@@ -19,9 +19,11 @@ use crate::families::a5a8::records::{
 };
 use crate::families::b2::records::{
     b2_adjacent_face_counted_owners_from_records, b2_circles_from_records,
-    b2_class25_descriptors_from_records, b2_cone_point, b2_cones_from_records, b2_cylinder_point,
-    b2_cylinders_from_records, b2_edge_nodes_from_records, b2_edge_parameters_from_records,
-    b2_embedded_cylinders_from_records, b2_pcurves_from_records, b2_plane_carriers_from_records,
+    b2_class25_descriptors_from_records, b2_closed_owner_boundary_edges, b2_cone_point,
+    b2_cones_from_records, b2_cylinder_point, b2_cylinders_from_records,
+    b2_edge_nodes_from_records, b2_edge_parameters_from_records,
+    b2_embedded_cylinders_from_records, b2_owner_identity_targets_from_records,
+    b2_owner_packets_from_records, b2_pcurves_from_records, b2_plane_carriers_from_records,
     b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records, b2_tori_from_records,
     b2_torus_geometry, b2_use_metadata_from_records, point_distance, B2Circle, B2Class25Descriptor,
     B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder, B2PlaneCarrier, B2Sphere,
@@ -137,6 +139,17 @@ pub struct ConsolidatedCompactEdgeEndpoints {
     pub node: B2EdgeNode,
     /// Byte offsets of the resolved endpoint records, in edge order.
     pub endpoint_records: [usize; 2],
+}
+
+/// One fixed-nine owner boundary closed by four resolved class-`0x5e` edges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ConsolidatedOwnerBoundaryCycle {
+    /// Bounded record source containing the owner and its local targets.
+    pub source_index: usize,
+    /// Class-`0x62` owner-record offset.
+    pub owner_pos: usize,
+    /// Four edge targets in fixed-nine slot order.
+    pub edges: [crate::families::b2::records::B2OwnerBoundaryEdge; 4],
 }
 
 /// Framed edge definition structurally owned by an adjacent oriented-use run.
@@ -958,6 +971,50 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
         .collect::<Vec<_>>();
     endpoints.sort_by_key(|binding| binding.node.pos);
     endpoints
+}
+
+/// Derive owner-local four-edge boundary cycles from fixed-nine references.
+/// Every returned endpoint is closed by the same bounded record source as its
+/// owner. Other fixed-nine roles remain unclassified.
+pub(crate) fn consolidated_owner_boundary_cycles_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedOwnerBoundaryCycle> {
+    let endpoint_records = consolidated_compact_edge_endpoints_from_records(data, records)
+        .into_iter()
+        .map(|binding| (binding.node.pos, binding.endpoint_records))
+        .collect::<HashMap<_, _>>();
+    let record_sources = records
+        .iter()
+        .map(|record| (record.range.start, record.source_index))
+        .collect::<HashMap<_, _>>();
+    let mut targets_by_owner = BTreeMap::<(usize, usize), Vec<_>>::new();
+    for target in b2_owner_identity_targets_from_records(data, records) {
+        targets_by_owner
+            .entry((target.source_index, target.owner_pos))
+            .or_default()
+            .push(target);
+    }
+    b2_owner_packets_from_records(data, records)
+        .into_iter()
+        .filter_map(|packet| {
+            let targets = targets_by_owner.get(&(packet.source_index, packet.pos))?;
+            let edges = b2_closed_owner_boundary_edges(targets, &endpoint_records)?;
+            edges
+                .iter()
+                .all(|edge| {
+                    record_sources.get(&edge.target_pos) == Some(&packet.source_index)
+                        && edge.endpoint_records.iter().all(|endpoint| {
+                            record_sources.get(endpoint) == Some(&packet.source_index)
+                        })
+                })
+                .then_some(ConsolidatedOwnerBoundaryCycle {
+                    source_index: packet.source_index,
+                    owner_pos: packet.pos,
+                    edges,
+                })
+        })
+        .collect()
 }
 
 /// Build the native endpoint-incidence graph for all complete consolidated

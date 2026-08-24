@@ -601,6 +601,8 @@ When these clamped NURBS or bounded spatial-circle carriers are the complete geo
 - **`b2/b3/b4 03 3b`** has width-coded header token `5`, a reference-and-control program beginning `85` and ending `03 11`, then finite f64 angular scale and cone half-angle. The half-angle lies strictly between zero and π/2. Complete frames retain their own identity when nested inside a wider consolidated payload. The immediately following contiguous run of class-`18` records is the chart's ordered parameter-space point run when every record in the run satisfies the parameter-space grammar. One unrecognized record makes the complete run opaque.
 - **`b2 03 23`** stores `[lo,hi,eps, lo,hi,1.0, lo,hi,eps]` as nine finite f64 values with `lo<hi`. The repeated range is the native parameter interval shared by the two preceding pcurves.
 
+- A fixed-nine packet has a closed owner-boundary cycle only when its complete resolved target set contains exactly four class-`0x5e` records, every target endpoint resolves to a distinct class-`0x5d` record pair, and those four pairs form one simple four-vertex cycle. The derived relation retains the fixed-nine slots, edge-record offsets, and endpoint-record offsets in slot order. It is owner-local evidence and does not assign a standard face ordinal; packets with another target class, an incomplete endpoint walk, a repeated edge, or a non-cycle graph remain unclassified.
+
 ### 6.5 `b2 03 19/28/29/31/30/60` support and construction records
 
 - **`b2 03 19`** stores the circle supports defined in §5.9.

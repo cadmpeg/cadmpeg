@@ -386,6 +386,27 @@ pub enum CatiaOwnerPacketPayload {
     },
 }
 
+/// One fixed-nine boundary edge retained when four resolved class-`0x5e`
+/// targets close one simple owner-local cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaOwnerBoundaryEdge {
+    /// Identity slot in the fixed-nine packet.
+    pub slot: u8,
+    /// Resolved class-`0x5e` edge-record offset.
+    pub byte_offset: u64,
+    /// Resolved class-`0x5d` endpoint-record offsets, in edge order.
+    pub endpoint_records: [u64; 2],
+}
+
+/// Owner-local boundary evidence derived from a closed fixed-nine cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaOwnerBoundaryCycle {
+    /// Four edge targets in fixed-nine slot order.
+    pub edges: [CatiaOwnerBoundaryEdge; 4],
+}
+
 /// Exact class-`0x62` consolidated owner packet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -411,6 +432,10 @@ pub struct CatiaConsolidatedOwnerPacket {
     /// Complete carrier/reference/side chart that this packet terminates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_chart: Option<CatiaOwnerChartRelation>,
+    /// Closed owner-local four-edge boundary, when all four resolved targets
+    /// form one simple cycle in the bounded record source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boundary_cycle: Option<CatiaOwnerBoundaryCycle>,
 }
 
 /// One structurally complete consolidated `B:29` cone chart.
@@ -6711,6 +6736,24 @@ fn consolidated_owner_packets(
                 target_class: target.target_class,
             });
     }
+    let boundary_cycles =
+        crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
+            bytes, records,
+        )
+        .into_iter()
+        .map(|cycle| {
+            (
+                (cycle.source_index, cycle.owner_pos),
+                CatiaOwnerBoundaryCycle {
+                    edges: cycle.edges.map(|edge| CatiaOwnerBoundaryEdge {
+                        slot: edge.slot,
+                        byte_offset: edge.target_pos as u64,
+                        endpoint_records: edge.endpoint_records.map(|pos| pos as u64),
+                    }),
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let face_nodes =
         crate::families::b2::records::b2_adjacent_face_owners_from_records(bytes, records)
             .into_iter()
@@ -6825,6 +6868,7 @@ fn consolidated_owner_packets(
                         terminal: face_node.terminal,
                     }),
                 owner_chart: owner_charts.get(&(source_index, pos)).cloned(),
+                boundary_cycle: boundary_cycles.get(&(source_index, pos)).copied(),
             },
         )
         .collect()

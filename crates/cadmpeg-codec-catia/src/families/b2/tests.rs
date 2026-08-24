@@ -351,6 +351,48 @@ fn fixed_owner_backward_identities_do_not_cross_group_separator() {
 }
 
 #[test]
+fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
+    use std::collections::HashMap;
+
+    use crate::families::b2::records::{b2_closed_owner_boundary_edges, B2OwnerIdentityTarget};
+
+    let targets = [(5, 13), (1, 10), (7, 16), (3, 14)]
+        .into_iter()
+        .map(|(slot, target_pos)| B2OwnerIdentityTarget {
+            owner_pos: 20,
+            source_index: 0,
+            slot,
+            distance: 1,
+            target_pos,
+            target_class: 0x5e,
+        })
+        .collect::<Vec<_>>();
+    let endpoints = HashMap::from([
+        (10, [100, 101]),
+        (13, [102, 103]),
+        (14, [100, 102]),
+        (16, [101, 103]),
+    ]);
+
+    let edges = b2_closed_owner_boundary_edges(&targets, &endpoints)
+        .expect("four class-5e targets close a cycle");
+    assert_eq!(edges.map(|edge| edge.slot), [1, 3, 5, 7]);
+    assert_eq!(edges[0].endpoint_records, [100, 101]);
+
+    let mut open = endpoints.clone();
+    open.insert(16, [101, 104]);
+    assert!(b2_closed_owner_boundary_edges(&targets, &open).is_none());
+
+    let mut mixed_classes = targets.clone();
+    mixed_classes[0].target_class = 0x5d;
+    assert!(b2_closed_owner_boundary_edges(&mixed_classes, &endpoints).is_none());
+
+    let mut duplicate = endpoints;
+    duplicate.insert(16, [100, 101]);
+    assert!(b2_closed_owner_boundary_edges(&targets, &duplicate).is_none());
+}
+
+#[test]
 fn owner_chart_requires_exact_source_closed_selector_rectangle() {
     use crate::families::b2::records::{
         B2OwnerChartBridge, B2OwnerChartCarrier, B2OwnerChartSideAxis,

@@ -465,6 +465,14 @@ population can displace the required face population.
 
 **Need.** We must resolve the remaining state where neither edge-table grammar admits, and establish the source rule if both grammars admit the same byte region. The variant fixes the decode route: `StandardNested` uses the complete standard spine, `FbbOnly` uses the partial-spine route, and `E5Stream` uses the coherent E5 graph.
 
+### SN-37. Fixed-nine owner boundary cycle
+
+**Question.** Which fixed-nine references form a face-boundary incidence witness, and what identity does that witness establish?
+
+**Known.** A fixed-nine packet exposes a boundary-cycle relation only when exactly four backward-resolved targets are class `0x5e`, every target has two resolved class `0x5d` endpoint records, and the four endpoint pairs form one simple four-vertex cycle. The relation retains the four identity slots, target offsets, and endpoint offsets in slot order. It is scoped to the packet's bounded allocation source and does not assign a standard face ordinal. Other fixed-nine roles, including packets with six disjoint edge targets or mixed `0x5d` and `0x5e` targets, remain unclassified.
+
+**Need.** Map a closed owner-boundary cycle to the standard face and edge-support records through an allocation-scoped relation. Do not compare local endpoint or owner identities across bounded record sources.
+
 ### DI-24. PMI dimension quantity and suffix framing
 
 **Question.** Which field gives the physical quantity of a `Range`/`CstAttr_Dimension` nominal and its deviations, and what do the `B8`, `C1`, and `DC` suffix framings select?

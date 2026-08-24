@@ -8,7 +8,7 @@
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
@@ -205,6 +205,17 @@ pub struct B2OwnerIdentityTarget {
     pub target_pos: usize,
     /// Selected record class.
     pub target_class: u8,
+}
+
+/// One fixed-nine identity that resolves to a closed owner-boundary edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct B2OwnerBoundaryEdge {
+    /// Identity slot in the fixed-nine packet.
+    pub slot: u8,
+    /// Resolved class-`0x5e` edge-record offset.
+    pub target_pos: usize,
+    /// Resolved class-`0x5d` endpoint-record offsets, in edge order.
+    pub endpoint_records: [usize; 2],
 }
 
 /// Parameter axis held constant by selectors `0x05` and `0x09` in an owner
@@ -844,6 +855,55 @@ pub(crate) fn b2_owner_identity_targets_from_records(
         }
     }
     targets
+}
+
+/// Select a fixed-nine boundary only when its complete resolved target set is
+/// one simple four-edge cycle. The endpoint records remain allocation-local;
+/// this predicate does not assign a face or promote the records to a global
+/// identity namespace.
+pub(crate) fn b2_closed_owner_boundary_edges(
+    targets: &[B2OwnerIdentityTarget],
+    endpoint_records: &HashMap<usize, [usize; 2]>,
+) -> Option<[B2OwnerBoundaryEdge; 4]> {
+    if targets.len() != 4 || targets.iter().any(|target| target.target_class != 0x5e) {
+        return None;
+    }
+    let mut edges = targets
+        .iter()
+        .map(|target| {
+            Some(B2OwnerBoundaryEdge {
+                slot: target.slot,
+                target_pos: target.target_pos,
+                endpoint_records: *endpoint_records.get(&target.target_pos)?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    edges.sort_unstable_by_key(|edge| edge.slot);
+    if edges.windows(2).any(|pair| pair[0].slot == pair[1].slot)
+        || edges
+            .iter()
+            .any(|edge| edge.endpoint_records[0] == edge.endpoint_records[1])
+    {
+        return None;
+    }
+
+    let mut edge_keys = HashSet::new();
+    let mut degrees = BTreeMap::<usize, usize>::new();
+    for edge in &edges {
+        let [start, end] = edge.endpoint_records;
+        let key = if start < end {
+            [start, end]
+        } else {
+            [end, start]
+        };
+        if !edge_keys.insert(key) {
+            return None;
+        }
+        *degrees.entry(start).or_default() += 1;
+        *degrees.entry(end).or_default() += 1;
+    }
+    (degrees.len() == 4 && degrees.values().all(|degree| *degree == 2))
+        .then(|| edges.try_into().ok().expect("four owner boundary edges"))
 }
 
 /// Decode source-closed carrier/reference/side/owner chart productions.
