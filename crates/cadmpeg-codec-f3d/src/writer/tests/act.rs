@@ -44,6 +44,8 @@ fn generated_source_less_rejects_act_without_segment_metadata() {
         channel_class_tag: None,
         channels: Default::default(),
         channel_guid_offsets: Default::default(),
+        channel_class_tail: Vec::new(),
+        channel_class_tail_offset: None,
     }];
     drop(native);
     let error = F3dCodec

@@ -6433,6 +6433,13 @@ pub struct ActEntity {
     /// Byte offsets of UTF-16 GUID code units, keyed parallel to `channels`.
     #[serde(default)]
     pub channel_guid_offsets: BTreeMap<String, u64>,
+    /// Class-owned bytes after the optional entity key. An empty vector means
+    /// that the record ends with zero padding only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub channel_class_tail: Vec<u8>,
+    /// Byte offset of `channel_class_tail` in the ACT `BulkStream`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_class_tail_offset: Option<u64>,
 }
 
 /// One GUID in the ordered ACT stream-wide asset/change-version pool.

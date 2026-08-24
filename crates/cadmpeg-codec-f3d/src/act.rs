@@ -416,6 +416,8 @@ struct ChannelGroup {
     class_tag: String,
     channels: BTreeMap<String, String>,
     guid_offsets: BTreeMap<String, u64>,
+    class_tail: Vec<u8>,
+    class_tail_offset: Option<u64>,
 }
 
 fn merge_entities(
@@ -438,6 +440,8 @@ fn merge_entities(
             channel_class_tag: None,
             channels: BTreeMap::new(),
             channel_guid_offsets: BTreeMap::new(),
+            channel_class_tail: Vec::new(),
+            channel_class_tail_offset: None,
         };
         if by_index.insert(record_index, entity).is_some() {
             return Err(CodecError::Malformed(format!(
@@ -468,6 +472,8 @@ fn merge_entities(
             entity.channel_record_index_offset = Some(group.record_index_offset as u64);
             entity.channel_entity_id_offset = group.entity_id_offset.map(|offset| offset as u64);
             entity.channel_guid_offsets = group.guid_offsets;
+            entity.channel_class_tail = group.class_tail;
+            entity.channel_class_tail_offset = group.class_tail_offset;
         } else if let Some(entity_id) = group.entity_id {
             by_index.insert(
                 group.record_index,
@@ -483,6 +489,8 @@ fn merge_entities(
                     channel_class_tag: Some(group.class_tag),
                     channels: group.channels,
                     channel_guid_offsets: group.guid_offsets,
+                    channel_class_tail: group.class_tail,
+                    channel_class_tail_offset: group.class_tail_offset,
                 },
             );
         }
@@ -549,9 +557,12 @@ fn decode_channel_group(
     } else {
         (None, None, cursor)
     };
-    if !bytes[end..frame.end].iter().all(|byte| *byte == 0) {
-        return Ok(None);
-    }
+    let remainder = &bytes[end..frame.end];
+    let (class_tail, class_tail_offset) = if remainder.iter().all(|byte| *byte == 0) {
+        (Vec::new(), None)
+    } else {
+        (remainder.to_vec(), Some(end as u64))
+    };
     Ok(Some(ChannelGroup {
         record_index: frame.record_index,
         record_index_offset: frame.record_index_offset,
@@ -560,6 +571,8 @@ fn decode_channel_group(
         class_tag: frame.class_tag.clone(),
         channels,
         guid_offsets,
+        class_tail,
+        class_tail_offset,
     }))
 }
 
@@ -703,6 +716,8 @@ mod tests {
                 "11111111-2222-3333-4444-555555555555".into(),
             )]),
             guid_offsets: BTreeMap::from([("Appearance".into(), 120)]),
+            class_tail: Vec::new(),
+            class_tail_offset: None,
         }
     }
 
@@ -756,7 +771,7 @@ mod tests {
     }
 
     #[test]
-    fn channel_group_allows_only_zero_frame_padding() {
+    fn channel_group_distinguishes_zero_padding_from_a_class_tail() {
         let payload_offset = 11;
         let mut bytes = vec![0; payload_offset + 10];
         bytes.extend_from_slice(&1u32.to_le_bytes());
@@ -764,8 +779,9 @@ mod tests {
         lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
         let entity_at = bytes.len();
         lp_utf16(&mut bytes, "0_985");
+        let tail_at = bytes.len();
         bytes.extend_from_slice(&[0; 11]);
-        let frame = RecordFrame {
+        let mut frame = RecordFrame {
             start: 0,
             end: bytes.len(),
             record_index: 7,
@@ -779,6 +795,8 @@ mod tests {
             .expect("zero padding belongs to the group frame");
         assert_eq!(group.record_index, 7);
         assert_eq!(group.entity_id.as_deref(), Some("0_985"));
+        assert!(group.class_tail.is_empty());
+        assert!(group.class_tail_offset.is_none());
 
         let keyless_frame = RecordFrame {
             start: frame.start,
@@ -793,9 +811,14 @@ mod tests {
             .expect("table-keyed group");
         assert!(keyless.entity_id.is_none());
 
-        *bytes.last_mut().expect("padding byte") = 1;
-        assert!(decode_channel_group(&bytes, &frame, "synthetic")
-            .expect("non-group records are not malformed")
-            .is_none());
+        let class_tail = b"\0synthetic-class-tail\x01";
+        bytes.truncate(tail_at);
+        bytes.extend_from_slice(class_tail);
+        frame.end = bytes.len();
+        let group = decode_channel_group(&bytes, &frame, "synthetic")
+            .expect("well-framed group with a class tail")
+            .expect("class tail follows the complete channel grammar");
+        assert_eq!(group.class_tail, class_tail);
+        assert_eq!(group.class_tail_offset, Some(tail_at as u64));
     }
 }

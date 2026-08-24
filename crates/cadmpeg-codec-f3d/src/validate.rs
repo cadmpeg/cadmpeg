@@ -820,9 +820,32 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
         } else {
             entity.table_record_index_offset.is_none() && entity.table_entity_id_offset.is_none()
         };
+        let valid_class_tail = if entity.channel_class_tail.is_empty() {
+            entity.channel_class_tail_offset.is_none()
+        } else {
+            entity.channel_class_tail.iter().any(|byte| *byte != 0)
+                && entity.channel_class_tail_offset.is_some_and(|tail_offset| {
+                    entity
+                        .channel_record_index_offset
+                        .is_some_and(|record_offset| record_offset < tail_offset)
+                        && entity
+                            .channel_entity_id_offset
+                            .is_none_or(|entity_offset| entity_offset < tail_offset)
+                        && entity.channel_guid_offsets.values().all(|guid_offset| {
+                            guid_offset
+                                .checked_add(72)
+                                .is_some_and(|guid_end| guid_end <= tail_offset)
+                        })
+                        && u64::try_from(entity.channel_class_tail.len())
+                            .ok()
+                            .and_then(|tail_len| tail_offset.checked_add(tail_len))
+                            .is_some()
+                })
+        };
         let valid_group = match entity.channel_class_tag.as_deref() {
             Some(class_tag) => {
                 valid_dynamic_class_tag(class_tag)
+                    && valid_class_tail
                     && !entity.channels.is_empty()
                     && entity.channels.len() <= 8
                     && entity
