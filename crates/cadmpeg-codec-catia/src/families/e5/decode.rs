@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! E5-stream decode route: analytic carriers, plane fitting, and topology transfer.
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -405,7 +406,8 @@ pub(crate) fn solve_e5_plane_frame(
     let mut fitted_axes = Vec::new();
     if let Some(anchors) = anchors {
         for mask in 0usize..(1usize << anchors.len()) {
-            let mut orientations = vec![false; segments.len()];
+            let mut orientations =
+                alloc_filled(segments.len(), false, "catia e5 plane orientations").ok()?;
             for (bit, &index) in anchors.iter().enumerate() {
                 orientations[index] = mask & (1 << bit) != 0;
             }
@@ -444,7 +446,8 @@ pub(crate) fn solve_e5_plane_frame(
             else {
                 continue;
             };
-            let mut orientations = vec![false; segments.len()];
+            let mut orientations =
+                alloc_filled(segments.len(), false, "catia e5 plane orientations").ok()?;
             orientations[seed_index] = seed_reversed;
             for (index, segment) in segments.iter().enumerate() {
                 if index == seed_index {
@@ -2273,7 +2276,12 @@ pub(crate) fn e5_ownership_plan(
             }
         }
     }
-    let mut uses = vec![HashMap::<u32, usize>::new(); body_faces.len()];
+    let mut uses = alloc_filled(
+        body_faces.len(),
+        HashMap::<u32, usize>::new(),
+        "catia e5 body edge uses",
+    )
+    .ok()?;
     let mut bodies_by_edge = topology
         .edges
         .keys()
@@ -2332,8 +2340,10 @@ pub(crate) fn e5_ownership_plan(
                 components[component].push(face);
             }
             let body_uses = &uses[body];
-            let mut closed_components = vec![true; components.len()];
-            let mut component_has_edges = vec![false; components.len()];
+            let mut closed_components =
+                alloc_filled(components.len(), true, "catia e5 closed components").ok()?;
+            let mut component_has_edges =
+                alloc_filled(components.len(), false, "catia e5 component edge marks").ok()?;
             for (&edge, &count) in body_uses {
                 let component = face_components[first_face_by_edge[&edge]];
                 component_has_edges[component] = true;

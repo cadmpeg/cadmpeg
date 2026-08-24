@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -70,7 +71,8 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         let next = labels.len();
         face_components.push(*labels.entry(root).or_insert(next));
     }
-    let mut component_faces = vec![Vec::new(); labels.len()];
+    let mut component_faces =
+        alloc_filled(labels.len(), Vec::new(), "catia b5 component faces").ok()?;
     for (face, component) in face_components.iter().copied().enumerate() {
         component_faces[component].push(face);
     }
@@ -140,7 +142,12 @@ pub(super) fn orient_loop_members(
             uses.entry(edge).or_default().push((node, sense));
         }
     }
-    let mut constraints = vec![Vec::<(usize, bool)>::new(); loop_ids.len()];
+    let mut constraints = alloc_filled(
+        loop_ids.len(),
+        Vec::<(usize, bool)>::new(),
+        "catia b5 loop orientation constraints",
+    )
+    .ok()?;
     for occurrences in uses.values().filter(|occurrences| occurrences.len() == 2) {
         let [(left, left_reversed), (right, right_reversed)] = occurrences.as_slice() else {
             unreachable!("filtered to two occurrences");
@@ -156,7 +163,12 @@ pub(super) fn orient_loop_members(
         }
     }
 
-    let mut flips = vec![None; loop_ids.len()];
+    let mut flips = alloc_filled(
+        loop_ids.len(),
+        None,
+        "catia b5 loop orientation assignments",
+    )
+    .ok()?;
     for root in 0..loop_ids.len() {
         if flips[root].is_some() {
             continue;
@@ -310,13 +322,20 @@ fn b5_boundary_roles(
     loop_orientation: &BTreeMap<u32, OrientedLoop>,
     surface_ids: &HashMap<u32, SurfaceId>,
     pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
-) -> Vec<LoopBoundaryRole> {
+) -> Option<Vec<LoopBoundaryRole>> {
     if face.loops.len() == 1 {
-        return vec![LoopBoundaryRole::Outer];
+        return Some(vec![LoopBoundaryRole::Outer]);
     }
-    let unspecified = vec![LoopBoundaryRole::Unspecified; face.loops.len()];
+    let unspecified = || {
+        alloc_filled(
+            face.loops.len(),
+            LoopBoundaryRole::Unspecified,
+            "catia b5 boundary roles",
+        )
+        .ok()
+    };
     let Some(surface_id) = surface_ids.get(&face.surface) else {
-        return unspecified;
+        return unspecified();
     };
     let Some(boundaries) = face
         .loops
@@ -333,7 +352,7 @@ fn b5_boundary_roles(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return unspecified;
+        return unspecified();
     };
     let Some(surface) = ir
         .model
@@ -341,9 +360,12 @@ fn b5_boundary_roles(
         .iter()
         .find(|surface| surface.id == *surface_id)
     else {
-        return unspecified;
+        return unspecified();
     };
-    crate::boundary_roles::classify_planar_boundary_roles(&surface.geometry, &boundaries)
+    Some(crate::boundary_roles::classify_planar_boundary_roles(
+        &surface.geometry,
+        &boundaries,
+    ))
 }
 
 /// Emit the single body, its ownership-derived regions and shells, and every
@@ -356,7 +378,7 @@ pub(super) fn emit_faces(
     surface_ids: &HashMap<u32, SurfaceId>,
     pcurve_uses: &HashMap<(u32, usize), (PcurveId, [f64; 2])>,
     edge_id_map: &HashMap<u32, EdgeId>,
-) {
+) -> bool {
     let ownership = &plan.ownership;
     let loop_orientation = &plan.loop_orientation;
 
@@ -430,8 +452,11 @@ pub(super) fn emit_faces(
             "catia:b5:shell#{}",
             ownership.face_components[face_index]
         ));
-        let boundary_roles =
-            b5_boundary_roles(ir, graph, face, loop_orientation, surface_ids, pcurve_uses);
+        let Some(boundary_roles) =
+            b5_boundary_roles(ir, graph, face, loop_orientation, surface_ids, pcurve_uses)
+        else {
+            return false;
+        };
         annotate(
             annotations,
             &face_id,
@@ -569,6 +594,7 @@ pub(super) fn emit_faces(
             ir.model.coedges[arena_index].radial_next = ir.model.coedges[radial].id.clone();
         }
     }
+    true
 }
 
 #[cfg(test)]
@@ -713,7 +739,7 @@ mod tests {
                 &HashMap::from([(10, SurfaceId("surface#10".to_string()))]),
                 &pcurve_uses,
             ),
-            vec![LoopBoundaryRole::Inner, LoopBoundaryRole::Outer]
+            Some(vec![LoopBoundaryRole::Inner, LoopBoundaryRole::Outer])
         );
     }
 }

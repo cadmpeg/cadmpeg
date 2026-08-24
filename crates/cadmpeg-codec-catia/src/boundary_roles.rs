@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-backed boundary-role derivation shared by closed topology routes.
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::LoopBoundaryRole;
@@ -143,7 +144,14 @@ pub(crate) fn classify_planar_boundary_roles(
     surface: &SurfaceGeometry,
     boundaries: &[Vec<Point3>],
 ) -> Vec<LoopBoundaryRole> {
-    let unspecified = || vec![LoopBoundaryRole::Unspecified; boundaries.len()];
+    let unspecified = || {
+        alloc_filled(
+            boundaries.len(),
+            LoopBoundaryRole::Unspecified,
+            "catia planar boundary roles",
+        )
+        .unwrap_or_default()
+    };
     if boundaries.len() == 1 {
         return vec![LoopBoundaryRole::Outer];
     }
@@ -252,7 +260,13 @@ pub(crate) fn classify_planar_boundary_roles(
     }) {
         return unspecified();
     }
-    let mut roles = vec![LoopBoundaryRole::Inner; boundaries.len()];
+    let Ok(mut roles) = alloc_filled(
+        boundaries.len(),
+        LoopBoundaryRole::Inner,
+        "catia planar boundary roles",
+    ) else {
+        return unspecified();
+    };
     roles[outer] = LoopBoundaryRole::Outer;
     roles
 }

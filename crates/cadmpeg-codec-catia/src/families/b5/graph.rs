@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{View, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
 use cadmpeg_ir::geometry::{
     knots_strictly_increasing, NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -1418,7 +1418,12 @@ fn object_stream_pcurve_candidate(
         surface: jet.support_id,
         degree: jet.degree,
         distinct_knots: jet.knots.clone(),
-        multiplicities: vec![jet.degree + 1; jet.knots.len()],
+        multiplicities: alloc_filled(
+            jet.knots.len(),
+            jet.degree + 1,
+            "catia b5 pcurve multiplicities",
+        )
+        .ok()?,
         control_points,
         weights: None,
         parameter_range: Some(jet.range),
@@ -1531,7 +1536,8 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
         surface,
         degree,
         distinct_knots,
-        multiplicities: vec![degree + 1; knot_count],
+        multiplicities: alloc_filled(knot_count, degree + 1, "catia b5 pcurve multiplicities")
+            .ok()?,
         control_points,
         weights: None,
         parameter_range: Some(parameter_range),

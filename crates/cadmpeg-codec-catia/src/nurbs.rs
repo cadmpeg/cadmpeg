@@ -5,6 +5,7 @@
 //! B-spline conversion, tensor-product NURBS isocurve extraction, circular
 //! interval canonicalization, and exact circular-helix fitting.
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
     ProceduralCurveDefinition,
@@ -758,7 +759,7 @@ fn nurbs_basis_values(
     {
         return None;
     }
-    let mut basis = vec![0.0; count + degree];
+    let mut basis = alloc_filled(count + degree, 0.0, "catia NURBS basis values").ok()?;
     for (index, value) in basis.iter_mut().enumerate() {
         if (knots.get(index)? <= &parameter && &parameter < knots.get(index + 1)?)
             || (parameter == *knots.last()? && index + 1 == count)

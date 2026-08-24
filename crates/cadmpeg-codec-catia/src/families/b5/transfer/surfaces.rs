@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
@@ -338,10 +339,15 @@ pub(super) fn revolve_nurbs(
         angular_weights.push(1.0);
         append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count);
     }
-    let profile_weights = profile
-        .weights
-        .clone()
-        .unwrap_or_else(|| vec![1.0; profile.control_points.len()]);
+    let profile_weights = match profile.weights.clone() {
+        Some(weights) => weights,
+        None => alloc_filled(
+            profile.control_points.len(),
+            1.0,
+            "catia b5 revolution profile weights",
+        )
+        .ok()?,
+    };
     let mut control_points = Vec::with_capacity(control_count);
     let mut weights = Vec::with_capacity(control_points.capacity());
     for (profile_point, profile_weight) in profile.control_points.iter().zip(profile_weights) {
