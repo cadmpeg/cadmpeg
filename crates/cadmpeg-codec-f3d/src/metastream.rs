@@ -174,6 +174,33 @@ fn take_version_guid(
     })
 }
 
+fn take_version_urn(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
+    let initial = *at;
+    for prefix_len in [0, 4] {
+        if prefix_len != 0 && View::u32_le_at(bytes, initial) != Some(0) {
+            continue;
+        }
+        let Some(urn_at) = initial.checked_add(prefix_len) else {
+            continue;
+        };
+        let Some((urn, next)) = lp_utf16_bounded(bytes, urn_at, 1..=1024) else {
+            continue;
+        };
+        let urn = urn.as_bytes();
+        if urn.len() > 4
+            && urn[..4].eq_ignore_ascii_case(b"urn:")
+            && urn[4..].iter().all(u8::is_ascii_graphic)
+        {
+            *at = next;
+            return Ok(());
+        }
+    }
+    Err(ParseFailure {
+        field: "version-context version URN",
+        offset: initial,
+    })
+}
+
 fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
     let count_at = *at;
     let count = require(View::u32_le_at(bytes, *at), "version-context count", *at)?;
@@ -189,26 +216,22 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure
         require(bytes.get(*at..token_end), "version-context token", *at)?;
         *at = token_end;
         take_version_guid(bytes, at, "version-context asset GUID", true)?;
+
+        // Legacy full contexts omit the separate revision GUID and place the
+        // version URN directly after the asset GUID.
+        let legacy_full_at = *at;
+        if take_version_urn(bytes, at).is_ok() {
+            take_version_guid(bytes, at, "version-context asset revision GUID", true)?;
+            require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
+            *at = require(at.checked_add(4), "version-context revision", *at)?;
+            continue;
+        }
+        *at = legacy_full_at;
         take_version_guid(bytes, at, "version-context revision GUID", true)?;
 
         let full_at = *at;
-        let full = (|| {
-            let (version_urn, next) = require(
-                lp_utf16_bounded(bytes, *at, 1..=1024),
-                "version-context version URN",
-                *at,
-            )?;
-            let version_urn = version_urn.as_bytes();
-            if version_urn.len() <= 4
-                || !version_urn[..4].eq_ignore_ascii_case(b"urn:")
-                || !version_urn[4..].iter().all(u8::is_ascii_graphic)
-            {
-                return Err(ParseFailure {
-                    field: "version-context version URN",
-                    offset: *at,
-                });
-            }
-            *at = next;
+        let full: Result<(), ParseFailure> = (|| {
+            take_version_urn(bytes, at)?;
             take_version_guid(bytes, at, "version-context asset revision GUID", true)?;
             require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
             *at = require(at.checked_add(4), "version-context revision", *at)?;
@@ -507,6 +530,19 @@ mod tests {
         }
         short.extend_from_slice(&0u32.to_le_bytes());
         parse(&short, "short-version-context").expect("short version context");
+
+        let mut legacy_full = stream_prefix();
+        legacy_full.extend_from_slice(&15u64.to_le_bytes());
+        legacy_full.extend_from_slice(&1u32.to_le_bytes());
+        legacy_full.extend_from_slice(&0x7766_5544_3322_1100u64.to_le_bytes());
+        legacy_full.extend_from_slice(&0u32.to_le_bytes());
+        lp_utf16(&mut legacy_full, "11111111-2222-3333-4444-555555555555");
+        lp_utf16(&mut legacy_full, "urn:synthetic:legacy-version:3");
+        lp_utf16(&mut legacy_full, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+        legacy_full.extend_from_slice(&3u32.to_le_bytes());
+        legacy_full.extend_from_slice(&0u32.to_le_bytes());
+        parse(&legacy_full, "legacy-full-version-context")
+            .expect("legacy full version context without a revision GUID");
 
         let mut invalid_presence = stream_prefix();
         invalid_presence.extend_from_slice(&15u64.to_le_bytes());
