@@ -6081,9 +6081,9 @@ fn decode_two_chart_scalar(
         return Some((0.0, cursor + 1));
     }
     if first_coordinate {
-        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)
+        scalar::decode_two_chart_first_coordinate(body, cursor, cache)
     } else {
-        scalar::decode_tabulated_cylinder_second_coordinate(body, cursor, cache)
+        scalar::decode_two_chart_second_coordinate(body, cursor, cache)
     }
 }
 

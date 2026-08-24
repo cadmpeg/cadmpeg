@@ -111,6 +111,35 @@ fn two_chart_sample_rows_require_exact_counted_consumption() {
 }
 
 #[test]
+fn two_chart_replay_consumes_curve_local_scalar_forms() {
+    let first = [0x32, 0, 0, 0, 0, 0, 0, 0];
+    let second = [0x56, 0, 0, 0, 0, 0, 0];
+    let mut samples = Vec::new();
+    for _ in 0..2 {
+        samples.extend_from_slice(&first);
+        samples.extend_from_slice(&second);
+        samples.extend_from_slice(&first);
+        samples.extend_from_slice(&second);
+    }
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 2]);
+    payload.extend(samples);
+    payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+
+    let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].samples.len(), 2);
+    let expected_first = f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0]);
+    let expected_second = f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0]);
+    for sample in &decoded[0].samples {
+        for chart in sample {
+            assert!((chart[0] - expected_first).abs() <= f64::EPSILON);
+            assert!((chart[1] - expected_second).abs() <= f64::EPSILON);
+        }
+    }
+}
+
+#[test]
 fn decodes_only_complete_fc02_short_pcurve_endpoints() {
     let token_specs = [
         (-14.5, vec![0x48, 0x45, 0x00]),

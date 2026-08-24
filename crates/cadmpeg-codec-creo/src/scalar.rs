@@ -416,6 +416,38 @@ pub fn decode_tabulated_cylinder_second_coordinate(
     decode_second_coordinate_lane(data, offset, cache)
 }
 
+/// Decode the first coordinate of one chart in a bounded two-chart curve body.
+///
+/// This curve lane adds an eight-byte positive sub-unit `0x32` form. The same
+/// prefix opens a model reference in positional surface-row bodies; the
+/// enclosing two-chart sample grammar distinguishes the two uses.
+pub fn decode_two_chart_first_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x32) {
+        return ieee8(data, offset, 0x3f);
+    }
+    decode_tabulated_cylinder_first_coordinate(data, offset, cache)
+}
+
+/// Decode the second coordinate of one chart in a bounded two-chart curve body.
+///
+/// Positive-DICT prefixes below the general second-directrix floor use the
+/// same arithmetic lattice when the complete two-chart grammar owns the slot.
+pub fn decode_two_chart_second_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    let prefix = *data.get(offset)?;
+    if (0x4b..=0x5b).contains(&prefix) {
+        return ieee7_dict(data, offset, 0x3f75 + u16::from(prefix));
+    }
+    decode_tabulated_cylinder_second_coordinate(data, offset, cache)
+}
+
 /// Decode a model-space coordinate in an `ActDatums` outline.
 ///
 /// Named and positional datum outlines use the backed subset of the bounded
@@ -1739,6 +1771,27 @@ mod tests {
                 f64::from_be_bytes([0x3f, 0xc6, 0x20, 0xbb, 0xca, 0xab, 0x7c, 0x66]),
                 encoded.len()
             ))
+        );
+    }
+
+    #[test]
+    fn two_chart_coordinates_use_their_bounded_lane_extensions() {
+        let first = [0x32, 0, 0, 0, 0, 0, 0, 0];
+        let second = [0x56, 0, 0, 0, 0, 0, 0];
+        let cache = ScalarCache::default();
+
+        let (first_value, first_end) =
+            decode_two_chart_first_coordinate(&first, 0, &cache).expect("first coordinate");
+        let (second_value, second_end) =
+            decode_two_chart_second_coordinate(&second, 0, &cache).expect("second coordinate");
+        assert_eq!(first_end, first.len());
+        assert_eq!(second_end, second.len());
+        assert!(
+            (first_value - f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0])).abs() <= f64::EPSILON
+        );
+        assert!(
+            (second_value - f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0])).abs()
+                <= f64::EPSILON
         );
     }
 

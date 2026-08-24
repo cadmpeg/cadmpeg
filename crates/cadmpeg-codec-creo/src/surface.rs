@@ -3687,8 +3687,7 @@ fn inline_surface_body(
         if !structurally_complete || geometric_interpretation_count == 0 {
             continue;
         }
-        let carrier = (geometric_interpretation_count != 0
-            && carriers.len() == geometric_interpretation_count)
+        let carrier = (!carriers.is_empty())
             .then(|| carriers.first().copied())
             .flatten()
             .filter(|first| {
@@ -3961,15 +3960,24 @@ fn decode_inline_surface_envelope(
         *value = decoded;
         cursor = next;
     }
-    (body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
+    let close = inline_surface_envelope_close(body, cursor)?;
     Some(InlineSurfaceEnvelope {
         axial: [values[1], values[2]],
         corners: [
             [values[3], values[4], values[5]],
             [values[6], values[7], values[8]],
         ],
-        close: cursor,
+        close,
     })
+}
+
+fn inline_surface_envelope_close(body: &[u8], cursor: usize) -> Option<usize> {
+    if body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE) {
+        return Some(cursor);
+    }
+    (body.get(cursor) == Some(&0xf7)).then_some(())?;
+    let (_, close) = psb::reference_id(body, cursor + 1).ok()?;
+    (body.get(close) == Some(&psb::token::COMPOUND_CLOSE)).then_some(close)
 }
 
 fn decode_inline_four_bound_cylinder_envelope(
@@ -4004,11 +4012,11 @@ fn decode_inline_four_bound_cylinder_envelope(
         *value = decoded;
         cursor = next;
     }
-    (body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
+    let close = inline_surface_envelope_close(body, cursor)?;
     Some(InlineSurfaceEnvelope {
         axial: [v_low, v_high],
         corners,
-        close: cursor,
+        close,
     })
 }
 
@@ -4037,11 +4045,11 @@ fn decode_inline_referenced_cylinder_envelope(
         *value = decoded;
         cursor = next;
     }
-    (body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
+    let close = inline_surface_envelope_close(body, cursor)?;
     Some(InlineSurfaceEnvelope {
         axial: [bounds[0], bounds[2]],
         corners,
-        close: cursor,
+        close,
     })
 }
 
@@ -4326,8 +4334,7 @@ fn witnessed_inline_axis_index(
     let axial_span = (envelope.axial[1] - envelope.axial[0]).abs();
     (axial_span.is_finite() && axial_span > EPS_INLINE_WITNESS).then_some(())?;
     let hinted_span = (envelope.corners[1][hinted_axis] - envelope.corners[0][hinted_axis]).abs();
-    (hinted_span <= axial_span + EPS_INLINE_WITNESS * inline_scale(hinted_span, axial_span))
-        .then_some(hinted_axis)
+    hinted_span.is_finite().then_some(hinted_axis)
 }
 
 fn solve_inline_axis_endpoint(
@@ -4342,6 +4349,7 @@ fn solve_inline_axis_endpoint(
     let mut direct = Vec::new();
     let mut crosswise = Vec::new();
     let mut containing = Vec::new();
+    let mut endpoint_anchored = Vec::new();
     let push_unique = |candidates: &mut Vec<(f64, f64)>, candidate: (f64, f64)| {
         if !candidates.iter().any(|existing| {
             inline_close(existing.0, candidate.0) && inline_close(existing.1, candidate.1)
@@ -4376,6 +4384,16 @@ fn solve_inline_axis_endpoint(
                     && candidate_upper >= upper - EPS_INLINE_WITNESS * scale
                 {
                     push_unique(&mut containing, candidate);
+                } else if candidate_lower < upper
+                    && candidate_upper > lower
+                    && ([first, second].into_iter().any(|endpoint| {
+                        inline_close(endpoint, lower) || inline_close(endpoint, upper)
+                    }))
+                {
+                    // An oblique trim can extend one outline corner beyond the
+                    // stored axial interval. The other endpoint still anchors
+                    // the signed local axis to the model-space outline.
+                    push_unique(&mut endpoint_anchored, candidate);
                 }
             }
         }
@@ -4384,6 +4402,7 @@ fn solve_inline_axis_endpoint(
         .iter()
         .chain(&crosswise)
         .chain(&containing)
+        .chain(&endpoint_anchored)
         .filter(|candidate| inline_close(candidate.1, stored_axis_sense))
         .copied()
         .collect::<Vec<_>>();
@@ -4396,6 +4415,10 @@ fn solve_inline_axis_endpoint(
             [candidate] => Some(*candidate),
             [] => match containing.as_slice() {
                 [candidate] => Some(*candidate),
+                [] => match endpoint_anchored.as_slice() {
+                    [candidate] => Some(*candidate),
+                    _ => None,
+                },
                 _ => None,
             },
             _ => None,

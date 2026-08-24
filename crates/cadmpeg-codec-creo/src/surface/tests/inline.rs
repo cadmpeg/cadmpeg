@@ -328,12 +328,45 @@ fn four_bound_inline_envelope_accepts_oblique_axial_containment() {
     let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
     push_inline_test_scalar(&mut payload, 0.0);
     push_inline_test_first_directrix(&mut payload, 2.0);
-    let u_high_offset = payload.len();
     push_inline_test_scalar(&mut payload, 1.0);
     push_inline_test_first_directrix(&mut payload, 6.0);
     for value in [-1.0, 1.0, 4.0, 1.0, 3.0, 6.0] {
         push_inline_test_scalar(&mut payload, value);
     }
+    payload.push(0xe3);
+    payload.extend_from_slice(&[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4]);
+    for value in [4.0, 2.0, 5.0] {
+        push_inline_test_scalar(&mut payload, value);
+    }
+    payload.extend_from_slice(&[0x0f, 0xe3]);
+
+    let body = &payload[6..];
+    let InlineSurfaceCarrier::Cylinder(frame) =
+        inline_surface_body(SurfaceKind::Cylinder, body, &scalar::ScalarCache::default())
+            .and_then(|body| body.carrier)
+            .expect("contained four-bound envelope resolves one carrier")
+    else {
+        panic!("cylinder grammar resolves a cylinder carrier");
+    };
+    assert_eq!(frame.origin, [-4.0, 2.0, 5.0]);
+    assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.ref_direction, [0.0, 0.0, -1.0]);
+    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.length, Some(4.0));
+}
+
+#[test]
+fn four_bound_inline_envelope_accepts_an_endpoint_anchored_oblique_trim() {
+    let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+    push_inline_test_scalar(&mut payload, 0.0);
+    push_inline_test_first_directrix(&mut payload, 2.0);
+    let u_high_offset = payload.len();
+    push_inline_test_scalar(&mut payload, 1.0);
+    push_inline_test_first_directrix(&mut payload, 6.0);
+    for value in [-3.0, 1.0, 4.0, 2.0, 3.0, 6.0] {
+        push_inline_test_scalar(&mut payload, value);
+    }
+    payload.extend_from_slice(&[0xf7, 0x17]);
     payload.push(0xe3);
     payload.extend_from_slice(&[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4]);
     for value in [4.0, 2.0, 5.0] {
@@ -363,6 +396,38 @@ fn four_bound_inline_envelope_accepts_oblique_axial_containment() {
         &scalar::ScalarCache::default(),
     )
     .is_none());
+}
+
+#[test]
+fn inline_envelope_rejects_lane_aliases_by_geometry() {
+    let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+    push_inline_test_scalar(&mut payload, 0.0);
+    push_inline_test_first_directrix(&mut payload, 2.0);
+    push_inline_test_scalar(&mut payload, 1.0);
+    push_inline_test_first_directrix(&mut payload, 6.0);
+    for value in [-3.0, 1.0, 2.0, 2.0, 3.0, 2.0] {
+        push_inline_test_scalar(&mut payload, value);
+    }
+    payload.push(0xe3);
+    payload.extend_from_slice(&[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4]);
+    push_inline_test_scalar(&mut payload, -4.0);
+    push_inline_test_scalar(&mut payload, 2.0);
+    payload.extend_from_slice(&[0xd3, 0, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0xe4, 0xe3]);
+
+    let body = &payload[6..];
+    let InlineSurfaceCarrier::Cylinder(frame) =
+        inline_surface_body(SurfaceKind::Cylinder, body, &scalar::ScalarCache::default())
+            .and_then(|body| body.carrier)
+            .expect("outline containment rejects the alternate scalar lane")
+    else {
+        panic!("inline body resolves a cylinder carrier");
+    };
+    let expected_z = f64::from_be_bytes([0xc0, 0x01, 0, 0, 0, 0, 0, 0]).abs();
+    assert_eq!(frame.origin[..2], [-4.0, 2.0]);
+    assert!((frame.origin[2] - expected_z).abs() <= f64::EPSILON);
+    assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius, 1.0);
 }
 
 #[test]

@@ -1078,8 +1078,10 @@ model-reference token does not contribute a geometric coordinate.
 A positional non-plane surface row with an inline carrier stores an axial
 envelope, an outline, a twelve-slot local system, a family suffix, and the
 contour chain in that order. The envelope is `<u> <v0> 12 <v1>` followed by
-two model-space XYZ corners and `e3`; the `12` is the separator between the
-two axial parameters. The local system has three direction triples followed
+two model-space XYZ corners, an optional complete `f7 <reference-id>` replay
+reference, and `e3`; the `12` is the separator between the two axial
+parameters. The replay reference does not contribute geometry. The local
+system has three direction triples followed
 by one origin triple and is closed by `e3`. A cylinder suffix is one radius, a
 cone suffix is one half-angle, and a type-26 suffix is `radius1 radius2`.
 The suffix lane uses exact `18` for zero, `0f` for one, and `0e` for one half.
@@ -1090,8 +1092,10 @@ An obliquely trimmed cylinder can instead store four consecutive envelope
 bounds `u0 v0 u1 v1` without a separator. The `u` bounds use the positive
 DICT or positional row lane, and the `v` bounds use the first
 tabulated-cylinder directrix-coordinate lane. Six outline coordinates and
-`e3` follow. Both intervals are nondegenerate. A `12` byte inside a bounded
-scalar token is payload and does not select the separated envelope production.
+`e3` follow. One complete `f7 <reference-id>` replay reference may occur
+between the outline coordinates and `e3`; it does not contribute geometry.
+Both intervals are nondegenerate. A `12` byte inside a bounded scalar token is
+payload and does not select the separated envelope production.
 
 A local-system-suffix row may omit the axial envelope. Its body begins with
 the local system and family suffix, or with an earlier row-local block closed
@@ -1143,10 +1147,12 @@ The carrier placement is admitted only when the envelope, outline, and stored
 frame provide one witness. The compact image names the axis coordinate, whose
 outline span equals `abs(v1 - v0)` in the separated envelope production.
 Other outline spans may have the same length. In the four-bound oblique
-production, the outline interval on that coordinate is strictly contained in
-the axial parameter interval. In a referenced inline envelope, an oblique trim
-can reduce that interval to one coordinate while the compact image still names
-the axis; the placed axial parameter interval must contain that coordinate.
+production, the outline interval on that coordinate is contained in the axial
+parameter interval or overlaps it with one common endpoint. The latter form
+stores an oblique trim whose other outline corner extends beyond the axial
+parameter interval. In a referenced inline envelope, an oblique trim can
+reduce that interval to one coordinate while the compact image still names the
+axis; the placed axial parameter interval must contain that coordinate.
 Solve
 `{o + v0 C, o + v1 C} = {lo, hi}` for
 `o in {+abs(s), -abs(s)}` and `C in {+1, -1}`, where `s` is the stored origin
@@ -1160,6 +1166,10 @@ inside `[center - R, center + R]`. Use the cylinder radius for `R`; for a cone u
 `max(abs(v0), abs(v1)) * tan(half_angle)`; for a torus or sphere use
 `radius1 + radius2`. A failed or non-unique witness retains the complete row
 as native data and does not create an analytic carrier.
+When one scalar image has several lane interpretations, apply these envelope
+and outline tests to every interpretation. Discard interpretations that fail
+the carrier witness. Admit the carrier only when the surviving interpretations
+produce one equivalent carrier.
 
 The local-system-suffix form has no envelope witness. Its stored origin,
 normalized first direction, normalized frame axis, and family suffix define
@@ -2055,8 +2065,12 @@ canonical counts for one feature and raw type
 make an unprefixed replay ambiguous.
 
 Each chart's first coordinate uses the first tabulated-cylinder directrix
-coordinate lane. Its second coordinate uses the second directrix coordinate
-lane. A bare `18` occupies one zero slot in either coordinate. The chart pair
+coordinate lane. In this bounded curve grammar, `32 <tail7>` is an eight-byte
+positive sub-unit first-coordinate scalar that reconstructs IEEE-754 bytes
+`3f <tail7>`. Its second coordinate uses the second directrix coordinate lane.
+The positive-DICT lattice extends through prefixes `4b..a3` in this grammar;
+the prefix and six-byte tail reconstruct by the positive-DICT rule. A bare
+`18` occupies one zero slot in either coordinate. The chart pair
 for a spline face is the interpolation surface's `(u, v)` pair. A plane uses
 its stored affine `(u, v)` frame. An extrusion uses profile parameter followed
 by sweep coordinate. Other surface families use their stored surface chart.
