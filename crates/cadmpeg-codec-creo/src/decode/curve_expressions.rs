@@ -26,10 +26,10 @@ pub(crate) fn curve_expression_record_id(record: &crate::curve::CurveExpressionR
     )
 }
 
-const EPS_HELIX_BASIS_LENGTH: f64 = 1e-12;
-const EPS_HELIX_BASIS_ORIGIN: f64 = 1e-12;
-const EPS_HELIX_UV_EQUAL: f64 = 1e-9;
-const EPS_HELIX_UV_ORTHO: f64 = 1e-9;
+const EPS_HELIX_BASIS_LENGTH: f64 = 1.0e-12;
+const EPS_HELIX_BASIS_ORIGIN: f64 = 1.0e-12;
+const EPS_HELIX_UV_EQUAL: f64 = 1.0e-9;
+const EPS_HELIX_UV_ORTHO: f64 = 1.0e-9;
 
 pub(crate) fn curve_expression_helix_definition(
     record: &crate::curve::CurveExpressionRecord,

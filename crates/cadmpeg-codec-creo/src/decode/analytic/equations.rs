@@ -9,14 +9,14 @@ pub(crate) use crate::vecmath::{cross, dot};
 
 use super::planes::point_on_carrier;
 
-const EPS_PLANE_RESIDUAL: f64 = 1e-6;
-const EPS_CONIC_RESIDUAL: f64 = 1e-8;
-const EPS_ROOT_CLUSTER: f64 = 1e-7;
-const EPS_PARAM_UNIQUE: f64 = 1e-7;
-const EPS_AGREE: f64 = 1e-9;
-const EPS_ORTHO: f64 = 1e-10;
-const EPS_POLY_ROOT_VALUE: f64 = 1e-11;
-const EPS_NEAR_ZERO: f64 = 1e-12;
+const EPS_PLANE_RESIDUAL: f64 = 1.0e-6;
+const EPS_CONIC_RESIDUAL: f64 = 1.0e-8;
+const EPS_ROOT_CLUSTER: f64 = 1.0e-7;
+const EPS_PARAM_UNIQUE: f64 = 1.0e-7;
+const EPS_AGREE: f64 = 1.0e-9;
+const EPS_ORTHO: f64 = 1.0e-10;
+const EPS_POLY_ROOT_VALUE: f64 = 1.0e-11;
+const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
 #[derive(Clone, Copy)]
 pub struct PlaneEquation {

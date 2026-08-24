@@ -1727,7 +1727,7 @@ const SKETCH_TEXT_TRAILING_RUN: usize = 30;
 /// rigid placement writes there. The transform is composed in floating point,
 /// so its constants arrive rounded; the bound is far tighter than a run of
 /// misframed bytes would meet.
-const TEXT_PLACEMENT_TOLERANCE: f64 = 1e-9;
+const TEXT_PLACEMENT_TOLERANCE: f64 = 1.0e-9;
 
 /// Bytes between the end of the stored `txt_tag` rotation and the four f32 RGBA
 /// components. The first byte is zero and four further bytes are unclassified.

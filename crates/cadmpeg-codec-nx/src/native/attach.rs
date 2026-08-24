@@ -37,6 +37,9 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
+const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
+const MIN_ANGULAR_TOLERANCE: f64 = 1.0e-12;
+
 use crate::container::EntryContent;
 use crate::decode::Scan;
 use crate::native::history::{active_feature_closure, BodyWriterHistory};
@@ -6110,7 +6113,7 @@ fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement
     let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
         return Vec::new();
     };
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
     let mut placements = Vec::new();
     for (origin, axis, _) in bores {
         let Some(mut axis) = unit_vector(axis) else {
@@ -6284,8 +6287,8 @@ fn cylindrical_face_witnesses(
             .or_default()
             .push(coedge);
     }
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let linear_tolerance = ir.tolerances.linear.max(MIN_LINEAR_TOLERANCE);
+    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
     let mut witnesses = Vec::new();
     for face in body_faces
         .iter()
@@ -6406,8 +6409,8 @@ fn plane_annulus_witness(
             .or_default()
             .push(coedge);
     }
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let linear_tolerance = ir.tolerances.linear.max(MIN_LINEAR_TOLERANCE);
+    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
     let mut matches = 0;
     for face in body_faces {
         if face.loops.len() != 2 {
@@ -6505,8 +6508,8 @@ fn counterbore_cylinders(
     if cylinders.is_empty() || cylinders.len() % 2 != 0 {
         return None;
     }
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let linear_tolerance = ir.tolerances.linear.max(MIN_LINEAR_TOLERANCE);
+    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
     let mut candidates = vec![Vec::<(usize, CounterboreCylinderWitness)>::new(); cylinders.len()];
     for (first_index, first) in cylinders.iter().enumerate() {
         for (second_index, second) in cylinders.iter().enumerate().skip(first_index + 1) {
@@ -6624,8 +6627,8 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
             .or_default()
             .push(coedge);
     }
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let linear_tolerance = ir.tolerances.linear.max(MIN_LINEAR_TOLERANCE);
+    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
     let mut cap_stations = Vec::new();
     for (station_ordinal, station) in cylinder.stations.iter().enumerate() {
         let cylinder_loop = &cylinder.loop_ids[station_ordinal];
@@ -6824,8 +6827,8 @@ fn simple_hole_chamfers(
             .push(coedge);
     }
 
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let linear_tolerance = ir.tolerances.linear.max(MIN_LINEAR_TOLERANCE);
+    let angular_tolerance = ir.tolerances.angular.max(MIN_ANGULAR_TOLERANCE);
     let mut treatments = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let Some(body_faces) = connected_solid_body_faces(ir, &body) else {

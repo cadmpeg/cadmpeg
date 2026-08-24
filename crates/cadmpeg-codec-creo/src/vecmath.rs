@@ -3,7 +3,7 @@
 
 use cadmpeg_ir::math::Vector3;
 
-const EPS_NEAR_ZERO: f64 = 1e-12;
+const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
 pub(crate) fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
     Vector3::from(left).dot(Vector3::from(right))

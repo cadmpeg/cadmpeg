@@ -25,7 +25,7 @@ const TRIM_KINDS: [u8; 14] = [
 // direction to binary32 changes its squared norm by less than 2.1e-7; this
 // bound leaves room for binary32 arithmetic used by a writer without
 // admitting a materially non-unit frame.
-const FRAME_VECTOR_NORM2_TOLERANCE: f64 = 1e-6;
+const FRAME_VECTOR_NORM2_TOLERANCE: f64 = 1.0e-6;
 
 /// Number of face rows in the governing standard topology spine. The spine is
 /// the unique largest contiguous stride-eight FBB run; shorter marker runs are

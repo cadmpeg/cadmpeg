@@ -6,9 +6,9 @@ use cadmpeg_ir::math::Point2;
 
 use super::equations::{cross, dot};
 
-const EPS_AGREE: f64 = 1e-9;
-const EPS_ORTHO: f64 = 1e-10;
-const EPS_NEAR_ZERO: f64 = 1e-12;
+const EPS_AGREE: f64 = 1.0e-9;
+const EPS_ORTHO: f64 = 1.0e-10;
+const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
 pub fn stored_unit_vector(vector: [f64; 3]) -> Option<[f64; 3]> {
     let length = dot(vector, vector).sqrt();

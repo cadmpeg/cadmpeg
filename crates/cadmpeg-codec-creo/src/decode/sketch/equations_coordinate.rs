@@ -8,6 +8,11 @@ use super::super::sketch_transfer::section_solver_equation_is_disabled;
 use super::equations_scalar::SectionScalarVariable;
 use super::skamp::SectionPointSource;
 
+const EPS_DISTANCE_AGREEMENT: f64 = 1.0e-9;
+const EPS_SOLVER_SCALE: f64 = 1.0e-12;
+const EPS_DISCRIMINANT_SCALE: f64 = 1.0e-12;
+const EPS_SOLUTION_AGREEMENT: f64 = 1.0e-9;
+
 pub(crate) fn section_equation_function_six_distance_values(
     definition: &crate::feature::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
@@ -85,7 +90,8 @@ pub(crate) fn section_equation_function_six_distance_values(
             if radius.value.is_some_and(|stored| {
                 !stored.is_finite()
                     || stored <= 0.0
-                    || (stored - distance).abs() > 1e-9 * stored.abs().max(distance).max(1.0)
+                    || (stored - distance).abs()
+                        > EPS_DISTANCE_AGREEMENT * stored.abs().max(distance).max(1.0)
             }) {
                 return None;
             }
@@ -252,7 +258,8 @@ pub(crate) fn section_equation_radius_dimensions(
                     !value.is_finite()
                         || value <= 0.0
                         || (value - dimension_value).abs()
-                            > 1e-9 * value.abs().max(dimension_value.abs()).max(1.0)
+                            > EPS_DISTANCE_AGREEMENT
+                                * value.abs().max(dimension_value.abs()).max(1.0)
                 })
             {
                 return None;
@@ -603,7 +610,7 @@ pub(crate) fn solve_unsigned_dimension_coordinates(
                     return true;
                 };
                 let scale = lhs.abs().max(equation.rhs.abs()).max(1.0);
-                (lhs - equation.rhs).abs() <= 1e-9 * scale
+                (lhs - equation.rhs).abs() <= EPS_SOLUTION_AGREEMENT * scale
             }) && component_distances.iter().all(
                 |&(first, second, coordinate, magnitude)| {
                     let Some(first) = values.get(&(first, coordinate)).copied() else {
@@ -613,7 +620,7 @@ pub(crate) fn solve_unsigned_dimension_coordinates(
                         return false;
                     };
                     let scale = first.abs().max(second.abs()).max(magnitude).max(1.0);
-                    ((second - first).abs() - magnitude).abs() <= 1e-9 * scale
+                    ((second - first).abs() - magnitude).abs() <= EPS_DISTANCE_AGREEMENT * scale
                 },
             );
             if valid {
@@ -644,9 +651,9 @@ pub(crate) fn solve_unsigned_dimension_coordinates(
             };
             let scale = value.abs().max(1.0);
             if solutions.iter().all(|solution| {
-                solution
-                    .get(&variable)
-                    .is_some_and(|candidate| (*candidate - value).abs() <= 1e-9 * scale)
+                solution.get(&variable).is_some_and(|candidate| {
+                    (*candidate - value).abs() <= EPS_DISTANCE_AGREEMENT * scale
+                })
             }) {
                 resolved.insert(variable, value);
             }
@@ -758,7 +765,7 @@ pub(crate) fn quadratic_roots((quadratic, linear, constant): (f64, f64, f64)) ->
         .max(linear.abs())
         .max(constant.abs())
         .max(1.0);
-    let tolerance = 1e-12 * scale;
+    let tolerance = EPS_SOLVER_SCALE * scale;
     let mut roots = if quadratic.abs() <= tolerance {
         if linear.abs() <= tolerance {
             Vec::new()
@@ -767,8 +774,8 @@ pub(crate) fn quadratic_roots((quadratic, linear, constant): (f64, f64, f64)) ->
         }
     } else {
         let discriminant = linear * linear - 4.0 * quadratic * constant;
-        let discriminant_tolerance =
-            1e-12 * (linear * linear + (4.0 * quadratic * constant).abs()).max(1.0);
+        let discriminant_tolerance = EPS_DISCRIMINANT_SCALE
+            * (linear * linear + (4.0 * quadratic * constant).abs()).max(1.0);
         if discriminant < -discriminant_tolerance {
             Vec::new()
         } else if discriminant.abs() <= discriminant_tolerance {
@@ -784,7 +791,7 @@ pub(crate) fn quadratic_roots((quadratic, linear, constant): (f64, f64, f64)) ->
     roots.retain(|root| {
         root.is_finite()
             && (quadratic * root * root + linear * root + constant).abs()
-                <= 1e-9
+                <= EPS_SOLUTION_AGREEMENT
                     * (quadratic * root * root)
                         .abs()
                         .max((linear * root).abs())
@@ -798,7 +805,7 @@ pub(crate) fn quadratic_roots((quadratic, linear, constant): (f64, f64, f64)) ->
 
 pub(crate) fn approximately_equal(first: f64, second: f64) -> bool {
     let scale = first.abs().max(second.abs()).max(1.0);
-    (first - second).abs() <= 1e-9 * scale
+    (first - second).abs() <= EPS_DISTANCE_AGREEMENT * scale
 }
 
 pub(crate) fn solve_section_coordinate_equations(
@@ -906,8 +913,8 @@ pub(crate) fn uniquely_solved_linear_variables(
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     let rhs_scale = matrix.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
-    let coefficient_tolerance = 1e-12 * coefficient_scale;
-    let residual_tolerance = 1e-9 * rhs_scale;
+    let coefficient_tolerance = EPS_SOLVER_SCALE * coefficient_scale;
+    let residual_tolerance = EPS_SOLUTION_AGREEMENT * rhs_scale;
     let mut pivot_rows = BTreeMap::new();
     let mut pivot_row = 0;
     for column in 0..variable_count {

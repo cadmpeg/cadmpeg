@@ -21,6 +21,8 @@ use super::{
 };
 use crate::assemble::cgm_source;
 
+const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-9;
+
 pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeometry> {
     match surface {
         B5Surface::Plane {
@@ -429,9 +431,9 @@ pub(super) fn orthonormal_plane(
 ) -> Option<SurfaceGeometry> {
     let u = unit(direction_u)?;
     let v = unit(direction_v)?;
-    if (length(direction_u) - 1.0).abs() > 1e-9
-        || (length(direction_v) - 1.0).abs() > 1e-9
-        || dot(u, v).abs() > 1e-9
+    if (length(direction_u) - 1.0).abs() > EPS_FRAME_ORTHONORMAL
+        || (length(direction_v) - 1.0).abs() > EPS_FRAME_ORTHONORMAL
+        || dot(u, v).abs() > EPS_FRAME_ORTHONORMAL
     {
         return None;
     }

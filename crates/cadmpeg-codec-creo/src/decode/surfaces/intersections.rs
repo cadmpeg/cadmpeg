@@ -9,6 +9,15 @@ use super::super::sketch::normalized;
 
 use super::intersection_candidates::apex_plane_cone_generator_candidates;
 
+const EPS_AXIS_ORTHO: f64 = 1.0e-10;
+const EPS_CARRIER_AGREEMENT: f64 = 1.0e-9;
+const EPS_CONE_SLOPE_NONZERO: f64 = 1.0e-12;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_DISTANCE_NONZERO: f64 = 1.0e-12;
+const EPS_TRANSVERSE_RESIDUAL: f64 = 1.0e-9;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+const EPS_DISCRIMINANT_RESIDUAL: f64 = 1.0e-9;
+
 pub(in super::super) fn carrier_intersection_curve(
     first: CarrierEquation,
     second: CarrierEquation,
@@ -41,13 +50,13 @@ pub(in super::super) fn carrier_intersection_curve(
             let normal = normalized(plane.normal)?;
             let axis = normalized(cylinder.axis)?;
             let cosine = dot(normal, axis);
-            if cosine.abs() <= 1e-10 {
+            if cosine.abs() <= EPS_AXIS_ORTHO {
                 let signed_distance = dot(
                     normal,
                     std::array::from_fn(|index| cylinder.origin[index] - plane.origin[index]),
                 );
                 let scale = cylinder.radius.max(1.0);
-                if (signed_distance.abs() - cylinder.radius).abs() > 1e-9 * scale {
+                if (signed_distance.abs() - cylinder.radius).abs() > EPS_CARRIER_AGREEMENT * scale {
                     return None;
                 }
                 let origin: [f64; 3] = std::array::from_fn(|index| {
@@ -67,7 +76,7 @@ pub(in super::super) fn carrier_intersection_curve(
             ) / cosine;
             let center: [f64; 3] =
                 std::array::from_fn(|index| cylinder.origin[index] + axis_parameter * axis[index]);
-            if (cosine.abs() - 1.0).abs() <= 1e-10 {
+            if (cosine.abs() - 1.0).abs() <= EPS_AXIS_ORTHO {
                 let reference = normalized(cylinder.ref_direction)?;
                 return Some((
                     CurveGeometry::Circle {
@@ -138,7 +147,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let axis = normalized(cone.axis)?;
             let alignment = dot(normal, axis);
             let slope = cone.half_angle.tan();
-            if circular_cone(cone) && slope.abs() > 1e-12 {
+            if circular_cone(cone) && slope.abs() > EPS_CONE_SLOPE_NONZERO {
                 let apex: [f64; 3] = std::array::from_fn(|index| {
                     cone.origin[index] - (cone.radius / slope) * axis[index]
                 });
@@ -147,8 +156,8 @@ pub(in super::super) fn carrier_intersection_curve(
                     std::array::from_fn(|index| apex[index] - plane.origin[index]),
                 );
                 let scale = cone.radius.max(1.0);
-                if plane_distance.abs() <= 1e-9 * scale
-                    && (alignment.abs() - cone.half_angle.sin()).abs() <= 1e-10
+                if plane_distance.abs() <= EPS_CARRIER_AGREEMENT * scale
+                    && (alignment.abs() - cone.half_angle.sin()).abs() <= EPS_AXIS_ORTHO
                 {
                     let direction = normalized(std::array::from_fn(|index| {
                         axis[index] - alignment * normal[index]
@@ -169,13 +178,13 @@ pub(in super::super) fn carrier_intersection_curve(
             if apex_generators.len() == 1 {
                 return apex_generators.into_iter().next();
             }
-            if (alignment.abs() - 1.0).abs() <= 1e-10 {
+            if (alignment.abs() - 1.0).abs() <= EPS_AXIS_ORTHO {
                 let axial = dot(
                     axis,
                     std::array::from_fn(|index| plane.origin[index] - cone.origin[index]),
                 );
                 let radius = (cone.radius + axial * cone.half_angle.tan()).abs();
-                if radius <= 1e-12 {
+                if radius <= EPS_RADIUS_NONZERO {
                     return None;
                 }
                 let center: [f64; 3] =
@@ -211,7 +220,7 @@ pub(in super::super) fn carrier_intersection_curve(
         | (CarrierEquation::Torus(torus), CarrierEquation::Plane(plane)) => {
             let normal = normalized(plane.normal)?;
             let axis = normalized(torus.axis)?;
-            if (dot(normal, axis).abs() - 1.0).abs() > 1e-10 {
+            if (dot(normal, axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
                 return None;
             }
             let axial = dot(
@@ -219,7 +228,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 std::array::from_fn(|index| plane.origin[index] - torus.center[index]),
             );
             let scale = torus.minor_radius.max(torus.major_radius).max(1.0);
-            if (axial.abs() - torus.minor_radius).abs() > 1e-9 * scale {
+            if (axial.abs() - torus.minor_radius).abs() > EPS_CARRIER_AGREEMENT * scale {
                 return None;
             }
             let center: [f64; 3] =
@@ -239,7 +248,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let first_axis = normalized(first.axis)?;
             let second_axis = normalized(second.axis)?;
             let alignment = dot(first_axis, second_axis);
-            if (alignment.abs() - 1.0).abs() > 1e-10 {
+            if (alignment.abs() - 1.0).abs() > EPS_AXIS_ORTHO {
                 return None;
             }
             let relative = std::array::from_fn(|index| second.origin[index] - first.origin[index]);
@@ -247,15 +256,15 @@ pub(in super::super) fn carrier_intersection_curve(
             let transverse: [f64; 3] =
                 std::array::from_fn(|index| relative[index] - axial * first_axis[index]);
             let distance = dot(transverse, transverse).sqrt();
-            if distance <= 1e-12 {
+            if distance <= EPS_DISTANCE_NONZERO {
                 return None;
             }
             let external = first.radius + second.radius;
             let internal = (first.radius - second.radius).abs();
             let scale = external.max(distance).max(1.0);
-            let first_fraction = if (distance - external).abs() <= 1e-9 * scale {
+            let first_fraction = if (distance - external).abs() <= EPS_CARRIER_AGREEMENT * scale {
                 first.radius / distance
-            } else if (distance - internal).abs() <= 1e-9 * scale {
+            } else if (distance - internal).abs() <= EPS_CARRIER_AGREEMENT * scale {
                 let signed = if first.radius >= second.radius {
                     first.radius
                 } else {
@@ -280,7 +289,7 @@ pub(in super::super) fn carrier_intersection_curve(
             let center_delta: [f64; 3] =
                 std::array::from_fn(|index| second.center[index] - first.center[index]);
             let distance = dot(center_delta, center_delta).sqrt();
-            if distance <= 1e-12
+            if distance <= EPS_DISTANCE_NONZERO
                 || distance >= first.radius + second.radius
                 || distance <= (first.radius - second.radius).abs()
             {
@@ -318,8 +327,8 @@ pub(in super::super) fn carrier_intersection_curve(
             let transverse: [f64; 3] =
                 std::array::from_fn(|index| relative[index] - axial * axis[index]);
             let scale = sphere.radius.max(cylinder.radius).max(1.0);
-            if dot(transverse, transverse).sqrt() > 1e-9 * scale
-                || (sphere.radius - cylinder.radius).abs() > 1e-9 * scale
+            if dot(transverse, transverse).sqrt() > EPS_TRANSVERSE_RESIDUAL * scale
+                || (sphere.radius - cylinder.radius).abs() > EPS_RADIUS_AGREEMENT * scale
             {
                 return None;
             }
@@ -338,7 +347,7 @@ pub(in super::super) fn carrier_intersection_curve(
         | (CarrierEquation::Torus(torus), CarrierEquation::Cylinder(cylinder)) => {
             let cylinder_axis = normalized(cylinder.axis)?;
             let torus_axis = normalized(torus.axis)?;
-            if (dot(cylinder_axis, torus_axis).abs() - 1.0).abs() > 1e-10 {
+            if (dot(cylinder_axis, torus_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
                 return None;
             }
             let relative: [f64; 3] =
@@ -351,13 +360,14 @@ pub(in super::super) fn carrier_intersection_curve(
                 .max(torus.minor_radius)
                 .max(cylinder.radius)
                 .max(1.0);
-            if dot(transverse, transverse).sqrt() > 1e-9 * scale {
+            if dot(transverse, transverse).sqrt() > EPS_TRANSVERSE_RESIDUAL * scale {
                 return None;
             }
             let outer_radius = torus.major_radius + torus.minor_radius;
             let inner_radius = (torus.major_radius - torus.minor_radius).abs();
-            if (cylinder.radius - outer_radius).abs() > 1e-9 * scale
-                && (inner_radius <= 1e-12 || (cylinder.radius - inner_radius).abs() > 1e-9 * scale)
+            if (cylinder.radius - outer_radius).abs() > EPS_RADIUS_AGREEMENT * scale
+                && (inner_radius <= EPS_RADIUS_NONZERO
+                    || (cylinder.radius - inner_radius).abs() > EPS_RADIUS_AGREEMENT * scale)
             {
                 return None;
             }
@@ -384,11 +394,11 @@ pub(in super::super) fn carrier_intersection_curve(
             let transverse: [f64; 3] =
                 std::array::from_fn(|index| relative[index] - axial * cone_axis[index]);
             let scale = cone.radius.max(sphere.radius).max(1.0);
-            if dot(transverse, transverse).sqrt() > 1e-9 * scale {
+            if dot(transverse, transverse).sqrt() > EPS_TRANSVERSE_RESIDUAL * scale {
                 return None;
             }
             let slope = cone.half_angle.tan();
-            if slope.abs() <= 1e-12 {
+            if slope.abs() <= EPS_CONE_SLOPE_NONZERO {
                 return None;
             }
             let quadratic = 1.0 + slope * slope;
@@ -400,12 +410,14 @@ pub(in super::super) fn carrier_intersection_curve(
                 .abs()
                 .max((4.0 * quadratic * constant).abs().sqrt())
                 .max(1.0);
-            if discriminant.abs() > 1e-9 * discriminant_scale * discriminant_scale {
+            if discriminant.abs()
+                > EPS_DISCRIMINANT_RESIDUAL * discriminant_scale * discriminant_scale
+            {
                 return None;
             }
             let cone_parameter = -linear / (2.0 * quadratic);
             let radius = (cone.radius + cone_parameter * slope).abs();
-            if radius <= 1e-12 * scale {
+            if radius <= EPS_RADIUS_NONZERO * scale {
                 return None;
             }
             let center: [f64; 3] =
@@ -434,17 +446,17 @@ pub(in super::super) fn carrier_intersection_curve(
                 .max(torus.minor_radius)
                 .max(sphere.radius)
                 .max(1.0);
-            if dot(transverse, transverse).sqrt() > 1e-9 * scale {
+            if dot(transverse, transverse).sqrt() > EPS_TRANSVERSE_RESIDUAL * scale {
                 return None;
             }
             let meridian_distance = torus.major_radius.hypot(axial);
-            if meridian_distance <= 1e-12 {
+            if meridian_distance <= EPS_DISTANCE_NONZERO {
                 return None;
             }
             let external = sphere.radius + torus.minor_radius;
             let internal = (sphere.radius - torus.minor_radius).abs();
-            if (meridian_distance - external).abs() > 1e-9 * scale
-                && (meridian_distance - internal).abs() > 1e-9 * scale
+            if (meridian_distance - external).abs() > EPS_CARRIER_AGREEMENT * scale
+                && (meridian_distance - internal).abs() > EPS_CARRIER_AGREEMENT * scale
             {
                 return None;
             }
@@ -453,7 +465,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 - torus.minor_radius * torus.minor_radius)
                 / (2.0 * meridian_distance);
             let radius = (sphere_parameter * torus.major_radius / meridian_distance).abs();
-            if radius <= 1e-12 * scale {
+            if radius <= EPS_RADIUS_NONZERO * scale {
                 return None;
             }
             let center_axial = sphere_parameter * axial / meridian_distance;
@@ -473,7 +485,7 @@ pub(in super::super) fn carrier_intersection_curve(
         (CarrierEquation::Torus(first), CarrierEquation::Torus(second)) => {
             let first_axis = normalized(first.axis)?;
             let second_axis = normalized(second.axis)?;
-            if (dot(first_axis, second_axis).abs() - 1.0).abs() > 1e-10 {
+            if (dot(first_axis, second_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
                 return None;
             }
             let relative: [f64; 3] =
@@ -487,18 +499,18 @@ pub(in super::super) fn carrier_intersection_curve(
                 .max(second.major_radius)
                 .max(second.minor_radius)
                 .max(1.0);
-            if dot(transverse, transverse).sqrt() > 1e-9 * scale {
+            if dot(transverse, transverse).sqrt() > EPS_TRANSVERSE_RESIDUAL * scale {
                 return None;
             }
             let radial_delta = second.major_radius - first.major_radius;
             let meridian_distance = radial_delta.hypot(axial);
-            if meridian_distance <= 1e-12 {
+            if meridian_distance <= EPS_DISTANCE_NONZERO {
                 return None;
             }
             let external = first.minor_radius + second.minor_radius;
             let internal = (first.minor_radius - second.minor_radius).abs();
-            if (meridian_distance - external).abs() > 1e-9 * scale
-                && (meridian_distance - internal).abs() > 1e-9 * scale
+            if (meridian_distance - external).abs() > EPS_CARRIER_AGREEMENT * scale
+                && (meridian_distance - internal).abs() > EPS_CARRIER_AGREEMENT * scale
             {
                 return None;
             }
@@ -508,7 +520,7 @@ pub(in super::super) fn carrier_intersection_curve(
                 / (2.0 * meridian_distance);
             let radius =
                 (first.major_radius + first_parameter * radial_delta / meridian_distance).abs();
-            if radius <= 1e-12 * scale {
+            if radius <= EPS_RADIUS_NONZERO * scale {
                 return None;
             }
             let center_axial = first_parameter * axial / meridian_distance;

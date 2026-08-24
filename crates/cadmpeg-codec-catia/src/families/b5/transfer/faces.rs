@@ -19,7 +19,7 @@ use super::super::graph::B5Graph;
 use super::{annotate, OrientedLoop, OwnershipPlan, TransferPlan};
 use crate::solve::UnionFind;
 
-const EPS_PLANE_AXES_ORTHO: f64 = 1e-8;
+const EPS_PLANE_AXES_ORTHO: f64 = 1.0e-8;
 
 pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     let mut face_ids = HashSet::new();

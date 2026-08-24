@@ -13,6 +13,16 @@ use cadmpeg_core::decode::{alloc_filled, bounded_len};
 use crate::psb::{self, compact_int, reference_id};
 use crate::scalar;
 
+const EPS_RELATION_ROUND: f64 = 1.0e-9;
+const EPS_DIMENSION_SOLUTION: f64 = 1.0e-9;
+const EPS_LINEAR_SYSTEM_COEFFICIENT: f64 = 1.0e-12;
+const EPS_LINEAR_SYSTEM_RESIDUAL: f64 = 1.0e-9;
+const EPS_NONLINEAR_CONVERGENCE: f64 = 1.0e-12;
+const EPS_ORDINATE_AGREEMENT: f64 = 1.0e-9;
+const EPS_CIRCLE_RESIDUAL: f64 = 1.0e-9;
+const EPS_ANGLE_AGREEMENT: f64 = 1.0e-6;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+
 /// A labeled curve namespace entry.
 ///
 /// `type_byte` remains raw because the namespace grammar does not define its
@@ -4138,7 +4148,13 @@ fn relation_round(value: f64, decimal_places: f64, upward: bool) -> Option<f64> 
     (decimal_places >= i32::MIN as f64).then_some(())?;
     let scale = 10_f64.powi(decimal_places as i32);
     (scale.is_finite() && scale > 0.0).then_some(())?;
-    let scaled = (value + if upward { -1e-9 } else { 1e-9 }) * scale;
+    let scaled = (value
+        + if upward {
+            -EPS_RELATION_ROUND
+        } else {
+            EPS_RELATION_ROUND
+        })
+        * scale;
     if !scaled.is_finite() {
         return Some(value);
     }
@@ -4611,7 +4627,8 @@ fn infer_solve_variable_dimensions(
                 continue;
             }
             let rounded = value.round();
-            (value.is_finite() && (value - rounded).abs() <= 1e-9).then_some(())?;
+            (value.is_finite() && (value - rounded).abs() <= EPS_DIMENSION_SOLUTION)
+                .then_some(())?;
             components[axis][index] = i8::try_from(rounded as i16).ok()?;
         }
     }
@@ -4635,7 +4652,7 @@ fn solve_dimension_axis(
 ) -> Option<Vec<f64>> {
     let mut pivot_row = 0;
     let mut pivot_rows = Vec::new();
-    let coefficient_tolerance = 1e-12;
+    let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
     for column in 0..variable_count {
         let Some(selected) = (pivot_row..rows.len()).max_by(|&first, &second| {
             rows[first].coefficients[column]
@@ -4674,7 +4691,8 @@ fn solve_dimension_axis(
         pivot_rows.push((column, pivot_row));
         pivot_row += 1;
     }
-    let residual_tolerance = 1e-9 * rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
+    let residual_tolerance =
+        EPS_LINEAR_SYSTEM_RESIDUAL * rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
     rows.iter()
         .all(|row| {
             let has_coefficients = row
@@ -4765,9 +4783,9 @@ fn solve_affine_expression_block(
 const MAX_NONLINEAR_SOLVE_VARIABLES: usize = 8;
 const MAX_NONLINEAR_SOLVE_ITERATIONS: usize = 64;
 const MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS: usize = 16;
-const NONLINEAR_SOLVE_RESIDUAL_TOLERANCE: f64 = 1e-8;
-const NONLINEAR_SOLVE_DERIVATIVE_STEP: f64 = 1e-6;
-const NONLINEAR_SOLVE_SOLUTION_TOLERANCE: f64 = 1e-7;
+const NONLINEAR_SOLVE_RESIDUAL_TOLERANCE: f64 = 1.0e-8;
+const NONLINEAR_SOLVE_DERIVATIVE_STEP: f64 = 1.0e-6;
+const NONLINEAR_SOLVE_SOLUTION_TOLERANCE: f64 = 1.0e-7;
 
 #[derive(Debug, Clone, Copy)]
 struct SolveResidual {
@@ -4998,7 +5016,7 @@ fn refine_nonlinear_solution(
         let (candidate, candidate_residuals) = accepted?;
         point = candidate;
         residuals = candidate_residuals;
-        if maximum_delta * scale <= 1e-12 * point_scale
+        if maximum_delta * scale <= EPS_NONLINEAR_CONVERGENCE * point_scale
             && !nonlinear_residuals_converged(&residuals)
         {
             return None;
@@ -5091,8 +5109,8 @@ fn solve_unique_affine_system(
         }
     }
     let rhs_scale = rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
-    let coefficient_tolerance = 1e-12;
-    let residual_tolerance = 1e-9 * rhs_scale;
+    let coefficient_tolerance = EPS_LINEAR_SYSTEM_COEFFICIENT;
+    let residual_tolerance = EPS_LINEAR_SYSTEM_RESIDUAL * rhs_scale;
     let mut pivot_row = 0;
     for column in 0..variable_count {
         let selected = (pivot_row..rows.len()).max_by(|&first, &second| {
@@ -5786,7 +5804,10 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
             continue;
         }
         let ordinate = points[0].3;
-        if points.iter().any(|point| (point.3 - ordinate).abs() > 1e-9) {
+        if points
+            .iter()
+            .any(|point| (point.3 - ordinate).abs() > EPS_ORDINATE_AGREEMENT)
+        {
             continue;
         }
         let first = points[0];
@@ -5815,7 +5836,7 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
             .map(|point| ((point.0 - center_x).hypot(point.1 - center_z) - radius).abs())
             .collect::<Vec<_>>();
         let max_residual = residuals.iter().copied().fold(0.0, f64::max);
-        if max_residual > 1e-9 * radius.max(1.0) {
+        if max_residual > EPS_CIRCLE_RESIDUAL * radius.max(1.0) {
             continue;
         }
         let angle_0 = (first.1 - center_z).atan2(first.0 - center_x);
@@ -5836,7 +5857,7 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
                 };
                 let angle = (point.1 - center_z).atan2(point.0 - center_x);
                 let expected = angle_0 + sign * (parameter - parameter_0);
-                wrapped_distance(angle, expected) <= 1e-6
+                wrapped_distance(angle, expected) <= EPS_ANGLE_AGREEMENT
             })
         };
         let positive = sign_matches(1.0);
@@ -5930,7 +5951,7 @@ pub fn fc05_cylinder_cap_pairs(
         else {
             continue;
         };
-        let tolerance = 1e-9 * first.radius_mm.max(1.0);
+        let tolerance = EPS_RADIUS_AGREEMENT * first.radius_mm.max(1.0);
         if !group.iter().all(|(circle, _)| {
             (circle.radius_mm - first.radius_mm).abs() <= tolerance
                 && (circle.center_row_frame[0] - first.center_row_frame[0]).abs() <= tolerance

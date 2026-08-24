@@ -5,7 +5,8 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::LoopBoundaryRole;
 
-const EPS_PLANE_AXES_ORTHO: f64 = 1e-8;
+const EPS_PLANE_AXES_ORTHO: f64 = 1.0e-8;
+const EPS_PLANAR_COORDINATE: f64 = 1.0e-10;
 
 fn strictly_inside_planar_polygon(point: Point2, polygon: &[Point2], tolerance: f64) -> bool {
     let mut inside = false;
@@ -188,7 +189,7 @@ pub(crate) fn classify_planar_boundary_roles(
         .flat_map(|polygon| polygon.iter())
         .flat_map(|point| [point.u.abs(), point.v.abs()])
         .fold(1.0, f64::max);
-    let coordinate_tolerance = 1e-10 * coordinate_scale;
+    let coordinate_tolerance = EPS_PLANAR_COORDINATE * coordinate_scale;
     let area_tolerance = coordinate_tolerance * coordinate_scale;
     let areas = polygons
         .iter()

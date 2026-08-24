@@ -8,6 +8,8 @@ use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeom
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::SketchGeometry;
 
+const EPS_PLANAR_COORDINATE: f64 = 1.0e-12;
+
 pub(in super::super) fn extruded_geometry_surface(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
@@ -211,7 +213,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     nurbs
         .control_points
         .iter()
-        .all(|point| point.z.abs() <= 1e-12)
+        .all(|point| point.z.abs() <= EPS_PLANAR_COORDINATE)
         .then(|| SketchGeometry::Nurbs {
             degree: nurbs.degree,
             knots: nurbs.knots,

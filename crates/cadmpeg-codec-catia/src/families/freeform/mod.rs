@@ -29,6 +29,9 @@ use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
 use crate::loss::CatiaLossCode;
 
+const EPS_TORUS_FRAME: f64 = 1.0e-12;
+const EPS_APEX_ALIGNMENT: f64 = 1.0e-12;
+
 #[derive(Clone)]
 struct FreeformSurfaceCarrier {
     pos: usize,
@@ -122,14 +125,14 @@ pub(crate) fn append_consolidated_revolutions(
         let major_radius = radial.x.hypot(radial.y).hypot(radial.z);
         let profile_plane_contains_axis =
             (direction_x.x * axis.x + direction_x.y * axis.y + direction_x.z * axis.z).abs()
-                <= 1e-12;
+                <= EPS_TORUS_FRAME;
         let radial_follows_profile_reference = major_radius > 0.0
             && ((radial.x * direction_y.x + radial.y * direction_y.y + radial.z * direction_y.z)
                 .abs()
                 / major_radius
                 - 1.0)
                 .abs()
-                <= 1e-12;
+                <= EPS_TORUS_FRAME;
         let torus_geometry = (major_radius > 0.0
             && major_radius.is_finite()
             && profile.radius > 0.0
@@ -2450,7 +2453,7 @@ fn same_surface_locus(left: &SurfaceGeometry, right: &SurfaceGeometry) -> bool {
     (left_apex.x - right_apex.x)
         .hypot(left_apex.y - right_apex.y)
         .hypot(left_apex.z - right_apex.z)
-        <= 1e-12 * scale
+        <= EPS_APEX_ALIGNMENT * scale
 }
 
 fn rechart_equivalent_surface_pcurve(
