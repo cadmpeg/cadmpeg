@@ -278,6 +278,8 @@ The last edge-recipe member of a counted construction-operand group ends at the 
 
 A body-map entity suffix between a history-bearing parameter scope and the next parameter scope is the result body of the first scope. Its BREP basename selects that scope's ASM history when the scope's state pair occurs in multiple histories. A whole-body recipe whose solved candidate faces name exactly one candidate BREP supplies the same history selection.
 
+History-state identities are local to one ASM history. A construction recipe state resolves by Design stream, bound ASM history, and state identity; the same numeric state identity in another history does not name the recipe's topology state or its producing feature.
+
 `MetaStream.dat` is a segment header, a type table, two record indexes, and an optional property block. It is not a sequence of independent object records.
 
 The header is the LP-ASCII segment type name, the u32 segment ID, an LP-UTF16 asset GUID, a u32 serializer magic, three further u32 when that magic is `1234` and one otherwise, a second LP-ASCII segment type name, an LP-ASCII add-in name, and two u32. The two type names need not be equal: the first is the segment's short name and the second its full type name.

@@ -8,6 +8,23 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::design::feature_project::ScopeHistoryGraph;
+
+#[test]
+fn work_point_history_state_keys_are_history_qualified() {
+    let scope_a = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#a", "Extrude", 1);
+    let scope_b = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#b", "Fillet", 2);
+    let graph = ScopeHistoryGraph {
+        histories_present: true,
+        bound_histories: HashMap::from([
+            (scope_a.id.clone(), "f3d:history#a".to_owned()),
+            (scope_b.id.clone(), "f3d:history#b".to_owned()),
+        ]),
+        scopes_by_state: HashMap::new(),
+    };
+
+    assert_ne!(graph.state_key(&scope_a, 7), graph.state_key(&scope_b, 7));
+}
 
 #[test]
 fn feature_projection_uses_timeline_items_not_scope_byte_order() {

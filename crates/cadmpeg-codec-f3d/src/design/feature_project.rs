@@ -333,6 +333,26 @@ impl<'a> ScopeHistoryGraph<'a> {
         }
     }
 
+    fn history_id(&self, scope: &DesignParameterScope) -> Option<&str> {
+        if self.histories_present {
+            self.bound_histories.get(&scope.id).map(String::as_str)
+        } else {
+            Some("")
+        }
+    }
+
+    fn state_key(
+        &self,
+        scope: &DesignParameterScope,
+        state_id: i64,
+    ) -> Option<(String, String, i64)> {
+        Some((
+            native_stream(&scope.id)?.to_owned(),
+            self.history_id(scope)?.to_owned(),
+            state_id,
+        ))
+    }
+
     /// Follow `scope.previous_history_state_id` until a scope accepted by
     /// `projected` is reached. Internal scopes preserve state continuity but
     /// are not themselves authored top-level features.
@@ -350,13 +370,8 @@ impl<'a> ScopeHistoryGraph<'a> {
         let Some(stream) = native_stream(&scope.id) else {
             return Ok(ScopeHistoryPredecessor::Ambiguous);
         };
-        let history_id = if self.histories_present {
-            let Some(history_id) = self.bound_histories.get(&scope.id) else {
-                return Ok(ScopeHistoryPredecessor::Ambiguous);
-            };
-            history_id.as_str()
-        } else {
-            ""
+        let Some(history_id) = self.history_id(scope) else {
+            return Ok(ScopeHistoryPredecessor::Ambiguous);
         };
         let mut visited = HashSet::new();
         loop {
@@ -1458,9 +1473,12 @@ pub fn project_parameter_design_with_edge_identities(
         }
     }
     let mut history_state_features =
-        HashMap::<(&str, i64), Option<cadmpeg_ir::features::FeatureId>>::new();
+        HashMap::<(String, String, i64), Option<cadmpeg_ir::features::FeatureId>>::new();
     for scope in scopes {
         let Some(state_id) = scope.history_state_id else {
+            continue;
+        };
+        let Some(key) = scope_history.state_key(scope, state_id) else {
             continue;
         };
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
@@ -1468,7 +1486,7 @@ pub fn project_parameter_design_with_edge_identities(
             continue;
         };
         history_state_features
-            .entry((stream, state_id))
+            .entry(key)
             .and_modify(|candidate| *candidate = None)
             .or_insert_with(|| Some(feature_id.clone()));
     }
@@ -1483,14 +1501,16 @@ pub fn project_parameter_design_with_edge_identities(
         let Some(construction) = &scope.work_point_construction else {
             continue;
         };
-        let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
         for state_id in construction
             .rule
             .inputs()
             .iter()
             .filter_map(|input| work_point_input_history_state_id(scope, input, edge_operands))
         {
-            let Some(Some(dependency)) = history_state_features.get(&(stream, state_id)) else {
+            let Some(key) = scope_history.state_key(scope, state_id) else {
+                continue;
+            };
+            let Some(Some(dependency)) = history_state_features.get(&key) else {
                 continue;
             };
             if dependency != &feature.id && !feature.dependencies.contains(dependency) {
