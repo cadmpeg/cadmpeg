@@ -375,7 +375,7 @@ pub fn real_polynomial_roots(coefficients: &[f64]) -> Vec<f64> {
 }
 
 pub fn polynomial_product(first: &[f64], second: &[f64]) -> Vec<f64> {
-    let mut product = vec![0.0; first.len() + second.len() - 1];
+    let mut product = std::iter::repeat_n(0.0, first.len() + second.len() - 1).collect::<Vec<_>>();
     for (first_power, first_coefficient) in first.iter().enumerate() {
         for (second_power, second_coefficient) in second.iter().enumerate() {
             product[first_power + second_power] += first_coefficient * second_coefficient;

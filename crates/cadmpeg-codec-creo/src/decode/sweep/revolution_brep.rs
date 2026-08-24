@@ -139,7 +139,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let region_id = RegionId(format!("{prefix}:region"));
         let shell_id = ShellId(format!("{prefix}:shell"));
         let count = profile.len();
-        let mut edges = vec![None; count];
+        let mut edges = std::iter::repeat_n(None, count).collect::<Vec<_>>();
         for (index, ((_, _, point, _), curve_geometry)) in
             profile.iter().zip(vertex_curves).enumerate()
         {

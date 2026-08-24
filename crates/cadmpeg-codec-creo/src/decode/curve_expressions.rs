@@ -155,7 +155,7 @@ pub(crate) fn curve_expression_parameter_order(
             }
         }
     }
-    let mut ordinals = vec![u32::MAX; dependencies.len()];
+    let mut ordinals = std::iter::repeat_n(u32::MAX, dependencies.len()).collect::<Vec<_>>();
     for ordinal in 0..dependencies.len() {
         let index = (0..dependencies.len())
             .find(|&candidate| {

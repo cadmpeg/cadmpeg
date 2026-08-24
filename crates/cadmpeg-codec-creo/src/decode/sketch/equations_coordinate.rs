@@ -503,7 +503,7 @@ pub(crate) fn solve_unsigned_dimension_coordinates(
         .enumerate()
         .map(|(index, variable)| (*variable, index))
         .collect::<BTreeMap<_, _>>();
-    let mut adjacency = vec![BTreeSet::new(); variables.len()];
+    let mut adjacency = std::iter::repeat_n(BTreeSet::new(), variables.len()).collect::<Vec<_>>();
     let connect = |members: Vec<usize>, adjacency: &mut [BTreeSet<usize>]| {
         for &first in &members {
             adjacency[first].extend(members.iter().copied().filter(|second| *second != first));
@@ -816,8 +816,9 @@ pub(crate) fn solve_section_coordinate_equations(
         .enumerate()
         .map(|(index, variable)| (*variable, index))
         .collect::<BTreeMap<_, _>>();
-    let mut adjacency = vec![BTreeSet::new(); variables.len()];
-    let mut variable_equations = vec![BTreeSet::new(); variables.len()];
+    let mut adjacency = std::iter::repeat_n(BTreeSet::new(), variables.len()).collect::<Vec<_>>();
+    let mut variable_equations =
+        std::iter::repeat_n(BTreeSet::new(), variables.len()).collect::<Vec<_>>();
     for (equation_index, equation) in equations.iter().enumerate() {
         let members = equation
             .terms

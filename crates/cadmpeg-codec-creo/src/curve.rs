@@ -803,11 +803,11 @@ fn synchronize_solve_blocks(
             }
         }
         block.solutions = solutions.get(&block.offset).map_or_else(
-            || vec![None; block.variables.len()],
+            || std::iter::repeat_n(None, block.variables.len()).collect(),
             |values| values.iter().cloned().map(Some).collect(),
         );
         if block.solutions.len() != block.variables.len() {
-            block.solutions = vec![None; block.variables.len()];
+            block.solutions = std::iter::repeat_n(None, block.variables.len()).collect();
         }
     }
 }
@@ -1108,7 +1108,7 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                 program.blocks.push(CurveExpressionSolveBlock {
                     equations,
                     assignments,
-                    solutions: vec![None; variables.len()],
+                    solutions: std::iter::repeat_n(None, variables.len()).collect(),
                     variables,
                     offset: block.offset,
                     for_offset: line.offset,
@@ -5476,7 +5476,7 @@ fn curve_scalar_lane(
 ) {
     let mut scalars = Vec::new();
     let mut references = Vec::new();
-    let mut claimed = vec![false; body.len()];
+    let mut claimed = std::iter::repeat_n(false, body.len()).collect::<Vec<_>>();
     let mut cursor = 0;
     while cursor < body.len() {
         if body[cursor] == psb::token::ENTITY_REF {
