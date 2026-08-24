@@ -118,6 +118,57 @@ fn placed_carriers_reject_duplicate_model_surface_ids() {
 }
 
 #[test]
+fn placed_carriers_prefers_unique_positional_cylinder_frame() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces
+        .rows
+        .push(carrier_row(7, crate::surface::SurfaceKind::Cylinder));
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 7,
+            body: Vec::new(),
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: Some(crate::surface::PositionalCylinderFrame {
+                origin: [-12.5, 4.0, 0.0],
+                axis: [0.0, 1.0, 0.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                radius: 0.75,
+                length: Some(34.0),
+            }),
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            positional_torus_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 0,
+            body_offset: 0,
+        });
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(cylinder_surface(7, 0.75));
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Cylinder {
+        origin: Point3::new(0.0, 0.0, 12.5),
+        axis: Vector3::new(0.0, -1.0, 0.0),
+        ref_direction: Vector3::new(0.0, 0.0, -1.0),
+        radius: 0.75,
+    };
+
+    let carriers = placed_carriers(&scan, &ir);
+    assert!(matches!(
+        carriers.get(&7),
+        Some(CarrierEquation::Cylinder(cylinder))
+            if cylinder.origin == [-12.5, 4.0, 0.0]
+                && cylinder.axis == [0.0, 1.0, 0.0]
+                && cylinder.ref_direction == [1.0, 0.0, 0.0]
+                && cylinder.radius == 0.75
+    ));
+}
+
+#[test]
 fn duplicate_model_surface_ids_remove_native_carrier() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces

@@ -254,6 +254,10 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
         .map(|row| row.id)
         .collect::<BTreeSet<_>>();
     for row in crate::surface::uniquely_identified_rows(&scan.surfaces.rows) {
+        if let Some(carrier) = positional_cylinder_carrier(scan, row) {
+            carriers.insert(row.id, carrier);
+            continue;
+        }
         let id = native_surface_id(scan, row.id);
         let model_surfaces = ir
             .model
@@ -331,6 +335,23 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
         }
     }
     carriers
+}
+
+fn positional_cylinder_carrier(
+    scan: &ContainerScan,
+    row: &crate::surface::SurfaceRow,
+) -> Option<CarrierEquation> {
+    (row.kind == crate::surface::SurfaceKind::Cylinder).then_some(())?;
+    let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?
+        .positional_cylinder_frame?;
+    frame
+        .is_valid()
+        .then_some(CarrierEquation::Cylinder(CylinderEquation {
+            origin: frame.origin,
+            axis: frame.axis,
+            ref_direction: frame.ref_direction,
+            radius: frame.radius,
+        }))
 }
 
 fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
