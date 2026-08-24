@@ -5457,6 +5457,18 @@ pub struct DesignMeshTextureResource {
     pub asset: AssetId,
 }
 
+/// One finite axis-aligned bound stored by a mesh Scene record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignMeshSceneBounds {
+    /// Component-wise upper corner, serialized first.
+    pub maximum: [f64; 3],
+    /// Component-wise lower corner, serialized second.
+    pub minimum: [f64; 3],
+    /// Byte offsets of the serialized upper and lower corners.
+    pub offsets: [u64; 2],
+}
+
 /// One mesh body and its complete Design identity graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5471,8 +5483,14 @@ pub struct DesignMeshBody {
     pub wrapper_record: DesignMeshRecordIdentity,
     /// Fixed Scene-state record owned by this mesh body.
     pub scene_state_record: DesignMeshRecordIdentity,
+    /// Finite bound carried by the Scene-state footer; absent for its unset sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene_state_bounds: Option<DesignMeshSceneBounds>,
     /// Scene node connecting `body_record` to its state and auxiliary cache.
     pub scene_node_record: DesignMeshRecordIdentity,
+    /// Finite bound carried by the Scene-node footer; absent for its unset sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene_node_bounds: Option<DesignMeshSceneBounds>,
     /// Separately typed Scene auxiliary cache reached through the Scene node.
     pub scene_auxiliary_record: DesignMeshRecordIdentity,
     /// Typed Design body-owner record referenced by `body_record`.

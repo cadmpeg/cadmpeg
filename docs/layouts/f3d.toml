@@ -2875,7 +2875,7 @@ anchor = "a marked same-segment owner reference at offset 19"
 name = "paramesh_scene_state"
 kind = "byte"
 section = "3.1"
-anchor = "It is exactly 95 bytes: its indexed header, 34 zero bytes, byte `01`, and a 49-byte mask."
+anchor = "It is exactly 95 bytes: its indexed header, 34 zero bytes, and the 50-byte Scene footer."
 size = 95
 
 [[record.field]]
@@ -2904,7 +2904,7 @@ name = "footer_mask"
 offset = 46
 type = "bytes[49]"
 source = "spec"
-anchor = "and a 49-byte mask"
+anchor = "remaining 49 bytes"
 
 [[record]]
 name = "paramesh_scene_node"

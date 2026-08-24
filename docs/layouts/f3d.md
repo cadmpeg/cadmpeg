@@ -895,7 +895,7 @@ Spec §3.1 · layout: byte offsets · size: 95 B
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | its indexed header, 34 zero bytes |
 | 11 | 34 | `zero_run_34` | `bytes[34]` | little | spec | 34 zero bytes |
 | 45 | 1 | `footer_marker` | `u8` | little | spec | byte `01` |
-| 46 | 49 | `footer_mask` | `bytes[49]` | little | spec | and a 49-byte mask |
+| 46 | 49 | `footer_mask` | `bytes[49]` | little | spec | remaining 49 bytes |
 
 ## `paramesh_scene_node`
 
