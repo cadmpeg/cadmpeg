@@ -3831,9 +3831,9 @@ fn inline_suffix_witness(
     let prefix_end = local_start.checked_sub(1)?;
     let prefix = body.get(..prefix_end)?;
     match kind {
-        SurfaceKind::Cylinder => {
-            decode_11_10_13_cylinder_witness(prefix, cache).map(InlineSurfaceCarrier::Cylinder)
-        }
+        SurfaceKind::Cylinder => decode_11_10_13_cylinder_witness(prefix, cache)
+            .or_else(|| decode_held_axis_cylinder_frame(prefix, cache))
+            .map(InlineSurfaceCarrier::Cylinder),
         SurfaceKind::Cone => {
             decode_planar_envelope_cone_frame(prefix, cache).map(InlineSurfaceCarrier::Cone)
         }

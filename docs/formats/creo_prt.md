@@ -889,6 +889,11 @@ axis is positive Z, the reference direction points from the first radial bound
 toward the second, and half the radial span is the radius. This body defines an
 unbounded analytic carrier and does not define an axial extent. The
 model-reference token does not contribute a geometric coordinate.
+The complete held-axis body may be followed by `e3`, an inline local system,
+one cylinder-radius suffix, and a second `e3`. In that form the held-axis body
+is the placement witness. The suffix must define the same origin, axis line,
+and radius. Exactly one suffix interpretation must agree; otherwise the row
+remains native.
 
 An axial/radial positional cylinder begins `11 18 13` and stores positive
 axial length, first axial coordinate, one radial sample, second axial

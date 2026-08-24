@@ -622,6 +622,35 @@ fn cylinder_inline_suffix_uses_the_11_10_13_placement_witness() {
 }
 
 #[test]
+fn cylinder_inline_suffix_uses_the_held_axis_placement_witness() {
+    let mut payload = vec![7, 0x24, 4, 0x01, 0, 0, 0x11, 0x18, 0x13];
+    for value in [0.0, -5.0] {
+        push_inline_test_signed_first_directrix(&mut payload, value);
+    }
+    payload.push(0x10);
+    push_inline_test_signed_first_directrix(&mut payload, -2.0);
+    push_inline_test_signed_first_directrix(&mut payload, -3.0);
+    payload.extend_from_slice(&[0x19, 0, 0, 0, 0, 0, 0, 0]);
+    push_inline_test_signed_first_directrix(&mut payload, -2.0);
+    payload.extend_from_slice(&[0xf7, 0x17, 0xe3]);
+    payload.extend_from_slice(&[0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f]);
+    for value in [-4.0, 0.0, -2.0] {
+        push_inline_test_scalar(&mut payload, value);
+    }
+    payload.extend_from_slice(&[0x0f, 0xe3]);
+
+    let record = parameter_records(&payload).remove(0);
+    let frame = record
+        .positional_cylinder_frame
+        .expect("held-axis-witnessed inline cylinder");
+    assert_eq!(frame.origin, [-4.0, 0.0, -2.0]);
+    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.length, None);
+}
+
+#[test]
 fn decodes_compact_y_axis_cone_with_a_nonzero_origin() {
     let local_system = [
         0x10, 0x18, 0xe6, 0x10, 0x18, 0x10, 0x18, 0xe4, 0x46, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
