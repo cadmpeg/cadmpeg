@@ -2858,6 +2858,8 @@ pub struct OperationBodyWriteFrame {
     pub raw_group_node: Vec<u8>,
     /// Absolute offset of the GROUP-node token.
     pub group_node_offset: usize,
+    /// Tagged body-image field discriminator.
+    pub endpoint_tag: u8,
     /// Offset-store body-image object index.
     pub body_image_object_index: u32,
     /// Exact serialized body-image object-index token.
@@ -6985,8 +6987,8 @@ pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBo
 
 /// Decode every exact nested `01 02 tag index 97 75 01 02 endpoint_tag index ff` frame.
 ///
-/// Both indices are non-null and canonical. The endpoint tag is the fixed
-/// direct body-reference tag `10`.
+/// Both indices are non-null and canonical. Endpoint tags `10`, `12`, and
+/// `15` select the body-image field across the supported schema generations.
 pub fn operation_body_write_frames(record: OperationRecord<'_>) -> Vec<OperationBodyWriteFrame> {
     body_write_frames(record.payload, record.payload_offset)
 }
@@ -7031,7 +7033,7 @@ fn operation_body_write_frame_at(
         return None;
     }
     let endpoint_tag = *payload.get(first_end + 4)?;
-    (endpoint_tag == 0x10).then_some(())?;
+    matches!(endpoint_tag, 0x10 | 0x12 | 0x15).then_some(())?;
     let second_token = first_end + 5;
     let (Some(second_object_index), second_end) =
         operation_relation_object_index(payload, second_token)?
@@ -7052,6 +7054,7 @@ fn operation_body_write_frame_at(
         group_node: first_object_index,
         raw_group_node: raw_first_object_index.to_vec(),
         group_node_offset: payload_offset + first_token,
+        endpoint_tag,
         body_image_object_index: second_object_index,
         raw_body_image_object_index: raw_second_object_index.to_vec(),
         body_image_object_index_offset: payload_offset + second_token,

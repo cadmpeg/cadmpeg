@@ -345,7 +345,8 @@ ownership, or access role.
 and how does a blend construction identify the faces created by that blend?
 
 **Known.** A nested operation body-write frame retains the persistent body
-identity, partition-local GROUP node, and write-state body-image object.
+identity, partition-local GROUP node, endpoint tag, and write-state body-image
+object. Endpoint tags `10`, `12`, and `15` select the body-image field.
 Explicit Boolean operations independently require the body-image object to
 equal the target and exclude every tool. A closed GROUP chain resolves current
 members by topology family and kernel node identity and transfers current FACE,
@@ -358,9 +359,9 @@ write with that identity writes that body.
 created-face subset.
 
 **Conflict.** Extrusion profile references resolve to construction data blocks
-whose identities differ from the operation body-write image. The direct
-body-reference field inside a body-write frame is the frame's body-image field,
-not an independent profile-body witness. GROUP membership assigns topology to
+whose identities differ from the operation body-write image. The embedded
+endpoint field inside a body-write frame is the frame's body-image field, not
+an independent profile-body witness. GROUP membership assigns topology to
 the producing feature but does not by itself identify which member faces carry
 a particular blend-surface construction.
 

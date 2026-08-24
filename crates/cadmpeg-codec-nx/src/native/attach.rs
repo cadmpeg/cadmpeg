@@ -2066,6 +2066,10 @@ fn attach_feature_operations(
                 write.group_node.to_string(),
             );
             source_properties.insert(
+                format!("body_write.{ordinal}.endpoint_tag"),
+                write.endpoint_tag.to_string(),
+            );
+            source_properties.insert(
                 format!("body_write.{ordinal}.body_image_object_index"),
                 write.body_image_object_index.to_string(),
             );

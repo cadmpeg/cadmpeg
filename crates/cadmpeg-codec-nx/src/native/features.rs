@@ -139,6 +139,8 @@ pub struct FeatureUnlabeledOperationBodyWrite {
     pub raw_group_node: Vec<u8>,
     /// Absolute offset of the GROUP-node token.
     pub group_node_source_offset: u64,
+    /// Tagged body-image field discriminator.
+    pub endpoint_tag: u8,
     /// Offset-store object containing the body's serialized image.
     pub body_image_object_index: u32,
     /// Unambiguous offset-store block selected by the body-image object index.
@@ -173,6 +175,8 @@ pub struct FeatureOperationBodyWrite {
     pub raw_group_node: Vec<u8>,
     /// Absolute offset of the GROUP-node token.
     pub group_node_source_offset: u64,
+    /// Tagged body-image field discriminator.
+    pub endpoint_tag: u8,
     /// Offset-store object containing the body's serialized image.
     pub body_image_object_index: u32,
     /// Unambiguous offset-store block selected by the body-image object index.
@@ -3523,6 +3527,7 @@ pub fn feature_unlabeled_operation_body_writes(
                     group_node: write.group_node,
                     raw_group_node: write.raw_group_node,
                     group_node_source_offset: entry_offset + write.group_node_offset as u64,
+                    endpoint_tag: write.endpoint_tag,
                     body_image_object_index: write.body_image_object_index,
                     body_image_data_block: unique_offset_data_block(
                         &indexed,
@@ -3568,6 +3573,7 @@ pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperat
                     raw_group_node: write.raw_group_node,
                     group_node_source_offset: entry_offset
                         + write.group_node_offset as u64,
+                    endpoint_tag: write.endpoint_tag,
                     body_image_object_index: write.body_image_object_index,
                     body_image_data_block: unique_offset_data_block(
                         &indexed,

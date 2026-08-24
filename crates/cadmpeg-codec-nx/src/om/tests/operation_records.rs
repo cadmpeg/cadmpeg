@@ -67,7 +67,22 @@ fn every_body_identity_opens_a_body_write_frame() {
     };
     assert_eq!(write.body_identity, 0x11);
     assert_eq!(write.group_node, 0xa9);
+    assert_eq!(write.endpoint_tag, 0x10);
     assert_eq!(write.body_image_object_index, 0x693);
+
+    for endpoint_tag in [0x12, 0x15] {
+        let mut generation = payload;
+        generation[9] = endpoint_tag;
+        let writes = operation_body_write_frames(OperationRecord {
+            bytes: &generation,
+            payload: &generation,
+            ..record
+        });
+        let [write] = writes.as_slice() else {
+            panic!("generation body-write frame");
+        };
+        assert_eq!(write.endpoint_tag, endpoint_tag);
+    }
 
     let mut invalid_endpoint = payload;
     invalid_endpoint[9] = 0x11;

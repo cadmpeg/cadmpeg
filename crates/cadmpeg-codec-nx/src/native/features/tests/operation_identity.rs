@@ -377,6 +377,7 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
         group_node: 99,
         raw_group_node: vec![99],
         group_node_source_offset: 10,
+        endpoint_tag: 0x10,
         body_image_object_index: 20,
         body_image_data_block: Some("block".into()),
         raw_body_image_object_index: vec![20],

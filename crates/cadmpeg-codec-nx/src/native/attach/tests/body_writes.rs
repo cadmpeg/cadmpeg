@@ -23,6 +23,7 @@ fn native_body_write(id: &str) -> crate::native::features::FeatureOperationBodyW
         group_node: 1,
         raw_group_node: vec![1],
         group_node_source_offset: 0,
+        endpoint_tag: 0x10,
         body_image_object_index: 2,
         body_image_data_block: Some("block".into()),
         raw_body_image_object_index: vec![2],
@@ -263,6 +264,7 @@ fn repeated_body_identity_builds_output_lineage() {
         std::slice::from_ref(&extrude.id)
     );
     assert_eq!(block.source_properties["body_write.0.body_identity"], "17");
+    assert_eq!(block.source_properties["body_write.0.endpoint_tag"], "16");
     assert_eq!(
         extrude.source_properties["body_write.0.body_identity"],
         "17"
