@@ -551,6 +551,7 @@ struct SecondaryLayoutContext<'a> {
 }
 
 fn build_secondary_layouts(
+    ctx: &DecodeContext<'_>,
     context: &SecondaryLayoutContext<'_>,
     derived_grips: &[DerivedGripConnectivity],
 ) -> Result<Vec<Option<SubdVertexGripLayout>>, CodecError> {
@@ -567,10 +568,16 @@ fn build_secondary_layouts(
         grip_points,
     } = *context;
     let live_vertices = vertex_ir.iter().flatten().count();
-    let mut layouts = vec![None; live_vertices];
-    let mut has_cg = vec![false; vertex_live.len()];
-    let mut secondary_counts = vec![0usize; vertex_live.len()];
-    let mut grip_owners = vec![None; grip_vertices.len()];
+    let mut layouts = ctx.alloc_filled(live_vertices, None, "f3d subd secondary layouts")?;
+    let mut has_cg = ctx.alloc_filled(
+        vertex_live.len(),
+        false,
+        "f3d subd derived-grip ownership flags",
+    )?;
+    let mut secondary_counts =
+        ctx.alloc_filled(vertex_live.len(), 0usize, "f3d subd secondary-grip counts")?;
+    let mut grip_owners =
+        ctx.alloc_filled(grip_vertices.len(), None, "f3d subd secondary-grip owners")?;
     for marker in grip_vertices {
         if let GripVertexMarker::Secondary(Some(vertex)) = marker {
             *secondary_counts
@@ -1279,6 +1286,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     }
 
     let secondary_layouts = build_secondary_layouts(
+        ctx,
         &SecondaryLayoutContext {
             name,
             vertex_roots: &vertex_roots,
