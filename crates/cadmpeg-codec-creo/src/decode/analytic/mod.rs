@@ -62,9 +62,6 @@ pub(super) use pcurves::{
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(super) use planes::solve_carriers;
-#[cfg(test)]
-#[allow(unused_imports)]
-pub(super) use planes::stored_parameter_normal_candidates;
 #[allow(unused_imports)]
 pub(super) use planes::{
     agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
@@ -74,6 +71,12 @@ pub(super) use planes::{
     reconciled_model_plane, solve_carriers_with_diagnostics, tangent_plane_sphere_point,
     tangent_sphere_point, topology_bound_line_plane, topology_bound_plane,
     valid_positive_nurbs_curve, BoundaryLine, CarrierSolveDiagnostics, PlaneCandidate, PlaneChart,
+};
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(super) use planes::{
+    feature_placed_stored_parameter_normal_candidates, plane_candidate_pcurve_lies_on_carrier,
+    stored_parameter_normal_candidates,
 };
 #[allow(unused_imports)]
 pub(super) use vertices::{

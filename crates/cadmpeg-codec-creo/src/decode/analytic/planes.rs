@@ -533,6 +533,47 @@ pub(crate) fn stored_parameter_normal_candidates(
     (candidates.len() > 1).then_some(candidates)
 }
 
+pub(crate) fn feature_placed_stored_parameter_normal_candidates(
+    frame: &crate::surface::PlaneLocalSystem,
+    transform: &crate::placement::FeatureSectionTransform,
+) -> Option<Vec<PlaneCandidate>> {
+    let map_direction = |direction: [f64; 3]| {
+        std::array::from_fn(|axis| {
+            direction[0] * transform.u_axis[axis]
+                + direction[1] * transform.v_axis[axis]
+                + direction[2] * transform.normal[axis]
+        })
+    };
+    let mut candidates = Vec::new();
+    for candidate in stored_parameter_normal_candidates(frame)? {
+        let chart = candidate.chart?;
+        let normal = normalized(map_direction(chart.normal))?;
+        let u_axis = normalized(map_direction(chart.u_axis))?;
+        if dot(normal, u_axis).abs() > EPS_STORED_FRAME_RELATIVE {
+            return None;
+        }
+        let placed = PlaneCandidate {
+            equation: PlaneEquation {
+                origin: candidate.equation.origin,
+                normal,
+            },
+            chart: Some(PlaneChart {
+                origin: chart.origin,
+                normal,
+                u_axis,
+            }),
+            offset: candidate.offset,
+        };
+        if !candidates
+            .iter()
+            .any(|known| plane_candidates_equivalent(*known, placed))
+        {
+            candidates.push(placed);
+        }
+    }
+    (!candidates.is_empty()).then_some(candidates)
+}
+
 fn coordinate_vectors_agree(first: [f64; 3], second: [f64; 3]) -> bool {
     first.into_iter().zip(second).all(|(first, second)| {
         (first - second).abs() <= EPS_AGREE * first.abs().max(second.abs()).max(1.0)
@@ -823,6 +864,114 @@ fn plane_candidate_is_fc05_tangent(
         <= EPS_FC05_TANGENT_RESIDUAL * cylinder.radius.max(1.0)
 }
 
+pub(crate) fn plane_candidate_pcurve_lies_on_carrier(
+    candidate: PlaneCandidate,
+    endpoints: [[f64; 2]; 2],
+    carrier: CarrierEquation,
+) -> bool {
+    let Some(points) = endpoints
+        .map(|uv| plane_chart_point(candidate, uv))
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    !model_points_agree(points[0], points[1])
+        && points
+            .into_iter()
+            .all(|point| point_on_carrier(point, carrier))
+}
+
+fn native_positional_cylinder_carriers(scan: &ContainerScan) -> BTreeMap<u32, CarrierEquation> {
+    crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
+        .into_iter()
+        .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+        .filter_map(|row| {
+            let frame =
+                crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?
+                    .positional_cylinder_frame?;
+            Some((
+                row.id,
+                CarrierEquation::Cylinder(super::equations::CylinderEquation {
+                    origin: frame.origin,
+                    axis: frame.axis,
+                    ref_direction: frame.ref_direction,
+                    radius: frame.radius,
+                }),
+            ))
+        })
+        .collect()
+}
+
+fn select_stored_frame_carrier_pcurve_branches(
+    scan: &ContainerScan,
+    variable_domains: &BTreeMap<u32, Vec<PlaneCandidate>>,
+    domains: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
+) {
+    let carriers = native_positional_cylinder_carriers(scan);
+    let mut apply = |faces: [u32; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+        for face_index in 0..2 {
+            let plane_id = faces[face_index];
+            let Some(options) = variable_domains.get(&plane_id) else {
+                continue;
+            };
+            let Some(carrier) = carriers.get(&faces[1 - face_index]).copied() else {
+                continue;
+            };
+            let retained = options
+                .iter()
+                .copied()
+                .filter(|candidate| {
+                    plane_candidate_pcurve_lies_on_carrier(
+                        *candidate,
+                        endpoint_sets[face_index],
+                        carrier,
+                    )
+                })
+                .collect::<Vec<_>>();
+            if retained.len() == 1 {
+                domains.insert(plane_id, retained);
+            }
+        }
+    };
+    for pcurve in &scan.curves.pcurves {
+        apply(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            ),
+        );
+    }
+    for pcurve in &scan.curves.bound_prototype_pcurves {
+        apply(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            ),
+        );
+    }
+    for pcurve in &scan.curves.two_chart_pcurves {
+        let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
+            continue;
+        };
+        apply(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                [first[0], last[0]],
+                [first[1], last[1]],
+            ),
+        );
+    }
+}
+
 fn select_stored_frame_branches(
     scan: &ContainerScan,
     candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
@@ -833,7 +982,22 @@ fn select_stored_frame_branches(
             continue;
         };
         let known = variable_domains.entry(frame.surface_id).or_default();
-        for option in options {
+        let row = crate::surface::unique_surface_row(&scan.surfaces.rows, frame.surface_id);
+        let transform = row.and_then(|row| {
+            crate::decode::uniqueness::exactly_one(
+                scan.features
+                    .section_transforms
+                    .iter()
+                    .filter(|transform| transform.feature_id == Some(row.feature_id)),
+            )
+        });
+        let placed = transform
+            .and_then(|transform| {
+                feature_placed_stored_parameter_normal_candidates(frame, transform)
+            })
+            .into_iter()
+            .flatten();
+        for option in options.into_iter().chain(placed) {
             if !known
                 .iter()
                 .any(|candidate| plane_candidates_equivalent(*candidate, option))
@@ -847,6 +1011,7 @@ fn select_stored_frame_branches(
     }
 
     let mut domains = variable_domains.clone();
+    select_stored_frame_carrier_pcurve_branches(scan, &variable_domains, &mut domains);
     let cylinder_witnesses = fc05_cylinder_branch_witnesses(scan);
     for (surface_id, options) in &variable_domains {
         let Some(witnesses) = cylinder_witnesses.get(surface_id) else {

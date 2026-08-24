@@ -831,6 +831,15 @@ signed `46` form. The terminal scalar is the radius. This body defines an
 unbounded carrier and no axial extent. Prefix bytes before the unique complete
 suffix do not contribute carrier geometry.
 
+A referenced inline-cylinder envelope begins with one complete `32` model
+reference, followed by three first-directrix-coordinate scalars, six
+positional surface-row scalars forming two model-space outline corners, and a
+structural `e3`. The first and third directrix scalars are the axial parameter
+bounds; the middle scalar is retained parameter data. The model reference does
+not contribute geometry. The body after `e3` uses the ordinary inline
+local-system and cylinder-radius suffix. A complete envelope without a unique
+suffix interpretation remains native.
+
 An inline cylinder may use the `11 10 13` placement-witness prefix before the
 local-system suffix. The prefix stores one zero auxiliary slot, transverse
 bounds `b0`, `b1` separated by literal `10`, the other transverse center
@@ -1143,6 +1152,15 @@ has center at the resolved origin and radius `radius2`. The stored first
 support direction, projected perpendicular to the witnessed axis, is the
 parameter-space reference direction. The witness must agree with every
 complete inline interpretation of the bounded body.
+
+When a surface row has one owning feature-section transform, a stored plane
+frame can express its direction triples in that section basis. A stored
+direction `(d0, d1, d2)` maps to
+`d0 * section_u + d1 * section_v + d2 * section_normal`. The stored origin
+remains in model coordinates. The direct and Z-reflected frame images remain
+candidate branches; a complete pcurve whose mapped endpoints lie on the
+incident analytic carrier selects a branch only when exactly one candidate
+satisfies both endpoints.
 
 Family-26 and family-29 rows may omit the inline envelope and local-system
 body. When the header is followed immediately by a contour chain, their

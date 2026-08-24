@@ -40,6 +40,28 @@ fn push_inline_test_first_directrix(bytes: &mut Vec<u8>, value: f64) {
     bytes.extend_from_slice(&raw[1..]);
 }
 
+#[test]
+fn referenced_inline_cylinder_envelope_uses_outer_axial_bounds() {
+    let mut body = vec![0x32, 0, 0, 0, 0, 0, 0, 0];
+    for value in [2.0, 4.0, 8.0] {
+        push_inline_test_first_directrix(&mut body, value);
+    }
+    for value in [-1.0, 3.0, 5.0, 1.0, 3.0, 5.0] {
+        push_inline_test_scalar(&mut body, value);
+    }
+    body.push(0xe3);
+
+    let envelope = decode_inline_referenced_cylinder_envelope(
+        SurfaceKind::Cylinder,
+        &body,
+        &scalar::ScalarCache::default(),
+    )
+    .expect("referenced inline envelope");
+    assert_eq!(envelope.axial, [2.0, 8.0]);
+    assert_eq!(envelope.corners, [[-1.0, 3.0, 5.0], [1.0, 3.0, 5.0]]);
+    assert_eq!(envelope.close, body.len() - 1);
+}
+
 fn inline_non_plane_row(
     type_byte: u8,
     axial: [f64; 2],

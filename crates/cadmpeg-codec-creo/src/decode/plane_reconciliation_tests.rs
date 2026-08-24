@@ -1,7 +1,8 @@
 use crate::decode::analytic::{
     agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
     analytic_curve_plane, dot, envelope_reconciled_plane_candidate,
-    frame_bound_outline_plane_candidate, held_coordinate_plane, plane_candidates,
+    feature_placed_stored_parameter_normal_candidates, frame_bound_outline_plane_candidate,
+    held_coordinate_plane, plane_candidate_pcurve_lies_on_carrier, plane_candidates,
     stored_parameter_normal_candidates, topology_bound_line_plane, topology_bound_plane,
     transfer_topology_bound_planes, BoundaryLine, PlaneCandidate, PlaneChart, PlaneEquation,
 };
@@ -745,6 +746,69 @@ fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
     let mut compact = frame.clone();
     compact.classification = LocalSystemClassification::Simple;
     assert!(stored_parameter_normal_candidates(&compact).is_none());
+}
+
+#[test]
+fn stored_parameter_directions_use_the_unique_feature_section_basis() {
+    let scan = stored_frame_branch_scan(false);
+    let frame = &scan.planes.local_systems[0];
+    let transform = crate::placement::FeatureSectionTransform {
+        definition_id: 9,
+        feature_id: Some(4),
+        origin: [-30.0, 0.0, 1.0],
+        u_axis: [0.0, 1.0, 0.0],
+        v_axis: [1.0, 0.0, 0.0],
+        normal: [0.0, 0.0, -1.0],
+        offset: 40,
+    };
+
+    let candidates = feature_placed_stored_parameter_normal_candidates(frame, &transform)
+        .expect("feature-placed frame candidates");
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates.iter().any(|candidate| {
+        candidate.equation.origin == [0.0, 0.0, 0.0]
+            && candidate.equation.normal == [0.0, 0.8, -0.6]
+            && candidate.chart.expect("chart").u_axis == [0.0, 0.6, 0.8]
+    }));
+    assert!(candidates.iter().any(|candidate| {
+        candidate.equation.normal == [0.0, 0.8, 0.6]
+            && candidate.chart.expect("chart").u_axis == [0.0, 0.6, -0.8]
+    }));
+}
+
+#[test]
+fn plane_pcurve_discriminates_a_feature_frame_against_an_analytic_carrier() {
+    let candidate = PlaneCandidate {
+        equation: PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
+        chart: Some(PlaneChart {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+        }),
+        offset: 0,
+    };
+    let cylinder = crate::decode::analytic::CarrierEquation::Cylinder(
+        crate::decode::analytic::CylinderEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [1.0, 0.0, 0.0],
+            ref_direction: [0.0, 1.0, 0.0],
+            radius: 1.0,
+        },
+    );
+
+    assert!(plane_candidate_pcurve_lies_on_carrier(
+        candidate,
+        [[0.0, 1.0], [2.0, 1.0]],
+        cylinder
+    ));
+    assert!(!plane_candidate_pcurve_lies_on_carrier(
+        candidate,
+        [[0.0, 2.0], [2.0, 2.0]],
+        cylinder
+    ));
 }
 
 #[test]

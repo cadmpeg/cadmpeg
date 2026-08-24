@@ -3607,7 +3607,11 @@ fn inline_surface_body(
 ) -> Option<InlineSurfaceBody> {
     let standard_envelope = decode_inline_surface_envelope(kind, body, cache);
     let four_bound_envelope = decode_inline_four_bound_cylinder_envelope(kind, body, cache);
-    let Some(envelope) = standard_envelope.or(four_bound_envelope) else {
+    let referenced_envelope = decode_inline_referenced_cylinder_envelope(kind, body, cache);
+    let Some(envelope) = standard_envelope
+        .or(four_bound_envelope)
+        .or(referenced_envelope)
+    else {
         return inline_surface_suffix_body(kind, body, cache);
     };
     let local_start = envelope.close.checked_add(1)?;
@@ -3987,6 +3991,38 @@ fn decode_inline_four_bound_cylinder_envelope(
     (body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
     Some(InlineSurfaceEnvelope {
         axial: [v_low, v_high],
+        corners,
+        close: cursor,
+    })
+}
+
+fn decode_inline_referenced_cylinder_envelope(
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<InlineSurfaceEnvelope> {
+    (kind == SurfaceKind::Cylinder && body.first() == Some(&0x32)).then_some(())?;
+    let (_, mut cursor) = scalar::decode_model_reference_coordinate(body, 0, cache)?;
+    let mut bounds = [0.0; 3];
+    for value in &mut bounds {
+        let (decoded, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    (bounds[0] != bounds[2]).then_some(())?;
+
+    let mut corners = [[0.0; 3]; 2];
+    for value in corners.iter_mut().flatten() {
+        let (decoded, next) = decode_row_scalar(kind, body, cursor, cache)?;
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    (body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
+    Some(InlineSurfaceEnvelope {
+        axial: [bounds[0], bounds[2]],
         corners,
         close: cursor,
     })
