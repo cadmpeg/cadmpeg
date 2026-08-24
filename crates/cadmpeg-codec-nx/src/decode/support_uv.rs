@@ -654,28 +654,36 @@ pub(crate) fn invalidate_inconsistent_support_uv(
 ) {
     let geometry_budget = GeometryWorkBudget::new(super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK);
     let support_budget = WorkBudget::new(MAX_SUPPORT_UV_SAMPLES);
-    let _ = invalidate_inconsistent_support_uv_with_validated_lanes(
+    let _ = invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
         ir,
         pending,
         &BTreeSet::new(),
         &support_budget,
         &geometry_budget,
+        false,
     );
 }
 
 /// Invalidate support lanes that disagree with their surface and retain
 /// endpoint witnesses only for lanes whose complete sample set was evaluated.
-pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes(
+pub(crate) struct SupportUvValidationResult {
+    pub(crate) endpoint_witnesses: EndpointWitnesses,
+    pub(crate) lane_geometry_exhausted: bool,
+}
+
+pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
     ir: &mut CadIr,
     pending: &[PendingExt11SupportUv],
     validated_lanes: &BTreeSet<(ProceduralCurveId, usize)>,
     support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
-) -> EndpointWitnesses {
-    let (invalid, endpoint_witnesses) = {
+    isolate_lanes: bool,
+) -> SupportUvValidationResult {
+    let (invalid, endpoint_witnesses, lane_geometry_exhausted) = {
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
         let mut invalid = Vec::new();
         let mut endpoint_witnesses: EndpointWitnesses = BTreeMap::new();
+        let mut lane_geometry_exhausted = false;
         for (procedural_id, points, parameters, fit_tolerance, _) in pending {
             if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
                 break;
@@ -705,6 +713,16 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes(
                 };
                 let tolerance =
                     blend_spine_cache_fit_tolerance_with_index(&index, surface, *fit_tolerance);
+                let parent_geometry_budget = geometry_budget;
+                let lane_geometry_budget = isolate_lanes.then(|| {
+                    parent_geometry_budget.child_slice(support_uv_lane_geometry_work_limit(
+                        points.len(),
+                        parent_geometry_budget.remaining(),
+                    ))
+                });
+                let geometry_budget = lane_geometry_budget
+                    .as_ref()
+                    .unwrap_or(parent_geometry_budget);
                 let mut inconsistent = false;
                 let mut fully_validated =
                     parameters.len() == points.len() && !parameters.is_empty();
@@ -743,6 +761,10 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes(
                         break;
                     }
                 }
+                if let Some(lane_geometry_budget) = &lane_geometry_budget {
+                    lane_geometry_exhausted |= lane_geometry_budget.exhausted();
+                    let _ = parent_geometry_budget.consume_child(lane_geometry_budget);
+                }
                 if inconsistent {
                     invalid.push((procedural_id.clone(), side));
                 } else if fully_validated {
@@ -755,7 +777,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes(
                 }
             }
         }
-        (invalid, endpoint_witnesses)
+        (invalid, endpoint_witnesses, lane_geometry_exhausted)
     };
     for (procedural_id, side) in invalid {
         let Some(procedural) = ir
@@ -772,7 +794,10 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes(
         };
         context.sides[side].pcurve = None;
     }
-    endpoint_witnesses
+    SupportUvValidationResult {
+        endpoint_witnesses,
+        lane_geometry_exhausted,
+    }
 }
 
 pub(crate) fn pending_support_lanes_requiring_completion(

@@ -23,7 +23,7 @@ use super::support_uv::{
     attach_completed_intersection_pcurves_for_stream_with_budget,
     complete_ext11_support_uv_with_budget, complete_parameterization_equivalent_support_uv,
     complete_support_uv_with_budget_and_endpoint_witnesses,
-    invalidate_inconsistent_support_uv_with_validated_lanes, linear_knots,
+    invalidate_inconsistent_support_uv_with_validated_lanes_and_status, linear_knots,
     support_uv_budget_exhausted, support_uv_completion_budget_limit,
     validate_serialized_support_uv_with_index, validated_support_uv_endpoint_witnesses,
     IntersectionCompletionSource, SerializedSupportUv,
@@ -930,14 +930,23 @@ pub(crate) fn try_decode_geometry(
         // Topology completion adds incidence and pcurve carriers, but does
         // not change surface or model-curve geometry. Keep its successful
         // blend-geometry certificates for support validation and attachment.
-        let newly_validated_endpoint_witnesses =
-            invalidate_inconsistent_support_uv_with_validated_lanes(
+        // Once earlier completion has consumed half the shared allowance,
+        // isolate each remaining validation lane. This preserves ordinary
+        // whole-lane proofs while preventing one recursive support from
+        // starving every later attachment candidate.
+        let isolate_validation_lanes =
+            completion_geometry_budget.remaining() <= MAX_PCURVE_COMPLETION_GEOMETRY_WORK / 2;
+        let support_uv_validation =
+            invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
                 &mut ir,
                 &pending_ext11_support_uv,
                 &validated_support_uv_lanes,
                 &support_uv_validation_budget,
                 &completion_geometry_budget,
+                isolate_validation_lanes,
             );
+        support_uv_lane_geometry_exhausted |= support_uv_validation.lane_geometry_exhausted;
+        let newly_validated_endpoint_witnesses = support_uv_validation.endpoint_witnesses;
         serialized_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_ext11_support_uv_with_budget(
             &mut ir,
