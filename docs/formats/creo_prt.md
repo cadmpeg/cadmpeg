@@ -1124,7 +1124,10 @@ frame provide one witness. The compact image names the axis coordinate, whose
 outline span equals `abs(v1 - v0)` in the separated envelope production.
 Other outline spans may have the same length. In the four-bound oblique
 production, the outline interval on that coordinate is strictly contained in
-the axial parameter interval. Solve
+the axial parameter interval. In a referenced inline envelope, an oblique trim
+can reduce that interval to one coordinate while the compact image still names
+the axis; the placed axial parameter interval must contain that coordinate.
+Solve
 `{o + v0 C, o + v1 C} = {lo, hi}` for
 `o in {+abs(s), -abs(s)}` and `C in {+1, -1}`, where `s` is the stored origin
 component on that coordinate. One solution supplies the model-space axis

@@ -62,6 +62,38 @@ fn referenced_inline_cylinder_envelope_uses_outer_axial_bounds() {
     assert_eq!(envelope.close, body.len() - 1);
 }
 
+#[test]
+fn referenced_inline_compact_x_cylinder_accepts_oblique_trim_containment() {
+    let mut body = vec![0x32, 0, 0, 0, 0, 0, 0, 0];
+    for value in [2.0, 4.0, 6.0] {
+        push_inline_test_first_directrix(&mut body, value);
+    }
+    for value in [-2.0, 2.0, -4.0, -2.0, 3.0, -3.0] {
+        push_inline_test_scalar(&mut body, value);
+    }
+    body.push(0xe3);
+    body.extend_from_slice(&[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4]);
+    for value in [-4.0, 3.0, -4.0] {
+        push_inline_test_scalar(&mut body, value);
+    }
+    body.extend_from_slice(&[0xe4, 0xe3]);
+
+    let InlineSurfaceCarrier::Cylinder(frame) = inline_surface_body(
+        SurfaceKind::Cylinder,
+        &body,
+        &scalar::ScalarCache::default(),
+    )
+    .and_then(|body| body.carrier)
+    .expect("compact X frame resolves from contained oblique-trim evidence") else {
+        panic!("referenced inline body resolves a cylinder");
+    };
+    assert_eq!(frame.origin, [-4.0, 3.0, -4.0]);
+    assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.ref_direction, [0.0, 0.0, -1.0]);
+    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.length, Some(4.0));
+}
+
 fn inline_non_plane_row(
     type_byte: u8,
     axial: [f64; 2],

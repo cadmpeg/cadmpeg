@@ -4309,9 +4309,8 @@ fn witnessed_inline_axis_index(
     let axial_span = (envelope.axial[1] - envelope.axial[0]).abs();
     (axial_span.is_finite() && axial_span > EPS_INLINE_WITNESS).then_some(())?;
     let hinted_span = (envelope.corners[1][hinted_axis] - envelope.corners[0][hinted_axis]).abs();
-    (hinted_span > EPS_INLINE_WITNESS
-        && hinted_span <= axial_span + EPS_INLINE_WITNESS * inline_scale(hinted_span, axial_span))
-    .then_some(hinted_axis)
+    (hinted_span <= axial_span + EPS_INLINE_WITNESS * inline_scale(hinted_span, axial_span))
+        .then_some(hinted_axis)
 }
 
 fn solve_inline_axis_endpoint(
