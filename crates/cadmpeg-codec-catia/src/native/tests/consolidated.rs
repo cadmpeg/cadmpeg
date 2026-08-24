@@ -1119,6 +1119,40 @@ fn native_namespace_merges_shared_consolidated_vertex_identity() {
 }
 
 #[test]
+fn native_vertex_identity_namespace_is_bounded_by_record_source() {
+    let first = a5_native_edge_run_stream(6, 14, 15);
+    let mut bytes = first.clone();
+    bytes.extend_from_slice(&a5_native_edge_run_stream(9, 15, 16));
+    let native = crate::native::CatiaNative::decode_with_record_ranges(
+        &bytes,
+        &[0..first.len(), first.len()..bytes.len()],
+    );
+
+    assert_eq!(native.consolidated_edge_runs.len(), 2);
+    assert_eq!(native.consolidated_vertex_identities.len(), 4);
+    assert_eq!(
+        native
+            .consolidated_edge_nodes
+            .iter()
+            .map(|node| node.source_index)
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+    let repeated = native
+        .consolidated_vertex_identities
+        .iter()
+        .filter(|vertex| vertex.identity == 15)
+        .collect::<Vec<_>>();
+    assert_eq!(repeated.len(), 2);
+    assert_eq!(repeated[0].source_index, 0);
+    assert_eq!(repeated[1].source_index, 1);
+    assert_ne!(
+        native.consolidated_edge_nodes[0].vertices[1],
+        native.consolidated_edge_nodes[1].vertices[0]
+    );
+}
+
+#[test]
 fn explicit_vertex_encodings_share_one_complete_run_identity_namespace() {
     fn replace_node(mut stream: Vec<u8>, payload: &[u8]) -> Vec<u8> {
         let node = stream

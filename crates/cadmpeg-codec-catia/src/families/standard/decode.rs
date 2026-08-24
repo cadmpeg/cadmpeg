@@ -1110,9 +1110,9 @@ pub(crate) fn try_decode_standard(
     if !work_budget.charge() {
         return None;
     }
-    let consolidated_records = crate::wire::records::consolidated_records_in_ranges(
+    let consolidated_records = crate::wire::records::consolidated_records_in_sources(
         &scan.data,
-        container::consolidated_record_ranges(scan),
+        container::consolidated_record_sources(scan),
     );
     let points = (if fbb_only {
         fbb::fbb_only_vertex_points(standard_spine)

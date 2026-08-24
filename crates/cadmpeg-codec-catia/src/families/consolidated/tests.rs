@@ -703,6 +703,71 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
     };
     assert_eq!(resolved.endpoint_records, [first_endpoint, second_endpoint]);
 
+    let split_sources = crate::wire::records::consolidated_records_in_ranges(
+        &bytes,
+        [0..edge.len(), edge.len()..bytes.len()],
+    );
+    assert!(
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &bytes,
+            &split_sources,
+        )
+        .is_empty(),
+        "a forward endpoint walk cannot cross bounded record sources"
+    );
+
+    let mut reordered = endpoint.to_vec();
+    let edge_pos = reordered.len();
+    reordered.extend_from_slice(&edge);
+    let filler_pos = reordered.len();
+    reordered.extend_from_slice(&filler);
+    let second_endpoint_pos = reordered.len();
+    reordered.extend_from_slice(&endpoint);
+    let records = crate::wire::records::consolidated_records_in_sources(
+        &reordered,
+        [[
+            edge_pos..filler_pos,
+            filler_pos..second_endpoint_pos,
+            0..endpoint.len(),
+            second_endpoint_pos..reordered.len(),
+        ]],
+    );
+    let endpoints =
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &reordered, &records,
+        );
+    let [resolved] = endpoints.as_slice() else {
+        panic!("one edge can walk across physical extents in logical source order")
+    };
+    assert_eq!(resolved.endpoint_records, [0, second_endpoint_pos]);
+
+    let mut spanning = edge.to_vec();
+    let filler_start = spanning.len();
+    spanning.extend_from_slice(&[0xa5, 0x03, 0x34]);
+    spanning.extend_from_slice(&8u32.to_le_bytes());
+    spanning.extend_from_slice(&[0x05, 0, 1, 2, 3, 4, 5, 6, 7]);
+    let spanning_first_endpoint = spanning.len();
+    spanning.extend_from_slice(&endpoint);
+    let spanning_second_endpoint = spanning.len();
+    spanning.extend_from_slice(&endpoint);
+    let split = filler_start + 10;
+    let records = crate::wire::records::consolidated_records_in_sources(
+        &spanning,
+        [[0..split, split..spanning.len()]],
+    );
+    assert!(!records[1].physically_contiguous);
+    let endpoints =
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &spanning, &records,
+        );
+    let [resolved] = endpoints.as_slice() else {
+        panic!("a spanning frame remains in forward-distance ordinal accounting")
+    };
+    assert_eq!(
+        resolved.endpoint_records,
+        [spanning_first_endpoint, spanning_second_endpoint]
+    );
+
     let mut wrong_class = bytes;
     wrong_class[first_endpoint + 2] = 0x19;
     let records = crate::wire::records::consolidated_records(&wrong_class);

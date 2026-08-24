@@ -903,9 +903,27 @@ fn consolidated_record_sources_follow_physical_stream_extents() {
             })
         })
         .collect::<Vec<_>>();
+    let expected_sources = inner
+        .descriptors
+        .iter()
+        .map(|descriptor| {
+            descriptor
+                .extents
+                .iter()
+                .map(|extent| {
+                    let start = inner.inner + extent.phys_off as usize;
+                    start..start + extent.phys_len as usize
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
         crate::container::consolidated_record_ranges(&scan),
         expected
+    );
+    assert_eq!(
+        crate::container::consolidated_record_sources(&scan),
+        expected_sources
     );
     assert!(crate::container::consolidated_record_ranges(&scan)
         .iter()

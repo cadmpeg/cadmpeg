@@ -682,18 +682,20 @@ pub struct ContainerScan<'a> {
     pub variant: Variant,
 }
 
-/// Return the physical file regions that can carry consolidated A/B records.
+/// Return the logical record sources that can carry consolidated A/B records.
 ///
-/// Catalogued stream extents are the authoritative source boundaries. When a
+/// Each catalogued descriptor is one source. Its physical extents remain in
+/// logical-offset order. When a
 /// file has no outer directory, the bytes after the outer header and before a
 /// nested container (or the outer directory) are the unnamed outer-preamble
 /// source. The nested directory itself and all directory headers stay outside
-/// the inventory. Ranges remain separate even when they are adjacent: a
-/// record cannot establish an ordered relationship across two stream extents.
-pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<usize>> {
-    let mut ranges = Vec::new();
-    let add_directory = |ranges: &mut Vec<Range<usize>>, directory: &InnerDir| {
+/// the inventory. Records can establish ordered relationships across extents
+/// of one descriptor, but never across descriptors.
+pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<Range<usize>>> {
+    let mut sources = Vec::new();
+    let add_directory = |sources: &mut Vec<Vec<Range<usize>>>, directory: &InnerDir| {
         for descriptor in &directory.descriptors {
+            let mut source = Vec::new();
             for extent in &descriptor.extents {
                 let Some(start) = directory.inner.checked_add(extent.phys_off as usize) else {
                     continue;
@@ -702,14 +704,17 @@ pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<
                     continue;
                 };
                 if end <= scan.data.len() {
-                    ranges.push(start..end);
+                    source.push(start..end);
                 }
+            }
+            if !source.is_empty() && !sources.contains(&source) {
+                sources.push(source);
             }
         }
     };
 
     if let Some(outer) = scan.outer.as_ref() {
-        add_directory(&mut ranges, outer);
+        add_directory(&mut sources, outer);
     } else {
         let outer_end = scan
             .inner
@@ -718,19 +723,27 @@ pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<
             .or_else(|| outer_stream_directory_range(&scan.data).map(|range| range.start))
             .unwrap_or(scan.data.len());
         if outer_hdr::FILL_FF < outer_end {
-            ranges.push(outer_hdr::FILL_FF..outer_end);
+            sources.push(std::iter::once(outer_hdr::FILL_FF..outer_end).collect());
         }
     }
     if let Some(inner) = scan.inner.as_ref() {
-        add_directory(&mut ranges, inner);
+        add_directory(&mut sources, inner);
     }
 
-    if ranges.is_empty() && scan.data.len() > outer_hdr::FILL_FF {
-        ranges.push(outer_hdr::FILL_FF..scan.data.len());
+    if sources.is_empty() && scan.data.len() > outer_hdr::FILL_FF {
+        sources.push(std::iter::once(outer_hdr::FILL_FF..scan.data.len()).collect());
     }
-    ranges.sort_by_key(|range| (range.start, range.end));
-    ranges.dedup();
-    ranges
+    sources
+}
+
+/// Flatten the descriptor-scoped source inventory without changing logical
+/// source or extent order.
+#[cfg(test)]
+pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<usize>> {
+    consolidated_record_sources(scan)
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 /// Reconstruct each catalogued logical stream as an independent record source.

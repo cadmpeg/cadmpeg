@@ -22,7 +22,7 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 279;
+pub const CATIA_NATIVE_VERSION: u32 = 280;
 /// Native schema version associating exact scalar nominals with `Range` intervals.
 #[cfg(test)]
 pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
@@ -810,6 +810,8 @@ pub struct CatiaConsolidatedEdgeNode {
     pub id: String,
     /// Record byte offset.
     pub byte_offset: u64,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
     /// Header-token width in bytes.
     pub width: u8,
     /// Independent framing flag.
@@ -937,6 +939,8 @@ pub struct CatiaConsolidatedVertexIdentity {
     pub id: String,
     /// First raw endpoint-address operand associated with this identity.
     pub identity: u32,
+    /// Bounded record source that owns this identity namespace.
+    pub source_index: usize,
     /// Resolved structural endpoint record, when available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint_record: Option<u64>,
@@ -6632,7 +6636,12 @@ fn consolidated_edge_nodes(
         .filter(|record| {
             record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x5e
         })
-        .map(|record| (record.range.start, (record.width, record.flag)))
+        .map(|record| {
+            (
+                record.range.start,
+                (record.width, record.flag, record.source_index),
+            )
+        })
         .collect::<HashMap<_, _>>();
     let owned_nodes =
         crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
@@ -6715,11 +6724,12 @@ fn consolidated_edge_nodes(
         .into_iter()
         .enumerate()
         .filter_map(|(index, node)| {
-            let (width, flag) = frames.get(&node.pos)?;
+            let (width, flag, source_index) = frames.get(&node.pos)?;
             let owner = owned_nodes.get(&node.pos);
             Some(CatiaConsolidatedEdgeNode {
                 id: format!("catia:consolidated:edge-node#{index}"),
                 byte_offset: node.pos as u64,
+                source_index: *source_index,
                 width: *width,
                 flag: *flag,
                 header_token: node.header_token,
@@ -6812,7 +6822,7 @@ fn consolidated_vertex_identities(
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     enum IdentityKey {
         EndpointRecord(u64),
-        Unresolved(Option<String>, u32),
+        Unresolved(usize, Option<String>, u32),
     }
 
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
@@ -6824,7 +6834,13 @@ fn consolidated_vertex_identities(
         for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
             let endpoint_record = node.endpoint_records.map(|records| records[endpoint]);
             let key = endpoint_record.map_or_else(
-                || IdentityKey::Unresolved(node.allocation_owner.clone(), identity),
+                || {
+                    IdentityKey::Unresolved(
+                        node.source_index,
+                        node.allocation_owner.clone(),
+                        identity,
+                    )
+                },
                 IdentityKey::EndpointRecord,
             );
             let index = *identity_indices.entry(key.clone()).or_insert_with(|| {
@@ -6832,6 +6848,7 @@ fn consolidated_vertex_identities(
                 identities.push(CatiaConsolidatedVertexIdentity {
                     id: format!("catia:consolidated:vertex-identity#{index}"),
                     identity,
+                    source_index: node.source_index,
                     endpoint_record,
                     reference_values: vec![identity],
                     allocation_owner: node.allocation_owner.clone(),
@@ -7032,9 +7049,18 @@ impl CatiaNative {
     /// Decode CATIA-native records using container-bounded consolidated
     /// record sources.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn decode_with_record_ranges(bytes: &[u8], ranges: &[Range<usize>]) -> Self {
         let consolidated_records =
             crate::wire::records::consolidated_records_in_ranges(bytes, ranges.iter().cloned());
+        Self::decode_with_records(bytes, &consolidated_records)
+    }
+
+    /// Decode CATIA-native records from descriptor-scoped logical sources.
+    #[must_use]
+    pub(crate) fn decode_with_record_sources(bytes: &[u8], sources: &[Vec<Range<usize>>]) -> Self {
+        let consolidated_records =
+            crate::wire::records::consolidated_records_in_sources(bytes, sources.iter().cloned());
         Self::decode_with_records(bytes, &consolidated_records)
     }
 

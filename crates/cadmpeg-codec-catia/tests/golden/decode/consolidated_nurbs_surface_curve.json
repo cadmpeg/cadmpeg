@@ -530,6 +530,7 @@
                 "backward_distance",
                 "backward_distance"
               ],
+              "source_index": 0,
               "tail": 33,
               "uses": {
                 "references": [
@@ -724,7 +725,8 @@
               ],
               "reference_values": [
                 139
-              ]
+              ],
+              "source_index": 0
             },
             {
               "id": "catia:consolidated:vertex-identity#1",
@@ -734,7 +736,8 @@
               ],
               "reference_values": [
                 142
-              ]
+              ],
+              "source_index": 0
             }
           ],
           "design_objects": [],
@@ -771,7 +774,7 @@
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
         },
-        "version": 279
+        "version": 280
       }
     },
     "source": {

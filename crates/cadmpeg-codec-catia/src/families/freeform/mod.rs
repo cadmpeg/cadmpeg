@@ -287,9 +287,9 @@ pub(crate) fn try_decode_freeform_surfaces(
     let object_frames = object_selection.frames;
     let selected_object_records = object_selection.records;
     let census_object_records = object_selection.census_records;
-    let consolidated_records = crate::wire::records::consolidated_records_in_ranges(
+    let consolidated_records = crate::wire::records::consolidated_records_in_sources(
         &scan.data,
-        container::consolidated_record_ranges(scan),
+        container::consolidated_record_sources(scan),
     );
     let mut b5_graph = crate::families::b5::graph::parse_from_records_budgeted(
         &object_source,

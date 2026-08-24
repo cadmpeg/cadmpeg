@@ -139,8 +139,8 @@ fn finish_decode(
         &mut admitted_entities,
         "admit CATIA route entities",
     )?;
-    let consolidated_record_ranges = container::consolidated_record_ranges(scan);
-    let native = CatiaNative::decode_with_record_ranges(&scan.data, &consolidated_record_ranges);
+    let consolidated_record_sources = container::consolidated_record_sources(scan);
+    let native = CatiaNative::decode_with_record_sources(&scan.data, &consolidated_record_sources);
     let modeling_graph_scope = modeling_graph_scope(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,

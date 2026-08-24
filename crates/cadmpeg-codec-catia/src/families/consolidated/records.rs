@@ -688,7 +688,9 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 .checked_sub(1)
                 .and_then(|preceding| records.get(preceding))
                 .filter(|record| {
-                    record.range.end == use0.range.start
+                    record.source_index == use0.source_index
+                        && record.source_range.end == use0.source_range.start
+                        && record.physically_contiguous
                         && record.family == ConsolidatedFamily::B
                         && matches!(record.class, 0x23..=0x25)
                 })
@@ -874,7 +876,9 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
                     AllocationReferenceEncoding::WidthCoded => {
                         let target = record_index.checked_add(usize::try_from(reference).ok()?)?;
                         let target_record = self.records.get(target)?;
-                        if target_record.family != ConsolidatedFamily::B
+                        if target_record.source_index
+                            != self.records.get(record_index)?.source_index
+                            || target_record.family != ConsolidatedFamily::B
                             || target_record.class != 0x18
                         {
                             return None;
@@ -918,7 +922,10 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
     let mut allocation_scopes = vec![Vec::new()];
     let mut allocation_locations = HashMap::new();
     for (index, record) in records.iter().enumerate() {
-        if index > 0 && records[index - 1].range.end != record.range.start {
+        if index > 0
+            && (records[index - 1].source_index != record.source_index
+                || records[index - 1].source_range.end != record.source_range.start)
+        {
             allocation_scopes.push(Vec::new());
         }
         if record.family == ConsolidatedFamily::B && matches!(record.class, 0x5d | 0x5e) {
