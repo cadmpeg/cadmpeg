@@ -25,6 +25,8 @@ use crate::wire::records::{
     ConsolidatedPcurve, ConsolidatedRecord,
 };
 
+const B2_GROUP_SEPARATOR_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
+
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
 /// kind-`0x01` `b2 03 30` construction-use record.
 #[derive(Debug, Clone)]
@@ -775,7 +777,8 @@ pub(crate) fn b2_owner_packets_from_records(
 
 /// Resolve backward-distance identities in fixed-nine owner packets within
 /// one contiguous record source and its local class-`0x5d`/`0x5e` allocation
-/// sequence.
+/// sequence. The explicit class-`0x65` group separator starts a new
+/// allocation sequence even when its frame is physically contiguous.
 pub(crate) fn b2_owner_identity_targets_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
@@ -789,6 +792,15 @@ pub(crate) fn b2_owner_identity_targets_from_records(
     for (index, record) in records.iter().enumerate() {
         if index > 0 && !crate::wire::records::records_are_contiguous(&records[index - 1..=index]) {
             allocation.clear();
+        }
+        if record.family == crate::wire::records::ConsolidatedFamily::B
+            && record.class == 0x65
+            && data
+                .get(record.payload.clone())
+                .is_some_and(|payload| payload == B2_GROUP_SEPARATOR_PAYLOAD.as_slice())
+        {
+            allocation.clear();
+            continue;
         }
         if record.family == crate::wire::records::ConsolidatedFamily::B
             && matches!(record.class, 0x5d | 0x5e)
@@ -2625,7 +2637,9 @@ pub(crate) fn b2_spheres_from_records(
 pub fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
     b_family_frames(data, 0x65)
         .into_iter()
-        .filter(|frame| data.get(frame.payload..frame.end) == Some(&[0x81, 0x03, 0x05, 0x0d]))
+        .filter(|frame| {
+            data.get(frame.payload..frame.end) == Some(B2_GROUP_SEPARATOR_PAYLOAD.as_slice())
+        })
         .map(|frame| B2GroupSeparator {
             token: frame.header_token,
         })

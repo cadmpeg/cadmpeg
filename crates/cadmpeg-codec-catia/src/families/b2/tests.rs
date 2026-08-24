@@ -339,6 +339,18 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
 }
 
 #[test]
+fn fixed_owner_backward_identities_do_not_cross_group_separator() {
+    let (mut bytes, _target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
+    bytes.splice(owner_pos..owner_pos, b2_group_stream());
+    let records = crate::wire::records::consolidated_records(&bytes);
+
+    assert!(
+        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records)
+            .is_empty()
+    );
+}
+
+#[test]
 fn owner_chart_requires_exact_source_closed_selector_rectangle() {
     use crate::families::b2::records::{
         B2OwnerChartBridge, B2OwnerChartCarrier, B2OwnerChartSideAxis,
