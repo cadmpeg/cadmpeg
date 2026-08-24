@@ -11611,7 +11611,48 @@ name = "compact_trailer"
 offset = 38
 type = "bytes[4]"
 source = "spec"
-anchor = "the compact trailer is `00 00 00 01`"
+anchor = "the four bytes `00 00 00 01`"
+
+[[record]]
+name = "thread_compact_reference_construction_tail"
+kind = "byte"
+section = "3.1"
+anchor = "A compact trailer is either"
+size = 49
+note = "Offsets are relative to the first byte after the third LP-UTF16 string."
+
+[[record.field]]
+name = "construction_marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "`01 02 00 00 00` in the compact form"
+
+[[record.gap]]
+offset = 5
+size = 33
+note = "The compact scalar lanes use the same offsets as the standard construction tail."
+
+[[record.field]]
+name = "reference_marker"
+offset = 38
+type = "u8"
+source = "spec"
+anchor = "byte `01`, a nonzero u32 record index"
+
+[[record.field]]
+name = "record_index"
+offset = 39
+type = "u32"
+source = "spec"
+anchor = "byte `01`, a nonzero u32 record index"
+
+[[record.field]]
+name = "zero_tail"
+offset = 43
+type = "bytes[6]"
+source = "spec"
+anchor = "and six zero bytes"
 
 # --- Not tabulated ---------------------------------------------------------
 

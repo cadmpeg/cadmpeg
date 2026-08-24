@@ -4896,6 +4896,26 @@ pub(crate) mod thread_compact_construction_tail {
     pub(crate) const COMPACT_TRAILER: usize = 38;
 }
 
+/// Byte offsets for the `thread_compact_reference_construction_tail` record.
+///
+/// Spec §3.1. Record length 49 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the third LP-UTF16 string.
+/// ```
+pub(crate) mod thread_compact_reference_construction_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 49;
+    /// Offset of `construction_marker` (`bytes[5]`). Spec §3.1.
+    pub(crate) const CONSTRUCTION_MARKER: usize = 0;
+    /// Offset of `reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const REFERENCE_MARKER: usize = 38;
+    /// Offset of `record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RECORD_INDEX: usize = 39;
+    /// Offset of `zero_tail` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_TAIL: usize = 43;
+}
+
 /// Byte offsets for the `edge_flange_fixed_operation_section` record.
 ///
 /// Spec §3.1. Record length 79 B.

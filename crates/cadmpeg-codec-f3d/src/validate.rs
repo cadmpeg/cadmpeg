@@ -3338,6 +3338,19 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .parse::<f64>()
                         .is_ok_and(|value| value.to_bits() == construction.nominal_size.to_bits())
                     && !construction.profile.is_empty()
+                    && match (
+                        construction.trailing_reference_record_index,
+                        construction.trailing_reference_offset,
+                    ) {
+                        (None, None) => true,
+                        (Some(record_index), Some(offset)) => {
+                            construction.form == records::DesignThreadForm::Compact
+                                && offset > construction.designation_offset
+                                && offset < scope.paired_byte_offset
+                                && record_indices.contains(&(native_stream, record_index))
+                        }
+                        _ => false,
+                    }
                     && [
                         construction.nominal_size,
                         construction.major_diameter,

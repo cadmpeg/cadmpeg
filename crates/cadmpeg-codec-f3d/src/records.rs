@@ -2145,6 +2145,12 @@ pub struct DesignThreadConstruction {
     pub pitch: f64,
     /// Pitch diameter in Design length units.
     pub pitch_diameter: f64,
+    /// Record named by the reference-bearing compact trailer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trailing_reference_record_index: Option<u32>,
+    /// Byte offset of `trailing_reference_record_index`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trailing_reference_offset: Option<u64>,
     /// Ordered counted face-selection groups referenced by the scope.
     pub face_group_record_indices: Vec<u32>,
 }

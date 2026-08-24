@@ -43,6 +43,8 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         minor_diameter: 2.5732,
         pitch: 0.35,
         pitch_diameter: 2.7568,
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
         face_group_record_indices: vec![988],
     };
     assert_thread_construction(
@@ -91,6 +93,14 @@ fn assert_thread_construction(
     assert_eq!(actual.nominal_size_text, expected.nominal_size_text);
     assert_eq!(actual.profile, expected.profile);
     assert_eq!(
+        actual.trailing_reference_record_index,
+        expected.trailing_reference_record_index
+    );
+    assert_eq!(
+        actual.trailing_reference_offset,
+        expected.trailing_reference_offset
+    );
+    assert_eq!(
         actual.face_group_record_indices,
         expected.face_group_record_indices
     );
@@ -137,11 +147,24 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         minor_diameter: 0.293,
         pitch: 0.06,
         pitch_diameter: 0.3166,
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
         face_group_record_indices: vec![988],
     };
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, DesignThreadForm::Compact, vec![988]),
         &expected,
+    );
+    let mut referenced = bytes.clone();
+    referenced[after_profile + 38] = 1;
+    referenced[after_profile + 39..after_profile + 43].copy_from_slice(&2075u32.to_le_bytes());
+    referenced[after_profile + 43..after_profile + 49].fill(0);
+    let mut referenced_expected = expected.clone();
+    referenced_expected.trailing_reference_record_index = Some(2075);
+    referenced_expected.trailing_reference_offset = Some((after_profile + 39) as u64);
+    assert_thread_construction(
+        parse_thread_payload(&referenced, 38, DesignThreadForm::Compact, vec![988]),
+        &referenced_expected,
     );
 
     let mut scope = DesignParameterScope::empty("f3d:scope#compact-thread", "Thread", 987);

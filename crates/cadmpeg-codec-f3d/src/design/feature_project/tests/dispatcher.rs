@@ -520,6 +520,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         minor_diameter: 0.293,
         pitch: 0.06,
         pitch_diameter: 0.3166,
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
         face_group_record_indices: vec![701, 703],
     });
     thread.reference_members = vec![701, 702, 703, 704];

@@ -237,6 +237,21 @@ not change the channel count, names, GUIDs, entity key, or ACT-table join.
 **Need.** A source-less writer must generate the class tail selected by the
 change-group class instead of copying it from a retained record.
 
+### DR-73. Thread compact-trailer record reference
+
+**Question.** What does the record named by a reference-bearing compact
+`Thread` trailer hold?
+
+**Known.** `f3d.md` §3.1 "The three LP-UTF16 fields are the designation"
+gives both compact trailer layouts. The reference-bearing layout stores a
+marked nonzero indexed-record reference after the physical thread scalars. The
+decoder retains its target and byte offset. The reference is independent of
+the ordered face-selection groups.
+
+**Need.** A source-less writer must select the referenced record and generate
+its payload. The physical thread construction and face selections decode
+without assigning a semantic role to that record.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID

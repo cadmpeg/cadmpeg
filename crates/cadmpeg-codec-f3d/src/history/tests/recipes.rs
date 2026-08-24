@@ -1526,6 +1526,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         minor_diameter: 0.2,
         pitch: 0.07,
         pitch_diameter: 0.3,
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
         face_group_record_indices: vec![100],
     });
     let mut cylinder_operand = operand.clone();

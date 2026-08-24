@@ -553,24 +553,45 @@ pub(crate) fn parse_thread_payload(
     let pitch = (bytes.get(after_profile + thread_tail::PITCH_MARKER) == Some(&pitch_marker))
         .then(|| View::f64_le_at(bytes, after_profile + thread_tail::PITCH))??;
     let pitch_diameter = View::f64_le_at(bytes, after_profile + thread_tail::PITCH_DIAMETER)?;
-    let trailer: &[u8] = match form {
-        DesignThreadForm::Standard => &[0, 1],
-        DesignThreadForm::Compact => &[0, 0, 0, 1],
-    };
     let trailer_at = match form {
         DesignThreadForm::Standard => thread_tail::STANDARD_TRAILER,
         DesignThreadForm::Compact => thread_compact_tail::COMPACT_TRAILER,
     };
-    if bytes.get(after_profile + trailer_at..after_profile + trailer_at + trailer.len())? != trailer
-        || ![
-            nominal_size,
-            major_diameter,
-            minor_diameter,
-            pitch,
-            pitch_diameter,
-        ]
-        .into_iter()
-        .all(|value| value.is_finite() && value > 0.0)
+    let trailer_offset = after_profile.checked_add(trailer_at)?;
+    let (trailing_reference_record_index, trailing_reference_offset) = match form {
+        DesignThreadForm::Standard if bytes.get(trailer_offset..trailer_offset + 2)? == [0, 1] => {
+            (None, None)
+        }
+        DesignThreadForm::Compact
+            if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
+        {
+            (None, None)
+        }
+        DesignThreadForm::Compact
+            if bytes.get(trailer_offset) == Some(&1)
+                && bytes.get(trailer_offset + 5..trailer_offset + 11)? == [0; 6] =>
+        {
+            let reference_offset = trailer_offset.checked_add(1)?;
+            let record_index = View::u32_le_at(bytes, reference_offset)?;
+            if record_index == 0 {
+                return None;
+            }
+            (
+                Some(record_index),
+                Some(u64::try_from(reference_offset).ok()?),
+            )
+        }
+        _ => return None,
+    };
+    if ![
+        nominal_size,
+        major_diameter,
+        minor_diameter,
+        pitch,
+        pitch_diameter,
+    ]
+    .into_iter()
+    .all(|value| value.is_finite() && value > 0.0)
         || !(minor_diameter < pitch_diameter && pitch_diameter < major_diameter)
     {
         return None;
@@ -586,6 +607,8 @@ pub(crate) fn parse_thread_payload(
         minor_diameter,
         pitch,
         pitch_diameter,
+        trailing_reference_record_index,
+        trailing_reference_offset,
         face_group_record_indices,
     })
 }

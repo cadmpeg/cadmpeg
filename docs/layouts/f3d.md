@@ -3572,7 +3572,24 @@ Offsets are relative to the first byte after the third LP-UTF16 string.
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | `01 02 00 00 00` in the compact form |
-| 38 | 4 | `compact_trailer` | `bytes[4]` | little | spec | the compact trailer is `00 00 00 01` |
+| 38 | 4 | `compact_trailer` | `bytes[4]` | little | spec | the four bytes `00 00 00 01` |
+
+Unstated regions:
+
+- `5..38` (33 B): The compact scalar lanes use the same offsets as the standard construction tail.
+
+## `thread_compact_reference_construction_tail`
+
+Spec §3.1 · layout: byte offsets · size: 49 B
+
+Offsets are relative to the first byte after the third LP-UTF16 string.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | `01 02 00 00 00` in the compact form |
+| 38 | 1 | `reference_marker` | `u8` | little | spec | byte `01`, a nonzero u32 record index |
+| 39 | 4 | `record_index` | `u32` | little | spec | byte `01`, a nonzero u32 record index |
+| 43 | 6 | `zero_tail` | `bytes[6]` | little | spec | and six zero bytes |
 
 Unstated regions:
 
