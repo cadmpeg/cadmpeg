@@ -3164,6 +3164,7 @@
               ],
               "member": null,
               "neutral_links": [],
+              "root": true,
               "source_instance": "iges:entity:directory#9",
               "world_transform": [
                 [
@@ -3215,6 +3216,7 @@
               ],
               "member": null,
               "neutral_links": [],
+              "root": false,
               "source_instance": "iges:entity:directory#5",
               "world_transform": [
                 [
@@ -3270,6 +3272,7 @@
                 "iges:model:point#D1-start",
                 "iges:model:point#D1-end"
               ],
+              "root": false,
               "source_instance": "iges:entity:directory#5",
               "world_transform": [
                 [

@@ -127,26 +127,6 @@ exact shared point.
 
 ## 6. Product structure, annotation, and presentation
 
-### PS-16. Top-level occurrence inferred from absence of containment
-
-**Question.** What source relationship makes a Type 408 or Type 420 instance a
-top-level neutral product occurrence?
-
-**Known.** IGES defines Type 308 and Type 320 definition membership and the
-nested placement of their Type 408 and Type 420 instances. It does not define a
-top-level occurrence root. `iges.md` defines a CADIR root as an admitted Type
-408 or Type 420 instance that is not a member of any parseable Type 308 or Type
-320 member list. `crates/cadmpeg-codec-iges/src/native.rs:4617-4669` constructs
-the containment set, and `crates/cadmpeg-codec-iges/src/native.rs:4764-4782`
-expands every admitted instance outside that set from the identity world
-transform. A malformed definition member list suppresses all root inference.
-
-**Need.** Absence from a definition member list does not declare product-root
-meaning. The neutral occurrence and its identity placement are inferred from
-the document graph rather than transferred from an IGES relationship. The
-answer defines an explicit application root, or represents these inferred roots
-so that a consumer cannot mistake them for source-declared product structure.
-
 ## 7. Write path
 
 ### WR-16. Type 126 plane and normal inferred from control points

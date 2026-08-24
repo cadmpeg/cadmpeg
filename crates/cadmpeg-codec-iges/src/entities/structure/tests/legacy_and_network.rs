@@ -270,6 +270,7 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
         .iter()
         .find(|occurrence| occurrence.id() == "iges:product:occurrence#9/5")
         .unwrap();
+    assert_eq!(nested.fields()["root"], false);
     assert_eq!(
         nested.fields()["instance_path"][0],
         "iges:entity:directory#9"
@@ -286,6 +287,7 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
         .iter()
         .find(|occurrence| occurrence.id() == "iges:product:occurrence#9/5/D1")
         .unwrap();
+    assert_eq!(leaf.fields()["root"], false);
     assert_eq!(leaf.fields()["member"], "iges:entity:directory#1");
     assert_eq!(leaf.fields()["neutral_links"][0], "iges:model:curve#D1");
     assert_eq!(
@@ -329,6 +331,7 @@ fn v5_applies_definition_transformations_to_subfigure_occurrences() {
             .iter()
             .find(|occurrence| occurrence.id() == "iges:product:occurrence#7")
             .unwrap();
+        assert_eq!(root.fields()["root"], true);
         assert_eq!(root.fields()["world_transform"][0][3], 10.0);
         assert_eq!(root.fields()["world_transform"][1][3], 20.0);
         assert_eq!(root.fields()["world_transform"][2][3], 30.0);
@@ -336,6 +339,7 @@ fn v5_applies_definition_transformations_to_subfigure_occurrences() {
             .iter()
             .find(|occurrence| occurrence.id() == "iges:product:occurrence#7/D3")
             .unwrap();
+        assert_eq!(leaf.fields()["root"], false);
         assert_eq!(leaf.fields()["world_transform"][0][3], 10.0);
         assert_eq!(leaf.fields()["world_transform"][1][3], 20.0);
         assert_eq!(leaf.fields()["world_transform"][2][3], 30.0);
@@ -512,6 +516,7 @@ fn v4_applies_definition_transformations_to_subfigure_occurrences() {
             .iter()
             .find(|occurrence| occurrence.id() == "iges:product:occurrence#7")
             .unwrap();
+        assert_eq!(root.fields()["root"], true);
         assert_eq!(root.fields()["world_transform"][0][3], 10.0);
         assert_eq!(root.fields()["world_transform"][1][3], 20.0);
         assert_eq!(root.fields()["world_transform"][2][3], 30.0);

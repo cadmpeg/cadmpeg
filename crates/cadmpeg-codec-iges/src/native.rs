@@ -913,6 +913,7 @@ struct NativeUnitsData {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeProductOccurrence {
     id: String,
+    root: bool,
     source_instance: String,
     definition: String,
     member: Option<String>,
@@ -1406,6 +1407,7 @@ impl OccurrenceExpansion<'_, '_> {
         };
         let world = parent.compose(local);
         let definition_world = world.compose(definition.transform);
+        let root = path.is_empty();
         path.push(instance_sequence);
         let path_ids = path
             .iter()
@@ -1421,6 +1423,7 @@ impl OccurrenceExpansion<'_, '_> {
         }
         occurrences.push(NativeProductOccurrence {
             id: format!("iges:product:occurrence#{path_key}"),
+            root,
             source_instance: format!("iges:entity:directory#{instance_sequence}"),
             definition: format!("iges:entity:directory#{definition_sequence}"),
             member: None,
@@ -1471,6 +1474,7 @@ impl OccurrenceExpansion<'_, '_> {
             }
             occurrences.push(NativeProductOccurrence {
                 id: format!("iges:product:occurrence#{path_key}/D{member}"),
+                root: false,
                 source_instance: format!("iges:entity:directory#{instance_sequence}"),
                 definition: format!("iges:entity:directory#{definition_sequence}"),
                 member: Some(format!("iges:entity:directory#{member}")),

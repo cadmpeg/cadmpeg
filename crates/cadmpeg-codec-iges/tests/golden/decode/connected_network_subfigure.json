@@ -2853,6 +2853,7 @@
               ],
               "member": null,
               "neutral_links": [],
+              "root": true,
               "source_instance": "iges:entity:directory#7",
               "world_transform": [
                 [
