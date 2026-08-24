@@ -276,7 +276,8 @@ fn decode_sketch_visibilities_in_stream(
             )));
         }
         let Some((entity_suffix, _, _, header_end)) =
-            parse_genesis_entity_header(&bytes[..frame.end], frame.start)
+            parse_settled_entity_header(&bytes[..frame.end], frame.start)
+                .or_else(|| parse_genesis_entity_header(&bytes[..frame.end], frame.start))
         else {
             return Err(CodecError::Malformed(format!(
                 "F3D sketch container {} has an invalid entity header",
