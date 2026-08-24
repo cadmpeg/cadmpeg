@@ -43,7 +43,7 @@ pub fn parse_with_context(
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::Malformed(format!("invalid Document.xml: {error}")))?;
+        .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
     let root = xml.root_element();
     let schema = root
         .attribute("SchemaVersion")
@@ -65,18 +65,24 @@ pub fn parse_with_context(
         .children()
         .find(|node| node.has_tag_name(declarations_tag))
         .ok_or_else(|| {
-            CodecError::Malformed(format!("Document.xml has no {declarations_tag} section"))
+            CodecError::malformed(format_args!(
+                "Document.xml has no {declarations_tag} section"
+            ))
         })?;
     let data_node = root
         .children()
         .find(|node| node.has_tag_name(data_tag))
-        .ok_or_else(|| CodecError::Malformed(format!("Document.xml has no {data_tag} section")))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("Document.xml has no {data_tag} section"))
+        })?;
 
     let declared_count = objects_node
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::Malformed(format!("{declarations_tag} Count is missing or invalid"))
+            CodecError::malformed(format_args!(
+                "{declarations_tag} Count is missing or invalid"
+            ))
         })?;
     let object_limit = ctx
         .and_then(|ctx| usize::try_from(ctx.policy().limits.max_entities).ok())
@@ -117,7 +123,7 @@ pub fn parse_with_context(
                 CodecError::Malformed("ObjectDeps Count is missing or invalid".into())
             })?;
         if dependency_count != dependencies.len() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "ObjectDeps {name} Count={dependency_count} but {} dependencies were found",
                 dependencies.len()
             )));
@@ -143,7 +149,7 @@ pub fn parse_with_context(
             )
             .is_some()
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate ObjectDeps name {name}"
             )));
         }
@@ -156,7 +162,7 @@ pub fn parse_with_context(
     {
         let name = required_attr(node, "name")?;
         if data_by_name.insert(name.clone(), node).is_some() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate ObjectData name {name}"
             )));
         }
@@ -164,9 +170,11 @@ pub fn parse_with_context(
     let data_count = data_node
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
-        .ok_or_else(|| CodecError::Malformed(format!("{data_tag} Count is missing or invalid")))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("{data_tag} Count is missing or invalid"))
+        })?;
     if data_count != data_by_name.len() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{data_tag} Count={data_count} but {} records were found",
             data_by_name.len()
         )));
@@ -181,7 +189,7 @@ pub fn parse_with_context(
     {
         let name = required_attr(node, "name")?;
         if !object_names.insert(name.clone()) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate object declaration name {name}"
             )));
         }
@@ -200,7 +208,7 @@ pub fn parse_with_context(
                 .as_ref()
                 .is_none_or(|dependency| dependency.order != order)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "ObjectDeps order does not match object {name}"
             )));
         }
@@ -223,7 +231,7 @@ pub fn parse_with_context(
     }
 
     if declared_count != objects.len() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{declarations_tag} Count={declared_count} but {} declarations were found",
             objects.len()
         )));
@@ -234,7 +242,7 @@ pub fn parse_with_context(
         ));
     }
     if data_by_name.len() != objects.len() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "object declarations and {data_tag} identities disagree"
         )));
     }
@@ -245,7 +253,7 @@ pub fn parse_with_context(
     for object in &mut objects {
         for dependency in &mut object.dependencies {
             if !declared_names.contains(dependency) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "object {} depends on missing object {dependency}",
                     object.name
                 )));
@@ -268,7 +276,7 @@ pub fn parse_with_context(
     }
     for object in &objects {
         let data = data_by_name.get(&object.name).ok_or_else(|| {
-            CodecError::Malformed(format!("missing ObjectData for {}", object.name))
+            CodecError::malformed(format_args!("missing ObjectData for {}", object.name))
         })?;
         for extensions_node in data
             .children()
@@ -285,7 +293,7 @@ pub fn parse_with_context(
                     CodecError::Malformed("Extensions Count is missing or invalid".into())
                 })?;
             if declared != nodes.len() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "Extensions Count={declared} but {} records were found for {}",
                     nodes.len(),
                     object.id
@@ -370,7 +378,7 @@ fn parse_properties(
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| CodecError::Malformed("Properties Count is missing or invalid".into()))?;
     if declared != nodes.len() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Properties Count={declared} but {} properties were found for {owner}",
             nodes.len()
         )));
@@ -384,7 +392,7 @@ fn parse_properties(
                 })
             })?;
     if declared_transient != transient_nodes.len() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Properties TransientCount={declared_transient} but {} transient properties were found for {owner}",
             transient_nodes.len()
         )));
@@ -426,7 +434,7 @@ fn parse_properties(
                     .checked_add(len)
                     .filter(|total| *total <= MAX_PROPERTY_VALUE_XML_BYTES)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "property {name} retained value XML limit exceeded"
                         ))
                     })?;
@@ -590,11 +598,11 @@ fn single_value_element<'a, 'input>(
     type_name: &str,
 ) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
     let mut elements = property.children().filter(roxmltree::Node::is_element);
-    let value = elements
-        .next()
-        .ok_or_else(|| CodecError::Malformed(format!("{type_name} requires one {tag} value")))?;
+    let value = elements.next().ok_or_else(|| {
+        CodecError::malformed(format_args!("{type_name} requires one {tag} value"))
+    })?;
     if !value.has_tag_name(tag) || elements.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{type_name} requires exactly one {tag} value"
         )));
     }
@@ -608,13 +616,13 @@ fn counted_children<'a, 'input>(
 ) -> Result<impl Iterator<Item = roxmltree::Node<'a, 'input>>, CodecError> {
     let count = required_attr(parent, "count")?
         .parse::<usize>()
-        .map_err(|_| CodecError::Malformed(format!("{type_name} count is invalid")))?;
+        .map_err(|_| CodecError::malformed(format_args!("{type_name} count is invalid")))?;
     let children = parent
         .children()
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     if children.len() != count || children.iter().any(|child| !child.has_tag_name(tag)) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{type_name} count={count} but {} {tag} values were found",
             children.len()
         )));
@@ -679,7 +687,7 @@ fn reject_link_aliases(node: roxmltree::Node<'_, '_>, allowed: &[&str]) -> Resul
     if let Some(attribute) = node.attributes().find(|attribute| {
         CARRIERS.contains(&attribute.name()) && !allowed.contains(&attribute.name())
     }) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{} has unsupported link carrier {}",
             node.tag_name().name(),
             attribute.name()
@@ -753,7 +761,7 @@ fn extension_id(owner: &str, name: &str, order: usize) -> String {
 
 fn required_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Result<String, CodecError> {
     node.attribute(name).map(str::to_owned).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "{} element has no {name} attribute",
             node.tag_name().name()
         ))

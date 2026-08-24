@@ -108,7 +108,7 @@ pub fn decode_sketch_placements(
                 .insert((ids::native_scope(&entry.name), entity_suffix), visibility)
                 .is_some()
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D Design stream {} repeats sketch visibility for entity {entity_suffix}",
                     entry.name
                 )));
@@ -270,7 +270,7 @@ fn decode_sketch_visibilities_in_stream(
                 .as_deref()
                 .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {} has incompatible registration metadata",
                 frame.entity_id
             )));
@@ -279,26 +279,26 @@ fn decode_sketch_visibilities_in_stream(
             parse_settled_entity_header(&bytes[..frame.end], frame.start)
                 .or_else(|| parse_genesis_entity_header(&bytes[..frame.end], frame.start))
         else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {} has an invalid entity header",
                 frame.entity_id
             )));
         };
         if entity_suffix != frame.entity_id {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {} disagrees with its entity header {entity_suffix}",
                 frame.entity_id
             )));
         }
         let Some(member_at) = next_indexed_record_offset(&bytes[..frame.end], header_end) else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {entity_suffix} has no typed Geometry member"
             )));
         };
         let Some((class_tag, after_tag)) =
             lp_ascii_filtered(bytes, member_at, 3..=3, u8::is_ascii_digit)
         else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {entity_suffix} has an invalid Geometry-member class tag"
             )));
         };
@@ -319,14 +319,14 @@ fn decode_sketch_visibilities_in_stream(
                     })
             })
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {entity_suffix} has an incompatible Geometry member"
             )));
         }
         let Some(visibility) =
             decode_sketch_visibility_member(&bytes[..frame.end], member_at, entity_suffix)
         else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {entity_suffix} has an invalid visibility member"
             )));
         };
@@ -1510,7 +1510,7 @@ pub(crate) fn decode_sketch_points_from_stream(
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
         let decoded =
             decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "F3D sketch point {record_index} has an invalid version-{} member sequence",
                     frame.design_type.version
                 ))
@@ -1521,7 +1521,7 @@ pub(crate) fn decode_sketch_points_from_stream(
             decoded.coordinates[2] * 10.0,
         );
         if !u.is_finite() || !v.is_finite() || !depth.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch point {record_index} has a non-finite coordinate"
             )));
         }
@@ -1530,7 +1530,7 @@ pub(crate) fn decode_sketch_points_from_stream(
             decoded.trailing_reference(),
             SKETCH_CONTAINER_TYPE_GUID,
         ) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch point {record_index} has an invalid trailing container reference"
             )));
         }
@@ -1563,14 +1563,14 @@ pub(crate) fn decode_sketch_points_from_stream(
                 )
             })
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
         if decoded.record_form.uses_inline_typed_references()
             != (companion.reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D sketch point {record_index} and its companion use different reference encodings"
             )));
         }
@@ -2930,7 +2930,7 @@ pub(crate) fn bind_sketch_graph(
         .collect::<std::collections::HashMap<_, _>>();
     for relation in relations.iter_mut() {
         let scope = native_stream(&relation.id).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "Fusion sketch relation {} has no Design stream identity",
                 relation.record_index
             ))
@@ -2938,7 +2938,7 @@ pub(crate) fn bind_sketch_graph(
         relation.owner_entity_id = sketch_owners
             .get(&(scope, relation.owner_reference))
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "Fusion sketch relation {} in {scope} has no owning Design entity {}",
                     relation.record_index, relation.owner_reference,
                 ))
@@ -2999,7 +2999,7 @@ pub(crate) fn bind_sketch_graph(
                 .insert((scope, *record_index), relation.owner_reference)
                 .is_some_and(|owner| owner != relation.owner_reference)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "Fusion sketch record {record_index} in {scope} belongs to multiple sketches"
                 )));
             }
@@ -3024,7 +3024,7 @@ pub(crate) fn bind_sketch_graph(
                 .insert((scope, *record_index), suffix)
                 .is_some_and(|owner| owner != suffix)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "Fusion sketch record {record_index} in {scope} belongs to multiple sketches"
                 )));
             }

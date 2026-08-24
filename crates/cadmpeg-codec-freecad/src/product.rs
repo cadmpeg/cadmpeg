@@ -385,7 +385,7 @@ fn linked_prototype_transform(
         return Ok(identity());
     };
     if stack.iter().any(|object| object == &record.object) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "nested link cycle reaches {}",
             record.object
         )));
@@ -410,7 +410,9 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
         .element_count
         .map(usize::try_from)
         .transpose()
-        .map_err(|_| CodecError::Malformed(format!("{} has negative element count", record.id)))?;
+        .map_err(|_| {
+            CodecError::malformed(format_args!("{} has negative element count", record.id))
+        })?;
     let count = declared_count.unwrap_or_else(|| {
         [
             record.element_transforms.len(),
@@ -424,7 +426,7 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
         .expect("nonempty lengths")
     });
     if count > 1_000_000 || u32::try_from(count).is_err() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{} link-array count limit exceeded",
             record.id
         )));
@@ -438,7 +440,7 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
     .into_iter()
     .any(|length| length != 0 && length != count)
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{} has inconsistent link-array counts",
             record.id
         )));
@@ -544,7 +546,7 @@ fn side_bytes<'a>(
         return Ok(None);
     };
     entries.get(entry).copied().map(Some).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "{property_id} references missing {entry}",
             property_id = property.id
         ))
@@ -558,7 +560,7 @@ fn list_layout(
 ) -> Result<(usize, usize), CodecError> {
     let len = view.end().saturating_sub(view.start());
     if len < link_array::LEN {
-        return Err(CodecError::Malformed(format!("{name} is truncated")));
+        return Err(CodecError::malformed(format_args!("{name} is truncated")));
     }
     let mut head = view;
     head.seek(view.start()).expect("window start");
@@ -572,7 +574,7 @@ fn list_layout(
     } else if len == float_len {
         Ok((count, 4))
     } else {
-        Err(CodecError::Malformed(format!(
+        Err(CodecError::malformed(format_args!(
             "{name} count {count} does not match {len} bytes"
         )))
     }

@@ -214,14 +214,14 @@ fn validate_card_order(lines: &[PhysicalLine]) -> Result<(), CodecError> {
             continue;
         };
         let current_sequence = line.sequence.ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "IGES card at offset {} has an invalid sequence field",
                 line.offset
             ))
         })?;
         if section != Some(current) {
             if section.is_some_and(|previous| current <= previous) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "IGES section {} is out of order",
                     current.name()
                 )));
@@ -230,7 +230,7 @@ fn validate_card_order(lines: &[PhysicalLine]) -> Result<(), CodecError> {
             expected_sequence = 1;
         }
         if current_sequence != expected_sequence {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES {} sequence is {current_sequence}, expected {expected_sequence}",
                 current.name()
             )));
@@ -254,7 +254,7 @@ fn validate_terminate_counts(lines: &[PhysicalLine]) -> Result<(), CodecError> {
         .filter(|line| line.section == Some(Section::Terminate))
         .collect::<Vec<_>>();
     if terminate.len() != 1 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "IGES Fixed ASCII has {} Terminate cards, expected 1",
             terminate.len()
         )));
@@ -274,7 +274,7 @@ fn validate_terminate_counts(lines: &[PhysicalLine]) -> Result<(), CodecError> {
             .map(str::trim)
             .filter(|text| !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()));
         if field[0] != marker || count.is_none() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES Terminate field for {} is malformed",
                 section.name()
             )));
@@ -282,7 +282,7 @@ fn validate_terminate_counts(lines: &[PhysicalLine]) -> Result<(), CodecError> {
         let declared = count
             .and_then(|text| text.parse::<usize>().ok())
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES Terminate count for {} is out of range",
                     section.name()
                 ))
@@ -292,7 +292,7 @@ fn validate_terminate_counts(lines: &[PhysicalLine]) -> Result<(), CodecError> {
             .filter(|line| line.section == Some(section))
             .count();
         if declared != actual {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES Terminate count for {} is {declared}, actual {actual}",
                 section.name()
             )));

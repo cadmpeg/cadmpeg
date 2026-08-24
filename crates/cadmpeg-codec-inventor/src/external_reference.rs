@@ -274,7 +274,7 @@ fn parse_stream<'a>(
     cursor.u16("next LOD id")?;
     let invariant = cursor.u16("header invariant")?;
     if invariant != 1 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "UFRxDoc header invariant is {invariant}, expected 1"
         )));
     }
@@ -481,7 +481,7 @@ fn parse_occurrences<'a>(
             let marker_offset = cursor.position();
             let marker = cursor.u16("occurrence extended-header marker")?;
             if marker != 0x2080 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "UFRxDoc occurrence extended-header marker at offset {marker_offset} is {marker:#06x}, expected 0x2080"
                 )));
             }
@@ -614,7 +614,7 @@ fn parse_occurrence_items(
     let count = cursor.count32("occurrence export item count", 65_536)?;
     let repeated = cursor.count32("occurrence export repeated item count", 65_536)?;
     if repeated != count {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "UFRxDoc occurrence export item counts differ: {count} and {repeated}"
         )));
     }
@@ -683,7 +683,7 @@ fn parse_occurrence_item_value(cursor: &mut Cursor<'_>, tag: u8) -> Result<(), C
 
 fn require_tag(actual: u8, expected: u8) -> Result<(), CodecError> {
     if actual != expected {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "UFRxDoc repeated occurrence tag is {actual:#04x}, expected {expected:#04x}"
         )));
     }
@@ -692,7 +692,7 @@ fn require_tag(actual: u8, expected: u8) -> Result<(), CodecError> {
 
 fn require_u32(actual: u32, expected: u32, field: &str) -> Result<(), CodecError> {
     if actual != expected {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "UFRxDoc {field} is {actual:#010x}, expected {expected:#010x}"
         )));
     }
@@ -785,13 +785,12 @@ impl<'a> Cursor<'a> {
     }
 
     fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
-        let _ = self
-            .position()
-            .checked_add(len)
-            .ok_or_else(|| CodecError::Malformed(format!("UFRxDoc {field} range overflows")))?;
+        let _ = self.position().checked_add(len).ok_or_else(|| {
+            CodecError::malformed(format_args!("UFRxDoc {field} range overflows"))
+        })?;
         self.view
             .take(len)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated UFRxDoc {field}")))
+            .ok_or_else(|| CodecError::malformed(format_args!("truncated UFRxDoc {field}")))
     }
 
     fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
@@ -828,24 +827,23 @@ impl<'a> Cursor<'a> {
     fn peek_u16(&self, field: &str) -> Result<u16, CodecError> {
         let mut view = self.view;
         view.u16_le()
-            .ok_or_else(|| CodecError::Malformed(format!("truncated UFRxDoc {field}")))
+            .ok_or_else(|| CodecError::malformed(format_args!("truncated UFRxDoc {field}")))
     }
 
     fn peek_u32_at(&self, relative: usize, field: &str) -> Result<u32, CodecError> {
-        let _ = self
-            .position()
-            .checked_add(relative)
-            .ok_or_else(|| CodecError::Malformed(format!("UFRxDoc {field} range overflows")))?;
+        let _ = self.position().checked_add(relative).ok_or_else(|| {
+            CodecError::malformed(format_args!("UFRxDoc {field} range overflows"))
+        })?;
         let mut view = self.view;
         view.skip(relative)
             .and_then(|()| view.u32_le())
-            .ok_or_else(|| CodecError::Malformed(format!("truncated UFRxDoc {field}")))
+            .ok_or_else(|| CodecError::malformed(format_args!("truncated UFRxDoc {field}")))
     }
 
     fn count16(&mut self, field: &str, maximum: usize) -> Result<usize, CodecError> {
         let value = self.u16(field)? as usize;
         if value > maximum {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "UFRxDoc {field} exceeds {maximum}"
             )));
         }
@@ -855,9 +853,9 @@ impl<'a> Cursor<'a> {
     fn count32(&mut self, field: &str, maximum: usize) -> Result<usize, CodecError> {
         let offset = self.position();
         let value = usize::try_from(self.u32(field)?)
-            .map_err(|_| CodecError::Malformed(format!("UFRxDoc {field} is too large")))?;
+            .map_err(|_| CodecError::malformed(format_args!("UFRxDoc {field} is too large")))?;
         if value > maximum {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "UFRxDoc {field} value {value} at offset {offset} exceeds {maximum}"
             )));
         }
@@ -880,19 +878,18 @@ impl<'a> Cursor<'a> {
         field: &str,
         count: usize,
     ) -> Result<String, CodecError> {
-        let len = count
-            .checked_mul(2)
-            .ok_or_else(|| CodecError::Malformed(format!("UFRxDoc {field} length overflows")))?;
+        let len = count.checked_mul(2).ok_or_else(|| {
+            CodecError::malformed(format_args!("UFRxDoc {field} length overflows"))
+        })?;
         ctx.charge_retained(len as u64, "retain UFRxDoc string", None)?;
-        let _ = self
-            .position()
-            .checked_add(len)
-            .ok_or_else(|| CodecError::Malformed(format!("UFRxDoc {field} range overflows")))?;
+        let _ = self.position().checked_add(len).ok_or_else(|| {
+            CodecError::malformed(format_args!("UFRxDoc {field} range overflows"))
+        })?;
         self.view.utf16_le(count).ok_or_else(|| {
             if self.view.remaining() < len {
-                CodecError::Malformed(format!("truncated UFRxDoc {field}"))
+                CodecError::malformed(format_args!("truncated UFRxDoc {field}"))
             } else {
-                CodecError::Malformed(format!("UFRxDoc {field} is not UTF-16"))
+                CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-16"))
             }
         })
     }
@@ -908,14 +905,14 @@ impl<'a> Cursor<'a> {
         let value = self.take(count, field)?;
         std::str::from_utf8(value)
             .map(str::to_owned)
-            .map_err(|_| CodecError::Malformed(format!("UFRxDoc {field} is not UTF-8")))
+            .map_err(|_| CodecError::malformed(format_args!("UFRxDoc {field} is not UTF-8")))
     }
 
     fn boolean(&mut self, field: &str) -> Result<bool, CodecError> {
         match self.u8(field)? {
             0 => Ok(false),
             1 => Ok(true),
-            value => Err(CodecError::Malformed(format!(
+            value => Err(CodecError::malformed(format_args!(
                 "UFRxDoc {field} is {value}, expected 0 or 1"
             ))),
         }

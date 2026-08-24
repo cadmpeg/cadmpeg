@@ -3803,7 +3803,7 @@ pub fn bind_dimension_loci(
             .replace(owner)
             .is_some_and(|existing| existing != owner)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Fusion sketch point {} has conflicting relation and dimension owners",
                 point.record_index
             )));
@@ -3824,7 +3824,7 @@ pub fn bind_dimension_loci(
             .replace(owner)
             .is_some_and(|existing| existing != owner)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Fusion sketch curve {} has conflicting relation and dimension owners",
                 curve.record_index
             )));
@@ -3843,7 +3843,7 @@ fn insert_dimension_binding(
         .insert((scope.to_owned(), record_index), owner)
         .is_some_and(|existing| existing != owner)
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Fusion dimensional geometry record {record_index} belongs to multiple sketches"
         )));
     }

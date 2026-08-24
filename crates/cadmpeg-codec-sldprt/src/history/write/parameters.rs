@@ -150,13 +150,13 @@ pub(crate) fn sync_neutral_parameters(
             )));
         };
         let Some(owner) = features.get(owner_id) else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} references a missing feature",
                 parameter.id.0
             )));
         };
         if parameter.display != dimension_display(&parameter.expression) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} has display semantics inconsistent with its expression",
                 parameter.id.0
             )));
@@ -164,7 +164,7 @@ pub(crate) fn sync_neutral_parameters(
         if parse_neutral_parameter_literal(owner, &parameter.name, &parameter.expression)
             .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} has a value inconsistent with its expression",
                 parameter.id.0
             )));
@@ -174,7 +174,7 @@ pub(crate) fn sync_neutral_parameters(
             .iter()
             .any(|candidate| candidate.name == parameter.name)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate SLDPRT parameter {} on feature {}",
                 parameter.name, owner_id
             )));
@@ -183,7 +183,7 @@ pub(crate) fn sync_neutral_parameters(
             .iter()
             .any(|candidate| candidate.ordinal == parameter.ordinal)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate SLDPRT parameter ordinal {} on feature {}",
                 parameter.ordinal, owner_id
             )));
@@ -261,7 +261,7 @@ pub(crate) fn sync_neutral_parameters(
                     .map(|scalar_index| (lane_index, scalar_index))
             })
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT parameter {} references missing scalar {native_ref}",
                     parameter.id.0
                 ))
@@ -269,7 +269,7 @@ pub(crate) fn sync_neutral_parameters(
         let lane = &mut native.feature_input_lanes[location.0];
         let scalar = &mut lane.scalars[location.1];
         if scalar.role == crate::records::FeatureInputScalarRole::Display {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT parameter {} references a display scalar",
                 parameter.id.0
             )));
@@ -292,7 +292,7 @@ pub(crate) fn sync_neutral_parameters(
             .native_payload
             .get_mut(offset..offset + 8)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT scalar {} lies outside its payload",
                     scalar.id
                 ))

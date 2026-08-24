@@ -139,7 +139,7 @@ fn native_procedural_surface_definition(
         return Ok(false);
     };
     if definitions.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "surface {} has multiple procedural constructions",
             solved_surface.id
         )));
@@ -553,7 +553,7 @@ fn native_procedural_surface_definition(
                     .iter()
                     .find(|surface| surface.id == *component)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "compound surface {} references missing component {component}",
                             procedural.id
                         ))
@@ -563,7 +563,7 @@ fn native_procedural_surface_definition(
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::SubSurface { .. } => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "sub-surface {} must use its exact cacheless carrier",
                 procedural.id
             )));
@@ -805,7 +805,7 @@ fn native_procedural_surface_definition(
                         .iter()
                         .find(|curve| curve.id == *id)
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "ruled surface {} references missing profile {id}",
                                 procedural.id
                             ))
@@ -890,7 +890,7 @@ fn native_procedural_surface_definition(
                         .iter()
                         .find(|curve| curve.id == *id)
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "sum surface {} references missing curve {id}",
                                 procedural.id
                             ))
@@ -1005,7 +1005,7 @@ fn native_procedural_surface_definition(
                 .iter()
                 .find(|curve| curve.id == *directrix)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "revolution surface {} references a missing directrix",
                         procedural.id
                     ))
@@ -1063,7 +1063,7 @@ fn native_procedural_surface_definition(
                 .iter()
                 .find(|surface| surface.id == *support)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "offset surface {} references a missing support",
                         procedural.id
                     ))
@@ -1191,7 +1191,7 @@ fn native_procedural_surface_definition(
             }
         }
         ProceduralSurfaceDefinition::Helix { .. } => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "source-less F3D helix surface {} must use its cacheless native carrier",
                 procedural.id
             )))
@@ -1252,14 +1252,18 @@ fn native_g2_side(
         .surfaces
         .iter()
         .find(|surface| surface.id == side.surface)
-        .ok_or_else(|| CodecError::Malformed(format!("G2 support {} is missing", side.surface)))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("G2 support {} is missing", side.surface))
+        })?;
     native_embedded_surface(bytes, &surface.geometry)?;
     let curve = target
         .model
         .curves
         .iter()
         .find(|curve| curve.id == side.curve)
-        .ok_or_else(|| CodecError::Malformed(format!("G2 side curve {} is missing", side.curve)))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("G2 side curve {} is missing", side.curve))
+        })?;
     let pcurve = side
         .pcurves
         .iter()
@@ -1390,7 +1394,7 @@ fn native_loft_curve(
         .curves
         .iter()
         .find(|curve| curve.id == *id)
-        .ok_or_else(|| CodecError::Malformed(format!("loft references missing curve {id}")))?;
+        .ok_or_else(|| CodecError::malformed(format_args!("loft references missing curve {id}")))?;
     native_spline_field_curve(&curve.geometry, None).map_err(|_| {
         CodecError::NotImplemented(format!(
             "source-less F3D loft requires a NURBS, circle, or ellipse curve {id}"
@@ -1465,7 +1469,7 @@ fn required_first_flag(
     context: &str,
 ) -> Result<u8, CodecError> {
     data.first_flag.map(native_bool).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "{context} profile members require the first constraint flag"
         ))
     })
@@ -1511,7 +1515,7 @@ fn native_loft_section(
                         .iter()
                         .find(|surface| surface.id == *surface_id)
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "loft references missing surface {surface_id}"
                             ))
                         })?;
@@ -1568,7 +1572,7 @@ fn native_loft_curve_in_range(
         .curves
         .iter()
         .find(|curve| curve.id == *id)
-        .ok_or_else(|| CodecError::Malformed(format!("loft references missing curve {id}")))?;
+        .ok_or_else(|| CodecError::malformed(format_args!("loft references missing curve {id}")))?;
     native_spline_field_curve(&curve.geometry, parameter_range).map_err(|_| {
         CodecError::NotImplemented(format!(
             "source-less F3D loft requires NURBS curve {id} without a section domain"
@@ -1595,7 +1599,7 @@ fn native_compound_loft_scale(
             .iter()
             .find(|curve| curve.id == member.curve)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "compound loft references missing member curve {}",
                     member.curve
                 ))
@@ -1614,7 +1618,7 @@ fn native_compound_loft_scale(
             .iter()
             .find(|surface| surface.id == *surface_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "compound loft references missing surface {surface_id}"
                 ))
             })?;
@@ -1931,7 +1935,7 @@ fn native_cacheless_procedural_surface_definition(
         return Ok(false);
     };
     if definitions.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "surface {} has multiple procedural constructions",
             surface.id
         )));
@@ -2272,7 +2276,7 @@ fn native_law_expression(
                 .iter()
                 .find(|candidate| candidate.id == *curve)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("law edge curve {curve} is missing"))
+                    CodecError::malformed(format_args!("law edge curve {curve} is missing"))
                 })?;
             let curve = native_interval_curve(&curve.geometry, *parameters)?;
             native_nurbs_curve(bytes, &curve)?;
@@ -2325,7 +2329,7 @@ fn native_law_expression(
                 }
             };
             if operands.len() != arity {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D law operator {operator} requires {arity} operands, got {}",
                     operands.len()
                 )));
@@ -2460,7 +2464,7 @@ fn native_skin_profile_data(
         .iter()
         .find(|surface| surface.id == *surface_id)
         .ok_or_else(|| {
-            CodecError::Malformed(format!("skin references missing surface {surface_id}"))
+            CodecError::malformed(format_args!("skin references missing surface {surface_id}"))
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
     native_optional_pcurve(bytes, data.pcurve.as_ref())?;
@@ -2508,7 +2512,7 @@ fn encode_native_skin_surface(
                     .iter()
                     .find(|curve| curve.id == profile.curve)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "skin references missing profile curve {}",
                             profile.curve
                         ))
@@ -3019,7 +3023,7 @@ fn encode_native_sweep_surface(
                 .iter()
                 .find(|surface| surface.id == *support_surface)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "sweep references missing support surface {support_surface}"
                     ))
                 })?;
@@ -3242,7 +3246,7 @@ fn encode_native_extrusion(
         .iter()
         .find(|curve| curve.id == *directrix)
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "procedural surface {} references missing directrix {directrix}",
                 procedural.id
             ))
@@ -3612,7 +3616,7 @@ fn native_vertex_blend_boundary(
                 .iter()
                 .find(|candidate| candidate.id == *surface)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("vertex-blend support {surface} is missing"))
+                    CodecError::malformed(format_args!("vertex-blend support {surface} is missing"))
                 })?;
             if revision {
                 native_embedded_surface_with_bounds(bytes, &surface.geometry, support_bounds)?;
@@ -3716,7 +3720,7 @@ fn native_revision_cl_scale(
                     .iter()
                     .find(|surface| surface.id == *surface_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "compound loft references missing surface {surface_id}"
                         ))
                     })?;
@@ -4103,7 +4107,7 @@ fn native_rolling_ball_side(
             .iter()
             .find(|surface| surface.id == *id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("rolling-ball support {id} is missing"))
+                CodecError::malformed(format_args!("rolling-ball support {id} is missing"))
             })?;
         native_embedded_surface(bytes, &surface.geometry)?;
         if matches!(
@@ -4133,7 +4137,7 @@ fn native_rolling_ball_side(
             .iter()
             .find(|curve| curve.id == *id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("rolling-ball side curve {id} is missing"))
+                CodecError::malformed(format_args!("rolling-ball side curve {id} is missing"))
             })?;
         let curve = native_spline_field_curve(
             &curve.geometry,
@@ -4185,7 +4189,7 @@ fn native_rolling_ball_third_side(
         .iter()
         .find(|surface| surface.id == side.surface)
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "rolling-ball third support {} is missing",
                 side.surface
             ))
@@ -4197,7 +4201,7 @@ fn native_rolling_ball_third_side(
         .iter()
         .find(|curve| curve.id == side.curve)
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "rolling-ball third-side curve {} is missing",
                 side.curve
             ))
@@ -4336,7 +4340,7 @@ fn encode_native_rolling_ball(
             .iter()
             .find(|surface| surface.id == support.surface)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "procedural surface {} references missing support {}",
                     procedural.id, support.surface
                 ))
@@ -4353,7 +4357,9 @@ fn encode_native_rolling_ball(
         .curves
         .iter()
         .find(|curve| curve.id == *spine)
-        .ok_or_else(|| CodecError::Malformed(format!("blend references missing spine {spine}")))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("blend references missing spine {spine}"))
+        })?;
     let spine_range = [
         solved_cache.u_knots.first().copied().ok_or_else(|| {
             CodecError::Malformed("rolling-ball solved surface has no U knot domain".into())
@@ -4713,7 +4719,7 @@ pub(crate) fn native_procedural_curve(
         return Ok(false);
     };
     if definitions.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "curve {curve_id} has multiple procedural constructions"
         )));
     }
@@ -4976,7 +4982,7 @@ pub(crate) fn native_procedural_curve(
                 .iter()
                 .find(|curve| curve.id == *component)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "compound curve references missing component {component}"
                     ))
                 })?;
@@ -5205,7 +5211,7 @@ pub(crate) fn native_procedural_curve(
                     .iter()
                     .find(|surface| surface.id == *surface_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "spring references missing support {surface_id}"
                         ))
                     })?;
@@ -5238,7 +5244,7 @@ pub(crate) fn native_procedural_curve(
                         .iter()
                         .find(|surface| surface.id == *surface_id)
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "spring references missing support {surface_id}"
                             ))
                         })?;
@@ -5299,7 +5305,7 @@ pub(crate) fn native_procedural_curve(
             .iter()
             .find(|surface| surface.id == *surface_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "three-surface intersection references missing support {surface_id}"
                 ))
             })?;
@@ -5494,12 +5500,12 @@ pub(crate) fn native_cacheless_procedural_curve(
         return Ok(false);
     };
     if definitions.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "curve {curve_id} has multiple procedural constructions"
         )));
     }
     if procedural.cache_fit_tolerance.is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "cacheless procedural curve {} carries a cache-fit tolerance",
             procedural.id
         )));
@@ -5780,7 +5786,7 @@ pub(crate) fn pcurve_support_geometry<'a>(
             .iter()
             .find(|loop_| loop_.id == *loop_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "pcurve {pcurve_id} is used by missing loop {loop_id}"
                 ))
             })?;
@@ -5789,7 +5795,7 @@ pub(crate) fn pcurve_support_geometry<'a>(
             .iter()
             .find(|face| face.id == loop_.face)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "pcurve {pcurve_id} is used by loop {} with missing face {}",
                     loop_.id, loop_.face
                 ))
@@ -5833,7 +5839,7 @@ pub(crate) fn pcurve_support_geometry<'a>(
         }
     }
     let surface_id = surface_id.ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "F3D pcurve {pcurve_id} is not used by a coedge or pole vertex"
         ))
     })?;
@@ -5843,7 +5849,7 @@ pub(crate) fn pcurve_support_geometry<'a>(
         .find(|surface| surface.id == surface_id)
         .map(|surface| &surface.geometry)
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "F3D pcurve {pcurve_id} references missing support {surface_id}"
             ))
         })
@@ -5872,7 +5878,7 @@ fn native_intcurve_support_context(
                 .iter()
                 .find(|surface| surface.id == *surface_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "intcurve references missing support {surface_id}"
                     ))
                 })?;
@@ -5890,7 +5896,7 @@ fn native_intcurve_support_context(
                     .iter()
                     .find(|surface| surface.id == *surface_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "intcurve references missing support {surface_id}"
                         ))
                     })?;
@@ -5947,7 +5953,7 @@ fn native_law_version_context(
                 .iter()
                 .find(|surface| surface.id == *surface_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "intcurve references missing support {surface_id}"
                     ))
                 })?;
@@ -5965,7 +5971,7 @@ fn native_law_version_context(
                     .iter()
                     .find(|surface| surface.id == *surface_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "law intcurve references missing support {surface_id}"
                         ))
                     })?;
@@ -6065,7 +6071,9 @@ fn native_solved_cache_fit_tolerance(
     cache_fit_tolerance: Option<f64>,
 ) -> Result<(), CodecError> {
     let cache_fit_tolerance = cache_fit_tolerance.ok_or_else(|| {
-        CodecError::Malformed(format!("{carrier} requires a native cache-fit tolerance"))
+        CodecError::malformed(format_args!(
+            "{carrier} requires a native cache-fit tolerance"
+        ))
     })?;
     native_f64(bytes, cache_fit_tolerance / LEN_TO_MM);
     Ok(())
@@ -6192,7 +6200,7 @@ fn native_cache_first_curve_context(
                 .iter()
                 .find(|surface| surface.id == *surface_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "cache-first intcurve references missing support {surface_id}"
                     ))
                 })?;
@@ -6227,7 +6235,7 @@ fn native_cache_first_curve_context(
                     .iter()
                     .find(|surface| surface.id == *surface_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "cache-first intcurve references missing support {surface_id}"
                         ))
                     })?;
@@ -6302,7 +6310,7 @@ pub(crate) fn pcurve_uses_ref_form(pcurve: &Pcurve) -> Result<bool, CodecError> 
     ) {
         (None, None, None) => Ok(true),
         (Some(_), Some(_), Some(_)) => Ok(false),
-        _ => Err(CodecError::Malformed(format!(
+        _ => Err(CodecError::malformed(format_args!(
             "pcurve {} mixes inline and ref-form native fields",
             pcurve.id
         ))),
@@ -6317,13 +6325,13 @@ pub(crate) fn native_pcurve(
 ) -> Result<(), CodecError> {
     if pcurve_uses_ref_form(pcurve)? {
         let companion_ref = companion_ref.ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "ref-form pcurve {} has no companion record",
                 pcurve.id
             ))
         })?;
         let range = pcurve.parameter_range.ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "ref-form pcurve {} has no parameter range",
                 pcurve.id
             ))
@@ -6339,7 +6347,7 @@ pub(crate) fn native_pcurve(
         return Ok(());
     }
     if companion_ref.is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "inline pcurve {} unexpectedly has a companion record",
             pcurve.id
         )));
@@ -6411,13 +6419,13 @@ pub(crate) fn native_ref_pcurve_companion(
     support: &SurfaceGeometry,
 ) -> Result<(), CodecError> {
     if !pcurve_uses_ref_form(pcurve)? {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "inline pcurve {} cannot emit a ref-form companion",
             pcurve.id
         )));
     }
     let range = pcurve.parameter_range.ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "ref-form pcurve {} has no parameter range",
             pcurve.id
         ))

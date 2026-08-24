@@ -254,7 +254,7 @@ fn positive_u32(value: i64, sequence: u32, name: &str) -> Result<u32, CodecError
 
 fn back_pointer(line: &PhysicalLine) -> Result<u32, CodecError> {
     let field = line.payload.get(64..72).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "IGES Parameter Data card P{} is shorter than 72 bytes",
             line.sequence.unwrap_or_default()
         ))
@@ -397,7 +397,7 @@ pub(crate) fn assemble_with_context(
     for (sequence, line) in &lines {
         let pointer = back_pointer(line)?;
         if pointer == 0 || pointer % 2 == 0 || !entries.contains_key(&pointer) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES Parameter Data card P{sequence} back-pointer {pointer} is not an owning odd Directory Entry sequence"
             )));
         }

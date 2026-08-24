@@ -348,7 +348,7 @@ pub(crate) fn patch_configuration_parameter_scalars(
             lane.native_payload
                 .get_mut(offset..offset + 8)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "SLDPRT scalar {} lies outside its payload",
                         scalar.id
                     ))

@@ -87,11 +87,11 @@ pub fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let manifest: ManifestJson = serde_json::from_slice(scan.entry_bytes(MANIFEST_ENTRY)?)
         .map_err(|error| {
-            CodecError::Malformed(format!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
+            CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
         })?;
     let (model_root, omitted_drawing_root) = model_root_member(scan, &manifest.root)?;
     let root_view = scan.entry_view(&model_root).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
@@ -152,7 +152,7 @@ fn model_root_member(
 
     let description: DesignDescriptionJson =
         serde_json::from_slice(scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?).map_err(|error| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
             ))
         })?;
@@ -183,7 +183,7 @@ fn model_root_member(
     candidates.dedup();
     match candidates.as_slice() {
         [model_root] => Ok((model_root.clone(), Some(archive_root.to_owned()))),
-        _ => Err(CodecError::Malformed(format!(
+        _ => Err(CodecError::malformed(format_args!(
             "f3z root member {archive_root} is not an f3d document and has {} unambiguous derived f3d model members",
             candidates.len()
         ))),
@@ -220,7 +220,7 @@ fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(XrefTable::default());
     };
-    let invalid = |error| CodecError::Malformed(format!("invalid F3D native data: {error}"));
+    let invalid = |error| CodecError::malformed(format_args!("invalid F3D native data: {error}"));
     Ok(XrefTable {
         designs: namespace.arena_as("xref_designs").map_err(invalid)?,
         references: namespace.arena_as("xref_references").map_err(invalid)?,
@@ -409,7 +409,7 @@ fn merge_annotations(
             .and_then(|index| stream_map.get(index))
             .copied()
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "component annotation {id} references missing stream {}",
                     provenance.stream
                 ))
@@ -500,11 +500,11 @@ impl EntityRewrite for OccurrenceScope<'_> {
     /// non-finite one.
     fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, CodecError> {
         let mut value = serde_value::to_value(entity).map_err(|error| {
-            CodecError::Malformed(format!("model serialization failed: {error}"))
+            CodecError::malformed(format_args!("model serialization failed: {error}"))
         })?;
         remap_ids(&mut value, self.occurrence);
         crate::value_tree::from_value(value).map_err(|error| {
-            CodecError::Malformed(format!("merged model round-trip failed: {error}"))
+            CodecError::malformed(format_args!("merged model round-trip failed: {error}"))
         })
     }
 }

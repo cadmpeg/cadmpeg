@@ -278,7 +278,7 @@ impl<C: CodecBackend + ?Sized> Codec for C {
                 .iter()
                 .find(|loss| loss.strict_consequence() == StrictConsequence::Reject)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "strict mode rejects {}: {}",
                     loss.code, loss.message
                 )));

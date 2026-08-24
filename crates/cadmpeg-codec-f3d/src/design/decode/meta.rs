@@ -70,7 +70,7 @@ fn insert_component_naming_space(
     };
     if let Some(existing) = by_component.insert(component_record_index, binding.clone()) {
         if existing.context_uuid != binding.context_uuid {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Design component {component_record_index} has conflicting context UUID bindings"
             )));
         }
@@ -186,7 +186,7 @@ pub fn decode_component_naming_spaces(
             .filter(|entity| !by_component.contains_key(entity))
             .min()
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Design component {missing} has no context UUID binding"
             )));
         }
@@ -344,7 +344,7 @@ pub(crate) fn typed_primary_frames<'a>(
         }
         for &entity_id in &design_type.entity_ids {
             if !typed_entities.insert(entity_id) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D Design {record_kind} entity {entity_id} is registered more than once"
                 )));
             }
@@ -370,7 +370,7 @@ pub(crate) fn typed_primary_frames<'a>(
         });
     }
     if let Some(entity_id) = typed_entities.difference(&resolved_entities).min() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D Design {record_kind} entity {entity_id} has no primary record of its registered class"
         )));
     }

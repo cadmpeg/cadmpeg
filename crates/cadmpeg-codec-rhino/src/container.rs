@@ -386,7 +386,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             });
         }
         let rank = table_rank(chunk.typecode).ok_or_else(|| {
-            CodecError::Malformed(format!("expected table or EOF at offset {offset}"))
+            CodecError::malformed(format_args!("expected table or EOF at offset {offset}"))
         })?;
         match table_base(chunk.typecode) {
             TCODE_PROPERTIES => saw_properties = true,
@@ -408,7 +408,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             saw_user = true;
         } else {
             if saw_user || rank <= last_rank {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "table typecode {:#x} is out of order or duplicated",
                     chunk.typecode
                 )));
@@ -442,7 +442,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 .checked_add(1)
                 .filter(|count| *count <= record_limit)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "document table record budget of {record_limit} exceeded"
                     ))
                 })?;
@@ -458,7 +458,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             };
             if !record_is_allowed(chunk.typecode, record.typecode, record.short) {
                 if known_record(record.typecode) {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "record typecode {:#x} is invalid or short-framed in table {:#x}",
                         record.typecode, chunk.typecode
                     )));

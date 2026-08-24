@@ -80,7 +80,7 @@ pub(crate) fn transfer_neutral(
         .collect::<HashMap<_, _>>();
     for (order, record) in records.iter().enumerate() {
         let schema = annotation_schema(&record.kind).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "semantic annotation {} has unsupported runtime type {}",
                 record.id, record.kind
             ))
@@ -232,7 +232,7 @@ fn annotation_position(
             match (x, y) {
                 (None, None) => Ok(None),
                 (Some(x), Some(y)) => Ok(Some([x, y, 0.0])),
-                _ => Err(CodecError::Malformed(format!(
+                _ => Err(CodecError::malformed(format_args!(
                     "annotation position requires both {x_name} and {y_name}"
                 ))),
             }
@@ -248,7 +248,7 @@ fn optional_scalar_property(
         return Ok(None);
     };
     scalar_property(properties, name).map(Some).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "annotation property {} is not a scalar",
             property.id
         ))
@@ -263,7 +263,7 @@ fn optional_vector_property(
         return Ok(None);
     };
     vector_property(properties, name).map(Some).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "annotation property {} is not a vector",
             property.id
         ))

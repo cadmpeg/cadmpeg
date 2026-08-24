@@ -679,7 +679,7 @@ fn parse_chamfer(
     let value = cursor.u16("chamfer enumeration value")?;
     let terminal = cursor.u32("chamfer enumeration terminal value")?;
     if terminal != 0 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Inventor PmDc chamfer enumeration terminal value is {terminal}"
         )));
     }
@@ -727,7 +727,7 @@ fn parse_boolean(
     let name_value = cursor.u32("feature Boolean name value")?;
     let raw = cursor.u8("feature Boolean value")?;
     if raw > 1 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Inventor PmDc feature Boolean value is {raw}"
         )));
     }

@@ -257,7 +257,7 @@ fn nested_chunk(
     )
     .map_err(malformed)?;
     if chunk.short || chunk.typecode != typecode {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "expected V1 nested chunk {typecode:#010x} at offset {}",
             reader.position()
         )));
@@ -275,7 +275,7 @@ fn nested_stuff(
     stuff_type: u32,
 ) -> Result<crate::chunks::Chunk, CodecError> {
     child_with_type(data, range, stuff_type)?.ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "V1 wrapper {wrapper_type:#010x} has no stuff chunk"
         ))
     })
@@ -1145,7 +1145,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
                 BoundedReader::new(data, chunk.body.start, chunk.body.end).map_err(malformed)?;
             let version = reader.i32().map_err(malformed)?;
             if version != 1 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "unsupported V1 unit structure {version}"
                 )));
             }
@@ -1154,7 +1154,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
                 1.0
             } else {
                 crate::settings::standard_scale(unit).ok_or_else(|| {
-                    CodecError::Malformed(format!("unsupported V1 unit system {unit}"))
+                    CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
                 })?
             };
             ir.tolerances.linear = reader.f64().map_err(malformed)? * scale;
@@ -1169,7 +1169,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
                 reader.f64().map_err(malformed)? * scale,
             );
             if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "V1 point at offset {offset} is not finite"
                 )));
             }

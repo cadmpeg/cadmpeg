@@ -273,7 +273,7 @@ fn parse_segment_header(bytes: &[u8]) -> Result<(u32, usize), ParseFailure> {
 }
 
 fn parse_error(failure: ParseFailure, stream: &str) -> CodecError {
-    CodecError::Malformed(format!(
+    CodecError::malformed(format_args!(
         "invalid F3D MetaStream {} at byte {}: {stream}",
         failure.field, failure.offset
     ))

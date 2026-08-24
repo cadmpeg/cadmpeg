@@ -537,7 +537,7 @@ pub fn parse_payloads(
     {
         for name in &property.side_entries {
             let entry = entries.get(name.as_str()).ok_or_else(|| {
-                CodecError::Malformed(format!("missing exact-shape entry {name}"))
+                CodecError::malformed(format_args!("missing exact-shape entry {name}"))
             })?;
             let is_shape_entry = entry.role == "brep"
                 || roxmltree::Document::parse(&property.raw_xml)
@@ -768,18 +768,20 @@ pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
         let index = tokens
             .iter()
             .position(|token| *token == section)
-            .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {section} table")))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("text B-rep has no {section} table"))
+            })?;
         let count = tokens
             .get(index + 1)
             .and_then(|value| value.parse::<usize>().ok())
-            .ok_or_else(|| CodecError::Malformed(format!("invalid {section} count")))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("invalid {section} count")))?;
         if count > 1_000_000 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "{section} count limit exceeded"
             )));
         }
         if previous_section.is_some_and(|previous| index <= previous) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "text B-rep {section} table is out of order"
             )));
         }
@@ -807,7 +809,7 @@ pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     }
     let declared_shapes = section_counts.get("TShapes").copied().unwrap_or(0);
     if shape_types.values().sum::<usize>() != declared_shapes {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "TShapes declares {declared_shapes} records but the shape-type census found {}",
             shape_types.values().sum::<usize>()
         )));
@@ -889,7 +891,7 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecErro
                         CodecError::Malformed("negative binary location factor".into())
                     })?;
                     if referenced == 0 || referenced > locations.len() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "binary location {} references unavailable location {referenced}",
                             index + 1
                         )));
@@ -906,7 +908,7 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecErro
                 TextLocation { factors, transform }
             }
             other => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "invalid binary location type {other}"
                 )))
             }
@@ -1126,7 +1128,7 @@ fn parse_binary_tshape(
         6 => TextShapeKind::Edge,
         7 => TextShapeKind::Vertex,
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid binary TShape kind {other}"
             )))
         }
@@ -1184,7 +1186,7 @@ fn parse_binary_tshape(
                         )?),
                     ),
                     other => {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "invalid binary vertex representation kind {other}"
                         )))
                     }
@@ -1270,7 +1272,7 @@ fn parse_binary_tshape(
                     "face triangulation",
                 )?),
                 other => {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "invalid binary face triangulation marker {other}"
                     )))
                 }
@@ -1307,7 +1309,7 @@ fn parse_binary_tshape(
         )?;
         let shape = tshape_count - reverse_index + 1;
         if shape >= index {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "binary TShape {index} references non-prior child {shape}"
             )));
         }
@@ -1484,7 +1486,7 @@ fn parse_binary_edge_representation(
             )?;
         }
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid binary edge representation kind {other}"
             )))
         }
@@ -1499,9 +1501,9 @@ fn checked_binary_reference(
     label: &str,
 ) -> Result<usize, CodecError> {
     let value = usize::try_from(value)
-        .map_err(|_| CodecError::Malformed(format!("negative binary {label}")))?;
+        .map_err(|_| CodecError::malformed(format_args!("negative binary {label}")))?;
     if value > count || (!allow_zero && value == 0) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "binary {label} index {value} exceeds table count {count}"
         )));
     }
@@ -1514,7 +1516,7 @@ fn binary_orientation(value: i32) -> Result<TextOrientation, CodecError> {
         1 => Ok(TextOrientation::Reversed),
         2 => Ok(TextOrientation::Internal),
         3 => Ok(TextOrientation::External),
-        other => Err(CodecError::Malformed(format!(
+        other => Err(CodecError::malformed(format_args!(
             "invalid binary orientation {other}"
         ))),
     }
@@ -1707,7 +1709,7 @@ fn parse_binary_surface(
             basis: Box::new(parse_binary_surface(cursor, depth + 1)?),
         },
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid binary surface kind {other}"
             )))
         }
@@ -1718,7 +1720,7 @@ fn checked_grid_count(u_count: usize, v_count: usize, label: &str) -> Result<usi
     u_count
         .checked_mul(v_count)
         .filter(|count| *count <= 1_000_000)
-        .ok_or_else(|| CodecError::Malformed(format!("{label} pole-count limit exceeded")))
+        .ok_or_else(|| CodecError::malformed(format_args!("{label} pole-count limit exceeded")))
 }
 
 fn parse_binary_curve(
@@ -1851,7 +1853,7 @@ fn parse_binary_curve(
             basis: Box::new(parse_binary_curve(cursor, depth + 1)?),
         },
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid binary 3D curve kind {other}"
             )))
         }
@@ -1966,7 +1968,7 @@ fn parse_binary_curve2d(
             basis: Box::new(parse_binary_curve2d(cursor, depth + 1)?),
         },
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid binary parameter-curve kind {other}"
             )))
         }
@@ -1994,7 +1996,7 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn truncated(label: &str) -> CodecError {
-        CodecError::Malformed(format!("truncated {label}"))
+        CodecError::malformed(format_args!("truncated {label}"))
     }
 
     /// Clamps a declared element count to what the unread bytes can hold.
@@ -2002,8 +2004,9 @@ impl<'a> BinaryCursor<'a> {
     /// `element_size` is the minimum encoded bytes of one element; a count that
     /// could not physically fit in the remaining input is rejected.
     fn bounded(&self, count: usize, element_size: usize, label: &str) -> Result<usize, CodecError> {
-        bounded_len(count as u64, element_size, self.remaining())
-            .ok_or_else(|| CodecError::Malformed(format!("{label} count exceeds remaining input")))
+        bounded_len(count as u64, element_size, self.remaining()).ok_or_else(|| {
+            CodecError::malformed(format_args!("{label} count exceeds remaining input"))
+        })
     }
 
     fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
@@ -2015,10 +2018,10 @@ impl<'a> BinaryCursor<'a> {
         let length = tail
             .iter()
             .position(|byte| *byte == b'\n')
-            .ok_or_else(|| CodecError::Malformed(format!("unterminated {label}")))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("unterminated {label}")))?;
         let line = self.take(length + 1, label)?;
         std::str::from_utf8(&line[..length])
-            .map_err(|_| CodecError::Malformed(format!("non-UTF-8 {label}")))
+            .map_err(|_| CodecError::malformed(format_args!("non-UTF-8 {label}")))
     }
 
     fn section_count(&mut self, name: &str) -> Result<usize, CodecError> {
@@ -2030,7 +2033,7 @@ impl<'a> BinaryCursor<'a> {
         };
         let mut tokens = line.split_ascii_whitespace();
         if tokens.next() != Some(name) || tokens.clone().count() != 1 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "binary B-rep expected {name} section, found {line:?}"
             )));
         }
@@ -2038,7 +2041,7 @@ impl<'a> BinaryCursor<'a> {
             .next()
             .and_then(|value| value.parse::<usize>().ok())
             .filter(|count| *count <= 1_000_000)
-            .ok_or_else(|| CodecError::Malformed(format!("invalid binary {name} count")))
+            .ok_or_else(|| CodecError::malformed(format_args!("invalid binary {name} count")))
     }
 
     fn u8(&mut self, label: &str) -> Result<u8, CodecError> {
@@ -2049,7 +2052,7 @@ impl<'a> BinaryCursor<'a> {
         match self.u8(label)? {
             0 => Ok(false),
             1 => Ok(true),
-            other => Err(CodecError::Malformed(format!(
+            other => Err(CodecError::malformed(format_args!(
                 "invalid {label} byte {other}"
             ))),
         }
@@ -2068,7 +2071,7 @@ impl<'a> BinaryCursor<'a> {
         usize::try_from(value)
             .ok()
             .filter(|count| *count <= 1_000_000)
-            .ok_or_else(|| CodecError::Malformed(format!("invalid {label}")))
+            .ok_or_else(|| CodecError::malformed(format_args!("invalid {label}")))
     }
 
     fn f64(&mut self, label: &str) -> Result<f64, CodecError> {
@@ -2076,7 +2079,7 @@ impl<'a> BinaryCursor<'a> {
         value
             .is_finite()
             .then_some(value)
-            .ok_or_else(|| CodecError::Malformed(format!("non-finite {label}")))
+            .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
     }
 
     fn f32(&mut self, label: &str) -> Result<f32, CodecError> {
@@ -2084,7 +2087,7 @@ impl<'a> BinaryCursor<'a> {
         value
             .is_finite()
             .then_some(value)
-            .ok_or_else(|| CodecError::Malformed(format!("non-finite {label}")))
+            .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
     }
 
     fn point2(&mut self, label: &str) -> Result<Point2, CodecError> {
@@ -2125,7 +2128,7 @@ impl<'a> BinaryCursor<'a> {
                 .checked_add(multiplicity)
                 .is_none_or(|len| len > 1_000_000)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "{label} expanded knot-count limit exceeded"
                 )));
             }
@@ -2181,7 +2184,7 @@ fn parse_locations(
                         CodecError::Malformed("negative location factor index".into())
                     })?;
                     if referenced == 0 || referenced > locations.len() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "location {} references unavailable location {referenced}",
                             index + 1
                         )));
@@ -2202,7 +2205,7 @@ fn parse_locations(
                 TextLocation { factors, transform }
             }
             other => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "invalid location type {other} at table index {}",
                     index + 1
                 )))
@@ -2600,12 +2603,14 @@ fn section_cursor<'a>(
     let start = tokens
         .iter()
         .position(|token| *token == section)
-        .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {section} table")))?
+        .ok_or_else(|| CodecError::malformed(format_args!("text B-rep has no {section} table")))?
         + 2;
     let end = tokens
         .iter()
         .position(|token| *token == following)
-        .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {following} table")))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("text B-rep has no {following} table"))
+        })?;
     Ok(TokenCursor::new(&tokens[start..end]))
 }
 
@@ -2613,7 +2618,7 @@ fn ensure_section_consumed(cursor: &TokenCursor<'_>, section: &str) -> Result<()
     if cursor.is_empty() {
         Ok(())
     } else {
-        Err(CodecError::Malformed(format!(
+        Err(CodecError::malformed(format_args!(
             "text B-rep {section} table contains trailing tokens"
         )))
     }
@@ -2645,7 +2650,7 @@ fn parse_tshapes(
             }
             let child = parse_shape_use(&mut cursor, count, section_counts)?;
             if child.shape >= index {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "TShape {index} references non-prior child {}",
                     child.shape
                 )));
@@ -2686,7 +2691,7 @@ fn parse_shape_kind(token: &str) -> Result<TextShapeKind, CodecError> {
         "So" => Ok(TextShapeKind::Solid),
         "CS" => Ok(TextShapeKind::CompSolid),
         "Co" => Ok(TextShapeKind::Compound),
-        _ => Err(CodecError::Malformed(format!(
+        _ => Err(CodecError::malformed(format_args!(
             "invalid TShape kind {token:?}"
         ))),
     }
@@ -2765,7 +2770,7 @@ fn parse_vertex_geometry(
                 )?),
             ),
             other => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "invalid vertex representation kind {other}"
                 )))
             }
@@ -2942,7 +2947,7 @@ fn parse_edge_representation(
             )?;
         }
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid edge representation kind {other}"
             )))
         }
@@ -2980,7 +2985,7 @@ fn parse_face_geometry(
 
 fn parse_shape_flags(token: &str, topology_version: u8) -> Result<[bool; 7], CodecError> {
     if token.len() != 7 || !token.bytes().all(|byte| matches!(byte, b'0' | b'1')) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "invalid TShape flags {token:?}"
         )));
     }
@@ -3006,16 +3011,16 @@ fn parse_shape_use(
         Some(b'i') => (TextOrientation::Internal, &token[1..]),
         Some(b'e') => (TextOrientation::External, &token[1..]),
         _ => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid shape use {token:?}"
             )))
         }
     };
     let encoded = encoded
         .parse::<usize>()
-        .map_err(|_| CodecError::Malformed(format!("invalid shape use {token:?}")))?;
+        .map_err(|_| CodecError::malformed(format_args!("invalid shape use {token:?}")))?;
     if encoded == 0 || encoded > shape_count {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "shape use index {encoded} is out of range"
         )));
     }
@@ -3036,7 +3041,7 @@ fn parse_reference(
 ) -> Result<usize, CodecError> {
     let value = cursor.count(label, maximum)?;
     if value == 0 && !allow_zero {
-        return Err(CodecError::Malformed(format!("{label} index is zero")));
+        return Err(CodecError::malformed(format_args!("{label} index is zero")));
     }
     Ok(value)
 }
@@ -3053,9 +3058,11 @@ fn parse_reference_suffix(
     let (reference, suffix) = token.split_at(split);
     let value = reference
         .parse::<usize>()
-        .map_err(|_| CodecError::Malformed(format!("invalid {label}")))?;
+        .map_err(|_| CodecError::malformed(format_args!("invalid {label}")))?;
     if value == 0 || value > maximum {
-        return Err(CodecError::Malformed(format!("{label} limit exceeded")));
+        return Err(CodecError::malformed(format_args!(
+            "{label} limit exceeded"
+        )));
     }
     Ok((value, (!suffix.is_empty()).then(|| suffix.to_owned())))
 }
@@ -3066,7 +3073,7 @@ fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[f64; 2], Co
         cursor.real(&format!("{label} last parameter"))?,
     ];
     if range[0] > range[1] {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{label} parameter range is reversed"
         )));
     }
@@ -3322,7 +3329,7 @@ fn parse_knots(
             .checked_add(multiplicity)
             .filter(|count| *count <= 2_000_000)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("expanded {label} knot limit exceeded"))
+                CodecError::malformed(format_args!("expanded {label} knot limit exceeded"))
             })?;
         knots.resize(expanded, knot);
     }
@@ -3686,8 +3693,9 @@ impl<'a> TokenCursor<'a> {
     /// `element_size` is the minimum tokens one element consumes; a count that
     /// could not fit in the remaining tokens is rejected.
     fn bounded(&self, count: usize, element_size: usize, label: &str) -> Result<usize, CodecError> {
-        bounded_len(count as u64, element_size, self.remaining())
-            .ok_or_else(|| CodecError::Malformed(format!("{label} count exceeds available tokens")))
+        bounded_len(count as u64, element_size, self.remaining()).ok_or_else(|| {
+            CodecError::malformed(format_args!("{label} count exceeds available tokens"))
+        })
     }
 
     fn peek(&self) -> Option<&'a str> {
@@ -3696,16 +3704,18 @@ impl<'a> TokenCursor<'a> {
 
     fn integer(&mut self, label: &str) -> Result<i64, CodecError> {
         self.next(label)?.parse().map_err(|_| {
-            CodecError::Malformed(format!("invalid {label} in text B-rep Curves table"))
+            CodecError::malformed(format_args!("invalid {label} in text B-rep Curves table"))
         })
     }
 
     fn count(&mut self, label: &str, maximum: usize) -> Result<usize, CodecError> {
         let value = self.integer(label)?;
         let value = usize::try_from(value)
-            .map_err(|_| CodecError::Malformed(format!("negative {label}")))?;
+            .map_err(|_| CodecError::malformed(format_args!("negative {label}")))?;
         if value > maximum {
-            return Err(CodecError::Malformed(format!("{label} limit exceeded")));
+            return Err(CodecError::malformed(format_args!(
+                "{label} limit exceeded"
+            )));
         }
         Ok(value)
     }
@@ -3714,16 +3724,16 @@ impl<'a> TokenCursor<'a> {
         match self.integer(label)? {
             0 => Ok(false),
             1 => Ok(true),
-            _ => Err(CodecError::Malformed(format!("invalid {label}"))),
+            _ => Err(CodecError::malformed(format_args!("invalid {label}"))),
         }
     }
 
     fn real(&mut self, label: &str) -> Result<f64, CodecError> {
         let value = self.next(label)?.parse::<f64>().map_err(|_| {
-            CodecError::Malformed(format!("invalid {label} in text B-rep Curves table"))
+            CodecError::malformed(format_args!("invalid {label} in text B-rep Curves table"))
         })?;
         if !value.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "non-finite {label} in text B-rep Curves table"
             )));
         }
@@ -3752,7 +3762,7 @@ impl<'a> TokenCursor<'a> {
 
     fn next(&mut self, label: &str) -> Result<&'a str, CodecError> {
         let token = self.tokens.get(self.index).copied().ok_or_else(|| {
-            CodecError::Malformed(format!("truncated {label} in text B-rep Curves table"))
+            CodecError::malformed(format_args!("truncated {label} in text B-rep Curves table"))
         })?;
         self.index += 1;
         Ok(token)

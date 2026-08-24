@@ -484,7 +484,7 @@ impl<'a> DecodeContext<'a> {
             .zip(end)
             .and_then(|(start, end)| parent.child(start, end))
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "stored slice [{}, {}) escapes parent space {}",
                     range.start,
                     range.end,
@@ -559,7 +559,7 @@ impl<'a> ExpandWriter<'_, 'a> {
         let new_written = self.written.saturating_add(len);
         match self.spec {
             ExpandSpec::Exact(size) if new_written > size => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "expansion exceeded declared exact size {size}"
                 )))
             }
@@ -599,7 +599,7 @@ impl<'a> ExpandWriter<'_, 'a> {
     pub fn finalize(self) -> Result<View<'a>, CodecError> {
         if let ExpandSpec::Exact(size) = self.spec {
             if self.written != size {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "expansion produced {} of declared exact {size} bytes",
                     self.written
                 )));

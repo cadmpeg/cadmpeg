@@ -185,7 +185,7 @@ pub(crate) fn native_stream(id: &str, delimiter: &str) -> Result<String, CodecEr
     id.strip_prefix(crate::ids::SCHEME_PREFIX)
         .and_then(|id| id.rsplit_once(delimiter))
         .and_then(|(stream, _)| crate::ids::decode_identity_key_component(stream))
-        .ok_or_else(|| CodecError::Malformed(format!("invalid native record id {id}")))
+        .ok_or_else(|| CodecError::malformed(format_args!("invalid native record id {id}")))
 }
 
 fn patch_bytes_at(
@@ -195,10 +195,10 @@ fn patch_bytes_at(
     field: &str,
 ) -> Result<(), CodecError> {
     let start = usize::try_from(offset)
-        .map_err(|_| CodecError::Malformed(format!("{field} offset exceeds address space")))?;
+        .map_err(|_| CodecError::malformed(format_args!("{field} offset exceeds address space")))?;
     bytes
         .get_mut(start..start + encoded.len())
-        .ok_or_else(|| CodecError::Malformed(format!("{field} is truncated")))?
+        .ok_or_else(|| CodecError::malformed(format_args!("{field} is truncated")))?
         .copy_from_slice(encoded);
     Ok(())
 }
@@ -238,10 +238,10 @@ pub(crate) fn patch_entity_headers(
 
 fn patch_u32_at(bytes: &mut [u8], offset: u64, value: u32, field: &str) -> Result<(), CodecError> {
     let start = usize::try_from(offset)
-        .map_err(|_| CodecError::Malformed(format!("{field} offset exceeds address space")))?;
+        .map_err(|_| CodecError::malformed(format_args!("{field} offset exceeds address space")))?;
     bytes
         .get_mut(start..start + 4)
-        .ok_or_else(|| CodecError::Malformed(format!("{field} is truncated")))?
+        .ok_or_else(|| CodecError::malformed(format_args!("{field} is truncated")))?
         .copy_from_slice(&value.to_le_bytes());
     Ok(())
 }
@@ -255,7 +255,7 @@ pub(crate) fn patch_body_members(
             CodecError::Malformed("design-body-member offset exceeds address space".into())
         })?;
         if bytes.get(start) != Some(&1) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "design-body-member at byte {start} has no presence marker"
             )));
         }
@@ -316,10 +316,12 @@ pub(crate) fn patch_body_native_keys(
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         for (record_index, key) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
-                CodecError::Malformed(format!("F3D body-key record {record_index} is missing"))
+                CodecError::malformed(format_args!(
+                    "F3D body-key record {record_index} is missing"
+                ))
             })?;
             if record.head != "body" {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D body-key record {record_index} is not a body"
                 )));
             }
@@ -339,12 +341,12 @@ pub(crate) fn patch_transform_hints(
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         for (record_index, flags) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "F3D transform-hint record {record_index} is missing"
                 ))
             })?;
             if !record.name.ends_with("transform") {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D transform-hint record {record_index} is {}, not a transform",
                     record.head
                 )));
@@ -367,12 +369,12 @@ pub(crate) fn patch_tolerant_coedge_parameters(
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         for (record_index, range) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "F3D tolerant-coedge record {record_index} is missing"
                 ))
             })?;
             if record.head != "tcoedge" {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D tolerant-coedge record {record_index} is {}",
                     record.head
                 )));
@@ -396,10 +398,10 @@ pub(crate) fn patch_wire_topologies(
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         for (record_index, side) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
-                CodecError::Malformed(format!("F3D wire record {record_index} is missing"))
+                CodecError::malformed(format_args!("F3D wire record {record_index} is missing"))
             })?;
             if record.head != "wire" {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D wire record {record_index} is {}",
                     record.head
                 )));
@@ -421,12 +423,12 @@ pub(crate) fn patch_edge_ownerships(
     AsmEditSet::apply(bytes, |bytes, asm_edits| {
         for (record_index, owner) in edits {
             let record = asm_edits.record(*record_index).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "F3D edge-ownership record {record_index} is missing"
                 ))
             })?;
             if !matches!(record.head.as_str(), "edge" | "tedge") {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D edge-ownership record {record_index} is {}",
                     record.head
                 )));

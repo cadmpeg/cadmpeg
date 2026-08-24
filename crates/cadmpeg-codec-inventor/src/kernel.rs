@@ -105,7 +105,7 @@ pub(crate) fn decode_kernel_carrier(
         None => sab::frame_history(bytes, start, bytes.len(), width),
     }
     .map_err(|error| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "Inventor {} SAB framing failed: {error}",
             carrier.family.label()
         ))
@@ -231,7 +231,7 @@ fn parse_carrier<'a>(
         0 => false,
         1 => true,
         value => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Inventor kernel-carrier enabled flag is {value}"
             )));
         }
@@ -276,17 +276,17 @@ fn parse_carrier<'a>(
 
 fn read_u16(bytes: &[u8], offset: usize, name: &str) -> Result<u16, CodecError> {
     View::u16_le_at(bytes, offset)
-        .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))
+        .ok_or_else(|| CodecError::malformed(format_args!("truncated Inventor {name}")))
 }
 
 fn read_u32(bytes: &[u8], offset: usize, name: &str) -> Result<u32, CodecError> {
     View::u32_le_at(bytes, offset)
-        .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))
+        .ok_or_else(|| CodecError::malformed(format_args!("truncated Inventor {name}")))
 }
 
 fn read_i32(bytes: &[u8], offset: usize, name: &str) -> Result<i32, CodecError> {
     View::i32_le_at(bytes, offset)
-        .ok_or_else(|| CodecError::Malformed(format!("truncated Inventor {name}")))
+        .ok_or_else(|| CodecError::malformed(format_args!("truncated Inventor {name}")))
 }
 
 #[cfg(test)]

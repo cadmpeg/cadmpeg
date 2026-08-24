@@ -13,7 +13,7 @@ pub(crate) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
     if let Some(namespace) = ir.native.namespace("f3d") {
         if namespace.version != crate::native::F3D_NATIVE_VERSION {
             let version = namespace.version;
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "unsupported F3D native namespace version {version}"
             )));
         }

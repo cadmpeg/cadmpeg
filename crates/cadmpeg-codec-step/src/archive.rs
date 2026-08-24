@@ -65,12 +65,12 @@ pub(crate) fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarge
         .as_deref()
         .is_some_and(|fragment| fragment.contains('#'))
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "invalid STEP ZIP URI fragment {uri:?}"
         )));
     }
     if path.starts_with('/') {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "STEP ZIP URI escapes the archive root: {uri:?}"
         )));
     }
@@ -88,14 +88,14 @@ pub(crate) fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarge
     for component in path.split('/') {
         match component {
             "" => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "invalid empty path component in STEP ZIP URI {uri:?}"
                 )))
             }
             "." => {}
             ".." => {
                 if components.pop().is_none() {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "STEP ZIP URI escapes the archive root: {uri:?}"
                     )));
                 }
@@ -104,7 +104,7 @@ pub(crate) fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarge
         }
     }
     if components.is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "STEP ZIP URI resolves to no member: {uri:?}"
         )));
     }
@@ -131,7 +131,7 @@ pub(crate) fn root_reference_notes(
         match resolve_uri(ROOT_NAME, uri)? {
             ReferenceTarget::Internal { member, fragment } => {
                 if archive.entry(&member).is_none() {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "STEP ZIP resource {uri:?} for {name} has no archive member {member:?}"
                     )));
                 }
@@ -192,7 +192,7 @@ fn validate_entry_name(name: &str) -> Result<(), CodecError> {
                 || component == ".."
         })
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "unsafe STEP ZIP entry path {name:?}"
         )));
     }

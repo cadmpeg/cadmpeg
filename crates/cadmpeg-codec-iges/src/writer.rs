@@ -220,7 +220,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                 .iter()
                 .find(|candidate| candidate.id == *curve_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES edge {} references missing curve {}",
                         edge.id, curve_id
                     ))
@@ -376,7 +376,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             .iter()
             .find(|surface| surface.id == procedural.surface)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES procedural surface {} references missing solved surface {}",
                     procedural.id, procedural.surface
                 ))
@@ -403,7 +403,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             .iter()
             .find(|curve| curve.id == procedural.curve)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES procedural curve {} references missing solved curve {}",
                     procedural.id, procedural.curve
                 ))
@@ -481,13 +481,13 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
             .iter()
             .find(|region| region.id == *region_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES body {} references missing region {}",
                     body.id, region_id
                 ))
             })?;
         if region.body != body.id || region.shells.is_empty() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES region {} is not a nonempty region of body {}",
                 region.id, body.id
             )));
@@ -499,7 +499,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
             )));
         }
         if !owned_regions.insert(region.id.as_str().to_owned()) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES region {} is owned more than once",
                 region.id
             )));
@@ -511,13 +511,13 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                 .iter()
                 .find(|shell| shell.id == *shell_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES region {} references missing shell {}",
                         region.id, shell_id
                     ))
                 })?;
             if shell.region != region.id || shell.faces.is_empty() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "IGES shell {} is not a nonempty shell of region {}",
                     shell.id, region.id
                 )));
@@ -529,7 +529,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                 )));
             }
             if !owned_shells.insert(shell.id.as_str().to_owned()) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "IGES shell {} is owned more than once",
                     shell.id
                 )));
@@ -541,19 +541,19 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                     .iter()
                     .find(|face| face.id == *face_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES shell {} references missing face {}",
                             shell.id, face_id
                         ))
                     })?;
                 if face.shell != shell.id || face.loops.is_empty() {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "IGES face {} is not a nonempty face of shell {}",
                         face.id, shell.id
                     )));
                 }
                 if !owned_faces.insert(face.id.as_str().to_owned()) {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "IGES face {} is owned more than once",
                         face.id
                     )));
@@ -564,7 +564,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                     .iter()
                     .find(|surface| surface.id == face.surface)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES face {} references missing surface {}",
                             face.id, face.surface
                         ))
@@ -577,7 +577,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                         .iter()
                         .find(|loop_| loop_.id == *loop_id)
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "IGES face {} references missing loop {}",
                                 face.id, loop_id
                             ))
@@ -585,19 +585,19 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                     if loop_.face != face.id
                         || (loop_.coedges.is_empty() && loop_.vertex_uses.len() != 1)
                     {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "IGES loop {} is not a valid loop of face {}",
                             loop_.id, face.id
                         )));
                     }
                     if loop_.coedges.is_empty() && loop_.vertex_uses[0].after.is_some() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "IGES vertex-only loop {} has a preceding coedge",
                             loop_.id
                         )));
                     }
                     if !used_loops.insert(loop_.id.as_str().to_owned()) {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "IGES loop {} is used more than once",
                             loop_.id
                         )));
@@ -609,7 +609,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             .iter()
                             .find(|coedge| coedge.id == *coedge_id)
                             .ok_or_else(|| {
-                                CodecError::Malformed(format!(
+                                CodecError::malformed(format_args!(
                                     "IGES loop {} references missing coedge {}",
                                     loop_.id, coedge_id
                                 ))
@@ -622,13 +622,13 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             || coedge.previous != *previous
                             || coedge.use_curve.is_some()
                         {
-                            return Err(CodecError::Malformed(format!(
+                            return Err(CodecError::malformed(format_args!(
                                 "IGES coedge {} is not a valid loop use",
                                 coedge.id
                             )));
                         }
                         if !used_coedges.insert(coedge.id.as_str().to_owned()) {
-                            return Err(CodecError::Malformed(format!(
+                            return Err(CodecError::malformed(format_args!(
                                 "IGES coedge {} is used more than once",
                                 coedge.id
                             )));
@@ -639,14 +639,14 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             .iter()
                             .find(|edge| edge.id == coedge.edge)
                             .ok_or_else(|| {
-                                CodecError::Malformed(format!(
+                                CodecError::malformed(format_args!(
                                     "IGES coedge {} references missing edge {}",
                                     coedge.id, coedge.edge
                                 ))
                             })?;
                         if let Some((owner, _)) = edge_bodies.get(edge.id.as_str()) {
                             if owner != body.id.as_str() {
-                                return Err(CodecError::Malformed(format!(
+                                return Err(CodecError::malformed(format_args!(
                                     "IGES edge {} is used by multiple bodies",
                                     edge.id
                                 )));
@@ -674,7 +674,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             .iter()
                             .find(|curve| curve.id == *curve_id)
                             .ok_or_else(|| {
-                                CodecError::Malformed(format!(
+                                CodecError::malformed(format_args!(
                                     "IGES edge {} references missing curve {}",
                                     edge.id, curve_id
                                 ))
@@ -688,7 +688,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                                 .iter()
                                 .find(|vertex| vertex.id == *vertex_id)
                                 .ok_or_else(|| {
-                                    CodecError::Malformed(format!(
+                                    CodecError::malformed(format_args!(
                                         "IGES edge {} references missing vertex {}",
                                         edge.id, vertex_id
                                     ))
@@ -709,7 +709,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                     }
                     for vertex_use in &loop_.vertex_uses {
                         if !loop_.coedges.is_empty() && vertex_use.after.is_none() {
-                            return Err(CodecError::Malformed(format!(
+                            return Err(CodecError::malformed(format_args!(
                                 "IGES loop {} vertex use has no preceding coedge",
                                 loop_.id
                             )));
@@ -719,7 +719,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             .as_ref()
                             .is_some_and(|coedge_id| !loop_.coedges.contains(coedge_id))
                         {
-                            return Err(CodecError::Malformed(format!(
+                            return Err(CodecError::malformed(format_args!(
                                 "IGES loop {} vertex use references a coedge outside the loop",
                                 loop_.id
                             )));
@@ -730,7 +730,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             .iter()
                             .find(|vertex| vertex.id == vertex_use.vertex)
                             .ok_or_else(|| {
-                                CodecError::Malformed(format!(
+                                CodecError::malformed(format_args!(
                                     "IGES loop {} references missing vertex {}",
                                     loop_.id, vertex_use.vertex
                                 ))
@@ -806,7 +806,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
 
     for (edge_id, uses) in &edge_coedges {
         let first = uses.first().ok_or_else(|| {
-            CodecError::Malformed(format!("IGES edge {edge_id} has no coedge uses"))
+            CodecError::malformed(format_args!("IGES edge {edge_id} has no coedge uses"))
         })?;
         let mut ring = Vec::new();
         let mut current = first.clone();
@@ -815,12 +815,12 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                 if current == *first {
                     break;
                 }
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "IGES edge {edge_id} has an invalid radial ring"
                 )));
             }
             if ring.len() >= uses.len() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "IGES edge {edge_id} has an invalid radial ring"
                 )));
             }
@@ -831,19 +831,19 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                 .iter()
                 .find(|coedge| coedge.id.as_str() == current)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES radial ring references missing coedge {current}"
                     ))
                 })?;
             if coedge.edge.as_str() != edge_id {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "IGES radial ring for edge {edge_id} names another edge"
                 )));
             }
             current = coedge.radial_next.as_str().to_owned();
         }
         if ring.len() != uses.len() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES edge {edge_id} radial ring does not cover every use"
             )));
         }
@@ -856,19 +856,19 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                     .find(|coedge| coedge.id.as_str() == coedge_id)
                     .map(|coedge| coedge.sense)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES radial ring references missing coedge {coedge_id}"
                         ))
                     })
             })
             .collect::<Result<Vec<_>, _>>()?;
         if senses.len() == 2 && senses[0] == senses[1] {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES edge {edge_id} has two coedges with the same sense"
             )));
         }
         if edge_bodies[edge_id].1 == BodyKind::Solid && ring.len() != 2 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES solid edge {edge_id} is not used by exactly two coedges"
             )));
         }
@@ -936,7 +936,9 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             .iter()
             .find(|candidate| candidate.id.as_str() == edge_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("IGES topology references missing edge {edge_id}"))
+                CodecError::malformed(format_args!(
+                    "IGES topology references missing edge {edge_id}"
+                ))
             })?;
         let curve_id = edge.curve.as_ref().ok_or_else(|| {
             CodecError::NotImplemented(format!(
@@ -950,7 +952,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             .iter()
             .find(|candidate| candidate.id == *curve_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES edge {} references missing curve {}",
                     edge.id, curve_id
                 ))
@@ -990,7 +992,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             .iter()
             .find(|candidate| candidate.id.as_str() == pcurve_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES topology references missing pcurve {pcurve_id}"
                 ))
             })?;
@@ -1008,13 +1010,15 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
         let body = bodies
             .iter()
             .find(|body| body.id.as_str() == body_id)
-            .ok_or_else(|| CodecError::Malformed(format!("IGES body {body_id} is missing")))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("IGES body {body_id} is missing")))?;
         let region = ir
             .model
             .regions
             .iter()
             .find(|region| region.body.as_str() == body_id)
-            .ok_or_else(|| CodecError::Malformed(format!("IGES body {body_id} has no region")))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("IGES body {body_id} has no region"))
+            })?;
         let shells = region
             .shells
             .iter()
@@ -1024,7 +1028,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     .iter()
                     .find(|shell| shell.id == *shell_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES region {} references missing shell {}",
                             region.id, shell_id
                         ))
@@ -1044,7 +1048,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     .iter()
                     .find(|face| face.id == *face_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES shell {} references missing face {}",
                             shell.id, face_id
                         ))
@@ -1057,7 +1061,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                         .iter()
                         .find(|loop_| loop_.id == *loop_id)
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "IGES face {} references missing loop {}",
                                 face.id, loop_id
                             ))
@@ -1070,7 +1074,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                             .iter()
                             .find(|coedge| coedge.id == *coedge_id)
                             .ok_or_else(|| {
-                                CodecError::Malformed(format!(
+                                CodecError::malformed(format_args!(
                                     "IGES loop {} references missing coedge {}",
                                     loop_.id, coedge_id
                                 ))
@@ -1082,7 +1086,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                             .iter()
                             .find(|edge| edge.id == coedge.edge)
                             .ok_or_else(|| {
-                                CodecError::Malformed(format!(
+                                CodecError::malformed(format_args!(
                                     "IGES coedge {} references missing edge {}",
                                     coedge.id, coedge.edge
                                 ))
@@ -1111,7 +1115,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 .iter()
                 .find(|vertex| vertex.id.as_str() == vertex_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES B-rep references missing vertex {vertex_id}"
                     ))
                 })?;
@@ -1149,7 +1153,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     .iter()
                     .find(|edge| edge.id.as_str() == edge_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!("IGES B-rep edge {edge_id} is missing"))
+                        CodecError::malformed(format_args!("IGES B-rep edge {edge_id} is missing"))
                     })?;
                 let curve_index = edge_curve_indices[edge_id];
                 let start_index = vertex_indices[edge.start.as_str()];
@@ -1185,7 +1189,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 .iter()
                 .find(|loop_| loop_.id == *loop_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("IGES B-rep loop {loop_id} is missing"))
+                    CodecError::malformed(format_args!("IGES B-rep loop {loop_id} is missing"))
                 })?;
             let face = ir
                 .model
@@ -1193,7 +1197,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 .iter()
                 .find(|face| face.id == loop_.face)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES B-rep loop {} references missing face {}",
                         loop_.id, loop_.face
                     ))
@@ -1204,7 +1208,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 .iter()
                 .find(|surface| surface.id == face.surface)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES B-rep face {} references missing surface {}",
                         face.id, face.surface
                     ))
@@ -1222,14 +1226,14 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     .iter()
                     .find(|coedge| coedge.id == *coedge_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES loop {} references missing coedge {}",
                             loop_.id, coedge_id
                         ))
                     })?;
                 let edge_index = edge_indices[coedge.edge.as_str()];
                 let edge_list_index = edge_list_index.ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES loop {} has a coedge but no edge list",
                         loop_.id
                     ))
@@ -1241,7 +1245,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     .iter()
                     .find(|edge| edge.id == coedge.edge)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES coedge {} references missing edge {}",
                             coedge.id, coedge.edge
                         ))
@@ -1258,7 +1262,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     .iter()
                     .find(|curve| curve.id == *curve_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES edge {} references missing curve {}",
                             edge.id, curve_id
                         ))
@@ -1361,7 +1365,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 .iter()
                 .find(|face| face.id == *face_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("IGES B-rep face {face_id} is missing"))
+                    CodecError::malformed(format_args!("IGES B-rep face {face_id} is missing"))
                 })?;
             let loops = face_loop_order(ir, face)?;
             let has_outer = face_outer_loop(&loops).is_some();
@@ -1401,7 +1405,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     .iter()
                     .find(|face| face.id == *face_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES shell {} references missing face {}",
                             shell.id, face_id
                         ))
@@ -1431,7 +1435,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
         }
         if body.kind == BodyKind::Solid {
             let exterior_shell = region.exterior_shell().ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES solid region {} has no exterior shell",
                     region.id
                 ))
@@ -1716,7 +1720,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             .iter()
             .find(|candidate| candidate.id == *curve_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES edge {} references missing curve {}",
                     edge.id, curve_id
                 ))
@@ -1972,13 +1976,13 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
             .iter()
             .find(|candidate| candidate.id == *region_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES body {} references missing region {}",
                     body.id, region_id
                 ))
             })?;
         if region.body != body.id || region.shells.len() != 1 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES region {} is not owned by body {} with one shell",
                 region.id, body.id
             )));
@@ -1990,7 +1994,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
             .iter()
             .find(|candidate| candidate.id == *shell_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES region {} references missing shell {}",
                     region.id, shell_id
                 ))
@@ -2011,19 +2015,19 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
             .iter()
             .find(|candidate| candidate.id == shell.faces[0])
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES shell {} references missing face {}",
                     shell.id, shell.faces[0]
                 ))
             })?;
         if face.shell != shell.id {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES face {} is not owned by shell {}",
                 face.id, shell.id
             )));
         }
         if !owned_faces.insert(face.id.as_str().to_owned()) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES face {} is owned by more than one sheet shell",
                 face.id
             )));
@@ -2054,7 +2058,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
             .iter()
             .find(|candidate| candidate.id == face.surface)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES face {} references missing surface {}",
                     face.id, face.surface
                 ))
@@ -2082,7 +2086,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
         let trimmed = has_explicit_loop;
         for loop_ in loops {
             if !used_loops.insert(loop_.id.as_str().to_owned()) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "IGES face {} uses loop {} more than once",
                     face.id, loop_.id
                 )));
@@ -2101,7 +2105,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     .map(|coedge| coedge.pcurves.len())
             });
             let Some(first_pcurve_count) = first_pcurve_count else {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "IGES loop {} references a missing first coedge",
                     loop_.id
                 )));
@@ -2113,13 +2117,13 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     .iter()
                     .find(|candidate| candidate.id == *coedge_id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES loop {} references missing coedge {}",
                             loop_.id, coedge_id
                         ))
                     })?;
                 if !used_coedges.insert(coedge.id.as_str().to_owned()) {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "IGES coedge {} is used more than once",
                         coedge.id
                     )));
@@ -2133,7 +2137,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     || coedge.radial_next != coedge.id
                     || coedge.use_curve.is_some()
                 {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "IGES coedge {} is not a simple laminar loop use",
                         coedge.id
                     )));
@@ -2156,7 +2160,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     .iter()
                     .find(|candidate| candidate.id == coedge.edge)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES coedge {} references missing edge {}",
                             coedge.id, coedge.edge
                         ))
@@ -2174,7 +2178,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     ))
                 })?;
                 if !ir.model.curves.iter().any(|curve| curve.id == *curve_id) {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "IGES edge {} references missing curve {}",
                         edge.id, curve_id
                     )));
@@ -2197,7 +2201,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     .iter()
                     .find(|vertex| vertex.id == edge.start)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES edge {} references missing start vertex {}",
                             edge.id, edge.start
                         ))
@@ -2208,7 +2212,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     .iter()
                     .find(|vertex| vertex.id == edge.end)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES edge {} references missing end vertex {}",
                             edge.id, edge.end
                         ))
@@ -2224,7 +2228,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                         .iter()
                         .any(|point| point.id == end_vertex.point)
                 {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "IGES edge {} references a vertex with a missing point",
                         edge.id
                     )));
@@ -2244,7 +2248,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                         .iter()
                         .find(|candidate| candidate.id == pcurve_use.pcurve)
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "IGES coedge {} references missing pcurve {}",
                                 coedge.id, pcurve_use.pcurve
                             ))
@@ -2321,7 +2325,7 @@ fn face_loop_order<'a>(
             .iter()
             .find(|candidate| candidate.id == *loop_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES face {} references missing loop {}",
                     face.id, loop_id
                 ))
@@ -2372,7 +2376,7 @@ fn boundary_entity(
                 .iter()
                 .find(|coedge| coedge.id == *coedge_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES loop {} references missing coedge {}",
                         loop_.id, coedge_id
                     ))
@@ -2393,7 +2397,7 @@ fn boundary_entity(
             .get(coedge.edge.as_str())
             .copied()
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES boundary loop {} references missing edge entity {}",
                     loop_.id, coedge.edge
                 ))
@@ -2414,7 +2418,7 @@ fn boundary_entity(
                 .iter()
                 .find(|edge| edge.id == coedge.edge)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES coedge {} references missing edge {}",
                         coedge.id, coedge.edge
                     ))
@@ -2431,7 +2435,7 @@ fn boundary_entity(
                 .iter()
                 .find(|curve| curve.id == *curve_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES edge {} references missing curve {}",
                         edge.id, curve_id
                     ))
@@ -2483,7 +2487,7 @@ fn curve_on_surface_entity(
             .iter()
             .find(|coedge| coedge.id == *coedge_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES loop {} references missing coedge {}",
                     loop_.id, coedge_id
                 ))
@@ -2494,7 +2498,7 @@ fn curve_on_surface_entity(
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES coedge {} references missing edge {}",
                     coedge.id, coedge.edge
                 ))
@@ -2511,7 +2515,7 @@ fn curve_on_surface_entity(
             .iter()
             .find(|curve| curve.id == *curve_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES edge {} references missing curve {}",
                     edge.id, curve_id
                 ))
@@ -2520,7 +2524,7 @@ fn curve_on_surface_entity(
         let span = edge_span(ir, edge, &geometry)?;
         let model_index = if coedge.sense == Sense::Forward {
             *edge_indices.get(edge.id.as_str()).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES Type 142 loop {} references missing edge entity {}",
                     loop_.id, edge.id
                 ))
@@ -2969,7 +2973,7 @@ fn validate_brep_pcurve_uses(
             .iter()
             .find(|pcurve| pcurve.id == pcurve_use.pcurve)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES B-rep {} references missing pcurve {}",
                     orientation.owner, pcurve_use.pcurve
                 ))
@@ -3044,7 +3048,7 @@ impl PcurveOrientationContext<'_> {
         {
             return Ok(PcurveOrientation::Natural);
         }
-        Err(CodecError::Malformed(format!(
+        Err(CodecError::malformed(format_args!(
             "IGES {} pcurve chain endpoints disagree with its directed support edge",
             self.owner
         )))
@@ -3060,7 +3064,7 @@ impl PcurveOrientationContext<'_> {
                 .iter()
                 .find(|pcurve| pcurve.id == pcurve_use.pcurve)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES {} references missing pcurve {}",
                         self.owner, pcurve_use.pcurve
                     ))
@@ -3072,33 +3076,33 @@ impl PcurveOrientationContext<'_> {
                 ))
             })?;
             if range.iter().any(|value| !value.is_finite()) || range[0] > range[1] {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "IGES {} pcurve {} has an invalid parameter range",
                     self.owner, pcurve.id
                 )));
             }
             let start_uv = pcurve_uv(&pcurve.geometry, range[0]).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES {} pcurve {} start cannot be evaluated",
                     self.owner, pcurve.id
                 ))
             })?;
             let end_uv = pcurve_uv(&pcurve.geometry, range[1]).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES {} pcurve {} end cannot be evaluated",
                     self.owner, pcurve.id
                 ))
             })?;
             let start = model_surface_point(self.ir, self.surface, start_uv.u, start_uv.v)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES {} pcurve {} start is outside its support",
                         self.owner, pcurve.id
                     ))
                 })?;
             let end = model_surface_point(self.ir, self.surface, end_uv.u, end_uv.v).ok_or_else(
                 || {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "IGES {} pcurve {} end is outside its support",
                         self.owner, pcurve.id
                     ))
@@ -3134,7 +3138,7 @@ impl PcurveOrientationContext<'_> {
                     .iter()
                     .find(|pcurve| pcurve.id == pcurve_use.pcurve)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES {} references missing pcurve {}",
                             self.owner, pcurve_use.pcurve
                         ))
@@ -3145,7 +3149,7 @@ impl PcurveOrientationContext<'_> {
                     index
                 } else {
                     *pcurve_indices.get(pcurve.id.as_str()).ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "IGES {} references missing pcurve entity {}",
                             self.owner, pcurve.id
                         ))
@@ -3353,7 +3357,7 @@ fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
     }
     for vertex in &ir.model.vertices {
         if !ir.model.points.iter().any(|point| point.id == vertex.point) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES vertex {} references missing point {}",
                 vertex.id, vertex.point
             )));
@@ -3989,7 +3993,9 @@ fn vertex_point_id(ir: &CadIr, vertex_id: &VertexId) -> Result<PointId, CodecErr
         .iter()
         .find(|vertex| vertex.id == *vertex_id)
         .ok_or_else(|| {
-            CodecError::Malformed(format!("IGES edge references missing vertex {vertex_id}"))
+            CodecError::malformed(format_args!(
+                "IGES edge references missing vertex {vertex_id}"
+            ))
         })?;
     Ok(vertex.point.clone())
 }
@@ -4001,7 +4007,9 @@ fn point_position(ir: &CadIr, point_id: &PointId) -> Result<Point3, CodecError> 
         .find(|point| point.id == *point_id)
         .map(|point| point.position)
         .ok_or_else(|| {
-            CodecError::Malformed(format!("IGES topology references missing point {point_id}"))
+            CodecError::malformed(format_args!(
+                "IGES topology references missing point {point_id}"
+            ))
         })
 }
 
@@ -4028,7 +4036,7 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         ))
     })?;
     if range.iter().any(|value| !value.is_finite()) || range[0] >= range[1] {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "IGES edge {} requires a finite non-zero parameter span",
             edge.id
         )));
@@ -4047,13 +4055,13 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
             | CurveGeometry::Polyline { .. }
     ) {
         let evaluated_start = curve_point(geometry, range[0]).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "IGES edge {} start cannot be evaluated on its curve",
                 edge.id
             ))
         })?;
         let evaluated_end = curve_point(geometry, range[1]).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "IGES edge {} end cannot be evaluated on its curve",
                 edge.id
             ))
@@ -4062,7 +4070,7 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         if !close_point_with_tolerance(start, evaluated_start, tolerance)
             || !close_point_with_tolerance(end, evaluated_end, tolerance)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES edge {} endpoints disagree with its curve parameter range",
                 edge.id
             )));
@@ -4080,7 +4088,7 @@ fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
             .iter()
             .find(|vertex| vertex.id == *vertex_id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "IGES edge {} references missing vertex {}",
                     edge.id, vertex_id
                 ))
@@ -4634,7 +4642,9 @@ fn apply_rigid_transform(
 fn unit(vector: Vector3, label: &str) -> Result<Vector3, CodecError> {
     let norm = vector.norm();
     if !norm.is_finite() || norm <= f64::EPSILON {
-        return Err(CodecError::Malformed(format!("IGES {label} is degenerate")));
+        return Err(CodecError::malformed(format_args!(
+            "IGES {label} is degenerate"
+        )));
     }
     Ok(vector.scale(1.0 / norm))
 }
@@ -4648,7 +4658,7 @@ fn orthonormal_pair(
     let reference = unit(reference, label)?;
     let residual = primary.dot(reference);
     if residual.abs() > FRAME_REPAIR_DOT_LIMIT {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "IGES {label} exceeds the frame repair bound"
         )));
     }
@@ -4791,7 +4801,7 @@ fn ensure_finite_point(point: Point3, label: &str) -> Result<(), CodecError> {
     {
         Ok(())
     } else {
-        Err(CodecError::Malformed(format!(
+        Err(CodecError::malformed(format_args!(
             "IGES point {label} has non-finite coordinates"
         )))
     }
@@ -5022,7 +5032,7 @@ fn directory_card(fields: [String; 9], sequence: u32) -> Result<Vec<u8>, CodecEr
     let mut payload = Vec::with_capacity(72);
     for field in fields {
         if field.len() > 8 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "IGES Directory field is wider than eight bytes: {field}"
             )));
         }

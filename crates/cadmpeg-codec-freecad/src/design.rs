@@ -675,13 +675,16 @@ fn append_spreadsheet(
         .copied()
         .find(|property| property.type_name.contains("PropertySheet") || property.name == "cells")
         .ok_or_else(|| {
-            CodecError::Malformed(format!("spreadsheet {} has no cells property", object.id))
+            CodecError::malformed(format_args!(
+                "spreadsheet {} has no cells property",
+                object.id
+            ))
         })?;
     let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
-        CodecError::Malformed(format!("invalid spreadsheet {}: {error}", property.id))
+        CodecError::malformed(format_args!("invalid spreadsheet {}: {error}", property.id))
     })?;
     let Some(cells) = xml.descendants().find(|node| node.has_tag_name("Cells")) else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{} has no Cells value",
             property.id
         )));
@@ -689,9 +692,11 @@ fn append_spreadsheet(
     let declared = cells
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
-        .ok_or_else(|| CodecError::Malformed(format!("{} has invalid Cells Count", property.id)))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("{} has invalid Cells Count", property.id))
+        })?;
     if declared > MAX_SKETCH_RECORDS {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{} cell count exceeds {MAX_SKETCH_RECORDS}",
             property.id
         )));
@@ -701,7 +706,7 @@ fn append_spreadsheet(
         .filter(|node| node.has_tag_name("Cell"))
         .collect::<Vec<_>>();
     if declared != records.len() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{} declares {declared} cells but contains {}",
             property.id,
             records.len()
@@ -710,9 +715,9 @@ fn append_spreadsheet(
     let mut cell_ids = Vec::with_capacity(records.len());
     let mut merged_ranges = Vec::new();
     for (index, cell) in records.into_iter().enumerate() {
-        let address = cell
-            .attribute("address")
-            .ok_or_else(|| CodecError::Malformed(format!("{} cell has no address", property.id)))?;
+        let address = cell.attribute("address").ok_or_else(|| {
+            CodecError::malformed(format_args!("{} cell has no address", property.id))
+        })?;
         let content = cell.attribute("content").unwrap_or_default();
         let name = cell.attribute("alias").unwrap_or(address);
         let mut retained = BTreeMap::from([("address".into(), address.to_owned())]);
@@ -797,7 +802,7 @@ fn spreadsheet_dimensions(
         return Ok(Vec::new());
     };
     let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "invalid spreadsheet dimension {}: {error}",
             property.id
         ))
@@ -806,7 +811,7 @@ fn spreadsheet_dimensions(
         .descendants()
         .find(|node| node.has_tag_name(container))
         .ok_or_else(|| {
-            CodecError::Malformed(format!("{} has no dimension container", property.id))
+            CodecError::malformed(format_args!("{} has no dimension container", property.id))
         })?;
     let records = root
         .children()
@@ -816,10 +821,10 @@ fn spreadsheet_dimensions(
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::Malformed(format!("{} has invalid dimension count", property.id))
+            CodecError::malformed(format_args!("{} has invalid dimension count", property.id))
         })?;
     if declared != records.len() || declared > MAX_SKETCH_RECORDS {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{} dimension count does not match its records",
             property.id
         )));
@@ -828,13 +833,16 @@ fn spreadsheet_dimensions(
         .into_iter()
         .map(|record| {
             let name = record.attribute("name").ok_or_else(|| {
-                CodecError::Malformed(format!("{} dimension has no name", property.id))
+                CodecError::malformed(format_args!("{} dimension has no name", property.id))
             })?;
             let pixels = record
                 .attribute(value_name)
                 .and_then(|value| value.parse::<u32>().ok())
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("{} dimension has invalid size", property.id))
+                    CodecError::malformed(format_args!(
+                        "{} dimension has invalid size",
+                        property.id
+                    ))
                 })?;
             Ok(SpreadsheetDimension {
                 name: name.to_owned(),
@@ -999,7 +1007,10 @@ fn parse_sketch(
     let mut entities = Vec::new();
     if let Some(geometry) = property(properties, "Geometry") {
         let xml = roxmltree::Document::parse(&geometry.raw_xml).map_err(|error| {
-            CodecError::Malformed(format!("invalid sketch geometry {}: {error}", geometry.id))
+            CodecError::malformed(format_args!(
+                "invalid sketch geometry {}: {error}",
+                geometry.id
+            ))
         })?;
         validate_declared_count(&xml, "GeometryList", "Geometry", &geometry.id)?;
         for (index, node) in xml
@@ -1048,7 +1059,7 @@ fn parse_sketch(
     }
     if let Some(external_geometry) = property(properties, "ExternalGeo") {
         let xml = roxmltree::Document::parse(&external_geometry.raw_xml).map_err(|error| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "invalid external sketch geometry {}: {error}",
                 external_geometry.id
             ))
@@ -1444,7 +1455,7 @@ fn parse_constraints(
         return Ok((Vec::new(), Vec::new()));
     };
     let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "invalid sketch constraints {}: {error}",
             property.id
         ))
@@ -1459,7 +1470,7 @@ fn parse_constraints(
     {
         let type_code = int_attr(node, "Type").unwrap_or(0);
         let operands = constraint_operands(node).map_err(|message| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "{} constraint {}: {message}",
                 property.id,
                 index + 1
@@ -1986,16 +1997,18 @@ fn validate_declared_count(
         .descendants()
         .find(|node| node.has_tag_name(container_tag))
     else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{owner} has no {container_tag} value"
         )));
     };
     let declared = container
         .attribute("count")
         .and_then(|value| value.parse::<usize>().ok())
-        .ok_or_else(|| CodecError::Malformed(format!("{owner} has an invalid record count")))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("{owner} has an invalid record count"))
+        })?;
     if declared > MAX_SKETCH_RECORDS {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{owner} record count exceeds {MAX_SKETCH_RECORDS}"
         )));
     }
@@ -2004,7 +2017,7 @@ fn validate_declared_count(
         .filter(|node| node.has_tag_name(record_tag))
         .count();
     if declared != actual {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{owner} declares {declared} records but contains {actual}"
         )));
     }
@@ -4989,7 +5002,7 @@ pub(crate) fn census(
         .filter(|object| is_design_object(&object.type_name))
         .map(|object| {
             let feature = features.get(object.id.as_str()).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "design object {} has no neutral history projection",
                     object.id
                 ))
@@ -4999,7 +5012,7 @@ pub(crate) fn census(
                 definition => (definition, false),
             };
             let value = serde_json::to_value(definition).map_err(|error| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "cannot classify design feature {}: {error}",
                     feature.id
                 ))
@@ -5008,7 +5021,7 @@ pub(crate) fn census(
                 .get("definition")
                 .and_then(serde_json::Value::as_str)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "design feature {} has no semantic family tag",
                         feature.id
                     ))

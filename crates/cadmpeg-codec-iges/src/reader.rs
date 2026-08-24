@@ -214,7 +214,7 @@ fn decode_with_occurrence_limits(
                 .iter()
                 .find(|loss| loss.severity >= Severity::Warning)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "strict mode rejects {}: {}",
                     loss.code, loss.message
                 )));
@@ -242,7 +242,9 @@ fn decode_with_occurrence_limits(
     transfer_ledger
         .verify(&cadmpeg_ir::index::ModelIndex::new(&ir))
         .map_err(|message| {
-            CodecError::Malformed(format!("IGES transfer ledger is inconsistent: {message}"))
+            CodecError::malformed(format_args!(
+                "IGES transfer ledger is inconsistent: {message}"
+            ))
         })?;
     let mut notes = directory::summary_notes(&directory);
     notes.extend(parameter::summary_notes(&parameters));
@@ -283,7 +285,7 @@ pub(crate) fn reject_invalid_semantic_ir(
         .entity
         .as_deref()
         .map_or(String::new(), |entity| format!(" for {entity}"));
-    Err(CodecError::Malformed(format!(
+    Err(CodecError::malformed(format_args!(
         "IGES semantic projection produced invalid CADIR: {}{entity}: {}",
         finding.check, finding.message
     )))

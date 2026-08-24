@@ -1134,7 +1134,7 @@ impl CodecBackend for FcstdCodec {
             for property in &graph.properties {
                 for side_entry in &property.side_entries {
                     if !scan.data.contains_key(side_entry) {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "property {} references missing side entry {side_entry}",
                             property.id
                         )));
@@ -1150,7 +1150,7 @@ impl CodecBackend for FcstdCodec {
                         .get(&entry.name)
                         .map(|view| view.window())
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "entry {} disappeared after scan",
                                 entry.name
                             ))

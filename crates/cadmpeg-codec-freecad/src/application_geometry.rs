@@ -31,7 +31,7 @@ pub(crate) fn transfer(
             continue;
         }
         if property.side_entries.len() > 1 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "geometry property {} references more than one side entry",
                 property.id
             )));
@@ -43,7 +43,7 @@ pub(crate) fn transfer(
             .iter()
             .find(|entry| entry.name == *entry_name)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "geometry property {} references missing side entry {entry_name}",
                     property.id
                 ))
@@ -153,7 +153,7 @@ fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, C
 
 fn point_transform(property: &PropertyRecord) -> Result<[[f64; 4]; 4], CodecError> {
     let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "invalid point property XML {}: {error}",
             property.id
         ))
@@ -269,9 +269,9 @@ impl<'a> Reader<'a> {
 
     fn count(&mut self, order: ByteOrder, label: &str) -> Result<usize, CodecError> {
         let count = usize::try_from(self.u32(order)?)
-            .map_err(|_| CodecError::Malformed(format!("{label} does not fit usize")))?;
+            .map_err(|_| CodecError::malformed(format_args!("{label} does not fit usize")))?;
         if count > MAX_ELEMENTS {
-            return Err(CodecError::Malformed(format!("{label} exceeds limit")));
+            return Err(CodecError::malformed(format_args!("{label} exceeds limit")));
         }
         Ok(count)
     }
@@ -284,7 +284,9 @@ impl<'a> Reader<'a> {
     ) -> Result<u32, CodecError> {
         let index = self.u32(order)?;
         if usize::try_from(index).map_or(true, |index| index >= point_count) {
-            return Err(CodecError::Malformed(format!("{label} is out of bounds")));
+            return Err(CodecError::malformed(format_args!(
+                "{label} is out of bounds"
+            )));
         }
         Ok(index)
     }
@@ -292,7 +294,7 @@ impl<'a> Reader<'a> {
     fn point3(&mut self, order: ByteOrder, label: &str) -> Result<Point3, CodecError> {
         let values = [self.f32(order)?, self.f32(order)?, self.f32(order)?];
         if values.iter().any(|value| !value.is_finite()) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "{label} contains a non-finite coordinate"
             )));
         }
@@ -305,7 +307,7 @@ impl<'a> Reader<'a> {
 
     fn finish(&self, label: &str) -> Result<(), CodecError> {
         if !self.view.is_empty() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "{label} has {} trailing bytes",
                 self.remaining()
             )));
