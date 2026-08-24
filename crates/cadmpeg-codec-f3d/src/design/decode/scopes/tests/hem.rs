@@ -44,7 +44,7 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
             bend_radius: 0.25,
         });
 
-        let operation = crate::design::decode::scopes::exact_hem_operation(
+        let operation = crate::design::decode::scopes::extrude_sheet_metal::exact_hem_operation(
             &frame.bytes,
             0,
             frame.paired_at,
@@ -94,29 +94,33 @@ fn hem_scope_refuses_a_frame_whose_owner_slot_is_absent() {
     frame.bytes[at..at + 11].fill(0);
     frame.bytes[at + 1] = 1;
     frame.bytes[at + 2..at + 6].copy_from_slice(&304u32.to_le_bytes());
-    assert!(crate::design::decode::scopes::exact_hem_operation(
-        &frame.bytes,
-        0,
-        frame.paired_at,
-        &references,
-        &[(301, "HemGap"), (304, "HemLength")],
-    )
-    .is_none());
-    assert!(crate::design::decode::scopes::exact_hem_operation(
-        &frame.bytes,
-        0,
-        frame.paired_at,
-        &references,
-        &[(301, "HemGap"), (301, "HemGap"), (304, "HemLength")],
-    )
-    .is_none());
+    assert!(
+        crate::design::decode::scopes::extrude_sheet_metal::exact_hem_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            &references,
+            &[(301, "HemGap"), (304, "HemLength")],
+        )
+        .is_none()
+    );
+    assert!(
+        crate::design::decode::scopes::extrude_sheet_metal::exact_hem_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            &references,
+            &[(301, "HemGap"), (301, "HemGap"), (304, "HemLength")],
+        )
+        .is_none()
+    );
 }
 
 #[test]
 fn hem_scope_reads_the_rolled_owner_layout() {
     let references = [708, 717, 720, 724, 775, 788, 790, 793];
     let frame = rolled_hem_frame();
-    let operation = crate::design::decode::scopes::exact_hem_operation(
+    let operation = crate::design::decode::scopes::extrude_sheet_metal::exact_hem_operation(
         &frame.bytes,
         0,
         frame.paired_at,
@@ -139,7 +143,7 @@ fn hem_scope_reads_the_rolled_owner_layout() {
 fn hem_scope_reads_the_teardrop_owner_layout() {
     let references = [703, 706, 708, 717, 720, 724, 775, 777, 780];
     let frame = teardrop_hem_frame();
-    let operation = crate::design::decode::scopes::exact_hem_operation(
+    let operation = crate::design::decode::scopes::extrude_sheet_metal::exact_hem_operation(
         &frame.bytes,
         0,
         frame.paired_at,
@@ -173,14 +177,16 @@ fn hem_scope_refuses_an_owner_layout_whose_parameter_kinds_name_another_form() {
         bend_radius: 0.25,
     });
 
-    assert!(crate::design::decode::scopes::exact_hem_operation(
-        &frame.bytes,
-        0,
-        frame.paired_at,
-        &references,
-        &[(301, "HemRadius"), (304, "HemAngle")],
-    )
-    .is_none());
+    assert!(
+        crate::design::decode::scopes::extrude_sheet_metal::exact_hem_operation(
+            &frame.bytes,
+            0,
+            frame.paired_at,
+            &references,
+            &[(301, "HemRadius"), (304, "HemAngle")],
+        )
+        .is_none()
+    );
 }
 
 /// Build a gap-and-length `Hem` frame from the settled fixed-section layout.

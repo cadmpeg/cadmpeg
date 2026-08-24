@@ -9,12 +9,12 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
-use crate::design::decode::scopes::{
+use crate::design::decode::scopes::extrude_sheet_metal::{
     is_class_296_legacy_one_sided_distance_layout, is_class_296_legacy_one_sided_to_face_layout,
     is_class_296_one_sided_to_face_layout, is_class_296_symmetric_distance_layout,
     is_class_296_two_sided_to_faces_layout, is_class_296_two_sided_to_faces_scope,
-    legacy_class_415,
 };
+use crate::design::decode::scopes::legacy_class_415;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as class_296_legacy_prefix;

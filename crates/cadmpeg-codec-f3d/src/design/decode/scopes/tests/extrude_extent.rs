@@ -2,7 +2,9 @@
 #![allow(unused_imports, clippy::default_trait_access, clippy::wildcard_imports)]
 
 use super::prelude::*;
-use super::{exact_class_338_two_sided_distance_extrude_prologue, exact_extrude_extent};
+use crate::design::decode::scopes::extrude_sheet_metal::{
+    exact_class_338_two_sided_distance_extrude_prologue, exact_extrude_extent,
+};
 
 #[test]
 fn extrude_extent_tuple_is_one_admission_key() {
@@ -90,12 +92,9 @@ fn class_338_two_sided_distance_requires_its_null_scope_scalar_lane() {
         &[4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
     )
     .expect("class-338 frame should satisfy its exact admission grammar");
-    assert_eq!(parsed.clone().operation(), DesignExtrudeOperation::Cut);
-    assert_eq!(
-        parsed.clone().extent(),
-        Some(DesignExtrudeExtent::TwoSidedDistance)
-    );
-    assert!(!parsed.clone().direction_reversed());
+    assert_eq!(parsed.operation(), DesignExtrudeOperation::Cut);
+    assert_eq!(parsed.extent(), Some(DesignExtrudeExtent::TwoSidedDistance));
+    assert!(!parsed.direction_reversed());
     assert!(parsed.solid_operation());
 
     bytes[139] = 0;

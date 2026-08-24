@@ -186,8 +186,10 @@ pub(crate) fn exact_one_sided_extrude_prologue(
     {
         return None;
     }
-    let extent =
-        super::exact_extrude_extent(direction_face_extend_values[0], side_extent_discriminators)?;
+    let extent = super::extrude_sheet_metal::exact_extrude_extent(
+        direction_face_extend_values[0],
+        side_extent_discriminators,
+    )?;
     if let Some(offset) = first_side_offset_reference {
         let record_index = super::marked_record_reference(bytes, start.checked_add(offset)?)?;
         if !reference_members.contains(&record_index) {
