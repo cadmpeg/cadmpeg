@@ -15,9 +15,11 @@ use super::blend::{
 };
 use super::geometry_work::GeometryWorkBudget;
 use super::offset::{
+    coarse_model_surface_parameters,
     continue_surface_intersection_parameters_with_index_and_seeds_and_budget_and_grid_cache,
     offset_surface_parameters_with_tolerance_with_index_and_budget, point_distance,
-    refine_offset_surface_parameters_with_index_and_budget, surface_parameters,
+    refine_offset_surface_parameters_with_index_and_budget, surface_parameter_domain_with_index,
+    surface_parameters,
 };
 use super::pcurves::{
     blend_boundary_parameter_from_support_spine_with_index_and_budget,
@@ -476,6 +478,41 @@ fn ordered_support_uv_seed_candidates(
             None,
         ]
     }
+}
+
+fn unseeded_nurbs_surface_parameters_with_index_and_budget(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    surface: &SurfaceGeometry,
+    nurbs: &cadmpeg_ir::geometry::NurbsSurface,
+    point: Point3,
+    fit_tolerance: f64,
+    geometry_budget: &GeometryWorkBudget<'_>,
+) -> Option<Point2> {
+    let coarse = surface_parameter_domain_with_index(index, surface_id).and_then(|domain| {
+        coarse_model_surface_parameters(index, surface_id, point, domain, geometry_budget)
+    });
+    if let Some(parameters) = coarse.filter(|parameters| {
+        decoded_surface_point_with_geometry_and_budget(
+            index,
+            surface_id,
+            surface,
+            parameters.u,
+            parameters.v,
+            0,
+            geometry_budget,
+        )
+        .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+    }) {
+        return Some(parameters);
+    }
+    nurbs_surface_parameter_within_tolerance_with_budget(
+        nurbs,
+        point,
+        coarse,
+        fit_tolerance,
+        geometry_budget,
+    )
 }
 
 fn serialized_support_uv_seed_for_side(
@@ -1016,14 +1053,27 @@ fn complete_support_uv_wave(
                         }
                         let candidate = match &surface.geometry {
                             SurfaceGeometry::Nurbs(nurbs) => {
-                                nurbs_surface_parameter_within_tolerance_with_budget(
-                                    nurbs,
-                                    *point,
-                                    seed,
-                                    effective_fit_tolerance,
-                                    geometry_budget,
-                                )
-                                .map(|parameters| (parameters, true))
+                                if let Some(seed) = seed {
+                                    nurbs_surface_parameter_within_tolerance_with_budget(
+                                        nurbs,
+                                        *point,
+                                        Some(seed),
+                                        effective_fit_tolerance,
+                                        geometry_budget,
+                                    )
+                                    .map(|parameters| (parameters, true))
+                                } else {
+                                    unseeded_nurbs_surface_parameters_with_index_and_budget(
+                                        &model_index,
+                                        surface_id,
+                                        &surface.geometry,
+                                        nurbs,
+                                        *point,
+                                        effective_fit_tolerance,
+                                        geometry_budget,
+                                    )
+                                    .map(|parameters| (parameters, true))
+                                }
                             }
                             SurfaceGeometry::Procedural { .. } => {
                                 let solve_blend_parameters = if source_chart_available {
@@ -2218,5 +2268,64 @@ mod tests {
             parent.remaining(),
         ));
         assert!(later_lane.charge());
+    }
+
+    #[test]
+    fn unseeded_nurbs_completion_accepts_only_a_tolerance_certified_coarse_fit() {
+        const FIT_TOLERANCE: f64 = 1.0e-10;
+        const GEOMETRY_WORK: usize = 1_024;
+
+        let surface_id = SurfaceId("synthetic:coarse-nurbs-support".into());
+        let nurbs = cadmpeg_ir::geometry::NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            normal_reversed: false,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let geometry = SurfaceGeometry::Nurbs(nurbs.clone());
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: surface_id.clone(),
+            geometry: geometry.clone(),
+            source_object: None,
+        });
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+
+        let fit_budget = GeometryWorkBudget::new(GEOMETRY_WORK);
+        let parameters = unseeded_nurbs_surface_parameters_with_index_and_budget(
+            &index,
+            &surface_id,
+            &geometry,
+            &nurbs,
+            Point3::new(0.5, 0.5, 0.0),
+            FIT_TOLERANCE,
+            &fit_budget,
+        )
+        .expect("coarse grid contains the exact chart point");
+        assert_eq!(parameters, Point2::new(0.5, 0.5));
+
+        let miss_budget = GeometryWorkBudget::new(GEOMETRY_WORK);
+        assert!(unseeded_nurbs_surface_parameters_with_index_and_budget(
+            &index,
+            &surface_id,
+            &geometry,
+            &nurbs,
+            Point3::new(0.5, 0.5, 1.0),
+            FIT_TOLERANCE,
+            &miss_budget,
+        )
+        .is_none());
     }
 }
