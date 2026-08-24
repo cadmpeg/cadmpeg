@@ -11,6 +11,10 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
+const EPS_PERIODIC_RANGE: f64 = 1e-9;
+const EPS_HELIX_FRAME: f64 = 1e-9;
+const SMALL_RELATIVE_HELIX_TOLERANCE: f64 = 1e-6;
+
 fn finite_point2(point: Point2) -> bool {
     [point.u, point.v].into_iter().all(f64::is_finite)
 }
@@ -369,11 +373,11 @@ pub(crate) fn reverse_helix_definition(
 /// Normalize an increasing circular interval to the canonical one-turn domain.
 pub(crate) fn canonical_periodic_range(range: [f64; 2]) -> Option<[f64; 2]> {
     let sweep = range[1] - range[0];
-    if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + 1e-9 {
+    if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + EPS_PERIODIC_RANGE {
         return None;
     }
     let mut start = range[0].rem_euclid(std::f64::consts::TAU);
-    if std::f64::consts::TAU - start <= 1e-9 {
+    if std::f64::consts::TAU - start <= EPS_PERIODIC_RANGE {
         start = 0.0;
     }
     Some([start, start + sweep])
@@ -430,9 +434,9 @@ pub(crate) fn circular_helix_cache(
         || !minor_radius.is_finite()
         || minor_radius <= 0.0
         || !axis_norm.is_finite()
-        || (axis_norm - 1.0).abs() > 1e-9
+        || (axis_norm - 1.0).abs() > EPS_HELIX_FRAME
         || !pitch_norm.is_finite()
-        || (radius - minor_radius).abs() > 1e-9 * radius.max(minor_radius)
+        || (radius - minor_radius).abs() > EPS_HELIX_FRAME * radius.max(minor_radius)
         || !angle_range.iter().copied().all(f64::is_finite)
         || angle_range[0] >= angle_range[1]
         || *apex_factor != 0.0
@@ -448,13 +452,13 @@ pub(crate) fn circular_helix_cache(
         normalized_dot(pitch, axis)
     };
     if !normalized_dot_major_minor.is_finite()
-        || normalized_dot_major_minor.abs() > 1e-9
+        || normalized_dot_major_minor.abs() > EPS_HELIX_FRAME
         || !normalized_dot_major_axis.is_finite()
-        || normalized_dot_major_axis.abs() > 1e-9
+        || normalized_dot_major_axis.abs() > EPS_HELIX_FRAME
         || !normalized_dot_minor_axis.is_finite()
-        || normalized_dot_minor_axis.abs() > 1e-9
+        || normalized_dot_minor_axis.abs() > EPS_HELIX_FRAME
         || !normalized_dot_pitch_axis.is_finite()
-        || normalized_dot_pitch_axis.abs() < 1.0 - 1e-9
+        || normalized_dot_pitch_axis.abs() < 1.0 - EPS_HELIX_FRAME
     {
         return None;
     }
@@ -463,7 +467,7 @@ pub(crate) fn circular_helix_cache(
         return None;
     }
     let relative_tolerance = requested_tolerance / radius;
-    let max_step = if relative_tolerance < 1e-6 {
+    let max_step = if relative_tolerance < SMALL_RELATIVE_HELIX_TOLERANCE {
         2.0 * (2.0 * relative_tolerance).sqrt()
     } else {
         2.0 * (1.0 - relative_tolerance).clamp(-1.0, 1.0).acos()
