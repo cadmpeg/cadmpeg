@@ -957,6 +957,14 @@ pub(in super::super) fn transfer_positional_cylinders(
                 },
             }
         };
+        let row_local_frame_selected = record
+            .positional_cylinder_frame
+            .is_some_and(|stored| crate::surface::positional_cylinder_frames_agree(stored, frame))
+            && (feature_class != Some(913)
+                || matches!(
+                    mechanism,
+                    "inline_positional_surface_row" | "selector_corner_interval_cylinder"
+                ));
         if feature_class == Some(911)
             && counterbore_dimensions(scan, ir, row.feature_id).is_some_and(|dimensions| {
                 !counterbore_dimension_tuple_matches_radius(dimensions, frame.radius)
@@ -966,6 +974,41 @@ pub(in super::super) fn transfer_positional_cylinders(
         }
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if row_local_frame_selected
+                && ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .filter(|surface| surface.id == id)
+                    .count()
+                    == 1
+            {
+                if let Some(surface) = ir
+                    .model
+                    .surfaces
+                    .iter_mut()
+                    .find(|surface| surface.id == id)
+                {
+                    surface.geometry = SurfaceGeometry::Cylinder {
+                        origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
+                        axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                        ref_direction: Vector3::new(
+                            frame.ref_direction[0],
+                            frame.ref_direction[1],
+                            frame.ref_direction[2],
+                        ),
+                        radius: frame.radius,
+                    };
+                    annotate(
+                        annotations,
+                        &id,
+                        "VisibGeom",
+                        row.offset as u64,
+                        "positional_cylinder_frame_reconciled",
+                        Exactness::Derived,
+                    );
+                }
+            }
             continue;
         }
         annotate(

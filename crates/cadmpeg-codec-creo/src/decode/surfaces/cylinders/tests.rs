@@ -508,6 +508,83 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
 }
 
 #[test]
+fn positional_frame_reconciles_an_existing_model_cylinder() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.rows.push(crate::feature::FeatureRow {
+        feature_id: 917,
+        header: [0, 0],
+        root_schema_class: Some(917),
+        stream_offset: 0,
+        body: Vec::new(),
+        body_offset: 0,
+        offset: 0,
+    });
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 7,
+        type_byte: 0x24,
+        kind: crate::surface::SurfaceKind::Cylinder,
+        feature_id: 917,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 7,
+    });
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 7,
+            body: Vec::new(),
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: Some(crate::surface::PositionalCylinderFrame {
+                origin: [-12.5, 4.0, 0.0],
+                axis: [0.0, 1.0, 0.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                radius: 0.75,
+                length: Some(34.0),
+            }),
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            positional_torus_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 7,
+            body_offset: 7,
+        });
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.push(model_cylinder(7, 0.75));
+
+    assert_eq!(
+        super::transfer_positional_cylinders(
+            &scan,
+            &mut ir,
+            &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        )
+        .transferred,
+        0
+    );
+    let [surface] = ir.model.surfaces.as_slice() else {
+        panic!("one reconciled cylinder");
+    };
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+    } = surface.geometry
+    else {
+        panic!("reconciled cylinder: {:?}", surface.geometry);
+    };
+    assert_eq!(origin, [-12.5, 4.0, 0.0].into());
+    assert_eq!(axis, [0.0, 1.0, 0.0].into());
+    assert_eq!(ref_direction, [1.0, 0.0, 0.0].into());
+    assert_eq!(radius, 0.75);
+}
+
+#[test]
 fn round_edge_support_frame_selects_one_offset_line() {
     let frame = super::round_edge_cylinder_frame(
         crate::surface::Type24RoundEdgeEnvelope {

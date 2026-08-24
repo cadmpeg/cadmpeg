@@ -169,6 +169,62 @@ fn placed_carriers_prefers_unique_positional_cylinder_frame() {
 }
 
 #[test]
+fn placed_carriers_keeps_non_inline_class913_model_carrier() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.rows.push(crate::feature::FeatureRow {
+        feature_id: 913,
+        header: [0, 0],
+        root_schema_class: Some(913),
+        stream_offset: 0,
+        body: Vec::new(),
+        body_offset: 0,
+        offset: 0,
+    });
+    let mut row = carrier_row(7, crate::surface::SurfaceKind::Cylinder);
+    row.feature_id = 913;
+    scan.surfaces.rows.push(row);
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 7,
+            body: Vec::new(),
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: Some(crate::surface::PositionalCylinderFrame {
+                origin: [-30.0, 6.5, -14.0],
+                axis: [
+                    std::f64::consts::FRAC_1_SQRT_2,
+                    0.0,
+                    std::f64::consts::FRAC_1_SQRT_2,
+                ],
+                ref_direction: [0.0, -1.0, 0.0],
+                radius: 0.8,
+                length: Some(0.282_842_712_474_619),
+            }),
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            positional_torus_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 0,
+            body_offset: 0,
+        });
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(cylinder_surface(7, 0.2));
+
+    let carriers = placed_carriers(&scan, &ir);
+    assert!(matches!(
+        carriers.get(&7),
+        Some(CarrierEquation::Cylinder(cylinder)) if cylinder.origin == [0.0, 0.0, 0.0]
+            && cylinder.axis == [0.0, 0.0, 1.0]
+            && cylinder.radius == 0.2
+    ));
+}
+
+#[test]
 fn duplicate_model_surface_ids_remove_native_carrier() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces

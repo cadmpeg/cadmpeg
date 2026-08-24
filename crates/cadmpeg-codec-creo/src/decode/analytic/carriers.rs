@@ -342,8 +342,18 @@ fn positional_cylinder_carrier(
     row: &crate::surface::SurfaceRow,
 ) -> Option<CarrierEquation> {
     (row.kind == crate::surface::SurfaceKind::Cylinder).then_some(())?;
-    let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?
-        .positional_cylinder_frame?;
+    let record = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?;
+    let inline = record.has_inline_non_plane_envelope()
+        || record.has_inline_non_plane_local_system_suffix(row.type_byte)
+        || record
+            .selector_corner_interval_cylinder_frame(row.type_byte)
+            .is_some();
+    if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id) == Some(913)
+        && !inline
+    {
+        return None;
+    }
+    let frame = record.positional_cylinder_frame?;
     frame
         .is_valid()
         .then_some(CarrierEquation::Cylinder(CylinderEquation {
