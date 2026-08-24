@@ -334,6 +334,20 @@ impl ParameterRecord {
     }
 }
 
+/// Whether any successfully tokenized ordinary Parameter Data real uses the
+/// IGES double-precision exponent spelling.
+pub(crate) fn uses_double_precision(records: &[ParameterRecord]) -> bool {
+    records.iter().any(|record| {
+        record.tokens.iter().any(|token| {
+            matches!(&token.value, TokenValue::Real(_))
+                && record
+                    .bytes
+                    .get(token.span.clone())
+                    .is_some_and(|bytes| bytes.iter().any(|byte| matches!(byte, b'D' | b'd')))
+        })
+    })
+}
+
 fn analyze_trailing_pointer_groups_for_dialect(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,

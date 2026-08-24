@@ -431,6 +431,63 @@ fn the_5_0_required_global_fields_report_absence_without_later_defaults() {
 }
 
 #[test]
+fn the_5_0_double_precision_fields_are_conditional_on_parameter_syntax() {
+    let mut fields = valid_global_fields();
+    fields[9].clear();
+    fields[10].clear();
+    fields[17] = "13H260714.000000".into();
+    fields[22] = "8".into();
+    fields.truncate(25);
+    let mut global = fields.join(",");
+    global.push(';');
+
+    let bytes = point_file_with_global(global.as_bytes());
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
+        0
+    );
+    assert_eq!(
+        report_code_count(
+            result.report(),
+            IgesLossCode::GlobalSemanticContextSubstituted
+        ),
+        0
+    );
+    assert_eq!(dialect_losses(result.report()), 1);
+
+    let mut double_bytes = point_file_with_global(global.as_bytes());
+    let old = b"116,1.0,2.0,3.0;";
+    let new = b"116,1D0,2.0,3.0;";
+    assert_eq!(old.len(), new.len());
+    let offset = double_bytes
+        .windows(old.len())
+        .position(|window| window == old)
+        .expect("point Parameter Data");
+    double_bytes[offset..offset + old.len()].copy_from_slice(new);
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(double_bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
+        1
+    );
+    assert_eq!(
+        report_code_count(
+            result.report(),
+            IgesLossCode::GlobalSemanticContextSubstituted
+        ),
+        1
+    );
+    assert_eq!(dialect_losses(result.report()), 1);
+}
+
+#[test]
 fn the_4_0_global_defaults_do_not_inherit_5_0_metadata_defaults() {
     let mut fields = valid_global_fields();
     fields[11].clear();

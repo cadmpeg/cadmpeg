@@ -164,6 +164,8 @@ pub(crate) struct ResolvedGlobal {
     maximum_coordinate: Option<f64>,
     length_factor_mm: Option<f64>,
     line_weight_scale: Option<LineWeightScale>,
+    double_magnitude_absent: bool,
+    double_significance_absent: bool,
     declared_version_flag: i64,
     unreadable_version_declaration: Option<String>,
     dialect: Dialect,
@@ -276,6 +278,20 @@ const LENGTH_CONSEQUENCE: &str =
     "the decoder resolved no millimetre length factor, suppressed every geometry projection, and retained the native records";
 const LINE_WEIGHT_CONSEQUENCE: &str =
     "the line-weight scale is unavailable, so no entity carries a display width";
+
+fn global_loss_note(
+    code: IgesLossCode,
+    index: usize,
+    defect: Defect,
+    consequence: &str,
+) -> LossNote {
+    code.note(format!(
+        "IGES Global field {} ({}) is {}; {consequence}",
+        index + 1,
+        field_name(index),
+        defect.as_str()
+    ))
+}
 
 fn malformed(message: impl Into<String>) -> CodecError {
     crate::error::malformed(format!("IGES Global: {}", message.into()))
@@ -778,12 +794,8 @@ impl Resolution {
     }
 
     fn charge(&mut self, code: IgesLossCode, index: usize, defect: Defect, consequence: &str) {
-        self.losses.push(code.note(format!(
-            "IGES Global field {} ({}) is {}; {consequence}",
-            index + 1,
-            field_name(index),
-            defect.as_str()
-        )));
+        self.losses
+            .push(global_loss_note(code, index, defect, consequence));
     }
 
     fn declaration_text(&self, index: usize) -> String {
@@ -1166,9 +1178,23 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
     let single_magnitude =
         resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, dialect, |_| true);
     let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE);
+    let double_magnitude_absent = dialect == Dialect::V5_0
+        && matches!(
+            resolution.supplied_integer(FIELD_DOUBLE_MAGNITUDE),
+            Supplied::Absent
+        );
     let double_magnitude =
         resolution.metadata_integer_value(FIELD_DOUBLE_MAGNITUDE, dialect, |_| true);
-    let double_significance = resolution.significance(FIELD_DOUBLE_SIGNIFICANCE);
+    let double_significance_absent = dialect == Dialect::V5_0
+        && matches!(
+            resolution.supplied_integer(FIELD_DOUBLE_SIGNIFICANCE),
+            Supplied::Absent
+        );
+    let double_significance = if double_significance_absent {
+        FALLBACK_SIGNIFICANCE
+    } else {
+        resolution.significance(FIELD_DOUBLE_SIGNIFICANCE)
+    };
     let receiver_product = match resolution.supplied_string(FIELD_RECEIVER_PRODUCT) {
         Supplied::Absent if dialect.defaults_receiver_product_to_sender() => sender_product.clone(),
         Supplied::Absent if dialect.field_requires_value(FIELD_RECEIVER_PRODUCT) => {
@@ -1237,6 +1263,8 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         maximum_coordinate,
         length_factor_mm,
         line_weight_scale,
+        double_magnitude_absent,
+        double_significance_absent,
         declared_version_flag,
         unreadable_version_declaration,
         dialect,
@@ -1319,6 +1347,33 @@ impl ResolvedGlobal {
 
     pub(crate) fn dialect(&self) -> Dialect {
         self.dialect
+    }
+
+    pub(crate) fn conditional_double_precision_losses(
+        &self,
+        uses_double_precision: bool,
+    ) -> Vec<LossNote> {
+        if self.dialect != Dialect::V5_0 || !uses_double_precision {
+            return Vec::new();
+        }
+        let mut losses = Vec::new();
+        if self.double_magnitude_absent {
+            losses.push(global_loss_note(
+                IgesLossCode::GlobalMetadataFieldUnusable,
+                FIELD_DOUBLE_MAGNITUDE,
+                Defect::Absent,
+                METADATA_CONSEQUENCE,
+            ));
+        }
+        if self.double_significance_absent {
+            losses.push(global_loss_note(
+                IgesLossCode::GlobalSemanticContextSubstituted,
+                FIELD_DOUBLE_SIGNIFICANCE,
+                Defect::Absent,
+                SIGNIFICANCE_CONSEQUENCE,
+            ));
+        }
+        losses
     }
 
     /// The loss charged when field 23 does not name a verified specification version.

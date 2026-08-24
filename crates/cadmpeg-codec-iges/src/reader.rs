@@ -134,7 +134,7 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             .map(|ctx| ctx.reserve_scoped(bytes.len() as u64, card_storage, None))
             .transpose()?;
         let scan = card::scan_with_context(bytes, ctx)?;
-        let (global, global_losses) = global::parse(&scan)?;
+        let (global, mut global_losses) = global::parse(&scan)?;
         let (directory, quarantined_directory) = directory::parse(&scan, global.dialect());
         charge_entities(
             ctx,
@@ -156,6 +156,10 @@ impl<'a, 'ctx> PhysicalParse<'a, 'ctx> {
             &global,
             ctx,
         )?;
+        global_losses.extend(
+            global
+                .conditional_double_precision_losses(parameter::uses_double_precision(&parameters)),
+        );
         charge_work(ctx, parameter_tokens(&parameters), parameter_parse)?;
         let references = graph::build(&directory);
         let mut framing_recoveries = scan.recoveries.clone();
