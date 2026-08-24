@@ -1017,6 +1017,16 @@ arc interval and does not become a cylinder length; a geometric axial span may
 be retained when the endpoint projection is positive. Missing, conflicting, or
 non-unique radius, ownership, support, or line evidence retains the row native.
 
+The class-913 replay radius is carried by a bounded positional record. The
+`f2 f7 80 a0` anchor opens the record, and the next `f3 f7 80 97 e2` anchor
+closes it. Within that boundary, `01 f6` ends the preceding compact fields;
+the first complete `0x29` short-form scalar after it is the replay-radius
+candidate. A missing closing anchor or incomplete scalar yields no candidate.
+The candidate is admissible only when it is positive and agrees with every
+available observed rolling-radius sample and every placed generated-cylinder
+radius for the owning feature. Conflicting or absent witnesses retain the
+round body as native.
+
 In a generated-entity-referenced round-edge endpoint body, the endpoint grammar
 owns every coordinate through the generated-entity reference. In the
 perpendicular form, exactly one pair of endpoint coordinate deltas has equal

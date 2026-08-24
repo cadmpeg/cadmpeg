@@ -54,3 +54,4 @@ pub use rows::{
     FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRevolutionExtentKind, FeatureRow,
     FeatureSurfaceMergeAffectedIds, LoopRestoreDirectionLane, ReplayExtentSource,
 };
+pub(crate) use rows::{round_replay_scalars, FeatureRoundReplayScalar};

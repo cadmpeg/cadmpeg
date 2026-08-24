@@ -400,6 +400,9 @@ pub(in super::super) fn round_constant_radius(
     if generated_rows.is_empty() {
         return round_support_radius(scan, ir, feature_id);
     }
+    if let Some(radius) = round_replay_radius(scan, ir, feature_id) {
+        return Some(radius);
+    }
     // Unequal decoded rolling-radius samples identify a variable-radius
     // round even when another generated row has no radius proof. A support
     // plane fallback must not turn that incomplete, unequal sample set into
@@ -454,6 +457,22 @@ pub(in super::super) fn round_constant_radius(
         return unique_positive_length(&cylinder_radii);
     }
     round_support_radius(scan, ir, feature_id)
+}
+
+fn round_replay_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
+    let mut samples = round_observed_radii(scan, feature_id);
+    samples.extend(round_placed_cylinder_radii(scan, ir, feature_id));
+    let radius = unique_positive_length(&samples)?;
+    let scale = radius.abs().max(1.0);
+    scan.features
+        .round_replay_scalars
+        .iter()
+        .filter(|candidate| candidate.feature_id == feature_id)
+        .any(|candidate| {
+            candidate.value > 0.0
+                && (candidate.value - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+        })
+        .then_some(radius)
 }
 
 fn legacy_round_radius_agrees(

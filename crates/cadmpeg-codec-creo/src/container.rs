@@ -429,6 +429,8 @@ pub struct FeatureScan {
     pub ids: Vec<u32>,
     /// Byte-bounded `AllFeatur` rows for known geometry-owning features.
     pub rows: Vec<FeatureRow>,
+    /// Short-form radius candidates from bounded class-913 round replays.
+    pub round_replay_scalars: Vec<crate::feature::FeatureRoundReplayScalar>,
     /// Section-bounded procedural recipe rows synthesized from `DEPDB_DATA`.
     pub depdb_recipe_rows: Vec<FeatureRow>,
     /// Labeled procedural-choice spans inside decoded feature rows.
@@ -2526,6 +2528,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let mut feature_ids = structural_feature_ids;
     feature_ids.extend(feature_rows.iter().map(|row| row.feature_id));
     let feature_ids = feature_ids.into_iter().collect::<Vec<_>>();
+    let feature_round_replay_scalars = feature::round_replay_scalars(&feature_rows);
     let feature_choices = feature::choices(&feature_rows);
     let feature_choice_fields = feature::choice_fields(&feature_choices);
     let depdb_recipe_rows = depdb_recipe_rows(&data, &sections);
@@ -2694,6 +2697,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         features: FeatureScan {
             ids: feature_ids,
             rows: feature_rows,
+            round_replay_scalars: feature_round_replay_scalars,
             depdb_recipe_rows,
             choices: feature_choices,
             choice_fields: feature_choice_fields,

@@ -278,6 +278,13 @@ context, axial-interval and endpoint bodies do not fall through to scalar-frame
 or terminal-suffix radius grammars. Outside that context, a byte-compatible
 body does not establish endpoint ownership.
 
+Class-913 generated round-edge replays carry a radius candidate in a bounded
+`cr_flags_xar` positional record. Its `f2 f7 80 a0` opener, following
+`01 f6` compact-field terminator, first `0x29` short-form scalar, and next
+`f3 f7 80 97 e2` boundary are defined in `creo_prt.md` §3.2. The candidate
+is used only with agreeing observed rolling-radius and placed-cylinder
+witnesses; it does not by itself define the remaining carrier equation.
+
 **Need.** We must know the equation to construct the cylinder carrier.
 
 ### GS-19. Positional cone station token

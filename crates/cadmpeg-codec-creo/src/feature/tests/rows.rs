@@ -102,6 +102,67 @@ fn rows_ignore_a_valid_prefix_inside_an_existing_row() {
 }
 
 #[test]
+fn class_913_round_replay_scalars_use_bounded_short_form_lane() {
+    const EPS_ROUND_REPLAY_TEST: f64 = 1e-12;
+    let mut body = vec![0x29, 0xdf, 0xff];
+    let first_record_offset = body.len();
+    body.extend_from_slice(&[
+        0xf2, 0xf7, 0x80, 0xa0, 0x29, 0xdf, 0xff, 0x01, 0xf6, 0x19, 0x00, 0x29, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ]);
+    let first_scalar_offset = body.len();
+    body.extend_from_slice(&[0x29, 0xdf, 0xff]);
+    body.extend_from_slice(&[0xf3, 0xf7, 0x80, 0x97, 0xe2]);
+    let second_record_offset = body.len();
+    body.extend_from_slice(&[0xf2, 0xf7, 0x80, 0xa0, 0x01, 0xf6]);
+    let second_scalar_offset = body.len();
+    body.extend_from_slice(&[0x29, 0xc9, 0x99]);
+    body.extend_from_slice(&[0xf3, 0xf7, 0x80, 0x97, 0xe2]);
+    let incomplete = [0xf2, 0xf7, 0x80, 0xa0, 0x01, 0xf6, 0x29, 0xdf, 0xff];
+    let rows = [
+        FeatureRow {
+            feature_id: 17,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(913),
+            stream_offset: 300,
+            body: body.clone(),
+            body_offset: 400,
+            offset: 398,
+        },
+        FeatureRow {
+            feature_id: 18,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(917),
+            stream_offset: 300,
+            body: body.clone(),
+            body_offset: 500,
+            offset: 498,
+        },
+        FeatureRow {
+            feature_id: 19,
+            header: [0xeb, 0x04],
+            root_schema_class: Some(913),
+            stream_offset: 300,
+            body: incomplete.to_vec(),
+            body_offset: 600,
+            offset: 598,
+        },
+    ];
+
+    let decoded = round_replay_scalars(&rows);
+
+    assert_eq!(decoded.len(), 2);
+    assert_eq!(decoded[0].feature_id, 17);
+    assert!((decoded[0].value - 0.5).abs() < EPS_ROUND_REPLAY_TEST);
+    assert_eq!(decoded[0].offset, 400 + first_scalar_offset);
+    assert_eq!(decoded[0].record_offset, 400 + first_record_offset);
+    assert_eq!(decoded[1].feature_id, 17);
+    assert!((decoded[1].value - 0.2).abs() < EPS_ROUND_REPLAY_TEST);
+    assert_eq!(decoded[1].offset, 400 + second_scalar_offset);
+    assert_eq!(decoded[1].record_offset, 400 + second_record_offset);
+}
+
+#[test]
 fn final_generated_entry_may_terminate_at_the_table_separator() {
     let payload = [10, 0x80, 200, 4, 0, 0xe3, 11, 0x80, 200, 7, 1, 0xf2, 0xf7];
     let entries = read_entries(&payload, 0, 2).expect("complete generated table");
