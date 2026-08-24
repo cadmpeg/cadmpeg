@@ -175,17 +175,24 @@ fn take_version_guid(
 }
 
 fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
-    let present_at = *at;
-    let present = require(View::u32_le_at(bytes, *at), "version-context presence", *at)?;
-    *at = require(at.checked_add(4), "version-context presence", *at)?;
-    match present {
-        0 => Ok(()),
-        1 | 4 => {
-            let token_end = require(at.checked_add(8), "version-context token", *at)?;
-            require(bytes.get(*at..token_end), "version-context token", *at)?;
-            *at = token_end;
-            take_version_guid(bytes, at, "version-context asset GUID", true)?;
-            take_version_guid(bytes, at, "version-context revision GUID", false)?;
+    let count_at = *at;
+    let count = require(View::u32_le_at(bytes, *at), "version-context count", *at)?;
+    *at = require(at.checked_add(4), "version-context count", *at)?;
+    if count > 64 {
+        return Err(ParseFailure {
+            field: "version-context count",
+            offset: count_at,
+        });
+    }
+    for _ in 0..count {
+        let token_end = require(at.checked_add(8), "version-context token", *at)?;
+        require(bytes.get(*at..token_end), "version-context token", *at)?;
+        *at = token_end;
+        take_version_guid(bytes, at, "version-context asset GUID", true)?;
+        take_version_guid(bytes, at, "version-context revision GUID", true)?;
+
+        let full_at = *at;
+        let full = (|| {
             let (version_urn, next) = require(
                 lp_utf16_bounded(bytes, *at, 1..=1024),
                 "version-context version URN",
@@ -202,27 +209,18 @@ fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure
                 });
             }
             *at = next;
-            let (guid, next) = require(
-                lp_utf16_bounded(bytes, *at, 36..=36),
-                "version-context asset revision GUID",
-                *at,
-            )?;
-            if !is_guid_hyphenated(&guid) {
-                return Err(ParseFailure {
-                    field: "version-context asset revision GUID",
-                    offset: *at,
-                });
-            }
-            *at = next;
+            take_version_guid(bytes, at, "version-context asset revision GUID", true)?;
             require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
             *at = require(at.checked_add(4), "version-context revision", *at)?;
             Ok(())
+        })();
+        if full.is_err() {
+            *at = full_at;
+            require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
+            *at = require(at.checked_add(4), "version-context revision", *at)?;
         }
-        _ => Err(ParseFailure {
-            field: "version-context presence",
-            offset: present_at,
-        }),
     }
+    Ok(())
 }
 
 fn parse_segment_header(bytes: &[u8]) -> Result<(u32, usize), ParseFailure> {
@@ -461,6 +459,7 @@ mod tests {
         bytes.extend_from_slice(&15u64.to_le_bytes());
         let presence_at = bytes.len();
         bytes.extend_from_slice(&1u32.to_le_bytes());
+        let context_at = bytes.len();
         bytes.extend_from_slice(&0x1122_3344_5566_7788u64.to_le_bytes());
         let asset_guid_at = bytes.len();
         for value in [
@@ -472,6 +471,7 @@ mod tests {
         lp_utf16(&mut bytes, "urn:synthetic:version:2");
         lp_utf16(&mut bytes, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
         bytes.extend_from_slice(&2u32.to_le_bytes());
+        let properties_at = bytes.len();
         bytes.extend_from_slice(&2u32.to_le_bytes());
         for (name, value) in [("Application", 1u32), ("Server", 1)] {
             lp_ascii(&mut bytes, name);
@@ -488,12 +488,29 @@ mod tests {
 
         let mut alternate_presence = bytes.clone();
         alternate_presence[presence_at..presence_at + 4].copy_from_slice(&4u32.to_le_bytes());
-        parse(&alternate_presence, "alternate-version-context")
-            .expect("alternate present-context discriminator");
+        let context = bytes[context_at..properties_at].to_vec();
+        for _ in 0..3 {
+            alternate_presence.splice(properties_at..properties_at, context.iter().copied());
+        }
+        parse(&alternate_presence, "alternate-version-context").expect("four version contexts");
+
+        let mut short = stream_prefix();
+        short.extend_from_slice(&15u64.to_le_bytes());
+        short.extend_from_slice(&1u32.to_le_bytes());
+        short.extend_from_slice(&0x8877_6655_4433_2211u64.to_le_bytes());
+        for guid in [
+            "11111111-2222-3333-4444-555555555555",
+            "66666666-7777-8888-9999-aaaaaaaaaaaa",
+        ] {
+            short.extend_from_slice(&0u32.to_le_bytes());
+            lp_utf16(&mut short, guid);
+        }
+        short.extend_from_slice(&0u32.to_le_bytes());
+        parse(&short, "short-version-context").expect("short version context");
 
         let mut invalid_presence = stream_prefix();
         invalid_presence.extend_from_slice(&15u64.to_le_bytes());
-        invalid_presence.extend_from_slice(&2u32.to_le_bytes());
+        invalid_presence.extend_from_slice(&65u32.to_le_bytes());
         assert!(parse(&invalid_presence, "invalid-version-context").is_err());
         assert!(parse(&bytes[..bytes.len() - 1], "truncated-version-context").is_err());
     }
