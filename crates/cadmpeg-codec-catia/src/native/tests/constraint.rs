@@ -99,6 +99,10 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .report()
         .coverage
         .contains_key("unresolved_constraint_range_owner_count"));
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::CatiaLossCode::AttributesDimensionQuantityUnresolved.kind()
+            && loss.message.contains("1 finite")
+    }));
 
     let referenced_file = |reference_count: usize, storage_reference: bool| {
         let value = [

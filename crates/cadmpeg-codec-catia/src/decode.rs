@@ -850,6 +850,24 @@ fn finish_decode(
                 (total + 1, dimensions, complex, evaluated, unset)
             },
         );
+    let unresolved_dimension_quantity_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.constraint_range.as_ref())
+        .filter(|range| {
+            matches!(
+                range.framing,
+                crate::native::CatiaConstraintRangeFraming::DimensionB8
+                    | crate::native::CatiaConstraintRangeFraming::DimensionC1
+                    | crate::native::CatiaConstraintRangeFraming::DimensionDC
+            ) && match range.evaluation {
+                crate::native::CatiaEntityEvaluation::Scalar { bits } => {
+                    f64::from_bits(bits).is_finite()
+                }
+                crate::native::CatiaEntityEvaluation::Unset => false,
+            }
+        })
+        .count();
     let IncomingEntityIncidenceCounts {
         total: constraint_range_incoming_reference_count,
         payload: constraint_range_incoming_payload_reference_count,
@@ -3437,6 +3455,15 @@ fn finish_decode(
             formula_transfer.legacy_selector_parameter_count,
             formula_transfer.legacy_formula_count,
         )));
+    }
+    if unresolved_dimension_quantity_count != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesDimensionQuantityUnresolved.note(format!(
+                "{unresolved_dimension_quantity_count} finite `Range`/`CstAttr_Dimension` \
+                 scalar production(s) remain native because the admitted selectors, suffix \
+                 framing, interval, and owner incidences do not assign a physical quantity."
+            )),
+        );
     }
     if !native.value_blocks.is_empty() {
         report.losses.push(CatiaLossCode::AttributesVisualizationUnbound.note(format!(

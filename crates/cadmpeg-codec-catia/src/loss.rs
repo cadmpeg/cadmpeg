@@ -79,6 +79,8 @@ pub enum CatiaLossCode {
     HistoryLegacyRunsUnresolved,
     /// Materials, unbound NURBS caches, and document metadata were not transferred.
     AttributesMaterialsMetadataNotTransferred,
+    /// Dimension scalars retain no admitted physical-quantity discriminator.
+    AttributesDimensionQuantityUnresolved,
     /// Visualization value blocks lack a proven typed face or body target.
     AttributesVisualizationUnbound,
 }
@@ -112,6 +114,7 @@ impl CatiaLossCode {
         Self::HistoryObjectRecordsUnresolved,
         Self::HistoryLegacyRunsUnresolved,
         Self::AttributesMaterialsMetadataNotTransferred,
+        Self::AttributesDimensionQuantityUnresolved,
         Self::AttributesVisualizationUnbound,
     ];
 
@@ -150,6 +153,9 @@ impl CatiaLossCode {
             Self::HistoryLegacyRunsUnresolved => "history.legacy-runs-unresolved",
             Self::AttributesMaterialsMetadataNotTransferred => {
                 "attributes.materials-metadata-not-transferred"
+            }
+            Self::AttributesDimensionQuantityUnresolved => {
+                "attributes.dimension-quantity-unresolved"
             }
             Self::AttributesVisualizationUnbound => "attributes.visualization-unbound",
         }
@@ -204,6 +210,7 @@ impl CatiaLossCode {
             | Self::TopologyZeroEntityFaceUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyZeroEntityGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
             Self::AttributesMaterialsMetadataNotTransferred
+            | Self::AttributesDimensionQuantityUnresolved
             | Self::AttributesVisualizationUnbound => LossTaxonomy::AttributesNotTransferred,
             Self::HistoryModelingScopeUnresolved
             | Self::HistoryObjectRecordsUnresolved
@@ -274,6 +281,7 @@ mod tests {
                 "history.object-records-unresolved",
                 "history.legacy-runs-unresolved",
                 "attributes.materials-metadata-not-transferred",
+                "attributes.dimension-quantity-unresolved",
                 "attributes.visualization-unbound",
             ]
         );

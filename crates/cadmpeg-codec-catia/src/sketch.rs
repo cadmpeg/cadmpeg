@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{DesignParameter, Length, ParameterId, ParameterValue};
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchEntityId,
     SketchGeometry, SketchId, SketchNativeOperand,
@@ -12,9 +11,8 @@ use cadmpeg_ir::sketches::{
 
 use crate::design_feature::{self, DesignFeatureTransfer};
 use crate::native::{
-    CatiaConstraintRange, CatiaConstraintRangeFraming, CatiaDesignObject, CatiaEntityEvaluation,
-    CatiaEntityRecord, CatiaNative, CatiaObjectRecord, CatiaObjectRecordReference,
-    CatiaObjectRecordReferenceSource, CatiaRangeNominalFraming,
+    CatiaConstraintRange, CatiaDesignObject, CatiaEntityEvaluation, CatiaEntityRecord, CatiaNative,
+    CatiaObjectRecord, CatiaObjectRecordReference, CatiaObjectRecordReferenceSource,
 };
 
 const NATIVE_SKETCH_GEOMETRY_CLASSES: &[&str] = &["2DPoint"];
@@ -640,8 +638,6 @@ pub(crate) fn transfer_constraint_ranges(
         }) {
             continue;
         }
-        let parameter = dimension_parameter(ir, entity, range);
-
         ir.model.sketch_constraints.push(SketchConstraint {
             id: constraint_id,
             sketch: binding.sketch,
@@ -651,7 +647,7 @@ pub(crate) fn transfer_constraint_ranges(
                 native_flags: None,
                 native_properties: constraint_properties(range),
                 entities: binding.entity.into_iter().collect(),
-                parameter,
+                parameter: None,
                 operands: vec![binding.operand],
             },
             name: None,
@@ -670,92 +666,6 @@ pub(crate) fn transfer_constraint_ranges(
     }
 
     transferred
-}
-
-/// Bind the admitted scalar value of a sketch-owned dimension constraint.
-///
-/// The range and constraint productions must carry the same finite binary64
-/// bits. The exact owner proof is supplied by `constraint_binding`, so this
-/// helper assigns no geometry or operation role. A conflicting parameter with
-/// the same native identity prevents the binding instead of replacing it.
-fn dimension_parameter(
-    ir: &mut CadIr,
-    entity: &CatiaEntityRecord,
-    constraint: &CatiaConstraintRange,
-) -> Option<ParameterId> {
-    if constraint.range.value != "Range"
-        || constraint.constraint.value != "CstAttr_Dimension"
-        || !matches!(
-            constraint.framing,
-            CatiaConstraintRangeFraming::DimensionB8
-                | CatiaConstraintRangeFraming::DimensionC1
-                | CatiaConstraintRangeFraming::DimensionDC
-        )
-    {
-        return None;
-    }
-    let range = entity.range_interval.as_ref()?;
-    let nominal = range.nominal.as_ref()?;
-    let CatiaEntityEvaluation::Scalar {
-        bits: evaluated_bits,
-    } = constraint.evaluation
-    else {
-        return None;
-    };
-    if nominal.bits != evaluated_bits {
-        return None;
-    }
-    let value = f64::from_bits(nominal.bits);
-    if !value.is_finite() {
-        return None;
-    }
-
-    let id = ParameterId(design_feature::neutral_history_id(&entity.id, "parameter"));
-    if let Some(existing) = ir.model.parameters.iter().find(|parameter| {
-        parameter.id == id || parameter.native_ref.as_deref() == Some(entity.id.as_str())
-    }) {
-        let Some(ParameterValue::Length(Length(existing_value))) = existing.value.as_ref() else {
-            return None;
-        };
-        return (existing_value.to_bits() == value.to_bits()).then_some(existing.id.clone());
-    }
-
-    let mut properties = BTreeMap::new();
-    properties.insert("value_type".to_string(), "LENGTH".to_string());
-    properties.insert(
-        "catia_range_nominal_framing".to_string(),
-        range_nominal_framing_name(nominal.framing).to_string(),
-    );
-    properties.insert(
-        "catia_range_nominal_bits".to_string(),
-        format!("{:016x}", nominal.bits),
-    );
-    properties.insert(
-        "catia_range_nominal_opcode_offset".to_string(),
-        nominal.evaluation_opcode_offset.to_string(),
-    );
-    ir.model.parameters.push(DesignParameter {
-        id: id.clone(),
-        owner: None,
-        ordinal: 0,
-        name: String::new(),
-        expression: format!("{value} mm"),
-        display: None,
-        value: Some(ParameterValue::Length(Length(value))),
-        dependencies: Vec::new(),
-        properties,
-        pmi: None,
-        native_ref: Some(entity.id.clone()),
-    });
-    Some(id)
-}
-
-fn range_nominal_framing_name(framing: CatiaRangeNominalFraming) -> &'static str {
-    match framing {
-        CatiaRangeNominalFraming::D8Token8193 => "D8Token8193",
-        CatiaRangeNominalFraming::D8Token81DB => "D8Token81DB",
-        CatiaRangeNominalFraming::DCToken81DB => "DCToken81DB",
-    }
 }
 
 struct ConstraintBinding {
@@ -1060,12 +970,10 @@ mod tests {
     use cadmpeg_ir::units::Units;
 
     use crate::design_feature::DesignFeatureTransfer;
-    use crate::entity_table::{RangeInterval, RangeIntervalPrefix};
     use crate::native::{
         CatiaConstraintRangeFraming, CatiaEntityEvaluation, CatiaEntityIncomingReference,
         CatiaEntitySchemaValue, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReference,
-        CatiaObjectRecordReferenceSource, CatiaRangeInterval, CatiaRangeNominal,
-        CatiaRangeNominalFraming,
+        CatiaObjectRecordReferenceSource,
     };
     use crate::object_graph::{ObjectPayload, PayloadField, PayloadSubtype};
 
@@ -1288,28 +1196,6 @@ mod tests {
             feature_transfer,
             HashSet::from(["graph".to_string()]),
         )
-    }
-
-    fn range_interval(nominal: f64) -> CatiaRangeInterval {
-        CatiaRangeInterval {
-            range: CatiaEntitySchemaValue {
-                offset: 0,
-                ordinal: 3,
-                entry: "range-entry".to_string(),
-                value: "Range".to_string(),
-            },
-            interval: RangeInterval {
-                prefix: RangeIntervalPrefix::Compact { value: 7, width: 1 },
-                slots: None,
-            },
-            nominal: Some(CatiaRangeNominal {
-                framing: CatiaRangeNominalFraming::DCToken81DB,
-                bits: nominal.to_bits(),
-                evaluation_opcode_offset: 4,
-            }),
-            incoming_references: Vec::new(),
-            incoming_storage_references: Vec::new(),
-        }
     }
 
     fn native_sketch_fixture(
@@ -1795,49 +1681,31 @@ mod tests {
     }
 
     #[test]
-    fn binds_a_bit_agreeing_sketch_dimension_to_a_length_parameter() {
+    fn sketch_dimension_scalar_remains_native_without_a_quantity() {
         let (mut ir, mut native, transfer, graph_scope) = fixture(false);
-        native.entity_records[0].range_interval = Some(range_interval(128.0));
+        native.entity_records[0].range_interval = Some(crate::native::CatiaRangeInterval {
+            range: CatiaEntitySchemaValue {
+                offset: 0,
+                ordinal: 3,
+                entry: "range-entry".to_string(),
+                value: "Range".to_string(),
+            },
+            interval: crate::entity_table::RangeInterval {
+                prefix: crate::entity_table::RangeIntervalPrefix::Compact { value: 7, width: 1 },
+                slots: None,
+            },
+            nominal: Some(crate::native::CatiaRangeNominal {
+                framing: crate::native::CatiaRangeNominalFraming::DCToken81DB,
+                bits: 128.0_f64.to_bits(),
+                evaluation_opcode_offset: 4,
+            }),
+            incoming_references: Vec::new(),
+            incoming_storage_references: Vec::new(),
+        });
 
         transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
 
-        assert_eq!(ir.model.parameters.len(), 1);
-        let parameter = &ir.model.parameters[0];
-        assert_eq!(parameter.id.0, "catia:outer:parameter#range");
-        assert_eq!(
-            parameter.native_ref.as_deref(),
-            Some("catia:outer:entity-record#range")
-        );
-        assert_eq!(parameter.expression, "128 mm");
-        assert_eq!(
-            parameter.properties.get("value_type").map(String::as_str),
-            Some("LENGTH")
-        );
-        assert_eq!(
-            parameter
-                .properties
-                .get("catia_range_nominal_framing")
-                .map(String::as_str),
-            Some("DCToken81DB")
-        );
-        assert_eq!(
-            parameter
-                .properties
-                .get("catia_range_nominal_bits")
-                .map(String::as_str),
-            Some("4060000000000000")
-        );
-        assert_eq!(
-            parameter
-                .properties
-                .get("catia_range_nominal_opcode_offset")
-                .map(String::as_str),
-            Some("4")
-        );
-        let Some(ParameterValue::Length(Length(value))) = parameter.value.as_ref() else {
-            panic!("expected length parameter");
-        };
-        assert_eq!(value.to_bits(), 128.0_f64.to_bits());
+        assert!(ir.model.parameters.is_empty());
 
         let SketchConstraintDefinition::Native {
             parameter: constraint_parameter,
@@ -1846,58 +1714,7 @@ mod tests {
         else {
             panic!("expected native constraint");
         };
-        assert_eq!(
-            constraint_parameter
-                .as_ref()
-                .map(|parameter| parameter.0.as_str()),
-            Some("catia:outer:parameter#range")
-        );
-    }
-
-    #[test]
-    fn refuses_a_sketch_dimension_when_nominal_and_evaluation_bits_differ() {
-        let (mut ir, mut native, transfer, graph_scope) = fixture(false);
-        native.entity_records[0].range_interval = Some(range_interval(64.0));
-
-        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
-
-        assert!(ir.model.parameters.is_empty());
-        let SketchConstraintDefinition::Native { parameter, .. } =
-            &ir.model.sketch_constraints[0].definition
-        else {
-            panic!("expected native constraint");
-        };
-        assert!(parameter.is_none());
-    }
-
-    #[test]
-    fn reuses_an_exact_existing_parameter_identity_for_a_sketch_dimension() {
-        let (mut ir, mut native, transfer, graph_scope) = fixture(false);
-        native.entity_records[0].range_interval = Some(range_interval(128.0));
-        let existing_id = ParameterId("synthetic:existing:parameter#range".to_string());
-        ir.model.parameters.push(DesignParameter {
-            id: existing_id.clone(),
-            owner: None,
-            ordinal: 0,
-            name: String::new(),
-            expression: "128".to_string(),
-            display: None,
-            value: Some(ParameterValue::Length(Length(128.0))),
-            dependencies: Vec::new(),
-            properties: BTreeMap::new(),
-            pmi: None,
-            native_ref: Some("catia:outer:entity-record#range".to_string()),
-        });
-
-        transfer_constraint_ranges(&mut ir, &native, &transfer, Some(&graph_scope));
-
-        assert_eq!(ir.model.parameters.len(), 1);
-        let SketchConstraintDefinition::Native { parameter, .. } =
-            &ir.model.sketch_constraints[0].definition
-        else {
-            panic!("expected native constraint");
-        };
-        assert_eq!(parameter.as_ref(), Some(&existing_id));
+        assert!(constraint_parameter.is_none());
     }
 
     #[test]

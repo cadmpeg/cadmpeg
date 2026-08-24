@@ -8,17 +8,13 @@ use cadmpeg_ir::ids::{format_identity, PmiId};
 use cadmpeg_ir::pmi::{DimensionKind, PmiAnnotation, PmiDefinition, PmiQuantity, PmiValue};
 
 use crate::entity_table::{RangeInterval, RangeIntervalSlot};
-use crate::native::{
-    CatiaConstraintRange, CatiaConstraintRangeFraming, CatiaEntityEvaluation, CatiaEntityRecord,
-    CatiaNative, CatiaRangeInterval,
-};
+use crate::native::{CatiaEntityRecord, CatiaNative, CatiaRangeInterval};
 
 /// Transfer complete CATIA dimension productions.
 ///
-/// `Range` is used by several unrelated CATIA object families. The exact
-/// `Range`/`CstAttr_Dimension` pair declares a dimension value and its direct
-/// scalar evaluation. A Range-only `DiameterThread` or `FeatureRSUR`
-/// definition declares a diameter or feature-size dimension when one paired
+/// `Range` is used by several unrelated CATIA object families. A Range-only
+/// `DiameterThread` or `FeatureRSUR` definition declares a diameter or
+/// feature-size dimension when one paired
 /// payload owner selects its complete finite nominal and deviation interval.
 /// The range nominal and deviation slots remain independent native
 /// productions, so incomplete or conflicting values are not transferred.
@@ -70,45 +66,10 @@ fn pmi_id(source_offset: u64) -> PmiId {
 
 fn dimension_definition(entity: &CatiaEntityRecord) -> Option<PmiDefinition> {
     let range = entity.range_interval.as_ref()?;
-    match entity.constraint_range.as_ref() {
-        Some(constraint) => constraint_dimension_definition(range, constraint),
-        None => range_only_dimension_definition(entity, range),
-    }
-}
-
-fn constraint_dimension_definition(
-    range: &CatiaRangeInterval,
-    constraint: &CatiaConstraintRange,
-) -> Option<PmiDefinition> {
-    if constraint.constraint.value != "CstAttr_Dimension"
-        || !matches!(
-            constraint.framing,
-            CatiaConstraintRangeFraming::DimensionB8
-                | CatiaConstraintRangeFraming::DimensionC1
-                | CatiaConstraintRangeFraming::DimensionDC
-        )
-    {
+    if entity.constraint_range.is_some() {
         return None;
     }
-    let nominal = range.nominal.as_ref()?.bits;
-    let CatiaEntityEvaluation::Scalar {
-        bits: evaluated_nominal,
-    } = constraint.evaluation
-    else {
-        return None;
-    };
-    if nominal != evaluated_nominal {
-        return None;
-    }
-    let nominal = finite_length(nominal)?;
-    let (lower_deviation, upper_deviation) = deviations(&range.interval)?;
-    Some(PmiDefinition::Dimension {
-        dimension: DimensionKind::Other(constraint.constraint.value.clone()),
-        nominal: Some(nominal),
-        lower_deviation,
-        upper_deviation,
-        limits_and_fits: None,
-    })
+    range_only_dimension_definition(entity, range)
 }
 
 fn range_only_dimension_definition(
@@ -202,10 +163,10 @@ mod tests {
     use super::*;
     use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
     use crate::native::{
-        CatiaConstraintRange, CatiaDefinitionSchemaSelection, CatiaEntityIncomingReference,
-        CatiaEntityRecord, CatiaEntityReference, CatiaEntitySchemaValue,
-        CatiaEntityValueSchemaSelection, CatiaObjectRecordReferenceSource, CatiaRangeNominal,
-        CatiaRangeNominalFraming,
+        CatiaConstraintRange, CatiaConstraintRangeFraming, CatiaDefinitionSchemaSelection,
+        CatiaEntityEvaluation, CatiaEntityIncomingReference, CatiaEntityRecord,
+        CatiaEntityReference, CatiaEntitySchemaValue, CatiaEntityValueSchemaSelection,
+        CatiaObjectRecordReferenceSource, CatiaRangeNominal, CatiaRangeNominalFraming,
     };
     use cadmpeg_ir::pmi::PmiDefinition;
     use cadmpeg_ir::units::Units;
@@ -333,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn transfers_complete_dimension_values_and_nullable_deviations() {
+    fn constraint_ranges_remain_native_without_a_physical_quantity() {
         let mut ir = CadIr::empty(Units::default());
         let native = CatiaNative {
             entity_records: vec![entity_record()],
@@ -342,48 +303,8 @@ mod tests {
 
         assert_eq!(
             transfer_dimensions(&mut ir, &native, None, &HashSet::new()),
-            1
+            0
         );
-        let PmiDefinition::Dimension {
-            dimension,
-            nominal,
-            lower_deviation,
-            upper_deviation,
-            ..
-        } = &ir.model.pmi[0].definition
-        else {
-            panic!("dimension definition");
-        };
-        assert_eq!(
-            dimension,
-            &DimensionKind::Other("CstAttr_Dimension".to_string())
-        );
-        assert_eq!(nominal.expect("nominal").value, 12.7);
-        assert_eq!(lower_deviation.expect("lower").value, -0.1);
-        assert_eq!(upper_deviation.expect("upper").value, 0.2);
-        assert_eq!(
-            ir.model.pmi[0].id.0,
-            "catia:model:pmi#entity-record-0000000000"
-        );
-    }
-
-    #[test]
-    fn refuses_mismatched_or_sketch_bound_ranges() {
-        let mut mismatched = entity_record();
-        mismatched
-            .constraint_range
-            .as_mut()
-            .expect("constraint range")
-            .evaluation = CatiaEntityEvaluation::Scalar {
-            bits: 1.0_f64.to_bits(),
-        };
-        let native = CatiaNative {
-            entity_records: vec![mismatched, entity_record()],
-            ..CatiaNative::default()
-        };
-        let mut ir = CadIr::empty(Units::default());
-        let excluded = HashSet::from(["catia:object#dimension".to_string()]);
-        assert_eq!(transfer_dimensions(&mut ir, &native, None, &excluded), 0);
         assert!(ir.model.pmi.is_empty());
     }
 
