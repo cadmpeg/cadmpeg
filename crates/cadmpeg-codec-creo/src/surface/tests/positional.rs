@@ -327,16 +327,16 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     .is_none());
 
     let referenced_planar_envelope = [
-        17, 24, 19, 47, 48, 0, 71, 17, 204, 24, 50, 195, 162, 112, 229, 160, 63, 250, 46, 17, 204,
-        47, 48, 0, 46, 17, 204,
+        17, 24, 19, 47, 48, 0, 71, 17, 204, 47, 48, 0, 50, 195, 162, 112, 229, 160, 63, 250, 46,
+        17, 204, 24, 46, 17, 204,
     ];
     let frame = decode_positional_cylinder_frame(
         &referenced_planar_envelope,
         &scalar::ScalarCache::default(),
     )
     .expect("complete referenced planar-envelope cylinder");
-    assert_eq!(frame.origin, [0.0, 16.0, 0.0]);
-    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(frame.origin, [0.0, 0.0, 0.0]);
+    assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
     assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
     assert!((frame.radius - 4.45).abs() < 1e-12);
     assert_eq!(frame.length, Some(16.0));

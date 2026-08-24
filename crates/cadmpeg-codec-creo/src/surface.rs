@@ -5648,8 +5648,11 @@ fn decode_referenced_planar_envelope_cylinder_frame(
     let (second_radial, next) =
         scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
     cursor = next;
-    let (second_axial, next) =
-        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    let (second_axial, next) = if body.get(cursor) == Some(&0x18) {
+        (0.0, cursor + 1)
+    } else {
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?
+    };
     cursor = next;
     let (radius, next) = scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
     let reversed = if next == body.len() {

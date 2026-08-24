@@ -868,8 +868,9 @@ A referenced planar-envelope positional cylinder begins `11 18 13` and stores
 positive axial length, first radial bound, first axial bound, one complete
 `19` or `32` model-reference token, second radial bound, second axial bound,
 and positive radius. All geometric fields use the first tabulated-cylinder
-directrix-coordinate lane. The radial span equals twice the radius and the
-axial span equals the stored length. The cylinder origin has zero third
+directrix-coordinate lane. A bare `18` in either axial-bound slot is zero.
+The radial span equals twice the radius and the axial span equals the stored
+length. The cylinder origin has zero third
 coordinate, the radial midpoint as its first coordinate, and the second axial
 bound as its second coordinate. Without a trailer, the axis points from the
 first axial bound toward the second and the reference direction points from the
