@@ -25,4 +25,16 @@ fn product_anchored_control_lane_crosses_the_first_column_boundary() {
     let aligned_control = 7u32.to_le_bytes();
     let anchored_first_record = b"\x04\x01\x0eNX 2027.3102\0";
     assert!(offset_store_control_form(&aligned_control, Some(anchored_first_record)).is_none());
+
+    let zero_prefixed_control = [0x00, 0x52, 0x02, 0x00];
+    let mut continued_record = vec![0x00];
+    continued_record.extend_from_slice(&7u32.to_le_bytes());
+    continued_record.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
+    assert_eq!(
+        offset_store_control_form(&zero_prefixed_control, Some(&continued_record)),
+        Some(OffsetStoreControlForm::ProductAnchored {
+            leading_value: Some((1, 0)),
+            values: vec![594, 7],
+        })
+    );
 }

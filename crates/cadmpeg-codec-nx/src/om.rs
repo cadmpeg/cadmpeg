@@ -9508,13 +9508,12 @@ pub fn offset_store_control_form(
     control: &[u8],
     first_record: Option<&[u8]>,
 ) -> Option<OffsetStoreControlForm> {
-    match (
-        offset_store_control_values(control),
-        offset_store_product_anchored_form(control, first_record.unwrap_or_default()),
-    ) {
+    let zero = offset_store_control_values(control);
+    let product = offset_store_product_anchored_form(control, first_record.unwrap_or_default());
+    match (zero, product) {
         (Some(values), None) => Some(OffsetStoreControlForm::ZeroPrefixed { values }),
-        (None, Some(form)) => Some(form),
-        _ => None,
+        (_, Some(form)) => Some(form),
+        (None, None) => None,
     }
 }
 
