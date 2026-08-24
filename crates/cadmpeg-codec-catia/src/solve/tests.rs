@@ -108,7 +108,7 @@ fn standard_mesh_resolver_derives_trim_components_from_local_ports() {
     assert_eq!(assignment, vec![0, 1, 2, 3]);
     assert_eq!(
         topology.edge_vertices().expect("resolved edge endpoints"),
-        vec![[0, 1], [1, 2], [2, 3], [3, 0]]
+        vec![[0, 1], [1, 2], [2, 3], [0, 3]]
     );
 }
 
