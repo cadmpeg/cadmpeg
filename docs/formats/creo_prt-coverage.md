@@ -422,6 +422,11 @@ fixtures, scores above L1 remain blocked.
   counterbore tuple only when its radius is the declared bore or counterbore
   radius. A mismatching frame remains native; an unavailable or ambiguous tuple
   does not gate the frame.
+- Complete selector-corner interval cylinders transfer their source-bound axis
+  line, radius, and extent independently of the owning feature's generated
+  round replay. Split selectors and one reconstructed transverse placeholder
+  span use the same admission rule. Ambiguous axis, sign, selector, or radius
+  evidence remains native.
 - Fill boundaries use the unique feature-bound section transform when present
   and otherwise the unique feature-owned section definition. The sketch
   identity remains available when its placement or profile geometry is

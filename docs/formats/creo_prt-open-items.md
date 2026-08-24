@@ -262,6 +262,10 @@ construct their curves and endpoints.
 
 **Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay." define the recognized cylinder row families and their placement invariants, including the `11 10 13` placement-witnessed inline cylinder and generated type-24 round-edge endpoint bodies. The first directrix-coordinate positive DICT lattice covers prefixes `4b..a3`.
 
+The selector-corner interval family reconstructs its unique axis line, radius,
+and extent from two directrix parameters, two XYZ corners, and the selector
+pair. Its split-selector and one-placeholder variants use the same equation.
+
 **Need.** We must know the equation to construct the cylinder carrier.
 
 ### GS-19. Positional cone station token

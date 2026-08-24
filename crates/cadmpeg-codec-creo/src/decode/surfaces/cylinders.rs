@@ -749,6 +749,9 @@ pub(in super::super) fn transfer_positional_cylinders(
         let feature_class = feature_schema_class(scan, row.feature_id);
         let inline_non_plane = record.has_inline_non_plane_envelope()
             || record.has_inline_non_plane_local_system_suffix(row.type_byte);
+        let selector_corner_interval = record
+            .selector_corner_interval_cylinder_frame(row.type_byte)
+            .is_some();
         let round_edge_envelope = (feature_class == Some(913) && !inline_non_plane)
             .then(|| record.type24_round_edge_envelope(row.type_byte))
             .flatten();
@@ -828,6 +831,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         // row has an independent cap/support-envelope cylinder proof.
         if row.type_byte == 0x24
             && !inline_non_plane
+            && !selector_corner_interval
             && (matches!(feature_class, Some(916))
                 || matches!(feature_class, Some(913))
                     && !constant_round_radii.contains_key(&row.feature_id)
@@ -868,11 +872,16 @@ pub(in super::super) fn transfer_positional_cylinders(
             reference_cap_bound_round_frame(envelope, &circles)
                 .map(|frame| (frame, "round_reference_cap_cylinder_frame"))
         };
-        let (frame, mechanism) = if inline_non_plane {
+        let (frame, mechanism) = if inline_non_plane || selector_corner_interval {
             let Some(frame) = record.positional_cylinder_frame else {
                 continue;
             };
-            (frame, "inline_positional_surface_row")
+            let mechanism = if selector_corner_interval {
+                "selector_corner_interval_cylinder"
+            } else {
+                "inline_positional_surface_row"
+            };
+            (frame, mechanism)
         } else {
             match round_support_frame {
                 Some(frame) => (frame, "round_support_envelope_cylinder"),

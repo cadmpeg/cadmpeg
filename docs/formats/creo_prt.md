@@ -945,6 +945,26 @@ axis vector. Its magnitude is the bounded axial length, its normalized value
 is the axis direction, and the first extent endpoint supplies the other two
 origin coordinates.
 
+A selector-corner interval cylinder begins with a selector in `11..14`, one
+first-directrix-coordinate parameter, a second selector in `11..14`, one
+first-directrix-coordinate parameter, and two XYZ corner triples in the same
+scalar lane. The three-byte images `00 11 13` and `00 13 1a` carry selectors
+`11` and `13` respectively. One complete `f7 <reference-id>` may follow the
+corners. Exactly one corner-coordinate span equals the absolute parameter span.
+That coordinate is the axis. Pairing the first corner with the first parameter
+and the second corner with the second parameter under `corner - parameter`
+gives a positive axis; pairing the same ends under `corner + parameter` gives a negative axis.
+Exactly one pairing must produce one common axis-line coordinate. The two
+transverse corner spans have one common positive magnitude, which is the
+cylinder radius. The selector pair chooses the two transverse origin
+coordinates from the corner extrema: `12,11` chooses `(max,max)`, `11,14`
+chooses `(max,min)`, `14,13` chooses `(min,min)`, and `13,12` chooses
+`(min,max)`. A seven-byte `92 <i48>` or `da <i48>` image in one transverse
+corner slot is a placeholder. Its span equals the other transverse signed
+span, which reconstructs the missing corner coordinate. More than one missing
+transverse span is incomplete. Any other selector pair or non-unique axis,
+pairing, or radius retains the body as native.
+
 A generated type-24 round-edge body has a control shell, two edge parameters,
 two model-space endpoint triples, and an optional generated-entity reference.
 This production applies only when the bounded row has no complete inline

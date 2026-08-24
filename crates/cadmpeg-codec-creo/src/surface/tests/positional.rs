@@ -1251,36 +1251,42 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
             length: Some(2.0_f64.sqrt()),
         }
     );
-    let compact_controls = [
+    let selector_corner_interval = [
         0x12, 0x2d, 0x40, 0x7a, 0x35, 0xc4, 0x3e, 0x21, 0x5b, 0x11, 0x2d, 0x44, 0xff, 0xd2, 0xa6,
         0xae, 0x74, 0x2b, 0x46, 0x65, 0x3f, 0xff, 0xff, 0xff, 0xff, 0xfc, 0x2d, 0x51, 0xd2, 0x31,
         0x1a, 0xfa, 0xb7, 0x82, 0x48, 0x28, 0x00, 0x46, 0x64, 0x1f, 0xff, 0xff, 0xff, 0xff, 0xfc,
         0x2d, 0x54, 0x14, 0xff, 0x8c, 0x32, 0xe0, 0xea, 0x48, 0x08, 0x00,
     ];
-    let compact_record = record(&compact_controls);
-    let compact_frame = compact_record
+    let selector_corner_record = record(&selector_corner_interval);
+    assert!(selector_corner_record
+        .selector_corner_interval_cylinder_frame(0x24)
+        .is_some());
+    assert!(selector_corner_record
+        .selector_corner_interval_cylinder_frame(0x22)
+        .is_none());
+    let selector_corner_frame = selector_corner_record
         .positional_cylinder_frame
-        .expect("compact-control repeated-diameter carrier");
-    assert!((compact_frame.radius - 4.521_925_117_895_819).abs() < 1e-12);
-    assert!(compact_frame
-        .axis
-        .into_iter()
-        .zip([
-            -std::f64::consts::FRAC_1_SQRT_2,
-            0.0,
-            std::f64::consts::FRAC_1_SQRT_2
-        ])
-        .all(|(actual, expected)| (actual - expected).abs() < 1e-12));
-    assert_eq!(compact_frame.ref_direction, [0.0, -1.0, 0.0]);
-    let mut referenced_controls = compact_controls.to_vec();
+        .expect("selector-corner interval carrier");
+    assert!((selector_corner_frame.origin[0] + 161.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!(
+        (selector_corner_frame.origin[1] - 38.329_481_329_444_5).abs() < EPS_CYLINDER_GEOMETRY_MIN
+    );
+    assert!((selector_corner_frame.origin[2] + 3.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert_eq!(selector_corner_frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(selector_corner_frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert!((selector_corner_frame.radius - 9.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!(selector_corner_frame.length.is_some_and(|length| {
+        (length - 9.043_850_235_791_638).abs() < EPS_CYLINDER_GEOMETRY_MIN
+    }));
+    let mut referenced_controls = selector_corner_interval.to_vec();
     referenced_controls.extend_from_slice(&[0xf7, 0x40]);
     assert!(record(&referenced_controls)
         .positional_cylinder_frame
         .is_some());
-    let mut invalid_control = compact_controls;
+    let mut invalid_control = selector_corner_interval;
     invalid_control[0] = 0x15;
     assert!(record(&invalid_control).positional_cylinder_frame.is_none());
-    invalid_control = compact_controls;
+    invalid_control = selector_corner_interval;
     invalid_control[9] = 0x15;
     assert!(record(&invalid_control).positional_cylinder_frame.is_none());
     let prefixed_auxiliary = [
@@ -1321,9 +1327,16 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     ];
     let split_frame = record(&split_controls)
         .positional_cylinder_frame
-        .expect("split-control repeated-diameter carrier");
-    assert!((split_frame.radius - 3.250_923_087_748_47).abs() < 1e-12);
-    assert_eq!(split_frame.ref_direction, [0.0, -1.0, 0.0]);
+        .expect("split selector-corner interval carrier");
+    assert!((split_frame.origin[0] + 99.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!((split_frame.origin[1] - 38.329_481_329_444_49).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!((split_frame.origin[2] - 3.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert_eq!(split_frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(split_frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert!((split_frame.radius - 7.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!(split_frame.length.is_some_and(|length| {
+        (length - 6.501_846_175_496_936_6).abs() < EPS_CYLINDER_GEOMETRY_MIN
+    }));
     let mut invalid_split_controls = split_controls;
     invalid_split_controls[10] = 0x14;
     assert!(record(&invalid_split_controls)
@@ -1627,7 +1640,6 @@ fn complete_directrix_interval_cylinders_accept_selector_opener_variants() {
             Some(expected)
         );
     }
-
     let inconsistent_interval = build(&[0x18, 0xe4, 0x11], [2.0, 2.0, 3.0, 4.0, 6.0, 5.0, 7.0]);
     assert!(decode_complete_directrix_interval_cylinder_frame(
         &inconsistent_interval,
