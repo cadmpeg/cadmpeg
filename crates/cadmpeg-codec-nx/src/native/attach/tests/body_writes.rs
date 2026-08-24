@@ -268,6 +268,20 @@ fn group_use(member_ids: &[&str]) -> crate::native::features::FeatureOperationBo
     }
 }
 
+fn direct_group_use(
+    member_ids: &[&str],
+) -> crate::native::features::FeatureBodyWriteGroupPartitionUse {
+    crate::native::features::FeatureBodyWriteGroupPartitionUse {
+        id: "direct-partition-use".into(),
+        body_write: "write".into(),
+        body_identity: 17,
+        group_node: 7,
+        partition_stream_ordinal: 4,
+        parasolid_group_records: Vec::new(),
+        parasolid_group_members: member_ids.iter().map(|id| (*id).into()).collect(),
+    }
+}
+
 #[test]
 fn result_topology_uses_only_unique_current_group_members() {
     let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
@@ -278,7 +292,11 @@ fn result_topology_uses_only_unique_current_group_members() {
         group_member("historical", "FACE", None),
         group_member("shell", "SHELL", Some(43)),
     ];
-    let result = super::feature_result_group_members(&use_, &members);
+    let result = super::feature_result_group_members(
+        use_.partition_stream_ordinal,
+        &use_.parasolid_group_members,
+        &members,
+    );
 
     assert_eq!(result.faces, ["nx:s4:face#40"]);
     assert_eq!(result.edges, ["nx:s4:edge#41"]);
@@ -289,10 +307,41 @@ fn result_topology_uses_only_unique_current_group_members() {
         group_member("face", "FACE", Some(40)),
     ];
     assert!(
-        super::feature_result_group_members(&group_use(&["face"]), &duplicate_members,)
+        super::feature_result_group_members(4, &["face".into()], &duplicate_members)
             .faces
             .is_empty()
     );
+}
+
+#[test]
+fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
+    let members = [
+        group_member("face", "FACE", Some(40)),
+        group_member("edge", "EDGE", Some(41)),
+    ];
+    let image = group_use(&["face"]);
+    let direct = direct_group_use(&["face"]);
+
+    let from_image = super::operation_body_write_result_group_members(
+        "write",
+        std::slice::from_ref(&image),
+        &[],
+        &members,
+    );
+    let from_direct = super::operation_body_write_result_group_members(
+        "write",
+        &[],
+        std::slice::from_ref(&direct),
+        &members,
+    );
+    assert_eq!(from_image.faces, ["nx:s4:face#40"]);
+    assert_eq!(from_direct.faces, from_image.faces);
+
+    let conflict = direct_group_use(&["edge"]);
+    let rejected =
+        super::operation_body_write_result_group_members("write", &[image], &[conflict], &members);
+    assert!(rejected.faces.is_empty());
+    assert!(rejected.edges.is_empty());
 }
 
 #[test]

@@ -2092,6 +2092,19 @@ fn attach_feature_operations(
                     use_.segment_body_binding.clone(),
                 );
             }
+            if let Some(use_) = operation_body_identity_segment_uses
+                .iter()
+                .find(|use_| use_.operation_body_write == write.id)
+            {
+                source_properties.insert(
+                    format!("body_write.{ordinal}.body_identity_segment_use"),
+                    use_.id.clone(),
+                );
+                source_properties.insert(
+                    format!("body_write.{ordinal}.body_identity_segment_binding"),
+                    use_.segment_body_binding.clone(),
+                );
+            }
             if let Some(use_) = operation_body_partition_uses
                 .iter()
                 .find(|use_| use_.operation_body_write == write.id)
@@ -2116,6 +2129,15 @@ fn attach_feature_operations(
                         member.clone(),
                     );
                 }
+            }
+            if let Some(use_) = body_write_group_partition_uses
+                .iter()
+                .find(|use_| use_.body_write == write.id)
+            {
+                source_properties.insert(
+                    format!("body_write.{ordinal}.group_partition_use"),
+                    use_.id.clone(),
+                );
             }
         }
         source_properties.extend(operation_source_properties(
@@ -3571,11 +3593,12 @@ fn attach_feature_operations(
                 .strip_prefix("nx:feature-history:operation-label#")
                 .unwrap_or(label.id.as_str());
             for write in operation_body_writes {
-                let result_members = operation_body_partition_uses
-                    .iter()
-                    .find(|use_| use_.operation_body_write == write.id)
-                    .map(|use_| feature_result_group_members(use_, parasolid_group_members))
-                    .unwrap_or_default();
+                let result_members = operation_body_write_result_group_members(
+                    write.id.as_str(),
+                    operation_body_partition_uses,
+                    body_write_group_partition_uses,
+                    parasolid_group_members,
+                );
                 ir.model
                     .feature_result_topologies
                     .push(FeatureResultTopology {
@@ -3654,19 +3677,63 @@ fn attach_feature_operations(
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default, PartialEq, Eq)]
 struct FeatureResultGroupMembers {
     faces: Vec<String>,
     edges: Vec<String>,
     vertices: Vec<String>,
 }
 
+fn operation_body_write_result_group_members(
+    body_write: &str,
+    image_partition_uses: &[crate::native::features::FeatureOperationBodyPartitionUse],
+    group_partition_uses: &[crate::native::features::FeatureBodyWriteGroupPartitionUse],
+    members: &[crate::native::parasolid::ParasolidGroupMember],
+) -> FeatureResultGroupMembers {
+    let mut matching_image_uses = image_partition_uses
+        .iter()
+        .filter(|use_| use_.operation_body_write == body_write);
+    let image_use = matching_image_uses.next();
+    if matching_image_uses.next().is_some() {
+        return FeatureResultGroupMembers::default();
+    }
+    let image_members = image_use.map(|use_| {
+        feature_result_group_members(
+            use_.partition_stream_ordinal,
+            &use_.parasolid_group_members,
+            members,
+        )
+    });
+    let mut matching_group_uses = group_partition_uses
+        .iter()
+        .filter(|use_| use_.body_write == body_write);
+    let group_use = matching_group_uses.next();
+    if matching_group_uses.next().is_some() {
+        return FeatureResultGroupMembers::default();
+    }
+    let group_members = group_use.map(|use_| {
+        feature_result_group_members(
+            use_.partition_stream_ordinal,
+            &use_.parasolid_group_members,
+            members,
+        )
+    });
+    match (image_members, group_members) {
+        (Some(image), Some(group)) if image == group => image,
+        (Some(_), Some(_)) => FeatureResultGroupMembers::default(),
+        (Some(image), None) => image,
+        (None, Some(group)) => group,
+        (None, None) => FeatureResultGroupMembers::default(),
+    }
+}
+
 fn feature_result_group_members(
-    use_: &crate::native::features::FeatureOperationBodyPartitionUse,
+    partition_stream_ordinal: u32,
+    member_ids: &[String],
     members: &[crate::native::parasolid::ParasolidGroupMember],
 ) -> FeatureResultGroupMembers {
     let mut result = FeatureResultGroupMembers::default();
-    for member_id in &use_.parasolid_group_members {
+    for member_id in member_ids {
         let mut matches = members.iter().filter(|member| member.id == *member_id);
         let Some(member) = matches.next() else {
             continue;
@@ -3674,22 +3741,22 @@ fn feature_result_group_members(
         if matches.next().is_some() {
             continue;
         }
+        if member.partition_stream_ordinal != partition_stream_ordinal {
+            continue;
+        }
         let Some(xmt) = member.current_member_xmt else {
             continue;
         };
         match member.member_family.as_str() {
-            "FACE" => result.faces.push(format!(
-                "nx:s{}:face#{xmt}",
-                member.partition_stream_ordinal
-            )),
-            "EDGE" => result.edges.push(format!(
-                "nx:s{}:edge#{xmt}",
-                member.partition_stream_ordinal
-            )),
-            "VERTEX" => result.vertices.push(format!(
-                "nx:s{}:vertex#{xmt}",
-                member.partition_stream_ordinal
-            )),
+            "FACE" => result
+                .faces
+                .push(format!("nx:s{partition_stream_ordinal}:face#{xmt}")),
+            "EDGE" => result
+                .edges
+                .push(format!("nx:s{partition_stream_ordinal}:edge#{xmt}")),
+            "VERTEX" => result
+                .vertices
+                .push(format!("nx:s{partition_stream_ordinal}:vertex#{xmt}")),
             _ => {}
         }
     }
