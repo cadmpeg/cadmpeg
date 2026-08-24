@@ -248,6 +248,28 @@ u8[9] zero
 
 Each legacy target reference is `u8 1`, `u64 target entity ID`, `u8 1`, `u64 opaque target-reference value`, `u8 0`, `LP-ASCII 36 target type GUID`, and `u8 0`. The identity form is 403 bytes from its indexed header through its fixed closing tail; the matrix form is 531 bytes. `identity_flag` `1` stores no matrix, and `0` stores the rigid matrix. The dynamic class tag does not select this envelope: the occurrence-placement type-table identity and exact record closure do.
 
+The repeated-target placement generation starts with the standard target path and its terminating u8 zero. Its generation tail is:
+
+```
+u32  envelope_discriminator   1 or 5
+LP-UTF16 36       metadata GUID 1
+LP-UTF16 36       metadata GUID 2
+u8[15]            00 01 03 00 00 00 00 00 00 00 01 00 00 00 00
+LP-UTF16 36       repeated component GUID
+u8   0
+LP-ASCII 36       repeated target type GUID
+LP-UTF16           repeated occurrence role
+u8   0
+u8   identity_flag
+16 × f64          row-major 4×4, stored only when identity_flag is 0
+u32  0
+LP-UTF16           repeated occurrence role
+u8   0
+reference          closing local reference
+```
+
+The two occurrence-role fields are equal. When the target path carries a cross-document role, they also equal that path role. The metadata and component fields are GUIDs. The record closes immediately after the local reference. The matrix form is exactly 128 bytes longer than the identity form.
+
 The transform belongs to the occurrence record rather than the referenced target. Each reference placement projects as one root external occurrence whose target path is `relativePath`; translation converts from centimetres to millimetres. An external occurrence without a serialized transform places the target document's model in the referencing document's frame unchanged.
 
 A type-admitted occurrence placement whose target path parses but whose remaining payload does not close under the selected generation grammar is an undecoded placement, not an identity placement. When no scope-bound construction carrier or other valid placement names the same occurrence role, the decoder retains the container reference at identity and records an `xref.placement-undecoded` loss. An identity marker that closes the placement record is not a loss, and a role with no placement record is not a placement decode failure.

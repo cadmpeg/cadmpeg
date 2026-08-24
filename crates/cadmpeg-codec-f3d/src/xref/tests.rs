@@ -187,6 +187,72 @@ fn occurrence_record_with_serializer_magic(
     bytes
 }
 
+fn repeated_target_occurrence_record(
+    role: &str,
+    entity_id: u64,
+    envelope_discriminator: u32,
+    transform: Option<[[f64; 4]; 4]>,
+) -> Vec<u8> {
+    let component_guid = "11111111-2222-3333-4444-555555555555";
+    let type_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
+    let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
+    let mut bytes = occurrence_record(role, entity_id, &[1], None);
+    let path_end = super::occurrence_path(&bytes).expect("synthetic path").2;
+    bytes.truncate(path_end);
+    bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
+    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a));
+    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_b));
+    bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
+    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid));
+    bytes.push(0);
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    bytes.extend_from_slice(type_guid.as_bytes());
+    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.push(0);
+    match transform {
+        Some(transform) => {
+            bytes.push(0);
+            for value in transform.into_iter().flatten() {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        None => bytes.push(1),
+    }
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.push(0);
+    bytes.extend(local_reference(3));
+    bytes
+}
+
+#[test]
+fn repeated_target_placements_decode_identity_and_matrix_forms() {
+    let matrix = [
+        [0.0, -1.0, 0.0, 2.0],
+        [1.0, 0.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+    let identity = repeated_target_occurrence_record(role, 10, 1, None);
+    let matrix_record = repeated_target_occurrence_record(role, 11, 5, Some(matrix));
+    assert_eq!(identity.len(), 695);
+    assert_eq!(matrix_record.len(), 823);
+    let mut bytes = identity;
+    bytes.extend(matrix_record);
+
+    let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
+
+    assert_eq!(placements.len(), 2);
+    assert_eq!(placements[0].discriminators, vec![1]);
+    assert_eq!(placements[1].discriminators, vec![1]);
+    assert_eq!(
+        super::occurrence_transforms(&placements, role),
+        vec![None, Some(matrix)]
+    );
+}
+
 fn grouped_identity_carrier(role: &str, record_index: u32) -> Vec<u8> {
     let component_guid = "11111111-2222-3333-4444-555555555555";
     let type_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";

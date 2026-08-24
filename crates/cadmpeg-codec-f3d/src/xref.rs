@@ -661,6 +661,7 @@ fn occurrence_placements_with_failures(
 /// exactly at the record end.
 fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<OccurrencePlacement> {
     legacy_occurrence_placement(body)
+        .or_else(|| repeated_target_occurrence_placement(body))
         .or_else(|| modern_occurrence_placement(body, serializer_magic))
         .or_else(|| {
             let record_index = View::u32_le_at(body, 7)?;
@@ -672,6 +673,89 @@ fn occurrence_placement(body: &[u8], serializer_magic: Option<u32>) -> Option<Oc
                 transform: None,
             })
         })
+}
+
+/// Parse the placement generation that repeats the target identity after the
+/// standard path and stores the identity flag beside that repeated target.
+fn repeated_target_occurrence_placement(body: &[u8]) -> Option<OccurrencePlacement> {
+    const METADATA_MARKER: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
+    let (link_names, discriminators, mut at) = occurrence_path(body)?;
+    if !matches!(View::u32_le_at(body, at)?, 1 | 5) {
+        return None;
+    }
+    at += 4;
+    for _ in 0..2 {
+        let (guid, next) = lp_utf16_bounded(body, at, 36..=36)?;
+        if !is_guid_relaxed(&guid) {
+            return None;
+        }
+        at = next;
+    }
+    if body.get(at..at + METADATA_MARKER.len())? != METADATA_MARKER {
+        return None;
+    }
+    at += METADATA_MARKER.len();
+
+    let (component_guid, next) = lp_utf16_bounded(body, at, 36..=36)?;
+    if !is_guid_relaxed(&component_guid) {
+        return None;
+    }
+    at = next;
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    at += 1;
+    let (type_guid, next) = lp_ascii_strict(body, at, 36..=36)?;
+    if !is_guid_relaxed(&type_guid) {
+        return None;
+    }
+    at = next;
+    let (role, next) = lp_utf16_bounded(body, at, 36..=256)?;
+    if !is_guid_prefix(&role)
+        || (!link_names.is_empty()
+            && !link_names
+                .iter()
+                .any(|link_name| link_name.eq_ignore_ascii_case(&role)))
+    {
+        return None;
+    }
+    at = next;
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    at += 1;
+    let transform = match *body.get(at)? {
+        1 => {
+            at += 1;
+            None
+        }
+        0 => {
+            at += 1;
+            let matrix = decode_rigid_matrix(body, at)?;
+            at = at.checked_add(128)?;
+            Some(matrix)
+        }
+        _ => return None,
+    };
+    if View::u32_le_at(body, at)? != 0 {
+        return None;
+    }
+    at += 4;
+    let (final_role, next) = lp_utf16_bounded(body, at, 36..=256)?;
+    if !final_role.eq_ignore_ascii_case(&role) {
+        return None;
+    }
+    at = next;
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    at += 1;
+    take_reference(body, &mut at)?;
+    (at == body.len()).then_some(OccurrencePlacement {
+        link_names,
+        discriminators,
+        transform,
+    })
 }
 
 /// Parse the grouped identity carrier used by the compact `Component Insert`
