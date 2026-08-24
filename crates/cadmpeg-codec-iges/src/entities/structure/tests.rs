@@ -18,7 +18,7 @@ use crate::IgesCodec;
 use super::{
     flow_join_target_valid, functional_level_identifier_valid, line_font_property_code_valid,
     network_connectivity_valid, signal_string_geometry_target,
-    subfigure_definition_directory_valid,
+    subfigure_definition_directory_fields_valid,
 };
 mod network;
 const LEGACY_TEXT_ANGLE_TOLERANCE: f64 = 1.0e-4;
@@ -1985,6 +1985,96 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
 }
 
 #[test]
+fn v5_applies_definition_transformations_to_subfigure_occurrences() {
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    for (definition_type, instance_type, definition_arena) in [
+        (308, 408, "subfigure_definitions"),
+        (320, 420, "network_definitions"),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(transformed_subfigure_definition_file(
+                    definition_type,
+                    instance_type,
+                    global_v5,
+                    0,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        assert_eq!(native.arenas[definition_arena].len(), 1);
+        assert_eq!(
+            native.arenas[definition_arena][0].fields()["transformation"],
+            "iges:native:transformation#D1"
+        );
+        let root = native.arenas["product_occurrences"]
+            .iter()
+            .find(|occurrence| occurrence.id() == "iges:product:occurrence#7")
+            .unwrap();
+        assert_eq!(root.fields()["world_transform"][0][3], 10.0);
+        assert_eq!(root.fields()["world_transform"][1][3], 20.0);
+        assert_eq!(root.fields()["world_transform"][2][3], 30.0);
+        let leaf = native.arenas["product_occurrences"]
+            .iter()
+            .find(|occurrence| occurrence.id() == "iges:product:occurrence#7/D3")
+            .unwrap();
+        assert_eq!(leaf.fields()["world_transform"][0][3], 10.0);
+        assert_eq!(leaf.fields()["world_transform"][1][3], 20.0);
+        assert_eq!(leaf.fields()["world_transform"][2][3], 30.0);
+        assert!(
+            !result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()),
+            "{:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
+fn v4_rejects_definition_transformations_for_both_subfigure_types() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    for (definition_type, instance_type, message) in [
+        (
+            308,
+            408,
+            "subfigure definition fields or nesting depth is invalid",
+        ),
+        (
+            320,
+            420,
+            "network definition fields or nesting depth is invalid",
+        ),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(transformed_subfigure_definition_file(
+                    definition_type,
+                    instance_type,
+                    global_v4,
+                    1,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(
+            result.report().losses.iter().any(|loss| {
+                loss.code == IgesLossCode::EntityNotProjected.kind()
+                    && loss.message.contains(message)
+            }),
+            "{:#?}",
+            result.report().losses
+        );
+        assert!(
+            result.ir().native.namespace("iges").unwrap().arenas["product_occurrences"].is_empty()
+        );
+    }
+}
+
+#[test]
 fn decode_omits_occurrence_with_malformed_placement_and_reports_it() {
     let result = IgesCodec
         .decode(
@@ -2432,27 +2522,27 @@ fn subfigure_definition_directory_fields_use_the_v4_table_rules() {
         subscript: 0,
     };
 
-    assert!(!subfigure_definition_directory_valid(
+    assert!(!subfigure_definition_directory_fields_valid(
         &entry(0, 0, 2, 0),
         Dialect::V4_0
     ));
-    assert!(subfigure_definition_directory_valid(
+    assert!(subfigure_definition_directory_fields_valid(
         &entry(1, 0, 2, 0),
         Dialect::V4_0
     ));
-    assert!(subfigure_definition_directory_valid(
+    assert!(subfigure_definition_directory_fields_valid(
         &entry(0, 0, 2, 1),
         Dialect::V4_0
     ));
-    assert!(!subfigure_definition_directory_valid(
+    assert!(!subfigure_definition_directory_fields_valid(
         &entry(1, 1, 2, 0),
         Dialect::V4_0
     ));
-    assert!(!subfigure_definition_directory_valid(
+    assert!(!subfigure_definition_directory_fields_valid(
         &entry(1, 0, 1, 0),
         Dialect::V4_0
     ));
-    assert!(subfigure_definition_directory_valid(
+    assert!(subfigure_definition_directory_fields_valid(
         &entry(0, 3, 2, 0),
         Dialect::V5_0
     ));

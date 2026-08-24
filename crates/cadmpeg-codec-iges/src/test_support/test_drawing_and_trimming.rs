@@ -938,6 +938,117 @@ pub(crate) fn nested_subfigure_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn transformed_subfigure_definition_file(
+    definition_type: i64,
+    instance_type: i64,
+    global: &[u8],
+    line_font: i64,
+) -> Vec<u8> {
+    struct Entry<'a> {
+        entity_type: i64,
+        form: i64,
+        transform: i64,
+        label: &'a str,
+        status: &'a str,
+        parameters: &'a [u8],
+    }
+    assert!(matches!(
+        (definition_type, instance_type),
+        (308, 408) | (320, 420)
+    ));
+    let definition_parameters: &[u8] = match definition_type {
+        308 => b"308,0,3HDEF,1,3;",
+        320 => b"320,0,3HNET,1,3,1,,,0;",
+        _ => unreachable!(),
+    };
+    let instance_parameters: &[u8] = match instance_type {
+        408 => b"408,5,0,0,0,1;",
+        420 => b"420,5,0,0,0,1,,,1,,,0;",
+        _ => unreachable!(),
+    };
+    let entries = [
+        Entry {
+            entity_type: 124,
+            form: 0,
+            transform: 0,
+            label: "MATRIX",
+            status: "00010000",
+            parameters: b"124,1,0,0,10,0,1,0,20,0,0,1,30;",
+        },
+        Entry {
+            entity_type: 110,
+            form: 0,
+            transform: 0,
+            label: "MEMBER",
+            status: "00010000",
+            parameters: b"110,0,0,0,1,0,0;",
+        },
+        Entry {
+            entity_type: definition_type,
+            form: 0,
+            transform: 1,
+            label: "DEF",
+            status: "00000200",
+            parameters: definition_parameters,
+        },
+        Entry {
+            entity_type: instance_type,
+            form: 0,
+            transform: 0,
+            label: "INSTANCE",
+            status: "00000000",
+            parameters: instance_parameters,
+        },
+    ];
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (index, entry) in entries.iter().enumerate() {
+        let sequence = u32::try_from(index * 2 + 1).unwrap();
+        let parameter_start = u32::try_from(index + 1).unwrap().to_string();
+        let entity_type = entry.entity_type.to_string();
+        let form = entry.form.to_string();
+        let transform = entry.transform.to_string();
+        let line_font = if line_font != 0 {
+            line_font.to_string()
+        } else {
+            "0".into()
+        };
+        bytes.extend(directory_card(
+            [
+                &entity_type,
+                &parameter_start,
+                "0",
+                &line_font,
+                "0",
+                "0",
+                &transform,
+                "0",
+                entry.status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [&entity_type, "0", "0", "1", &form, "", "", entry.label, "0"],
+            sequence + 1,
+        ));
+    }
+    for (index, entry) in entries.iter().enumerate() {
+        let sequence = u32::try_from(index * 2 + 1).unwrap();
+        bytes.extend(parameter_card(
+            entry.parameters,
+            sequence,
+            u32::try_from(index + 1).unwrap(),
+        ));
+    }
+    let global_cards = global_card_count(global);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000008P0000004").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
 pub(crate) fn malformed_occurrence_placement_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {

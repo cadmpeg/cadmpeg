@@ -1564,6 +1564,7 @@
                 49
               ],
               "source_entity": "iges:entity:directory#1",
+              "transformation": null,
               "type_flag": 1
             }
           ],

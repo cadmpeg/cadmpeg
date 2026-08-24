@@ -3317,7 +3317,8 @@
                 76,
                 68
               ],
-              "source_entity": "iges:entity:directory#3"
+              "source_entity": "iges:entity:directory#3",
+              "transformation": null
             },
             {
               "declared_member_count": 1,
@@ -3334,7 +3335,8 @@
                 78,
                 84
               ],
-              "source_entity": "iges:entity:directory#7"
+              "source_entity": "iges:entity:directory#7",
+              "transformation": null
             }
           ],
           "subfigure_instances": [

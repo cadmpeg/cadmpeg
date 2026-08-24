@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "b1889a102f259d67ab892c003af1570d550e0709"
+measured_at = "324753e548d167189113175e0908bc33f8aef6e9"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -34,7 +34,7 @@ bare_tolerance_literals = 708
 nonliteral_vec_repeat = 153
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 17594
+test_line_debt = 17712
 production_line_debt = 0
 
 [reasons]
@@ -42,4 +42,4 @@ from_endian_bytes = "four u32::from_le_bytes calls compare already-copied layer 
 codec_error_malformed_format = "The merged FreeCAD, IGES, Rhino, and STEP admission paths retain explicit malformed-input diagnostics: DP-10 and SA-03 require exact carrier and annotation checks, while IGES Type 186 and Rhino V1/RhinoIO checks preserve field-specific failures rather than collapsing distinct producer fields into one generic error."
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
 nonliteral_vec_repeat = "The current IGES writer retains one parsed-count vector repeat while the allocation convergence work remains open."
-test_line_debt = "The merged tree retains the current CATIA native test helper file at 3,777 lines, the IGES parameter test file at 14,097 lines, the IGES solid test support file at 2,039 lines, and the IGES writer encoding test file at 2,036 lines while test ownership migration remains incomplete; this change adds 55 owner tests for the versioned Type 308/320 Directory admission rule."
+test_line_debt = "The merged tree retains the current CATIA native test helper file at 3,777 lines, the IGES parameter test file at 14,097 lines, the IGES solid test support file at 2,039 lines, and the IGES writer encoding test file at 2,036 lines while test ownership migration remains incomplete; the previous change added 55 owner tests for the versioned Type 308/320 Directory admission rule, and this change adds V4/V5 Type 308/320 transformation witnesses and their shared byte fixture."

@@ -127,12 +127,32 @@ fn network_connectivity_valid(
             || (definition.iter().all(Option::is_some) && instance.iter().all(Option::is_some)))
 }
 
-fn subfigure_definition_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+fn subfigure_definition_directory_fields_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
     entry.status.use_flag == 2
-        && entry.transform == 0
         && (!matches!(dialect, Dialect::V4_0)
             || (entry.status.subordinate == 0
                 && (entry.status.hierarchy == 1 || entry.line_font != 0)))
+}
+
+fn subfigure_definition_transform_valid(
+    entry: &DirectoryEntry,
+    dialect: Dialect,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    global: &ProjectedGlobal,
+    ctx: Option<&DecodeContext<'_>>,
+) -> bool {
+    (!matches!(dialect, Dialect::V4_0) || entry.transform == 0)
+        && resolve_transform(
+            entry.transform,
+            entries,
+            records,
+            global.length_factor_mm(),
+            global.real_precision(),
+            &mut BTreeSet::new(),
+            ctx,
+        )
+        .is_ok()
 }
 
 #[derive(Clone)]
@@ -2549,7 +2569,17 @@ pub(super) fn project(
             continue;
         };
         definitions.insert(entry.sequence, SubfigureDefinition { depth, members });
-        if name_valid && subfigure_definition_directory_valid(entry, global.dialect()) {
+        if name_valid
+            && subfigure_definition_directory_fields_valid(entry, global.dialect())
+            && subfigure_definition_transform_valid(
+                entry,
+                global.dialect(),
+                &entries,
+                &records,
+                global,
+                ctx,
+            )
+        {
             definition_fields_valid.insert(entry.sequence);
         }
     }
@@ -2671,7 +2701,15 @@ pub(super) fn project(
             && type_flag_valid
             && designator_valid
             && display_valid
-            && subfigure_definition_directory_valid(entry, global.dialect())
+            && subfigure_definition_directory_fields_valid(entry, global.dialect())
+            && subfigure_definition_transform_valid(
+                entry,
+                global.dialect(),
+                &entries,
+                &records,
+                global,
+                ctx,
+            )
         {
             network_definition_fields_valid.insert(entry.sequence);
         }

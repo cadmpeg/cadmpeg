@@ -2658,7 +2658,8 @@
                 82,
                 75
               ],
-              "source_entity": "iges:entity:directory#1"
+              "source_entity": "iges:entity:directory#1",
+              "transformation": null
             }
           ],
           "subfigure_instances": [],

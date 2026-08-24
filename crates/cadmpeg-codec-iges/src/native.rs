@@ -352,6 +352,7 @@ struct NativeSubfigureDefinition {
     name: Option<Vec<u8>>,
     declared_member_count: Option<i64>,
     members: Vec<Option<String>>,
+    transformation: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -377,6 +378,7 @@ struct NativeNetworkDefinition {
     display_template: Option<String>,
     declared_connect_point_count: Option<i64>,
     connect_points: Vec<Option<String>>,
+    transformation: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1177,6 +1179,7 @@ fn choose_drawing_property(
 #[derive(Clone)]
 struct OccurrenceDefinition {
     members: Vec<u32>,
+    transform: Affine,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1413,6 +1416,7 @@ impl OccurrenceExpansion<'_, '_> {
             return Ok(None);
         };
         let world = parent.compose(local);
+        let definition_world = world.compose(definition.transform);
         path.push(instance_sequence);
         let path_ids = path
             .iter()
@@ -1434,7 +1438,7 @@ impl OccurrenceExpansion<'_, '_> {
             neutral_links: Vec::new(),
             instance_path: path_ids.clone(),
             local_transform: local.rows,
-            world_transform: world.rows,
+            world_transform: definition_world.rows,
         });
         for member in &definition.members {
             if occurrences.len() >= self.output_limit {
@@ -1448,7 +1452,7 @@ impl OccurrenceExpansion<'_, '_> {
             {
                 if let Some(source_sequence) = self.expand(
                     *member,
-                    world,
+                    definition_world,
                     path,
                     occurrences,
                     depth_truncated_at,
@@ -1484,7 +1488,7 @@ impl OccurrenceExpansion<'_, '_> {
                 neutral_links: self.neutral_links.get(member).cloned().unwrap_or_default(),
                 instance_path: path_ids.clone(),
                 local_transform: member_local.rows,
-                world_transform: world.compose(member_local).rows,
+                world_transform: definition_world.compose(member_local).rows,
             });
         }
         path.pop();
@@ -2530,6 +2534,8 @@ pub(crate) fn store(
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             }
         })
         .collect::<Vec<_>>();
@@ -2659,6 +2665,8 @@ pub(crate) fn store(
                             .collect()
                     },
                 ),
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             }
         })
         .collect::<Vec<_>>();
@@ -4618,6 +4626,9 @@ pub(crate) fn store(
     let fem_entities = fem::build(directory, &by_directory, &parameter_resolver, ctx)?;
     // Scan every definition for root-inference diagnostics, then restrict the
     // map consumed by expansion to definitions admitted by structure.
+    let occurrence_length_factor = global
+        .length_context()
+        .map(|context| context.length_factor_mm());
     let mut malformed_definition_sequences = Vec::new();
     let all_occurrence_definitions = directory
         .iter()
@@ -4635,6 +4646,7 @@ pub(crate) fn store(
                     entry.sequence,
                     OccurrenceDefinition {
                         members: Vec::new(),
+                        transform: Affine::IDENTITY,
                     },
                 ));
             };
@@ -4649,10 +4661,27 @@ pub(crate) fn store(
                     member
                 })
                 .collect();
+            let transform = occurrence_length_factor.map_or(Affine::IDENTITY, |length_factor| {
+                match resolve_transform(
+                    entry.transform,
+                    &entries,
+                    &by_directory,
+                    length_factor,
+                    global.real_precision(),
+                    &mut BTreeSet::new(),
+                    ctx,
+                ) {
+                    Ok(transform) => transform,
+                    Err(_) => {
+                        malformed = true;
+                        Affine::IDENTITY
+                    }
+                }
+            });
             if malformed {
                 malformed_definition_sequences.push(entry.sequence);
             }
-            Some((entry.sequence, OccurrenceDefinition { members }))
+            Some((entry.sequence, OccurrenceDefinition { members, transform }))
         })
         .collect::<BTreeMap<_, _>>();
     // Keep parseable member lists as containment evidence even when semantic
@@ -4724,10 +4753,7 @@ pub(crate) fn store(
     let mut output_truncated_at = None;
     let mut depth_truncated_at = None;
     let mut malformed_placement_sequences = std::collections::BTreeSet::new();
-    if let Some(length_factor) = global
-        .length_context()
-        .map(|context| context.length_factor_mm())
-    {
+    if let Some(length_factor) = occurrence_length_factor {
         // Structure admission excludes malformed placement records. Inspect
         // those records here so the existing placement loss remains visible.
         for entry in directory.iter().filter(|entry| {
