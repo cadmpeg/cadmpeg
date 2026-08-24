@@ -679,11 +679,11 @@ pub(crate) fn decode_inline_non_plane_local_system_prefix(
     cache: &ScalarCache,
 ) -> Vec<InlineNonPlaneLocalSystemPrefix> {
     let mut prefixes = Vec::new();
-    if let Some((axis, reference_coordinate, reference_sign, cursor)) =
+    if let Some((axis, reference_coordinate, reference_sign, axis_sign, cursor)) =
         decode_inline_compact_image(body)
     {
         prefixes.push(InlineNonPlaneLocalSystemPrefix {
-            values: compact_inline_frame(axis, reference_coordinate, reference_sign),
+            values: compact_inline_frame(axis, reference_coordinate, reference_sign, axis_sign),
             cursor,
             compact_axis: Some(axis),
         });
@@ -733,7 +733,7 @@ pub(crate) fn decode_inline_surface_suffix_scalar(
     }
 }
 
-fn decode_inline_compact_image(body: &[u8]) -> Option<(usize, usize, f64, usize)> {
+fn decode_inline_compact_image(body: &[u8]) -> Option<(usize, usize, f64, f64, usize)> {
     const X_IMAGES: [&[u8]; 2] = [
         &[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4],
         &[0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4],
@@ -748,45 +748,46 @@ fn decode_inline_compact_image(body: &[u8]) -> Option<(usize, usize, f64, usize)
         if body[1] == 0x18 && body[2] == 0xe5 && body[4] == 0x18 && body[5] == 0xe5 {
             let reference_sign = sign(body[0])?;
             sign(body[3])?;
-            sign(body[6])?;
-            return Some((2, 0, reference_sign, 7));
+            let axis_sign = sign(body[6])?;
+            return Some((2, 0, reference_sign, axis_sign, 7));
         }
         if body[0] == 0x18 && body[2] == 0x18 && body[4] == 0x18 && body[5] == 0xe6 {
-            let reference_sign = sign(body[1])?;
-            sign(body[3])?;
-            sign(body[6])?;
-            return Some((2, 0, reference_sign, 7));
+            sign(body[1])?;
+            let reference_sign = sign(body[3])?;
+            let axis_sign = sign(body[6])?;
+            return Some((2, 1, reference_sign, axis_sign, 7));
         }
         if body[1] == 0x18 && body[2] == 0xe6 && body[4] == 0x18 && body[6] == 0x18 {
             let reference_sign = sign(body[0])?;
             sign(body[3])?;
             sign(body[5])?;
-            return Some((1, 0, reference_sign, 7));
+            return Some((1, 0, reference_sign, 1.0, 7));
         }
     }
 
     if body.starts_with(Y_IMAGE) {
-        return Some((1, 2, 1.0, Y_IMAGE.len()));
+        return Some((1, 2, 1.0, 1.0, Y_IMAGE.len()));
     }
 
     X_IMAGES
         .into_iter()
         .find(|image| body.starts_with(image))
-        .map(|image| (0, 1, 1.0, image.len()))
+        .map(|image| (0, 1, 1.0, 1.0, image.len()))
 }
 
 fn compact_inline_frame(
     axis: usize,
     reference_coordinate: usize,
     reference_sign: f64,
+    axis_sign: f64,
 ) -> [f64; 12] {
     debug_assert!(axis < 3 && reference_coordinate < 3 && axis != reference_coordinate);
     let mut values = [0.0; 12];
     values[reference_coordinate] = reference_sign;
     let axis_direction = [
-        if axis == 0 { 1.0 } else { 0.0 },
-        if axis == 1 { 1.0 } else { 0.0 },
-        if axis == 2 { 1.0 } else { 0.0 },
+        if axis == 0 { axis_sign } else { 0.0 },
+        if axis == 1 { axis_sign } else { 0.0 },
+        if axis == 2 { axis_sign } else { 0.0 },
     ];
     let reference_direction: [f64; 3] = values[..3].try_into().expect("three direction slots");
     let second = [
@@ -795,7 +796,7 @@ fn compact_inline_frame(
         axis_direction[0] * reference_direction[1] - axis_direction[1] * reference_direction[0],
     ];
     values[3..6].copy_from_slice(&second);
-    values[6 + axis] = 1.0;
+    values[6 + axis] = axis_sign;
     values
 }
 
@@ -1254,9 +1255,9 @@ fn decode_inline_plane_support_image(
     if !body.starts_with(&[0x18, 0xe4]) {
         return None;
     }
-    let (axis, reference_coordinate, reference_sign, prefix_end) =
+    let (axis, reference_coordinate, reference_sign, axis_sign, prefix_end) =
         decode_inline_compact_image(body)?;
-    let inline = compact_inline_frame(axis, reference_coordinate, reference_sign);
+    let inline = compact_inline_frame(axis, reference_coordinate, reference_sign, axis_sign);
     let (origin, cursor) = decode_plane_support_origin(body, prefix_end, cache)?;
     Some((
         [
@@ -1832,7 +1833,9 @@ mod tests {
             (
                 vec![0x18, 0x10, 0x18, 0x10, 0x18, 0xe6, 0x10],
                 2,
-                [-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                [
+                    0.0, -1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0,
+                ],
             ),
             (
                 vec![0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18],

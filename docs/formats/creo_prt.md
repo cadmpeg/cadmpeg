@@ -1086,6 +1086,9 @@ and axis sense:
 Here `A`, `B`, and `C` are the image's single-byte signed unit tokens. The
 image dictionary expands the support directions according to its slot lanes;
 the stored origin and the envelope witness below select the model-space signs.
+In `18 A 18 B 18 e6 C`, the first support is `B` on model Y and the stored
+axis is `C` on model Z. The second support is the cross product of the stored
+axis and first support.
 The exact `18 10 18 e5 10 0f 18 e4` image expands to first support `+Z`,
 second support `+X`, and stored axis `+Y`.
 An explicit frame consumes the first five direction coordinates, then
@@ -1096,14 +1099,18 @@ origin. The standalone `18 e5` image expands to `[0, 1, 0]`. The remaining
 explicit slots use the scalar lanes already defined for tabulated-cylinder
 coordinates and positional surface rows.
 
-The carrier placement is admitted only when the envelope and outline provide a
-unique witness. The outline coordinate whose span equals `abs(v1 - v0)` is the
-axis coordinate. Solve
+The carrier placement is admitted only when the envelope, outline, and stored
+frame provide one witness. The compact image names the axis coordinate, whose
+outline span must equal `abs(v1 - v0)`. Other outline spans may have the same
+length. Solve
 `{o + v0 C, o + v1 C} = {lo, hi}` for
 `o in {+abs(s), -abs(s)}` and `C in {+1, -1}`, where `s` is the stored origin
-component on that coordinate. A unique solution supplies the model-space axis
-origin and direction. For each perpendicular coordinate, select the unique
-sign of its stored component for which the outline lies inside
+component on that coordinate. One solution supplies the model-space axis
+origin and direction. When symmetric bounds produce two solutions for the
+same carrier line, the stored frame-axis sign selects one. If that sign does
+not select a solution, the ordered `(v0, first corner)` and `(v1, second
+corner)` correspondence selects one. For each perpendicular coordinate,
+select the unique sign of its stored component for which the outline lies inside
 `[center - R, center + R]`. Use the cylinder radius for `R`; for a cone use
 `max(abs(v0), abs(v1)) * tan(half_angle)`; for a torus or sphere use
 `radius1 + radius2`. A failed or non-unique witness retains the complete row

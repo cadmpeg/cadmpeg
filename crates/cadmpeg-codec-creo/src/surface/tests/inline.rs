@@ -6,6 +6,12 @@ use super::super::*;
 fn push_inline_test_scalar(bytes: &mut Vec<u8>, value: f64) {
     match value as i32 {
         -1 => bytes.push(0x0d),
+        -4..=-2 => {
+            let raw = value.to_be_bytes();
+            assert_eq!(raw[0], 0xc0, "test coordinate must be negative");
+            bytes.push(0x2d);
+            bytes.extend_from_slice(&raw[1..]);
+        }
         -7 => bytes.extend_from_slice(&[0x48, 0x1c, 0x00]),
         0 => bytes.push(0x0f),
         1 => bytes.push(0xe4),
@@ -217,6 +223,30 @@ fn compact_y_image_uses_the_unique_envelope_axis_witness() {
     assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
     assert_eq!(frame.radius, 1.0);
     assert_eq!(frame.length, Some(3.0));
+}
+
+#[test]
+fn compact_axis_image_selects_equal_spans_and_stored_axis_branch() {
+    let mut local_system = vec![0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe6, 0x0f];
+    push_inline_test_scalar(&mut local_system, 2.0);
+    push_inline_test_scalar(&mut local_system, 2.0);
+    push_inline_test_scalar(&mut local_system, 3.0);
+    let cylinder = inline_non_plane_record(
+        0x24,
+        [-2.0, -4.0],
+        [[1.0, 1.0, -1.0], [3.0, 3.0, 1.0]],
+        &local_system,
+        &[0x0f],
+    );
+
+    let frame = cylinder
+        .positional_cylinder_frame
+        .expect("compact image selects the Z span and stored axis branch");
+    assert_eq!(frame.origin, [2.0, 2.0, 3.0]);
+    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
+    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.length, Some(2.0));
 }
 
 #[test]

@@ -3962,10 +3962,15 @@ fn inline_surface_carrier(
     let (suffix, _) = inline_surface_suffix(kind, local, prefix.cursor, cache)?;
 
     let (axis_index, reference_direction) = inline_frame_directions(prefix, envelope)?;
-    let axis_index = unique_inline_axis_index(envelope, axis_index)?;
+    let axis_index = witnessed_inline_axis_index(envelope, axis_index)?;
     let stored_origin: [f64; 3] = prefix.values[9..12].try_into().ok()?;
-    let (origin_axis, axis_sense) =
-        solve_inline_axis_endpoint(envelope, axis_index, stored_origin[axis_index])?;
+    let stored_axis_sense = prefix.values[6 + axis_index];
+    let (origin_axis, axis_sense) = solve_inline_axis_endpoint(
+        envelope,
+        axis_index,
+        stored_origin[axis_index],
+        stored_axis_sense,
+    )?;
     let mut origin = stored_origin;
     origin[axis_index] = origin_axis;
     let mut axis = [0.0; 3];
@@ -4220,48 +4225,68 @@ fn inline_frame_directions(
     Some((axis_index, reference_direction))
 }
 
-fn unique_inline_axis_index(envelope: InlineSurfaceEnvelope, hinted_axis: usize) -> Option<usize> {
+fn witnessed_inline_axis_index(
+    envelope: InlineSurfaceEnvelope,
+    hinted_axis: usize,
+) -> Option<usize> {
     let axial_span = (envelope.axial[1] - envelope.axial[0]).abs();
     (axial_span.is_finite() && axial_span > EPS_INLINE_WITNESS).then_some(())?;
-    let mut axes = (0..3).filter(|index| {
-        let span = (envelope.corners[1][*index] - envelope.corners[0][*index]).abs();
-        inline_close(span, axial_span)
-    });
-    let axis = axes.next()?;
-    axes.next().is_none().then_some(())?;
-    (axis == hinted_axis).then_some(axis)
+    let hinted_span = (envelope.corners[1][hinted_axis] - envelope.corners[0][hinted_axis]).abs();
+    inline_close(hinted_span, axial_span).then_some(hinted_axis)
 }
 
 fn solve_inline_axis_endpoint(
     envelope: InlineSurfaceEnvelope,
     axis_index: usize,
     stored_axis_origin: f64,
+    stored_axis_sense: f64,
 ) -> Option<(f64, f64)> {
     let stored_magnitude = stored_axis_origin.abs();
     let lower = envelope.corners[0][axis_index].min(envelope.corners[1][axis_index]);
     let upper = envelope.corners[0][axis_index].max(envelope.corners[1][axis_index]);
-    let mut candidates: Vec<(f64, f64)> = Vec::new();
+    let mut direct = Vec::new();
+    let mut crosswise = Vec::new();
+    let push_unique = |candidates: &mut Vec<(f64, f64)>, candidate: (f64, f64)| {
+        if !candidates.iter().any(|existing| {
+            inline_close(existing.0, candidate.0) && inline_close(existing.1, candidate.1)
+        }) {
+            candidates.push(candidate);
+        }
+    };
     for origin_sign in [-1.0, 1.0] {
         for direction in [-1.0, 1.0] {
             let origin = origin_sign * stored_magnitude;
             let first = origin + envelope.axial[0] * direction;
             let second = origin + envelope.axial[1] * direction;
-            if (inline_close(first, lower) && inline_close(second, upper))
+            let candidate = (origin, direction);
+            if inline_close(first, envelope.corners[0][axis_index])
+                && inline_close(second, envelope.corners[1][axis_index])
+            {
+                push_unique(&mut direct, candidate);
+            } else if (inline_close(first, lower) && inline_close(second, upper))
                 || (inline_close(first, upper) && inline_close(second, lower))
             {
-                let candidate = (origin, direction);
-                if !candidates.iter().any(|existing| {
-                    inline_close(existing.0, candidate.0) && inline_close(existing.1, candidate.1)
-                }) {
-                    candidates.push(candidate);
-                }
+                push_unique(&mut crosswise, candidate);
             }
         }
     }
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    let stored_direction = direct
+        .iter()
+        .chain(&crosswise)
+        .filter(|candidate| inline_close(candidate.1, stored_axis_sense))
+        .copied()
+        .collect::<Vec<_>>();
+    if let [candidate] = stored_direction.as_slice() {
+        return Some(*candidate);
+    }
+    match direct.as_slice() {
+        [candidate] => Some(*candidate),
+        [] => match crosswise.as_slice() {
+            [candidate] => Some(*candidate),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 fn unique_inline_center(
