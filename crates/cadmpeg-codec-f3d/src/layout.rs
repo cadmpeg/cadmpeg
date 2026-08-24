@@ -1250,6 +1250,22 @@ pub(crate) mod paramesh_scene_node {
     pub(crate) const FOOTER_MASK: usize = 84;
 }
 
+/// Byte offsets for the `paramesh_scene_node_placed` record.
+///
+/// Spec §3.1. Record length 261 B.
+pub(crate) mod paramesh_scene_node_placed {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 261;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `zero_run_25` (`bytes[25]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_25: usize = 59;
+    /// Offset of `transform` (`bytes[128]`). Spec §3.1.
+    pub(crate) const TRANSFORM: usize = 84;
+    /// Offset of `footer_mask` (`bytes[49]`). Spec §3.1.
+    pub(crate) const FOOTER_MASK: usize = 212;
+}
+
 /// Byte offsets for the `paramesh_collection_owner_backlink_prefix` record.
 ///
 /// Spec §3.1. Record length 273 B.
@@ -1264,6 +1280,22 @@ pub(crate) mod paramesh_collection_owner_backlink_prefix {
     pub(crate) const INDEXED_HEADER: usize = 0;
     /// Offset of `collection_backlink` (`bytes[11]`). Spec §3.1.
     pub(crate) const COLLECTION_BACKLINK: usize = 262;
+}
+
+/// Byte offsets for the `paramesh_collection_owner_v17` record.
+///
+/// Spec §3.1. Record length 252 B.
+///
+/// ```text
+/// Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix.
+/// ```
+pub(crate) mod paramesh_collection_owner_v17 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 252;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `collection_backlink` (`bytes[11]`). Spec §3.1.
+    pub(crate) const COLLECTION_BACKLINK: usize = 241;
 }
 
 /// Byte offsets for the `assembly_class_406_261_scope_671` record.

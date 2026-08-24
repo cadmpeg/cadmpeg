@@ -2910,7 +2910,7 @@ anchor = "remaining 49 bytes"
 name = "paramesh_scene_node"
 kind = "byte"
 section = "3.1"
-anchor = "It is exactly 133 bytes."
+anchor = "The compact form is exactly 133 bytes."
 size = 133
 
 [[record.field]]
@@ -2984,10 +2984,50 @@ source = "spec"
 anchor = "the same 50-byte Scene footer at offset 83"
 
 [[record]]
+name = "paramesh_scene_node_placed"
+kind = "byte"
+section = "3.1"
+anchor = "The placed form is exactly 261 bytes."
+size = 261
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The placed form shares that header, constants, and references through offset 58"
+
+[[record.gap]]
+offset = 11
+size = 48
+note = "The header, constants, and two references use the compact form's offsets through byte 58."
+
+[[record.field]]
+name = "zero_run_25"
+offset = 59
+type = "bytes[25]"
+source = "spec"
+anchor = "25 zero bytes at offset 59"
+
+[[record.field]]
+name = "transform"
+offset = 84
+type = "bytes[128]"
+source = "spec"
+anchor = "a row-major 4×4 f64 affine transform at offset 84"
+
+[[record.field]]
+name = "footer_mask"
+offset = 212
+type = "bytes[49]"
+source = "spec"
+anchor = "the 49-byte bounds payload at offset 212"
+
+[[record]]
 name = "paramesh_collection_owner_backlink_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "Its marked same-segment reference at offset 262 points back to the collection."
+anchor = "In version 23, its marked same-segment reference at offset 262 points back to the collection."
 size = 273
 note = "Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix."
 
@@ -3008,7 +3048,34 @@ name = "collection_backlink"
 offset = 262
 type = "bytes[11]"
 source = "spec"
-anchor = "Its marked same-segment reference at offset 262 points back to the collection."
+anchor = "In version 23, its marked same-segment reference at offset 262 points back to the collection."
+
+[[record]]
+name = "paramesh_collection_owner_v17"
+kind = "byte"
+section = "3.1"
+anchor = "Version 17 stores its collection backlink at offset 241"
+size = 252
+note = "Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The owner has type GUID"
+
+[[record.gap]]
+offset = 11
+size = 230
+note = "The version-17 owner payload before the reciprocal collection reference is outside this table."
+
+[[record.field]]
+name = "collection_backlink"
+offset = 241
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 17 stores its collection backlink at offset 241"
 
 [[record]]
 name = "assembly_class_406_261_scope_671"
@@ -5431,7 +5498,7 @@ name = "filled"
 offset = 30
 type = "u8"
 source = "spec"
-anchor = "offset 30 value `1` selects a filled section"
+anchor = "Offset 30 value `1` selects a filled section"
 
 [[record]]
 name = "legacy_pipe_operation_prefix"
@@ -7403,7 +7470,7 @@ name = "tail_slot_marker"
 offset = 185
 type = "u8"
 source = "spec"
-anchor = "an optional-slot marker"
+anchor = "a reserved optional-slot marker"
 
 [[record.field]]
 name = "tail_slot_value"

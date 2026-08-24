@@ -16,6 +16,7 @@ use crate::ids;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::paramesh_body_wrapper as body_wrapper;
 use crate::layout::paramesh_collection_owner_backlink_prefix as collection_owner;
+use crate::layout::paramesh_collection_owner_v17 as collection_owner_v17;
 use crate::layout::paramesh_entry_name_prefix as entry_name_prefix;
 use crate::layout::paramesh_feature_scope_base as feature_scope_base;
 use crate::layout::paramesh_feature_scope_prefix as feature_scope;
@@ -24,6 +25,7 @@ use crate::layout::paramesh_mesh_body_join_prefix as mesh_body;
 use crate::layout::paramesh_mesh_collection_base_prefix as mesh_collection_base;
 use crate::layout::paramesh_mesh_collection_prefix as mesh_collection;
 use crate::layout::paramesh_scene_node as scene_node;
+use crate::layout::paramesh_scene_node_placed as placed_scene_node;
 use crate::layout::paramesh_scene_state as scene_state;
 use crate::layout::paramesh_texture_filename_prefix as texture_filename;
 use crate::layout::paramesh_texture_table_prefix as texture_table;
@@ -81,7 +83,7 @@ const MESH_TEXTURE_FILENAME_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5
 const MESH_TEXTURE_FILENAME_TYPE_VERSION: u32 = 0;
 const MESH_COLLECTION_OWNER_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
 const MESH_COLLECTION_OWNER_BASE_TYPE_GUID: &str = "42054630-20A0-40E1-B969-CFE9E742F5C9";
-const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 2] = [15, 23];
+const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 3] = [15, 17, 23];
 const MESH_BODY_OWNER_TYPE_GUID: &str = "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA";
 const MESH_BODY_OWNER_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
 const MESH_BODY_OWNER_TYPE_VERSION: u32 = 4;
@@ -341,6 +343,8 @@ struct MeshWrapperRecord {
 struct MeshSceneNodeRecord {
     identity: DesignMeshRecordIdentity,
     bounds: Option<DesignMeshSceneBounds>,
+    transform: Option<MeshAffineTransform>,
+    transform_offset: Option<u64>,
     state_record_index: u32,
     state_reference_offset: u64,
     auxiliary_record_index: u32,
@@ -890,7 +894,14 @@ fn parse_scene_footer(
 ) -> Option<Option<DesignMeshSceneBounds>> {
     (at.checked_add(SCENE_FOOTER_BYTES) == Some(record.len()) && record.get(at) == Some(&1))
         .then_some(())?;
-    let payload_at = at.checked_add(1)?;
+    parse_scene_bounds_payload(record, at.checked_add(1)?, frame_start)
+}
+
+fn parse_scene_bounds_payload(
+    record: &[u8],
+    payload_at: usize,
+    frame_start: usize,
+) -> Option<Option<DesignMeshSceneBounds>> {
     let payload = record.get(payload_at..)?;
     if scene_state_mask_is_exact(payload) {
         return Some(None);
@@ -953,17 +964,39 @@ fn parse_scene_node_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-scene-node")?;
     let parsed = (|| {
-        (record.len() == scene_node::LEN
-            && record.get(scene_node::ZERO_RUN_14..scene_node::CONSTANT_TWO_A) == Some(&[0; 14])
+        (record.get(scene_node::ZERO_RUN_14..scene_node::CONSTANT_TWO_A) == Some(&[0; 14])
             && View::u32_le_at(record, scene_node::CONSTANT_TWO_A) == Some(2)
             && View::u32_le_at(record, scene_node::CONSTANT_TWO_B) == Some(2)
-            && View::u32_le_at(record, scene_node::CONSTANT_THREE) == Some(3)
-            && record.get(scene_node::ZERO_RUN_24..scene_node::FOOTER_MARKER) == Some(&[0; 24]))
+            && View::u32_le_at(record, scene_node::CONSTANT_THREE) == Some(3))
         .then_some(())?;
-        let bounds = parse_scene_footer(record, scene_node::FOOTER_MARKER, frame.start)?;
+        let (bounds, transform, transform_offset) = if record.len() == scene_node::LEN
+            && record.get(scene_node::ZERO_RUN_24..scene_node::FOOTER_MARKER) == Some(&[0; 24])
+        {
+            (
+                parse_scene_footer(record, scene_node::FOOTER_MARKER, frame.start)?,
+                None,
+                None,
+            )
+        } else if record.len() == placed_scene_node::LEN
+            && record.get(placed_scene_node::ZERO_RUN_25..placed_scene_node::TRANSFORM)
+                == Some(&[0; 25])
+        {
+            (
+                parse_scene_bounds_payload(record, placed_scene_node::FOOTER_MASK, frame.start)?,
+                Some(MeshAffineTransform::parse(
+                    record,
+                    placed_scene_node::TRANSFORM,
+                )?),
+                Some(source_offset(frame.start, placed_scene_node::TRANSFORM)?),
+            )
+        } else {
+            return None;
+        };
         Some(MeshSceneNodeRecord {
             identity,
             bounds,
+            transform,
+            transform_offset,
             state_record_index: exact_local_record_index(
                 record,
                 scene_node::SCENE_STATE_REFERENCE,
@@ -1070,11 +1103,11 @@ fn parse_mesh_scope_record(
 fn parse_mesh_collection_owner_record(
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
-) -> Result<MeshCollectionOwnerRecord, CodecError> {
+) -> Result<Option<MeshCollectionOwnerRecord>, CodecError> {
     let admitted_version = MESH_COLLECTION_OWNER_TYPE_VERSIONS
         .contains(&frame.design_type.version)
         .then_some(frame.design_type.version)
-        .unwrap_or(MESH_COLLECTION_OWNER_TYPE_VERSIONS[1]);
+        .unwrap_or(MESH_COLLECTION_OWNER_TYPE_VERSIONS[2]);
     let identity = parse_typed_identity(
         bytes,
         frame,
@@ -1084,18 +1117,25 @@ fn parse_mesh_collection_owner_record(
         "mesh-collection-owner",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let collection_record_index =
-        exact_local_record_index(record, collection_owner::COLLECTION_BACKLINK)
-            .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?;
-    Ok(MeshCollectionOwnerRecord {
+    let Some(backlink_at) = (match frame.design_type.version {
+        15 => record.len().checked_sub(11),
+        17 if record.len() >= collection_owner_v17::LEN => {
+            Some(collection_owner_v17::COLLECTION_BACKLINK)
+        }
+        23 => Some(collection_owner::COLLECTION_BACKLINK),
+        _ => None,
+    }) else {
+        return Ok(None);
+    };
+    let Some(collection_record_index) = exact_local_record_index(record, backlink_at) else {
+        return Ok(None);
+    };
+    Ok(Some(MeshCollectionOwnerRecord {
         identity,
         collection_record_index,
-        collection_reference_offset: source_offset(
-            frame.start,
-            collection_owner::COLLECTION_BACKLINK,
-        )
-        .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?,
-    })
+        collection_reference_offset: source_offset(frame.start, backlink_at)
+            .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?,
+    }))
 }
 
 fn parse_mesh_texture_filename_record(
@@ -1188,6 +1228,18 @@ where
             features: Vec::new(),
         });
     }
+    let collections = collection_frames
+        .into_iter()
+        .map(|frame| parse_mesh_collection_record(bytes, meta, frame))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|collection| !collection.body_record_indices.is_empty())
+        .collect::<Vec<_>>();
+    if collections.is_empty() {
+        return Ok(MeshDesignRecords {
+            features: Vec::new(),
+        });
+    }
     let mut entry_names = unique_record_map(
         typed_primary_frames(bytes, meta, MESH_ENTRY_NAME_TYPE_GUID, "mesh-entry-name")?
             .into_iter()
@@ -1212,10 +1264,10 @@ where
         |record| record.identity.record_index,
         "mesh-body",
     )?;
-    let collections = collection_frames
-        .into_iter()
-        .map(|frame| parse_mesh_collection_record(bytes, meta, frame))
-        .collect::<Result<Vec<_>, _>>()?;
+    let collection_record_indices = collections
+        .iter()
+        .map(|collection| collection.identity.record_index)
+        .collect::<HashSet<_>>();
     let mut texture_tables = unique_record_map(
         typed_primary_frames(
             bytes,
@@ -1293,7 +1345,11 @@ where
         )?
         .into_iter()
         .map(|frame| parse_mesh_collection_owner_record(bytes, frame))
-        .collect::<Result<Vec<_>, _>>()?,
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .filter(|owner| collection_record_indices.contains(&owner.collection_record_index))
+        .collect(),
         |record| record.identity.record_index,
         "mesh-collection-owner",
     )?;
@@ -1321,9 +1377,30 @@ where
             .map(|(record_index, _)| *record_index)
             .collect::<Vec<_>>();
         let [scope_record_index] = candidate_scopes.as_slice() else {
-            return Err(stream_error(
-                "each mesh collection has exactly one scope with the same ordered body list",
-            ));
+            let scope_lists = scopes
+                .iter()
+                .map(|(index, scope)| (*index, scope.body_record_indices.clone()))
+                .collect::<Vec<_>>();
+            let body_links = collection
+                .body_record_indices
+                .iter()
+                .filter_map(|index| {
+                    bodies.get(index).map(|body| {
+                        (
+                            *index,
+                            body.scope_record_index,
+                            body.collection_record_index,
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+            return Err(CodecError::Malformed(format!(
+                "F3D Design mesh feature graph violates `each mesh collection has exactly one scope with the same ordered body list` in {stream}: collection {} bodies {:?}, scope lists {:?}, body links {:?}",
+                collection.identity.record_index,
+                collection.body_record_indices,
+                scope_lists,
+                body_links,
+            )));
         };
         let scope = scopes.remove(scope_record_index).ok_or_else(|| {
             stream_error("a mesh feature scope belongs to exactly one mesh collection")
@@ -1449,6 +1526,8 @@ where
                 scene_state_bounds: scene_state.1,
                 scene_node_record: scene_node.identity,
                 scene_node_bounds: scene_node.bounds,
+                scene_node_transform: scene_node.transform.map(MeshAffineTransform::rows),
+                scene_node_transform_offset: scene_node.transform_offset,
                 scene_auxiliary_record: scene_auxiliary,
                 owner_record: body_owner,
                 entry_name: entry_name.entry_name,
@@ -1922,6 +2001,33 @@ mod tests {
         bytes
     }
 
+    fn placed_mesh_scene_node_record(
+        class_tag: u32,
+        record_index: u32,
+        state_record_index: u32,
+        auxiliary_record_index: u32,
+        transform: [f64; 16],
+        bounds: [f64; 6],
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        push_indexed_header(&mut bytes, class_tag, record_index);
+        bytes.extend_from_slice(&[0; 14]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        push_reference(&mut bytes, state_record_index);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        push_reference(&mut bytes, auxiliary_record_index);
+        bytes.extend_from_slice(&[0; 25]);
+        for value in transform {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in bounds {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(1);
+        bytes
+    }
+
     fn mesh_scope_record(
         class_tag: u32,
         base_class_tag: u32,
@@ -2058,7 +2164,7 @@ mod tests {
         const TAG_BODY_OWNER: u32 = 269;
         const TAG_FILENAME: u32 = 270;
 
-        assert!((1..=2).contains(&body_count));
+        assert!(body_count <= 2);
         let entity_ids = |indices: &[u32]| {
             indices[..body_count]
                 .iter()
@@ -2160,7 +2266,7 @@ mod tests {
             design_type(
                 MESH_COLLECTION_OWNER_TYPE_GUID,
                 Some(MESH_COLLECTION_OWNER_BASE_TYPE_GUID),
-                MESH_COLLECTION_OWNER_TYPE_VERSIONS[1],
+                MESH_COLLECTION_OWNER_TYPE_VERSIONS[2],
                 FUSION_MODULE,
                 vec![u64::from(COLLECTION_OWNER)],
             ),
@@ -2380,6 +2486,21 @@ mod tests {
             resolve_mesh_body(&[design], ENTRY_NAME, FUSION_UUID),
             Some((0, 0, 0))
         );
+    }
+
+    #[test]
+    fn empty_mesh_collection_does_not_enter_feature_graph() {
+        let graph = synthetic_mesh_graph_with_body_count(false, 0);
+        let mut no_asset = no_texture_asset;
+
+        let design = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_asset,
+        )
+        .expect("empty mesh registry");
+        assert!(design.features.is_empty());
     }
 
     #[test]
@@ -2615,6 +2736,47 @@ mod tests {
     }
 
     #[test]
+    fn mesh_scene_node_transfers_placed_transform_and_bounds() {
+        let graph = synthetic_mesh_graph(false);
+        let transform = [
+            -1.0, 0.0, 0.0, 4.0, 0.0, -1.0, 0.0, 5.0, 0.0, 0.0, 1.0, 6.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let bytes = placed_mesh_scene_node_record(
+            267,
+            107,
+            105,
+            106,
+            transform,
+            [4.0, 5.0, 6.0, 1.0, 2.0, 3.0],
+        );
+        let frame = TypedPrimaryFrame {
+            entity_id: 107,
+            start: 0,
+            end: bytes.len(),
+            design_type: graph
+                .meta
+                .types
+                .iter()
+                .find(|design_type| {
+                    design_type
+                        .type_guid
+                        .eq_ignore_ascii_case(SCENE_NODE_TYPE_GUID)
+                })
+                .expect("Scene-node type"),
+        };
+
+        let parsed = parse_scene_node_record(&bytes, frame).expect("placed Scene node");
+        assert_eq!(parsed.transform.expect("placed transform").0, transform);
+        assert_eq!(
+            parsed.transform_offset,
+            Some(placed_scene_node::TRANSFORM as u64)
+        );
+        let bounds = parsed.bounds.expect("placed bounds");
+        assert_eq!(bounds.maximum, [4.0, 5.0, 6.0]);
+        assert_eq!(bounds.minimum, [1.0, 2.0, 3.0]);
+    }
+
+    #[test]
     fn mesh_graph_rejects_a_nonreciprocal_collection_owner() {
         let mut graph = synthetic_mesh_graph(false);
         let start = sole_typed_frame(&graph, MESH_COLLECTION_OWNER_TYPE_GUID).start;
@@ -2651,11 +2813,98 @@ mod tests {
             })
             .expect("collection-owner type")
             .version = MESH_COLLECTION_OWNER_TYPE_VERSIONS[0];
-        let frame = sole_typed_frame(&graph, MESH_COLLECTION_OWNER_TYPE_GUID);
+        let design_type = graph
+            .meta
+            .types
+            .iter()
+            .find(|design_type| {
+                design_type
+                    .type_guid
+                    .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
+            })
+            .expect("collection-owner type");
+        let mut bytes = Vec::new();
+        push_indexed_header(&mut bytes, 270, 110);
+        bytes.resize(859, 0);
+        push_reference(&mut bytes, EXPECTED_COLLECTION);
+        let frame = TypedPrimaryFrame {
+            entity_id: 110,
+            start: 0,
+            end: bytes.len(),
+            design_type,
+        };
 
-        let owner = parse_mesh_collection_owner_record(&graph.bytes, frame)
+        let owner = parse_mesh_collection_owner_record(&bytes, frame)
+            .expect("valid legacy owner frame")
             .expect("legacy collection owner");
         assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
+        assert_eq!(owner.collection_reference_offset, 859);
+    }
+
+    #[test]
+    fn mesh_collection_owner_accepts_version_seventeen_frame() {
+        const EXPECTED_COLLECTION: u32 = 100;
+        let mut graph = synthetic_mesh_graph(false);
+        let design_type = graph
+            .meta
+            .types
+            .iter_mut()
+            .find(|design_type| {
+                design_type
+                    .type_guid
+                    .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
+            })
+            .expect("collection-owner type");
+        design_type.version = MESH_COLLECTION_OWNER_TYPE_VERSIONS[1];
+        let mut bytes = Vec::new();
+        push_indexed_header(&mut bytes, 270, 110);
+        bytes.resize(collection_owner_v17::COLLECTION_BACKLINK, 0);
+        push_reference(&mut bytes, EXPECTED_COLLECTION);
+        bytes.extend_from_slice(&[0; 64]);
+        let frame = TypedPrimaryFrame {
+            entity_id: 110,
+            start: 0,
+            end: bytes.len(),
+            design_type,
+        };
+
+        let owner = parse_mesh_collection_owner_record(&bytes, frame)
+            .expect("valid version-17 owner frame")
+            .expect("version-17 collection owner");
+        assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
+        assert_eq!(
+            owner.collection_reference_offset,
+            collection_owner_v17::COLLECTION_BACKLINK as u64
+        );
+    }
+
+    #[test]
+    fn mesh_collection_owner_ignores_non_owner_class_members() {
+        let mut graph = synthetic_mesh_graph(false);
+        let design_type = graph
+            .meta
+            .types
+            .iter_mut()
+            .find(|design_type| {
+                design_type
+                    .type_guid
+                    .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
+            })
+            .expect("collection-owner type");
+        design_type.version = MESH_COLLECTION_OWNER_TYPE_VERSIONS[1];
+        let mut bytes = Vec::new();
+        push_indexed_header(&mut bytes, 270, 110);
+        bytes.resize(collection_owner_v17::LEN, 0);
+        let frame = TypedPrimaryFrame {
+            entity_id: 110,
+            start: 0,
+            end: bytes.len(),
+            design_type,
+        };
+
+        assert!(parse_mesh_collection_owner_record(&bytes, frame)
+            .expect("valid generic owner frame")
+            .is_none());
     }
 
     #[test]

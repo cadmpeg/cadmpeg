@@ -914,6 +914,21 @@ Spec §3.1 · layout: byte offsets · size: 133 B
 | 83 | 1 | `footer_marker` | `u8` | little | spec | the same 50-byte Scene footer at offset 83 |
 | 84 | 49 | `footer_mask` | `bytes[49]` | little | spec | the same 50-byte Scene footer at offset 83 |
 
+## `paramesh_scene_node_placed`
+
+Spec §3.1 · layout: byte offsets · size: 261 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The placed form shares that header, constants, and references through offset 58 |
+| 59 | 25 | `zero_run_25` | `bytes[25]` | little | spec | 25 zero bytes at offset 59 |
+| 84 | 128 | `transform` | `bytes[128]` | little | spec | a row-major 4×4 f64 affine transform at offset 84 |
+| 212 | 49 | `footer_mask` | `bytes[49]` | little | spec | the 49-byte bounds payload at offset 212 |
+
+Unstated regions:
+
+- `11..59` (48 B): The header, constants, and two references use the compact form's offsets through byte 58.
+
 ## `paramesh_collection_owner_backlink_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 273 B
@@ -923,11 +938,26 @@ Offsets are relative to the collection-owner indexed header. The record can cont
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The owner has type GUID |
-| 262 | 11 | `collection_backlink` | `bytes[11]` | little | spec | Its marked same-segment reference at offset 262 points back to the collection. |
+| 262 | 11 | `collection_backlink` | `bytes[11]` | little | spec | In version 23, its marked same-segment reference at offset 262 points back to the collection. |
 
 Unstated regions:
 
 - `11..262` (251 B): The owner payload before the reciprocal collection reference is outside this table.
+
+## `paramesh_collection_owner_v17`
+
+Spec §3.1 · layout: byte offsets · size: 252 B
+
+Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The owner has type GUID |
+| 241 | 11 | `collection_backlink` | `bytes[11]` | little | spec | Version 17 stores its collection backlink at offset 241 |
+
+Unstated regions:
+
+- `11..241` (230 B): The version-17 owner payload before the reciprocal collection reference is outside this table.
 
 ## `assembly_class_406_261_scope_671`
 
@@ -1698,7 +1728,7 @@ Offsets are relative to the primary indexed header. The variable scope reference
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | the primary indexed header |
 | 25 | 4 | `operation` | `u32` | little | spec | Primary-header offset 25 stores u32 `4`, which selects a new-body result |
 | 29 | 1 | `section_shape` | `u8` | little | spec | Offset 29 value `1` selects a circular section |
-| 30 | 1 | `filled` | `u8` | little | spec | offset 30 value `1` selects a filled section |
+| 30 | 1 | `filled` | `u8` | little | spec | Offset 30 value `1` selects a filled section |
 
 Unstated regions:
 
@@ -2244,7 +2274,7 @@ Offsets are relative to the member's indexed header. The UUID payloads occupy 36
 | 105 | 4 | `context_uuid_length` | `u32` | little | spec | an LP-UTF16 context UUID |
 | 109 | 72 | `context_uuid_utf16` | `bytes[72]` | little | spec | an LP-UTF16 context UUID |
 | 181 | 4 | `tail_kind` | `u32` | little | spec | `u32 2` |
-| 185 | 1 | `tail_slot_marker` | `u8` | little | spec | an optional-slot marker |
+| 185 | 1 | `tail_slot_marker` | `u8` | little | spec | a reserved optional-slot marker |
 | 186 | 4 | `tail_slot_value` | `u32` | little | spec | followed by u32 zero |
 
 ## `coil_compact_scope_discriminators`

@@ -5491,6 +5491,12 @@ pub struct DesignMeshBody {
     /// Finite bound carried by the Scene-node footer; absent for its unset sentinel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scene_node_bounds: Option<DesignMeshSceneBounds>,
+    /// Optional row-major affine transform carried by the placed Scene-node form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene_node_transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of `scene_node_transform` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene_node_transform_offset: Option<u64>,
     /// Separately typed Scene auxiliary cache reached through the Scene node.
     pub scene_auxiliary_record: DesignMeshRecordIdentity,
     /// Typed Design body-owner record referenced by `body_record`.
