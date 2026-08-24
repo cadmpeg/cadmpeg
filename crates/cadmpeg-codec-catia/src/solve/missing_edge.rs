@@ -640,6 +640,46 @@ pub(crate) fn standard_repeated_edge_face_handle_candidates(
     repeated_edge_face_handle_candidates_from_sets(&edge_rows, &face_handles, serialized)
 }
 
+/// Refine unresolved repeated-face domains with positive trim-handle evidence.
+///
+/// A row already resolved to two distinct faces has consumed its repeated slot;
+/// later candidate sources cannot reopen it. For an unresolved row, common
+/// carrier and handle candidates are preferred, while handle evidence supplies
+/// the domain when carrier geometry abstains.
+pub(crate) fn refine_repeated_edge_face_candidates(
+    edge_faces: &[[usize; 2]],
+    allowed_faces: &mut [Vec<usize>],
+    handle_face_candidates: &[Vec<usize>],
+) -> Option<()> {
+    if edge_faces.len() != allowed_faces.len() || edge_faces.len() != handle_face_candidates.len() {
+        return None;
+    }
+    for (edge, (allowed, handle_candidates)) in allowed_faces
+        .iter_mut()
+        .zip(handle_face_candidates)
+        .enumerate()
+    {
+        if edge_faces[edge][0] != edge_faces[edge][1] {
+            allowed.clear();
+            continue;
+        }
+        if handle_candidates.is_empty() {
+            continue;
+        }
+        let intersection = allowed
+            .iter()
+            .copied()
+            .filter(|face| handle_candidates.contains(face))
+            .collect::<Vec<_>>();
+        *allowed = if intersection.is_empty() {
+            handle_candidates.clone()
+        } else {
+            intersection
+        };
+    }
+    Some(())
+}
+
 pub(crate) fn unique_duplicate_face_assignment<F>(
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],

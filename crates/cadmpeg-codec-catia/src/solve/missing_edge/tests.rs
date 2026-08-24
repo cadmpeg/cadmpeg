@@ -175,3 +175,17 @@ fn repeated_handle_selector_requires_file_wide_owning_face_containment() {
         repeated_edge_face_handle_candidates_from_sets(&rows, &faces, &[[0, 0], [0, 1]],).is_none()
     );
 }
+
+#[test]
+fn handle_face_candidates_do_not_reopen_resolved_incidence() {
+    let edge_faces = [[0, 2], [1, 1], [3, 3]];
+    let mut allowed = [vec![2], vec![2, 4], Vec::new()];
+    let handles = [vec![2], vec![4, 5], vec![5]];
+
+    refine_repeated_edge_face_candidates(&edge_faces, &mut allowed, &handles)
+        .expect("aligned face domains");
+
+    assert!(allowed[0].is_empty());
+    assert_eq!(allowed[1], vec![4]);
+    assert_eq!(allowed[2], vec![5]);
+}

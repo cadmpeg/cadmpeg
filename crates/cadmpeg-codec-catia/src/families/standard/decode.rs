@@ -3535,22 +3535,12 @@ fn attach_standard_topology(
             })
             .collect::<Vec<_>>();
         if let Some(handle_face_candidates) = handle_face_candidates {
-            for (allowed, handle_candidates) in allowed_faces.iter_mut().zip(handle_face_candidates)
-            {
-                if handle_candidates.is_empty() {
-                    continue;
-                }
-                let intersection = allowed
-                    .iter()
-                    .copied()
-                    .filter(|face| handle_candidates.contains(face))
-                    .collect::<Vec<_>>();
-                *allowed = if intersection.is_empty() {
-                    handle_candidates
-                } else {
-                    intersection
-                };
-            }
+            missing_edge::refine_repeated_edge_face_candidates(
+                &edge_faces,
+                &mut allowed_faces,
+                &handle_face_candidates,
+            )
+            .ok_or(StandardTopologyFailure::EdgeFaceAssignment)?;
         }
         // A non-empty alternate domain remains a wildcard until the joint mesh
         // quotient evaluates it. Face-local endpoint closure is incomplete:
