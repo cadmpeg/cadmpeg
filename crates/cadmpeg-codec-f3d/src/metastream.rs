@@ -146,26 +146,46 @@ fn require<T>(value: Option<T>, field: &'static str, offset: usize) -> Result<T,
     value.ok_or(ParseFailure { field, offset })
 }
 
+fn take_version_guid(
+    bytes: &[u8],
+    at: &mut usize,
+    field: &'static str,
+    allow_zero_prefix: bool,
+) -> Result<(), ParseFailure> {
+    let initial = *at;
+    for prefix_len in [0, 4] {
+        if prefix_len != 0 && (!allow_zero_prefix || View::u32_le_at(bytes, initial) != Some(0)) {
+            continue;
+        }
+        let Some(guid_at) = initial.checked_add(prefix_len) else {
+            continue;
+        };
+        let Some((guid, next)) = lp_utf16_bounded(bytes, guid_at, 36..=36) else {
+            continue;
+        };
+        if is_guid_hyphenated(&guid) {
+            *at = next;
+            return Ok(());
+        }
+    }
+    Err(ParseFailure {
+        field,
+        offset: initial,
+    })
+}
+
 fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
     let present_at = *at;
     let present = require(View::u32_le_at(bytes, *at), "version-context presence", *at)?;
     *at = require(at.checked_add(4), "version-context presence", *at)?;
     match present {
         0 => Ok(()),
-        1 => {
+        1 | 4 => {
             let token_end = require(at.checked_add(8), "version-context token", *at)?;
             require(bytes.get(*at..token_end), "version-context token", *at)?;
             *at = token_end;
-            for field in [
-                "version-context asset GUID",
-                "version-context revision GUID",
-            ] {
-                let (guid, next) = require(lp_utf16_bounded(bytes, *at, 36..=36), field, *at)?;
-                if !is_guid_hyphenated(&guid) {
-                    return Err(ParseFailure { field, offset: *at });
-                }
-                *at = next;
-            }
+            take_version_guid(bytes, at, "version-context asset GUID", true)?;
+            take_version_guid(bytes, at, "version-context revision GUID", false)?;
             let (version_urn, next) = require(
                 lp_utf16_bounded(bytes, *at, 1..=1024),
                 "version-context version URN",
@@ -366,16 +386,18 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     }
     if at < bytes.len() {
         take_version_context(bytes, &mut at)?;
-        let properties = require(View::u32_le_at(bytes, at), "property count", at)?;
-        at = require(at.checked_add(4), "property count", at)?;
-        for _ in 0..properties {
-            let (_, next) = require(
-                lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic),
-                "property name",
-                at,
-            )?;
-            at = require(next.checked_add(4), "property value", next)?;
-            require(bytes.get(..at), "property value", at.min(bytes.len()))?;
+        if at < bytes.len() {
+            let properties = require(View::u32_le_at(bytes, at), "property count", at)?;
+            at = require(at.checked_add(4), "property count", at)?;
+            for _ in 0..properties {
+                let (_, next) = require(
+                    lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic),
+                    "property name",
+                    at,
+                )?;
+                at = require(next.checked_add(4), "property value", next)?;
+                require(bytes.get(..at), "property value", at.min(bytes.len()))?;
+            }
         }
     }
     if at != bytes.len() {
@@ -437,8 +459,10 @@ mod tests {
     fn parses_present_version_context_before_properties() {
         let mut bytes = stream_prefix();
         bytes.extend_from_slice(&15u64.to_le_bytes());
+        let presence_at = bytes.len();
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&0x1122_3344_5566_7788u64.to_le_bytes());
+        let asset_guid_at = bytes.len();
         for value in [
             "11111111-2222-3333-4444-555555555555",
             "66666666-7777-8888-9999-aaaaaaaaaaaa",
@@ -457,6 +481,15 @@ mod tests {
         let parsed = parse(&bytes, "version-context").expect("framed version context");
         assert!(parsed.types.is_empty());
         assert!(parsed.records.is_empty());
+
+        let mut padded = bytes.clone();
+        padded.splice(asset_guid_at..asset_guid_at, [0; 4]);
+        parse(&padded, "padded-version-context").expect("zero-padded version context");
+
+        let mut alternate_presence = bytes.clone();
+        alternate_presence[presence_at..presence_at + 4].copy_from_slice(&4u32.to_le_bytes());
+        parse(&alternate_presence, "alternate-version-context")
+            .expect("alternate present-context discriminator");
 
         let mut invalid_presence = stream_prefix();
         invalid_presence.extend_from_slice(&15u64.to_le_bytes());
@@ -667,6 +700,6 @@ mod tests {
         trailing.push(0);
         assert!(parse(&trailing, "trailing MetaStream").is_err());
         assert!(parse(&bytes[..bytes.len() - 1], "truncated MetaStream").is_err());
-        assert!(parse(&bytes[..bytes.len() - 4], "flag-only MetaStream").is_err());
+        assert!(parse(&bytes[..bytes.len() - 4], "property-free MetaStream").is_ok());
     }
 }
