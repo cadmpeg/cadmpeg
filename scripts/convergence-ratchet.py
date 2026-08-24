@@ -70,6 +70,7 @@ MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTIL
 LOSS_NOTE_LIT = re.compile(r"LossNote\s*\{")
 LOSS_NOTE_RETURN = re.compile(r"->\s*LossNote\s*\{")
 LOSS_NOTE_STRUCT = re.compile(r"\b(?:pub(?:\([^)]*\))?\s+)?struct\s+LossNote\s*\{")
+LOSS_NOTE_IMPL = re.compile(r"\bimpl(?:\s*<[^>]*>)?\s+LossNote\s*\{")
 BARE_TOLERANCE = re.compile(r"(?<![0-9A-Za-z_.])1[eE]-(?:6|7|8|9|10|11|12)\b")
 # `vec![value; count]` where count is not a decimal/hex literal.
 VEC_REPEAT = re.compile(r"vec!\s*\[(?:[^\];]|;)*;\s*([^\]]+)\]", re.MULTILINE)
@@ -213,7 +214,11 @@ def count_loss_note_literals() -> int:
             code = line.split("//", 1)[0]
             if not LOSS_NOTE_LIT.search(code):
                 continue
-            if LOSS_NOTE_RETURN.search(code) or LOSS_NOTE_STRUCT.search(code):
+            if (
+                LOSS_NOTE_RETURN.search(code)
+                or LOSS_NOTE_STRUCT.search(code)
+                or LOSS_NOTE_IMPL.search(code)
+            ):
                 continue
             total += 1
     return total

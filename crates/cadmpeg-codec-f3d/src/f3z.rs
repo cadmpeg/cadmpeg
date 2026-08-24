@@ -15,7 +15,6 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{EntityRewrite, Model};
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::{Native, NativeRecord};
 
 use crate::container::ContainerScan;
@@ -328,11 +327,9 @@ fn merge_references(
         )?;
         merged += descendants + 1;
         parent.report_mut().geometry_transferred |= component_report.geometry_transferred;
-        for loss in component_report.losses {
-            parent.report_mut().losses.push(LossNote {
-                message: format!("xref {label}: {}", loss.message),
-                ..loss
-            });
+        for mut loss in component_report.losses {
+            loss.message = format!("xref {label}: {}", loss.message);
+            parent.report_mut().losses.push(loss);
         }
         let placement = if reference.transform.is_some() {
             "Design occurrence transform"

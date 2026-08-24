@@ -94,10 +94,13 @@ class StripCfgTest(unittest.TestCase):
 
 
 class PatternFilters(unittest.TestCase):
-    def test_excludes_loss_note_return_and_struct(self) -> None:
+    def test_excludes_loss_note_return_struct_and_impl(self) -> None:
         text = (
             "struct LossNote {\n"
             "    msg: String,\n"
+            "}\n"
+            "impl LossNote {\n"
+            "    fn message(&self) -> &str { &self.msg }\n"
             "}\n"
             "fn make() -> LossNote {\n"
             "    LossNote { msg: String::new() }\n"
@@ -107,7 +110,11 @@ class PatternFilters(unittest.TestCase):
         for line in text.splitlines():
             if not ratchet.LOSS_NOTE_LIT.search(line):
                 continue
-            if ratchet.LOSS_NOTE_RETURN.search(line) or ratchet.LOSS_NOTE_STRUCT.search(line):
+            if (
+                ratchet.LOSS_NOTE_RETURN.search(line)
+                or ratchet.LOSS_NOTE_STRUCT.search(line)
+                or ratchet.LOSS_NOTE_IMPL.search(line)
+            ):
                 continue
             hits += 1
         self.assertEqual(hits, 1)

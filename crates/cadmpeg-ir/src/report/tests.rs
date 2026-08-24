@@ -6,12 +6,11 @@ use super::*;
 
 #[test]
 fn loss_code_serializes_as_namespaced_object() {
-    let note = LossNote {
-        code: LossKind::shared(LossTaxonomy::TopologyNotTransferred),
-        severity: Severity::Blocking,
-        message: "topology graph not transferred".to_owned(),
-        provenance: None,
-    };
+    let note = LossNote::new(
+        LossKind::shared(LossTaxonomy::TopologyNotTransferred),
+        "topology graph not transferred",
+    )
+    .with_severity(Severity::Blocking);
     let value: serde_json::Value = serde_json::to_value(&note).expect("required invariant");
     assert_eq!(value["code"]["namespace"], SHARED_LOSS_NAMESPACE);
     assert_eq!(value["code"]["code"], "topology_not_transferred");
@@ -121,19 +120,19 @@ fn namespaced_local_code_pins_strict_floor_independently_of_taxonomy() {
 
 #[test]
 fn loss_provenance_root_alias_constructs_and_serializes() {
-    let note = LossNote {
-        code: LossKind::shared(LossTaxonomy::GeometryNotTransferred),
-        severity: Severity::Warning,
-        message: "geometry was retained as metadata".into(),
-        provenance: Some(SourceProvenance {
-            format: "rhino".into(),
-            stream: String::new(),
-            offset: 42,
-            tag: Some(
-                "OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020".into(),
-            ),
-        }),
-    };
+    let note = LossNote::new(
+        LossKind::shared(LossTaxonomy::GeometryNotTransferred),
+        "geometry was retained as metadata",
+    )
+    .with_severity(Severity::Warning)
+    .with_provenance(SourceProvenance {
+        format: "rhino".into(),
+        stream: String::new(),
+        offset: 42,
+        tag: Some(
+            "OBJECT_RECORD/class=00000000-0000-0000-0000-000000000000/type=0x00000020".into(),
+        ),
+    });
     let json = serde_json::to_value(&note).unwrap();
     assert_eq!(json["provenance"]["format"], "rhino");
     assert_eq!(json["provenance"]["stream"], "");
