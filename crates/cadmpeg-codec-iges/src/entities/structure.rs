@@ -462,9 +462,6 @@ fn legacy_associativity_valid(
     records: &BTreeMap<u32, &ParameterRecord>,
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
 ) -> bool {
-    if entry.structure != 0 {
-        return false;
-    }
     let context = LegacyAssociativityContext {
         entry,
         entries,
@@ -1105,6 +1102,10 @@ fn existing_pointer(
         .integer(index)
         .and_then(|value| u32::try_from(value).ok())
         .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
+}
+
+fn type402_structure_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    matches!(dialect, Dialect::V4_0) || entry.structure == 0
 }
 
 fn predefined_associativity_valid(
@@ -2130,18 +2131,24 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let valid = if matches!(entry.form, 8 | 10 | 11) {
-            legacy_associativity_valid(entry, record, &entries, &records, trailing_pointer_analysis)
-        } else {
-            entry.structure == 0
-                && predefined_associativity_valid(
+        let valid = type402_structure_valid(entry, global.dialect())
+            && if matches!(entry.form, 8 | 10 | 11) {
+                legacy_associativity_valid(
                     entry,
                     record,
                     &entries,
                     &records,
                     trailing_pointer_analysis,
                 )
-        };
+            } else {
+                predefined_associativity_valid(
+                    entry,
+                    record,
+                    &entries,
+                    &records,
+                    trailing_pointer_analysis,
+                )
+            };
         if valid {
             decoded.insert(entry.sequence);
             if entry.form == 9 {

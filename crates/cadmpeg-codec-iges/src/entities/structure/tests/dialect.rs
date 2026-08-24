@@ -10,7 +10,7 @@ use crate::global::Dialect;
 use crate::test_support::*;
 use crate::IgesCodec;
 
-use super::super::flow_associativity_directory_valid;
+use super::super::{flow_associativity_directory_valid, type402_structure_valid};
 
 #[test]
 fn v4_flow_associativity_requires_entity_use_flag_three() {
@@ -102,5 +102,76 @@ fn decode_v4_flow_uses_the_table_use_flag_and_ignores_structure() {
     assert!(invalid.report().losses.iter().any(|loss| {
         loss.message
             .contains("flow class counts, flags, typed links")
+    }));
+}
+
+#[test]
+fn v4_type402_structure_is_ignored_for_each_predefined_associativity_path() {
+    let entry = |form, structure| DirectoryEntry {
+        source_offset: 0,
+        sequence: 1,
+        entity_type: 402,
+        parameter_start: 0,
+        structure,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag: 2,
+            hierarchy: 0,
+        },
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 0,
+        form,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
+    };
+
+    for form in [2, 5, 6, 8, 9, 10, 11, 12, 13, 16] {
+        assert!(
+            type402_structure_valid(&entry(form, 99), Dialect::V4_0),
+            "V4 form {form}"
+        );
+        assert!(
+            !type402_structure_valid(&entry(form, 99), Dialect::V5_0),
+            "V5 form {form}"
+        );
+        assert!(type402_structure_valid(&entry(form, 0), Dialect::V5_0));
+    }
+}
+
+#[test]
+fn decode_v4_type402_form2_ignores_nonzero_structure() {
+    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
+                &[OwnedTestEntity {
+                    entity_type: 402,
+                    form: 2,
+                    label: "EXTLOGIC".into(),
+                    status: "00000200",
+                    parameters: "402,1,4HNAME,1;".into(),
+                }],
+                GLOBAL_V4,
+                &[],
+                &[],
+                &[],
+                &[],
+                &[(1, 99)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.report().losses.iter().all(|loss| {
+        loss.code != crate::loss::IgesLossCode::EntityNotProjected.kind()
+            || !loss.message.contains("IGES entity type 402 form 2")
     }));
 }
