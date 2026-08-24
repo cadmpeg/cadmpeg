@@ -306,6 +306,7 @@ pub(crate) fn resolved_edge_treatment_group(
     )
 }
 
+#[allow(clippy::too_many_arguments)] // The arguments are distinct native operand arenas and resolution context.
 pub(crate) fn resolved_edge_treatment_group_with_corners(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],

@@ -93,8 +93,7 @@ pub fn decode(
     let (model_root, omitted_drawing_root) = model_root_member(scan, &manifest.root)?;
     let root_view = scan.entry_view(&model_root).ok_or_else(|| {
         CodecError::Malformed(format!(
-            "f3z root member {} is not present in the archive",
-            model_root
+            "f3z root member {model_root} is not present in the archive"
         ))
     })?;
     let mut root = crate::decode::decode(ctx, root_view)?;
@@ -111,8 +110,7 @@ pub fn decode(
         .filter(|entry| is_f3d_member(&entry.name))
         .count();
     root.report_mut().notes.push(format!(
-        "f3z archive: {member_count} document member(s); root {}",
-        model_root
+        "f3z archive: {member_count} document member(s); root {model_root}"
     ));
     if ctx.container_only() {
         return Ok(root);

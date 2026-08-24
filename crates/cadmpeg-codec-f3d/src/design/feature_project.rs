@@ -4168,7 +4168,7 @@ pub(crate) fn bind_form_cages(
                         valid = false;
                         break;
                     };
-                    let Some(Some(entry_name)) = serializers.get(&surface) else {
+                    let Some(Some(entry_name)) = serializers.by_surface.get(&surface) else {
                         valid = false;
                         break;
                     };
@@ -4292,7 +4292,7 @@ pub(crate) fn bind_form_cages(
         let resolved = surfaces
             .iter()
             .map(|surface| {
-                let entry_name = serializers.get(surface)?.as_ref()?;
+                let entry_name = serializers.by_surface.get(surface)?.as_ref()?;
                 let mut matches = cages.iter().filter(|cage| {
                     cage.source_object
                         .as_ref()
@@ -4937,12 +4937,6 @@ fn form_cage_surface(
 struct FormCageSerializers {
     by_surface: HashMap<u32, Option<String>>,
     ordered: Vec<(u32, Option<String>)>,
-}
-
-impl FormCageSerializers {
-    fn get(&self, surface: &u32) -> Option<&Option<String>> {
-        self.by_surface.get(surface)
-    }
 }
 
 fn form_cage_serializers(bytes: &[u8], records: &IndexedRecordOffsets) -> FormCageSerializers {
@@ -6002,14 +5996,14 @@ pub(crate) fn project_fixed_loft(
             || legacy_body_group_identity
                 == Some((group.record_index, group.scope_reference_ordinal))
     };
-    let body_count = groups.iter().filter(|group| is_body_group(**group)).count();
+    let body_count = groups.iter().filter(|group| is_body_group(group)).count();
     let expected_body_count = usize::from(*operation != DesignExtrudeOperation::NewBody);
     if body_count != expected_body_count {
         return None;
     }
     let operands = groups
         .iter()
-        .filter(|group| !is_body_group(**group))
+        .filter(|group| !is_body_group(group))
         .copied()
         .collect::<Vec<_>>();
     let profile_groups = operands
