@@ -943,11 +943,14 @@ pub(crate) fn transformed_subfigure_definition_file(
     instance_type: i64,
     global: &[u8],
     line_font: i64,
+    label_display: i64,
+    definition_transform: i64,
 ) -> Vec<u8> {
     struct Entry<'a> {
         entity_type: i64,
         form: i64,
         transform: i64,
+        label_display: i64,
         label: &'a str,
         status: &'a str,
         parameters: &'a [u8],
@@ -966,11 +969,12 @@ pub(crate) fn transformed_subfigure_definition_file(
         420 => b"420,5,0,0,0,1,,,1,,,0;",
         _ => unreachable!(),
     };
-    let entries = [
+    let mut entries = Vec::from([
         Entry {
             entity_type: 124,
             form: 0,
             transform: 0,
+            label_display: 0,
             label: "MATRIX",
             status: "00010000",
             parameters: b"124,1,0,0,10,0,1,0,20,0,0,1,30;",
@@ -979,6 +983,7 @@ pub(crate) fn transformed_subfigure_definition_file(
             entity_type: 110,
             form: 0,
             transform: 0,
+            label_display: 0,
             label: "MEMBER",
             status: "00010000",
             parameters: b"110,0,0,0,1,0,0;",
@@ -986,7 +991,8 @@ pub(crate) fn transformed_subfigure_definition_file(
         Entry {
             entity_type: definition_type,
             form: 0,
-            transform: 1,
+            transform: definition_transform,
+            label_display,
             label: "DEF",
             status: "00000200",
             parameters: definition_parameters,
@@ -995,11 +1001,43 @@ pub(crate) fn transformed_subfigure_definition_file(
             entity_type: instance_type,
             form: 0,
             transform: 0,
+            label_display: 0,
             label: "INSTANCE",
             status: "00000000",
             parameters: instance_parameters,
         },
-    ];
+    ]);
+    if label_display != 0 {
+        entries.extend([
+            Entry {
+                entity_type: 402,
+                form: 5,
+                transform: 0,
+                label_display: 0,
+                label: "LABELDSP",
+                status: "00000200",
+                parameters: b"402,1,11,1,2,3,13,0,5;",
+            },
+            Entry {
+                entity_type: 410,
+                form: 0,
+                transform: 0,
+                label_display: 0,
+                label: "VIEW",
+                status: "00000100",
+                parameters: b"410,1,1,0,0,0,0,0,0;",
+            },
+            Entry {
+                entity_type: 214,
+                form: 1,
+                transform: 0,
+                label_display: 0,
+                label: "LEADER",
+                status: "00010100",
+                parameters: b"214,1,2,1,0,0,0,2,0;",
+            },
+        ]);
+    }
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     for (index, entry) in entries.iter().enumerate() {
@@ -1022,7 +1060,7 @@ pub(crate) fn transformed_subfigure_definition_file(
                 "0",
                 "0",
                 &transform,
-                "0",
+                &entry.label_display.to_string(),
                 entry.status,
             ],
             sequence,

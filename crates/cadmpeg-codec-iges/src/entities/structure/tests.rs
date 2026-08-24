@@ -1998,6 +1998,8 @@ fn v5_applies_definition_transformations_to_subfigure_occurrences() {
                     instance_type,
                     global_v5,
                     0,
+                    0,
+                    1,
                 )),
                 &DecodeOptions::default(),
             )
@@ -2035,6 +2037,127 @@ fn v5_applies_definition_transformations_to_subfigure_occurrences() {
 }
 
 #[test]
+fn v5_preserves_label_display_links_on_subfigure_definitions() {
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    for (definition_type, instance_type, definition_arena) in [
+        (308, 408, "subfigure_definitions"),
+        (320, 420, "network_definitions"),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(transformed_subfigure_definition_file(
+                    definition_type,
+                    instance_type,
+                    global_v5,
+                    0,
+                    9,
+                    0,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = result.ir().native.namespace("iges").unwrap();
+        assert_eq!(
+            native.arenas[definition_arena][0].fields()["label_display"],
+            "iges:structure:associativity#D9"
+        );
+        assert!(
+            !result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()),
+            "{:#?}",
+            result.report().losses
+        );
+    }
+}
+
+#[test]
+fn v5_rejects_wrong_label_display_target_on_subfigure_definitions() {
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    for (definition_type, instance_type, message) in [
+        (
+            308,
+            408,
+            "subfigure definition fields or nesting depth is invalid",
+        ),
+        (
+            320,
+            420,
+            "network definition fields or nesting depth is invalid",
+        ),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(transformed_subfigure_definition_file(
+                    definition_type,
+                    instance_type,
+                    global_v5,
+                    0,
+                    3,
+                    0,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(
+            result.report().losses.iter().any(|loss| {
+                loss.code == IgesLossCode::EntityNotProjected.kind()
+                    && loss.message.contains(message)
+            }),
+            "{:#?}",
+            result.report().losses
+        );
+        assert!(
+            result.ir().native.namespace("iges").unwrap().arenas["product_occurrences"].is_empty()
+        );
+    }
+}
+
+#[test]
+fn v4_rejects_nonzero_label_display_on_subfigure_definitions() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    for (definition_type, instance_type, message) in [
+        (
+            308,
+            408,
+            "subfigure definition fields or nesting depth is invalid",
+        ),
+        (
+            320,
+            420,
+            "network definition fields or nesting depth is invalid",
+        ),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(transformed_subfigure_definition_file(
+                    definition_type,
+                    instance_type,
+                    global_v4,
+                    1,
+                    9,
+                    0,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(
+            result.report().losses.iter().any(|loss| {
+                loss.code == IgesLossCode::EntityNotProjected.kind()
+                    && loss.message.contains(message)
+            }),
+            "{:#?}",
+            result.report().losses
+        );
+        assert!(
+            result.ir().native.namespace("iges").unwrap().arenas["product_occurrences"].is_empty()
+        );
+    }
+}
+
+#[test]
 fn v4_rejects_definition_transformations_for_both_subfigure_types() {
     let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
     for (definition_type, instance_type, message) in [
@@ -2055,6 +2178,8 @@ fn v4_rejects_definition_transformations_for_both_subfigure_types() {
                     definition_type,
                     instance_type,
                     global_v4,
+                    1,
+                    0,
                     1,
                 )),
                 &DecodeOptions::default(),

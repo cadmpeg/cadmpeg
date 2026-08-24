@@ -134,6 +134,23 @@ fn subfigure_definition_directory_fields_valid(entry: &DirectoryEntry, dialect: 
                 && (entry.status.hierarchy == 1 || entry.line_font != 0)))
 }
 
+fn subfigure_definition_label_display_valid(
+    entry: &DirectoryEntry,
+    dialect: Dialect,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    entry.label_display == 0
+        || (!matches!(dialect, Dialect::V4_0)
+            && u32::try_from(entry.label_display)
+                .ok()
+                .filter(|sequence| sequence % 2 == 1)
+                .is_some_and(|sequence| {
+                    entries
+                        .get(&sequence)
+                        .is_some_and(|target| target.entity_type == 402 && target.form == 5)
+                }))
+}
+
 fn subfigure_definition_transform_valid(
     entry: &DirectoryEntry,
     dialect: Dialect,
@@ -2571,6 +2588,7 @@ pub(super) fn project(
         definitions.insert(entry.sequence, SubfigureDefinition { depth, members });
         if name_valid
             && subfigure_definition_directory_fields_valid(entry, global.dialect())
+            && subfigure_definition_label_display_valid(entry, global.dialect(), &entries)
             && subfigure_definition_transform_valid(
                 entry,
                 global.dialect(),
@@ -2702,6 +2720,7 @@ pub(super) fn project(
             && designator_valid
             && display_valid
             && subfigure_definition_directory_fields_valid(entry, global.dialect())
+            && subfigure_definition_label_display_valid(entry, global.dialect(), &entries)
             && subfigure_definition_transform_valid(
                 entry,
                 global.dialect(),

@@ -1553,6 +1553,7 @@
               "depth": 0,
               "display_template": null,
               "id": "iges:product:network-definition#D1",
+              "label_display": null,
               "members": [],
               "name": [
                 78,

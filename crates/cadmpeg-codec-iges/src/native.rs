@@ -179,6 +179,24 @@ fn resolved_display_definition(
         .map(|sequence| format!("iges:presentation:{arena}#D{sequence}"))
 }
 
+fn resolved_label_display_definition(
+    references: &BTreeMap<u32, Vec<ReferenceEdge>>,
+    source_sequence: u32,
+    pointer: i64,
+) -> Option<String> {
+    (pointer > 0)
+        .then(|| {
+            references
+                .get(&source_sequence)?
+                .iter()
+                .find_map(|reference| {
+                    reference.resolved_target_sequence_for(ReferenceKind::LabelDisplay)
+                })
+        })
+        .flatten()
+        .map(|sequence| format!("iges:structure:associativity#D{sequence}"))
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum NativeLineFontDefinition {
@@ -353,6 +371,7 @@ struct NativeSubfigureDefinition {
     declared_member_count: Option<i64>,
     members: Vec<Option<String>>,
     transformation: Option<String>,
+    label_display: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -379,6 +398,7 @@ struct NativeNetworkDefinition {
     declared_connect_point_count: Option<i64>,
     connect_points: Vec<Option<String>>,
     transformation: Option<String>,
+    label_display: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -2536,6 +2556,11 @@ pub(crate) fn store(
                     .collect(),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+                label_display: resolved_label_display_definition(
+                    references,
+                    entry.sequence,
+                    entry.label_display,
+                ),
             }
         })
         .collect::<Vec<_>>();
@@ -2667,6 +2692,11 @@ pub(crate) fn store(
                 ),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+                label_display: resolved_label_display_definition(
+                    references,
+                    entry.sequence,
+                    entry.label_display,
+                ),
             }
         })
         .collect::<Vec<_>>();

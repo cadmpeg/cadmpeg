@@ -3307,6 +3307,7 @@
               "declared_member_count": 1,
               "depth": 0,
               "id": "iges:product:subfigure-definition#D3",
+              "label_display": null,
               "members": [
                 "iges:entity:directory#1"
               ],
@@ -3324,6 +3325,7 @@
               "declared_member_count": 1,
               "depth": 1,
               "id": "iges:product:subfigure-definition#D7",
+              "label_display": null,
               "members": [
                 "iges:entity:directory#5"
               ],
