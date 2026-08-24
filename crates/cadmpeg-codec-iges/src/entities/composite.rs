@@ -49,6 +49,19 @@ fn composite_line_font_valid(line_font: i64, hierarchy: u8, dialect: Dialect) ->
     !matches!(dialect, Dialect::V4_0) || hierarchy == 1 || line_font != 0
 }
 
+fn composite_logical_connector_use_valid(
+    use_flag: u8,
+    is_logical_connector: bool,
+    dialect: Dialect,
+) -> bool {
+    !is_logical_connector
+        || !matches!(
+            dialect,
+            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3
+        )
+        || use_flag == 4
+}
+
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
     IgesLossCode::CompositeCarrierDegraded
         .note(format!(
@@ -967,6 +980,23 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "child pointer list is invalid"));
             continue;
         };
+        let is_logical_connector = child_sequences.len() == 2
+            && child_sequences.iter().all(|sequence| {
+                entries
+                    .get(sequence)
+                    .is_some_and(|child| child.entity_type == 132 && child.form == 0)
+            });
+        if !composite_logical_connector_use_valid(
+            entry.status.use_flag,
+            is_logical_connector,
+            global.dialect(),
+        ) {
+            losses.push(entity_loss(
+                entry,
+                "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later",
+            ));
+            continue;
+        }
         if entry.transform != 0 {
             losses.push(entity_loss(
                 entry,

@@ -60,6 +60,35 @@ fn composite_line_font_follows_the_declared_dialect_and_hierarchy() {
 }
 
 #[test]
+fn composite_logical_connector_use_flag_is_a_v5_rule() {
+    assert!(composite_logical_connector_use_valid(
+        0,
+        true,
+        Dialect::V4_0
+    ));
+    assert!(!composite_logical_connector_use_valid(
+        0,
+        true,
+        Dialect::V5_0
+    ));
+    assert!(composite_logical_connector_use_valid(
+        4,
+        true,
+        Dialect::V5_3
+    ));
+    assert!(!composite_logical_connector_use_valid(
+        5,
+        true,
+        Dialect::V5_0
+    ));
+    assert!(composite_logical_connector_use_valid(
+        0,
+        false,
+        Dialect::V5_0
+    ));
+}
+
+#[test]
 fn decode_rejects_a_nonzero_v4_composite_entity_use_flag() {
     const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
     let result = IgesCodec
@@ -105,6 +134,49 @@ fn decode_rejects_a_nonzero_v4_composite_entity_use_flag() {
             && loss
                 .message
                 .contains("Type 102 Entity Use Flag must be 00 in IGES 4.0")
+    }));
+}
+
+#[test]
+fn decode_rejects_a_v5_logical_connector_without_entity_use_flag_04() {
+    const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[
+                    OwnedTestEntity {
+                        entity_type: 132,
+                        form: 0,
+                        label: "CP1".into(),
+                        status: "00010000",
+                        parameters: "132,0,0,0,0,1,1,2HP1,0,3HCP1,0,1,1,0,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 132,
+                        form: 0,
+                        label: "CP2".into(),
+                        status: "00010000",
+                        parameters: "132,1,0,0,0,1,1,2HP2,0,3HCP2,0,1,1,0,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 102,
+                        form: 0,
+                        label: "CONN".into(),
+                        status: "00000000",
+                        parameters: "102,2,1,3;".into(),
+                    },
+                ],
+                GLOBAL_V5_0,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss.message.contains(
+                "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04",
+            )
     }));
 }
 
