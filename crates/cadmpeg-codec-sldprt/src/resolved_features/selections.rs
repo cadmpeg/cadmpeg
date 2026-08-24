@@ -626,9 +626,12 @@ pub(super) fn compact_surface_selections(
         }
         for (offset, components) in candidates {
             let endpoint_selector = if kind == NativeClassKind::Extrusion {
-                compact_extrusion_to_vertex_at(&lane.native_payload, start, end)
-                    .and_then(|(marker, _, selector)| (marker == offset).then_some(selector))
-                    .flatten()
+                compact_extrusion_endpoint_selector_for_marker(
+                    &lane.native_payload,
+                    start,
+                    end,
+                    offset,
+                )
             } else {
                 None
             };
@@ -659,6 +662,21 @@ pub(super) fn compact_surface_selections(
         }
     }
     result
+}
+
+/// Return the opaque endpoint selector belonging to one extrusion selection
+/// marker. The end-spec body can start after the feature-name offset, so the
+/// lookup must scan the complete feature interval rather than probe `start`.
+fn compact_extrusion_endpoint_selector_for_marker(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    marker: usize,
+) -> Option<u32> {
+    (start..end).find_map(|body| {
+        let (candidate, _, selector) = compact_extrusion_to_vertex_at(payload, body, end)?;
+        (candidate == marker).then_some(selector).flatten()
+    })
 }
 
 fn fillet_face_selection_candidates(

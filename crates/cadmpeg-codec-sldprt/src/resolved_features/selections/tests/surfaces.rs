@@ -16,6 +16,34 @@ use crate::records::{
 use std::collections::{BTreeMap, HashSet};
 
 #[test]
+fn extrusion_endpoint_selector_is_found_after_feature_name_offset() {
+    let mut body = vec![0; 30];
+    body[..2].copy_from_slice(&[0x0c, 0x8e]);
+    body[4] = 1;
+    body[18] = 3;
+    body.extend_from_slice(b"\xff\xff\x01\x00\x0f\x00moEndPointRef_w");
+    body.extend_from_slice(b"\xff\xff\x01\x00\x0c\x00moCompEdge_c");
+    body.extend_from_slice(&[0xcb, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
+    body.extend_from_slice(&[0; 12]);
+    let body_marker = selection_vector_tail(&mut body, &[2]);
+    let selector = 0x0012_3456_u32;
+    body[body_marker - 4..body_marker].copy_from_slice(&selector.to_le_bytes());
+
+    let prefix_len = 17;
+    let mut payload = vec![0; prefix_len];
+    payload.extend_from_slice(&body);
+    assert_eq!(
+        compact_extrusion_endpoint_selector_for_marker(
+            &payload,
+            0,
+            payload.len(),
+            prefix_len + body_marker,
+        ),
+        Some(selector)
+    );
+}
+
+#[test]
 fn compact_edge_selection_accepts_counted_u16_ids() {
     let marker = 12;
     let mut payload = vec![0; 80];
