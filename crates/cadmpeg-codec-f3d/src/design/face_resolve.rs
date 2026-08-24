@@ -50,6 +50,15 @@ pub(crate) fn resolved_face_group(
         if matches.next().is_some() {
             return None;
         }
+        if operand.resolved_active_face.is_none()
+            && operand.resolved_face_slots.is_empty()
+            && operand.alternate_selector_candidate_faces.is_empty()
+            && (!operand.preceding_candidate_faces.is_empty()
+                || !operand.changed_candidate_faces.is_empty()
+                || !operand.historical_support_contexts.is_empty())
+        {
+            return None;
+        }
         let operand_faces = resolved_face_operand(operand)?;
         for face in operand_faces {
             if !faces.contains(&face) {
@@ -2194,6 +2203,12 @@ mod tests {
             })
         );
         operand.resolved_active_face = None;
+        operand.preceding_candidate_faces = vec![face(10), face(20)];
+        assert_eq!(
+            resolved_face_group(&group, std::slice::from_ref(&operand)),
+            None
+        );
+        operand.preceding_candidate_faces.clear();
 
         operand.candidate_faces.clear();
         operand.recipe_references = vec![
