@@ -433,7 +433,7 @@ fn analyze_trailing_pointer_groups_from_end(
     let candidates = match primary_end {
         Some(start) => {
             let prefix = non_integer_prefix(record);
-            pointer_group_candidate_with_prefix(record, start, &prefix)
+            pointer_group_candidate_with_prefix(record, start, &prefix, true)
                 .into_iter()
                 .collect()
         }
@@ -2270,6 +2270,7 @@ fn pointer_group_candidate_with_prefix(
     record: &ParameterRecord,
     association_count_index: usize,
     non_integer_prefix: &[usize],
+    allow_empty: bool,
 ) -> Option<PointerGroupCandidate> {
     let association_count = record
         .raw_integer(association_count_index)
@@ -2279,7 +2280,11 @@ fn pointer_group_candidate_with_prefix(
     let property_count = record
         .raw_integer(property_count_index)
         .and_then(|value| usize::try_from(value).ok())?;
-    if association_count == 0 && property_count == 0 {
+    // A table-defined primary boundary is exact, so an explicitly encoded
+    // `0,0` suffix is a valid empty pair of groups. Generic recovery has no
+    // evidence for such a boundary and must not infer one from arbitrary
+    // zeros inside an entity's primary data.
+    if !allow_empty && association_count == 0 && property_count == 0 {
         return None;
     }
     let property_start = property_count_index.checked_add(1)?;
@@ -2306,6 +2311,7 @@ fn structural_pointer_group_candidates(record: &ParameterRecord) -> Vec<PointerG
                 record,
                 association_count_index,
                 &non_integer_prefix,
+                false,
             )
         })
         .collect()

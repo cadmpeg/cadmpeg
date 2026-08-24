@@ -10890,6 +10890,27 @@ fn type402_form16_entity_table_boundary_follows_entity_count() {
 }
 
 #[test]
+fn type402_form16_accepts_explicit_empty_pointer_groups() {
+    let transform = directory_target(3, 124);
+    let member = directory_target(341, 124);
+    let mut source = directory_target(5, 402);
+    source.form = 16;
+    let directory = BTreeMap::from([(3, &transform), (5, &source), (341, &member)]);
+    let record = integer_parameter_record(5, &[402, 1, 1, 3, 341, 0, 0]);
+
+    let analysis = analyze_trailing_pointer_groups(&record, &directory);
+    assert_eq!(analysis.candidate_count, 1);
+    assert_eq!(analysis.valid_candidate_count, 1);
+    let groups = analysis
+        .groups
+        .expect("Type 402 Form 16 empty pointer groups");
+    assert_eq!(groups.token_start, 5);
+    assert!(groups.associations.is_empty());
+    assert!(groups.properties.is_empty());
+    assert!(groups.fully_valid);
+}
+
+#[test]
 fn type402_form16_table_boundary_precedes_valid_generic_alternative() {
     let association = directory_target(1, 212);
     let transform = directory_target(3, 124);
