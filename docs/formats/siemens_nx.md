@@ -611,6 +611,12 @@ Inflated prologue text classifies each stream:
 | contains `TRANSMIT FILE created by` without subtype | plain (cached body) |
 | otherwise                                           | stream              |
 
+Without a segment index, each complete zlib member whose compressed extent is
+inside `/Root/UG_PART/UG_PART` is one embedded stream. The zlib end marker and
+integrity trailer bound the member. The inflated stream has no minimum byte
+length. With a segment index, the ordered segment wrapper selects the zlib
+member and supplies the same compressed extent boundary.
+
 ### 3.1 Neutral-binary encoding
 
 Inflated streams begin `PS 00 00`; the prologue contains a schema token `SCH_<version>` (for example, `SCH_3501171_35102_13006`). The third component (`13006`) is an NX-embedding constant.

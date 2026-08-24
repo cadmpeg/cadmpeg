@@ -1004,10 +1004,6 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
         .collect()
 }
 
-/// The minimum inflated length for an unindexed scan candidate to count as a
-/// real stream; indexed wrappers admit any complete member length.
-const MIN_INFLATED: usize = 64;
-
 /// Locates, inflates, and classifies zlib streams in `/Root/UG_PART/UG_PART`.
 pub fn extract_streams<'a>(
     ctx: &DecodeContext<'a>,
@@ -1051,7 +1047,7 @@ pub fn extract_streams<'a>(
             {
                 continue;
             }
-            let Some((inflated, consumed)) = inflate_stream(ctx, part_view, offset, 0)? else {
+            let Some((inflated, consumed)) = inflate_stream(ctx, part_view, offset)? else {
                 return Err(CodecError::Malformed(format!(
                     "invalid indexed zlib member at file offset {}",
                     start + offset
@@ -1072,7 +1068,7 @@ pub fn extract_streams<'a>(
     let mut i = 0usize;
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
-            if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i, MIN_INFLATED)? {
+            if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i)? {
                 let (kind, schema) = classify(&inflated);
                 streams.push(Stream {
                     file_offset: start + i,
@@ -1118,27 +1114,25 @@ pub fn extract_legacy_streams<'a>(
         let payload = bytes.get(start..end).ok_or_else(|| {
             CodecError::Malformed("legacy Parasolid stream range escapes payload".into())
         })?;
-        if payload.len() >= MIN_INFLATED {
-            let inflated = ctx.copy_retained(
-                payload,
-                "retain legacy NX Parasolid stream",
-                Some(part.location()),
-            )?;
-            let (kind, schema) = classify(&inflated);
-            let consumed = u64::try_from(payload.len()).map_err(|_| {
-                CodecError::Malformed("legacy Parasolid stream length exceeds u64".into())
-            })?;
-            let file_offset = part.start().checked_add(start).ok_or_else(|| {
-                CodecError::Malformed("legacy Parasolid stream offset overflow".into())
-            })?;
-            streams.push(Stream {
-                file_offset,
-                consumed,
-                inflated,
-                kind,
-                schema,
-            });
-        }
+        let inflated = ctx.copy_retained(
+            payload,
+            "retain legacy NX Parasolid stream",
+            Some(part.location()),
+        )?;
+        let (kind, schema) = classify(&inflated);
+        let consumed = u64::try_from(payload.len()).map_err(|_| {
+            CodecError::Malformed("legacy Parasolid stream length exceeds u64".into())
+        })?;
+        let file_offset = part.start().checked_add(start).ok_or_else(|| {
+            CodecError::Malformed("legacy Parasolid stream offset overflow".into())
+        })?;
+        streams.push(Stream {
+            file_offset,
+            consumed,
+            inflated,
+            kind,
+            schema,
+        });
         let Some(next) = next else {
             break;
         };
@@ -1180,12 +1174,11 @@ fn legacy_transmit_header(bytes: &[u8], start: usize) -> bool {
         && contains(description, b"TRANSMIT FILE")
 }
 
-/// Inflates one zlib member that meets [`MIN_INFLATED`].
+/// Inflate one complete zlib member.
 fn inflate_stream<'a>(
     ctx: &DecodeContext<'a>,
     part_view: View<'a>,
     offset: usize,
-    minimum_inflated: usize,
 ) -> Result<Option<(Vec<u8>, u64)>, CodecError> {
     let Some(source) = part_view.child(offset, part_view.end()) else {
         return Ok(None);
@@ -1195,9 +1188,6 @@ fn inflate_stream<'a>(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    if view.window().len() < minimum_inflated {
-        return Ok(None);
-    }
     let Ok(consumed) = u64::try_from(consumed) else {
         return Ok(None);
     };

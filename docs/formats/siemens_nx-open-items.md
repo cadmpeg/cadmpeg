@@ -286,11 +286,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which container relation bounds an unindexed Parasolid stream, and which enclosing production bounds each type-82 through type-89 value record?
 
-**Known.** A Parasolid transmit stream has a complete `PS 00 00` header and schema token. Counted value records and terminated character records have typed field grammars. Neither grammar defines a minimum stream length or permits an interior record to acquire ownership solely because its bytes resemble a record start.
+**Known.** In an unindexed canonical part payload, each complete zlib member inside `/Root/UG_PART/UG_PART` is one embedded stream. Its zlib end marker and integrity trailer bound its compressed extent, and its inflated form has no minimum byte length. A Parasolid transmit stream has a complete `PS 00 00` header and schema token. Counted value records and terminated character records have typed field grammars. Their grammar does not permit an interior record to acquire ownership solely because its bytes resemble a record start.
 
-**Need.** We must identify unindexed stream ranges from their container relation and parse value records sequentially from a schema-owned root or record boundary.
+**Need.** We must parse value records sequentially from a schema-owned root or record boundary.
 
-**Conflict.** Unindexed extraction rejects an inflated candidate shorter than 64 bytes, while value recovery searches byte by byte for independently plausible frames. The minimum length can reject a valid small stream, and an unowned marker-shaped payload can enter the decoded value set.
+**Conflict.** Value recovery searches byte by byte for independently plausible frames. An unowned marker-shaped payload can enter the decoded value set.
 
 ## 2. Object model and body composition
 

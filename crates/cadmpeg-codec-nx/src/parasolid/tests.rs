@@ -43,7 +43,7 @@ fn legacy_stream_boundaries_require_complete_transmit_headers() {
 }
 
 #[test]
-fn legacy_short_section_does_not_stall_boundary_scanning() {
+fn legacy_short_sections_are_bounded_by_complete_transmit_headers() {
     let mut bytes = Vec::new();
     let first_description = b": TRANSMIT FILE (partition)";
     bytes.extend_from_slice(b"PS");
@@ -62,8 +62,9 @@ fn legacy_short_section_does_not_stall_boundary_scanning() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let streams = super::extract_legacy_streams(&ctx, root).unwrap();
 
-    assert_eq!(streams.len(), 1);
-    assert_eq!(streams[0].file_offset, second);
+    assert_eq!(streams.len(), 2);
+    assert_eq!(streams[0].file_offset, 0);
+    assert_eq!(streams[1].file_offset, second);
 }
 
 #[test]
@@ -609,6 +610,19 @@ fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     let streams = extract_streams(&file);
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_TEST_1_9999"));
+}
+
+#[test]
+fn extraction_accepts_short_complete_zlib_members_in_ug_part() {
+    let inflated = b"PS\0\0SCH_X";
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", zlib_compress(inflated))]);
+
+    let streams = extract_streams(&file);
+
+    assert_eq!(streams.len(), 1);
+    assert_eq!(streams[0].inflated, inflated);
+    assert_eq!(streams[0].kind, StreamKind::Plain);
+    assert_eq!(streams[0].schema.as_deref(), Some("SCH_X"));
 }
 
 #[test]
