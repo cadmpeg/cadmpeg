@@ -351,15 +351,7 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
         let guid_selects_design = header
             .primary_guid
             .eq_ignore_ascii_case(&manifest.asset_folder_guid);
-        if guid_selects_design && header.asset_type != DESIGN_ASSET_TYPE {
-            return Err(malformed(
-                "asset manifest Design identity",
-                format!(
-                    "folder {folder:?} has the selected primary GUID but does not declare {DESIGN_ASSET_TYPE}"
-                ),
-            ));
-        }
-        if guid_selects_design {
+        if guid_selects_design && header.asset_type == DESIGN_ASSET_TYPE {
             design_folders.push(folder.to_owned());
         }
     }
@@ -731,27 +723,39 @@ mod tests {
     }
 
     #[test]
-    fn selected_design_guid_requires_the_design_asset_type() {
-        let manifest =
-            parse_top_level(&encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap()).unwrap();
+    fn selected_guid_can_be_shared_by_a_non_design_asset() {
+        let manifest = parse_top_level(
+            &encode_top_level(DESIGN_GUID, &["Simulation", "Design Base"]).unwrap(),
+        )
+        .unwrap();
         let entries = BTreeMap::from([
             (
-                "Design Base/Manifest.dat".to_string(),
+                "Simulation/Manifest.dat".to_string(),
                 encode_asset_header(
-                    "Design Base",
+                    "Simulation",
                     DESIGN_GUID,
                     SECONDARY_GUID,
                     "SimulationAssetType",
                 )
                 .unwrap(),
             ),
+            (
+                "Design Base/Manifest.dat".to_string(),
+                encode_asset_header(
+                    "Design Base",
+                    DESIGN_GUID,
+                    SECONDARY_GUID,
+                    DESIGN_ASSET_TYPE,
+                )
+                .unwrap(),
+            ),
             ("Design Base/Design1/BulkStream.dat".to_string(), vec![1]),
         ]);
-        let error = resolve_design_folder(&manifest, entries.keys().map(String::as_str), |name| {
+        let folder = resolve_design_folder(&manifest, entries.keys().map(String::as_str), |name| {
             entries.get(name).map(Vec::as_slice)
         })
-        .unwrap_err();
-        assert!(error.to_string().contains("does not declare"));
+        .unwrap();
+        assert_eq!(folder, "Design Base");
     }
 
     #[test]
