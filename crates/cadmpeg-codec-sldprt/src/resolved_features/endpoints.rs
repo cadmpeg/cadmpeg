@@ -37,6 +37,7 @@ use crate::layout::compact_legacy_96_profile_roster_curve as legacy_96_roster;
 use crate::layout::compact_legacy_terminal_diameter_circle as diam_circ;
 use crate::layout::current_extended_zero_tail_92_profile_curve as zero_tail_92;
 use crate::layout::extended_geometry_104_indexed_arc as geom_104;
+use crate::layout::extended_geometry_104_indexed_circle as geom_circle_104;
 use crate::layout::extended_geometry_locus_96_construction_line as locus_96;
 use crate::layout::extended_profile_104_indexed_arc as profile_arc_104;
 use crate::layout::extended_profile_terminal_102_indexed_arc as profile_arc_terminal_102;
@@ -2739,6 +2740,85 @@ pub(super) fn coordinate_roster_full_circle(
     points.sort_unstable_by_key(|marker| marker.offset);
     let center = points.first()?.coordinates_m?;
     let radial = points.get(radial_index)?.coordinates_m?;
+    let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
+    (radius.is_finite() && radius > 0.0).then_some((center, radius))
+}
+
+pub(super) fn extended_geometry_full_circle(
+    payload: &[u8],
+    circle: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> Option<([f64; 2], f64)> {
+    let offset = usize::try_from(circle.offset).ok()?;
+    if circle.kind != SketchInputKind::LineOrCircle
+        || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+            != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(1)
+        || !marker_is_geometry_locus(payload, offset)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(
+            offset + geom_circle_104::ENDPOINT_SELECTOR
+                ..offset + geom_circle_104::ENDPOINT_SELECTOR + 4,
+        ) != Some(&1u32.to_le_bytes())
+        || payload.get(
+            offset + geom_circle_104::SIGNED_RADIUS_SELECTOR
+                ..offset + geom_circle_104::SIGNED_RADIUS_SELECTOR + 8,
+        ) != Some(&(-1.0f64).to_le_bytes())
+        || View::i32_le_at(payload, offset + geom_circle_104::ARC_SELECTOR)
+            .is_none_or(|selector| !matches!(selector, -1 | 1))
+        || payload.get(
+            offset + geom_circle_104::REFERENCE_SENTINELS
+                ..offset + geom_circle_104::REFERENCE_SENTINELS + 16,
+        ) != Some(&[
+            0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+            0xff, 0xff,
+        ])
+        || payload
+            .get(offset + geom_circle_104::TERMINATOR..offset + geom_circle_104::TERMINATOR + 2)
+            != Some(&[0; 2])
+        || !sketch_marker_prefix_at(payload, offset + geom_circle_104::LEN)
+    {
+        return None;
+    }
+    let radial_index = usize::from(View::u16_le_at(
+        payload,
+        offset + geom_circle_104::RADIAL_INDEX,
+    )?);
+    let radial_repeat = usize::from(View::u16_le_at(
+        payload,
+        offset + geom_circle_104::RADIAL_INDEX_REPEAT,
+    )?);
+    if radial_index == 0 || radial_repeat != radial_index {
+        return None;
+    }
+    let center_index = usize::from(View::u16_le_at(
+        payload,
+        offset + geom_circle_104::CENTER_INDEX,
+    )?);
+    let mut coordinates = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == circle.feature_ref
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::ConstrainedPoint
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                )
+        })
+        .collect::<Vec<_>>();
+    coordinates.sort_unstable_by_key(|marker| marker.offset);
+    let center = coordinates.get(center_index)?.coordinates_m?;
+    let radial = coordinates.get(radial_index)?.coordinates_m?;
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }

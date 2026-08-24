@@ -671,6 +671,40 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `extended_geometry_104_indexed_circle`
+
+Spec §2 · layout: byte offsets · size: 104 B
+
+Equal radial indices use the explicit center index in the complete coordinate-bearing geometry roster.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended-prefix kind `1` geometry-locus 104-byte record |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind `1` geometry-locus · value `1` |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry-locus 104-byte record · value `[5, 0, 1, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | same fixed header · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | same fixed header |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_value` | `f64` | little | spec | state · value `1.0` |
+| 56 | 2 | `radial_index` | `u16` | little | spec | same nonzero zero-based radial index |
+| 58 | 2 | `radial_index_repeat` | `u16` | little | spec | same nonzero zero-based radial index |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | endpoint selector · value `1` |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | signed-radius selector · value `-1.0` |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | signed selector `-1` or `1` |
+| 76 | 2 | `center_index` | `u16` | little | spec | zero-based center index |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | reference sentinels · value `[254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255]` |
+| 94 | 2 | `terminator` | `u16` | little | spec | zero terminator · value `0` |
+| 96 | 8 | `trailer_identities` | `u32[2]` | little | spec | trailer identities |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this geometry-locus layout.
+- `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `extended_profile_104_indexed_arc`
 
 Spec §2 · layout: byte offsets · size: 104 B
