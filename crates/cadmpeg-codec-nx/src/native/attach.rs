@@ -1197,6 +1197,9 @@ fn attach_feature_operations(
     let operation_body_image_segment_uses = features
         .feature_operation_body_image_segment_uses
         .as_slice();
+    let operation_body_identity_segment_uses = features
+        .feature_operation_body_identity_segment_uses
+        .as_slice();
     let operation_body_partition_uses = features.feature_operation_body_partition_uses.as_slice();
     let body_write_group_partition_uses =
         features.feature_body_write_group_partition_uses.as_slice();
@@ -1716,21 +1719,24 @@ fn attach_feature_operations(
         operation_body_image_segment_uses,
         &bodies_by_segment_binding,
     );
-    for (write, body) in operation_body_group_partition_outputs_by_write(
-        operation_body_writes,
-        body_write_group_partition_uses,
-        &ir.model.bodies,
-    ) {
-        match body_image_outputs_by_write.entry(write) {
-            Entry::Vacant(entry) => {
-                entry.insert(body);
-            }
-            Entry::Occupied(entry) if entry.get() == &body => {}
-            Entry::Occupied(entry) => {
-                entry.remove();
-            }
-        }
-    }
+    let mut conflicting_body_output_writes = BTreeSet::new();
+    merge_operation_body_outputs(
+        &mut body_image_outputs_by_write,
+        &mut conflicting_body_output_writes,
+        operation_body_identity_outputs_by_write(
+            operation_body_identity_segment_uses,
+            &bodies_by_segment_binding,
+        ),
+    );
+    merge_operation_body_outputs(
+        &mut body_image_outputs_by_write,
+        &mut conflicting_body_output_writes,
+        operation_body_group_partition_outputs_by_write(
+            operation_body_writes,
+            body_write_group_partition_uses,
+            &ir.model.bodies,
+        ),
+    );
     let explicit_hole_outputs = primary_hole_outputs(
         simple_hole_templates,
         &body_references,
@@ -8255,6 +8261,53 @@ fn operation_body_image_outputs_by_write<'a>(
             continue;
         };
         outputs.insert(write, body.clone());
+    }
+    outputs
+}
+
+fn merge_operation_body_outputs<'a>(
+    outputs: &mut BTreeMap<&'a str, BodyId>,
+    conflicts: &mut BTreeSet<&'a str>,
+    candidates: impl IntoIterator<Item = (&'a str, BodyId)>,
+) {
+    for (write, body) in candidates {
+        if conflicts.contains(write) {
+            continue;
+        }
+        match outputs.entry(write) {
+            Entry::Vacant(entry) => {
+                entry.insert(body);
+            }
+            Entry::Occupied(entry) if entry.get() == &body => {}
+            Entry::Occupied(entry) => {
+                entry.remove();
+                conflicts.insert(write);
+            }
+        }
+    }
+}
+
+fn operation_body_identity_outputs_by_write<'a>(
+    uses: &'a [crate::native::features::FeatureOperationBodyIdentitySegmentUse],
+    bodies_by_segment_binding: &BTreeMap<&str, Vec<BodyId>>,
+) -> BTreeMap<&'a str, BodyId> {
+    let mut outputs = BTreeMap::new();
+    for use_ in uses {
+        let Some([body]) = bodies_by_segment_binding
+            .get(use_.segment_body_binding.as_str())
+            .map(Vec::as_slice)
+        else {
+            continue;
+        };
+        match outputs.entry(use_.operation_body_write.as_str()) {
+            Entry::Vacant(entry) => {
+                entry.insert(body.clone());
+            }
+            Entry::Occupied(entry) if entry.get() == body => {}
+            Entry::Occupied(entry) => {
+                entry.remove();
+            }
+        }
     }
     outputs
 }

@@ -1761,6 +1761,13 @@ plain segment tuple has `body_alias_object_index` equal to the frame's body
 identity. Partition tuples do not participate in this alias namespace. Zero or
 multiple matching plain aliases leave the segment use unresolved.
 
+Independently of body-image block resolution, exactly one plain segment tuple
+whose `body_alias_object_index` equals the frame's body identity establishes a
+persistent body-identity segment use. The relation maps the body write to the
+unique body in that plain stream. Partition aliases do not participate. Zero or
+multiple matching plain aliases, or zero or multiple bodies in the selected
+stream, leave the body-write output unresolved.
+
 Plain cached-body streams form consecutive body-history runs in the segment
 stream directory. The final plain tuple in a complete run has stream role 16,
 no earlier tuple in that run has role 16, and the following compressed stream

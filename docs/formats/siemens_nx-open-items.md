@@ -353,7 +353,9 @@ members by topology family and kernel node identity and transfers current FACE,
 EDGE, and VERTEX identities to the feature result state. A labeled or unlabeled
 write whose GROUP records resolve to exactly one partition binds its persistent
 body identity to that partition. When the partition has one body, every labeled
-write with that identity writes that body.
+write with that identity writes that body. Independently, a unique plain-stream
+alias equal to the persistent body identity binds that write to the unique body
+in the selected stream without requiring body-image block resolution.
 
 **Need.** We must identify the blend construction relation that assigns the
 created-face subset.

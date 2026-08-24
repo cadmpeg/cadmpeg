@@ -46,6 +46,19 @@ fn body_image_use(
     }
 }
 
+fn body_identity_use(
+    id: &str,
+    write: &str,
+    binding: &str,
+) -> crate::native::features::FeatureOperationBodyIdentitySegmentUse {
+    crate::native::features::FeatureOperationBodyIdentitySegmentUse {
+        id: id.into(),
+        operation_body_write: write.into(),
+        body_identity: 17,
+        segment_body_binding: binding.into(),
+    }
+}
+
 #[test]
 fn body_image_outputs_require_one_body_per_binding() {
     let uses = [
@@ -146,6 +159,46 @@ fn duplicate_body_image_uses_do_not_assign_an_output() {
     let bodies = BTreeMap::from([("binding-a", vec![BodyId("body-a".into())])]);
 
     assert!(super::operation_body_image_outputs_by_write(&uses, &bodies).is_empty());
+}
+
+#[test]
+fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
+    let uses = [
+        body_identity_use("use-a", "write-a", "binding-a"),
+        body_identity_use("use-b", "write-b", "binding-b"),
+    ];
+    let bodies = BTreeMap::from([
+        ("binding-a", vec![BodyId("body-a".into())]),
+        (
+            "binding-b",
+            vec![BodyId("body-b1".into()), BodyId("body-b2".into())],
+        ),
+    ]);
+
+    let outputs = super::operation_body_identity_outputs_by_write(&uses, &bodies);
+
+    assert_eq!(outputs.get("write-a"), Some(&BodyId("body-a".into())));
+    assert!(!outputs.contains_key("write-b"));
+}
+
+#[test]
+fn conflicting_body_output_witnesses_remain_unresolved() {
+    let mut outputs = BTreeMap::from([("write", BodyId("body-a".into()))]);
+    let mut conflicts = BTreeSet::new();
+
+    super::merge_operation_body_outputs(
+        &mut outputs,
+        &mut conflicts,
+        [("write", BodyId("body-b".into()))],
+    );
+    super::merge_operation_body_outputs(
+        &mut outputs,
+        &mut conflicts,
+        [("write", BodyId("body-a".into()))],
+    );
+
+    assert!(!outputs.contains_key("write"));
+    assert!(conflicts.contains("write"));
 }
 
 #[test]

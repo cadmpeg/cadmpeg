@@ -134,6 +134,8 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_unlabeled_operation_body_writes: Vec<FeatureUnlabeledOperationBodyWrite>,
     pub(crate) feature_operation_body_writes: Vec<FeatureOperationBodyWrite>,
     pub(crate) feature_operation_body_image_segment_uses: Vec<FeatureOperationBodyImageSegmentUse>,
+    pub(crate) feature_operation_body_identity_segment_uses:
+        Vec<FeatureOperationBodyIdentitySegmentUse>,
     pub(crate) feature_operation_body_partition_uses: Vec<FeatureOperationBodyPartitionUse>,
     pub(crate) feature_body_write_group_partition_uses: Vec<FeatureBodyWriteGroupPartitionUse>,
     pub(crate) feature_operation_tagged_references: Vec<FeatureOperationTaggedReference>,
@@ -544,6 +546,11 @@ impl NativeModel {
             &feature_operation_body_writes,
             &segment_body_bindings,
         );
+        let feature_operation_body_identity_segment_uses =
+            feature_operation_body_identity_segment_uses(
+                &feature_operation_body_writes,
+                &segment_body_bindings,
+            );
         let feature_operation_body_partition_uses = feature_operation_body_partition_uses(
             &feature_operation_body_writes,
             &feature_operation_body_image_segment_uses,
@@ -1142,6 +1149,7 @@ impl NativeModel {
                 feature_unlabeled_operation_body_writes,
                 feature_operation_body_writes,
                 feature_operation_body_image_segment_uses,
+                feature_operation_body_identity_segment_uses,
                 feature_operation_body_partition_uses,
                 feature_body_write_group_partition_uses,
                 feature_operation_tagged_references,

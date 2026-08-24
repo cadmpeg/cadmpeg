@@ -263,6 +263,53 @@ fn body_image_segment_use_requires_one_plain_alias() {
 }
 
 #[test]
+fn body_identity_segment_use_does_not_require_an_image_block() {
+    let mut write = FeatureOperationBodyWrite {
+        id: "nx:operation-body-write#0".into(),
+        operation_label: "operation".into(),
+        operation_record: "record".into(),
+        ordinal: 0,
+        body_identity: 11,
+        group_node: 1,
+        raw_group_node: vec![1],
+        group_node_source_offset: 0,
+        endpoint_tag: 0x12,
+        body_image_object_index: 1519,
+        body_image_data_block: None,
+        raw_body_image_object_index: vec![0x95, 0xef],
+        body_image_object_index_source_offset: 0,
+        byte_len: 12,
+        source_offset: 0,
+    };
+    let binding = |id: &str, stream_kind: &str| SegmentBodyBinding {
+        id: id.into(),
+        stream_link: format!("{id}:link"),
+        stream_ordinal: 1,
+        stream_kind: stream_kind.into(),
+        body_object_index: 42,
+        body_alias_object_index: 11,
+        stream_role: 10,
+        source_offset: 100,
+    };
+
+    let uses = super::feature_operation_body_identity_segment_uses(
+        std::slice::from_ref(&write),
+        &[binding("plain", "plain"), binding("partition", "partition")],
+    );
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].operation_body_write, write.id);
+    assert_eq!(uses[0].body_identity, 11);
+    assert_eq!(uses[0].segment_body_binding, "plain");
+
+    write.body_image_data_block = Some("irrelevant".into());
+    assert!(super::feature_operation_body_identity_segment_uses(
+        &[write],
+        &[binding("first", "plain"), binding("second", "plain")],
+    )
+    .is_empty());
+}
+
+#[test]
 fn body_partition_use_requires_a_complete_terminal_plain_run() {
     let body_write = vec![
         0x01, 0x02, 0x0b, 0x31, 0x97, 0x75, 0x01, 0x02, 0x10, 0x41, 0xff,

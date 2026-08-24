@@ -205,6 +205,19 @@ pub struct FeatureOperationBodyImageSegmentUse {
     pub segment_body_binding: String,
 }
 
+/// Exact persistent body-identity match to one plain cached-body stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationBodyIdentitySegmentUse {
+    /// Globally unique bridge identity.
+    pub id: String,
+    /// Body-write frame carrying the persistent body identity.
+    pub operation_body_write: String,
+    /// Persistent body identity shared by the frame and plain-stream alias.
+    pub body_identity: u8,
+    /// Unique plain cached-body tuple with the equal alias.
+    pub segment_body_binding: String,
+}
+
 /// Exact owning-partition scope for one body-write image and its GROUP node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureOperationBodyPartitionUse {
@@ -3620,6 +3633,37 @@ pub fn feature_operation_body_image_segment_uses(
                 ),
                 operation_body_write: write.id.clone(),
                 body_image_data_block: body_image_data_block.clone(),
+                segment_body_binding: binding.id.clone(),
+            })
+        })
+        .collect()
+}
+
+/// Join persistent body identities to unique plain cached-body aliases.
+///
+/// This cross-store relation is independent of body-image block resolution.
+/// Partition-stream aliases use another identity namespace and do not match.
+pub fn feature_operation_body_identity_segment_uses(
+    writes: &[FeatureOperationBodyWrite],
+    bindings: &[SegmentBodyBinding],
+) -> Vec<FeatureOperationBodyIdentitySegmentUse> {
+    writes
+        .iter()
+        .filter_map(|write| {
+            let mut matches = bindings.iter().filter(|binding| {
+                binding.stream_kind == "plain"
+                    && binding.body_alias_object_index == u32::from(write.body_identity)
+            });
+            let binding = matches.next()?;
+            matches.next().is_none().then_some(())?;
+            Some(FeatureOperationBodyIdentitySegmentUse {
+                id: write.id.replacen(
+                    "operation-body-write",
+                    "operation-body-identity-segment-use",
+                    1,
+                ),
+                operation_body_write: write.id.clone(),
+                body_identity: write.body_identity,
                 segment_body_binding: binding.id.clone(),
             })
         })
