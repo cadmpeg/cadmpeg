@@ -162,8 +162,15 @@ pub(crate) fn e5_d8_rolling_ball_stream() -> Vec<u8> {
             payload.extend_from_slice(&value.to_le_bytes());
         }
     }
-    for _ in 0..4 {
-        payload.extend_from_slice(&[0; 80]);
+    for row in [
+        [0.1_f64, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+        [1.1_f64, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0],
+        [2.1_f64, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0],
+        [3.1_f64, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0],
+    ] {
+        for value in row {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
     }
     payload.extend_from_slice(&2.0_f64.to_le_bytes());
     payload.extend_from_slice(&5.0_f64.to_le_bytes());

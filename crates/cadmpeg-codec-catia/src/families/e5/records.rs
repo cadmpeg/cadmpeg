@@ -457,8 +457,16 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
             let center = Point3::new(position[6], position[7], position[8]);
             let radius = d8_distance(center, first_limit);
             let second_radius = d8_distance(center, second_limit);
-            let chord = d8_distance(first_limit, second_limit);
-            let expected_angle = 2.0 * (chord / (2.0 * radius)).clamp(-1.0, 1.0).asin();
+            let expected_angle = if radius > 0.0 && second_radius > 0.0 {
+                first_limit
+                    .vector_from(center)
+                    .scale(1.0 / radius)
+                    .dot(second_limit.vector_from(center).scale(1.0 / second_radius))
+                    .clamp(-1.0, 1.0)
+                    .acos()
+            } else {
+                f64::NAN
+            };
             (
                 first_limit,
                 second_limit,
@@ -757,6 +765,24 @@ mod tests {
 
     use super::{e5_ref, e5_rolling_ball_jets, e5_surface_wrappers, e5_surfaces};
 
+    const TEST_F64_TOLERANCE: f64 = 1e-12;
+
+    fn assert_close(actual: f64, expected: f64) {
+        assert!((actual - expected).abs() <= TEST_F64_TOLERANCE);
+    }
+
+    fn assert_point_close(actual: Point3, expected: Point3) {
+        assert_close(actual.x, expected.x);
+        assert_close(actual.y, expected.y);
+        assert_close(actual.z, expected.z);
+    }
+
+    fn assert_vector_close(actual: Vector3, expected: Vector3) {
+        assert_close(actual.x, expected.x);
+        assert_close(actual.y, expected.y);
+        assert_close(actual.z, expected.z);
+    }
+
     fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
         bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, class, 0]);
         bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
@@ -784,18 +810,26 @@ mod tests {
         let jet = &jets[0];
         assert_eq!(jet.record_id, 42);
         assert_eq!(jet.degree, 5);
-        assert_eq!(jet.knots, [2.0, 5.0]);
+        assert_eq!(jet.knots.len(), 2);
+        assert_close(jet.knots[0], 2.0);
+        assert_close(jet.knots[1], 5.0);
         assert_eq!(jet.multiplicities, [6, 6]);
-        assert_eq!(jet.parameter_range, [2.0, 5.0]);
-        assert_eq!(jet.radius, 2.0);
+        assert_close(jet.parameter_range[0], 2.0);
+        assert_close(jet.parameter_range[1], 5.0);
+        assert_close(jet.radius, 2.0);
         assert_eq!(jet.sense, -1);
-        assert_eq!(jet.sites[0].first_limit, Point3::new(2.0, 0.0, 0.0));
-        assert_eq!(jet.sites[1].center, Point3::new(1.0, 0.0, 0.0));
-        assert_eq!(jet.sites[0].angle, std::f64::consts::FRAC_PI_2);
-        assert_eq!(
+        assert_point_close(jet.sites[0].first_limit, Point3::new(2.0, 0.0, 0.0));
+        assert_point_close(jet.sites[1].center, Point3::new(1.0, 0.0, 0.0));
+        assert_close(jet.sites[0].angle, std::f64::consts::FRAC_PI_2);
+        assert_vector_close(
             jet.sites[0].first_derivative.center,
-            Vector3::new(0.0, 0.0, 0.0)
+            Vector3::new(0.7, 0.8, 0.9),
         );
+        assert_vector_close(
+            jet.sites[0].second_derivative.center,
+            Vector3::new(2.7, 2.8, 2.9),
+        );
+        assert_close(jet.sites[1].second_derivative.angle, 4.0);
         assert!(matches!(
             jet.definition(),
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
@@ -803,7 +837,7 @@ mod tests {
                 ref knots,
                 ref multiplicities,
                 ref sites,
-            } if knots == &[2.0, 5.0] && multiplicities == &[6, 6] && sites.len() == 2
+            } if knots.len() == 2 && multiplicities == &[6, 6] && sites.len() == 2
         ));
     }
 
