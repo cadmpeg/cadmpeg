@@ -346,7 +346,7 @@ fn circular_face_interval_choices_select_disjoint_arc_branches() {
 }
 
 #[test]
-fn standard_line_pair_preference_rejects_partial_collinear_overlap() {
+fn standard_line_interval_constraint_rejects_partial_collinear_overlap() {
     let points = [0.0, 1.0, 2.0, 3.0]
         .into_iter()
         .enumerate()

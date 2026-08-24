@@ -4061,12 +4061,11 @@ fn attach_standard_topology(
                         })
                     })
                 };
-                let line_preference = StandardLinePairPreference::new(
+                let line_constraint = StandardLinePairConstraint::new(
                     &ir.model.points,
                     selected_supports,
                     &solver_options,
                 );
-                let line_preference_active = line_preference.has_flexible_edges();
                 let face_domain_edges = open_face_domains.as_ref().map_or_else(
                     || solver_options.iter().map(|_| false).collect::<Vec<_>>(),
                     |domains| domains.iter().map(|domain| !domain.is_empty()).collect(),
@@ -4083,7 +4082,7 @@ fn attach_standard_topology(
                     .collect::<Vec<_>>();
                 let partial_constraint_edges = selected_circle_constraint_edges
                     .iter()
-                    .zip(line_preference.flexible_edge_mask())
+                    .zip(line_constraint.flexible_edge_mask())
                     .zip(&face_domain_edges)
                     .map(|((circle, line), face)| *circle || *line || *face)
                     .collect::<Vec<_>>();
@@ -4103,11 +4102,11 @@ fn attach_standard_topology(
                     None,
                     &preferred_budget,
                     |pairs| {
-                        endpoint_pairs_on_selected_faces(pairs) && line_preference.is_valid(pairs)
+                        endpoint_pairs_on_selected_faces(pairs) && line_constraint.is_valid(pairs)
                     },
                     |pairs| {
                         endpoint_pairs_on_selected_faces(pairs)
-                            && line_preference.is_simple(pairs)
+                            && line_constraint.is_simple(pairs)
                             && standard_circle_pair_solution_is_simple(
                                 ir,
                                 bindings,
@@ -4126,8 +4125,11 @@ fn attach_standard_topology(
                 let has_circle_preference = selected_circle_constraint_edges
                     .iter()
                     .any(|constrained| *constrained);
-                let has_line_preference = !fbb_only && line_preference_active;
-                if has_circle_preference || has_line_preference {
+                if has_circle_preference {
+                    // Circular interval choice is a preference because both
+                    // complementary arcs can be valid. The fallback relaxes
+                    // only that choice; straight-carrier interval overlap is
+                    // an invalid endpoint relation in both searches.
                     let fallback_budget =
                         solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
                     let fallback = mesh_quotient::parse_standard_mesh_candidate_outcome(
@@ -4145,11 +4147,11 @@ fn attach_standard_topology(
                         &fallback_budget,
                         |pairs| {
                             endpoint_pairs_on_selected_faces(pairs)
-                                && line_preference.is_valid(pairs)
+                                && line_constraint.is_simple(pairs)
                         },
                         |pairs| {
                             endpoint_pairs_on_selected_faces(pairs)
-                                && line_preference.is_valid(pairs)
+                                && line_constraint.is_simple(pairs)
                         },
                     );
                     if !solve_budget.charge_by(fallback_budget.consumed()) {
@@ -7386,7 +7388,7 @@ pub(crate) fn standard_circle_pair_solution_is_simple(
     true
 }
 
-/// Prefer line endpoint assignments that partition each shared straight
+/// Require line endpoint assignments to partition each shared straight
 /// carrier into disjoint edge intervals. Exact coincident intervals remain
 /// admissible because seam and duplicate-edge representations can share one
 /// carrier; a partial collinear overlap is the non-simple alternative.
@@ -7404,7 +7406,7 @@ struct StandardLineSelection {
 
 type StandardLinePairKey = ((usize, [usize; 2]), (usize, [usize; 2]));
 
-struct StandardLinePairPreference {
+struct StandardLinePairConstraint {
     points: Vec<Point3>,
     line_edges: Vec<bool>,
     flexible_edges: Vec<bool>,
@@ -7412,7 +7414,7 @@ struct StandardLinePairPreference {
     simplicity_cache: RefCell<HashMap<StandardLinePairKey, bool>>,
 }
 
-impl StandardLinePairPreference {
+impl StandardLinePairConstraint {
     fn new(
         points: &[Point],
         supports: &[crate::families::standard::records::StandardCurveSupport],
@@ -7458,10 +7460,6 @@ impl StandardLinePairPreference {
             edges_by_face,
             simplicity_cache: RefCell::new(HashMap::new()),
         }
-    }
-
-    fn has_flexible_edges(&self) -> bool {
-        self.flexible_edges.iter().any(|flexible| *flexible)
     }
 
     fn flexible_edge_mask(&self) -> &[bool] {
@@ -7677,7 +7675,7 @@ pub(crate) fn standard_line_pair_solution_is_simple_cached(
     endpoint_options: &[Vec<[usize; 2]>],
     pairs: &[Option<[usize; 2]>],
 ) -> bool {
-    StandardLinePairPreference::new(points, supports, endpoint_options).is_simple(pairs)
+    StandardLinePairConstraint::new(points, supports, endpoint_options).is_simple(pairs)
 }
 
 fn circle_endpoint_range_choices(
