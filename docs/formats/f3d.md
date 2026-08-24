@@ -181,7 +181,13 @@ terminal:
 
 `active_asset_guid` is the first asset GUID of the active asset. The active asset can be the Design asset, a simulation case, an animation, or another asset kind. It does not select the Design folder.
 
-Each listed base resolves to exactly one archive folder: either `<base>` or `<base>[Active]`. That folder contains `Manifest.dat`. A **per-asset manifest** starts with its LP-UTF16 base name, a first asset GUID, a second asset GUID, and an LP-ASCII asset type. A `FusionAssetType` prefix continues with a u32 revision, a u32 capability count, repeated nonempty unique LP-ASCII capability names with u32 values, LP-ASCII `Neutron3DAssetType`, u8 zero, and an LP-ASCII subtype. The subtype is empty for the root Design asset and names a derived Fusion asset otherwise. The unique listed root `FusionAssetType` folder is the Design asset folder. Folder-run order, archive-entry order, the active-asset GUID, and B-rep presence do not select the Design asset.
+Each listed base resolves to exactly one archive folder: either `<base>` or `<base>[Active]`. That folder contains `Manifest.dat`. A **per-asset manifest** starts with its LP-UTF16 base name, a first asset GUID, a second asset GUID, and an LP-ASCII asset type. A `FusionAssetType` prefix continues with a u32 revision.
+
+Revision 20 carries a u32 capability count, repeated nonempty unique LP-ASCII capability names with u32 values, LP-ASCII `Neutron3DAssetType`, u8 zero, and an LP-ASCII subtype. The subtype is empty for the root Design asset and names a derived Fusion asset otherwise.
+
+Revision 10 carries the same named capability registry and kind token, followed by u8 zero. Each linked document stores u32 `2`, an LP-UTF16 composite locator containing a version URN, and two LP-UTF16 GUIDs. The root tail starts with u32 values `2, 5, 1, 0` and continues with two LP-ASCII `Design` tokens. Revision 0 instead stores u32 values `3, 1`, LP-ASCII `Neutron3DAssetType`, u8 zero, u32 values `0, 6, 1, 0`, and two LP-ASCII `Design` tokens. These revision-0 and revision-10 root tails end the manifest.
+
+The unique listed root `FusionAssetType` folder is the Design asset folder. Folder-run order, archive-entry order, the active-asset GUID, and B-rep presence do not select the Design asset.
 
 After the empty subtype field, a Design per-asset manifest carries a `physicalChangeGuid` and the segment-type registry (`FusionDesignSegmentType`, `FusionACTSegmentType`, `FusionBrowserSegmentType`).
 
