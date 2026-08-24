@@ -9,17 +9,17 @@ use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::directory::{DirectoryEntry, Status};
-use crate::global::Dialect;
-use crate::loss::IgesLossCode;
-use crate::test_support::*;
-use crate::IgesCodec;
-
 use super::{
     flow_join_target_valid, functional_level_identifier_valid, line_font_property_code_valid,
     network_connectivity_valid, signal_string_geometry_target,
     subfigure_definition_directory_fields_valid,
 };
+use crate::directory::{DirectoryEntry, Status};
+use crate::global::Dialect;
+use crate::loss::IgesLossCode;
+use crate::test_support::*;
+use crate::IgesCodec;
+mod dialect;
 mod network;
 const LEGACY_TEXT_ANGLE_TOLERANCE: f64 = 1.0e-4;
 

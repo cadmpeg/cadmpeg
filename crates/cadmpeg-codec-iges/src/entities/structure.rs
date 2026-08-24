@@ -305,6 +305,16 @@ pub(crate) fn flow_join_target_valid(target: &DirectoryEntry) -> bool {
             ))
 }
 
+fn flow_associativity_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    if entry.entity_type != 402 {
+        return false;
+    }
+    match dialect {
+        Dialect::V4_0 => entry.form == 18 && entry.status.use_flag == 3,
+        _ => matches!(entry.form, 18 | 20),
+    }
+}
+
 fn array_mask_valid(
     record: &ParameterRecord,
     count_index: usize,
@@ -1502,7 +1512,11 @@ fn flow_associativity(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+    dialect: Dialect,
 ) -> Option<FlowAssociativity> {
+    if !flow_associativity_directory_valid(entry, dialect) {
+        return None;
+    }
     let form = entry.form;
     let context_count = if form == 18 { 2 } else { 1 };
     if record.integer(1) != Some(context_count) {
@@ -1642,8 +1656,15 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
         .filter_map(|entry| {
             let record = records.get(&entry.sequence).copied()?;
-            flow_associativity(entry, record, &entries, &records, trailing_pointer_analysis)
-                .map(|flow| (entry.sequence, flow))
+            flow_associativity(
+                entry,
+                record,
+                &entries,
+                &records,
+                trailing_pointer_analysis,
+                global.dialect(),
+            )
+            .map(|flow| (entry.sequence, flow))
         })
         .collect::<BTreeMap<_, _>>();
 
@@ -2199,12 +2220,12 @@ pub(super) fn project(
                 .filter(|target| flows.contains_key(target))
                 .collect()
         });
-        if entry.structure == 0 && flow_targets_valid && !cyclic {
+        if flow_targets_valid && !cyclic {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
                 entry,
-                "flow class counts, flags, typed links, required back pointers, continuation tree, or structure are invalid",
+                "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid",
             ));
         }
     }
