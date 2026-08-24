@@ -36,6 +36,9 @@ use crate::families::freeform::{
 };
 use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
+use crate::solve::matching::{
+    distinct_domain_matching_with_budget, retain_distinct_matching_supports,
+};
 use crate::solve::{mesh_gauge::MeshEdgeGeometry, mesh_quotient, missing_edge};
 use crate::variant::Variant;
 use crate::wire::records::ConsolidatedRecord;
@@ -1668,8 +1671,18 @@ pub(crate) fn try_decode_standard(
             &mut annotations,
             &consolidated_revolutions,
         );
-    let consolidated_curve_bindings =
+    let mut consolidated_curve_bindings =
         append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data, &consolidated_records);
+    let owner_binding_budget =
+        ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
+    consolidated_curve_bindings.standard_face_surfaces += bind_standard_a5_owner_surfaces(
+        &mut ir,
+        &mut annotations,
+        &scan.data,
+        &consolidated_records,
+        &face_bounds,
+        &owner_binding_budget,
+    );
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
 
@@ -5998,6 +6011,303 @@ fn point_on_nurbs_surface(point: Point3, surface: &NurbsSurface) -> Option<bool>
     }
     let distance = nurbs_surface_witness_distance(surface, point)?;
     (distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE.powi(2)).then_some(true)
+}
+
+fn invariant_face_carrier_bindings(
+    face_edges: &[Vec<(usize, Vec<usize>)>],
+    owner_count: usize,
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<Vec<Option<usize>>> {
+    let normalized = face_edges
+        .iter()
+        .map(|edges| {
+            let mut by_owner = BTreeMap::<usize, HashSet<usize>>::new();
+            for (owner, carriers) in edges {
+                if *owner >= owner_count || carriers.is_empty() {
+                    continue;
+                }
+                by_owner
+                    .entry(*owner)
+                    .or_default()
+                    .extend(carriers.iter().copied());
+            }
+            by_owner
+        })
+        .collect::<Vec<_>>();
+    let mut domains = normalized
+        .iter()
+        .map(|edges| edges.keys().copied().collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let matching = distinct_domain_matching_with_budget(
+        domains.iter().map(Vec::as_slice),
+        owner_count,
+        budget,
+        None,
+    )?;
+    retain_distinct_matching_supports(&mut domains, owner_count, &matching, budget)?;
+    Some(
+        domains
+            .iter()
+            .zip(&normalized)
+            .map(|(owners, labels)| {
+                let carriers = owners
+                    .iter()
+                    .filter_map(|owner| labels.get(owner))
+                    .flatten()
+                    .copied()
+                    .collect::<HashSet<_>>();
+                if carriers.len() != 1 {
+                    return None;
+                }
+                carriers.into_iter().next()
+            })
+            .collect(),
+    )
+}
+
+fn owner_matches_a5_carrier(
+    tail: &crate::families::b2::records::B2OwnerNumericTail,
+    surface: &NurbsSurface,
+) -> bool {
+    let Some(domain) = nurbs_surface_parameter_domain(surface) else {
+        return false;
+    };
+    if (0..2).any(|axis| {
+        tail.lower[axis] < domain[axis][0] - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+            || tail.upper[axis] > domain[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+    }) {
+        return false;
+    }
+    [tail.lower[0], tail.upper[0]].into_iter().all(|u| {
+        [tail.lower[1], tail.upper[1]].into_iter().all(|v| {
+            cadmpeg_ir::eval::nurbs_surface_point(surface, u, v).is_some_and(|point| {
+                [point.x, point.y, point.z]
+                    .into_iter()
+                    .enumerate()
+                    .all(|(axis, value)| {
+                        value
+                            >= f64::from(tail.bounds[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+                            && value
+                                <= f64::from(tail.bounds[axis][1])
+                                    + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+                    })
+            })
+        })
+    })
+}
+
+fn owner_contains_face_bounds(
+    tail: &crate::families::b2::records::B2OwnerNumericTail,
+    bounds: crate::families::standard::records::StandardFaceBounds,
+) -> bool {
+    (0..3).all(|axis| {
+        let lower = bounds.aabb_center[axis] - bounds.aabb_half_extents[axis];
+        let upper = bounds.aabb_center[axis] + bounds.aabb_half_extents[axis];
+        lower >= f64::from(tail.bounds[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+            && upper <= f64::from(tail.bounds[axis][1]) + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+    })
+}
+
+fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
+    let point_positions = ir
+        .model
+        .points
+        .iter()
+        .map(|point| (point.id.clone(), point.position))
+        .collect::<HashMap<_, _>>();
+    let vertex_positions = ir
+        .model
+        .vertices
+        .iter()
+        .filter_map(|vertex| Some((vertex.id.clone(), *point_positions.get(&vertex.point)?)))
+        .collect::<HashMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.clone(), edge))
+        .collect::<HashMap<_, _>>();
+    let coedges = ir
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.clone(), coedge))
+        .collect::<HashMap<_, _>>();
+    let loops = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.clone(), loop_))
+        .collect::<HashMap<_, _>>();
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve.id.clone(), curve))
+        .collect::<HashMap<_, _>>();
+    ir.model
+        .faces
+        .iter()
+        .map(|face| {
+            let mut witnesses = Vec::new();
+            for edge in face
+                .loops
+                .iter()
+                .filter_map(|id| loops.get(id))
+                .flat_map(|loop_| &loop_.coedges)
+                .filter_map(|id| coedges.get(id))
+                .filter_map(|coedge| edges.get(&coedge.edge))
+            {
+                witnesses.extend(
+                    [&edge.start, &edge.end]
+                        .into_iter()
+                        .filter_map(|id| vertex_positions.get(id).copied()),
+                );
+                let Some((curve, [start, end])) = edge
+                    .curve
+                    .as_ref()
+                    .and_then(|id| curves.get(id))
+                    .zip(edge.param_range)
+                else {
+                    continue;
+                };
+                if let Some(point) =
+                    cadmpeg_ir::eval::curve_point(&curve.geometry, 0.5 * (start + end))
+                {
+                    witnesses.push(point);
+                }
+            }
+            let mut distinct = Vec::<Point3>::new();
+            for point in witnesses {
+                if distinct
+                    .iter()
+                    .all(|stored| stored.distance(point) > NURBS_SURFACE_MEMBERSHIP_TOLERANCE)
+                {
+                    distinct.push(point);
+                }
+            }
+            distinct
+        })
+        .collect()
+}
+
+fn bind_standard_a5_owner_surfaces(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+    face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
+    budget: &WorkBudget<'_>,
+) -> usize {
+    let carriers = crate::families::a5a8::records::a5_surfaces_from_records(data, records);
+    let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records);
+    if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {
+        return 0;
+    }
+    let owner_carriers = owners
+        .iter()
+        .map(|owner| {
+            carriers
+                .iter()
+                .enumerate()
+                .filter_map(|(carrier, value)| {
+                    let SurfaceGeometry::Nurbs(surface) = &value.geometry else {
+                        return None;
+                    };
+                    owner_matches_a5_carrier(&owner.numeric_tail, surface).then_some(carrier)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let witnesses = standard_face_boundary_witnesses(ir);
+    let surface_indices = ir
+        .model
+        .surfaces
+        .iter()
+        .enumerate()
+        .map(|(index, surface)| (surface.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let unknown_faces = ir
+        .model
+        .faces
+        .iter()
+        .enumerate()
+        .filter_map(|(face, value)| {
+            let ordinal = value
+                .id
+                .0
+                .strip_prefix("catia:standard:face#")?
+                .parse::<usize>()
+                .ok()?;
+            let surface = *surface_indices.get(&value.surface)?;
+            matches!(
+                ir.model.surfaces[surface].geometry,
+                SurfaceGeometry::Unknown { .. }
+            )
+            .then_some((face, ordinal, surface))
+        })
+        .collect::<Vec<_>>();
+    let mut face_edges = Vec::with_capacity(unknown_faces.len());
+    for &(face, ordinal, _) in &unknown_faces {
+        let Some(Some(bounds)) = face_bounds.get(ordinal) else {
+            face_edges.push(Vec::new());
+            continue;
+        };
+        let containing_owners = owners
+            .iter()
+            .enumerate()
+            .filter_map(|(owner, value)| {
+                (!owner_carriers[owner].is_empty()
+                    && owner_contains_face_bounds(&value.numeric_tail, *bounds))
+                .then_some(owner)
+            })
+            .collect::<Vec<_>>();
+        let possible_carriers = containing_owners
+            .iter()
+            .flat_map(|owner| owner_carriers[*owner].iter().copied())
+            .collect::<HashSet<_>>();
+        let face_carriers = possible_carriers
+            .into_iter()
+            .filter(|carrier| {
+                let SurfaceGeometry::Nurbs(surface) = &carriers[*carrier].geometry else {
+                    return false;
+                };
+                witnesses.get(face).is_some_and(|points| {
+                    points.len() >= 3
+                        && points
+                            .iter()
+                            .all(|point| point_on_nurbs_surface(*point, surface) == Some(true))
+                })
+            })
+            .collect::<HashSet<_>>();
+        face_edges.push(
+            containing_owners
+                .into_iter()
+                .filter_map(|owner| {
+                    let labels = owner_carriers[owner]
+                        .iter()
+                        .filter(|carrier| face_carriers.contains(carrier))
+                        .copied()
+                        .collect::<Vec<_>>();
+                    (!labels.is_empty()).then_some((owner, labels))
+                })
+                .collect(),
+        );
+    }
+    let Some(bindings) = invariant_face_carrier_bindings(&face_edges, owners.len(), Some(budget))
+    else {
+        return 0;
+    };
+    let mut bound = 0;
+    for ((_, _, surface), carrier) in unknown_faces.into_iter().zip(bindings) {
+        let Some(carrier) = carrier else {
+            continue;
+        };
+        ir.model.surfaces[surface].geometry = carriers[carrier].geometry.clone();
+        annotations.derived(&ir.model.surfaces[surface].id, "geometry");
+        bound += 1;
+    }
+    bound
 }
 
 /// Keep a topological endpoint pair when p-curve derivation cannot prove it.

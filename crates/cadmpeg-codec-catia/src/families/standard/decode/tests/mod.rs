@@ -8,11 +8,11 @@ pub(super) use crate::families::standard::decode::{
     circular_range_choices_have_simple_selection, circular_ranges_are_nonoverlapping_or_coincident,
     combine_propagated_endpoint_pairs, corroborate_successor_endpoint_points,
     emit_standard_topology, include_native_endpoint_pairs, intersection_line_direction,
-    merge_derived_endpoint_pair, merge_native_endpoint_evidence,
+    invariant_face_carrier_bindings, merge_derived_endpoint_pair, merge_native_endpoint_evidence,
     merge_standard_edge_vertex_references, native_support_circle_param_range,
-    plane_intersection_line, point_on_standard_face, point_on_surface,
-    resolve_standard_endpoint_pairs, resolve_standard_limit_curve_binding,
-    retry_rejected_mesh_solution, same_cone_generator_pair,
+    owner_contains_face_bounds, owner_matches_a5_carrier, plane_intersection_line,
+    point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
+    resolve_standard_limit_curve_binding, retry_rejected_mesh_solution, same_cone_generator_pair,
     standard_analytic_curve_parameter_range, standard_circle_endpoint_candidates,
     standard_circle_param_range, standard_endpoint_pair_supports_topology,
     standard_face_point_membership, standard_limit_curve_bindings,
@@ -28,6 +28,7 @@ pub(super) use crate::families::standard::decode::{
     PERPENDICULAR_CYLINDER_CONIC_TOLERANCE, SPHERE_SECTION_ENDPOINT_TOLERANCE,
 };
 
+pub(super) use crate::families::b2::records::B2OwnerNumericTail;
 pub(super) use crate::families::b5::graph::{B5Graph, B5Profile, B5Surface};
 pub(super) use crate::test_support::{
     append_b5_record, append_e5_record, b5_closed_triangle_stream, e5_d8_rolling_ball_stream,

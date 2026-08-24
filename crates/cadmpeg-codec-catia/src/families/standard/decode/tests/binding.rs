@@ -1,6 +1,127 @@
 use super::*;
 use std::collections::BTreeMap;
 
+fn unit_square_surface() -> NurbsSurface {
+    NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 2,
+        v_count: 2,
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+        ],
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    }
+}
+
+fn owner_tail(lower: [f64; 2], upper: [f64; 2], bounds: [[f32; 2]; 3]) -> B2OwnerNumericTail {
+    B2OwnerNumericTail {
+        header: [0x84, 0x41, 0, 0, 0x0d],
+        lower,
+        upper,
+        bounds,
+    }
+}
+
+#[test]
+fn owner_carrier_candidate_requires_parameter_and_model_space_containment() {
+    let surface = unit_square_surface();
+    let admitted = owner_tail(
+        [0.25, 0.25],
+        [0.75, 0.75],
+        [[0.2, 0.8], [0.2, 0.8], [-0.1, 0.1]],
+    );
+    let outside_parameter_domain = owner_tail(
+        [-0.25, 0.25],
+        [0.75, 0.75],
+        [[-0.3, 0.8], [0.2, 0.8], [-0.1, 0.1]],
+    );
+    let clipped_model_bounds = owner_tail(
+        [0.25, 0.25],
+        [0.75, 0.75],
+        [[0.3, 0.8], [0.2, 0.8], [-0.1, 0.1]],
+    );
+
+    assert!(owner_matches_a5_carrier(&admitted, &surface));
+    assert!(!owner_matches_a5_carrier(
+        &outside_parameter_domain,
+        &surface
+    ));
+    assert!(!owner_matches_a5_carrier(&clipped_model_bounds, &surface));
+}
+
+#[test]
+fn owner_face_candidate_requires_complete_trimmed_bounds_containment() {
+    let owner = owner_tail(
+        [0.0, 0.0],
+        [1.0, 1.0],
+        [[-1.0, 1.0], [-2.0, 2.0], [-3.0, 3.0]],
+    );
+    let contained = StandardFaceBounds {
+        aabb_center: [0.0, 0.0, 0.0],
+        aabb_half_extents: [0.5, 1.5, 2.5],
+        sphere_center: [0.0, 0.0, 0.0],
+        sphere_radius: 3.0,
+    };
+    let protruding = StandardFaceBounds {
+        aabb_half_extents: [1.5, 1.5, 2.5],
+        ..contained
+    };
+
+    assert!(owner_contains_face_bounds(&owner, contained));
+    assert!(!owner_contains_face_bounds(&owner, protruding));
+}
+
+#[test]
+fn owner_face_swaps_bind_when_every_complete_matching_has_one_carrier() {
+    let domains = vec![
+        vec![(0, vec![7]), (1, vec![7]), (2, vec![7])],
+        vec![(0, vec![7]), (1, vec![7])],
+    ];
+
+    assert_eq!(
+        invariant_face_carrier_bindings(&domains, 3, None),
+        Some(vec![Some(7), Some(7)])
+    );
+}
+
+#[test]
+fn owner_face_matching_withholds_carrier_labels_that_change_under_a_swap() {
+    let domains = vec![
+        vec![(0, vec![7]), (1, vec![9])],
+        vec![(0, vec![9]), (1, vec![7])],
+    ];
+
+    assert_eq!(
+        invariant_face_carrier_bindings(&domains, 2, None),
+        Some(vec![None, None])
+    );
+}
+
+#[test]
+fn owner_face_matching_removes_labels_outside_every_complete_matching() {
+    let domains = vec![vec![(0, vec![7]), (1, vec![99])], vec![(1, vec![11])]];
+
+    assert_eq!(
+        invariant_face_carrier_bindings(&domains, 2, None),
+        Some(vec![Some(7), Some(11)])
+    );
+}
+
+#[test]
+fn owner_face_matching_requires_every_face_to_have_a_distinct_owner() {
+    let domains = vec![vec![(0, vec![7])], Vec::new()];
+
+    assert_eq!(invariant_face_carrier_bindings(&domains, 2, None), None);
+}
+
 #[test]
 fn standard_object_journal_binds_ordered_edge_endpoints_through_roster_position() {
     let supports = [70, 90, 110].map(|tag| StandardCurveSupport {
