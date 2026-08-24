@@ -4033,18 +4033,23 @@ fn decode_inline_selector_cylinder_envelope(
         Some([0x11 | 0x14 | 0x17 | 0x18 | 0x20, ..]) => Some(cursor + 1),
         _ => None,
     };
+    let decode_coordinate = |cursor| {
+        let (value, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+        let value = -value;
+        value.is_finite().then_some((value, next))
+    };
     let mut cursor = selector_end(0)?;
-    let (first_axial, next) = decode_row_scalar(kind, body, cursor, cache)?;
+    let (first_axial, next) = decode_coordinate(cursor)?;
     cursor = selector_end(next)?;
-    let (second_axial, next) = decode_row_scalar(kind, body, cursor, cache)?;
+    let (second_axial, next) = decode_coordinate(cursor)?;
     cursor = next;
     (first_axial.is_finite() && second_axial.is_finite() && first_axial != second_axial)
         .then_some(())?;
 
     let mut corners = [[0.0; 3]; 2];
     for coordinate in corners.iter_mut().flatten() {
-        let (decoded, next) = decode_row_scalar(kind, body, cursor, cache)?;
-        decoded.is_finite().then_some(())?;
+        let (decoded, next) = decode_coordinate(cursor)?;
         *coordinate = decoded;
         cursor = next;
     }
