@@ -3017,6 +3017,25 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 && construction.transform
                                     == design::decode::sketch::identity_matrix()
                         }
+                        (261, "258") if scope.class_tag == "426" => {
+                            construction.transform_offset.is_none()
+                                && construction.transform
+                                    == design::decode::sketch::identity_matrix()
+                        }
+                        (261, "266") if scope.class_tag == "434" => {
+                            construction.transform_offset.is_none()
+                                && construction.transform
+                                    == design::decode::sketch::identity_matrix()
+                        }
+                        (257 | 261 | 267, "264") if scope.class_tag == "414" => {
+                            construction.transform_offset.is_none()
+                                && construction.transform
+                                    == design::decode::sketch::identity_matrix()
+                        }
+                        (389, "264") if scope.class_tag == "414" => {
+                            construction.transform_offset
+                                == Some(scope.byte_offset.saturating_add(50))
+                        }
                         (257, "262") if scope.class_tag == "283" => {
                             construction.transform_offset.is_none()
                                 && construction.transform
@@ -3036,6 +3055,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         (261, "261") if scope.class_tag == "410" => {
                             construction.carrier_transform_offset.is_none()
                         }
+                        (261, "258") if scope.class_tag == "426" => {
+                            construction.carrier_transform_offset.is_none()
+                        }
+                        (261, "266") if scope.class_tag == "434" => {
+                            construction.carrier_transform_offset.is_none()
+                        }
+                        (257 | 261 | 267, "264") if scope.class_tag == "414" => {
+                            construction.carrier_transform_offset.is_none()
+                        }
+                        (389, "264") if scope.class_tag == "414" => construction
+                            .carrier_transform_offset
+                            .is_some_and(|offset| construction.neutron_role_offset < offset),
                         (257 | 385, "262") if scope.class_tag == "283" => {
                             construction.carrier_transform_offset.is_none()
                         }

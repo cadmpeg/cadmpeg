@@ -13171,9 +13171,9 @@ name = "component_insert_identity_scope_compact"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The compact identity form is a 261-byte frame admitted for class-`296` paired with class `263`, class-`410` paired with class `261`, class-`426` paired with class `258`, and class-`434` paired with class `266`"
+anchor = "The compact identity form is a 261-byte frame admitted"
 size = 261
-note = "Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for all four admitted class pairs."
+note = "Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for every admitted class pair."
 
 [[record.field]]
 name = "indexed_header"
@@ -13257,6 +13257,173 @@ anchor = "the 36-code-unit null GUID `00000000-0000-0000-0000-000000000000` at o
 offset = 126
 size = 135
 note = "The feature-family tail, ordered reference table, state fields, and paired-header backlink occupy the remaining fixed frame."
+
+[[record]]
+name = "component_insert_identity_scope_shifted_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "Class `414` paired with class `264` also has 257- and 267-byte shifted identity frames"
+size = 122
+note = "Offsets are relative to the primary indexed header. The generation-specific scope tail begins at offset 122."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "257- and 267-byte shifted identity frames"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Ten zero bytes occupy offsets 11 through 20."
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 21
+type = "u64"
+source = "spec"
+anchor = "the occurrence identity at offset 21"
+
+[[record.gap]]
+offset = 29
+size = 4
+note = "Four zero bytes occupy offsets 29 through 32."
+
+[[record.field]]
+name = "relation_marker"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "the marked relation at offset 33"
+
+[[record.field]]
+name = "relation_record_index"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "the marked relation at offset 33"
+
+[[record.gap]]
+offset = 38
+size = 6
+note = "Six zero bytes occupy offsets 38 through 43."
+
+[[record.field]]
+name = "identity_markers"
+offset = 44
+type = "bytes[2]"
+source = "spec"
+anchor = "bytes `01 01` at offsets 44 and 45"
+
+[[record.field]]
+name = "null_guid_code_unit_count"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "the null-GUID code-unit count at offset 46"
+
+[[record.field]]
+name = "null_guid_utf16_payload"
+offset = 50
+type = "bytes[72]"
+source = "spec"
+anchor = "its UTF-16 payload at offset 50"
+
+[[record]]
+name = "component_insert_matrix_scope_414_264_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The 389-byte matrix frame uses the 261-byte prologue"
+size = 254
+note = "Offsets are relative to the primary indexed header. The 261-byte identity tail resumes at offset 254 after its 128-byte shift."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The 389-byte matrix frame"
+
+[[record.gap]]
+offset = 11
+size = 9
+note = "Nine zero bytes occupy offsets 11 through 19."
+
+[[record.field]]
+name = "prologue_marker"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "uses the 261-byte prologue"
+
+[[record.field]]
+name = "prologue_value"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "uses the 261-byte prologue"
+
+[[record.field]]
+name = "occurrence_identity"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "uses the 261-byte prologue"
+
+[[record.gap]]
+offset = 33
+size = 4
+note = "Four zero bytes occupy offsets 33 through 36."
+
+[[record.field]]
+name = "relation_marker"
+offset = 37
+type = "u8"
+source = "spec"
+anchor = "uses the 261-byte prologue through the relation"
+
+[[record.field]]
+name = "relation_record_index"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "uses the 261-byte prologue through the relation"
+
+[[record.gap]]
+offset = 42
+size = 6
+note = "Six zero bytes occupy offsets 42 through 47."
+
+[[record.field]]
+name = "matrix_markers"
+offset = 48
+type = "bytes[2]"
+source = "spec"
+anchor = "bytes `01 00` at offsets 48 and 49"
+
+[[record.field]]
+name = "transform"
+offset = 50
+type = "f64[16]"
+source = "spec"
+anchor = "a row-major rigid transform at offset 50"
+
+[[record.field]]
+name = "null_guid_code_unit_count"
+offset = 178
+type = "u32"
+source = "spec"
+anchor = "the null-GUID code-unit count at offset 178"
+
+[[record.field]]
+name = "null_guid_utf16_payload"
+offset = 182
+type = "bytes[72]"
+source = "spec"
+anchor = "its UTF-16 payload at offset 182"
 
 [[record]]
 name = "component_insert_relation_345_57"

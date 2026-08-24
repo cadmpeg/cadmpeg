@@ -251,35 +251,59 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
         [0.0, 0.0, 0.0, 1.0],
     ];
     let role = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
-    let identity = repeated_target_occurrence_record(role, 10, 1, None);
-    let matrix_record = repeated_target_occurrence_record(role, 11, 5, Some(matrix));
-    assert_eq!(identity.len(), 695);
-    assert_eq!(matrix_record.len(), 823);
-    let mut bytes = identity;
-    bytes.extend(matrix_record);
+    let identity_1 = repeated_target_occurrence_record(role, 10, 1, None);
+    let identity_2 = repeated_target_occurrence_record(role, 11, 2, None);
+    let identity_3 = repeated_target_occurrence_record(role, 12, 3, None);
+    let matrix_4 = repeated_target_occurrence_record(role, 13, 4, Some(matrix));
+    let matrix_5 = repeated_target_occurrence_record(role, 14, 5, Some(matrix));
+    let matrix_6 = repeated_target_occurrence_record(role, 15, 6, Some(matrix));
+    assert_eq!(identity_1.len(), 695);
+    assert_eq!(identity_2.len(), 695);
+    assert_eq!(identity_3.len(), 695);
+    assert_eq!(matrix_4.len(), 823);
+    assert_eq!(matrix_5.len(), 823);
+    assert_eq!(matrix_6.len(), 823);
+    let (matrix_role, _, matrix_offset) =
+        super::repeated_target_component_insert(&matrix_6, 0, matrix_6.len(), 15, matrix)
+            .expect("matrix carrier matching the scope transform");
+    assert_eq!(matrix_role, role);
+    assert!(matrix_offset.is_some());
+    let mut bytes = identity_1;
+    bytes.extend(identity_2);
+    bytes.extend(identity_3);
+    bytes.extend(matrix_4);
+    bytes.extend(matrix_5);
+    bytes.extend(matrix_6);
 
     let placements = super::occurrence_placements(&bytes, &super::indexed_records(&bytes), None);
 
-    assert_eq!(placements.len(), 2);
+    assert_eq!(placements.len(), 6);
     assert_eq!(placements[0].discriminators, vec![1]);
     assert_eq!(placements[1].discriminators, vec![1]);
     assert_eq!(
         super::occurrence_transforms(&placements, role),
-        vec![None, Some(matrix)]
+        vec![None, None, None, Some(matrix), Some(matrix), Some(matrix)]
     );
 
     let retained_role = format!("{role}_urn:example:component");
     let path_role = "11112222-3333-4444-5555-666677778888_urn:example:path-component";
     let local_carrier =
-        repeated_target_occurrence_record_with_path_role(path_role, &retained_role, 12, 1, None);
-    let (decoded_role, role_offset) = super::repeated_target_component_insert_identity(
+        repeated_target_occurrence_record_with_path_role(path_role, &retained_role, 16, 1, None);
+    let (decoded_role, role_offset, transform_offset) = super::repeated_target_component_insert(
         &local_carrier,
         0,
         local_carrier.len(),
-        12,
+        16,
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
     )
     .expect("identity carrier with an independent retained role");
     assert_eq!(decoded_role, retained_role);
+    assert_eq!(transform_offset, None);
     let encoded_role = crate::bytes::lp_utf16_bytes(&retained_role);
     assert_eq!(
         &local_carrier[role_offset - 4..role_offset - 4 + encoded_role.len()],

@@ -2211,6 +2211,50 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
     assert_eq!(construction.carrier_transform_offset, None);
 }
 
+#[test]
+fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
+    let relation_record_index = 20_u32;
+    let occurrence_identity = 17_u64;
+    let null_guid = crate::bytes::lp_utf16_bytes("00000000-0000-0000-0000-000000000000");
+
+    let mut identity = vec![0_u8; 267];
+    identity[21..29].copy_from_slice(&occurrence_identity.to_le_bytes());
+    identity[33] = 1;
+    identity[34..38].copy_from_slice(&relation_record_index.to_le_bytes());
+    identity[44..46].copy_from_slice(&[1, 1]);
+    identity[46..122].copy_from_slice(&null_guid);
+    assert_eq!(
+        super::super::exact_component_insert_identity_scope_shifted(
+            &identity,
+            0,
+            relation_record_index,
+        ),
+        Some(occurrence_identity)
+    );
+
+    let transform: [[f64; 4]; 4] = [
+        [1.0, 0.0, 0.0, 4.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut matrix = vec![0_u8; 389];
+    matrix[20] = 1;
+    matrix[25..33].copy_from_slice(&occurrence_identity.to_le_bytes());
+    matrix[37] = 1;
+    matrix[38..42].copy_from_slice(&relation_record_index.to_le_bytes());
+    matrix[48..50].copy_from_slice(&[1, 0]);
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 50 + ordinal * 8;
+        matrix[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    matrix[178..254].copy_from_slice(&null_guid);
+    assert_eq!(
+        super::super::exact_component_insert_scope_414_264_389(&matrix, 0, relation_record_index,),
+        Some((transform, Some(50), occurrence_identity))
+    );
+}
+
 fn legacy_class_383_258_fixture(scope_record_index: u32, members: &[u32]) -> Vec<u8> {
     let scope_len = crate::layout::assembly_class_383_258_scope_1011::LEN;
     let mut bytes = vec![0_u8; scope_len + 11];

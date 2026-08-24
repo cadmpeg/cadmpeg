@@ -3965,7 +3965,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 261 B
 
-Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for all four admitted class pairs.
+Offsets are relative to the primary indexed header. The paired indexed header begins at offset 261 for every admitted class pair.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
@@ -3988,6 +3988,59 @@ Unstated regions:
 - `33..37` (4 B): Four zero bytes occupy offsets 33 through 36.
 - `42..48` (6 B): Six zero bytes occupy offsets 42 through 47.
 - `126..261` (135 B): The feature-family tail, ordered reference table, state fields, and paired-header backlink occupy the remaining fixed frame.
+
+## `component_insert_identity_scope_shifted_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 122 B
+
+Offsets are relative to the primary indexed header. The generation-specific scope tail begins at offset 122.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | 257- and 267-byte shifted identity frames |
+| 21 | 8 | `occurrence_identity` | `u64` | little | spec | the occurrence identity at offset 21 |
+| 33 | 1 | `relation_marker` | `u8` | little | spec | the marked relation at offset 33 |
+| 34 | 4 | `relation_record_index` | `u32` | little | spec | the marked relation at offset 33 |
+| 44 | 2 | `identity_markers` | `bytes[2]` | little | spec | bytes `01 01` at offsets 44 and 45 |
+| 46 | 4 | `null_guid_code_unit_count` | `u32` | little | spec | the null-GUID code-unit count at offset 46 |
+| 50 | 72 | `null_guid_utf16_payload` | `bytes[72]` | little | spec | its UTF-16 payload at offset 50 |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten zero bytes occupy offsets 11 through 20.
+- `29..33` (4 B): Four zero bytes occupy offsets 29 through 32.
+- `38..44` (6 B): Six zero bytes occupy offsets 38 through 43.
+
+## `component_insert_matrix_scope_414_264_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 254 B
+
+Offsets are relative to the primary indexed header. The 261-byte identity tail resumes at offset 254 after its 128-byte shift.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The 389-byte matrix frame |
+| 20 | 1 | `prologue_marker` | `u8` | little | spec | uses the 261-byte prologue |
+| 21 | 4 | `prologue_value` | `u32` | little | spec | uses the 261-byte prologue |
+| 25 | 8 | `occurrence_identity` | `u64` | little | spec | uses the 261-byte prologue |
+| 37 | 1 | `relation_marker` | `u8` | little | spec | uses the 261-byte prologue through the relation |
+| 38 | 4 | `relation_record_index` | `u32` | little | spec | uses the 261-byte prologue through the relation |
+| 48 | 2 | `matrix_markers` | `bytes[2]` | little | spec | bytes `01 00` at offsets 48 and 49 |
+| 50 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid transform at offset 50 |
+| 178 | 4 | `null_guid_code_unit_count` | `u32` | little | spec | the null-GUID code-unit count at offset 178 |
+| 182 | 72 | `null_guid_utf16_payload` | `bytes[72]` | little | spec | its UTF-16 payload at offset 182 |
+
+Unstated regions:
+
+- `11..20` (9 B): Nine zero bytes occupy offsets 11 through 19.
+- `33..37` (4 B): Four zero bytes occupy offsets 33 through 36.
+- `42..48` (6 B): Six zero bytes occupy offsets 42 through 47.
 
 ## `component_insert_relation_345_57`
 

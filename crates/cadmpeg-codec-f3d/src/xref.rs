@@ -693,7 +693,7 @@ fn repeated_target_occurrence_placement_details(
 ) -> Option<RepeatedTargetPlacementDetails> {
     const METADATA_MARKER: &[u8] = &[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0];
     let (link_names, discriminators, mut at) = occurrence_path(body)?;
-    if !matches!(View::u32_le_at(body, at)?, 1 | 5) {
+    if !matches!(View::u32_le_at(body, at)?, 1..=6) {
         return None;
     }
     at += 4;
@@ -774,23 +774,34 @@ fn repeated_target_occurrence_placement_details(
     })
 }
 
-/// Bind a repeated-target occurrence carrier to an identity Component Insert
-/// scope through its relation record.
-pub(crate) fn repeated_target_component_insert_identity(
+/// Bind a repeated-target occurrence carrier to a Component Insert scope
+/// through its relation record.
+pub(crate) fn repeated_target_component_insert(
     bytes: &[u8],
     carrier_at: usize,
     relation_at: usize,
     carrier_record_index: u32,
-) -> Option<(String, usize)> {
+    expected_transform: [[f64; 4]; 4],
+) -> Option<(String, usize, Option<usize>)> {
     let body = bytes.get(carrier_at..relation_at)?;
     if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
         return None;
     }
     let details = repeated_target_occurrence_placement_details(body)?;
-    if details.placement.transform.is_some() || details.transform_offset.is_some() {
+    let transform = details.placement.transform.unwrap_or([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]);
+    if transform != expected_transform {
         return None;
     }
-    Some((details.role, carrier_at + details.role_offset))
+    Some((
+        details.role,
+        carrier_at + details.role_offset,
+        details.transform_offset.map(|offset| carrier_at + offset),
+    ))
 }
 
 /// Parse the grouped identity carrier used by the compact `Component Insert`
