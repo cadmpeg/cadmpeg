@@ -839,6 +839,30 @@ fn native_namespace_retains_fixed_owner_allocation_targets() {
 }
 
 #[test]
+fn native_namespace_retains_closed_fixed_owner_boundary_cycle() {
+    let (bytes, edge_positions, owner_pos, endpoint_records) =
+        b2_fixed_owner_boundary_cycle_stream();
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+
+    assert_eq!(packet.byte_offset, owner_pos as u64);
+    let cycle = packet
+        .boundary_cycle
+        .as_ref()
+        .expect("closed fixed-owner boundary cycle");
+    assert_eq!(
+        cycle.edges.map(|edge| edge.byte_offset),
+        edge_positions.map(|position| position as u64)
+    );
+    assert_eq!(
+        cycle.edges.map(|edge| edge.endpoint_records),
+        endpoint_records.map(|pair| pair.map(|position| position as u64))
+    );
+}
+
+#[test]
 fn native_namespace_retains_source_closed_owner_chart() {
     let native = crate::native::CatiaNative::decode(&b2_owner_chart_stream(0x2b));
     let [packet] = native.consolidated_owner_packets.as_slice() else {

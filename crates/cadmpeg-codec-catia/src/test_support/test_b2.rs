@@ -129,6 +129,71 @@ pub(crate) fn b2_width_coded_owner_with_allocation_stream() -> (Vec<u8>, [usize;
     (bytes, target_positions, owner_pos)
 }
 
+pub(crate) fn b2_fixed_owner_boundary_cycle_stream() -> (Vec<u8>, [usize; 4], usize, [[usize; 2]; 4])
+{
+    let mut bytes = Vec::new();
+    let mut endpoint_positions = [0usize; 4];
+    for position in &mut endpoint_positions {
+        *position = bytes.len();
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00]);
+    }
+
+    let endpoint_indices = [[0usize, 1], [0, 2], [2, 3], [1, 3]];
+    let mut edge_positions = [0usize; 4];
+    for (edge_index, indices) in endpoint_indices.into_iter().enumerate() {
+        let current_ordinal = 4 + edge_index;
+        let distances = indices
+            .map(|index| u8::try_from(current_ordinal - index).expect("cycle endpoint distance"));
+        edge_positions[edge_index] = bytes.len();
+        let mut edge = vec![
+            0xb2,
+            0x03,
+            0x5e,
+            0x09,
+            0x05,
+            0x06,
+            0,
+            4 * distances[0] + 1,
+            4 * distances[1] + 1,
+            0x06,
+            0,
+            0x06,
+            0,
+            0x21,
+        ];
+        bytes.append(&mut edge);
+    }
+
+    let owner_pos = bytes.len();
+    let mut owner = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
+    for (index, distance) in [1000u16, 4, 1001, 3, 1002, 2, 1003, 1, 1004]
+        .into_iter()
+        .enumerate()
+    {
+        if index % 2 == 0 {
+            owner.push(0x0a);
+            owner.extend_from_slice(&distance.to_le_bytes());
+        } else {
+            owner.push(4 * u8::try_from(distance).expect("cycle distance") + 1);
+        }
+    }
+    owner.extend_from_slice(&owner_numeric_tail());
+    owner[3] = u8::try_from(owner.len() - 5).expect("fixed owner packet length");
+    bytes.extend_from_slice(&owner);
+
+    (
+        bytes,
+        edge_positions,
+        owner_pos,
+        endpoint_indices.map(|indices| {
+            [
+                endpoint_positions[indices[0]],
+                endpoint_positions[indices[1]],
+            ]
+        }),
+    )
+}
+
 pub(crate) fn b2_all_compact_owner_packet_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
     for value in [278, 324, 276, 268, 277, 374, 199, 195, 279] {
