@@ -629,7 +629,7 @@ fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
     assert_eq!(parsed.owned_ordinal, 290);
     assert_eq!(parsed.evaluated_value, 0.0);
 
-    for class_tag in ["268", "282", "336", "325", "297"] {
+    for class_tag in ["268", "282", "289", "336", "325", "297"] {
         assert!(
             parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame(class_tag), 1.25)
                 .is_some()

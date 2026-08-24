@@ -388,7 +388,10 @@ pub(crate) fn valid_design_parameter_discriminator(value: u64) -> bool {
 /// Whether a class tag admits the legacy owner grammar without scope or scalar
 /// lanes.
 pub(crate) fn is_legacy_parameter_owner_68_class(class_tag: &str) -> bool {
-    matches!(class_tag, "268" | "284" | "282" | "336" | "325" | "297")
+    matches!(
+        class_tag,
+        "268" | "284" | "282" | "289" | "336" | "325" | "297"
+    )
 }
 
 /// Whether a class tag admits the legacy owner grammar with repeated scope
