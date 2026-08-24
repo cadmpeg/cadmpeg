@@ -22,7 +22,10 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 284;
+pub const CATIA_NATIVE_VERSION: u32 = 285;
+/// Native schema version that resolves grouped aliases to persistent surface tags.
+#[cfg(test)]
+pub(crate) const CATIA_ALIAS_SURFACE_TAG_VERSION: u32 = 285;
 /// Native schema version associating exact scalar nominals with `Range` intervals.
 #[cfg(test)]
 pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
@@ -1243,6 +1246,9 @@ pub struct CatiaAliasRow {
     /// Group-allocation header immediately preceding this alias core.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<AliasGroupMembership>,
+    /// Canonical persistent surface-roster tag selected by this alias row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_surface_tag: Option<u32>,
 }
 
 /// One exact `7C0B` value block adjacent to its source-schema catalog.
@@ -7300,6 +7306,57 @@ fn external_reference_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaExterna
         .collect()
 }
 
+fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) {
+    let mut stored_by_group = HashMap::<(u32, u32), Option<u32>>::new();
+    for row in rows.iter() {
+        let Some(group) = row.group.as_ref() else {
+            continue;
+        };
+        if row.lead != AliasLead::SurfaceSupportStorage {
+            continue;
+        }
+        stored_by_group
+            .entry((group.prototype, group.group_id))
+            .and_modify(|stored| *stored = None)
+            .or_insert(Some(row.tag));
+    }
+    for row in rows {
+        row.canonical_surface_tag = match row.lead {
+            AliasLead::SurfaceSupportStorage => Some(row.tag),
+            AliasLead::NonSurfaceAlias => row.group.as_ref().and_then(|group| {
+                stored_by_group
+                    .get(&(group.prototype, group.group_id))
+                    .copied()
+                    .flatten()
+            }),
+            _ => None,
+        };
+    }
+}
+
+#[cfg(test)]
+fn validate_alias_surface_tags(
+    rows: &[CatiaAliasRow],
+    required: bool,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    if !required {
+        return Ok(());
+    }
+    let mut expected = rows.to_vec();
+    resolve_alias_surface_tags(&mut expected);
+    if rows
+        .iter()
+        .zip(expected)
+        .all(|(row, expected)| row.canonical_surface_tag == expected.canonical_surface_tag)
+    {
+        Ok(())
+    } else {
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "alias rows have invalid canonical surface tags".to_string(),
+        ))
+    }
+}
+
 impl CatiaNative {
     /// Decode CATIA-native records using container-bounded consolidated
     /// record sources.
@@ -7573,6 +7630,7 @@ impl CatiaNative {
                     extents_overlap(row_start, 24, catalog.byte_offset, catalog.byte_len)
                 })
         });
+        resolve_alias_surface_tags(&mut alias_rows);
         let design_objects = design_objects(&object_graphs, &entity_records);
         let part_graph = {
             let mut graphs = object_graphs.iter().filter(|graph| {
@@ -7850,6 +7908,7 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
             f2: row.f2,
             f3: row.f3,
             group: row.group,
+            canonical_surface_tag: None,
         }
     }
 }

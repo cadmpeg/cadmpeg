@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "01516a4213f246009556e3f7387fce99d340f522"
+measured_at = "877a18404298c62971c6e4b1605d4c9758059d2b"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -34,9 +34,8 @@ bare_tolerance_literals = 709
 nonliteral_vec_repeat = 144
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 1777
+test_line_debt = 1769
 production_line_debt = 393
 
 [reasons]
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; this slice adds one distinct named 1e-9 geometric payload-comparison tolerance for shared NURBS boundaries; still occurrence-only (does not see naming or collapse of distinct values)"
-test_line_debt = "CATIA native test helpers moved from cfg(test) items in native.rs into native/test_only.rs; one file over the 2000-line test-file limit"

@@ -946,6 +946,8 @@ grouped_alias_row := alias_group_header alias_group_storage
 
 Each `bit` is exactly zero or one. `prototype` identifies the node kind and `group_id` identifies the node group. The group's four-byte target allocation slot begins at `f1[2]` and continues through the first three bytes of `f2`; its low byte is therefore also the object-record ordinal. The complete storage prefix remains attached to the alias membership.
 
+A grouped row whose four-byte word immediately before `01 00 04 00` is `01 00 00 00` selects its own persistent surface-roster tag. A grouped row whose preceding word is `00 00 00 00` selects the tag of the unique `01 00 00 00` row with the same exact `(prototype, group_id)`. It selects no surface tag when that group has zero or multiple `01 00 00 00` rows. Other preceding words do not enter this group closure.
+
 ---
 
 ## 8. Zero-entity `a9 03` variant

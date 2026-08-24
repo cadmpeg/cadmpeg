@@ -10,6 +10,18 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::test_support::*;
 use crate::CatiaCodec;
 
+fn grouped_surface_alias_stream(lead: u32, tag: u32, group_id: u32) -> Vec<u8> {
+    let mut bytes = vec![0x02, 0x00];
+    bytes.extend_from_slice(&0xafu32.to_le_bytes());
+    bytes.extend_from_slice(&group_id.to_le_bytes());
+    bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
+    let mut alias = surface_alias_stream();
+    alias[..4].copy_from_slice(&lead.to_le_bytes());
+    alias[8..12].copy_from_slice(&tag.to_le_bytes());
+    bytes.extend(alias);
+    bytes
+}
+
 #[test]
 fn decode_persists_external_references_in_native_namespace() {
     let mut file = standard_catpart();
@@ -537,6 +549,10 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
             .target_slot,
         0x17b
     );
+    assert_eq!(
+        native.alias_rows[0].canonical_surface_tag,
+        Some(0x0012_3456)
+    );
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
@@ -573,6 +589,57 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+
+    let mut legacy = crate::native::CatiaNative::decode(&bytes);
+    for row in &mut legacy.alias_rows {
+        row.canonical_surface_tag = None;
+    }
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    legacy
+        .store(&mut namespace)
+        .expect("store legacy alias rows");
+    namespace.version = crate::native::CATIA_ALIAS_SURFACE_TAG_VERSION - 1;
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace)
+            .expect("load legacy alias rows")
+            .alias_rows,
+        legacy.alias_rows
+    );
+}
+
+#[test]
+fn grouped_non_surface_alias_selects_the_unique_surface_storage_tag() {
+    let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
+    bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.alias_rows.len(), 2);
+    assert_eq!(native.alias_rows[0].canonical_surface_tag, Some(0x5678));
+    assert_eq!(native.alias_rows[1].canonical_surface_tag, Some(0x5678));
+
+    let mut invalid = native;
+    invalid.alias_rows[0].canonical_surface_tag = Some(0x1234);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid alias closure");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
+fn grouped_non_surface_alias_rejects_ambiguous_surface_storage() {
+    let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
+    bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
+    bytes.extend(grouped_surface_alias_stream(1, 0x9abc, 0x148));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.alias_rows.len(), 3);
+    assert_eq!(native.alias_rows[0].canonical_surface_tag, None);
+    assert_eq!(native.alias_rows[1].canonical_surface_tag, Some(0x5678));
+    assert_eq!(native.alias_rows[2].canonical_surface_tag, Some(0x9abc));
 }
 
 #[test]
