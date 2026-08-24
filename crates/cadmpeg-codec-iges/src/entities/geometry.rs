@@ -50,6 +50,28 @@ fn point_display_symbol_valid(
     }
 }
 
+fn base_geometry_line_font_required(entity_type: i64, form: i64) -> bool {
+    match entity_type {
+        106 => matches!(form, 11..=13 | 63),
+        116 => false,
+        100 | 104 | 108 | 110 | 112 | 114 | 118 | 120 | 122 | 126 | 128 | 130 | 140 | 142 | 144 => {
+            true
+        }
+        _ => false,
+    }
+}
+
+fn base_geometry_line_font_valid(
+    entity_type: i64,
+    form: i64,
+    line_font: i64,
+    dialect: Dialect,
+) -> bool {
+    !matches!(dialect, Dialect::V4_0)
+        || !base_geometry_line_font_required(entity_type, form)
+        || line_font != 0
+}
+
 #[derive(Clone, Copy)]
 enum ControlPointPlane {
     Unique,
@@ -750,21 +772,36 @@ pub(crate) fn project_geometry(
     let dialect = global.dialect();
     let admitted = |entry: &DirectoryEntry| {
         entry.status.is_use_flag_valid(dialect)
+            && base_geometry_line_font_valid(
+                entry.entity_type,
+                entry.form,
+                entry.line_font,
+                dialect,
+            )
             && crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect)
     };
-    let mut losses = directory
-        .iter()
-        .filter(|entry| !entry.status.is_use_flag_valid(dialect))
-        .map(|entry| {
-            entity_loss(
+    let mut losses = Vec::new();
+    for entry in directory {
+        if !entry.status.is_use_flag_valid(dialect) {
+            losses.push(entity_loss(
                 entry,
                 format!(
                     "Entity Use Flag {:02} is outside the declared dialect",
                     entry.status.use_flag
                 ),
-            )
-        })
-        .collect::<Vec<_>>();
+            ));
+        } else if !base_geometry_line_font_valid(
+            entry.entity_type,
+            entry.form,
+            entry.line_font,
+            dialect,
+        ) {
+            losses.push(entity_loss(
+                entry,
+                "Line Font must be nonzero for this IGES 4.0 geometry entity",
+            ));
+        }
+    }
     let admitted_directory = directory.iter().any(|entry| !admitted(entry)).then(|| {
         directory
             .iter()

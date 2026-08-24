@@ -238,7 +238,7 @@ pub(crate) fn symbol_and_sectioned_area_file() -> Vec<u8> {
 }
 
 pub(crate) fn general_symbol_form_file(form: i64, global: &[u8]) -> Vec<u8> {
-    owned_test_file_with_global(
+    owned_test_file_with_global_and_line_fonts(
         &[
             OwnedTestEntity {
                 entity_type: 212,
@@ -270,6 +270,7 @@ pub(crate) fn general_symbol_form_file(form: i64, global: &[u8]) -> Vec<u8> {
             },
         ],
         global,
+        &[(3, 1)],
     )
 }
 
@@ -443,7 +444,7 @@ pub(crate) fn bounded_associativity_forms_file_with_global(global: &[u8]) -> Vec
 }
 
 pub(crate) fn legacy_perforated_plane_file(global: &[u8]) -> Vec<u8> {
-    owned_test_file_with_global(
+    owned_test_file_with_global_and_line_fonts(
         &[
             OwnedTestEntity {
                 entity_type: 108,
@@ -482,11 +483,12 @@ pub(crate) fn legacy_perforated_plane_file(global: &[u8]) -> Vec<u8> {
             },
         ],
         global,
+        &[(1, 1), (3, 1), (5, 1), (7, 1)],
     )
 }
 
 pub(crate) fn legacy_generic_single_parent_file(global: &[u8]) -> Vec<u8> {
-    owned_test_file_with_global(
+    owned_test_file_with_global_and_line_fonts(
         &[
             OwnedTestEntity {
                 entity_type: 108,
@@ -518,6 +520,7 @@ pub(crate) fn legacy_generic_single_parent_file(global: &[u8]) -> Vec<u8> {
             },
         ],
         global,
+        &[(1, 1), (3, 1)],
     )
 }
 
@@ -633,11 +636,11 @@ fn legacy_associativity_entities() -> Vec<OwnedTestEntity> {
 }
 
 pub(crate) fn legacy_associativity_forms_file() -> Vec<u8> {
-    owned_test_file(&legacy_associativity_entities())
+    owned_test_file_with_display(&legacy_associativity_entities(), &[], &[(11, 1)])
 }
 
 pub(crate) fn legacy_associativity_forms_file_with_global(global: &[u8]) -> Vec<u8> {
-    owned_test_file_with_global(&legacy_associativity_entities(), global)
+    owned_test_file_with_global_and_line_fonts(&legacy_associativity_entities(), global, &[(11, 1)])
 }
 
 pub(crate) fn legacy_text_node_font_pointer_file() -> Vec<u8> {

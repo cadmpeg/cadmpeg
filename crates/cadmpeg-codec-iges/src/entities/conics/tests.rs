@@ -27,7 +27,7 @@ fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
         for (family, parameters, family_number) in families {
             let result = IgesCodec
                 .decode(
-                    &mut Cursor::new(owned_test_file_with_global(
+                    &mut Cursor::new(owned_test_file_with_global_and_line_fonts(
                         &[OwnedTestEntity {
                             entity_type: 104,
                             form: 0,
@@ -36,6 +36,7 @@ fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
                             parameters: parameters.into(),
                         }],
                         global,
+                        &[(1, 1)],
                     )),
                     &DecodeOptions::default(),
                 )

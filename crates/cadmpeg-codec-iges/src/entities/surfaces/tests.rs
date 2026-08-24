@@ -29,7 +29,7 @@ fn type128_surface_with_closure(
 ) -> Vec<u8> {
     let parameters =
         format!("128,1,1,1,1,{closed_u},{closed_v},1,0,0,0,0,1,1,0,0,1,1,1,1,1,1,{poles},0,1,0,1;");
-    owned_test_file_with_global(
+    owned_test_file_with_global_and_line_fonts(
         &[OwnedTestEntity {
             entity_type: 128,
             form: 0,
@@ -38,6 +38,7 @@ fn type128_surface_with_closure(
             parameters,
         }],
         global,
+        &[(1, 1)],
     )
 }
 
@@ -694,7 +695,7 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
             );
             let result = IgesCodec
                 .decode(
-                    &mut Cursor::new(owned_test_file_with_global(
+                    &mut Cursor::new(owned_test_file_with_global_and_line_fonts(
                         &[OwnedTestEntity {
                             entity_type: 128,
                             form: 0,
@@ -703,6 +704,7 @@ fn decode_applies_rational_surface_weight_declaration_in_iges_4_and_5_0() {
                             parameters,
                         }],
                         global,
+                        &[(1, 1)],
                     )),
                     &DecodeOptions::default(),
                 )

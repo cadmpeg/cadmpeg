@@ -65,7 +65,7 @@ fn v4_one_tuple_linear_path_is_projected_as_its_authored_point() {
     let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
     let result = IgesCodec
         .decode(
-            &mut Cursor::new(owned_test_file_with_global(
+            &mut Cursor::new(owned_test_file_with_global_and_line_fonts(
                 &[OwnedTestEntity {
                     entity_type: 106,
                     form: 11,
@@ -74,6 +74,7 @@ fn v4_one_tuple_linear_path_is_projected_as_its_authored_point() {
                     parameters: "106,1,1,0,3,4;".into(),
                 }],
                 global_v4,
+                &[(1, 1)],
             )),
             &DecodeOptions::default(),
         )

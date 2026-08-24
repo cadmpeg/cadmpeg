@@ -10,8 +10,8 @@ use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::Vector3;
 
 use super::{
-    enforce_transform_depth, is_finite_nonzero_vector, validate_declared_transform_frame,
-    DeclaredInterval, DeclaredTransformFrameError,
+    base_geometry_line_font_valid, enforce_transform_depth, is_finite_nonzero_vector,
+    validate_declared_transform_frame, DeclaredInterval, DeclaredTransformFrameError,
 };
 use crate::global::Dialect;
 use crate::loss::IgesLossCode;
@@ -73,6 +73,61 @@ fn entity_use_flag_six_is_admitted_only_by_the_later_profile() {
     assert!(!v5.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityNotProjected.kind()
             && loss.message.contains("Entity Use Flag 06 is outside")
+    }));
+}
+
+#[test]
+fn base_geometry_line_font_follows_the_declared_dialect() {
+    for entity_type in [
+        100, 104, 108, 110, 112, 114, 118, 120, 122, 126, 128, 130, 140, 142, 144,
+    ] {
+        assert!(!base_geometry_line_font_valid(
+            entity_type,
+            0,
+            0,
+            Dialect::V4_0
+        ));
+        assert!(base_geometry_line_font_valid(
+            entity_type,
+            0,
+            1,
+            Dialect::V4_0
+        ));
+    }
+    assert!(base_geometry_line_font_valid(106, 1, 0, Dialect::V4_0));
+    assert!(base_geometry_line_font_valid(106, 3, 0, Dialect::V4_0));
+    for form in [11, 12, 13, 63] {
+        assert!(!base_geometry_line_font_valid(106, form, 0, Dialect::V4_0));
+    }
+    assert!(base_geometry_line_font_valid(116, 0, 0, Dialect::V4_0));
+    assert!(base_geometry_line_font_valid(110, 0, 0, Dialect::V5_0));
+}
+
+#[test]
+fn decode_rejects_a_zero_v4_base_geometry_line_font() {
+    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "LINE".into(),
+                    status: "00000000",
+                    parameters: "110,0,0,0,1,0,0;".into(),
+                }],
+                GLOBAL_V4,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .message
+                .contains("Line Font must be nonzero for this IGES 4.0 geometry entity")
     }));
 }
 
@@ -607,7 +662,7 @@ fn decode_accepts_omitted_type_126_normal_for_nonplanar_v4_and_v5() {
     let parameters = "126,3,1,0,0,1,0,0,0,1,2,3,3,1,1,1,1,0,0,0,1,0,0,1,1,0,0,1,1,0,3,,,;";
 
     for global in [&global_v4[..], &global_v5[..]] {
-        let file = owned_test_file_with_global(
+        let file = owned_test_file_with_global_and_line_fonts(
             &[OwnedTestEntity {
                 entity_type: 126,
                 form: 0,
@@ -616,6 +671,7 @@ fn decode_accepts_omitted_type_126_normal_for_nonplanar_v4_and_v5() {
                 parameters: parameters.into(),
             }],
             global,
+            &[(1, 1)],
         );
         let result = IgesCodec
             .decode(&mut Cursor::new(file), &DecodeOptions::default())
