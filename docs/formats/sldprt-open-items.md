@@ -18,22 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Body classification
 
-### BC-01. Other class-root layouts
-
-**Question.** Which class-root record layouts and ownership relations select bodies outside the supported class-root chain form?
-
-**Known.** `sldprt.md` §6 defines the supported class-root index prefix, chain heads, and the byte intervals used to associate entity records with a class-root body. Other class-root layouts remain unresolved.
-
-**Need.** We must know the class-root grammar and body ownership rule to decode every body without assigning entities from one body to another.
-
-### BC-02. Deltas faces outside partition intervals
-
-**Question.** Which class-root body owns a deltas face that is outside every selected partition head interval?
-
-**Known.** `sldprt.md` §6 defines class-root interval ownership for selected partition records. A deltas face outside all selected intervals remains unresolved.
-
-**Need.** We must know the ownership relation to retain faces that do not fall inside a partition interval.
-
 ### BC-03. Superseded partition faces
 
 **Question.** How does a deltas topology record replace a partition face when the replacement has a different bridge or owner identity?

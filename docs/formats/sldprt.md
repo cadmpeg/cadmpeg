@@ -1340,9 +1340,12 @@ Roster entries name same-site nodes by attribute and node class, mixing topology
 
 A deltas change set can re-create subordinate topology and geometry records under new attributes. Partition records are the base set for one site. A deltas record with an identity already present in the partition updates only a point coordinate; it does not replace the partition topology or carrier record. A deltas record with an absent identity fills that missing subordinate record. The change roster carries no relation to a superseded partition face.
 
-An explicit deltas final-state body selector is reconstructed over the combined site entity table: partition entity records are the base, a deltas entity record with a greater or equal sequence replaces the same-attribute entity record for selector traversal, and references can resolve to records in either stream. When partition bridges exist, a missing-identity deltas bridge enters the merged bridge set only when its bridge attribute or owner attribute is reachable from this selector. Partition topology keeps precedence for every identity already present. The selector does not replace the class-root body relation. The decoder withholds an unselected deltas bridge. A partition without bridges takes its face membership entirely from the deltas stream.
-
-When a selected deltas bridge is absent from every partition body reference closure, its final body root binds it to a partition body only when the body attribute matches exactly or the selector closure shares a bridge attribute or bridge owner with exactly one partition body. A sole body, a geometric match, or an unrelated shared entity reference does not establish membership. If this join is not unique, the bridge remains unclaimed.
+Partition topology is the base set for one site. Typed BODY, SHELL, REGION,
+and FACE nodes are combined before body membership is validated. A deltas
+node with an identity present in the partition does not replace the partition
+node. A missing deltas node is retained when its bridge attribute or bridge
+owner is named by the validated typed FACE set. An unselected compact deltas
+bridge is not part of the merged topology.
 
 For bridges whose owner field is greater than one, the owner identifies the canonical face entity and the bridge identifies a face use. Bridges with the same owner and identical reference, marker, and walked loop/surface payload are duplicate uses; the bridge encoded first is canonical. Bridges with the same owner and non-equivalent payloads are alternate uses without a selector; the decoder withholds every use for that owner and reports the unresolved owner.
 
@@ -1488,30 +1491,6 @@ carrier's reference direction. The neutral topology joins these endpoints
 with one line edge, inserts two oppositely oriented radial coedges for that
 edge, and combines the two circular coedges and two seam coedges into one
 loop.
-
-A class-root directory is an auxiliary index of entity roots. It does not
-replace the typed BODY/SHELL/REGION/FACE ownership graph. Its fixed prefix and
-variable root vector are:
-
-```
-+0  signature       bytes[2]       ; CI
-+2  name_len        u8             ; 16
-+3  field_name      bytes[16]      ; index_map_offset
-+19 instance_marker bytes[6]       ; 00 00 00 01 01 64
-+25 ccz             bytes[3]       ; CCZ
-+28 type_tag        u32 BE         ; 20
-+32 class_token     u16 BE
-+34 root_count      u32 BE
-+38 roots_preamble  bytes[6]       ; 00 00 00 00 00 01
-+44 roots           u16 BE[root_count]
-```
-
-`class_token` is a stream-local nonsentinel token and `root_count` is
-positive. Each root is a distinct nonsentinel entity attribute. A root vector
-is valid only when its prefix, count, and every root satisfy these invariants.
-The directory can index attribute-list intervals, but it does not select a
-shell, region, body kind, or face set when the typed ownership closure is
-available.
 
 ## 7. Geometry carriers
 

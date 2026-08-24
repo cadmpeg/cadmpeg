@@ -19,6 +19,7 @@ use crate::SourceRecord;
 use crate::container::MARKER;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
 
 pub(crate) const SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_swobjects_local_sha256";
 pub(crate) const SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE: &str =
@@ -2581,6 +2582,7 @@ pub(crate) fn brep_body(
     write_body_hierarchy(
         ir,
         &faces,
+        &surfaces,
         &face_owners,
         &color_attrs,
         schema_32001,
@@ -2595,9 +2597,11 @@ pub(crate) fn brep_body(
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)] // The native and typed hierarchy writers share these identity maps.
 fn write_body_hierarchy(
     ir: &CadIr,
     faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
     face_owners: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
     color_attrs: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
     schema_32001: bool,
@@ -2695,6 +2699,7 @@ fn write_body_hierarchy(
             "face is not assigned to a body".into(),
         ));
     }
+    write_typed_body_hierarchy(ir, faces, surfaces, next, out)?;
     let mut face_owner_items = face_owners.iter().collect::<Vec<_>>();
     face_owner_items.sort_by_key(|(left, _)| *left);
     for (face, owner) in face_owner_items {
@@ -2709,6 +2714,184 @@ fn write_body_hierarchy(
         );
     }
     Ok(())
+}
+
+/// Write the typed XT ownership graph used by the decoder for body membership.
+///
+/// The compact topology records use the same transmit attributes as the
+/// neutral arenas.  BODY, REGION, and SHELL receive fresh attributes because
+/// those nodes are ownership records rather than compact topology identities;
+/// FACE keeps the compact bridge attribute so the two record families join
+/// without a second identity map.
+fn write_typed_body_hierarchy(
+    ir: &CadIr,
+    faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
+    next: &mut u16,
+    out: &mut Vec<u8>,
+) -> Result<(), CodecError> {
+    let body_attrs = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| Ok((body.id.clone(), take_attr(next)?)))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let region_attrs = ir
+        .model
+        .regions
+        .iter()
+        .map(|region| Ok((region.id.clone(), take_attr(next)?)))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let shell_attrs = ir
+        .model
+        .shells
+        .iter()
+        .map(|shell| Ok((shell.id.clone(), take_attr(next)?)))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let mut face_shells = HashMap::new();
+    for shell in &ir.model.shells {
+        let shell_attr = shell_attrs[&shell.id];
+        for face in &shell.faces {
+            if face_shells.insert(face.clone(), shell_attr).is_some() {
+                return Err(CodecError::Malformed(
+                    "face belongs to multiple typed shells".into(),
+                ));
+            }
+        }
+    }
+
+    for (index, body) in ir.model.bodies.iter().enumerate() {
+        let body_attr = body_attrs[&body.id];
+        let first_region = body
+            .regions
+            .first()
+            .ok_or_else(|| CodecError::Malformed("body has no typed region".into()))?;
+        let first_region = region_attrs[first_region];
+        let first_shell = ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.id.0 == body.regions[0].0)
+            .and_then(|region| region.shells.first())
+            .map(|shell| shell_attrs[shell])
+            .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
+        typed_prefix(out, 0x0c, body_attr, 0x1000_0000 + index as u32);
+        for value in [5, 6, 1, 1, 1, 1] {
+            typed_ref(out, value);
+        }
+        bef64(out, 1000.0);
+        bef64(out, TYPED_BODY_LINEAR_RESOLUTION);
+        for value in [1, 1, 1] {
+            typed_ref(out, value);
+        }
+        out.push(1);
+        typed_ref(out, 2);
+        out.push(match body.kind {
+            BodyKind::Solid => 1,
+            BodyKind::Wire => 2,
+            BodyKind::Sheet => 3,
+            BodyKind::General => 6,
+        });
+        out.push(1);
+        for value in [first_shell, 1, 1, 1, 1, 1, 1] {
+            typed_ref(out, value);
+        }
+        for value in [first_region, 1, 1, 1] {
+            typed_ref(out, value);
+        }
+    }
+
+    for (index, shell) in ir.model.shells.iter().enumerate() {
+        let body = ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
+            .map(|region| &region.body)
+            .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
+        let region = ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
+            .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
+        typed_prefix(
+            out,
+            0x0d,
+            shell_attrs[&shell.id],
+            0x2000_0000 + index as u32,
+        );
+        for value in [1, body_attrs[body], 1, 1, 1, 1, region_attrs[&region.id], 1] {
+            typed_ref(out, value);
+        }
+    }
+
+    for (index, region) in ir.model.regions.iter().enumerate() {
+        let body = body_attrs[&region.body];
+        let body_regions = ir
+            .model
+            .bodies
+            .iter()
+            .find(|candidate| candidate.id == region.body)
+            .ok_or_else(|| CodecError::Malformed("typed region has no body".into()))?;
+        let position = body_regions
+            .regions
+            .iter()
+            .position(|candidate| candidate == &region.id)
+            .ok_or_else(|| CodecError::Malformed("body does not reference typed region".into()))?;
+        let next_region = body_regions
+            .regions
+            .get(position + 1)
+            .map_or(1, |id| region_attrs[id]);
+        let previous_region = position
+            .checked_sub(1)
+            .and_then(|position| body_regions.regions.get(position))
+            .map_or(1, |id| region_attrs[id]);
+        let shell_head = region
+            .shells
+            .first()
+            .map(|id| shell_attrs[id])
+            .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
+        typed_prefix(
+            out,
+            0x13,
+            region_attrs[&region.id],
+            0x3000_0000 + index as u32,
+        );
+        for value in [1, body, next_region, previous_region, shell_head] {
+            typed_ref(out, value);
+        }
+        out.push(b'S');
+    }
+
+    for (index, face) in ir.model.faces.iter().enumerate() {
+        let shell = face_shells
+            .get(&face.id)
+            .copied()
+            .ok_or_else(|| CodecError::Malformed("typed face has no shell".into()))?;
+        typed_prefix(out, 0x0e, faces[&face.id], 0x4000_0000 + index as u32);
+        typed_ref(out, 1);
+        out.extend_from_slice(&MAGIC);
+        for value in [1, 1, 0, shell, surfaces[&face.surface]] {
+            typed_ref(out, value);
+        }
+        out.push(match face.sense {
+            Sense::Forward => 0x2b,
+            Sense::Reversed => 0x2d,
+        });
+    }
+    Ok(())
+}
+
+fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
+    tag(out, kind);
+    out.push(0xff);
+    be16(out, attr);
+    be32(out, node_id);
+}
+
+fn typed_ref(out: &mut Vec<u8>, value: u16) {
+    be16(out, value);
 }
 
 fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {

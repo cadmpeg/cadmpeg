@@ -87,8 +87,6 @@ pub enum SldprtLossCode {
     TessellationFaceOwnershipUnresolved,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
-    /// Body-component overlap tied and no body assignment was selected.
-    TopologyBodyAssignmentAmbiguous,
     /// One face owner has multiple non-equivalent face-use bridges.
     TopologyFaceOwnerAmbiguous,
     /// A canonical face has no explicit body relation.
@@ -143,7 +141,6 @@ impl SldprtLossCode {
         Self::AppearanceAssignmentUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
         Self::TopologyBodyHierarchyDerived,
-        Self::TopologyBodyAssignmentAmbiguous,
         Self::TopologyFaceOwnerAmbiguous,
         Self::TopologyFaceUnclaimed,
         Self::TopologyPcurveCarrierOffSurface,
@@ -191,7 +188,6 @@ impl SldprtLossCode {
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
-            Self::TopologyBodyAssignmentAmbiguous => "topology.body-assignment-ambiguous",
             Self::TopologyFaceOwnerAmbiguous => "topology.face-owner-ambiguous",
             Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
@@ -219,9 +215,9 @@ impl SldprtLossCode {
         match self {
             Self::ContainerNoParasolidStream => LossTaxonomy::MissingGeometryStream,
             Self::SourcePreservedImageUnavailable => LossTaxonomy::PreservedSourceUnavailable,
-            Self::TopologyBodyHierarchyDerived
-            | Self::TopologyBodyAssignmentAmbiguous
-            | Self::TopologyFaceOwnerAmbiguous => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::TopologyBodyHierarchyDerived | Self::TopologyFaceOwnerAmbiguous => {
+                LossTaxonomy::TopologyGaugeSubstituted
+            }
             Self::TopologyFaceUnclaimed => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
@@ -315,7 +311,6 @@ mod tests {
                 "appearance.assignment-unresolved",
                 "tessellation.face-ownership-unresolved",
                 "topology.body-hierarchy-derived",
-                "topology.body-assignment-ambiguous",
                 "topology.face-owner-ambiguous",
                 "topology.face-unclaimed",
                 "topology.pcurve-carrier-off-surface",

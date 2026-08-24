@@ -268,36 +268,6 @@ pub(crate) mod attribute_instance_00_51 {
     pub(crate) const OWNER_ATTRIBUTE_ID: usize = 12;
 }
 
-/// Byte offsets for the `class_root_directory_prefix` record.
-///
-/// Spec §6. Record length 44 B.
-///
-/// ```text
-/// Fixed prefix only. The root vector contains root_count u16 BE attributes from +44.
-/// ```
-pub(crate) mod class_root_directory_prefix {
-    /// Record length in bytes. Spec §6.
-    pub(crate) const LEN: usize = 44;
-    /// Offset of `signature` (`bytes[2]`). Spec §6.
-    pub(crate) const SIGNATURE: usize = 0;
-    /// Offset of `name_len` (`u8`). Spec §6.
-    pub(crate) const NAME_LEN: usize = 2;
-    /// Offset of `field_name` (`bytes[16]`). Spec §6.
-    pub(crate) const FIELD_NAME: usize = 3;
-    /// Offset of `instance_marker` (`bytes[6]`). Spec §6.
-    pub(crate) const INSTANCE_MARKER: usize = 19;
-    /// Offset of `ccz` (`bytes[3]`). Spec §6.
-    pub(crate) const CCZ: usize = 25;
-    /// Offset of `type_tag` (`u32`, big-endian). Spec §6.
-    pub(crate) const TYPE_TAG: usize = 28;
-    /// Offset of `class_token` (`u16`, big-endian). Spec §6.
-    pub(crate) const CLASS_TOKEN: usize = 32;
-    /// Offset of `root_count` (`u32`, big-endian). Spec §6.
-    pub(crate) const ROOT_COUNT: usize = 34;
-    /// Offset of `roots_preamble` (`bytes[6]`). Spec §6.
-    pub(crate) const ROOTS_PREAMBLE: usize = 38;
-}
-
 /// Byte offsets for the `compact_analytic_header` record.
 ///
 /// Spec §7.1. Record length 17 B.

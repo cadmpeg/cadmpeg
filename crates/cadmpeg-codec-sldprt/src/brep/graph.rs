@@ -307,13 +307,34 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
     components
 }
 
+#[derive(Debug, Clone)]
+struct BodyRecord {
+    attr: u16,
+    kind: BodyKind,
+    refs: Vec<u16>,
+    offset: usize,
+    regions: Vec<RegionRecord>,
+}
+
+#[derive(Debug, Clone)]
+struct RegionRecord {
+    attr: u16,
+    offset: usize,
+    shells: Vec<ShellRecord>,
+}
+
+#[derive(Debug, Clone)]
+struct ShellRecord {
+    attr: u16,
+    offset: usize,
+    refs: Vec<u16>,
+}
+
 /// Transfer limitations found while building a [`Brep`].
 #[derive(Default)]
 pub struct Stats {
     /// Framed top-level model entity records across the selected stream site.
     pub source_entity_records: usize,
-    /// Schema-33103 body heads whose maximum face-component overlap was tied.
-    pub ambiguous_body_assignments: usize,
     /// Face-color bindings withheld because current records conflict.
     pub unresolved_face_colors: usize,
     /// Face owners with multiple non-equivalent bridge uses.
@@ -666,110 +687,6 @@ fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
     }
 }
 
-fn body_claims_face(
-    body: &entity::BodyRecord,
-    face: &WalkedFace,
-    bridges: &HashMap<u16, Record>,
-) -> bool {
-    body.refs.contains(&face.bridge_attr)
-        || bridges
-            .get(&face.bridge_attr)
-            .and_then(|bridge| bridge.owner)
-            .is_some_and(|owner| body.refs.contains(&owner))
-}
-
-fn selector_reaches_face(
-    selector: &entity::BodyRecord,
-    face: &WalkedFace,
-    bridges: &HashMap<u16, Record>,
-) -> bool {
-    selector.refs.contains(&face.bridge_attr)
-        || bridges
-            .get(&face.bridge_attr)
-            .and_then(|bridge| bridge.owner)
-            .is_some_and(|owner| selector.refs.contains(&owner))
-}
-
-/// Map a final deltas body selector to one partition body.
-///
-/// A selector's body attribute is the primary join. A changed body may carry
-/// a new attribute, so the fallback is a unique intersection of the selector
-/// with face bridge identities already claimed by one partition body. Random
-/// shared entity references, sole-body inference, and geometric proximity do
-/// not qualify as membership evidence.
-fn final_selector_body_group(
-    selector: &entity::BodyRecord,
-    body_records: &[entity::BodyRecord],
-    faces: &[WalkedFace],
-    bridges: &HashMap<u16, Record>,
-) -> Option<usize> {
-    let exact = body_records
-        .iter()
-        .enumerate()
-        .filter(|(_, body)| body.attr == selector.attr)
-        .map(|(group, _)| group)
-        .collect::<Vec<_>>();
-    if let [group] = exact.as_slice() {
-        return Some(*group);
-    }
-    if !exact.is_empty() {
-        return None;
-    }
-
-    let candidates = body_records
-        .iter()
-        .enumerate()
-        .filter(|(_, body)| {
-            faces.iter().any(|face| {
-                body_claims_face(body, face, bridges)
-                    && selector_reaches_face(selector, face, bridges)
-            })
-        })
-        .map(|(group, _)| group)
-        .collect::<Vec<_>>();
-    let [group] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*group)
-}
-
-/// Bind faces that are both selected by a final deltas body relation and
-/// mapped to one partition body. The existing explicit body binding remains
-/// authoritative; this only fills selected delta-only face bridges.
-fn bind_final_selector_faces(
-    body_records: &[entity::BodyRecord],
-    selectors: &[entity::BodyRecord],
-    faces: &[WalkedFace],
-    bridges: &HashMap<u16, Record>,
-    bridge_group: &mut HashMap<u16, usize>,
-) {
-    let selector_groups = selectors
-        .iter()
-        .enumerate()
-        .filter_map(|(selector_index, selector)| {
-            final_selector_body_group(selector, body_records, faces, bridges)
-                .map(|group| (selector_index, group))
-        })
-        .collect::<HashMap<_, _>>();
-
-    for face in faces {
-        if bridge_group.contains_key(&face.bridge_attr) {
-            continue;
-        }
-        let mut groups = selectors
-            .iter()
-            .enumerate()
-            .filter(|(_, selector)| selector_reaches_face(selector, face, bridges))
-            .filter_map(|(selector_index, _)| selector_groups.get(&selector_index).copied())
-            .collect::<Vec<_>>();
-        groups.sort_unstable();
-        groups.dedup();
-        if let [group] = groups.as_slice() {
-            bridge_group.insert(face.bridge_attr, *group);
-        }
-    }
-}
-
 fn sense_of(marker: u8) -> Sense {
     if marker == 0x2d {
         Sense::Reversed
@@ -876,11 +793,7 @@ fn surface_sense(marker: u8, orientation_reversed: bool) -> Sense {
 ///
 /// `stream` names the provenance stream recorded in [`Brep::annotations`].
 pub fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
-    decode_body(
-        &payload[header.body_offset.min(payload.len())..],
-        &header.schema,
-        stream,
-    )
+    decode_body(&payload[header.body_offset.min(payload.len())..], stream)
 }
 
 /// Decode related partition and deltas streams as one record source.
@@ -901,54 +814,52 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
         .map(|(payload, header)| {
             let body = &payload[header.body_offset.min(payload.len())..];
             let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
-            (body, header.schema.as_str(), is_deltas)
+            (body, is_deltas)
         })
         .collect::<Vec<_>>();
     let typed_streams = entity_streams
         .iter()
-        .map(|(body, _, _)| typed::scan(body))
+        .map(|(body, _)| typed::scan(body))
         .collect::<Vec<_>>();
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
     }
-    let typed_present = typed_facts.has_valid_ownership();
-    let final_body_selectors = if typed_present {
-        None
-    } else {
-        entity::final_state::scan_final_body_selectors(&entity_streams)
-    };
-    let final_state_refs = final_body_selectors.as_ref().map(|selectors| {
-        selectors
-            .iter()
-            .flat_map(|body| body.refs.iter().copied())
-            .collect::<HashSet<_>>()
-    });
-    let combined_body_facts = (!typed_present && entity_streams.len() > 1)
-        .then(|| entity::scan_combined_bodies(&entity_streams));
+    let typed_bridge_attrs = typed_facts
+        .faces
+        .iter()
+        .map(|face| face.attr)
+        .collect::<HashSet<_>>();
+    let selected_bridge_attrs = typed_facts
+        .has_valid_ownership()
+        .then_some(&typed_bridge_attrs);
+    let typed_ownership_valid = typed_facts.has_valid_ownership();
     for (stream_order, ((payload, header), stream_typed_facts)) in
         ordered.into_iter().zip(typed_streams).enumerate()
     {
         let body = &payload[header.body_offset.min(payload.len())..];
         let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
+        let typed_face_offsets = if typed_ownership_valid {
+            stream_typed_facts
+                .faces
+                .iter()
+                .map(|face| face.offset)
+                .collect::<HashSet<_>>()
+        } else {
+            HashSet::new()
+        };
         typed_facts.merge_missing(stream_typed_facts);
         carriers.merge_missing(scan_carriers(body));
         let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if is_deltas {
-            topology::scan_deltas_with_curve_attrs(body, &curve_attrs)
+            topology::scan_deltas_with_curve_attrs_excluding(
+                body,
+                &curve_attrs,
+                &typed_face_offsets,
+            )
         } else {
-            topology::scan_with_curve_attrs(body, &curve_attrs)
+            topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets)
         };
-        let mut scanned_facts = if typed_present {
-            if is_deltas {
-                entity::scan_delta_metadata(body, &header.schema)
-            } else {
-                entity::scan_metadata(body, &header.schema)
-            }
-        } else if is_deltas {
-            entity::scan_deltas(body, &header.schema)
-        } else {
-            entity::scan(body, &header.schema)
-        };
+        let mut scanned_facts = entity::scan_metadata(body, is_deltas);
         for color in &mut scanned_facts.face_colors {
             color.stream_order = stream_order;
         }
@@ -957,16 +868,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
         }
         if !initialized || !is_deltas {
             if initialized {
-                tables.merge_deltas(scanned_tables, final_state_refs.as_ref());
-                if facts.bodies.is_empty() {
-                    facts.bodies = scanned_facts.bodies;
-                }
-                if facts.class_root_bodies.is_empty() {
-                    facts.class_root_bodies = scanned_facts.class_root_bodies;
-                }
-                if facts.cluster_bodies.is_empty() {
-                    facts.cluster_bodies = scanned_facts.cluster_bodies;
-                }
+                tables.merge_deltas(scanned_tables, selected_bridge_attrs);
                 facts.face_colors.append(&mut scanned_facts.face_colors);
                 facts
                     .face_color_versions
@@ -976,7 +878,6 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                     .body_modifiers
                     .append(&mut scanned_facts.body_modifiers);
                 facts.entity_count += scanned_facts.entity_count;
-                facts.ambiguous_body_assignments += scanned_facts.ambiguous_body_assignments;
                 facts.unresolved_face_colors += scanned_facts.unresolved_face_colors;
             } else {
                 tables = scanned_tables;
@@ -984,7 +885,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                 initialized = true;
             }
         } else {
-            tables.merge_deltas(scanned_tables, final_state_refs.as_ref());
+            tables.merge_deltas(scanned_tables, selected_bridge_attrs);
             facts.face_colors.append(&mut scanned_facts.face_colors);
             facts
                 .face_color_versions
@@ -994,32 +895,27 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                 .body_modifiers
                 .append(&mut scanned_facts.body_modifiers);
             facts.entity_count += scanned_facts.entity_count;
-            facts.ambiguous_body_assignments += scanned_facts.ambiguous_body_assignments;
             facts.unresolved_face_colors += scanned_facts.unresolved_face_colors;
-        }
-    }
-    facts.final_body_selectors = final_body_selectors.unwrap_or_default();
-    if facts.bodies.is_empty() {
-        if let Some((bodies, ambiguous_body_assignments)) = combined_body_facts {
-            if !bodies.is_empty() {
-                facts.bodies = bodies;
-                facts.ambiguous_body_assignments = ambiguous_body_assignments;
-            }
         }
     }
     decode_graph(&carriers, &tables, facts, &typed_facts, stream)
 }
 
-fn decode_body(body: &[u8], schema: &str, stream: &str) -> Brep {
+fn decode_body(body: &[u8], stream: &str) -> Brep {
     let carriers = scan_carriers(body);
     let curve_attrs = carriers.curve_attrs();
-    let t = topology::scan_with_curve_attrs(body, &curve_attrs);
     let typed_facts = typed::scan(body);
-    let entity_facts = if typed_facts.bodies.is_empty() {
-        entity::scan(body, schema)
+    let typed_face_offsets = if typed_facts.has_valid_ownership() {
+        typed_facts
+            .faces
+            .iter()
+            .map(|face| face.offset)
+            .collect::<HashSet<_>>()
     } else {
-        entity::scan_metadata(body, schema)
+        HashSet::new()
     };
+    let t = topology::scan_with_curve_attrs_excluding(body, &curve_attrs, &typed_face_offsets);
+    let entity_facts = entity::scan_metadata(body, false);
     decode_graph(&carriers, &t, entity_facts, &typed_facts, stream)
 }
 
@@ -1100,10 +996,7 @@ fn unique_face_colors(
     (out, unresolved)
 }
 
-fn typed_body_records(
-    facts: &typed::Facts,
-    tables: &topology::Tables,
-) -> Option<Vec<entity::BodyRecord>> {
+fn typed_body_records(facts: &typed::Facts, tables: &topology::Tables) -> Option<Vec<BodyRecord>> {
     let bridge_attrs = tables.bridges.keys().copied().collect::<HashSet<_>>();
     let hierarchies = facts.hierarchies(&bridge_attrs)?;
     let mut records = Vec::with_capacity(hierarchies.len());
@@ -1134,7 +1027,7 @@ fn typed_body_records(
                             .collect::<Vec<_>>();
                         refs.sort_unstable();
                         refs.dedup();
-                        entity::ShellRecord {
+                        ShellRecord {
                             attr: shell.attr,
                             offset: shell.offset,
                             refs,
@@ -1142,7 +1035,7 @@ fn typed_body_records(
                     })
                     .collect::<Vec<_>>();
                 shells.sort_by_key(|shell| shell.attr);
-                entity::RegionRecord {
+                RegionRecord {
                     attr: region.attr,
                     offset: region.offset,
                     shells,
@@ -1150,7 +1043,7 @@ fn typed_body_records(
             })
             .collect::<Vec<_>>();
         regions.sort_by_key(|region| region.attr);
-        records.push(entity::BodyRecord {
+        records.push(BodyRecord {
             attr: hierarchy.body.attr,
             kind: hierarchy.kind,
             refs: body_refs,
@@ -1170,21 +1063,7 @@ fn decode_graph(
     stream: &str,
 ) -> Brep {
     let typed_records = typed_body_records(typed_facts, t);
-    // A typed ownership graph starts at BODY.  FACE/SHELL/REGION byte
-    // candidates can occur in unrelated node payloads until their ownership
-    // closure is established; they must not disable the existing body routes
-    // on their own.
-    let typed_present = typed_facts.has_valid_ownership();
-    let typed_selected = typed_records.is_some();
-    let typed_authoritative = typed_selected || typed_present;
-    let mut body_records = if typed_authoritative {
-        typed_records.unwrap_or_default()
-    } else {
-        entity_facts.bodies
-    };
-    let class_root_bodies = entity_facts.class_root_bodies;
-    let cluster_bodies = entity_facts.cluster_bodies;
-    let final_body_selectors = entity_facts.final_body_selectors;
+    let body_records = typed_records.unwrap_or_default();
     let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
     let (face_colors, conflicting_face_colors) =
         unique_face_colors(entity_facts.face_colors, entity_facts.face_color_versions);
@@ -1223,7 +1102,6 @@ fn decode_graph(
         body_modifiers,
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
-            ambiguous_body_assignments: entity_facts.ambiguous_body_assignments,
             unresolved_face_colors: entity_facts.unresolved_face_colors + conflicting_face_colors,
             ..Stats::default()
         },
@@ -1659,7 +1537,7 @@ fn decode_graph(
     let loop_set = kept_loops;
 
     // Surfaces + faces.
-    let bind_bridges = |body_records: &[entity::BodyRecord],
+    let bind_bridges = |body_records: &[BodyRecord],
                         faces: &[WalkedFace]|
      -> (HashMap<u16, usize>, HashMap<u16, u16>) {
         let mut bridge_group = HashMap::new();
@@ -1687,63 +1565,7 @@ fn decode_graph(
         }
         (bridge_group, bridge_shell)
     };
-    let complete_cluster_binding = |records: &[entity::BodyRecord]| {
-        let (mut group, mut shell) = bind_bridges(records, &faces);
-        if let [sole] = records {
-            let shell_attr = sole
-                .regions
-                .first()
-                .and_then(|region| region.shells.first())
-                .map(|record| record.attr);
-            for face in &faces {
-                group.entry(face.bridge_attr).or_insert(0);
-                if let Some(shell_attr) = shell_attr {
-                    shell.entry(face.bridge_attr).or_insert(shell_attr);
-                }
-            }
-        }
-        (group, shell)
-    };
-    let (mut bridge_group, mut bridge_shell) = bind_bridges(&body_records, &faces);
-    let mut class_root_selected = false;
-    let mut cluster_selected = false;
-    if !typed_authoritative && !class_root_bodies.is_empty() {
-        let (root_group, root_shell) = complete_cluster_binding(&class_root_bodies);
-        if !root_group.is_empty() {
-            body_records = class_root_bodies;
-            bridge_group = root_group;
-            bridge_shell = root_shell;
-            class_root_selected = true;
-        }
-    }
-    // An unindexed cluster-key chain remains a fallback when the primary body
-    // layout owns no face. A sole chain owns every canonical face in the site.
-    if !typed_authoritative
-        && !class_root_selected
-        && (body_records.is_empty() || bridge_group.is_empty())
-        && !cluster_bodies.is_empty()
-    {
-        let (cluster_group, cluster_shell) = complete_cluster_binding(&cluster_bodies);
-        if !cluster_group.is_empty() {
-            body_records = cluster_bodies;
-            bridge_group = cluster_group;
-            bridge_shell = cluster_shell;
-            cluster_selected = true;
-        }
-    }
-    if !typed_authoritative
-        && !class_root_selected
-        && !cluster_selected
-        && !final_body_selectors.is_empty()
-    {
-        bind_final_selector_faces(
-            &body_records,
-            &final_body_selectors,
-            &faces,
-            &t.bridges,
-            &mut bridge_group,
-        );
-    }
+    let (bridge_group, bridge_shell) = bind_bridges(&body_records, &faces);
     if !body_records.is_empty() {
         out.stats.unclaimed_faces += faces
             .iter()
@@ -6071,7 +5893,7 @@ mod tests {
 
     #[test]
     fn geometry_free_stream_does_not_report_synthetic_body_grouping() {
-        let decoded = super::decode_body(&[], "", "empty");
+        let decoded = super::decode_body(&[], "empty");
 
         assert!(decoded.faces.is_empty());
         assert!(!decoded.stats.synthetic_body_grouping);

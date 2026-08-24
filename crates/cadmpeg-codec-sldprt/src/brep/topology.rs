@@ -384,20 +384,16 @@ pub struct Tables {
 impl Tables {
     /// Merge deltas without replacing partition topology membership.
     ///
-    /// The change roster does not identify a partition face that a deltas
-    /// bridge supersedes. Preserve a partition bridge when its identity is
-    /// present and add only missing deltas bridges reached by the final-state
-    /// body-relation selector.
-    pub fn merge_deltas(&mut self, mut deltas: Self, final_state_refs: Option<&HashSet<u16>>) {
+    /// Preserve partition topology for shared identities and add only deltas
+    /// bridges selected by the typed FACE ownership set.
+    pub fn merge_deltas(&mut self, mut deltas: Self, selected_bridge_attrs: Option<&HashSet<u16>>) {
         if self.bridges.is_empty() {
+            if let Some(selected_bridge_attrs) = selected_bridge_attrs {
+                retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
+            }
             self.bridges = deltas.bridges;
-        } else if let Some(final_state_refs) = final_state_refs {
-            deltas.bridges.retain(|attr, record| {
-                final_state_refs.contains(attr)
-                    || record
-                        .owner
-                        .is_some_and(|owner| final_state_refs.contains(&owner))
-            });
+        } else if let Some(selected_bridge_attrs) = selected_bridge_attrs {
+            retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
             merge_missing(&mut self.bridges, deltas.bridges);
         }
         merge_missing(&mut self.loops, deltas.loops);
@@ -406,6 +402,18 @@ impl Tables {
         merge_missing(&mut self.vertex_uses, deltas.vertex_uses);
         self.points.extend(deltas.points.drain());
     }
+}
+
+fn retain_selected_bridges(
+    bridges: &mut HashMap<u16, Record>,
+    selected_bridge_attrs: &HashSet<u16>,
+) {
+    bridges.retain(|attr, record| {
+        selected_bridge_attrs.contains(attr)
+            || record
+                .owner
+                .is_some_and(|owner| selected_bridge_attrs.contains(&owner))
+    });
 }
 
 fn merge_missing(target: &mut HashMap<u16, Record>, source: HashMap<u16, Record>) {
@@ -633,25 +641,55 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
 /// Later full records replace earlier records with the same `attr`, matching
 /// partition-base plus deltas-override merge order.
 pub fn scan(body: &[u8]) -> Tables {
-    scan_with_point_framing(body, false, None)
+    scan_with_point_framing(body, false, None, None)
 }
 
 /// Scan a partition stream with the typed curve attributes available to
 /// resolve an otherwise ambiguous edge-use reference orientation.
 pub(crate) fn scan_with_curve_attrs(body: &[u8], curve_attrs: &HashSet<u16>) -> Tables {
-    scan_with_point_framing(body, false, Some(curve_attrs))
+    scan_with_point_framing(body, false, Some(curve_attrs), None)
+}
+
+/// Scan a partition stream while excluding offsets owned by typed FACE nodes.
+///
+/// A typed FACE and a compact bridge share the `00 0e` prefix and enough of
+/// their fixed fields to pass the compact bridge framing checks.  The typed
+/// parser is the owner of that overlapping record family, so the graph layer
+/// supplies its admitted FACE offsets before this scanner builds compact
+/// topology tables.
+pub(crate) fn scan_with_curve_attrs_excluding(
+    body: &[u8],
+    curve_attrs: &HashSet<u16>,
+    excluded_bridge_offsets: &HashSet<usize>,
+) -> Tables {
+    scan_with_point_framing(
+        body,
+        false,
+        Some(curve_attrs),
+        Some(excluded_bridge_offsets),
+    )
 }
 
 /// Scan a deltas stream with the typed curve attributes available to resolve
 /// an otherwise ambiguous edge-use reference orientation.
 pub(crate) fn scan_deltas_with_curve_attrs(body: &[u8], curve_attrs: &HashSet<u16>) -> Tables {
-    scan_with_point_framing(body, true, Some(curve_attrs))
+    scan_with_point_framing(body, true, Some(curve_attrs), None)
+}
+
+/// Scan a deltas stream while excluding admitted typed FACE offsets.
+pub(crate) fn scan_deltas_with_curve_attrs_excluding(
+    body: &[u8],
+    curve_attrs: &HashSet<u16>,
+    excluded_bridge_offsets: &HashSet<usize>,
+) -> Tables {
+    scan_with_point_framing(body, true, Some(curve_attrs), Some(excluded_bridge_offsets))
 }
 
 fn scan_with_point_framing(
     body: &[u8],
     prefixed_points: bool,
     curve_attrs: Option<&HashSet<u16>>,
+    excluded_bridge_offsets: Option<&HashSet<usize>>,
 ) -> Tables {
     let mut t = Tables::default();
     let mut loop_candidates = Vec::new();
@@ -665,8 +703,11 @@ fn scan_with_point_framing(
         }
         match body[i + 1] {
             0x0e => {
-                if let Some(record) = parse_bridge(body, i) {
-                    t.bridges.insert(record.attr, record);
+                let excluded = excluded_bridge_offsets.is_some_and(|offsets| offsets.contains(&i));
+                if !excluded {
+                    if let Some(record) = parse_bridge(body, i) {
+                        t.bridges.insert(record.attr, record);
+                    }
                 }
             }
             0x0f => {

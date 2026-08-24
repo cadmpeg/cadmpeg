@@ -771,17 +771,6 @@ pub(crate) fn entity51(flags: u32, attr: u16, disc: u16, slots: &[u16]) -> Vec<u
     b
 }
 
-pub(crate) fn class_root_index(attrs: &[u16]) -> Vec<u8> {
-    let mut bytes = b"CI\x10index_map_offset\0\0\0\x01\x01dCCZ\0\0\0\x14".to_vec();
-    be16(&mut bytes, 0x0042);
-    be32(&mut bytes, u32::try_from(attrs.len()).expect("root count"));
-    bytes.extend_from_slice(&[0, 0, 0, 0, 0, 1]);
-    for attr in attrs {
-        be16(&mut bytes, *attr);
-    }
-    bytes
-}
-
 pub(crate) fn entity53_color(attr: u16, rgb: [f64; 3]) -> Vec<u8> {
     let mut b = vec![0x00, 0x53];
     be32(&mut b, 3);
@@ -971,6 +960,7 @@ pub(crate) fn tripled_triangle_body() -> Vec<u8> {
     b.extend(tripled_world_point(60, [0.0, 0.0, 0.0]));
     b.extend(tripled_world_point(61, [1.0, 0.0, 0.0]));
     b.extend(tripled_world_point(62, [0.0, 1.0, 0.0]));
+    typed_single_face_ownership(&mut b, 900, 901, 902, 10, 100, 1);
     b
 }
 
@@ -990,6 +980,98 @@ pub(crate) fn suffix_prefixed_edge_triangle_body() -> Vec<u8> {
     ));
     b.extend(suffix_prefixed_edge_use(40, 0x0103));
     b
+}
+
+fn typed_ref(bytes: &mut Vec<u8>, value: u32) {
+    assert!(value <= 0x7ffe, "synthetic typed reference must fit u16");
+    be16(bytes, value as u16);
+}
+
+fn typed_prefix(bytes: &mut Vec<u8>, tag: [u8; 2], attr: u16, node_id: u32) {
+    bytes.extend_from_slice(&tag);
+    bytes.push(0xff);
+    be16(bytes, attr);
+    be32(bytes, node_id);
+}
+
+/// Append one validated XT ownership graph for a compact face bridge.
+pub(crate) fn typed_single_face_ownership(
+    bytes: &mut Vec<u8>,
+    body_attr: u16,
+    shell_attr: u16,
+    region_attr: u16,
+    face_attr: u16,
+    surface_attr: u16,
+    body_type: u8,
+) {
+    typed_prefix(
+        bytes,
+        [0x00, 0x0c],
+        body_attr,
+        100_000 + u32::from(body_attr),
+    );
+    for value in [5, 6, 1, 1, 1, 1] {
+        typed_ref(bytes, value);
+    }
+    bef64(bytes, 1000.0);
+    bef64(bytes, 1.0e-8);
+    for value in [1, 1, 1] {
+        typed_ref(bytes, value);
+    }
+    bytes.push(1);
+    typed_ref(bytes, 2);
+    bytes.push(body_type);
+    bytes.push(1);
+    for value in [u32::from(shell_attr), 1, 1, 1, 1, 1, 1] {
+        typed_ref(bytes, value);
+    }
+    typed_ref(bytes, u32::from(region_attr));
+    typed_ref(bytes, 1);
+    typed_ref(bytes, 1);
+    typed_ref(bytes, 1);
+
+    typed_prefix(
+        bytes,
+        [0x00, 0x0d],
+        shell_attr,
+        200_000 + u32::from(shell_attr),
+    );
+    for value in [
+        1,
+        u32::from(body_attr),
+        1,
+        1,
+        1,
+        1,
+        u32::from(region_attr),
+        1,
+    ] {
+        typed_ref(bytes, value);
+    }
+
+    typed_prefix(
+        bytes,
+        [0x00, 0x13],
+        region_attr,
+        300_000 + u32::from(region_attr),
+    );
+    for value in [1, u32::from(body_attr), 1, 1, u32::from(shell_attr)] {
+        typed_ref(bytes, value);
+    }
+    bytes.push(b'S');
+
+    typed_prefix(
+        bytes,
+        [0x00, 0x0e],
+        face_attr,
+        400_000 + u32::from(face_attr),
+    );
+    typed_ref(bytes, 1);
+    bytes.extend_from_slice(&MAGIC);
+    for value in [1, 1, 0, u32::from(shell_attr), u32::from(surface_attr)] {
+        typed_ref(bytes, value);
+    }
+    bytes.push(0x2b);
 }
 
 /// One triangular planar face: a plane carrier, a bridge, a loop, three coedges
@@ -1016,6 +1098,7 @@ pub(crate) fn triangle_body() -> Vec<u8> {
     b.extend(world_point(60, [0.0, 0.0, 0.0]));
     b.extend(world_point(61, [1.0, 0.0, 0.0]));
     b.extend(world_point(62, [0.0, 1.0, 0.0]));
+    typed_single_face_ownership(&mut b, 900, 901, 902, 10, 100, 1);
     b
 }
 
@@ -1042,10 +1125,15 @@ pub(crate) fn triangle_body_with_overlapping_point() -> Vec<u8> {
     b.extend(vertex_use(52, 62));
     b.extend(world_point(61, [1.0, 0.0, 0.0]));
     b.extend(world_point(62, [0.0, 1.0, 0.0]));
+    typed_single_face_ownership(&mut b, 900, 901, 902, 10, 100, 1);
     b
 }
 
 pub(crate) fn owned_triangle(base: u16, owner: u16, x: f64) -> Vec<u8> {
+    owned_triangle_with_kind(base, owner, x, 1)
+}
+
+pub(crate) fn owned_triangle_with_kind(base: u16, owner: u16, x: f64, body_type: u8) -> Vec<u8> {
     let mut b = Vec::new();
     b.extend(plane_carrier(
         base + 100,
@@ -1091,6 +1179,15 @@ pub(crate) fn owned_triangle(base: u16, owner: u16, x: f64) -> Vec<u8> {
     b.extend(world_point(base + 60, [x, 0.0, 0.0]));
     b.extend(world_point(base + 61, [x + 1.0, 0.0, 0.0]));
     b.extend(world_point(base + 62, [x, 1.0, 0.0]));
+    typed_single_face_ownership(
+        &mut b,
+        owner,
+        base + 70,
+        base + 80,
+        base + 10,
+        base + 100,
+        body_type,
+    );
     b
 }
 
@@ -1110,6 +1207,7 @@ pub(crate) fn untyped_triangle(x: f64) -> Vec<u8> {
     body.extend(world_point(60, [x, 0.0, 0.0]));
     body.extend(world_point(61, [x + 1.0, 0.0, 0.0]));
     body.extend(world_point(62, [x, 1.0, 0.0]));
+    typed_single_face_ownership(&mut body, 900, 901, 902, 10, 999, 1);
     body
 }
 
@@ -1128,6 +1226,7 @@ pub(crate) fn circular_sketch_body() -> Vec<u8> {
     body.extend(edge_use(40, 70));
     body.extend(vertex_use(50, 60));
     body.extend(world_point(60, [1.0, 0.0, 0.0]));
+    typed_single_face_ownership(&mut body, 900, 901, 902, 10, 100, 1);
     body
 }
 
@@ -1154,6 +1253,7 @@ pub(crate) fn arc_sketch_body() -> Vec<u8> {
     body.extend(world_point(60, [1.0, 0.0, 0.0]));
     body.extend(world_point(61, [0.0, 1.0, 0.0]));
     body.extend(world_point(62, [0.0, 0.0, 0.0]));
+    typed_single_face_ownership(&mut body, 900, 901, 902, 10, 100, 1);
     body
 }
 
