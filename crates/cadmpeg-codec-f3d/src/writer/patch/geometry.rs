@@ -224,7 +224,7 @@ fn patch_asm_geometry(
             color_records.insert(attribute.index, (*color, decoded.carrier))
         {
             if existing != *color || existing_carrier != decoded.carrier {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D entities share conflicting color attribute {}",
                     attribute.index
                 )));
@@ -238,7 +238,7 @@ fn patch_asm_geometry(
                     |token| matches!(token, sab::Token::Str(value) if value == "Timestamp_attrib_def"),
                 )
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D timestamp record {} has the wrong attribute family",
                     record.index
                 )));
@@ -252,7 +252,7 @@ fn patch_asm_geometry(
                 )
                 .expect("timestamp family was checked");
             if !matches!(record.chunk(family + 1), Some(sab::Token::Long(1))) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D timestamp record {} lacks marker 1 after its family",
                     record.index
                 )));
@@ -263,7 +263,7 @@ fn patch_asm_geometry(
         }
         if let Some((sense, continuity)) = edge_continuities.get(&record.index) {
             if !matches!(record.head.as_str(), "edge" | "tedge") {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D edge-continuity record {} is not an edge",
                     record.index
                 )));
@@ -273,7 +273,7 @@ fn patch_asm_geometry(
         }
         if let Some((owning_edge, endpoint_index)) = vertex_ownerships.get(&record.index) {
             if !matches!(record.head.as_str(), "vertex" | "tvertex") {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D vertex-ownership record {} is not a vertex",
                     record.index
                 )));
@@ -287,7 +287,7 @@ fn patch_asm_geometry(
         }
         if let Some(containment) = face_sidedness.get(&record.index) {
             if record.head != "face" || !matches!(record.chunk(9), Some(sab::Token::True)) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D face-sidedness record {} is not double-sided",
                     record.index
                 )));
@@ -300,7 +300,7 @@ fn patch_asm_geometry(
         }
         if let Some((tolerance, leading)) = tolerant_vertices.get(&record.index) {
             if record.head != "tvertex" {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D tolerant-vertex record {} is not a tvertex",
                     record.index
                 )));
@@ -317,7 +317,7 @@ fn patch_asm_geometry(
                 || !matches!(record.chunk(12), Some(sab::Token::Long(_)))
                 || !matches!(record.chunk(13), Some(sab::Token::Long(_)))
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D tolerant-edge record {} has the wrong layout",
                     record.index
                 )));
@@ -372,7 +372,7 @@ fn patch_asm_geometry(
         let tolerant_curve_id = format!("f3d:brep:tolerant-coedge-curve#{}", record.index);
         if let Some(edit) = nurbs_curves.get(&tolerant_curve_id) {
             if record.head != "tcoedge" {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D tolerant use-curve carrier {tolerant_curve_id} is not a tcoedge record"
                 )));
             }
@@ -429,7 +429,7 @@ fn patch_asm_geometry(
         }
         if let Some(edit) = procedural_surface_edits.get(&procedural_id) {
             if record.head != "spline" {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D extrusion carrier {procedural_id} is not a spline record"
                 )));
             }
@@ -488,7 +488,7 @@ fn patch_asm_geometry(
                     "straight" => [0, 1],
                     "straight-curve" => [3, 4],
                     _ => {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "straight record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -518,7 +518,7 @@ fn patch_asm_geometry(
                     "degenerate_curve" => 0,
                     "degenerate_curve-curve" => 3,
                     _ => {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "degenerate-curve record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -543,7 +543,7 @@ fn patch_asm_geometry(
                     "ellipse" => [0, 1, 2, 3],
                     "ellipse-curve" => [3, 4, 5, 6],
                     _ => {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "ellipse record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -590,7 +590,7 @@ fn patch_asm_geometry(
                     "plane" => [0, 1, 2],
                     "plane-surface" => [3, 4, 5],
                     _ => {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "plane record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -622,7 +622,7 @@ fn patch_asm_geometry(
                     "sphere" => [0, 1, 2, 3],
                     "sphere-surface" => [3, 4, 5, 6],
                     _ => {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "sphere record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -656,7 +656,7 @@ fn patch_asm_geometry(
                     "torus" => [0, 1, 2, 3, 4],
                     "torus-surface" => [3, 4, 5, 6, 7],
                     _ => {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "torus record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -696,7 +696,7 @@ fn patch_asm_geometry(
                     "cone" => [0, 1, 2, 3, 4, 5, 6],
                     "cone-surface" => [3, 4, 5, 6, 9, 10, 11],
                     _ => {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "cone record {} has unsupported carrier name {}",
                             record.index, record.name
                         )))
@@ -761,7 +761,7 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
         .iter()
         .any(|channel| !channel.is_finite() || !(0.0..=1.0).contains(channel))
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{} record {} has an invalid edited color",
             record.head, record.index
         )));

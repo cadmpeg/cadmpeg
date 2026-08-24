@@ -127,17 +127,19 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file("AssetData/InstanceProperties.bin", options)
         .map_err(|error| {
-            CodecError::Malformed(format!("cannot create Protein instance: {error}"))
+            CodecError::malformed(format_args!("cannot create Protein instance: {error}"))
         })?;
     zip.write_all(&instance)?;
     zip.start_file("AssetData/DefinitionIteratorProperties.bin", options)
         .map_err(|error| {
-            CodecError::Malformed(format!("cannot create Protein catalog: {error}"))
+            CodecError::malformed(format_args!("cannot create Protein catalog: {error}"))
         })?;
     zip.write_all(&catalog)?;
     Ok(zip
         .finish()
-        .map_err(|error| CodecError::Malformed(format!("cannot finish Protein asset: {error}")))?
+        .map_err(|error| {
+            CodecError::malformed(format_args!("cannot finish Protein asset: {error}"))
+        })?
         .into_inner())
 }
 
@@ -205,14 +207,14 @@ pub(crate) fn patch_protein_appearances(
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
 ) -> Result<(Vec<u8>, std::collections::BTreeSet<String>), CodecError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
-        CodecError::Malformed(format!("cannot open nested Protein ZIP: {error}"))
+        CodecError::malformed(format_args!("cannot open nested Protein ZIP: {error}"))
     })?;
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let mut patched = std::collections::BTreeSet::new();
     let mut total_inflated = 0_u64;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| {
-            CodecError::Malformed(format!("cannot read nested Protein entry: {error}"))
+            CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
         })?;
         let name = entry.name().to_owned();
         let options = crate::zip_write::file_options(entry.compression());
@@ -221,7 +223,7 @@ pub(crate) fn patch_protein_appearances(
             CodecError::Malformed("Protein ZIP total inflated size overflows u64".into())
         })?;
         if total_inflated > crate::container::MAX_ARCHIVE_BYTES {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Protein ZIP entries declare {total_inflated} inflated bytes; total limit is {}",
                 crate::container::MAX_ARCHIVE_BYTES
             )));
@@ -231,13 +233,13 @@ pub(crate) fn patch_protein_appearances(
             patch_instance_colors(protein, &mut bytes, edits, &mut patched)?;
         }
         zip.start_file(name, options).map_err(|error| {
-            CodecError::Malformed(format!("cannot write nested Protein entry: {error}"))
+            CodecError::malformed(format_args!("cannot write nested Protein entry: {error}"))
         })?;
         zip.write_all(&bytes)?;
     }
     let bytes = zip
         .finish()
-        .map_err(|error| CodecError::Malformed(format!("cannot finish Protein ZIP: {error}")))?
+        .map_err(|error| CodecError::malformed(format_args!("cannot finish Protein ZIP: {error}")))?
         .into_inner();
     Ok((bytes, patched))
 }
@@ -280,7 +282,7 @@ fn patch_instance_colors(
                             && decoded.guid == guid
                     })
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "Protein appearance {guid} has no decoded schema record"
                         ))
                     })?,
@@ -292,7 +294,7 @@ fn patch_instance_colors(
             let relative = if let Some(decoded_record) = decoded_record {
                 let property_id =
                     appearance_base_color_property_id(decoded_record).ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "Protein appearance {guid} has no schema-selected color carrier"
                         ))
                     })?;
@@ -303,7 +305,7 @@ fn patch_instance_colors(
                         matches!(&property.value, cadmpeg_protein::PropertyValue::Color(_))
                     })
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "Protein appearance {guid} has no {property_id} color carrier"
                         ))
                     })?;
@@ -359,7 +361,7 @@ fn patch_instance_colors(
                     })
                     .map(|property| property.value_offset)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "Protein appearance {guid} has no {property_id} scalar carrier"
                         ))
                     })?
@@ -534,7 +536,7 @@ pub fn decode_with_body_bindings<'a>(
         .windows(2)
         .find(|pair| pair[0].id == pair[1].id && pair[0] != pair[1])
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D appearance asset {} has conflicting payloads",
             pair[0].id
         )));
@@ -1455,7 +1457,7 @@ fn unique_appearance<'a>(
         return Ok(None);
     };
     if matches.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D {identity} matches multiple appearance assets"
         )));
     }
@@ -1474,7 +1476,7 @@ fn resolved_body_for_map_pair(
     entity_suffix_offset: u64,
 ) -> Result<Option<BodyId>, CodecError> {
     let owner_stream = crate::ids::native_stream(owner_id).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "F3D material owner has no native stream: {owner_id}"
         ))
     })?;
@@ -1489,7 +1491,7 @@ fn resolved_body_for_map_pair(
         return Ok(None);
     };
     if matches.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D material owner {owner_id} matches multiple exact body-map pairs"
         )));
     }
@@ -1653,7 +1655,7 @@ fn unique_body_map_pair<'a>(
         return Ok(None);
     };
     if matches.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D {owner_kind} entity {entity_suffix} matches multiple body-map pairs"
         )));
     }

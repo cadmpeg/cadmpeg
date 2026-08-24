@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "3acbbc9c7955446019fa3f405c763dda1ee417e6"
+measured_at = "49e04cd5ee0f0669ec576421c7e2825b7ace8b79"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -28,8 +28,8 @@ production_line_debt = 0
 
 [ceilings]
 from_endian_bytes = 115
-codec_error_malformed_format = 1415
-loss_note_struct_literals = 2
+codec_error_malformed_format = 0
+loss_note_struct_literals = 0
 bare_tolerance_literals = 708
 nonliteral_vec_repeat = 153
 crate_root_tests_rs = 0
@@ -39,7 +39,6 @@ production_line_debt = 0
 
 [reasons]
 from_endian_bytes = "four u32::from_le_bytes calls compare already-copied layer color arrays in deterministic source order; these are not bounded decode-window reads and remain intentional exceptions"
-codec_error_malformed_format = "The merged FreeCAD, IGES, Rhino, and STEP admission paths retain explicit malformed-input diagnostics: DP-10 and SA-03 require exact carrier and annotation checks, while IGES Type 186 and Rhino V1/RhinoIO checks preserve field-specific failures rather than collapsing distinct producer fields into one generic error."
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
 nonliteral_vec_repeat = "The current IGES writer retains one parsed-count vector repeat while the allocation convergence work remains open."
 test_line_debt = "The current tree retains CATIA native test support at 3,777 lines, IGES parameter tests at 16,915 lines, IGES structure tests at 2,893 lines, IGES native counted-list tests at 2,182 lines, IGES drawing test support at 2,066 lines, IGES solid test support at 2,041 lines, and IGES writer encoding tests at 2,036 lines while test ownership migration remains incomplete; this change adds the V4 Type 402 Form 16 explicit-empty-pointer-group witness to the owning parameter tests."

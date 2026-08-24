@@ -137,7 +137,7 @@ fn validate_name(name: &str) -> Result<(), CodecError> {
             )
         })
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "unsafe ZIP entry path {name:?}"
         )));
     }
@@ -166,11 +166,11 @@ pub(crate) fn canonical_attribute(
     alias: &str,
 ) -> Result<Option<String>, CodecError> {
     match (root.attribute(canonical), root.attribute(alias)) {
-        (Some(_), Some(_)) => Err(CodecError::Malformed(format!(
+        (Some(_), Some(_)) => Err(CodecError::malformed(format_args!(
             "Document element has both {canonical} and {alias} attributes"
         ))),
         (Some(value), None) => Ok(Some(value.to_owned())),
-        (None, Some(_)) => Err(CodecError::Malformed(format!(
+        (None, Some(_)) => Err(CodecError::malformed(format_args!(
             "Document element uses unsupported {alias}; expected {canonical}"
         ))),
         (None, None) => Ok(None),
@@ -188,7 +188,7 @@ fn unique_section<'a, 'input>(
     match sections.as_slice() {
         [section] => Ok(Some(*section)),
         [] => Ok(None),
-        _ => Err(CodecError::Malformed(format!(
+        _ => Err(CodecError::malformed(format_args!(
             "Document.xml has duplicate {tag} sections"
         ))),
     }
@@ -198,7 +198,7 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::Malformed(format!("invalid Document.xml: {error}")))?;
+        .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
     let root = xml.root_element();
     if root.tag_name().name() != "Document" {
         return Err(CodecError::WrongFormat(format!(
@@ -355,7 +355,7 @@ pub(crate) fn logical_ledger(
             let mut cursor = 0_u64;
             for (start, end, classification, owner) in ranges {
                 if start < cursor || end < start || end > entry.byte_len {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "overlapping or invalid {} record spans",
                         entry.name
                     )));

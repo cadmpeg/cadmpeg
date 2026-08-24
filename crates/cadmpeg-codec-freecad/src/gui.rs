@@ -64,7 +64,7 @@ pub(crate) fn transfer(
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::Malformed(format!("invalid GuiDocument.xml: {error}")))?;
+        .map_err(|error| CodecError::malformed(format_args!("invalid GuiDocument.xml: {error}")))?;
     let root = xml.root_element();
     let schema_version =
         crate::container::canonical_attribute(root, "SchemaVersion", "schemaVersion")?
@@ -147,7 +147,7 @@ pub(crate) fn transfer(
             .and_then(|value| value.parse::<usize>().ok())
             .ok_or_else(|| CodecError::Malformed("invalid ViewProviderData Count".into()))?;
         if declared != providers.len() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "ViewProviderData Count={declared} but {} records were found",
                 providers.len()
             )));
@@ -183,7 +183,7 @@ pub(crate) fn transfer(
             &mut native_properties,
         )?;
         let properties_node = unique_child(provider, "Properties")?.ok_or_else(|| {
-            CodecError::Malformed(format!("ViewProvider {name} has no Properties"))
+            CodecError::malformed(format_args!("ViewProvider {name} has no Properties"))
         })?;
         let property_nodes = properties_node
             .children()
@@ -478,7 +478,7 @@ fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) -> Result<(), Co
         if line_width.is_some_and(|value| value < 0.0)
             || point_size.is_some_and(|value| value < 0.0)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "ViewProvider {} has a negative line or point size",
                 provider.name
             )));
@@ -617,16 +617,18 @@ fn camera_field<const N: usize>(
     let values = tokens
         .get(start..start.saturating_add(N))
         .filter(|values| values.len() == N && start.saturating_add(N) <= end)
-        .ok_or_else(|| CodecError::Malformed(format!("GUI camera {field} field is incomplete")))?
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("GUI camera {field} field is incomplete"))
+        })?
         .iter()
         .map(|value| {
             value.parse::<f64>().map_err(|_| {
-                CodecError::Malformed(format!("GUI camera {field} field is not numeric"))
+                CodecError::malformed(format_args!("GUI camera {field} field is not numeric"))
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
     values.try_into().map_err(|_| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "GUI camera {field} field has the wrong cardinality"
         ))
     })
@@ -820,7 +822,7 @@ fn append_native_provider(
         raw_xml: text[provider.range()].to_owned(),
     });
     let Some(container) = unique_child(provider, "Properties")? else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "ViewProvider {name} has no Properties"
         )));
     };
@@ -832,10 +834,12 @@ fn append_native_provider(
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::Malformed(format!("ViewProvider {name} has invalid property count"))
+            CodecError::malformed(format_args!(
+                "ViewProvider {name} has invalid property count"
+            ))
         })?;
     if declared != property_nodes.len() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "ViewProvider {name} declares {declared} properties but contains {}",
             property_nodes.len()
         )));
@@ -843,7 +847,7 @@ fn append_native_provider(
     let mut property_names = HashSet::new();
     for (property_order, property) in property_nodes.into_iter().enumerate() {
         let property_name = property.attribute("name").ok_or_else(|| {
-            CodecError::Malformed(format!("ViewProvider {name} property has no name"))
+            CodecError::malformed(format_args!("ViewProvider {name} property has no name"))
         })?;
         if !property_names.insert(property_name) {
             return Err(CodecError::Malformed(
@@ -851,7 +855,9 @@ fn append_native_provider(
             ));
         }
         let type_name = property.attribute("type").ok_or_else(|| {
-            CodecError::Malformed(format!("ViewProvider {name}.{property_name} has no type"))
+            CodecError::malformed(format_args!(
+                "ViewProvider {name}.{property_name} has no type"
+            ))
         })?;
         validate_gui_property(property, property_name, type_name)?;
         let values = property
@@ -960,18 +966,18 @@ fn validate_gui_property(
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     let root = roots.first().copied().ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "GUI property {property_name} requires one {expected_tag} value"
         ))
     })?;
     if !root.has_tag_name(expected_tag) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires a leading {expected_tag} value"
         )));
     }
     let scalar = |attribute: &str| {
         root.attribute(attribute).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "GUI property {property_name} {expected_tag} has no {attribute} attribute"
             ))
         })
@@ -979,14 +985,14 @@ fn validate_gui_property(
     match expected_tag {
         "Bool" => {
             if parse_bool(scalar("value")?).is_none() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "GUI property {property_name} has an invalid Boolean"
                 )));
             }
         }
         "Integer" => {
             scalar("value")?.parse::<i64>().map_err(|_| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} has an invalid integer"
                 ))
             })?;
@@ -1000,10 +1006,12 @@ fn validate_gui_property(
         }
         "Float" => {
             let value = scalar("value")?.parse::<f64>().map_err(|_| {
-                CodecError::Malformed(format!("GUI property {property_name} has an invalid float"))
+                CodecError::malformed(format_args!(
+                    "GUI property {property_name} has an invalid float"
+                ))
             })?;
             if !value.is_finite() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "GUI property {property_name} has a non-finite float"
                 )));
             }
@@ -1024,7 +1032,7 @@ fn validate_gui_property(
             }
             if type_name == "App::PropertyPersistentObject" {
                 if roots.len() != 2 || !roots[1].has_tag_name("PersistentObject") {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "GUI property {property_name} has an invalid persistent-object envelope"
                     )));
                 }
@@ -1036,7 +1044,7 @@ fn validate_gui_property(
                     .map(str::parse::<u32>)
                     .transpose()
                     .map_err(|_| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "GUI property {property_name} has an invalid material-list version"
                         ))
                     })?
@@ -1050,18 +1058,20 @@ fn validate_gui_property(
         }
         "PropertyColor" => {
             scalar("value")?.parse::<u32>().map_err(|_| {
-                CodecError::Malformed(format!("GUI property {property_name} has an invalid color"))
+                CodecError::malformed(format_args!(
+                    "GUI property {property_name} has an invalid color"
+                ))
             })?;
         }
         "PropertyVector" => {
             for attribute in ["valueX", "valueY", "valueZ"] {
                 let value = scalar(attribute)?.parse::<f64>().map_err(|_| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "GUI property {property_name} has an invalid vector"
                     ))
                 })?;
                 if !value.is_finite() {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "GUI property {property_name} has a non-finite vector"
                     )));
                 }
@@ -1073,7 +1083,7 @@ fn validate_gui_property(
                 .bytes()
                 .all(|byte| matches!(byte, b'0' | b'1'))
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "GUI property {property_name} has an invalid Boolean list"
                 )));
             }
@@ -1090,12 +1100,12 @@ fn validate_gui_property(
                 for column in 1..=4 {
                     let attribute = format!("a{row}{column}");
                     let value = scalar(&attribute)?.parse::<f64>().map_err(|_| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "GUI property {property_name} has an invalid matrix value"
                         ))
                     })?;
                     if !value.is_finite() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "GUI property {property_name} has a non-finite matrix value"
                         )));
                     }
@@ -1106,12 +1116,12 @@ fn validate_gui_property(
         "PropertyRotation" => {
             for attribute in ["A", "Ox", "Oy", "Oz"] {
                 let value = scalar(attribute)?.parse::<f64>().map_err(|_| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "GUI property {property_name} has an invalid rotation"
                     ))
                 })?;
                 if !value.is_finite() {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "GUI property {property_name} has a non-finite rotation"
                     )));
                 }
@@ -1142,7 +1152,7 @@ fn validate_gui_property(
         _ => unreachable!("closed GUI value-tag registry"),
     }
     if roots.len() != 1 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires exactly one {expected_tag} value"
         )));
     }
@@ -1163,7 +1173,7 @@ fn validate_gui_string_list(
             .iter()
             .any(|value| !value.has_tag_name("String") || value.attribute("value").is_none())
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} StringList count or value is invalid"
         )));
     }
@@ -1189,7 +1199,7 @@ fn validate_gui_integer_list(
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     if values.len() != count || values.iter().any(|value| !value.has_tag_name("I")) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} {tag} count or value is invalid"
         )));
     }
@@ -1201,18 +1211,18 @@ fn validate_gui_integer_list(
         let number = value
             .attribute("v")
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} {tag} value has no v attribute"
                 ))
             })?
             .parse::<i64>()
             .map_err(|_| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} {tag} value is not an integer"
                 ))
             })?;
         if require_sorted_unique && previous.is_some_and(|previous| number <= previous) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "GUI property {property_name} IntegerSet is not sorted and unique"
             )));
         }
@@ -1228,7 +1238,7 @@ fn validate_gui_map(root: roxmltree::Node<'_, '_>, property_name: &str) -> Resul
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     if values.len() != count || values.iter().any(|value| !value.has_tag_name("Item")) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} Map count or item tag is invalid"
         )));
     }
@@ -1238,15 +1248,17 @@ fn validate_gui_map(root: roxmltree::Node<'_, '_>, property_name: &str) -> Resul
     let mut previous_key = None;
     for value in values {
         let key = value.attribute("key").ok_or_else(|| {
-            CodecError::Malformed(format!("GUI property {property_name} Map item has no key"))
+            CodecError::malformed(format_args!(
+                "GUI property {property_name} Map item has no key"
+            ))
         })?;
         if value.attribute("value").is_none() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "GUI property {property_name} Map item has no value"
             )));
         }
         if previous_key.is_some_and(|previous| key <= previous) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "GUI property {property_name} Map keys are not sorted and unique"
             )));
         }
@@ -1262,11 +1274,13 @@ fn gui_list_count(
 ) -> Result<usize, CodecError> {
     root.attribute("count")
         .ok_or_else(|| {
-            CodecError::Malformed(format!("GUI property {property_name} {tag} has no count"))
+            CodecError::malformed(format_args!(
+                "GUI property {property_name} {tag} has no count"
+            ))
         })?
         .parse::<usize>()
         .map_err(|_| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "GUI property {property_name} {tag} has an invalid count"
             ))
         })
@@ -1323,18 +1337,18 @@ fn validate_gui_placement(
         let value = root
             .attribute(attribute)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} placement has no {attribute}"
                 ))
             })?
             .parse::<f64>()
             .map_err(|_| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} placement has an invalid {attribute}"
                 ))
             })?;
         if !value.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "GUI property {property_name} placement has a non-finite {attribute}"
             )));
         }
@@ -1351,18 +1365,18 @@ fn validate_gui_placement(
         let value = root
             .attribute(attribute)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} placement has no {attribute}"
                 ))
             })?
             .parse::<f64>()
             .map_err(|_| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} placement has an invalid {attribute}"
                 ))
             })?;
         if !value.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "GUI property {property_name} placement has a non-finite {attribute}"
             )));
         }
@@ -1379,7 +1393,7 @@ fn validate_gui_enumeration(
         return Ok(());
     }
     if !custom || roots.len() != 2 || !roots[1].has_tag_name("CustomEnumList") {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} has an invalid custom enumeration envelope"
         )));
     }
@@ -1391,7 +1405,7 @@ fn validate_gui_enumeration(
         .attribute("count")
         .and_then(|value| value.parse::<usize>().ok())
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "GUI property {property_name} has an invalid custom enumeration count"
             ))
         })?;
@@ -1400,7 +1414,7 @@ fn validate_gui_enumeration(
             .iter()
             .any(|value| !value.has_tag_name("Enum") || value.attribute("value").is_none())
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} custom enumeration count or value is invalid"
         )));
     }
@@ -2626,25 +2640,25 @@ fn validate_visual_layer_list(
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     let [root] = roots.as_slice() else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires exactly one VisualLayerList value"
         )));
     };
     if !root.has_tag_name("VisualLayerList") {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires a leading VisualLayerList value"
         )));
     }
     let count = root
         .attribute("count")
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "GUI property {property_name} VisualLayerList has no count"
             ))
         })?
         .parse::<usize>()
         .map_err(|_| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "GUI property {property_name} VisualLayerList has an invalid count"
             ))
         })?;
@@ -2657,44 +2671,44 @@ fn validate_visual_layer_list(
             .iter()
             .any(|layer| !layer.has_tag_name("VisualLayer"))
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} VisualLayerList count or record tag is invalid"
         )));
     }
     for layer in layers {
         if !matches!(layer.attribute("visible"), Some("true" | "false")) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "GUI property {property_name} VisualLayer has an invalid visible value"
             )));
         }
         layer
             .attribute("linePattern")
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} VisualLayer has no linePattern"
                 ))
             })?
             .parse::<u32>()
             .map_err(|_| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} VisualLayer has an invalid linePattern"
                 ))
             })?;
         let line_width = layer
             .attribute("lineWidth")
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} VisualLayer has no lineWidth"
                 ))
             })?
             .parse::<f64>()
             .map_err(|_| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} VisualLayer has an invalid lineWidth"
                 ))
             })?;
         if !line_width.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "GUI property {property_name} VisualLayer has a non-finite lineWidth"
             )));
         }
@@ -2715,13 +2729,13 @@ fn validate_gui_material(
         value
             .attribute(attribute)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} material has no {attribute}"
                 ))
             })?
             .parse::<u32>()
             .map_err(|_| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} material has an invalid {attribute}"
                 ))
             })?;
@@ -2730,18 +2744,18 @@ fn validate_gui_material(
         let scalar = value
             .attribute(attribute)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} material has no {attribute}"
                 ))
             })?
             .parse::<f64>()
             .map_err(|_| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "GUI property {property_name} material has an invalid {attribute}"
                 ))
             })?;
         if !scalar.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "GUI property {property_name} material has a non-finite {attribute}"
             )));
         }
@@ -2758,12 +2772,12 @@ fn validate_gui_expression_engine(
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     let [root] = roots.as_slice() else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one ExpressionEngine value"
         )));
     };
     if !root.has_tag_name("ExpressionEngine") {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires a leading ExpressionEngine value"
         )));
     }
@@ -2777,7 +2791,7 @@ fn validate_gui_expression_engine(
             expression.attribute("path").is_none() || expression.attribute("expression").is_none()
         })
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} ExpressionEngine count or expression is invalid"
         )));
     }
@@ -2793,12 +2807,12 @@ fn validate_gui_material_reference(
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     let [root] = roots.as_slice() else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one PropertyMaterial value"
         )));
     };
     if !root.has_tag_name("PropertyMaterial") || root.attribute("uuid").is_none() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} material reference is invalid"
         )));
     }
@@ -2821,7 +2835,7 @@ fn validate_gui_part_shape(
     {
         return Ok(());
     }
-    Err(CodecError::Malformed(format!(
+    Err(CodecError::malformed(format_args!(
         "GUI property {property_name} Part shape value is invalid"
     )))
 }
@@ -2835,12 +2849,12 @@ fn validate_gui_geometry_list(
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     let [root] = roots.as_slice() else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one GeometryList value"
         )));
     };
     if !root.has_tag_name("GeometryList") {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires a leading GeometryList value"
         )));
     }
@@ -2854,7 +2868,7 @@ fn validate_gui_geometry_list(
             .iter()
             .any(|geometry| !geometry.has_tag_name("Geometry"))
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} GeometryList count or record tag is invalid"
         )));
     }
@@ -2870,12 +2884,12 @@ fn validate_gui_filletedges(
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     let [root] = roots.as_slice() else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one FilletEdges value"
         )));
     };
     if !root.has_tag_name("FilletEdges") || root.attribute("file").is_none() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} FilletEdges value is invalid"
         )));
     }
@@ -2891,12 +2905,12 @@ fn validate_gui_shape_list(
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     let [root] = roots.as_slice() else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one ShapeList value"
         )));
     };
     if !root.has_tag_name("ShapeList") {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires a leading ShapeList value"
         )));
     }
@@ -2913,7 +2927,7 @@ fn validate_gui_shape_list(
                     && shape.attribute("brep").is_none())
         })
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} ShapeList count or record is invalid"
         )));
     }
@@ -2929,12 +2943,12 @@ fn validate_gui_constraint_list(
         .filter(roxmltree::Node::is_element)
         .collect::<Vec<_>>();
     let [root] = roots.as_slice() else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires one ConstraintList value"
         )));
     };
     if !root.has_tag_name("ConstraintList") {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} requires a leading ConstraintList value"
         )));
     }
@@ -2948,7 +2962,7 @@ fn validate_gui_constraint_list(
             .iter()
             .any(|constraint| !constraint.has_tag_name("Constrain"))
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI property {property_name} ConstraintList count or record tag is invalid"
         )));
     }
@@ -2981,7 +2995,7 @@ fn validate_gui_list_payloads(
         if property.type_name == "Part::PropertyTopoShapeList" {
             for entry_name in &property.side_entries {
                 entries.get(entry_name).ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "GUI property {} references missing side entry {entry_name}",
                         property.id
                     ))
@@ -2994,13 +3008,13 @@ fn validate_gui_list_payloads(
             .first()
             .expect("nonempty side entries");
         if property.side_entries.len() != 1 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "GUI property {} references more than one side entry",
                 property.id
             )));
         }
         let view = *entries.get(entry_name).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "GUI property {} references missing side entry {entry_name}",
                 property.id
             ))
@@ -3023,7 +3037,7 @@ fn validate_gui_list_payloads(
                     .and_then(|value| value.attributes.get("version"))
                     .map(|value| {
                         value.parse::<u32>().map_err(|_| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "GUI material list {} has an invalid version",
                                 property.id
                             ))
@@ -3057,12 +3071,12 @@ fn parse_color_list(
     let colors = view
         .read_counted(count.into(), 4, View::u32_le)
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "color-list entry {entry_name} count exceeds its payload"
             ))
         })?;
     if !view.is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "color-list entry {entry_name} has trailing bytes"
         )));
     }
@@ -3077,17 +3091,17 @@ fn parse_float_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecErr
     let values = view
         .read_counted(count.into(), 8, View::f64_le)
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "float-list entry {entry_name} count exceeds its payload"
             ))
         })?;
     if values.iter().any(|value| !value.is_finite()) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "float-list entry {entry_name} has a non-finite value"
         )));
     }
     if !view.is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "float-list entry {entry_name} has trailing bytes"
         )));
     }
@@ -3101,7 +3115,7 @@ fn parse_vector_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecEr
             Some((view.f64_le()?, view.f64_le()?, view.f64_le()?))
         })
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "vector-list entry {entry_name} count exceeds its payload"
             ))
         })?;
@@ -3110,12 +3124,12 @@ fn parse_vector_list(mut view: View<'_>, entry_name: &str) -> Result<(), CodecEr
         .flat_map(|value| [value.0, value.1, value.2])
         .any(|value| !value.is_finite())
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "vector-list entry {entry_name} has a non-finite value"
         )));
     }
     if !view.is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "vector-list entry {entry_name} has trailing bytes"
         )));
     }
@@ -3137,17 +3151,17 @@ fn parse_placement_list(mut view: View<'_>, entry_name: &str) -> Result<(), Code
             ])
         })
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "placement-list entry {entry_name} count exceeds its payload"
             ))
         })?;
     if values.iter().flatten().any(|value| !value.is_finite()) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "placement-list entry {entry_name} has a non-finite value"
         )));
     }
     if !view.is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "placement-list entry {entry_name} has trailing bytes"
         )));
     }
@@ -3161,7 +3175,7 @@ fn parse_fillet_edges(mut view: View<'_>, entry_name: &str) -> Result<(), CodecE
             Some((view.i32_le()?, view.f64_le()?, view.f64_le()?))
         })
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "fillet-edges entry {entry_name} count exceeds its payload"
             ))
         })?;
@@ -3169,12 +3183,12 @@ fn parse_fillet_edges(mut view: View<'_>, entry_name: &str) -> Result<(), CodecE
         .iter()
         .any(|(_, radius1, radius2)| !radius1.is_finite() || !radius2.is_finite())
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "fillet-edges entry {entry_name} has a non-finite radius"
         )));
     }
     if !view.is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "fillet-edges entry {entry_name} has trailing bytes"
         )));
     }
@@ -3190,11 +3204,13 @@ fn parse_material_list(
     let (count, has_strings) = match version {
         0 | 1 => {
             let header = view.i32_le().ok_or_else(|| {
-                CodecError::Malformed(format!("GUI material list {property_id} is truncated"))
+                CodecError::malformed(format_args!("GUI material list {property_id} is truncated"))
             })?;
             let count = if header < 0 {
                 view.u32_le().ok_or_else(|| {
-                    CodecError::Malformed(format!("GUI material list {property_id} is truncated"))
+                    CodecError::malformed(format_args!(
+                        "GUI material list {property_id} is truncated"
+                    ))
                 })?
             } else {
                 header as u32
@@ -3203,13 +3219,13 @@ fn parse_material_list(
         }
         2 => (
             view.u32_le().ok_or_else(|| {
-                CodecError::Malformed(format!("GUI material list {property_id} is truncated"))
+                CodecError::malformed(format_args!("GUI material list {property_id} is truncated"))
             })?,
             false,
         ),
         3 => (
             view.u32_le().ok_or_else(|| {
-                CodecError::Malformed(format!("GUI material list {property_id} is truncated"))
+                CodecError::malformed(format_args!("GUI material list {property_id} is truncated"))
             })?,
             true,
         ),
@@ -3234,13 +3250,13 @@ fn parse_material_list(
             })
         })
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "GUI material list {property_id} count exceeds its payload"
             ))
         })?;
     for material in &materials {
         if !material.shininess.is_finite() || !material.transparency.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "GUI material list {property_id} has non-finite scalars"
             )));
         }
@@ -3261,7 +3277,7 @@ fn parse_material_list(
         }
     }
     if !view.is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "GUI material list {property_id} has trailing bytes"
         )));
     }
@@ -3270,20 +3286,20 @@ fn parse_material_list(
 
 fn read_material_string(view: &mut View<'_>, property_id: &str) -> Result<String, CodecError> {
     let length = view.u32_le().ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "GUI material list {property_id} string is truncated"
         ))
     })?;
     let length = view
         .counted(length.into(), 1)
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "GUI material list {property_id} string exceeds its payload"
             ))
         })?
         .get();
     String::from_utf8(view.take(length).expect("counted material string").to_vec()).map_err(|_| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "GUI material list {property_id} string is not UTF-8"
         ))
     })
@@ -3420,7 +3436,7 @@ fn displayed_shape_payload<'a>(
         [] => return Ok(None),
         [property] => property,
         _ => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "object {object_id} has multiple Shape properties"
             )));
         }
@@ -3432,7 +3448,7 @@ fn displayed_shape_payload<'a>(
     match shape_payloads.as_slice() {
         [] => Ok(None),
         [payload] => Ok(Some(payload)),
-        _ => Err(CodecError::Malformed(format!(
+        _ => Err(CodecError::malformed(format_args!(
             "Shape property {} has multiple payloads",
             property.id
         ))),
@@ -3457,7 +3473,7 @@ fn displayed_shape_group<'a>(
         [] => return Ok(None),
         [map] => map,
         _ => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Shape property {} has multiple element maps",
                 payload.property
             )));
@@ -3474,7 +3490,7 @@ fn displayed_shape_group<'a>(
     match groups.as_slice() {
         [] => Ok(None),
         [group] => Ok(Some(group)),
-        _ => Err(CodecError::Malformed(format!(
+        _ => Err(CodecError::malformed(format_args!(
             "Shape property {} has multiple {indexed_name} groups",
             payload.property
         ))),
@@ -3594,7 +3610,9 @@ fn transfer_topology_colors(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let view = *entries.get(entry_name).ok_or_else(|| {
-        CodecError::Malformed(format!("color list references missing entry {entry_name}"))
+        CodecError::malformed(format_args!(
+            "color list references missing entry {entry_name}"
+        ))
     })?;
     let colors = parse_color_list(view, entry_name, requires_alpha_conversion)?;
     let count = colors.len();

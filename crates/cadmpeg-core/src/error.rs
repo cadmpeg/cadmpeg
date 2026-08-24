@@ -61,6 +61,11 @@ pub enum CodecError {
 }
 
 impl CodecError {
+    /// Builds a malformed-container error from a displayable message.
+    pub fn malformed(message: impl std::fmt::Display) -> Self {
+        Self::Malformed(message.to_string())
+    }
+
     /// Builds a truncation error at a qualified source location.
     pub const fn truncated(location: SourceLocation, operation: &'static str) -> Self {
         Self::Truncated {
@@ -76,6 +81,13 @@ impl CodecError {
 #[cfg(test)]
 mod tests {
     use super::CodecError;
+
+    #[test]
+    fn malformed_constructor_formats_the_message_once() {
+        let error = CodecError::malformed(format_args!("field {} is invalid", 7));
+
+        assert_eq!(error.to_string(), "malformed container: field 7 is invalid");
+    }
 
     #[test]
     fn a_strict_refusal_names_the_loss_and_claims_no_container_defect() {

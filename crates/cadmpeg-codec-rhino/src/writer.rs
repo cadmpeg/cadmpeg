@@ -694,7 +694,7 @@ fn prepare_write(ir: &CadIr, archive_version: u64) -> Result<WritePlan, CodecErr
             || (reference_norm - 1.0).abs() > 1.0e-10
             || dot.abs() > 1.0e-10
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "curve {} has an invalid circle frame",
                 curve.id.0
             )));
@@ -1027,9 +1027,9 @@ fn planar_sheet_brep_payload(
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == *id)
-                .ok_or_else(|| CodecError::Malformed(format!("coedge {} is missing", id.0)))?;
+                .ok_or_else(|| CodecError::malformed(format_args!("coedge {} is missing", id.0)))?;
             if coedge.owner_loop != loop_.id {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "coedge {} ownership is inconsistent",
                     coedge.id.0
                 )));
@@ -1045,7 +1045,7 @@ fn planar_sheet_brep_payload(
                 || current.previous != ordered_coedges[start + (offset + count - 1) % count].id
                 || current.radial_next != current.id
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "coedge {} ring is inconsistent",
                     current.id.0
                 )));
@@ -1062,7 +1062,9 @@ fn planar_sheet_brep_payload(
             .edges
             .iter()
             .find(|edge| edge.id == coedge.edge)
-            .ok_or_else(|| CodecError::Malformed(format!("edge {} is missing", coedge.edge.0)))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("edge {} is missing", coedge.edge.0))
+            })?;
         if ordered_edges
             .iter()
             .any(|existing: &&cadmpeg_ir::topology::Edge| existing.id == edge.id)
@@ -1103,7 +1105,7 @@ fn planar_sheet_brep_payload(
             .vertices
             .iter()
             .find(|vertex| vertex.id == *id)
-            .ok_or_else(|| CodecError::Malformed(format!("vertex {} is missing", id.0)))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("vertex {} is missing", id.0)))?;
         if ordered_vertices
             .iter()
             .any(|existing: &&cadmpeg_ir::topology::Vertex| existing.id == vertex.id)
@@ -1116,7 +1118,9 @@ fn planar_sheet_brep_payload(
             .points
             .iter()
             .find(|point| point.id == vertex.point)
-            .ok_or_else(|| CodecError::Malformed(format!("point {} is missing", vertex.point.0)))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("point {} is missing", vertex.point.0))
+            })?;
         ordered_vertices.push(vertex);
         ordered_points.push(point.position);
     }
@@ -1147,7 +1151,7 @@ fn planar_sheet_brep_payload(
                         + (point.y - origin.y) * normal.y
                         + (point.z - origin.z) * normal.z;
                     if distance.abs() > plane_tolerance {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "edge curve {} is outside its face plane tolerance",
                             curve.id.0
                         )));
@@ -1477,13 +1481,15 @@ fn multi_face_brep_payload(
             .points
             .iter()
             .find(|point| point.id == vertex.point)
-            .ok_or_else(|| CodecError::Malformed(format!("point {} is missing", vertex.point.0)))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("point {} is missing", vertex.point.0))
+            })?;
         if !used_points.insert(point.id.0.clone())
             || !point.position.x.is_finite()
             || !point.position.y.is_finite()
             || !point.position.z.is_finite()
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "vertex {} has a shared or invalid point",
                 vertex.id.0
             )));
@@ -1492,7 +1498,7 @@ fn multi_face_brep_payload(
     }
     for edge in &model.edges {
         if !vertex_index.contains_key(&edge.start.0) || !vertex_index.contains_key(&edge.end.0) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "edge {} references a missing vertex",
                 edge.id.0
             )));
@@ -1530,7 +1536,7 @@ fn multi_face_brep_payload(
             .iter()
             .find(|surface| surface.id == face.surface)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("surface {} is missing", face.surface.0))
+                CodecError::malformed(format_args!("surface {} is missing", face.surface.0))
             })?;
         if surface.source_object.is_some() {
             return Err(CodecError::NotImplemented(format!(
@@ -1571,7 +1577,7 @@ fn multi_face_brep_payload(
         }
         for loop_id in &face.loops {
             if !owned_loops.insert(loop_id.0.clone()) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "loop {} has multiple face owners",
                     loop_id.0
                 )));
@@ -1590,9 +1596,11 @@ fn multi_face_brep_payload(
             .faces
             .iter()
             .find(|face| face.id == loop_.face)
-            .ok_or_else(|| CodecError::Malformed(format!("face {} is missing", loop_.face.0)))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("face {} is missing", loop_.face.0))
+            })?;
         if !face.loops.contains(&loop_.id) || loop_.coedges.len() < 3 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "loop {} ownership or boundary is invalid",
                 loop_.id.0
             )));
@@ -1602,7 +1610,7 @@ fn multi_face_brep_payload(
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == *id)
-                .ok_or_else(|| CodecError::Malformed(format!("coedge {} is missing", id.0)))?;
+                .ok_or_else(|| CodecError::malformed(format_args!("coedge {} is missing", id.0)))?;
             if !owned_coedges.insert(id.0.clone())
                 || coedge.owner_loop != loop_.id
                 || coedge.next != loop_.coedges[(offset + 1) % loop_.coedges.len()]
@@ -1619,7 +1627,7 @@ fn multi_face_brep_payload(
                 .iter()
                 .find(|edge| edge.id == coedge.edge)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("edge {} is missing", coedge.edge.0))
+                    CodecError::malformed(format_args!("edge {} is missing", coedge.edge.0))
                 })?;
             let end = if coedge.sense == Sense::Forward {
                 &edge.end
@@ -1642,7 +1650,7 @@ fn multi_face_brep_payload(
                 &next_edge.end
             };
             if end != next_start {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "loop {} coedge traversal does not close",
                     loop_.id.0
                 )));
@@ -1677,10 +1685,10 @@ fn multi_face_brep_payload(
         while ordered.len() < uses.len() {
             let next_id = &model.coedges[*ordered.last().expect("nonempty")].radial_next;
             let next = *coedge_index.get(&next_id.0).ok_or_else(|| {
-                CodecError::Malformed(format!("radial coedge {} is missing", next_id.0))
+                CodecError::malformed(format_args!("radial coedge {} is missing", next_id.0))
             })? as usize;
             if !uses.contains(&next) || ordered.contains(&next) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "edge {} radial ring is inconsistent",
                     edge.id.0
                 )));
@@ -1689,14 +1697,14 @@ fn multi_face_brep_payload(
         }
         if model.coedges[*ordered.last().expect("nonempty")].radial_next != model.coedges[start].id
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "edge {} radial ring does not close",
                 edge.id.0
             )));
         }
         if ordered.len() == 2 && model.coedges[ordered[0]].sense == model.coedges[ordered[1]].sense
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "shared edge {} has equal directed uses",
                 edge.id.0
             )));
@@ -1784,7 +1792,7 @@ fn multi_face_brep_payload(
                         + (point.y - origin.y) * normal.y
                         + (point.z - origin.z) * normal.z;
                     if distance.abs() > tolerance {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "edge curve {} is outside its face plane tolerance",
                             curve.id.0
                         )));
@@ -1808,7 +1816,7 @@ fn multi_face_brep_payload(
                     + (point.y - origin.y) * normal.y
                     + (point.z - origin.z) * normal.z;
                 if distance.abs() > tolerance {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "loop {} vertex is outside its face plane tolerance",
                         model.loops[loop_position].id.0
                     )));
@@ -1822,7 +1830,7 @@ fn multi_face_brep_payload(
             .map(|(from, to)| from[0] * to[1] - to[0] * from[1])
             .sum::<f64>();
         if !twice_area.is_finite() || twice_area.abs() <= tolerance * tolerance {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "loop {} has degenerate planar area",
                 loop_.id.0
             )));
@@ -2116,7 +2124,7 @@ fn validate_planar_edge(
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
-        .ok_or_else(|| CodecError::Malformed(format!("curve {} is missing", curve_id.0)))?;
+        .ok_or_else(|| CodecError::malformed(format_args!("curve {} is missing", curve_id.0)))?;
     if curve.source_object.is_some() {
         return Err(CodecError::NotImplemented(format!(
             "edge curve {} source-object state is not writable",
@@ -2130,7 +2138,7 @@ fn validate_planar_edge(
         || !end_parameter.is_finite()
         || start_parameter >= end_parameter
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "edge {} has an invalid parameter range",
             edge.id.0
         )));
@@ -2138,7 +2146,7 @@ fn validate_planar_edge(
     let (expected_start, expected_end) = match &curve.geometry {
         CurveGeometry::Line { origin, direction } => {
             if (direction.norm() - 1.0).abs() > 1.0e-10 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "edge {} has an invalid line parameterization",
                     edge.id.0
                 )));
@@ -2178,14 +2186,15 @@ fn validate_planar_edge(
             )))
         }
     };
-    let start = vertex_point(model, &edge.start)
-        .ok_or_else(|| CodecError::Malformed(format!("edge {} start is missing", edge.id.0)))?;
+    let start = vertex_point(model, &edge.start).ok_or_else(|| {
+        CodecError::malformed(format_args!("edge {} start is missing", edge.id.0))
+    })?;
     let end = vertex_point(model, &edge.end)
-        .ok_or_else(|| CodecError::Malformed(format!("edge {} end is missing", edge.id.0)))?;
+        .ok_or_else(|| CodecError::malformed(format_args!("edge {} end is missing", edge.id.0)))?;
     let tolerance = edge.tolerance.unwrap_or(document_tolerance).max(1.0e-10);
     if !close_point(start, expected_start, tolerance) || !close_point(end, expected_end, tolerance)
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "edge {} endpoints disagree with its line curve",
             edge.id.0
         )));
@@ -2307,7 +2316,7 @@ fn canonicalize_native_curve_knots(
     let count = curve.control_points.len();
     let stored = curve.knots[1..curve.knots.len() - 1].to_vec();
     curve.knots = crate::surfaces::reconstruct_knots(&stored, order, count)
-        .map_err(|error| CodecError::Malformed(format!("curve {id}: {error}")))?;
+        .map_err(|error| CodecError::malformed(format_args!("curve {id}: {error}")))?;
     Ok(())
 }
 
@@ -2331,7 +2340,7 @@ fn brep_c2_curve(
             .first()
             .map(|use_| &use_.pcurve)
             .expect("explicit pcurve");
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "pcurve {} does not exactly match its directed planar C3 projection",
             id.0
         )));
@@ -2355,7 +2364,7 @@ fn explicit_brep_c2_curve(
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id == *pcurve_id)
-        .ok_or_else(|| CodecError::Malformed(format!("pcurve {} is missing", pcurve_id.0)))?;
+        .ok_or_else(|| CodecError::malformed(format_args!("pcurve {} is missing", pcurve_id.0)))?;
     if pcurve.wrapper_reversed == Some(true)
         || pcurve.native_tail_flags.is_some()
         || pcurve
@@ -2379,7 +2388,7 @@ fn explicit_brep_c2_curve(
                 || !direction.v.is_finite()
                 || direction.u == 0.0 && direction.v == 0.0
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "pcurve {} has invalid line geometry",
                     pcurve.id.0
                 )));
@@ -2453,7 +2462,10 @@ fn validate_brep_pcurve_ownership(
                 )));
             }
             if !model.pcurves.iter().any(|pcurve| pcurve.id == *id) {
-                return Err(CodecError::Malformed(format!("pcurve {} is missing", id.0)));
+                return Err(CodecError::malformed(format_args!(
+                    "pcurve {} is missing",
+                    id.0
+                )));
             }
         }
     }
@@ -2543,7 +2555,7 @@ fn validate_nurbs_trim_loop(
             }
         };
         if !control_hull_inside {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "pcurve {} leaves its NURBS surface parameter domain",
                 pcurve.id.0
             )));
@@ -2591,7 +2603,7 @@ fn validate_nurbs_trim_loop(
                 let fraction = f64::from(step) / 16.0;
                 let parameter = span[0] + (span[1] - span[0]) * fraction;
                 let uv = pcurve_uv(&pcurve.geometry, parameter).ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "pcurve {} cannot be evaluated over its edge domain",
                         pcurve.id.0
                     ))
@@ -2601,13 +2613,13 @@ fn validate_nurbs_trim_loop(
                     || uv.v < v_domain[0] - uv_epsilon
                     || uv.v > v_domain[1] + uv_epsilon
                 {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "pcurve {} leaves its NURBS surface parameter domain",
                         pcurve.id.0
                     )));
                 }
                 let mapped = nurbs_surface_point(surface, uv.u, uv.v).ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "pcurve {} cannot be evaluated through its NURBS surface",
                         pcurve.id.0
                     ))
@@ -2619,7 +2631,7 @@ fn validate_nurbs_trim_loop(
                 };
                 let edge_point =
                     curve_point(&curve.geometry, curve_parameter).ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "edge curve {} cannot be evaluated over its edge domain",
                             curve.id.0
                         ))
@@ -2629,7 +2641,7 @@ fn validate_nurbs_trim_loop(
                     + (mapped.z - edge_point.z).powi(2))
                 .sqrt();
                 if !distance.is_finite() || distance > tolerance {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "pcurve {} misses directed edge curve {} by {distance}",
                         pcurve.id.0, curve.id.0
                     )));
@@ -2740,7 +2752,7 @@ fn class_wrapper(class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
 fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), CodecError> {
     let vertex_count = mesh.vertices.len();
     if vertex_count == 0 || vertex_count > (1 << 24) || mesh.triangles.len() > (1 << 24) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "mesh {} has invalid native counts",
             mesh.id
         )));
@@ -2764,7 +2776,7 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
         )));
     }
     if !mesh.normals.is_empty() && mesh.normals.len() != vertex_count {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "mesh {} normal count mismatch",
             mesh.id
         )));
@@ -2784,7 +2796,7 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             || !(n.y as f32).is_finite()
             || !(n.z as f32).is_finite()
     }) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "mesh {} contains non-finite native values",
             mesh.id
         )));
@@ -2795,7 +2807,7 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
         .flatten()
         .any(|index| *index as usize >= vertex_count)
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "mesh {} index is out of range",
             mesh.id
         )));
@@ -2819,7 +2831,7 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             || channel.count as usize != vertex_count
             || channel.data.len() != vertex_count * expected as usize
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "mesh {} channel {:#x} has invalid metadata",
                 mesh.id, channel.kind
             )));
@@ -2860,13 +2872,13 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
             .iter()
             .find(|region| region.id == body.regions[0])
             .ok_or_else(|| {
-                CodecError::Malformed(format!("body {} region is missing", body.id.0))
+                CodecError::malformed(format_args!("body {} region is missing", body.id.0))
             })?;
         if region.body != body.id
             || region.shells.len() != 1
             || !regions.insert(region.id.0.clone())
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "body {} region graph is invalid",
                 body.id.0
             )));
@@ -2875,14 +2887,16 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
             .shells
             .iter()
             .find(|shell| shell.id == region.shells[0])
-            .ok_or_else(|| CodecError::Malformed(format!("body {} shell is missing", body.id.0)))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("body {} shell is missing", body.id.0))
+            })?;
         if shell.region != region.id
             || !shell.faces.is_empty()
             || !shell.wire_edges.is_empty()
             || shell.free_vertices.is_empty()
             || !shells.insert(shell.id.0.clone())
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "body {} shell graph is invalid",
                 body.id.0
             )));
@@ -2894,7 +2908,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 .iter()
                 .find(|vertex| vertex.id == *vertex_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("vertex {} is missing", vertex_id.0))
+                    CodecError::malformed(format_args!("vertex {} is missing", vertex_id.0))
                 })?;
             if vertex.tolerance.is_some() || !vertices.insert(vertex.id.0.clone()) {
                 return Err(CodecError::NotImplemented(format!(
@@ -2907,7 +2921,7 @@ fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
                 .iter()
                 .find(|point| point.id == vertex.point)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("point {} is missing", vertex.point.0))
+                    CodecError::malformed(format_args!("point {} is missing", vertex.point.0))
                 })?;
             if !points.insert(point.id.0.clone()) {
                 return Err(CodecError::NotImplemented(format!(
@@ -2951,7 +2965,7 @@ fn check_frame(
         || (x.norm() - 1.0).abs() > 1.0e-10
         || dot.abs() > 1.0e-10
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{family} {id} has an invalid frame"
         )));
     }
@@ -2980,7 +2994,7 @@ fn check_nurbs_surface(
         || surface.v_knots.len() != v_count + v_order
         || pole_count != Some(surface.control_points.len())
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "surface {id} has inconsistent NURBS counts"
         )));
     }
@@ -3002,7 +3016,7 @@ fn check_nurbs_surface(
             w.len() != surface.control_points.len() || w.iter().any(|v| !v.is_finite() || *v == 0.0)
         })
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "surface {id} has invalid NURBS data"
         )));
     }
@@ -3034,7 +3048,7 @@ fn check_nurbs_curve(id: &str, curve: &cadmpeg_ir::geometry::NurbsCurve) -> Resu
         || count < order
         || curve.knots.len() != count + order
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "curve {id} has inconsistent NURBS counts"
         )));
     }
@@ -3049,7 +3063,7 @@ fn check_nurbs_curve(id: &str, curve: &cadmpeg_ir::geometry::NurbsCurve) -> Resu
             .as_ref()
             .is_some_and(|w| w.len() != count || w.iter().any(|v| !v.is_finite() || *v == 0.0))
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "curve {id} has invalid NURBS data"
         )));
     }
@@ -3067,15 +3081,15 @@ fn check_knot_roundtrip(
 ) -> Result<(), CodecError> {
     let stored = &full[1..full.len() - 1];
     if stored[order - 2] >= stored[count - 1] {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{direction} {id} has a non-increasing native NURBS domain"
         )));
     }
     let reconstructed = crate::surfaces::reconstruct_knots(stored, order, count)
-        .map_err(|error| CodecError::Malformed(format!("{direction} {id}: {error}")))?;
+        .map_err(|error| CodecError::malformed(format_args!("{direction} {id}: {error}")))?;
     let periodic = crate::surfaces::periodic_knots(stored, order, count);
     if reconstructed != full || periodic != declared_periodic {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{direction} {id} knot endpoints or periodic flag are not native-canonical"
         )));
     }
@@ -3565,7 +3579,7 @@ fn check_object_attributes(
     color: Option<cadmpeg_ir::topology::Color>,
 ) -> Result<(), CodecError> {
     if identity.is_empty() || name.is_some_and(|value| value.contains('\0')) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "object {identity} has an invalid identity or name"
         )));
     }
@@ -3574,7 +3588,7 @@ fn check_object_attributes(
             .into_iter()
             .any(|channel| !channel.is_finite() || !(0.0..=1.0).contains(&channel))
     }) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "object {identity} has an invalid color"
         )));
     }

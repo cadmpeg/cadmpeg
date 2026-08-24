@@ -408,7 +408,7 @@ fn frame_sections(
         })?;
         if section != Some(current) {
             if section.is_some_and(|previous| current <= previous) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "IGES section {} is out of order",
                     current.name()
                 )));

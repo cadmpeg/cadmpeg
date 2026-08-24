@@ -335,7 +335,7 @@ impl<'a> CompoundSnapshot<'a> {
         };
         let mut opened = if physically_contiguous(&views) {
             let first = views.first().ok_or_else(|| {
-                CodecError::Malformed(format!("empty allocation chain for {}", entry.path))
+                CodecError::malformed(format_args!("empty allocation chain for {}", entry.path))
             })?;
             let last = views.last().expect("non-empty chain");
             self.root.child(first.start(), last.end()).ok_or_else(|| {
@@ -347,7 +347,7 @@ impl<'a> CompoundSnapshot<'a> {
         opened = opened
             .child(opened.start(), opened.start() + logical_size)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "CFB stream {} is shorter than declared",
                     entry.path
                 ))
@@ -584,7 +584,7 @@ impl CompoundState {
         }
         let field = |offset, what| {
             le_u32(bytes, offset)
-                .ok_or_else(|| CodecError::Malformed(format!("truncated CFB {what}")))
+                .ok_or_else(|| CodecError::malformed(format_args!("truncated CFB {what}")))
         };
         if bytes.get(8..24) != Some(&[0; 16])
             || le_u16(bytes, 24) != Some(0x003e)
@@ -1550,7 +1550,7 @@ fn chain(
         output.push(current);
         current = *fat
             .get(current as usize)
-            .ok_or_else(|| CodecError::Malformed(format!("CFB {role} FAT link is absent")))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("CFB {role} FAT link is absent")))?;
         if matches!(current, FREE_SECTOR | FAT_SECTOR | DIFAT_SECTOR) {
             return malformed(format!("CFB {role} chain enters a reserved sector role"));
         }

@@ -99,6 +99,9 @@ class PatternFilters(unittest.TestCase):
             "struct LossNote {\n"
             "    msg: String,\n"
             "}\n"
+            "impl LossNote {\n"
+            "    fn new() -> Self { todo!() }\n"
+            "}\n"
             "fn make() -> LossNote {\n"
             "    LossNote { msg: String::new() }\n"
             "}\n"
@@ -107,7 +110,11 @@ class PatternFilters(unittest.TestCase):
         for line in text.splitlines():
             if not ratchet.LOSS_NOTE_LIT.search(line):
                 continue
-            if ratchet.LOSS_NOTE_RETURN.search(line) or ratchet.LOSS_NOTE_STRUCT.search(line):
+            if (
+                ratchet.LOSS_NOTE_RETURN.search(line)
+                or ratchet.LOSS_NOTE_STRUCT.search(line)
+                or ratchet.LOSS_NOTE_IMPL.search(line)
+            ):
                 continue
             hits += 1
         self.assertEqual(hits, 1)

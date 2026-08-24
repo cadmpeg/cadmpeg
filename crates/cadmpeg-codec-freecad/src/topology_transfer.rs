@@ -377,7 +377,7 @@ impl<'a> Builder<'a> {
                     .iter()
                     .any(|representation| representation.kind == 1)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "unbounded edge TShape {} has no exact curve",
                     root.shape
                 )));
@@ -905,7 +905,7 @@ impl<'a> Builder<'a> {
             ..
         } = shape.geometry
         else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "TShape {} is not an edge",
                 edge_use.shape
             )));
@@ -1085,7 +1085,7 @@ impl<'a> Builder<'a> {
             tolerance, point, ..
         } = shape.geometry
         else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "TShape {} is not a vertex",
                 vertex_use.shape
             )));
@@ -1147,7 +1147,7 @@ impl<'a> Builder<'a> {
                 .iter()
                 .find(|curve| curve.id == base_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("missing curve table entry {source}"))
+                    CodecError::malformed(format_args!("missing curve table entry {source}"))
                 })?
                 .clone();
             ir.model.curves.push(Curve {
@@ -1185,7 +1185,7 @@ impl<'a> Builder<'a> {
                 .iter()
                 .find(|surface| surface.id == base_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("missing surface table entry {source}"))
+                    CodecError::malformed(format_args!("missing surface table entry {source}"))
                 })?
                 .clone();
             let has_procedural_construction = ir
@@ -1260,7 +1260,7 @@ impl<'a> Builder<'a> {
         self.tables
             .tshapes
             .get(index - 1)
-            .ok_or_else(|| CodecError::Malformed(format!("missing TShape {index}")))
+            .ok_or_else(|| CodecError::malformed(format_args!("missing TShape {index}")))
     }
 
     fn topology_label(&self, shape: usize, local: Transform) -> String {
@@ -1669,14 +1669,14 @@ fn edge_endpoint_uses(
         match child.orientation {
             TextOrientation::Forward => {
                 if start.replace(child).is_some() {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "edge TShape {edge} has multiple forward endpoint uses"
                     )));
                 }
             }
             TextOrientation::Reversed => {
                 if end.replace(child).is_some() {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "edge TShape {edge} has multiple reversed endpoint uses"
                     )));
                 }
@@ -1685,7 +1685,7 @@ fn edge_endpoint_uses(
         }
     }
     start.zip(end).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "edge TShape {edge} does not have both forward and reversed endpoint uses"
         ))
     })
@@ -1719,7 +1719,7 @@ fn select_exact_curve_representation<'a>(
     if matches.any(|(_, representation)| {
         !equivalent_exact_curve_representation(first.1, representation, tables)
     }) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "edge TShape {edge} has non-equivalent 3D curve representations"
         )));
     }
@@ -1754,7 +1754,7 @@ fn unique_fallback_polygon_representation(
         return Ok(None);
     };
     if matches.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "edge TShape {edge} has multiple fallback polygon representations"
         )));
     }

@@ -123,13 +123,13 @@ pub(crate) fn transfer_neutral(
             (None, None) => None,
             (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Some([x, y]),
             (Some(_), Some(_)) => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "drawing {} has a non-finite position",
                     record.id
                 )))
             }
             _ => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "drawing {} position requires both X and Y",
                     record.id
                 )))
@@ -137,21 +137,24 @@ pub(crate) fn transfer_neutral(
         };
         let scale = parameter("Scale")?;
         if scale.is_some_and(|scale| !scale.is_finite() || scale <= 0.0) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "drawing {} has a non-positive or non-finite scale",
                 record.id
             )));
         }
         let rotation_degrees = parameter("Rotation")?;
         if rotation_degrees.is_some_and(|rotation| !rotation.is_finite()) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "drawing {} has a non-finite rotation",
                 record.id
             )));
         }
         let direction = if record.parameters.contains_key("Direction") {
             let direction = vector_property(&owned, "Direction")?.ok_or_else(|| {
-                CodecError::Malformed(format!("drawing {} has no direction vector", record.id))
+                CodecError::malformed(format_args!(
+                    "drawing {} has no direction vector",
+                    record.id
+                ))
             })?;
             let length_squared = direction
                 .iter()
@@ -160,7 +163,7 @@ pub(crate) fn transfer_neutral(
             if direction.iter().any(|component| !component.is_finite())
                 || length_squared <= f64::EPSILON
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "drawing {} has a non-finite or zero direction",
                     record.id
                 )));
@@ -292,14 +295,14 @@ fn scalar_property(properties: &[&PropertyRecord], name: &str) -> Result<Option<
         return Ok(None);
     };
     let Some(value) = root_value(property, name)? else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "drawing property {name} has no root value"
         )));
     };
     scalar_value(name, &property.type_name, value)
         .map(Some)
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "drawing property {name} has an invalid scalar value"
             ))
         })
@@ -313,12 +316,12 @@ fn vector_property(
         return Ok(None);
     };
     let Some(value) = root_value(property, name)? else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "drawing property {name} has no root value"
         )));
     };
     vector_value(value).map(Some).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "drawing property {name} has an invalid vector value"
         ))
     })
@@ -341,14 +344,14 @@ fn source_links(
         _ => false,
     };
     if !valid_type {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "drawing source {name} has runtime type {}, which is not a source carrier",
             property.type_name
         )));
     }
     let is_list = is_link_list_type(&property.type_name);
     if !is_list && property.links.len() > 1 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "drawing source {name} has multiple targets",
         )));
     }
@@ -419,7 +422,9 @@ fn typed_single_link(
     match property.links.as_slice() {
         [] => Ok(None),
         [link] => Ok(Some(link.clone())),
-        _ => Err(CodecError::Malformed(format!("{name} has multiple links"))),
+        _ => Err(CodecError::malformed(format_args!(
+            "{name} has multiple links"
+        ))),
     }
 }
 
@@ -436,12 +441,12 @@ fn typed_property<'a>(
         return Ok(None);
     };
     if matches.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{name} has duplicate carriers"
         )));
     }
     if property.type_name != type_name {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{name} has runtime type {}, expected {type_name}",
             property.type_name
         )));
@@ -479,7 +484,7 @@ fn drawing_parameters(
         };
         validate_drawing_property(name, property)?;
         let value = root_value(property, name)?.ok_or_else(|| {
-            CodecError::Malformed(format!("drawing property {name} has no root value"))
+            CodecError::malformed(format_args!("drawing property {name} has no root value"))
         })?;
         parameters.insert((*name).to_owned(), value.raw_xml.clone());
     }
@@ -493,26 +498,26 @@ fn drawing_parameters(
 
 fn validate_drawing_property(name: &str, property: &PropertyRecord) -> Result<(), CodecError> {
     if !drawing_property_type_matches(name, &property.type_name) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "drawing property {name} has runtime type {}, which is not its registered carrier",
             property.type_name
         )));
     }
     let Some(value) = root_value(property, name)? else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "drawing property {name} has no root value"
         )));
     };
     if matches!(name, "Direction" | "XDirection") {
         if vector_value(value).is_none() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "drawing property {name} has an invalid vector value"
             )));
         }
     } else if matches!(name, "X" | "Y" | "Scale" | "Rotation")
         && scalar_value(name, &property.type_name, value).is_none()
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "drawing property {name} has an invalid scalar value"
         )));
     }
@@ -546,7 +551,7 @@ fn ensure_unique_property_names(properties: &[&PropertyRecord]) -> Result<(), Co
     let mut names = BTreeSet::new();
     for property in properties {
         if !names.insert(property.name.as_str()) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "drawing property {} occurs more than once",
                 property.name
             )));
@@ -570,7 +575,7 @@ fn root_value<'a>(
         _ => return Ok(None),
     };
     let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "drawing property {} has invalid XML: {error}",
             property.id
         ))
@@ -591,7 +596,7 @@ fn root_value<'a>(
         {
             let tag = node.tag_name().name();
             if tag != expected_tag && !allowed_extra_tags.contains(&tag) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "drawing property {name} has unexpected root element {tag}"
                 )));
             }
@@ -609,12 +614,12 @@ fn root_value<'a>(
             .find(|value| value.order == *selected_order)
             .map(Some)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "drawing property {} has an unretained root value",
                     property.id
                 ))
             }),
-        _ => Err(CodecError::Malformed(format!(
+        _ => Err(CodecError::malformed(format_args!(
             "drawing property {name} has multiple root values"
         ))),
     }
@@ -632,7 +637,7 @@ fn unique_property<'a>(
         return Ok(None);
     };
     if matches.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "drawing property {name} occurs more than once"
         )));
     }
