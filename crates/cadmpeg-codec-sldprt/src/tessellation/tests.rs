@@ -11,7 +11,7 @@ use crate::test_support::*;
 use crate::SldprtCodec;
 
 use super::*;
-use cadmpeg_ir::geometry::{Curve, Surface};
+use cadmpeg_ir::geometry::{Curve, NurbsSurface, Surface};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
     VertexId,
@@ -305,6 +305,46 @@ fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) 
             Point3::new(x + 2.0, 1.0, 0.0),
             Point3::new(x, 1.0, 0.0),
         ],
+    )
+}
+
+fn test_nurbs_surface() -> NurbsSurface {
+    let heights = [0.0, 0.25, 0.0, 0.25, 0.9, 0.25, 0.0, 0.25, 0.0];
+    let control_points = (0..3)
+        .flat_map(|u| (0..3).map(move |v| Point3::new(u as f64, v as f64, heights[u * 3 + v])))
+        .collect();
+    NurbsSurface {
+        u_degree: 2,
+        v_degree: 2,
+        u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        u_count: 3,
+        v_count: 3,
+        control_points,
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    }
+}
+
+fn flat_test_nurbs_surface() -> NurbsSurface {
+    let mut surface = test_nurbs_surface();
+    for point in &mut surface.control_points {
+        point.z = 0.0;
+    }
+    surface
+}
+
+fn test_nurbs_corners(surface: &NurbsSurface) -> [Point3; 4] {
+    [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+        .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(surface, u, v).unwrap())
+}
+
+fn test_nurbs_point_normal(surface: &NurbsSurface, u: f64, v: f64) -> (Point3, Vector3) {
+    let partials = cadmpeg_ir::eval::nurbs_surface_partials(surface, u, v).unwrap();
+    (
+        partials.point,
+        partials.du.cross(partials.dv).unit().unwrap(),
     )
 }
 
@@ -682,7 +722,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
         channels: Vec::new(),
     });
 
-    assert_eq!(assign_unique_analytic_owners(&mut model), vec!["mesh"]);
+    assert_eq!(assign_unique_surface_owners(&mut model), vec!["mesh"]);
     assert_eq!(model.tessellations[0].faces, vec![second]);
     assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
 
@@ -695,7 +735,7 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
         .clear();
     model.tessellations[0].body = None;
     model.tessellations[0].faces.clear();
-    assert!(assign_unique_analytic_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).is_empty());
     assert!(model.tessellations[0].faces.is_empty());
 }
 
@@ -726,10 +766,7 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
         channels: Vec::new(),
     });
 
-    assert_eq!(
-        assign_unique_analytic_owners(&mut model),
-        vec!["lower-mesh"]
-    );
+    assert_eq!(assign_unique_surface_owners(&mut model), vec!["lower-mesh"]);
     assert_eq!(model.tessellations[0].faces, vec![lower]);
     assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
 }
@@ -766,7 +803,7 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     });
 
     assert_eq!(
-        assign_unique_analytic_owners(&mut model),
+        assign_unique_surface_owners(&mut model),
         vec!["chordal-mesh"]
     );
     assert_eq!(model.tessellations[0].faces, vec![face]);
@@ -805,7 +842,7 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
         channels: Vec::new(),
     });
 
-    assert!(assign_unique_analytic_owners(&mut model).is_empty());
+    assert!(assign_unique_surface_owners(&mut model).is_empty());
     assert!(model.tessellations[0].body.is_none());
     assert!(model.tessellations[0].faces.is_empty());
 }
@@ -875,9 +912,177 @@ fn cone_support_binds_display_list_face() {
         channels: Vec::new(),
     });
 
-    assert_eq!(assign_unique_analytic_owners(&mut model), vec!["cone-mesh"]);
+    assert_eq!(assign_unique_surface_owners(&mut model), vec!["cone-mesh"]);
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+}
+
+#[test]
+fn unique_nurbs_support_binds_exact_display_list_face() {
+    let mut model = model_with_body();
+    let surface = test_nurbs_surface();
+    let face = add_face(
+        &mut model,
+        "nurbs-exact",
+        SurfaceGeometry::Nurbs(surface.clone()),
+        test_nurbs_corners(&surface),
+    );
+    model.shells[0].faces.push(face.clone());
+    let vertices = [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
+        .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
+        .to_vec();
+    model.tessellations.push(Tessellation {
+        id: "nurbs-exact-mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices,
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    });
+
+    assert_eq!(
+        assign_unique_surface_owners(&mut model),
+        vec!["nurbs-exact-mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert!(model.tessellations[0].chordal_deflection.is_none());
+}
+
+#[test]
+fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
+    let mut model = model_with_body();
+    let surface = test_nurbs_surface();
+    let face = add_face(
+        &mut model,
+        "nurbs-cache",
+        SurfaceGeometry::Nurbs(surface.clone()),
+        test_nurbs_corners(&surface),
+    );
+    model.shells[0].faces.push(face);
+    let samples =
+        [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)].map(|(u, v)| test_nurbs_point_normal(&surface, u, v));
+    let deflection = 0.02;
+    model.tessellations.push(Tessellation {
+        id: "nurbs-cache-mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: samples
+            .iter()
+            .map(|(point, normal)| point.translated(*normal, deflection))
+            .collect(),
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: samples.iter().map(|(_, normal)| *normal).collect(),
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    });
+
+    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(model.tessellations[0].faces.is_empty());
+    assert!(model.tessellations[0].body.is_none());
+    assert!(model.tessellations[0].chordal_deflection.is_none());
+}
+
+#[test]
+fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
+    let mut model = model_with_body();
+    let surface = test_nurbs_surface();
+    let corners = test_nurbs_corners(&surface);
+    let first = add_face(
+        &mut model,
+        "nurbs-coincident-first",
+        SurfaceGeometry::Nurbs(surface.clone()),
+        corners,
+    );
+    let second = add_face(
+        &mut model,
+        "nurbs-coincident-second",
+        SurfaceGeometry::Nurbs(surface.clone()),
+        corners,
+    );
+    model.shells[0].faces.extend([first, second]);
+    model.tessellations.push(Tessellation {
+        id: "nurbs-ambiguous-mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
+            .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
+            .to_vec(),
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    });
+
+    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(model.tessellations[0].faces.is_empty());
+    assert!(model.tessellations[0].body.is_none());
+}
+
+#[test]
+fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() {
+    let mut model = model_with_body();
+    let surface = flat_test_nurbs_surface();
+    let corners = test_nurbs_corners(&surface);
+    let nurbs_face = add_face(
+        &mut model,
+        "nurbs-plane-coincident",
+        SurfaceGeometry::Nurbs(surface.clone()),
+        corners,
+    );
+    let plane_face = add_face(
+        &mut model,
+        "plane-coincident",
+        SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        corners,
+    );
+    model.shells[0].faces.extend([nurbs_face, plane_face]);
+    model.tessellations.push(Tessellation {
+        id: "nurbs-plane-ambiguous-mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
+            .map(|(u, v)| cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).unwrap())
+            .to_vec(),
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    });
+
+    assert!(assign_unique_surface_owners(&mut model).is_empty());
+    assert!(model.tessellations[0].faces.is_empty());
+    assert!(model.tessellations[0].body.is_none());
 }
 
 #[test]

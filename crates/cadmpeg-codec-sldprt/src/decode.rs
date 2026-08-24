@@ -2908,7 +2908,7 @@ fn build_geometry_ir(
         &persistent_face_identities,
         &persistent_face_bindings,
     );
-    assigned_tessellations.extend(crate::tessellation::assign_unique_analytic_owners(
+    assigned_tessellations.extend(crate::tessellation::assign_unique_surface_owners(
         &mut ir.model,
     ));
     for id in assigned_tessellations {

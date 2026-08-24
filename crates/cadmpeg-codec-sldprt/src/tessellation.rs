@@ -603,7 +603,7 @@ pub fn summary(scan: &ContainerScan) -> Summary {
         })
 }
 
-struct AnalyticCandidate<'a> {
+struct SurfaceCandidate<'a> {
     face: &'a FaceId,
     body: &'a cadmpeg_ir::ids::BodyId,
     surface: &'a SurfaceGeometry,
@@ -612,14 +612,15 @@ struct AnalyticCandidate<'a> {
     trim: Option<AnalyticTrim>,
 }
 
-/// Bind a face-tessellation table when its vertices select one analytic face.
+/// Bind a face-tessellation table when its vertices select one surface face.
 ///
 /// Display coordinates are stored as f32, while the B-rep carriers are f64.
 /// The relative tolerance below covers that quantization. Complete analytic
-/// trims can distinguish faces on a shared analytic carrier.
-pub(crate) fn assign_unique_analytic_owners(
-    model: &mut cadmpeg_ir::document::Model,
-) -> Vec<String> {
+/// trims can distinguish faces on a shared analytic carrier. A NURBS support
+/// must provide a forward-evaluated parameter witness within the face or
+/// display quantization tolerance; an unconstrained nearest-support fit is
+/// not an ownership witness.
+pub(crate) fn assign_unique_surface_owners(model: &mut cadmpeg_ir::document::Model) -> Vec<String> {
     let surfaces = model
         .surfaces
         .iter()
@@ -680,7 +681,7 @@ pub(crate) fn assign_unique_analytic_owners(
                 Some(_) => return None,
                 None => cadmpeg_ir::transform::Transform::identity(),
             };
-            Some(AnalyticCandidate {
+            Some(SurfaceCandidate {
                 face: &face.id,
                 body,
                 surface: *surfaces.get(&face.surface)?,
@@ -717,11 +718,12 @@ pub(crate) fn assign_unique_analytic_owners(
             .filter(|candidate| {
                 let tolerance = candidate.tolerance.max(quantization_tolerance);
                 mesh.vertices.iter().all(|point| {
-                    analytic_surface_residual(
+                    surface_measure(
                         candidate.surface,
                         candidate.inverse.apply_point(*point),
+                        Some(tolerance),
                     )
-                    .is_some_and(|residual| residual <= tolerance)
+                    .is_some_and(|measure| measure.residual <= tolerance)
                 })
             })
             .collect::<Vec<_>>();
@@ -739,8 +741,14 @@ pub(crate) fn assign_unique_analytic_owners(
         let (face, body, chordal_deflection) = match owners.as_slice() {
             [owner] => (owner.face, owner.body, None),
             _ => {
+                if owners
+                    .iter()
+                    .any(|candidate| contains_nurbs_surface(candidate.surface))
+                {
+                    continue;
+                }
                 let Some((index, deflection)) =
-                    approximate_analytic_owner(mesh, &candidates, quantization_tolerance)
+                    approximate_surface_owner(mesh, &candidates, quantization_tolerance)
                 else {
                     continue;
                 };
@@ -758,9 +766,9 @@ pub(crate) fn assign_unique_analytic_owners(
     assigned
 }
 
-fn approximate_analytic_owner(
+fn approximate_surface_owner(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
-    candidates: &[AnalyticCandidate<'_>],
+    candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
 ) -> Option<(usize, f64)> {
     if mesh.normals.len() != mesh.vertices.len() || mesh.normals.is_empty() {
@@ -773,8 +781,9 @@ fn approximate_analytic_owner(
             let mut max_residual = 0.0_f64;
             for (point, normal) in mesh.vertices.iter().zip(&mesh.normals) {
                 let local_point = candidate.inverse.apply_point(*point);
-                let residual = analytic_surface_residual(candidate.surface, local_point)?;
-                let surface_normal = analytic_surface_normal(candidate.surface, local_point)?;
+                let measure = surface_measure(candidate.surface, local_point, None)?;
+                let residual = measure.residual;
+                let surface_normal = measure.normal?;
                 let mesh_normal = candidate.inverse.apply_vector(*normal).unit()?;
                 if surface_normal.dot(mesh_normal).abs() < MIN_TESSELLATION_NORMAL_ALIGNMENT {
                     return None;
@@ -814,6 +823,14 @@ fn is_planar_surface(surface: &SurfaceGeometry) -> bool {
     match surface {
         SurfaceGeometry::Plane { .. } => true,
         SurfaceGeometry::Transformed { basis, .. } => is_planar_surface(basis),
+        _ => false,
+    }
+}
+
+fn contains_nurbs_surface(surface: &SurfaceGeometry) -> bool {
+    match surface {
+        SurfaceGeometry::Nurbs(_) => true,
+        SurfaceGeometry::Transformed { basis, .. } => contains_nurbs_surface(basis),
         _ => false,
     }
 }
@@ -1735,6 +1752,50 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
         | SurfaceGeometry::Unknown { .. } => None,
     }
     .filter(|residual| residual.is_finite())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SurfaceMeasure {
+    residual: f64,
+    normal: Option<Vector3>,
+}
+
+fn surface_measure(
+    surface: &SurfaceGeometry,
+    point: Point3,
+    fit_tolerance: Option<f64>,
+) -> Option<SurfaceMeasure> {
+    if let SurfaceGeometry::Nurbs(nurbs) = surface {
+        let tolerance = fit_tolerance?;
+        let parameters = cadmpeg_ir::eval::nurbs_surface_parameter_near_point(nurbs, point, None)?;
+        let partials = cadmpeg_ir::eval::nurbs_surface_partials(nurbs, parameters.u, parameters.v)?;
+        let residual = point.distance(partials.point);
+        if residual > tolerance {
+            return None;
+        }
+        return Some(SurfaceMeasure {
+            residual,
+            normal: partials.du.cross(partials.dv).unit(),
+        })
+        .filter(|measure| measure.residual.is_finite());
+    }
+    if let SurfaceGeometry::Transformed { basis, transform } = surface {
+        if transform.is_proper_rigid() {
+            let mut measure = surface_measure(
+                basis,
+                transform.try_inverse_affine()?.apply_point(point),
+                fit_tolerance,
+            )?;
+            measure.normal = measure
+                .normal
+                .and_then(|normal| transform.apply_vector(normal).unit());
+            return Some(measure);
+        }
+    }
+    Some(SurfaceMeasure {
+        residual: analytic_surface_residual(surface, point)?,
+        normal: analytic_surface_normal(surface, point),
+    })
 }
 
 #[cfg(test)]

@@ -11,9 +11,9 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_curve_point,
-    nurbs_surface_isocurve, nurbs_surface_parameter_segment_chord_bound,
-    nurbs_surface_parameter_within_tolerance, nurbs_surface_partials, nurbs_surface_point,
-    surface_point,
+    nurbs_surface_isocurve, nurbs_surface_parameter_near_point,
+    nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
+    nurbs_surface_partials, nurbs_surface_point, surface_point,
 };
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry,
@@ -2705,9 +2705,6 @@ const INVERSE_RELATIVE_TOLERANCE: f64 = 8.0 * f64::EPSILON;
 const NURBS_POLE_ROUNDOFF_FACTOR: f64 = 256.0 * f64::EPSILON;
 const NURBS_CACHE_SAMPLES_PER_SPAN: usize = 8;
 const NURBS_ENDPOINT_TOLERANCE_MM: f64 = 1.0e-6;
-const NURBS_CACHE_PROJECTION_ITERATIONS: usize = 24;
-const NURBS_CACHE_LINE_SEARCH_STEPS: usize = 12;
-const NURBS_COARSE_INVERSE_GRID: usize = 8;
 
 fn inverse_coordinate_tolerance(points: impl IntoIterator<Item = cadmpeg_ir::math::Point3>) -> f64 {
     let scale = points.into_iter().fold(1.0_f64, |scale, point| {
@@ -4399,80 +4396,7 @@ fn nurbs_seeded_surface_projection(
     point: cadmpeg_ir::math::Point3,
     seed: Option<cadmpeg_ir::math::Point2>,
 ) -> Option<cadmpeg_ir::math::Point2> {
-    let u_domain = nurbs_active_domain(&surface.u_knots, surface.u_degree, surface.u_count)?;
-    let v_domain = nurbs_active_domain(&surface.v_knots, surface.v_degree, surface.v_count)?;
-    let mut parameters = match seed {
-        Some(seed) if seed.u.is_finite() && seed.v.is_finite() => cadmpeg_ir::math::Point2::new(
-            seed.u.clamp(u_domain[0], u_domain[1]),
-            seed.v.clamp(v_domain[0], v_domain[1]),
-        ),
-        _ => {
-            let mut best = None;
-            for u_index in 0..=NURBS_COARSE_INVERSE_GRID {
-                let u_fraction = u_index as f64 / NURBS_COARSE_INVERSE_GRID as f64;
-                let u = u_domain[0] + u_fraction * (u_domain[1] - u_domain[0]);
-                for v_index in 0..=NURBS_COARSE_INVERSE_GRID {
-                    let v_fraction = v_index as f64 / NURBS_COARSE_INVERSE_GRID as f64;
-                    let v = v_domain[0] + v_fraction * (v_domain[1] - v_domain[0]);
-                    let candidate = nurbs_surface_point(surface, u, v)?;
-                    let distance = (candidate.x - point.x).powi(2)
-                        + (candidate.y - point.y).powi(2)
-                        + (candidate.z - point.z).powi(2);
-                    if best.is_none_or(|(_, best_distance)| distance < best_distance) {
-                        best = Some((cadmpeg_ir::math::Point2::new(u, v), distance));
-                    }
-                }
-            }
-            best?.0
-        }
-    };
-    let squared_distance = |left: cadmpeg_ir::math::Point3| {
-        (left.x - point.x).powi(2) + (left.y - point.y).powi(2) + (left.z - point.z).powi(2)
-    };
-    for _ in 0..NURBS_CACHE_PROJECTION_ITERATIONS {
-        let partials = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
-        let current_distance = squared_distance(partials.point);
-        if current_distance <= f64::EPSILON {
-            return Some(parameters);
-        }
-        let residual = cadmpeg_ir::math::Vector3::new(
-            partials.point.x - point.x,
-            partials.point.y - point.y,
-            partials.point.z - point.z,
-        );
-        let du_squared = partials.du.dot(partials.du);
-        let mixed = partials.du.dot(partials.dv);
-        let dv_squared = partials.dv.dot(partials.dv);
-        let determinant = du_squared * dv_squared - mixed * mixed;
-        if !determinant.is_finite() || determinant.abs() <= f64::EPSILON {
-            break;
-        }
-        let du_residual = partials.du.dot(residual);
-        let dv_residual = partials.dv.dot(residual);
-        let step = cadmpeg_ir::math::Point2::new(
-            (dv_squared * du_residual - mixed * dv_residual) / determinant,
-            (du_squared * dv_residual - mixed * du_residual) / determinant,
-        );
-        let mut scale = 1.0;
-        let mut accepted = false;
-        for _ in 0..NURBS_CACHE_LINE_SEARCH_STEPS {
-            let candidate = cadmpeg_ir::math::Point2::new(
-                (parameters.u - scale * step.u).clamp(u_domain[0], u_domain[1]),
-                (parameters.v - scale * step.v).clamp(v_domain[0], v_domain[1]),
-            );
-            let candidate_point = nurbs_surface_point(surface, candidate.u, candidate.v)?;
-            if squared_distance(candidate_point) < current_distance {
-                parameters = candidate;
-                accepted = true;
-                break;
-            }
-            scale *= 0.5;
-        }
-        if !accepted {
-            break;
-        }
-    }
-    parameters.u.is_finite().then_some(parameters)
+    nurbs_surface_parameter_near_point(surface, point, seed)
 }
 
 fn nurbs_curve_surface_deviation(
