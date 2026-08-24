@@ -6505,7 +6505,12 @@ fn counterbore_cylinders(
     }
     let linear_tolerance = ir.tolerances.linear.max(1e-9);
     let angular_tolerance = ir.tolerances.angular.max(1e-12);
-    let mut candidates = vec![Vec::<(usize, CounterboreCylinderWitness)>::new(); cylinders.len()];
+    let mut candidates = cadmpeg_core::decode::alloc_filled(
+        cylinders.len(),
+        Vec::<(usize, CounterboreCylinderWitness)>::new(),
+        "nx counterbore cylinder candidates",
+    )
+    .ok()?;
     for (first_index, first) in cylinders.iter().enumerate() {
         for (second_index, second) in cylinders.iter().enumerate().skip(first_index + 1) {
             let (small, large) = if first.radius < second.radius {
@@ -6570,7 +6575,12 @@ fn counterbore_cylinders(
         return None;
     }
     let mut witnesses = Vec::with_capacity(cylinders.len() / 2);
-    let mut used = vec![false; cylinders.len()];
+    let mut used = cadmpeg_core::decode::alloc_filled(
+        cylinders.len(),
+        false,
+        "nx counterbore cylinder assignments",
+    )
+    .ok()?;
     for first_index in 0..cylinders.len() {
         if used[first_index] {
             continue;
@@ -6842,7 +6852,7 @@ fn simple_hole_chamfers(
         {
             return BTreeMap::new();
         }
-        let mut cone_counts = vec![0usize; bores.len()];
+        let mut cone_counts = std::iter::repeat_n(0usize, bores.len()).collect::<Vec<_>>();
         let mut outer_radii = Vec::new();
         let mut included_angles = Vec::new();
         for face in body_faces

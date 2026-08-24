@@ -488,7 +488,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                         trailer.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
-                    references: vec![1; trailer.count.into()],
+                    references: std::iter::repeat_n(1, trailer.count.into()).collect(),
                     byte_len: bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                     inflated_offset: trailer.offset as u64,
