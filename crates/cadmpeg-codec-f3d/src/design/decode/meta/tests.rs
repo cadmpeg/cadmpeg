@@ -52,6 +52,18 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         }
     }
 
+    fn typed_binding(out: &mut Vec<u8>, component: u64, context_uuid: &str) {
+        out.push(1);
+        out.extend_from_slice(&component.to_le_bytes());
+        out.extend_from_slice(&(COMPONENT_TYPE_GUID.len() as u32).to_le_bytes());
+        out.extend_from_slice(COMPONENT_TYPE_GUID.as_bytes());
+        out.extend_from_slice(&[0, 0]);
+        out.extend_from_slice(&36_u32.to_le_bytes());
+        for code_unit in context_uuid.encode_utf16() {
+            out.extend_from_slice(&code_unit.to_le_bytes());
+        }
+    }
+
     for reserved_len in [2, 3] {
         let mut bulk = vec![0xaa, 0xbb];
         let marker = bulk.len();
@@ -71,6 +83,20 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
             (marker + 9 + reserved_len) as u64
         );
     }
+
+    let mut typed = vec![0xaa, 0xbb];
+    let typed_marker = typed.len();
+    typed_binding(&mut typed, 17, CONTEXT_UUID);
+    let decoded = with_scan(&archive(&typed), |scan| {
+        crate::design::decode::meta::decode_component_naming_spaces(scan)
+    })
+    .expect("typed component naming space");
+    let [space] = decoded.as_slice() else {
+        panic!("expected one typed component naming space");
+    };
+    assert_eq!(space.component_record_index, 17);
+    assert_eq!(space.context_uuid, CONTEXT_UUID);
+    assert_eq!(space.byte_offset, typed_marker as u64);
 
     let mut conflicting = Vec::new();
     binding(&mut conflicting, 17, 3, CONTEXT_UUID);

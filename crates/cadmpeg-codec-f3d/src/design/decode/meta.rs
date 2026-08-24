@@ -53,6 +53,32 @@ pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError
     Ok(out)
 }
 
+fn insert_component_naming_space(
+    by_component: &mut HashMap<u64, DesignComponentNamingSpace>,
+    bulk_name: &str,
+    marker: usize,
+    component_record_index: u64,
+    context_uuid: String,
+    context_uuid_offset: usize,
+) -> Result<(), CodecError> {
+    let binding = DesignComponentNamingSpace {
+        id: ids::native_design_component_naming_space_id(bulk_name, marker),
+        byte_offset: marker as u64,
+        component_record_index,
+        context_uuid,
+        context_uuid_offset: context_uuid_offset as u64,
+    };
+    if let Some(existing) = by_component.insert(component_record_index, binding.clone()) {
+        if existing.context_uuid != binding.context_uuid {
+            return Err(CodecError::Malformed(format!(
+                "Design component {component_record_index} has conflicting context UUID bindings"
+            )));
+        }
+        by_component.insert(component_record_index, existing);
+    }
+    Ok(())
+}
+
 /// Decode each component entity's UUID-bound local naming space.
 pub fn decode_component_naming_spaces(
     scan: &ContainerScan,
@@ -106,23 +132,53 @@ pub fn decode_component_naming_spaces(
                 if !is_guid_relaxed(&context_uuid) {
                     continue;
                 }
-                let binding = DesignComponentNamingSpace {
-                    id: ids::native_design_component_naming_space_id(&bulk_name, marker),
-                    byte_offset: marker as u64,
+                insert_component_naming_space(
+                    &mut by_component,
+                    &bulk_name,
+                    marker,
                     component_record_index,
                     context_uuid,
-                    context_uuid_offset: uuid_offset as u64,
-                };
-                if let Some(existing) = by_component.insert(component_record_index, binding.clone())
-                {
-                    if existing.context_uuid != binding.context_uuid {
-                        return Err(CodecError::Malformed(format!(
-                            "Design component {component_record_index} has conflicting context UUID bindings"
-                        )));
-                    }
-                    by_component.insert(component_record_index, existing);
-                }
+                    uuid_offset,
+                )?;
             }
+        }
+        for marker in 0..bytes.len() {
+            let mut uuid_offset = marker;
+            let Some(reference) = take_reference(bytes, &mut uuid_offset) else {
+                continue;
+            };
+            let (Some(component_record_index), Some(inline_type_guid)) =
+                (reference.target, reference.inline_type_guid.as_deref())
+            else {
+                continue;
+            };
+            if reference.segment.is_some()
+                || reference.link_name.is_some()
+                || !meta.types.iter().any(|design_type| {
+                    design_type.module == COMPONENT_MODULE
+                        && design_type.base_type_guid.as_deref().is_some_and(|base| {
+                            base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                        })
+                        && design_type.type_guid.eq_ignore_ascii_case(inline_type_guid)
+                        && design_type.entity_ids.contains(&component_record_index)
+                })
+            {
+                continue;
+            }
+            let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
+                continue;
+            };
+            if !is_guid_relaxed(&context_uuid) {
+                continue;
+            }
+            insert_component_naming_space(
+                &mut by_component,
+                &bulk_name,
+                marker,
+                component_record_index,
+                context_uuid,
+                uuid_offset,
+            )?;
         }
         if let Some(missing) = component_entities
             .iter()
