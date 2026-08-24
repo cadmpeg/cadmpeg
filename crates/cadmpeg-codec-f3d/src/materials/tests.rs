@@ -96,7 +96,90 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
         .expect("decode framed definition record");
     assert_eq!(decoded.schema, "GenericSchema");
     assert_eq!(decoded.asset_id, "Prism-001");
-    assert_eq!(decoded.category, category);
+    assert_eq!(decoded.category.as_deref(), Some(category.as_str()));
+}
+
+#[test]
+fn definition_catalog_version_one_omits_category() {
+    fn lp(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    let mut logical = RECORD_MARKER.to_vec();
+    lp(&mut logical, "PrismOpaqueSchema");
+    logical.push(1);
+    lp(&mut logical, "Opaque(246,246,243)");
+    lp(&mut logical, "EFD2D83C-576F-3A9B-8535-31523D8D8432");
+    logical.extend_from_slice(&1_u32.to_le_bytes());
+    lp(&mut logical, "Default");
+    lp(&mut logical, "Prism opaque material.");
+    logical.extend_from_slice(&2_u32.to_le_bytes());
+    lp(&mut logical, "materials");
+    lp(&mut logical, "opaque");
+    logical.extend_from_slice(&0_u32.to_le_bytes());
+
+    let decoded = super::decode_definition_catalog_record(&logical)
+        .expect("decode version-one definition record");
+    assert_eq!(decoded.schema, "PrismOpaqueSchema");
+    assert_eq!(decoded.asset_id, "Opaque(246,246,243)");
+    assert_eq!(decoded.category, None);
+    assert_eq!(decoded.group.as_deref(), Some("Default"));
+    assert_eq!(decoded.tags, ["materials", "opaque"]);
+}
+
+#[test]
+fn definition_catalog_version_zero_omits_category_and_group() {
+    fn lp(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    let mut logical = RECORD_MARKER.to_vec();
+    lp(&mut logical, "UnifiedBitmapSchema");
+    logical.push(0);
+    lp(&mut logical, "Metal-045_metal_pattern_shader");
+    lp(&mut logical, "Metal-045_metal_pattern_shader");
+    logical.extend_from_slice(&0_u32.to_le_bytes());
+    lp(&mut logical, "Unified Bitmap.");
+    logical.extend_from_slice(&2_u32.to_le_bytes());
+    lp(&mut logical, "maps");
+    lp(&mut logical, "misc");
+    logical.extend_from_slice(&1_u32.to_le_bytes());
+    lp(&mut logical, "Maps/UnifiedBitmap/UnifiedBitmap.png");
+
+    let decoded = super::decode_definition_catalog_record(&logical)
+        .expect("decode version-zero definition record");
+    assert_eq!(decoded.category, None);
+    assert_eq!(decoded.group, None);
+    assert_eq!(decoded.description, "Unified Bitmap.");
+}
+
+#[test]
+fn definition_catalog_version_three_adds_subgroup() {
+    fn lp(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    let mut logical = RECORD_MARKER.to_vec();
+    lp(&mut logical, "GenericSchema");
+    logical.push(0);
+    lp(&mut logical, "InvGen-063");
+    lp(&mut logical, "InvGen-063");
+    logical.extend_from_slice(&3_u32.to_le_bytes());
+    for value in ["Metal", "Default", "Miscellaneous", "Generic material."] {
+        lp(&mut logical, value);
+    }
+    logical.extend_from_slice(&0_u32.to_le_bytes());
+    logical.extend_from_slice(&0_u32.to_le_bytes());
+
+    let decoded = super::decode_definition_catalog_record(&logical)
+        .expect("decode version-three definition record");
+    assert_eq!(decoded.category.as_deref(), Some("Metal"));
+    assert_eq!(decoded.group.as_deref(), Some("Default"));
+    assert_eq!(decoded.subgroup.as_deref(), Some("Miscellaneous"));
+    assert_eq!(decoded.description, "Generic material.");
 }
 
 #[test]
@@ -106,8 +189,9 @@ fn definition_catalog_deduplicates_equal_records_and_rejects_conflicts() {
             schema: "PrismMetalSchema".into(),
             asset_id: asset.into(),
             base_asset_id: asset.into(),
-            category: category.into(),
-            group: "Default".into(),
+            category: Some(category.into()),
+            group: Some("Default".into()),
+            subgroup: None,
             description: "Steel - satin".into(),
             tags: vec!["Metal".into(), "Steel".into()],
             preview_paths: vec!["Mats/PrismMetal/Presets/t_Prism-256.png".into()],
@@ -119,6 +203,12 @@ fn definition_catalog_deduplicates_equal_records_and_rejects_conflicts() {
         .expect("first definition");
     merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"))
         .expect("equal duplicate definition");
+    assert_eq!(definitions.len(), 1);
+
+    let mut alternate_description = definition("Prism-256", "Metal/Steel");
+    alternate_description.description = "CCAF1000-E7D9-2CF1-9BA1-B9224CFEBAF6".into();
+    merge_definition_catalog_record(&mut definitions, alternate_description)
+        .expect("descriptive duplicate definition");
     assert_eq!(definitions.len(), 1);
 
     assert!(merge_definition_catalog_record(

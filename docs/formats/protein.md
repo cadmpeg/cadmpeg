@@ -45,14 +45,14 @@ A valid logical record begins with four length-prefixed UTF-8 strings: schema id
 A `DefinitionIteratorProperties.bin` logical record has this sequence:
 
 1. record marker `80 00 01 00`;
-2. length-prefixed UTF-8 schema identifier, followed by one zero byte;
+2. length-prefixed UTF-8 schema identifier, followed by a Boolean flag;
 3. length-prefixed UTF-8 asset identifier;
 4. length-prefixed UTF-8 base asset identifier;
-5. little-endian u32 format version, equal to `2`;
-6. length-prefixed UTF-8 category, group, and description;
+5. little-endian u32 format version;
+6. version-specific metadata strings;
 7. little-endian u32 tag count and that many length-prefixed UTF-8 tags;
 8. little-endian u32 preview-path count and that many length-prefixed UTF-8 paths.
 
-The record has no further typed members after the last preview path. If page framing contributes bytes through the end of a start or continuation page, the remaining bytes are zero padding. The asset identifier joins the definition to the base asset identifier of an instance record. The joined definition supplies the instance schema identifier and category.
+The Boolean flag does not select the metadata layout. Format version `0` stores description only. Version `1` stores group and description. Version `2` stores category, group, and description. Version `3` stores category, group, subgroup, and description. The record has no further typed members after the last preview path. If page framing contributes bytes through the end of a start or continuation page, the remaining bytes are zero padding. The asset identifier joins the definition to the base asset identifier of an instance record. The joined definition supplies the instance schema identifier and its category when present.
 
-A definition stream can repeat one asset identifier with the same schema, base asset identifier, category, group, description, tags, and preview paths. Equal definitions denote one catalog entry. Repeated asset identifiers with different definition fields are invalid.
+A definition stream can repeat one asset identifier. Repeated records denote one catalog entry when schema identifier, base asset identifier, and category agree. Group, subgroup, description, tags, and preview paths are descriptive metadata and can differ between repeats. A disagreement in an identity field is invalid.

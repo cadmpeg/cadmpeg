@@ -1789,7 +1789,7 @@ fn definition_catalog<'a>(
     }
     Ok(definitions
         .into_iter()
-        .map(|(asset_id, definition)| (asset_id, (definition.schema, Some(definition.category))))
+        .map(|(asset_id, definition)| (asset_id, (definition.schema, definition.category)))
         .collect())
 }
 
@@ -1798,8 +1798,9 @@ struct DefinitionCatalogRecord {
     schema: String,
     asset_id: String,
     base_asset_id: String,
-    category: String,
-    group: String,
+    category: Option<String>,
+    group: Option<String>,
+    subgroup: Option<String>,
     description: String,
     tags: Vec<String>,
     preview_paths: Vec<String>,
@@ -1813,7 +1814,10 @@ fn merge_definition_catalog_record(
         std::collections::hash_map::Entry::Vacant(entry) => {
             entry.insert(definition);
         }
-        std::collections::hash_map::Entry::Occupied(entry) if entry.get() == &definition => {}
+        std::collections::hash_map::Entry::Occupied(entry)
+            if entry.get().schema == definition.schema
+                && entry.get().base_asset_id == definition.base_asset_id
+                && entry.get().category == definition.category => {}
         std::collections::hash_map::Entry::Occupied(entry) => {
             return Err(CodecError::Malformed(format!(
                 "Protein definition catalog repeats asset {} with conflicting fields",
@@ -1825,31 +1829,51 @@ fn merge_definition_catalog_record(
 }
 
 fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRecord, CodecError> {
-    let malformed =
-        || CodecError::Malformed("Protein definition catalog record is malformed".into());
+    let malformed = malformed_definition_catalog_record;
     if !record.starts_with(RECORD_MARKER) {
-        return Err(malformed());
+        return Err(malformed("marker", 0));
     }
     let mut position = RECORD_MARKER.len();
-    let schema = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
-    if record.get(position) != Some(&0) {
-        return Err(malformed());
+    let schema =
+        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("schema", position))?;
+    let flag = *record
+        .get(position)
+        .ok_or_else(|| malformed("flag", position))?;
+    if flag > 1 {
+        return Err(malformed("flag", position));
     }
     position += 1;
-    let asset_id = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
-    let base_asset_id = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
-    let version = View::u32_le_at(record, position).ok_or_else(&malformed)?;
+    let asset_id = take_lp_utf8(record, &mut position)
+        .ok_or_else(|| malformed("asset identifier", position))?;
+    let base_asset_id = take_lp_utf8(record, &mut position)
+        .ok_or_else(|| malformed("base asset identifier", position))?;
+    let version =
+        View::u32_le_at(record, position).ok_or_else(|| malformed("format version", position))?;
     position += 4;
-    if version != 2 {
-        return Err(malformed());
+    if version > 3 {
+        return Err(malformed("format version", position - 4));
     }
-    let category = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
-    let group = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
-    let description = take_lp_utf8(record, &mut position).ok_or_else(&malformed)?;
+    let category = if version >= 2 {
+        Some(take_lp_utf8(record, &mut position).ok_or_else(|| malformed("category", position))?)
+    } else {
+        None
+    };
+    let group = if version >= 1 {
+        Some(take_lp_utf8(record, &mut position).ok_or_else(|| malformed("group", position))?)
+    } else {
+        None
+    };
+    let subgroup = if version == 3 {
+        Some(take_lp_utf8(record, &mut position).ok_or_else(|| malformed("subgroup", position))?)
+    } else {
+        None
+    };
+    let description =
+        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("description", position))?;
     let tags = take_catalog_strings(record, &mut position)?;
     let preview_paths = take_catalog_strings(record, &mut position)?;
     if record[position..].iter().any(|byte| *byte != 0) {
-        return Err(malformed());
+        return Err(malformed("trailing padding", position));
     }
     Ok(DefinitionCatalogRecord {
         schema,
@@ -1857,25 +1881,32 @@ fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRe
         base_asset_id,
         category,
         group,
+        subgroup,
         description,
         tags,
         preview_paths,
     })
 }
 
+fn malformed_definition_catalog_record(_field: &str, _position: usize) -> CodecError {
+    CodecError::Malformed("Protein definition catalog record is malformed".into())
+}
+
 fn take_catalog_strings(record: &[u8], position: &mut usize) -> Result<Vec<String>, CodecError> {
-    let malformed =
-        || CodecError::Malformed("Protein definition catalog record is malformed".into());
-    let count = View::u32_le_at(record, *position).ok_or_else(&malformed)?;
+    let count = View::u32_le_at(record, *position)
+        .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
     *position += 4;
     let count = bounded_len(u64::from(count), 4, record.len().saturating_sub(*position))
-        .ok_or_else(&malformed)?;
+        .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
     let mut values = Vec::new();
-    values.try_reserve(count).map_err(|_| {
-        CodecError::Malformed("Protein catalog string count exceeds capacity".into())
-    })?;
+    values
+        .try_reserve(count)
+        .map_err(|_| malformed_definition_catalog_record("string capacity", *position))?;
     for _ in 0..count {
-        values.push(take_lp_utf8(record, position).ok_or_else(&malformed)?);
+        values.push(
+            take_lp_utf8(record, position)
+                .ok_or_else(|| malformed_definition_catalog_record("string", *position))?,
+        );
     }
     Ok(values)
 }
