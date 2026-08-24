@@ -794,7 +794,7 @@ fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandi
 
     let lead = *data.get(pos + 6)?;
     if lead == 0x03 && data.get(pos + 7..pos + 9) != Some(&[0x7c, 0x06]) {
-        let identities = identity_candidates(data, pos + 7, end, false);
+        let identities = identity_candidates(data, pos + 7, end, true);
         return (!identities.is_empty()).then_some(EntityRecordCandidates {
             pos,
             total_len,
@@ -844,7 +844,7 @@ fn identity_candidates(
     data: &[u8],
     start: usize,
     end: usize,
-    fixed_definition_fields: bool,
+    skip_fixed_fields: bool,
 ) -> Vec<EntityIdentityCandidate> {
     let mut identities = Vec::new();
     let mut at = start;
@@ -873,7 +873,7 @@ fn identity_candidates(
             {
                 at += 5;
             }
-            0xfe if fixed_definition_fields
+            0xfe if skip_fixed_fields
                 && at.checked_add(1).and_then(|next| data.get(next)) == Some(&0xf6)
                 && at.checked_add(18).is_some_and(|frame_end| frame_end <= end) =>
             {
@@ -1223,6 +1223,17 @@ mod tests {
         record_with_definition_suffix(prefix, entity_id, &[0xaa])
     }
 
+    fn inline_record(prefix: &[u8], entity_id: u32, tail: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0x7c, 0x05, 0, 0, 0, 0, 0x03];
+        bytes.extend_from_slice(prefix);
+        bytes.push(0xea);
+        bytes.extend_from_slice(&entity_id.to_le_bytes());
+        bytes.extend_from_slice(tail);
+        let len = u32::try_from(bytes.len()).expect("bounded inline test record");
+        bytes[2..6].copy_from_slice(&len.to_le_bytes());
+        bytes
+    }
+
     #[test]
     fn fixed_width_definition_atom_does_not_terminate_at_embedded_ea() {
         let prefix = [0x32, 0xea, 0, 0, 0, 0x11];
@@ -1290,6 +1301,22 @@ mod tests {
         );
         assert_eq!(run[0].definition_suffix, first_frame);
         assert_eq!(run[1].definition_suffix, second_frame);
+    }
+
+    #[test]
+    fn inline_fixed_frame_payload_does_not_create_an_identity_delimiter() {
+        let mut frame = [0; 18];
+        frame[..2].copy_from_slice(&[0xfe, 0xf6]);
+        frame[2] = 0xea;
+        frame[3..7].copy_from_slice(&100_u32.to_le_bytes());
+        let bytes = inline_record(&[0x32, 7, 0, 0, 0], 37, &frame);
+
+        let runs = parse_runs(&bytes);
+        let [run] = runs.as_slice() else {
+            panic!("one inline entity-table run");
+        };
+        assert_eq!(run[0].entity_id, 37);
+        assert_eq!(run[0].inline_body.as_deref(), Some(&bytes[6..]));
     }
 
     #[test]
