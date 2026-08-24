@@ -216,6 +216,8 @@
       "active_typed_feature_skamp_constraint_count": 0,
       "ambiguous_visible_curve_row_count": 0,
       "ambiguous_visible_surface_row_count": 0,
+      "axial_interval_corner_envelope_count": 0,
+      "axial_interval_corner_solved_carrier_count": 0,
       "brep_admitted_face_count": 0,
       "brep_body_count_mismatch_count": 0,
       "brep_boundary_curve_count": 0,

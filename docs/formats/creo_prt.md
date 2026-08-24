@@ -971,6 +971,15 @@ span, which reconstructs the missing corner coordinate. More than one missing
 transverse span is incomplete. Any other selector pair or non-unique axis,
 pairing, or radius retains the body as native.
 
+In a class-913 type-24 axial-interval corner body whose control shell does not
+select a radial quadrant, the parameter and corner fields use the same layout,
+but all four transverse corner extrema are candidate axis lines. Adjacent
+support planes whose normals are perpendicular to the cylinder axis provide
+tangency witnesses. Score each candidate by the number of support planes at
+the stored radius from its line. Admit the unique candidate with a nonzero
+maximum score. A tied or zero maximum retains the body as native. This body is
+not a generated round-edge endpoint body.
+
 A generated type-24 round-edge body has a control shell, two edge parameters,
 two model-space endpoint triples, and an optional generated-entity reference.
 This production applies only when the bounded row has no complete inline

@@ -2,9 +2,48 @@
 
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
+use super::unique_tangent_axial_interval_corner_frame;
 use crate::decode::analytic::PlaneEquation;
 
 const EPS_TEST_GEOMETRY: f64 = 1.0e-12;
+
+fn axial_interval_candidate(origin: [f64; 3]) -> crate::surface::PositionalCylinderFrame {
+    crate::surface::PositionalCylinderFrame {
+        origin,
+        axis: [1.0, 0.0, 0.0],
+        ref_direction: [0.0, 1.0, 0.0],
+        radius: 4.0,
+        length: Some(6.0),
+    }
+}
+
+#[test]
+fn axial_interval_corner_frame_requires_a_unique_tangent_maximum() {
+    let candidates = [
+        axial_interval_candidate([10.0, 7.0, 9.0]),
+        axial_interval_candidate([10.0, 7.0, 5.0]),
+        axial_interval_candidate([10.0, 3.0, 5.0]),
+        axial_interval_candidate([10.0, 3.0, 9.0]),
+    ];
+    let y_support = PlaneEquation {
+        origin: [0.0, 3.0, 0.0],
+        normal: [0.0, 1.0, 0.0],
+    };
+    let z_support = PlaneEquation {
+        origin: [0.0, 0.0, 5.0],
+        normal: [0.0, 0.0, 1.0],
+    };
+    let cap = PlaneEquation {
+        origin: [10.0, 0.0, 0.0],
+        normal: [1.0, 0.0, 0.0],
+    };
+
+    assert_eq!(
+        unique_tangent_axial_interval_corner_frame(&candidates, &[y_support, z_support, cap]),
+        Some(candidates[0])
+    );
+    assert!(unique_tangent_axial_interval_corner_frame(&candidates, &[y_support]).is_none());
+}
 
 fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes(Vec::new());

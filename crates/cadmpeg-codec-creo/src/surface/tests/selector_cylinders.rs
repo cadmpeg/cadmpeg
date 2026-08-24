@@ -65,3 +65,51 @@ fn selector_corner_interval_cylinders_resolve_axis_origin_and_radius() {
         decode_selector_corner_interval_cylinder_frame(&unequal_transverse_spans, &cache).is_none()
     );
 }
+
+#[test]
+fn axial_interval_corner_envelope_retains_all_radial_quadrants() {
+    let push_first = |body: &mut Vec<u8>, value: f64| {
+        let raw = value.to_be_bytes();
+        assert_eq!(raw[0], 0x40);
+        body.push(0x2d);
+        body.extend_from_slice(&raw[1..]);
+    };
+    let push_second = |body: &mut Vec<u8>, value: f64| {
+        let raw = value.to_be_bytes();
+        assert_eq!(raw[0], 0x40);
+        body.push(0x46);
+        body.extend_from_slice(&raw[1..]);
+    };
+    let mut body = vec![0x18];
+    push_first(&mut body, 2.0);
+    body.push(0x12);
+    push_first(&mut body, 8.0);
+    for corner in [[12.0, 3.0, 5.0], [18.0, 7.0, 9.0]] {
+        push_first(&mut body, corner[0]);
+        push_second(&mut body, corner[1]);
+        push_second(&mut body, corner[2]);
+    }
+    body.extend_from_slice(&[0xf7, 0x17]);
+
+    let candidates =
+        decode_type24_axial_interval_corner_candidates(&body, &scalar::ScalarCache::default())
+            .expect("complete axial-interval corner envelope");
+    assert_eq!(candidates.len(), 4);
+    assert_eq!(
+        candidates
+            .iter()
+            .map(|candidate| candidate.origin)
+            .collect::<Vec<_>>(),
+        [
+            [10.0, 7.0, 9.0],
+            [10.0, 7.0, 5.0],
+            [10.0, 3.0, 5.0],
+            [10.0, 3.0, 9.0],
+        ]
+    );
+    assert!(candidates.iter().all(|candidate| {
+        candidate.axis == [1.0, 0.0, 0.0]
+            && candidate.radius == 4.0
+            && candidate.length == Some(6.0)
+    }));
+}

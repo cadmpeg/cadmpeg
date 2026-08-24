@@ -48,6 +48,8 @@ pub(in super::super) struct PositionalCylinderTransferSummary {
     pub round_edge_nonunique_radius: usize,
     pub round_edge_carrier_validation_failure: usize,
     pub round_edge_replay_conflict: usize,
+    pub axial_interval_corner_envelopes: usize,
+    pub axial_interval_corner_solved_carriers: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -602,6 +604,41 @@ fn round_edge_cylinder_frame(
     Some(*frame)
 }
 
+fn unique_tangent_axial_interval_corner_frame(
+    candidates: &[crate::surface::PositionalCylinderFrame],
+    support_planes: &[PlaneEquation],
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    let scored = candidates
+        .iter()
+        .copied()
+        .filter_map(|candidate| {
+            let axis = normalized(candidate.axis)?;
+            let score = support_planes
+                .iter()
+                .filter(|plane| {
+                    let Some(normal) = normalized(plane.normal) else {
+                        return false;
+                    };
+                    if dot(axis, normal).abs() > EPS_ROUND_EDGE_RELATIVE {
+                        return false;
+                    }
+                    let distance =
+                        (dot(normal, candidate.origin) - dot(normal, plane.origin)).abs();
+                    (distance - candidate.radius).abs()
+                        <= EPS_ROUND_EDGE_PLANE_RESIDUAL * candidate.radius.max(1.0)
+                })
+                .count();
+            (score != 0).then_some((candidate, score))
+        })
+        .collect::<Vec<_>>();
+    let maximum = scored.iter().map(|(_, score)| *score).max()?;
+    let mut best = scored
+        .into_iter()
+        .filter_map(|(candidate, score)| (score == maximum).then_some(candidate));
+    let candidate = best.next()?;
+    best.next().is_none().then_some(candidate)
+}
+
 fn perpendicular_round_edge_cylinder_frame(
     envelope: crate::surface::Type24RoundEdgeEnvelope,
     support_planes: &[PlaneEquation],
@@ -752,9 +789,17 @@ pub(in super::super) fn transfer_positional_cylinders(
         let selector_corner_interval = record
             .selector_corner_interval_cylinder_frame(row.type_byte)
             .is_some();
-        let round_edge_envelope = (feature_class == Some(913) && !inline_non_plane)
-            .then(|| record.type24_round_edge_envelope(row.type_byte))
-            .flatten();
+        let axial_interval_corner_candidates =
+            if feature_class == Some(913) && !inline_non_plane && !selector_corner_interval {
+                record.type24_axial_interval_corner_candidates(row.type_byte)
+            } else {
+                Vec::new()
+            };
+        let round_edge_envelope = (feature_class == Some(913)
+            && !inline_non_plane
+            && axial_interval_corner_candidates.is_empty())
+        .then(|| record.type24_round_edge_envelope(row.type_byte))
+        .flatten();
         if round_edge_envelope.is_some() {
             summary.round_edge_complete_envelopes += 1;
         }
@@ -765,6 +810,15 @@ pub(in super::super) fn transfer_positional_cylinders(
                 round_support_envelope_cylinder(scan, ir, row.feature_id, envelope)
             });
         let support_planes = round_edge_support_planes.get(&row.id);
+        if !axial_interval_corner_candidates.is_empty() {
+            summary.axial_interval_corner_envelopes += 1;
+        }
+        let axial_interval_corner_frame = support_planes.and_then(|planes| {
+            unique_tangent_axial_interval_corner_frame(&axial_interval_corner_candidates, planes)
+        });
+        if axial_interval_corner_frame.is_some() {
+            summary.axial_interval_corner_solved_carriers += 1;
+        }
         let perpendicular_result =
             support_planes
                 .zip(round_edge_envelope)
@@ -836,7 +890,8 @@ pub(in super::super) fn transfer_positional_cylinders(
                 || matches!(feature_class, Some(913))
                     && !constant_round_radii.contains_key(&row.feature_id)
                     && round_support_frame.is_none()
-                    && round_edge_frame.is_none())
+                    && round_edge_frame.is_none()
+                    && axial_interval_corner_frame.is_none())
         {
             continue;
         }
@@ -887,14 +942,17 @@ pub(in super::super) fn transfer_positional_cylinders(
                 Some(frame) => (frame, "round_support_envelope_cylinder"),
                 None => match round_edge_frame {
                     Some(frame) => (frame, "round_edge_endpoint_cylinder"),
-                    None => match record.positional_cylinder_frame {
-                        Some(frame) => (frame, "positional_cylinder_frame"),
-                        None => {
-                            let Some(frame) = reference_bound_frame() else {
-                                continue;
-                            };
-                            frame
-                        }
+                    None => match axial_interval_corner_frame {
+                        Some(frame) => (frame, "axial_interval_corner_cylinder"),
+                        None => match record.positional_cylinder_frame {
+                            Some(frame) => (frame, "positional_cylinder_frame"),
+                            None => {
+                                let Some(frame) = reference_bound_frame() else {
+                                    continue;
+                                };
+                                frame
+                            }
+                        },
                     },
                 },
             }

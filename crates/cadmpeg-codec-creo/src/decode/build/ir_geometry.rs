@@ -450,6 +450,14 @@ pub(super) fn transfer_and_record_scanned_geometry(
             positional_cylinders.round_edge_replay_conflict,
         );
         coverage.insert(
+            "axial_interval_corner_envelope_count".to_string(),
+            positional_cylinders.axial_interval_corner_envelopes,
+        );
+        coverage.insert(
+            "axial_interval_corner_solved_carrier_count".to_string(),
+            positional_cylinders.axial_interval_corner_solved_carriers,
+        );
+        coverage.insert(
             "decoded_type24_round_edge_envelope_count".to_string(),
             decoded_type24_round_edge_envelope_count,
         );

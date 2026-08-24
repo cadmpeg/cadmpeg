@@ -268,6 +268,9 @@ pair. Its split-selector and one-placeholder variants use the same equation.
 The four-bound inline family selects either the positional row outline lane or
 the signed first-directrix outline lane from its first outline token. Both
 forms reconstruct a complete carrier from the inline local-system suffix.
+Class-913 axial-interval corner bodies without a quadrant selector retain four
+axis-line candidates. A unique maximum count of adjacent tangent support planes
+selects the carrier; a tied or zero maximum does not.
 
 **Need.** We must know the equation to construct the cylinder carrier.
 

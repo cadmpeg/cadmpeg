@@ -1361,6 +1361,20 @@ impl SurfaceParameterRecord {
             .then_some(frame)
     }
 
+    /// Decode every cylinder placement allowed by a type-24 axial-interval
+    /// corner envelope whose control shell does not select a radial quadrant.
+    #[must_use]
+    pub fn type24_axial_interval_corner_candidates(
+        &self,
+        type_byte: u8,
+    ) -> Vec<PositionalCylinderFrame> {
+        if type_byte != 0x24 {
+            return Vec::new();
+        }
+        decode_type24_axial_interval_corner_candidates(&self.body, &scalar::ScalarCache::default())
+            .unwrap_or_default()
+    }
+
     /// Decode the positional round-edge envelope carried by a type-24 row.
     ///
     /// The leading control shell and the separator are structural. They must
@@ -5126,6 +5140,113 @@ fn decode_selector_corner_interval_cylinder_frame(
         radius,
         length: Some(parameter_span),
     })
+}
+
+fn decode_type24_axial_interval_corner_candidates(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<PositionalCylinderFrame>> {
+    let start = type24_round_edge_shell_end(body, cache)?;
+    let (first_parameter, mut cursor) = scalar::decode_round_edge_coordinate(body, start, cache)?;
+    cursor = type24_round_edge_separator_end(body, cursor)?;
+    let (second_parameter, next) = scalar::decode_round_edge_coordinate(body, cursor, cache)?;
+    cursor = next;
+
+    let mut corners = [[0.0; 3]; 2];
+    for corner in &mut corners {
+        for (coordinate_index, coordinate) in corner.iter_mut().enumerate() {
+            let (value, next) = if coordinate_index == 0 {
+                scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?
+            } else {
+                scalar::decode_tabulated_cylinder_second_coordinate(body, cursor, cache)?
+            };
+            value.is_finite().then_some(())?;
+            *coordinate = value;
+            cursor = next;
+        }
+    }
+    if body.get(cursor) == Some(&psb::token::ENTITY_REF) {
+        let (_, next) = psb::reference_id(body, cursor + 1).ok()?;
+        cursor = next;
+    }
+    if body.get(cursor) == Some(&psb::token::COMPOUND_CLOSE) {
+        cursor += 1;
+    }
+    (cursor == body.len()).then_some(())?;
+
+    let parameter_span = (second_parameter - first_parameter).abs();
+    let spans = std::array::from_fn::<_, 3, _>(|axis| corners[1][axis] - corners[0][axis]);
+    let scale = corners
+        .iter()
+        .flatten()
+        .chain([first_parameter, second_parameter].iter())
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    (parameter_span > EPS_CYLINDER_GEOMETRY_MIN * scale).then_some(())?;
+    let close =
+        |left: f64, right: f64| (left - right).abs() <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale;
+    let axial_axes = (0..3)
+        .filter(|axis| close(spans[*axis].abs(), parameter_span))
+        .collect::<Vec<_>>();
+    let [axis_index] = axial_axes.as_slice() else {
+        return None;
+    };
+    let radial_axes: [usize; 2] = (0..3)
+        .filter(|axis| axis != axis_index)
+        .collect::<Vec<_>>()
+        .try_into()
+        .ok()?;
+    let [first_radial, second_radial] = radial_axes;
+    close(spans[first_radial].abs(), spans[second_radial].abs()).then_some(())?;
+    let radius = f64::midpoint(spans[first_radial].abs(), spans[second_radial].abs());
+    (radius > EPS_CYLINDER_GEOMETRY_MIN * scale).then_some(())?;
+
+    let axial_candidates = [
+        (
+            corners[0][*axis_index] - first_parameter,
+            corners[1][*axis_index] - second_parameter,
+            1.0,
+        ),
+        (
+            corners[0][*axis_index] + first_parameter,
+            corners[1][*axis_index] + second_parameter,
+            -1.0,
+        ),
+    ]
+    .into_iter()
+    .filter(|(first, second, _)| close(*first, *second))
+    .collect::<Vec<_>>();
+    let [(first_axial, second_axial, axis_sign)] = axial_candidates.as_slice() else {
+        return None;
+    };
+
+    let mut frames = Vec::new();
+    for radial_maxima in [[true, true], [true, false], [false, false], [false, true]] {
+        let mut origin = [0.0; 3];
+        origin[*axis_index] = f64::midpoint(*first_axial, *second_axial);
+        for (radial_axis, take_maximum) in radial_axes.into_iter().zip(radial_maxima) {
+            origin[radial_axis] = if take_maximum {
+                corners[0][radial_axis].max(corners[1][radial_axis])
+            } else {
+                corners[0][radial_axis].min(corners[1][radial_axis])
+            };
+        }
+        let mut axis = [0.0; 3];
+        axis[*axis_index] = *axis_sign;
+        let mut ref_direction = [0.0; 3];
+        ref_direction[first_radial] = 1.0;
+        frames.push(PositionalCylinderFrame {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            length: Some(parameter_span),
+        });
+    }
+    frames
+        .iter()
+        .all(PositionalCylinderFrame::is_valid)
+        .then_some(frames)
 }
 
 fn decode_complete_directrix_interval_cylinder_frame(
