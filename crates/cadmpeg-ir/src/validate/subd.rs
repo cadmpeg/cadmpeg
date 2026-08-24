@@ -30,8 +30,8 @@ fn check_symmetry_pairs(
     let mut sources = BTreeSet::new();
     let mut targets = BTreeSet::new();
     for (pair_index, [source, target]) in pairs.iter().copied().enumerate() {
-        let source_in_range = usize::try_from(source).map_or(false, |index| index < count);
-        let target_in_range = usize::try_from(target).map_or(false, |index| index < count);
+        let source_in_range = usize::try_from(source).is_ok_and(|index| index < count);
+        let target_in_range = usize::try_from(target).is_ok_and(|index| index < count);
         let source_unique = sources.insert(source);
         let target_unique = targets.insert(target);
         if !source_in_range || !target_in_range || !source_unique || !target_unique {

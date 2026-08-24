@@ -887,6 +887,7 @@ fn scene_state_mask_is_exact(mask: &[u8]) -> bool {
         })
 }
 
+#[allow(clippy::option_option)] // Distinguish an invalid footer from a valid footer without bounds.
 fn parse_scene_footer(
     record: &[u8],
     at: usize,
@@ -897,6 +898,7 @@ fn parse_scene_footer(
     parse_scene_bounds_payload(record, at.checked_add(1)?, frame_start)
 }
 
+#[allow(clippy::option_option)] // Distinguish an invalid payload from the exact no-bounds state mask.
 fn parse_scene_bounds_payload(
     record: &[u8],
     payload_at: usize,
@@ -1104,10 +1106,12 @@ fn parse_mesh_collection_owner_record(
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<Option<MeshCollectionOwnerRecord>, CodecError> {
-    let admitted_version = MESH_COLLECTION_OWNER_TYPE_VERSIONS
-        .contains(&frame.design_type.version)
-        .then_some(frame.design_type.version)
-        .unwrap_or(MESH_COLLECTION_OWNER_TYPE_VERSIONS[2]);
+    let admitted_version =
+        if MESH_COLLECTION_OWNER_TYPE_VERSIONS.contains(&frame.design_type.version) {
+            frame.design_type.version
+        } else {
+            MESH_COLLECTION_OWNER_TYPE_VERSIONS[2]
+        };
     let identity = parse_typed_identity(
         bytes,
         frame,

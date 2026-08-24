@@ -1529,7 +1529,7 @@ mod tests {
                 .windows(b"1 1e-06 1e-10".len())
                 .position(|window| window == b"1 1e-06 1e-10")
                 .expect("tolerance line");
-            stream.splice(scale_start..scale_start + 1, scale.bytes());
+            stream.splice(scale_start..=scale_start, scale.bytes());
 
             let error = parse(&stream).expect_err("invalid scale must fail");
             assert_eq!(error.offset, scale_start);

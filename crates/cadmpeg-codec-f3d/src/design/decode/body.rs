@@ -599,7 +599,9 @@ fn parse_snapshot_body_map_frame(
             };
             if name_end != end
                 || (!blob_name.is_empty()
-                    && (!is_brep_blob_basename(&blob_name) || !blob_name.ends_with(".smb")))
+                    && (!is_brep_blob_basename(&blob_name)
+                        || std::path::Path::new(&blob_name).extension()
+                            != Some(std::ffi::OsStr::new("smb"))))
                 || (blob_name.is_empty() && pair_count != 0)
             {
                 continue;
@@ -880,7 +882,8 @@ fn parse_body_map_frame(
             && ((pair_count == 0 && blob_name.is_empty())
                 || (pair_count > 0
                     && is_brep_blob_basename(&blob_name)
-                    && blob_name.ends_with(".smbh"))))
+                    && std::path::Path::new(&blob_name).extension()
+                        == Some(std::ffi::OsStr::new("smbh")))))
         .then_some((name_at, blob_name))
     };
     let mut typed_names = local_reference_candidates(bytes, pairs_end, true)

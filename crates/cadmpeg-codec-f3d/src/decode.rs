@@ -2023,14 +2023,12 @@ fn model_brep_candidates(
             [brep] => candidates.push((**brep).clone()),
             [] => {
                 return Err(CodecError::Malformed(format!(
-                    "Design body map references missing BREP entry {}",
-                    blob_name
+                    "Design body map references missing BREP entry {blob_name}"
                 )))
             }
             _ => {
                 return Err(CodecError::Malformed(format!(
-                    "Design body map BREP basename is ambiguous: {}",
-                    blob_name
+                    "Design body map BREP basename is ambiguous: {blob_name}"
                 )))
             }
         }
