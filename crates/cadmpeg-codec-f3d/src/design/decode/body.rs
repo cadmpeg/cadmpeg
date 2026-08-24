@@ -371,18 +371,31 @@ struct LocalReferenceCandidate {
     trailing_zeros: usize,
 }
 
-fn local_reference_candidates(bytes: &[u8], at: usize) -> Vec<LocalReferenceCandidate> {
+fn local_reference_candidates(
+    bytes: &[u8],
+    at: usize,
+    allow_extra_ordinary_zero: bool,
+) -> Vec<LocalReferenceCandidate> {
     let mut candidates = Vec::new();
     let mut end = at;
     if let Some(reference) = take_reference(bytes, &mut end) {
         if reference.segment.is_none() && reference.link_name.is_none() {
             if let Some(target) = reference.target {
+                let inline_type_guid = reference.inline_type_guid;
                 candidates.push(LocalReferenceCandidate {
                     target,
                     end,
-                    inline_type_guid: reference.inline_type_guid,
+                    inline_type_guid: inline_type_guid.clone(),
                     trailing_zeros: 2,
                 });
+                if allow_extra_ordinary_zero && bytes.get(end) == Some(&0) {
+                    candidates.push(LocalReferenceCandidate {
+                        target,
+                        end: end + 1,
+                        inline_type_guid,
+                        trailing_zeros: 2,
+                    });
+                }
             }
         }
     }
@@ -499,7 +512,7 @@ fn parse_snapshot_body_map_frame(
     let Some(companion_at) = start.checked_add(21) else {
         return Ok(None);
     };
-    for companion in local_reference_candidates(bytes, companion_at) {
+    for companion in local_reference_candidates(bytes, companion_at, true) {
         let Some(reserved_count) = 2usize.checked_sub(companion.trailing_zeros) else {
             continue;
         };
@@ -547,7 +560,7 @@ fn parse_snapshot_body_map_frame(
         }) {
             continue;
         }
-        for container in local_reference_candidates(bytes, pairs_end) {
+        for container in local_reference_candidates(bytes, pairs_end, false) {
             let Some(reserved_count) = 3usize.checked_sub(container.trailing_zeros) else {
                 continue;
             };
@@ -1372,6 +1385,20 @@ mod tests {
             assert_eq!(records[0].bindings[0].asm_key, 7);
             assert_eq!(records[0].bindings[0].entity_suffix, 500);
         }
+    }
+
+    #[test]
+    fn snapshot_body_map_accepts_three_zero_companion_variant() {
+        let mut bytes = snapshot_body_map_bytes(0);
+        let mut companion_end = 4 + 3 + 8 + 6;
+        take_reference(&bytes, &mut companion_end).expect("ordinary companion reference");
+        bytes.insert(companion_end, 0);
+
+        let records = snapshot_body_map_records(&bytes, &snapshot_body_map_metadata())
+            .expect("three-zero companion variant");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].blob_name, "BREP.snapshot.smb");
+        assert_eq!(records[0].bindings.len(), 1);
     }
 
     #[test]
