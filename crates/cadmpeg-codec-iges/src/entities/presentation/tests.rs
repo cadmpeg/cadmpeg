@@ -297,7 +297,7 @@ fn color_definition_ignores_nonsemantic_directory_fields() {
 }
 
 #[test]
-fn v4_property_color_is_ignored_by_presentation_projection() {
+fn v4_property_display_fields_are_ignored_by_presentation_projection() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
@@ -312,7 +312,7 @@ fn v4_property_color_is_ignored_by_presentation_projection() {
                 &[(1, -5)],
                 &[],
                 &[],
-                &[],
+                &[(1, 999)],
                 &[],
             )),
             &DecodeOptions::default(),
@@ -323,9 +323,12 @@ fn v4_property_color_is_ignored_by_presentation_projection() {
     assert_eq!(properties.len(), 1);
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::DisplayDataNotProjected.kind()
-            && loss
+            && (loss
                 .message
                 .contains("Directory color number or definition pointer is invalid")
+                || loss
+                    .message
+                    .contains("line-weight number is outside the Global gradation range"))
     }));
 }
 
