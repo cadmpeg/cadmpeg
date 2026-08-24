@@ -2196,7 +2196,9 @@ fn homogeneous_pcurve_spans(
             weights.to_vec()
         }
         Some(_) => return None,
-        None => vec![1.0; count],
+        None => {
+            cadmpeg_core::decode::alloc_filled(count, 1.0, "nx homogeneous curve weights").ok()?
+        }
     };
     let coordinate_scale = control_points
         .iter()
@@ -2574,7 +2576,13 @@ pub(crate) fn insert_homogeneous_curve_knot<const DIMENSION: usize>(
     if multiplicity >= degree {
         return Some(());
     }
-    let mut inserted = vec![[0.0; DIMENSION]; count + 1];
+    let inserted_count = count.checked_add(1)?;
+    let mut inserted = cadmpeg_core::decode::alloc_filled(
+        inserted_count,
+        [0.0; DIMENSION],
+        "nx inserted homogeneous curve controls",
+    )
+    .ok()?;
     inserted[..=span - degree].copy_from_slice(&controls[..=span - degree]);
     inserted[span - multiplicity + 1..].copy_from_slice(&controls[span - multiplicity..]);
     for index in span - degree + 1..=span - multiplicity {
@@ -3758,7 +3766,7 @@ pub(crate) fn closest_nurbs_curve_parameter_with_budget(
             weights.clone()
         }
         Some(_) => return None,
-        None => vec![1.0; count],
+        None => cadmpeg_core::decode::alloc_filled(count, 1.0, "nx NURBS curve weights").ok()?,
     };
     let coordinate_scale = curve
         .control_points
