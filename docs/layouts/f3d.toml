@@ -4233,6 +4233,108 @@ source = "spec"
 anchor = "their scope backlinks are at +479 and +490"
 
 [[record]]
+name = "assembly_class_307_264_joint_origin_scope"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_carrier_paths.rs"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The class-307 JointOrigin scope is 366 bytes"
+size = 366
+note = "Offsets are relative to the class-307 primary indexed header; the paired class-264 header starts at offset 366."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-307 JointOrigin scope is 366 bytes"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "Fixed scope prefix."
+
+[[record.field]]
+name = "first_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references occur at +21 and +33"
+
+[[record.gap]]
+offset = 32
+size = 1
+note = "Fixed separator."
+
+[[record.field]]
+name = "second_reference"
+offset = 33
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references occur at +21 and +33"
+
+[[record.field]]
+name = "identity_guid"
+offset = 44
+type = "bytes[76]"
+source = "spec"
+anchor = "One 36-code-unit identity GUID starts at +44"
+
+[[record.gap]]
+offset = 120
+size = 3
+note = "Fixed separator before the reference table."
+
+[[record.field]]
+name = "reference_count"
+offset = 123
+type = "u32"
+value = 12
+source = "spec"
+anchor = "A u32 reference count 12 at +123"
+
+[[record.field]]
+name = "reference_entries"
+offset = 127
+type = "bytes[132]"
+source = "spec"
+anchor = "twelve marked references starting at +127"
+
+[[record.field]]
+name = "reference_trailer"
+offset = 259
+type = "bytes[4]"
+value = [255, 255, 255, 255]
+source = "spec"
+anchor = "Four FF bytes follow the reference table"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 263
+type = "u32"
+value = 11
+source = "spec"
+anchor = "The 11-code-unit `JointOrigin` kind starts at +263"
+
+[[record.field]]
+name = "kind"
+offset = 267
+type = "bytes[22]"
+source = "spec"
+anchor = "The 11-code-unit `JointOrigin` kind starts at +263"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 289
+type = "u32"
+source = "spec"
+anchor = "the feature ordinal is at +289"
+
+[[record.gap]]
+offset = 293
+size = 73
+note = "Fixed scope tail."
+
+[[record]]
 name = "assembly_class_363_264_frame_363_carrier"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

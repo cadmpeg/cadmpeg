@@ -1517,12 +1517,9 @@ pub struct DesignAssemblyAlignment {
     /// Exact solved frame carried by a legacy 421-byte `As-built` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solved_frame: Option<DesignAssemblySolvedFrame>,
-    /// Exact occurrence paths qualifying the two operand constructions.
+    /// Exact qualifiers for the two operand constructions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub operand_paths: Option<[DesignAssemblyOperandPath; 2]>,
-    /// Exact pathless operand targets carried by an axial assembly scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub axial_operand_targets: Option<[DesignAssemblyAxialOperandTarget; 2]>,
+    pub operand_qualifiers: Option<[DesignAssemblyOperandQualifier; 2]>,
     /// Optional limits carried by a legacy As-built scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(alias = "angular_limits")]
@@ -1530,6 +1527,32 @@ pub struct DesignAssemblyAlignment {
     /// `JointOrigin` scope whose datum frame is carried by this scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_origin_scope_record_index: Option<u32>,
+}
+
+impl DesignAssemblyAlignment {
+    /// Return both occurrence paths when every operand uses that qualifier form.
+    pub(crate) fn operand_paths(&self) -> Option<[DesignAssemblyOperandPath; 2]> {
+        let qualifiers = self.operand_qualifiers.as_ref()?;
+        let [Some(first), Some(second)] = qualifiers
+            .each_ref()
+            .map(DesignAssemblyOperandQualifier::occurrence_path)
+        else {
+            return None;
+        };
+        Some([first.clone(), second.clone()])
+    }
+
+    /// Return both axial targets when every operand uses that qualifier form.
+    pub(crate) fn axial_operand_targets(&self) -> Option<[&DesignAssemblyAxialOperandTarget; 2]> {
+        let qualifiers = self.operand_qualifiers.as_ref()?;
+        let [Some(first), Some(second)] = qualifiers
+            .each_ref()
+            .map(DesignAssemblyOperandQualifier::axial_target)
+        else {
+            return None;
+        };
+        Some([first, second])
+    }
 }
 
 /// One pathless operand target carried by a 705- or 772-byte assembly scope.
@@ -1723,6 +1746,54 @@ pub struct DesignAssemblyOperandPath {
     /// Byte offsets parallel to `identity_guids`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub identity_guid_offsets: Vec<u64>,
+}
+
+/// One exact native qualifier for an assembly operand construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignAssemblyOperandQualifier {
+    /// Ordered occurrence path carried by a locator graph.
+    OccurrencePath {
+        /// Exact path and its native reference chain.
+        path: DesignAssemblyOperandPath,
+    },
+    /// Pathless target carried by an axial selector graph.
+    AxialTarget {
+        /// Exact pathless target.
+        target: DesignAssemblyAxialOperandTarget,
+    },
+    /// Datum connector owned directly by the current document root.
+    JointOrigin {
+        /// Referenced `JointOrigin` feature scope.
+        scope_record_index: u32,
+        /// Dynamic class of the scope's primary indexed header.
+        class_tag: String,
+        /// Byte offset of the primary indexed header.
+        byte_offset: u64,
+        /// Dynamic class of the paired indexed header.
+        paired_class_tag: String,
+        /// Byte offset of the paired indexed header.
+        paired_byte_offset: u64,
+    },
+}
+
+impl DesignAssemblyOperandQualifier {
+    /// Return the occurrence path when this qualifier carries one.
+    pub(crate) fn occurrence_path(&self) -> Option<&DesignAssemblyOperandPath> {
+        match self {
+            Self::OccurrencePath { path } => Some(path),
+            Self::AxialTarget { .. } | Self::JointOrigin { .. } => None,
+        }
+    }
+
+    /// Return the axial target when this qualifier carries one.
+    pub(crate) fn axial_target(&self) -> Option<&DesignAssemblyAxialOperandTarget> {
+        match self {
+            Self::AxialTarget { target } => Some(target),
+            Self::OccurrencePath { .. } | Self::JointOrigin { .. } => None,
+        }
+    }
 }
 
 /// One operand frame embedded by an assembly-operation scope.

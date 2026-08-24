@@ -716,7 +716,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(short_axial_alignment.angle, 0.5);
     assert_eq!(short_axial_alignment.offset, [0.0, 0.0, 2.0]);
     assert_eq!(short_axial_alignment.owner_record_indices, [64, 65]);
-    assert!(short_axial_alignment.operand_paths.is_none());
+    assert!(short_axial_alignment.operand_paths().is_none());
     let short_axial_frames = short_axial_alignment
         .operand_frames
         .as_ref()

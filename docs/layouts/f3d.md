@@ -1399,6 +1399,35 @@ Unstated regions:
 - `11..37` (26 B): Fixed identity prefix.
 - `189..490` (301 B): Reduced typed identity payload before the scope backlink.
 
+## `assembly_class_307_264_joint_origin_scope`
+
+Spec §Assembly operands · layout: byte offsets · size: 366 B
+
+Offsets are relative to the class-307 primary indexed header; the paired class-264 header starts at offset 366.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_carrier_paths.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The class-307 JointOrigin scope is 366 bytes |
+| 21 | 11 | `first_reference` | `bytes[11]` | little | spec | Marked references occur at +21 and +33 |
+| 33 | 11 | `second_reference` | `bytes[11]` | little | spec | Marked references occur at +21 and +33 |
+| 44 | 76 | `identity_guid` | `bytes[76]` | little | spec | One 36-code-unit identity GUID starts at +44 |
+| 123 | 4 | `reference_count` | `u32` | little | spec | A u32 reference count 12 at +123 · value `12` |
+| 127 | 132 | `reference_entries` | `bytes[132]` | little | spec | twelve marked references starting at +127 |
+| 259 | 4 | `reference_trailer` | `bytes[4]` | little | spec | Four FF bytes follow the reference table · value `[255, 255, 255, 255]` |
+| 263 | 4 | `kind_code_unit_count` | `u32` | little | spec | The 11-code-unit `JointOrigin` kind starts at +263 · value `11` |
+| 267 | 22 | `kind` | `bytes[22]` | little | spec | The 11-code-unit `JointOrigin` kind starts at +263 |
+| 289 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal is at +289 |
+
+Unstated regions:
+
+- `11..21` (10 B): Fixed scope prefix.
+- `32..33` (1 B): Fixed separator.
+- `120..123` (3 B): Fixed separator before the reference table.
+- `293..366` (73 B): Fixed scope tail.
+
 ## `assembly_class_363_264_frame_363_carrier`
 
 Spec §Assembly operands · layout: byte offsets · size: 389 B

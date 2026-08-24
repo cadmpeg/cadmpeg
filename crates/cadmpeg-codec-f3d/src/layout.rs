@@ -1754,6 +1754,44 @@ pub(crate) mod assembly_class_363_264_frame_388_identity_reduced_501 {
     pub(crate) const SCOPE_REFERENCE: usize = 490;
 }
 
+/// Byte offsets for the `assembly_class_307_264_joint_origin_scope` record.
+///
+/// Spec §Assembly operands. Record length 366 B.
+///
+/// ```text
+/// Offsets are relative to the class-307 primary indexed header; the paired class-264 header starts at offset 366.
+/// ```
+pub(crate) mod assembly_class_307_264_joint_origin_scope {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 366;
+    /// Offset of `indexed_header` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEXED_HEADER: usize = 0;
+    /// Offset of `first_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_REFERENCE: usize = 21;
+    /// Offset of `second_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_REFERENCE: usize = 33;
+    /// Offset of `identity_guid` (`bytes[76]`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_GUID: usize = 44;
+    /// Offset of `reference_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const REFERENCE_COUNT: usize = 123;
+    /// Stated value of `reference_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_COUNT_VALUE: u32 = 0x0000_000c;
+    /// Offset of `reference_entries` (`bytes[132]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_ENTRIES: usize = 127;
+    /// Offset of `reference_trailer` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_TRAILER: usize = 259;
+    /// Stated value of `reference_trailer` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const REFERENCE_TRAILER_VALUE: [u8; 4] = [0xff, 0xff, 0xff, 0xff];
+    /// Offset of `kind_code_unit_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const KIND_CODE_UNIT_COUNT: usize = 263;
+    /// Stated value of `kind_code_unit_count` (`u32`). Spec §Assembly operands.
+    pub(crate) const KIND_CODE_UNIT_COUNT_VALUE: u32 = 0x0000_000b;
+    /// Offset of `kind` (`bytes[22]`). Spec §Assembly operands.
+    pub(crate) const KIND: usize = 267;
+    /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const FEATURE_ORDINAL: usize = 289;
+}
+
 /// Byte offsets for the `assembly_class_363_264_frame_363_carrier` record.
 ///
 /// Spec §Assembly operands. Record length 389 B.

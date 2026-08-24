@@ -12,7 +12,7 @@ use cadmpeg_ir::products::{
 use crate::ids::native_stream;
 use crate::records::{
     DesignAssemblyAxialOperandTarget, DesignAssemblyLegacyOperand, DesignAssemblyLimitKind,
-    DesignAssemblyOperandPath, DesignComponentOccurrence, DesignParameterScope,
+    DesignAssemblyOperandQualifier, DesignComponentOccurrence, DesignParameterScope,
 };
 
 /// One exact generation of the legacy 421-byte `As-built` alignment grammar.
@@ -289,14 +289,12 @@ pub(crate) fn project_assembly_joints(
         let operands = if let Some(carriers) = alignment.legacy_operand_carriers.as_ref() {
             project_legacy_operands(carriers)
         } else {
-            match (
-                alignment.operand_paths.as_ref(),
-                alignment.axial_operand_targets.as_ref(),
-            ) {
-                (Some(paths), None) => project_path_operands(paths, stream, &occurrences),
-                (None, Some(targets)) => project_axial_operands(targets, stream, scopes, features),
-                _ => None,
-            }
+            alignment
+                .operand_qualifiers
+                .as_ref()
+                .and_then(|qualifiers| {
+                    project_qualified_operands(qualifiers, stream, &occurrences, scopes, features)
+                })
         };
         let Some(operands) = operands else {
             continue;
@@ -357,93 +355,98 @@ fn project_legacy_operands(
         .collect()
 }
 
-fn project_path_operands(
-    paths: &[DesignAssemblyOperandPath; 2],
+fn project_qualified_operands(
+    qualifiers: &[DesignAssemblyOperandQualifier; 2],
     stream: &str,
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
+    scopes: &[DesignParameterScope],
+    features: &[Feature],
 ) -> Option<Vec<JointOperand>> {
-    paths
+    qualifiers
         .iter()
-        .map(|path| {
-            let root_guid = path.occurrence_guids.first()?;
-            let occurrence = occurrences
-                .get(&(stream, root_guid.to_ascii_lowercase()))
-                .copied()
-                .flatten();
-            if occurrence.is_none() && !matches!(path.class_tag.as_str(), "330" | "386") {
-                return None;
+        .map(|qualifier| match qualifier {
+            DesignAssemblyOperandQualifier::OccurrencePath { path } => {
+                let root_guid = path.occurrence_guids.first()?;
+                let occurrence = occurrences
+                    .get(&(stream, root_guid.to_ascii_lowercase()))
+                    .copied()
+                    .flatten();
+                if occurrence.is_none() && !matches!(path.class_tag.as_str(), "330" | "386") {
+                    return None;
+                }
+                Some(JointOperand {
+                    occurrence: occurrence
+                        .map(|_| crate::ids::neutral_component_occurrence_id(root_guid)),
+                    external_document: occurrence.is_none().then(|| ExternalDocumentReference {
+                        path: None,
+                        document_id: path.identity_guids.first().cloned(),
+                        resolution: ExternalResolution::Unresolved,
+                    }),
+                    object: Some(root_guid.to_ascii_lowercase()),
+                    subelements: path.occurrence_guids[1..]
+                        .iter()
+                        .map(|guid| guid.to_ascii_lowercase())
+                        .collect(),
+                })
             }
-            Some(JointOperand {
-                occurrence: occurrence
-                    .map(|_| crate::ids::neutral_component_occurrence_id(root_guid)),
-                external_document: occurrence.is_none().then(|| ExternalDocumentReference {
-                    path: None,
-                    document_id: path.identity_guids.first().cloned(),
-                    resolution: ExternalResolution::Unresolved,
-                }),
-                object: Some(root_guid.to_ascii_lowercase()),
-                subelements: path.occurrence_guids[1..]
-                    .iter()
-                    .map(|guid| guid.to_ascii_lowercase())
-                    .collect(),
-            })
+            DesignAssemblyOperandQualifier::AxialTarget { target } => match target {
+                DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                    component_insert_scope_record_index,
+                    selectors,
+                    ..
+                } => {
+                    let target_scope = unique_scope(
+                        scopes,
+                        stream,
+                        *component_insert_scope_record_index,
+                        "Component Insert",
+                    )?;
+                    let feature = unique_feature(features, &target_scope.id)?;
+                    let FeatureDefinition::InsertComponent { occurrence } = &feature.definition
+                    else {
+                        return None;
+                    };
+                    Some(JointOperand {
+                        occurrence: Some(occurrence.clone()),
+                        external_document: None,
+                        object: Some(crate::ids::neutral_assembly_axial_object_id(&selectors[0])),
+                        subelements: Vec::new(),
+                    })
+                }
+                DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+                    scope_record_index,
+                } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
+            },
+            DesignAssemblyOperandQualifier::JointOrigin {
+                scope_record_index, ..
+            } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
         })
         .collect()
 }
 
-fn project_axial_operands(
-    targets: &[DesignAssemblyAxialOperandTarget; 2],
+fn project_joint_origin_operand(
+    scope_record_index: u32,
     stream: &str,
     scopes: &[DesignParameterScope],
     features: &[Feature],
-) -> Option<Vec<JointOperand>> {
-    targets
-        .iter()
-        .map(|target| match target {
-            DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
-                component_insert_scope_record_index,
-                selectors,
-                ..
-            } => {
-                let target_scope = unique_scope(
-                    scopes,
-                    stream,
-                    *component_insert_scope_record_index,
-                    "Component Insert",
-                )?;
-                let feature = unique_feature(features, &target_scope.id)?;
-                let FeatureDefinition::InsertComponent { occurrence } = &feature.definition else {
-                    return None;
-                };
-                Some(JointOperand {
-                    occurrence: Some(occurrence.clone()),
-                    external_document: None,
-                    object: Some(crate::ids::neutral_assembly_axial_object_id(&selectors[0])),
-                    subelements: Vec::new(),
-                })
-            }
-            DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin { scope_record_index } => {
-                let target_scope =
-                    unique_scope(scopes, stream, *scope_record_index, "JointOrigin")?;
-                if let Some(feature) = unique_feature(features, &target_scope.id) {
-                    if !matches!(
-                        feature.definition,
-                        FeatureDefinition::DatumCoordinateSystem { .. }
-                    ) {
-                        return None;
-                    }
-                } else if target_scope.joint_origin_transform.is_none() {
-                    return None;
-                }
-                Some(JointOperand {
-                    occurrence: None,
-                    external_document: None,
-                    object: Some(crate::ids::neutral_feature_id(target_scope).0),
-                    subelements: Vec::new(),
-                })
-            }
-        })
-        .collect()
+) -> Option<JointOperand> {
+    let target_scope = unique_scope(scopes, stream, scope_record_index, "JointOrigin")?;
+    if let Some(feature) = unique_feature(features, &target_scope.id) {
+        if !matches!(
+            feature.definition,
+            FeatureDefinition::DatumCoordinateSystem { .. }
+        ) {
+            return None;
+        }
+    } else if target_scope.joint_origin_transform.is_none() {
+        return None;
+    }
+    Some(JointOperand {
+        occurrence: None,
+        external_document: None,
+        object: Some(crate::ids::neutral_feature_id(target_scope).0),
+        subelements: Vec::new(),
+    })
 }
 
 fn unique_scope<'a>(
@@ -478,6 +481,7 @@ fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Tra
 
 #[cfg(test)]
 mod tests {
+    use crate::records::DesignAssemblyOperandQualifier;
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
@@ -895,10 +899,13 @@ mod tests {
             },
         ];
 
+        let qualifiers =
+            targets.map(|target| DesignAssemblyOperandQualifier::AxialTarget { target });
         let scopes = vec![component_scope, origin_scope.clone()];
-        let operands = super::project_axial_operands(
-            &targets,
+        let operands = super::project_qualified_operands(
+            &qualifiers,
             "f3d:Design/BulkStream.dat",
+            &BTreeMap::new(),
             &scopes,
             &features,
         )
@@ -917,9 +924,10 @@ mod tests {
             Some(crate::ids::neutral_feature_id(&origin_scope).0.as_str())
         );
 
-        let unlisted_operands = super::project_axial_operands(
-            &targets,
+        let unlisted_operands = super::project_qualified_operands(
+            &qualifiers,
             "f3d:Design/BulkStream.dat",
+            &BTreeMap::new(),
             &scopes,
             &features[..1],
         )

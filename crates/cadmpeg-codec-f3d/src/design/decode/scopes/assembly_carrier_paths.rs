@@ -1,25 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode exact carrier-owned assembly operand paths.
 
+use cadmpeg_core::decode::View;
+
+use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
+
 use super::{
     class_363_carrier, class_363_child, class_363_identity, class_363_identity_extended,
     class_363_identity_reduced_490, class_363_identity_reduced_501, class_363_identity_short,
     class_363_leading, class_363_terminal, exact_indexed_header_at,
     exact_same_segment_record_reference, is_guid_relaxed, lp_utf16_bounded,
     marked_record_reference, rigid_transform_at, DesignAssemblyOperandFrame,
-    DesignAssemblyOperandPath, DesignAssemblyOperandPathLink, DesignParameterScope,
-    IndexedRecordOffsets, ASSEMBLY_MARKED_REFERENCE_LEN,
+    DesignAssemblyOperandPath, DesignAssemblyOperandPathLink, DesignAssemblyOperandQualifier,
+    DesignParameterScope, IndexedRecordOffsets, ASSEMBLY_MARKED_REFERENCE_LEN,
 };
 
-pub(super) fn exact_class_363_operand_paths(
+pub(super) fn exact_variable_reference_operand_qualifiers(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     frames: &[DesignAssemblyOperandFrame; 2],
-) -> Option<[DesignAssemblyOperandPath; 2]> {
+) -> Option<[DesignAssemblyOperandQualifier; 2]> {
     frames
         .iter()
-        .map(|frame| exact_class_363_operand_path(bytes, records, scope, frame))
+        .map(|frame| {
+            exact_class_363_operand_path(bytes, records, scope, frame)
+                .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+                .or_else(|| exact_class_307_joint_origin(bytes, records, frame))
+        })
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()
@@ -148,6 +156,76 @@ fn exact_class_363_operand_path(
     })
 }
 
+fn exact_class_307_joint_origin(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    frame: &DesignAssemblyOperandFrame,
+) -> Option<DesignAssemblyOperandQualifier> {
+    let (start, paired_at) = exact_class_264_record_frame(
+        bytes,
+        records,
+        frame.reference_record_index,
+        "307",
+        class_307_joint_origin::LEN,
+    )?;
+    let (identity_guid, identity_end) = lp_utf16_bounded(
+        bytes,
+        start.checked_add(class_307_joint_origin::IDENTITY_GUID)?,
+        36..=36,
+    )?;
+    let (kind, kind_end) = lp_utf16_bounded(
+        bytes,
+        start.checked_add(class_307_joint_origin::KIND_CODE_UNIT_COUNT)?,
+        11..=11,
+    )?;
+    if paired_at != start.checked_add(class_307_joint_origin::LEN)?
+        || marked_record_reference(
+            bytes,
+            start.checked_add(class_307_joint_origin::FIRST_REFERENCE)?,
+        )
+        .is_none()
+        || marked_record_reference(
+            bytes,
+            start.checked_add(class_307_joint_origin::SECOND_REFERENCE)?,
+        )
+        .is_none()
+        || !is_guid_relaxed(&identity_guid)
+        || identity_end
+            != start
+                .checked_add(class_307_joint_origin::REFERENCE_COUNT)?
+                .checked_sub(3)?
+        || kind != "JointOrigin"
+        || kind_end != start.checked_add(class_307_joint_origin::FEATURE_ORDINAL)?
+        || View::u32_le_at(
+            bytes,
+            start.checked_add(class_307_joint_origin::REFERENCE_COUNT)?,
+        )? != class_307_joint_origin::REFERENCE_COUNT_VALUE
+        || bytes.get(
+            start.checked_add(class_307_joint_origin::REFERENCE_TRAILER)?
+                ..start
+                    .checked_add(class_307_joint_origin::REFERENCE_TRAILER)?
+                    .checked_add(class_307_joint_origin::REFERENCE_TRAILER_VALUE.len())?,
+        )? != class_307_joint_origin::REFERENCE_TRAILER_VALUE
+    {
+        return None;
+    }
+    for ordinal in 0..class_307_joint_origin::REFERENCE_COUNT_VALUE as usize {
+        marked_record_reference(
+            bytes,
+            start
+                .checked_add(class_307_joint_origin::REFERENCE_ENTRIES)?
+                .checked_add(ordinal.checked_mul(ASSEMBLY_MARKED_REFERENCE_LEN)?)?,
+        )?;
+    }
+    Some(DesignAssemblyOperandQualifier::JointOrigin {
+        scope_record_index: frame.reference_record_index,
+        class_tag: "307".into(),
+        byte_offset: u64::try_from(start).ok()?,
+        paired_class_tag: "264".into(),
+        paired_byte_offset: u64::try_from(paired_at).ok()?,
+    })
+}
+
 fn exact_class_363_identity_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -270,6 +348,106 @@ mod tests {
         bytes[at..at + 4].copy_from_slice(&3_u32.to_le_bytes());
         bytes[at + 4..at + 7].copy_from_slice(&class_tag);
         bytes[at + 7..at + 11].copy_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn write_reference(bytes: &mut [u8], at: usize, record_index: u32) {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn write_lp_utf16(bytes: &mut [u8], at: usize, value: &str) {
+        let units = value.encode_utf16().collect::<Vec<_>>();
+        bytes[at..at + 4].copy_from_slice(&(units.len() as u32).to_le_bytes());
+        for (ordinal, unit) in units.into_iter().enumerate() {
+            let start = at + 4 + ordinal * 2;
+            bytes[start..start + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    #[test]
+    fn class_307_joint_origin_is_a_pathless_operand_qualifier() {
+        let record_index = 17;
+        let mut bytes = vec![0; class_307_joint_origin::LEN + 22];
+        write_header(&mut bytes, 0, *b"307", record_index);
+        write_header(
+            &mut bytes,
+            class_307_joint_origin::LEN,
+            *b"264",
+            record_index,
+        );
+        write_header(
+            &mut bytes,
+            class_307_joint_origin::LEN + 11,
+            *b"399",
+            record_index + 1,
+        );
+        write_reference(&mut bytes, class_307_joint_origin::FIRST_REFERENCE, 31);
+        write_reference(&mut bytes, class_307_joint_origin::SECOND_REFERENCE, 32);
+        write_lp_utf16(
+            &mut bytes,
+            class_307_joint_origin::IDENTITY_GUID,
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        );
+        bytes[class_307_joint_origin::REFERENCE_COUNT..class_307_joint_origin::REFERENCE_COUNT + 4]
+            .copy_from_slice(&class_307_joint_origin::REFERENCE_COUNT_VALUE.to_le_bytes());
+        for ordinal in 0..class_307_joint_origin::REFERENCE_COUNT_VALUE as usize {
+            write_reference(
+                &mut bytes,
+                class_307_joint_origin::REFERENCE_ENTRIES + ordinal * ASSEMBLY_MARKED_REFERENCE_LEN,
+                40 + ordinal as u32,
+            );
+        }
+        bytes[class_307_joint_origin::REFERENCE_TRAILER
+            ..class_307_joint_origin::REFERENCE_TRAILER
+                + class_307_joint_origin::REFERENCE_TRAILER_VALUE.len()]
+            .copy_from_slice(&class_307_joint_origin::REFERENCE_TRAILER_VALUE);
+        write_lp_utf16(
+            &mut bytes,
+            class_307_joint_origin::KIND_CODE_UNIT_COUNT,
+            "JointOrigin",
+        );
+        let records = IndexedRecordOffsets::build(&bytes);
+        let frame = DesignAssemblyOperandFrame {
+            reference_record_index: record_index,
+            reference_offset: 9,
+            transform: super::super::identity_matrix(),
+            transform_offset: 20,
+        };
+
+        assert_eq!(
+            exact_class_264_record_frame(
+                &bytes,
+                &records,
+                record_index,
+                "307",
+                class_307_joint_origin::LEN,
+            ),
+            Some((0, class_307_joint_origin::LEN))
+        );
+        assert_eq!(
+            lp_utf16_bounded(
+                &bytes,
+                class_307_joint_origin::KIND_CODE_UNIT_COUNT,
+                11..=11,
+            ),
+            Some((
+                "JointOrigin".into(),
+                class_307_joint_origin::FEATURE_ORDINAL
+            ))
+        );
+        assert!(matches!(
+            exact_class_307_joint_origin(&bytes, &records, &frame),
+            Some(DesignAssemblyOperandQualifier::JointOrigin {
+                scope_record_index: 17,
+                byte_offset: 0,
+                paired_byte_offset: 366,
+                ..
+            })
+        ));
+
+        bytes[class_307_joint_origin::REFERENCE_TRAILER] = 0;
+        let records = IndexedRecordOffsets::build(&bytes);
+        assert_eq!(exact_class_307_joint_origin(&bytes, &records, &frame), None);
     }
 
     #[test]

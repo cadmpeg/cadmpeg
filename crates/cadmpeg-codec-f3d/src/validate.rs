@@ -15,6 +15,7 @@ use crate::design::decode::scopes::extrude_sheet_metal::{
     is_class_296_two_sided_to_faces_layout, is_class_296_two_sided_to_faces_scope,
 };
 use crate::design::decode::scopes::legacy_class_415;
+use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
 use crate::layout::assembly_class_363_264_frame_363_carrier as class_363_carrier;
 use crate::layout::assembly_class_363_264_frame_388_identity as class_363_identity;
 use crate::layout::assembly_operand_path_locator as path_locator;
@@ -185,6 +186,52 @@ fn valid_class_363_operand_path_link(
         && path.identity_guid_offsets[0] > path.occurrence_guid_offsets[0]
         && crate::bytes::is_guid_relaxed(&path.occurrence_guids[0])
         && crate::bytes::is_guid_relaxed(&path.identity_guids[0])
+}
+
+fn valid_class_307_joint_origin_qualifier(
+    native: &native::F3dNative,
+    records_by_index: &HashMap<(&str, u32), &records::DesignRecordHeader>,
+    stream: &str,
+    frame: &records::DesignAssemblyOperandFrame,
+    qualifier: &records::DesignAssemblyOperandQualifier,
+) -> bool {
+    let records::DesignAssemblyOperandQualifier::JointOrigin {
+        scope_record_index,
+        class_tag,
+        byte_offset,
+        paired_class_tag,
+        paired_byte_offset,
+    } = qualifier
+    else {
+        return false;
+    };
+    frame.reference_record_index == *scope_record_index
+        && class_tag == "307"
+        && paired_class_tag == "264"
+        && byte_offset.checked_add(class_307_joint_origin::LEN as u64) == Some(*paired_byte_offset)
+        && design_header_matches(
+            records_by_index,
+            stream,
+            *scope_record_index,
+            class_tag,
+            *byte_offset,
+        )
+        && native
+            .design_parameter_scopes
+            .iter()
+            .filter(|target_scope| {
+                design_stream(&target_scope.id) == stream
+                    && target_scope.kind == "JointOrigin"
+                    && target_scope.record_index == *scope_record_index
+                    && target_scope.class_tag == *class_tag
+                    && target_scope.byte_offset == *byte_offset
+                    && target_scope.paired_class_tag == *paired_class_tag
+                    && target_scope.paired_byte_offset == *paired_byte_offset
+                    && target_scope.frame_length == class_307_joint_origin::LEN as u64
+                    && target_scope.joint_origin_transform == Some(frame.transform)
+            })
+            .count()
+            == 1
 }
 
 fn valid_sketch_profile_region_selection(
@@ -428,10 +475,11 @@ fn valid_axial_assembly_targets(
     stream: &str,
     scope: &records::DesignParameterScope,
     frames: &[records::DesignAssemblyOperandFrame; 2],
-    targets: &[records::DesignAssemblyAxialOperandTarget; 2],
+    targets: &[&records::DesignAssemblyAxialOperandTarget; 2],
 ) -> bool {
     targets
         .iter()
+        .copied()
         .zip(frames)
         .all(|(target, frame)| match target {
             records::DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
@@ -2673,6 +2721,31 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     &scope.paired_class_tag,
                 );
                 let as_built_421 = as_built_421_generation.is_some();
+                let operand_paths = alignment
+                    .operand_qualifiers
+                    .as_ref()
+                    .and_then(|qualifiers| {
+                        let [Some(first), Some(second)] = qualifiers
+                            .each_ref()
+                            .map(|qualifier| qualifier.occurrence_path())
+                        else {
+                            return None;
+                        };
+                        Some([first, second])
+                    });
+                let axial_operand_targets =
+                    alignment
+                        .operand_qualifiers
+                        .as_ref()
+                        .and_then(|qualifiers| {
+                            let [Some(first), Some(second)] = qualifiers
+                                .each_ref()
+                                .map(|qualifier| qualifier.axial_target())
+                            else {
+                                return None;
+                            };
+                            Some([first, second])
+                        });
                 let legacy_operand_frames_link = alignment
                     .legacy_operand_carriers
                     .as_ref()
@@ -2737,7 +2810,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         frames[0].reference_record_index != frames[1].reference_record_index
                             && frames.iter().enumerate().all(|(ordinal, frame)| {
                                 let offsets_match = if as_built_frames {
-                                    alignment.operand_paths.as_ref().is_some_and(|paths| {
+                                    operand_paths.as_ref().is_some_and(|paths| {
                                         paths[ordinal].link.locator_byte_offset.checked_add(22)
                                             == Some(frame.reference_offset)
                                             && paths[ordinal]
@@ -2788,148 +2861,196 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 + u64::try_from(generation.matrix_offset()).unwrap_or(u64::MAX)
                         && design::decode::sketch::valid_sketch_transform(&frame.transform)
                 });
-                let operand_qualifiers_link = match (
-                    alignment.operand_frames.as_ref(),
-                    alignment.operand_paths.as_ref(),
-                    alignment.axial_operand_targets.as_ref(),
-                ) {
-                    (None, None, None) => true,
-                    // An axial form can retain its frames before both exact
-                    // pathless target joins resolve.
-                    (Some(_), None, None) if as_built_421 => {
-                        alignment.legacy_operand_carriers.is_some()
-                    }
-                    (Some(_), None, None) => axial_frames,
-                    (Some(frames), Some(paths), None) => {
-                        let class_363_carriers = paths
-                            .iter()
-                            .all(|path| path.link.locator_class_tag == "363");
-                        if class_363_carriers {
-                            !axial_frames
-                                && paths[0].link.locator_record_index
-                                    != paths[1].link.locator_record_index
-                                && paths.iter().zip(frames).all(|(path, frame)| {
-                                    valid_class_363_operand_path_link(scope, frame, path)
-                                })
-                        } else {
-                            let locator_offsets = design::assembly::operand_path_locator_offsets(
-                                scope.frame_length,
-                                &scope.class_tag,
-                                &scope.paired_class_tag,
-                            );
-                            let first_start = paths[0].link.locator_byte_offset;
-                            let second_start = paths[1].link.locator_byte_offset;
-                            let envelope_ends = paths.each_ref().map(|path| {
-                                let continuation_count = if variable_reference {
-                                    path.link
-                                        .wrapper_record_index
-                                        .checked_sub(path.link.locator_record_index)?
-                                        .checked_sub(2)?
-                                } else {
-                                    0
-                                };
-                                u64::try_from(path_wrapper::LEN)
-                                    .ok()?
-                                    .checked_add(u64::from(continuation_count).checked_mul(11)?)
-                                    .and_then(|length| {
-                                        path.link.wrapper_byte_offset.checked_add(length)
-                                    })
-                            });
-                            !axial_frames
-                                && locator_offsets.is_some_and(|offsets| {
-                                    paths.iter().zip(offsets).all(|(path, offset)| {
-                                        valid_assembly_operand_path_link(scope, path, offset)
-                                    })
-                                })
-                                && paths[0].link.locator_record_index
-                                    != paths[1].link.locator_record_index
-                                && matches!(envelope_ends, [Some(first_end), Some(second_end)]
-                                if !(first_start < second_end && second_start < first_end))
-                                && paths.iter().all(|path| {
-                                    !path.occurrence_guids.is_empty()
-                                        && path.occurrence_guids.len()
-                                            == path.occurrence_guid_offsets.len()
-                                        && matches!(
-                                            path.class_tag.as_str(),
-                                            "294" | "299" | "307" | "329" | "330" | "386" | "390"
-                                        )
-                                        && path.identity_guids.len()
-                                            == path.identity_guid_offsets.len()
-                                        && match path.class_tag.as_str() {
-                                            "294" | "299" | "307" | "386" | "390" => {
-                                                path.identity_guids.len() == 4
-                                            }
-                                            "329" => {
-                                                path.identity_guids.is_empty()
-                                                    || path.identity_guids.len() == 4
-                                            }
-                                            "330" => {
-                                                !path.identity_guids.is_empty()
-                                                    && path.identity_guids.len().is_multiple_of(4)
-                                            }
-                                            _ => false,
-                                        }
-                                        && path
-                                            .identity_guids
-                                            .iter()
-                                            .all(|guid| crate::bytes::is_guid_relaxed(guid))
-                                        && path
-                                            .identity_guid_offsets
-                                            .windows(2)
-                                            .all(|offsets| offsets[0] < offsets[1])
-                                        && path
-                                            .identity_guid_offsets
-                                            .iter()
-                                            .all(|offset| *offset > path.byte_offset)
-                                        && path
-                                            .occurrence_guid_offsets
-                                            .windows(2)
-                                            .all(|offsets| offsets[0] < offsets[1])
-                                        && path
-                                            .occurrence_guid_offsets
-                                            .iter()
-                                            .all(|offset| *offset > path.byte_offset)
-                                        && (matches!(
-                                            path.class_tag.as_str(),
-                                            "294" | "299" | "307" | "330" | "386"
-                                        ) || path.occurrence_guids.first().is_some_and(
-                                            |guid| {
-                                                native
-                                                    .design_component_occurrences
-                                                    .iter()
-                                                    .filter(|occurrence| {
-                                                        design_stream(&occurrence.id)
-                                                            == native_stream
-                                                            && occurrence
-                                                                .occurrence_guid
-                                                                .eq_ignore_ascii_case(guid)
-                                                    })
-                                                    .count()
-                                                    == 1
-                                            },
-                                        ))
-                                })
+                let mixed_variable_qualifiers_link = alignment
+                    .operand_frames
+                    .as_ref()
+                    .zip(alignment.operand_qualifiers.as_ref())
+                    .filter(|(_, qualifiers)| {
+                        variable_reference
+                            && qualifiers.iter().any(|qualifier| {
+                                matches!(
+                                    qualifier,
+                                    records::DesignAssemblyOperandQualifier::JointOrigin { .. }
+                                )
+                            })
+                    })
+                    .map(|(frames, qualifiers)| {
+                        frames[0].reference_record_index != frames[1].reference_record_index
+                            && qualifiers.iter().zip(frames).all(|(qualifier, frame)| {
+                                match qualifier {
+                                    records::DesignAssemblyOperandQualifier::OccurrencePath {
+                                        path,
+                                    } => valid_class_363_operand_path_link(scope, frame, path),
+                                    records::DesignAssemblyOperandQualifier::JointOrigin {
+                                        ..
+                                    } => valid_class_307_joint_origin_qualifier(
+                                        native,
+                                        records_by_index,
+                                        native_stream,
+                                        frame,
+                                        qualifier,
+                                    ),
+                                    records::DesignAssemblyOperandQualifier::AxialTarget {
+                                        ..
+                                    } => false,
+                                }
+                            })
+                    });
+                let operand_qualifiers_link = if let Some(link) = mixed_variable_qualifiers_link {
+                    link
+                } else {
+                    match (
+                        alignment.operand_frames.as_ref(),
+                        operand_paths.as_ref(),
+                        axial_operand_targets.as_ref(),
+                    ) {
+                        (None, None, None) => true,
+                        // An axial form can retain its frames before both exact
+                        // pathless target joins resolve.
+                        (Some(_), None, None) if as_built_421 => {
+                            alignment.legacy_operand_carriers.is_some()
                         }
+                        (Some(_), None, None) => axial_frames,
+                        (Some(frames), Some(paths), None) => {
+                            let class_363_carriers = paths
+                                .iter()
+                                .all(|path| path.link.locator_class_tag == "363");
+                            if class_363_carriers {
+                                !axial_frames
+                                    && paths[0].link.locator_record_index
+                                        != paths[1].link.locator_record_index
+                                    && paths.iter().zip(frames).all(|(path, frame)| {
+                                        valid_class_363_operand_path_link(scope, frame, path)
+                                    })
+                            } else {
+                                let locator_offsets =
+                                    design::assembly::operand_path_locator_offsets(
+                                        scope.frame_length,
+                                        &scope.class_tag,
+                                        &scope.paired_class_tag,
+                                    );
+                                let first_start = paths[0].link.locator_byte_offset;
+                                let second_start = paths[1].link.locator_byte_offset;
+                                let envelope_ends = paths.each_ref().map(|path| {
+                                    let continuation_count = if variable_reference {
+                                        path.link
+                                            .wrapper_record_index
+                                            .checked_sub(path.link.locator_record_index)?
+                                            .checked_sub(2)?
+                                    } else {
+                                        0
+                                    };
+                                    u64::try_from(path_wrapper::LEN)
+                                        .ok()?
+                                        .checked_add(u64::from(continuation_count).checked_mul(11)?)
+                                        .and_then(|length| {
+                                            path.link.wrapper_byte_offset.checked_add(length)
+                                        })
+                                });
+                                !axial_frames
+                                    && locator_offsets.is_some_and(|offsets| {
+                                        paths.iter().zip(offsets).all(|(path, offset)| {
+                                            valid_assembly_operand_path_link(scope, path, offset)
+                                        })
+                                    })
+                                    && paths[0].link.locator_record_index
+                                        != paths[1].link.locator_record_index
+                                    && matches!(envelope_ends, [Some(first_end), Some(second_end)]
+                                if !(first_start < second_end && second_start < first_end))
+                                    && paths.iter().all(|path| {
+                                        !path.occurrence_guids.is_empty()
+                                            && path.occurrence_guids.len()
+                                                == path.occurrence_guid_offsets.len()
+                                            && matches!(
+                                                path.class_tag.as_str(),
+                                                "294"
+                                                    | "299"
+                                                    | "307"
+                                                    | "329"
+                                                    | "330"
+                                                    | "386"
+                                                    | "390"
+                                            )
+                                            && path.identity_guids.len()
+                                                == path.identity_guid_offsets.len()
+                                            && match path.class_tag.as_str() {
+                                                "294" | "299" | "307" | "386" | "390" => {
+                                                    path.identity_guids.len() == 4
+                                                }
+                                                "329" => {
+                                                    path.identity_guids.is_empty()
+                                                        || path.identity_guids.len() == 4
+                                                }
+                                                "330" => {
+                                                    !path.identity_guids.is_empty()
+                                                        && path
+                                                            .identity_guids
+                                                            .len()
+                                                            .is_multiple_of(4)
+                                                }
+                                                _ => false,
+                                            }
+                                            && path
+                                                .identity_guids
+                                                .iter()
+                                                .all(|guid| crate::bytes::is_guid_relaxed(guid))
+                                            && path
+                                                .identity_guid_offsets
+                                                .windows(2)
+                                                .all(|offsets| offsets[0] < offsets[1])
+                                            && path
+                                                .identity_guid_offsets
+                                                .iter()
+                                                .all(|offset| *offset > path.byte_offset)
+                                            && path
+                                                .occurrence_guid_offsets
+                                                .windows(2)
+                                                .all(|offsets| offsets[0] < offsets[1])
+                                            && path
+                                                .occurrence_guid_offsets
+                                                .iter()
+                                                .all(|offset| *offset > path.byte_offset)
+                                            && (matches!(
+                                                path.class_tag.as_str(),
+                                                "294" | "299" | "307" | "330" | "386"
+                                            ) || path.occurrence_guids.first().is_some_and(
+                                                |guid| {
+                                                    native
+                                                        .design_component_occurrences
+                                                        .iter()
+                                                        .filter(|occurrence| {
+                                                            design_stream(&occurrence.id)
+                                                                == native_stream
+                                                                && occurrence
+                                                                    .occurrence_guid
+                                                                    .eq_ignore_ascii_case(guid)
+                                                        })
+                                                        .count()
+                                                        == 1
+                                                },
+                                            ))
+                                    })
+                            }
+                        }
+                        (Some(frames), None, Some(targets)) => {
+                            axial_frames
+                                && valid_axial_assembly_targets(
+                                    native,
+                                    records_by_index,
+                                    native_stream,
+                                    scope,
+                                    frames,
+                                    targets,
+                                )
+                        }
+                        _ => false,
                     }
-                    (Some(frames), None, Some(targets)) => {
-                        axial_frames
-                            && valid_axial_assembly_targets(
-                                native,
-                                records_by_index,
-                                native_stream,
-                                scope,
-                                frames,
-                                targets,
-                            )
-                    }
-                    _ => false,
                 };
                 let joint_origin_envelope_link = alignment
                     .joint_origin_scope_record_index
                     .is_none_or(|record_index| {
                         alignment.operand_frames.is_none()
-                            && alignment.operand_paths.is_none()
-                            && alignment.axial_operand_targets.is_none()
+                            && alignment.operand_qualifiers.is_none()
                             && scope.class_tag == "276"
                             && scope.paired_class_tag == "258"
                             && scope.frame_length == 604

@@ -124,7 +124,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         &scope,
         &owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("variable-reference compact operand paths");
     assert_eq!(
         paths.each_ref().map(|path| path.class_tag.as_str()),

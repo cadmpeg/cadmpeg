@@ -660,11 +660,9 @@ pub fn project_parameter_design_with_edge_identities(
                     .filter(|alignment| {
                         alignment.operand_frames.is_some()
                             && ((alignment.legacy_operand_carriers.is_some()
-                                && alignment.operand_paths.is_none()
-                                && alignment.axial_operand_targets.is_none())
+                                && alignment.operand_qualifiers.is_none())
                                 || (alignment.legacy_operand_carriers.is_none()
-                                    && (alignment.operand_paths.is_some()
-                                        ^ alignment.axial_operand_targets.is_some())))
+                                    && alignment.operand_qualifiers.is_some()))
                     })
                     .map_or_else(
                         || FeatureDefinition::Native {

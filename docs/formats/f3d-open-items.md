@@ -252,23 +252,6 @@ the ordered face-selection groups.
 its payload. The physical thread construction and face selections decode
 without assigning a semantic role to that record.
 
-### DR-74. Variable-reference `Assemble` carrier operands
-
-**Question.** How does a variable-reference `Assemble` operand whose frame
-reference names a class-307 carrier qualify its component operand?
-
-**Known.** The class-283/264 and class-347/260 scope generation, owner lanes,
-operand frames, and direct class-390/330/397 path subform are specified. In
-the carrier subform the two operand-frame references name class-307 or
-class-363 records. The direct locator slots can instead contain parameter-owner
-references. The operand frames and alignment scalars remain exact. The
-class-363 carrier, its class-360 and class-386 nodes, and all fixed class-388
-identity spans are specified and decode to occurrence paths.
-
-**Need.** Decode the class-307 carrier's occurrence path and bind it to the
-matching operand frame. The resulting `Assemble` feature must project one
-neutral assembly joint without a definition-incomplete warning.
-
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID

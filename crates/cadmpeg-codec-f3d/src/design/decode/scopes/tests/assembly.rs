@@ -153,7 +153,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified assembly occurrence paths");
     assert_eq!(identity_paths[0].class_tag, "390");
     assert_eq!(identity_paths[0].occurrence_guids.len(), 2);
@@ -167,7 +167,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("compact identity-qualified assembly occurrence paths");
     assert!(compact_identity_paths
         .iter()
@@ -181,7 +181,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified class-329 assembly occurrence paths");
     assert!(extended_class_329_paths.iter().all(|path| {
         path.class_tag == "329"
@@ -203,7 +203,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_paths.is_none()));
+    .is_some_and(|alignment| alignment.operand_paths().is_none()));
 
     let first_locator_at = assembly_bytes.len();
     push_path_locator(&mut assembly_bytes, 64, 66);
@@ -232,7 +232,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("exact assembly occurrence paths");
     assert_eq!(paths[0].link.locator_record_index, 64);
     assert_eq!(paths[0].link.wrapper_record_index, 66);
@@ -264,7 +264,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("scope locator order assigns paths to operand frames");
     assert_eq!(reversed_paths.map(|path| path.record_index), [68, 65]);
 
@@ -276,7 +276,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_paths.is_none()));
+    .is_some_and(|alignment| alignment.operand_paths().is_none()));
 
     for locator_zero_at in [first_locator_at + 32, first_locator_at + 161] {
         let mut invalid_locator = assembly_bytes.clone();
@@ -287,7 +287,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             &scope,
             &rectangular_owners,
         )
-        .is_some_and(|alignment| alignment.operand_paths.is_none()));
+        .is_some_and(|alignment| alignment.operand_paths().is_none()));
     }
     let first_wrapper_at =
         usize::try_from(paths[0].link.wrapper_byte_offset).expect("wrapper offset fits usize");
@@ -300,7 +300,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             &scope,
             &rectangular_owners,
         )
-        .is_some_and(|alignment| alignment.operand_paths.is_none()));
+        .is_some_and(|alignment| alignment.operand_paths().is_none()));
     }
     let first_wrapper_end = first_wrapper_at + 37;
     let mut extended_wrapper = assembly_bytes.clone();
@@ -311,7 +311,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_paths.is_none()));
+    .is_some_and(|alignment| alignment.operand_paths().is_none()));
 
     let push_class_294_path =
         |bytes: &mut Vec<u8>, record_index: u32, occurrence: &str, identities: &[&str; 4]| {
@@ -368,7 +368,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("class-294 identity-qualified assembly occurrence paths");
     assert!(class_294_paths.iter().all(|path| {
         path.class_tag == "294"
@@ -388,7 +388,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("class-299 identity-qualified assembly occurrence paths");
     assert!(class_299_paths.iter().all(|path| {
         path.class_tag == "299"
@@ -486,7 +486,10 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
     assert_eq!(alignment.owner_record_indices, vec![108, 109, 110, 111]);
     assert_eq!(alignment.value_offsets, vec![2_008, 2_009, 2_010, 2_011]);
-    let frames = alignment.operand_frames.expect("legacy operand frames");
+    let frames = alignment
+        .operand_frames
+        .as_ref()
+        .expect("legacy operand frames");
     assert_eq!(
         frames.each_ref().map(|frame| frame.reference_record_index),
         [300, 400]
@@ -495,7 +498,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
         frames.each_ref().map(|frame| frame.transform[0][3]),
         [1.25, -2.5]
     );
-    let paths = alignment.operand_paths.expect("legacy operand paths");
+    let paths = alignment.operand_paths().expect("legacy operand paths");
     assert!(paths.iter().all(|path| path.class_tag == "386"));
     assert_eq!(
         paths.each_ref().map(|path| path.link.locator_record_index),
@@ -529,7 +532,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
         &owners,
     )
     .expect("alignment scalar grammar remains exact");
-    assert!(malformed_alignment.operand_paths.is_none());
+    assert!(malformed_alignment.operand_paths().is_none());
 }
 
 #[test]
@@ -639,6 +642,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     assert_eq!(alignment.value_offsets, [2_004, 2_005, 2_006, 2_007]);
     let frames = alignment
         .operand_frames
+        .as_ref()
         .expect("legacy class-388 operand frames");
     assert_eq!(
         frames
@@ -646,7 +650,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
             .map(|frame| (frame.reference_record_index, frame.transform[0][3])),
         [(1_034, 1.25), (2_034, -2.5)]
     );
-    assert_eq!(alignment.operand_paths, None);
+    assert_eq!(alignment.operand_paths(), None);
 
     let write_guid = |bytes: &mut [u8], at: usize, guid: &str| {
         let encoded = guid.encode_utf16().collect::<Vec<_>>();
@@ -745,7 +749,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         &scope,
         &owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("legacy class-388 occurrence paths");
     assert_eq!(paths[0].link.locator_record_index, 5_001);
     assert_eq!(paths[0].link.locator_class_tag, "451");
@@ -778,7 +782,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         &scope,
         &owners,
     )
-    .is_some_and(|alignment| alignment.operand_paths.is_none()));
+    .is_some_and(|alignment| alignment.operand_paths().is_none()));
     let mut malformed_path = path_bytes.clone();
     malformed_path[first_path_at + 417] = 1;
     assert!(exact_assembly_alignment(
@@ -787,7 +791,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         &scope,
         &owners,
     )
-    .is_some_and(|alignment| alignment.operand_paths.is_none()));
+    .is_some_and(|alignment| alignment.operand_paths().is_none()));
 
     let mut malformed = bytes;
     malformed[25] = 0;
@@ -884,7 +888,10 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
     assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
     assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
-    let frames = alignment.operand_frames.expect("locator transforms");
+    let frames = alignment
+        .operand_frames
+        .as_ref()
+        .expect("locator transforms");
     assert_eq!(
         frames
             .each_ref()
@@ -898,7 +905,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
             u64::try_from(second_locator_at + 33).expect("fixture offset fits u64"),
         ]
     );
-    let paths = alignment.operand_paths.expect("locator occurrence paths");
+    let paths = alignment.operand_paths().expect("locator occurrence paths");
     assert_eq!(
         paths.each_ref().map(|path| (
             path.link.locator_record_index,
@@ -921,7 +928,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     )
     .expect("alignment scalars remain exact");
     assert_eq!(incomplete.operand_frames, None);
-    assert_eq!(incomplete.operand_paths, None);
+    assert_eq!(incomplete.operand_paths(), None);
 
     let mut duplicate_reference = bytes;
     duplicate_reference[63..67].copy_from_slice(&64_u32.to_le_bytes());
@@ -933,7 +940,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     )
     .expect("alignment scalars remain exact");
     assert_eq!(incomplete.operand_frames, None);
-    assert_eq!(incomplete.operand_paths, None);
+    assert_eq!(incomplete.operand_paths(), None);
 }
 
 #[test]
@@ -1091,7 +1098,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         }
         assert_eq!(alignment.owner_record_indices, [103, 100, 101, 102]);
         assert_eq!(alignment.value_offsets, [1_003, 1_000, 1_001, 1_002]);
-        let limits = alignment.limits.expect("assembly limits");
+        let limits = alignment.limits.as_ref().expect("assembly limits");
         assert_eq!(limits.kind, expected_limit_kind);
         assert!((limits.minimum - -1.0).abs() <= EPS_EXACT_FIXTURE);
         assert!((limits.maximum - 1.5).abs() <= EPS_EXACT_FIXTURE);
@@ -1112,7 +1119,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             }
         );
         assert!(alignment.operand_frames.is_none());
-        assert!(alignment.operand_paths.is_none());
+        assert!(alignment.operand_paths().is_none());
         let solved_frame = alignment.solved_frame.expect("solved frame carrier");
         assert_eq!(solved_frame.reference_record_index, 200);
         assert_eq!(solved_frame.reference_offset, 190 + 8 * 11);
@@ -1172,7 +1179,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     let targets = scopes[0]
         .assembly_alignment
         .as_ref()
-        .and_then(|alignment| alignment.axial_operand_targets.as_ref())
+        .and_then(|alignment| alignment.axial_operand_targets())
         .expect("two exact pathless assembly targets");
     let DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
         component_insert_scope_record_index,
@@ -1182,7 +1189,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         construction_paired_byte_offset,
         selectors,
         ..
-    } = &targets[0]
+    } = targets[0]
     else {
         panic!("first operand must select a component insertion");
     };
@@ -1207,7 +1214,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         component_insert_scope_record_index,
         selectors: versioned_selectors,
         ..
-    } = &targets[1]
+    } = targets[1]
     else {
         panic!("second operand must select a component insertion");
     };
@@ -1231,7 +1238,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     assert!(mismatched_scopes[0]
         .assembly_alignment
         .as_ref()
-        .is_some_and(|alignment| alignment.axial_operand_targets.is_none()));
+        .is_some_and(|alignment| alignment.axial_operand_targets().is_none()));
 }
 
 #[test]
@@ -1267,7 +1274,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     let targets = scopes[0]
         .assembly_alignment
         .as_ref()
-        .and_then(|alignment| alignment.axial_operand_targets.as_ref())
+        .and_then(|alignment| alignment.axial_operand_targets())
         .expect("component and root assembly targets");
     assert!(matches!(
         &targets[0],
@@ -1278,7 +1285,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     ));
     assert_eq!(
         targets[1],
-        DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+        &DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
             scope_record_index: 80
         }
     );
@@ -1922,8 +1929,7 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
         ]),
         legacy_operand_carriers: None,
         solved_frame: None,
-        operand_paths: None,
-        axial_operand_targets: None,
+        operand_qualifiers: None,
         limits: None,
         joint_origin_scope_record_index: None,
     }

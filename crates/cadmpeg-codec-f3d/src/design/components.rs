@@ -8,6 +8,7 @@ use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
 
+use crate::records::DesignAssemblyOperandQualifier;
 use crate::records::{DesignComponentOccurrence, DesignParameterScope};
 
 /// Project components and occurrences proven by local component history operations.
@@ -26,12 +27,15 @@ pub(crate) fn project_local_components(
     }
 
     for scope in scopes {
-        if let Some(paths) = scope
+        if let Some(qualifiers) = scope
             .assembly_alignment
             .as_ref()
-            .and_then(|alignment| alignment.operand_paths.as_ref())
+            .and_then(|alignment| alignment.operand_qualifiers.as_ref())
         {
-            for path in paths {
+            for qualifier in qualifiers {
+                let DesignAssemblyOperandQualifier::OccurrencePath { path } = qualifier else {
+                    continue;
+                };
                 let Some(root) = path
                     .occurrence_guids
                     .first()
