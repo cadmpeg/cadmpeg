@@ -3,6 +3,56 @@
 use super::super::*;
 
 #[test]
+fn round_edge_endpoint_coordinate_is_not_a_terminal_radius() {
+    let mut body = vec![0x18];
+    body.extend_from_slice(&[0x56, 0, 0, 0, 0, 0, 0]);
+    body.push(0x12);
+    body.extend_from_slice(&[0x6b, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x0f, 0x0f, 0x0f, 0xe4, 0x2f, 0x00, 0x00]);
+    body.extend_from_slice(&[0x54, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9a]);
+    body.extend_from_slice(&[0xf7, 0x17]);
+    let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+    payload.extend_from_slice(&body);
+    payload.push(0xe3);
+    let record = parameter_records(&payload).remove(0);
+
+    assert!(record.type24_round_edge_envelope(0x24).is_some());
+    assert!(record.type24_generated_round_radius(0x24).is_none());
+}
+
+#[test]
+fn perpendicular_round_edge_uses_equal_endpoint_deltas_as_radius() {
+    let mut body = vec![0x34, 0xe0, 0x00];
+    body.extend_from_slice(&[0x56, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x00, 0x12, 0x68]);
+    body.extend_from_slice(&[0x6b, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x0f, 0xe4, 0x2f, 0x00, 0x00]);
+    body.extend_from_slice(&[0x0d, 0x2f, 0x00, 0x00, 0x0f]);
+    body.extend_from_slice(&[0xf7, 0x17]);
+    let record = SurfaceParameterRecord {
+        surface_id: 7,
+        body,
+        scalar_values: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: None,
+        split_cylinder_outline_bounds: None,
+        positional_cone_frame: None,
+        positional_torus_frame: None,
+        boundary: SurfaceBodyBoundary::CompoundClose,
+        offset: 0,
+        body_offset: 0,
+    };
+
+    assert!(record.type24_round_edge_envelope(0x24).is_some());
+    assert_eq!(record.type24_generated_round_radius(0x24), Some(1.0));
+    assert!(record.type24_round_edge_envelope(0x25).is_none());
+}
+
+#[test]
 fn selector_corner_interval_cylinders_resolve_axis_origin_and_radius() {
     let build = |selectors: [u8; 2], values: [f64; 8]| {
         let mut body = vec![selectors[0]];

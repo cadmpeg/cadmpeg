@@ -979,6 +979,8 @@ tangency witnesses. Score each candidate by the number of support planes at
 the stored radius from its line. Admit the unique candidate with a nonzero
 maximum score. A tied or zero maximum retains the body as native. This body is
 not a generated round-edge endpoint body.
+The common positive transverse span is also the row's rolling-radius sample,
+independent of which radial quadrant is selected.
 
 A generated type-24 round-edge body has a control shell, two edge parameters,
 two model-space endpoint triples, and an optional generated-entity reference.
@@ -1014,6 +1016,16 @@ mixed transverse-coordinate construction. The stored parameter interval is an
 arc interval and does not become a cylinder length; a geometric axial span may
 be retained when the endpoint projection is positive. Missing, conflicting, or
 non-unique radius, ownership, support, or line evidence retains the row native.
+
+In a generated-entity-referenced round-edge endpoint body, the endpoint grammar
+owns every coordinate through the generated-entity reference. In the
+perpendicular form, exactly one pair of endpoint coordinate deltas has equal
+nonzero absolute magnitude. That magnitude is the row's rolling-radius sample.
+Its final coordinate is not a terminal radius suffix. In a class-913
+generated-round context, axial-interval and endpoint body grammar takes
+precedence over scalar-frame and terminal-suffix radius forms. Outside that
+owning feature context, a byte-compatible body does not establish endpoint
+ownership and remains eligible for the other complete type-24 grammars.
 
 For perpendicular support planes, project the endpoint displacement onto each
 support normal. The two absolute projections have the same positive magnitude;

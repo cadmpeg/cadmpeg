@@ -884,6 +884,30 @@ pub struct Type24RoundEdgeEnvelope {
     pub generated_entity_reference: Option<u32>,
 }
 
+fn perpendicular_round_edge_radius(envelope: Type24RoundEdgeEnvelope) -> Option<f64> {
+    let delta = std::array::from_fn::<_, 3, _>(|axis| {
+        envelope.vertices[1][axis] - envelope.vertices[0][axis]
+    });
+    let scale = envelope
+        .vertices
+        .iter()
+        .flatten()
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let pairs = (0..3)
+        .flat_map(|first| ((first + 1)..3).map(move |second| (first, second)))
+        .filter(|(first, second)| {
+            delta[*first].abs() > EPS_CYLINDER_GEOMETRY_MIN * scale
+                && (delta[*first].abs() - delta[*second].abs()).abs()
+                    <= EPS_CYLINDER_GEOMETRY_RELATIVE * scale
+        })
+        .collect::<Vec<_>>();
+    let [(first, second)] = pairs.as_slice() else {
+        return None;
+    };
+    Some(f64::midpoint(delta[*first].abs(), delta[*second].abs()))
+}
+
 /// One contiguous positional scalar frame with no intervening bytes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfaceParameterScalarFrame {
@@ -1294,6 +1318,26 @@ impl SurfaceParameterRecord {
                     .map(|frame| frame.radius)
             })
             .or_else(|| self.type24_terminal_round_radius())
+    }
+
+    /// Decode a type-24 radius in a class-913 generated-round context.
+    #[must_use]
+    pub fn type24_generated_round_radius(&self, type_byte: u8) -> Option<f64> {
+        (type_byte == 0x24).then_some(())?;
+        let axial_candidates = self.type24_axial_interval_corner_candidates(type_byte);
+        if let Some(first) = axial_candidates.first() {
+            return axial_candidates
+                .iter()
+                .all(|candidate| {
+                    (candidate.radius - first.radius).abs()
+                        <= EPS_CYLINDER_GEOMETRY_RELATIVE * first.radius.max(1.0)
+                })
+                .then_some(first.radius);
+        }
+        if let Some(envelope) = self.type24_round_edge_envelope(type_byte) {
+            return perpendicular_round_edge_radius(envelope);
+        }
+        self.type24_round_radius(type_byte)
     }
 
     fn type24_terminal_round_radius(&self) -> Option<f64> {

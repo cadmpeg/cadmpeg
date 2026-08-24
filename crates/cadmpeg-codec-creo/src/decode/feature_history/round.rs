@@ -501,7 +501,7 @@ fn complete_direct_placed_cylinder_radius_agreement(
         .iter()
         .map(|row| {
             unique_surface_parameter_record(scan, row)
-                .and_then(|record| record.type24_round_radius(row.type_byte))
+                .and_then(|record| record.type24_generated_round_radius(row.type_byte))
         })
         .collect::<Option<Vec<_>>>()?;
     let placed_radii = cylinder_rows
@@ -584,7 +584,7 @@ pub(in super::super) fn round_cylinder_radius(
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
     unique_surface_parameter_record(scan, row)
-        .and_then(|record| record.type24_round_radius(row.type_byte))
+        .and_then(|record| record.type24_generated_round_radius(row.type_byte))
         .or_else(|| round_placed_cylinder_radius(ir, row))
 }
 
@@ -848,7 +848,7 @@ pub(in super::super) fn round_observed_radii(scan: &ContainerScan, feature_id: u
             let parameters = unique_surface_parameter_record(scan, row)?;
             match row.kind {
                 crate::surface::SurfaceKind::Cylinder => {
-                    parameters.type24_round_radius(row.type_byte)
+                    parameters.type24_generated_round_radius(row.type_byte)
                 }
                 crate::surface::SurfaceKind::TorusOrSphere => parameters
                     .torus_radius_overrides(row.type_byte)

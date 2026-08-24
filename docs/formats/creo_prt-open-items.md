@@ -271,6 +271,12 @@ forms reconstruct a complete carrier from the inline local-system suffix.
 Class-913 axial-interval corner bodies without a quadrant selector retain four
 axis-line candidates. A unique maximum count of adjacent tangent support planes
 selects the carrier; a tied or zero maximum does not.
+Their common transverse span is a rolling-radius sample. In a
+round-edge endpoint body, the unique pair of equal nonzero endpoint-coordinate
+deltas supplies the perpendicular-round radius. In a class-913 generated-round
+context, axial-interval and endpoint bodies do not fall through to scalar-frame
+or terminal-suffix radius grammars. Outside that context, a byte-compatible
+body does not establish endpoint ownership.
 
 **Need.** We must know the equation to construct the cylinder carrier.
 
