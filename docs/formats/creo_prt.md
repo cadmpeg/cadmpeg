@@ -1071,7 +1071,8 @@ terminal `e3`.
 
 The local-system direction triples may use the explicit scalar lanes or one of
 the compact axis images below. The images name the axis coordinate and expand
-the nine direction slots; they do not determine model-space signs:
+the nine direction slots. The envelope witness selects the model-space origin
+and axis sense:
 
 | Image | Axis coordinate |
 | --- | --- |
@@ -1079,12 +1080,14 @@ the nine direction slots; they do not determine model-space signs:
 | `18 A 18 B 18 e6 C` | Z |
 | `A 18 e6 B 18 C 18` | Y |
 | `18 e4 0f 18 0f 18 10 18 e4` | X |
-| `18 10 18 e5 10 0f 18 e4` | X |
+| `18 10 18 e5 10 0f 18 e4` | Y |
 | `18 0f 18 e5 0f e4 18 e4` | X |
 
 Here `A`, `B`, and `C` are the image's single-byte signed unit tokens. The
 image dictionary expands the support directions according to its slot lanes;
 the stored origin and the envelope witness below select the model-space signs.
+The exact `18 10 18 e5 10 0f 18 e4` image expands to first support `+Z`,
+second support `+X`, and stored axis `+Y`.
 An explicit frame consumes the first five direction coordinates, then
 `18 e5 0f` fills the remaining direction matrix coordinates with
 `[0, 0, 0, 1]`. The reflected form `18 e5 10` fills them with

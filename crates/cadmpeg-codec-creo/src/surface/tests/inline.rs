@@ -196,6 +196,30 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
 }
 
 #[test]
+fn compact_y_image_uses_the_unique_envelope_axis_witness() {
+    let mut local_system = vec![0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4];
+    push_inline_test_scalar(&mut local_system, 2.0);
+    push_inline_test_scalar(&mut local_system, 0.0);
+    push_inline_test_scalar(&mut local_system, 5.0);
+    let cylinder = inline_non_plane_record(
+        0x24,
+        [2.0, 5.0],
+        [[1.0, 2.0, 4.0], [2.0, 5.0, 5.0]],
+        &local_system,
+        &[0x0f],
+    );
+
+    let frame = cylinder
+        .positional_cylinder_frame
+        .expect("envelope-witnessed compact Y cylinder");
+    assert_eq!(frame.origin, [2.0, 0.0, 5.0]);
+    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
+    assert_eq!(frame.radius, 1.0);
+    assert_eq!(frame.length, Some(3.0));
+}
+
+#[test]
 fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     let mut explicit = Vec::new();
     push_inline_test_subunit(&mut explicit, 0x41, 0.8);
@@ -233,8 +257,8 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
         .positional_cylinder_frame
         .expect("compact local-system suffix cylinder");
     assert_eq!(cylinder_frame.origin, [2.0, 3.0, 4.0]);
-    assert_eq!(cylinder_frame.axis, [1.0, 0.0, 0.0]);
-    assert_eq!(cylinder_frame.ref_direction, [0.0, 1.0, 0.0]);
+    assert_eq!(cylinder_frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(cylinder_frame.ref_direction, [0.0, 0.0, 1.0]);
     assert_eq!(cylinder_frame.radius, 1.0);
     assert_eq!(cylinder_frame.length, None);
     assert!(cylinder.has_inline_non_plane_local_system_suffix(0x24));
