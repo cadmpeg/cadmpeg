@@ -650,13 +650,11 @@ pub(crate) fn scan_with_curve_attrs(body: &[u8], curve_attrs: &HashSet<u16>) -> 
     scan_with_point_framing(body, false, Some(curve_attrs), None)
 }
 
-/// Scan a partition stream while excluding offsets owned by typed FACE nodes.
-///
-/// A typed FACE and a compact bridge share the `00 0e` prefix and enough of
-/// their fixed fields to pass the compact bridge framing checks.  The typed
-/// parser is the owner of that overlapping record family, so the graph layer
-/// supplies its admitted FACE offsets before this scanner builds compact
-/// topology tables.
+/// Scan a partition stream while admitting typed FACE offsets that carry a
+/// loop head.  A typed FACE and a compact bridge share the `00 0e` framing.
+/// An ownership-only typed FACE has a null loop field and must not replace a
+/// separate compact bridge for the same attribute; a shared FACE/bridge record
+/// has a non-null loop field and is the topology record as well.
 pub(crate) fn scan_with_curve_attrs_excluding(
     body: &[u8],
     curve_attrs: &HashSet<u16>,
@@ -676,7 +674,7 @@ pub(crate) fn scan_deltas_with_curve_attrs(body: &[u8], curve_attrs: &HashSet<u1
     scan_with_point_framing(body, true, Some(curve_attrs), None)
 }
 
-/// Scan a deltas stream while excluding admitted typed FACE offsets.
+/// Scan a deltas stream with the typed FACE/compact-bridge overlap rule.
 pub(crate) fn scan_deltas_with_curve_attrs_excluding(
     body: &[u8],
     curve_attrs: &HashSet<u16>,
@@ -703,9 +701,11 @@ fn scan_with_point_framing(
         }
         match body[i + 1] {
             0x0e => {
-                let excluded = excluded_bridge_offsets.is_some_and(|offsets| offsets.contains(&i));
-                if !excluded {
-                    if let Some(record) = parse_bridge(body, i) {
+                if let Some(record) = parse_bridge(body, i) {
+                    let excluded =
+                        excluded_bridge_offsets.is_some_and(|offsets| offsets.contains(&i));
+                    let carries_loop = record.refs.get(2).is_some_and(|reference| *reference > 1);
+                    if !excluded || carries_loop {
                         t.bridges.insert(record.attr, record);
                     }
                 }
@@ -826,6 +826,29 @@ mod tests {
             assert_eq!(bridge.refs, expected);
             assert_eq!(bridge.marker, Some(0x2d));
         }
+    }
+
+    #[test]
+    fn shared_typed_face_with_loop_remains_a_topology_bridge() {
+        let body = bridge_with_refs(&[1, 2, 3, 7, 8], false);
+        let excluded = HashSet::from([0]);
+
+        let tables = scan_with_curve_attrs_excluding(&body, &HashSet::new(), &excluded);
+
+        assert_eq!(
+            tables.bridges.get(&0x1234).map(|record| record.refs[2]),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn ownership_only_typed_face_does_not_replace_a_compact_bridge() {
+        let body = bridge_with_refs(&[1, 2, 0, 7, 8], false);
+        let excluded = HashSet::from([0]);
+
+        let tables = scan_with_curve_attrs_excluding(&body, &HashSet::new(), &excluded);
+
+        assert!(tables.bridges.is_empty());
     }
 
     fn topology_bridge(attr: u16, loop_attr: u16) -> Vec<u8> {
