@@ -800,7 +800,7 @@ fn approximate_surface_owner(
         })
         .collect::<Vec<_>>();
     if fits.is_empty() {
-        return None;
+        return approximate_trimmed_surface_owner(mesh, candidates, quantization_tolerance);
     }
     fits.sort_by(|left, right| left.1.total_cmp(&right.1));
     let best_deflection = fits[0].1;
@@ -819,6 +819,45 @@ fn approximate_surface_owner(
     {
         return None;
     }
+    Some((*index, *deflection))
+}
+
+/// Use a unique analytic trim as an ownership witness when stored display
+/// normals are absent or inconsistent. This path requires a bounded trim, so
+/// geometric coincidence on an unbounded analytic carrier cannot fabricate an
+/// owner without the normal agreement required above.
+fn approximate_trimmed_surface_owner(
+    mesh: &cadmpeg_ir::tessellation::Tessellation,
+    candidates: &[SurfaceCandidate<'_>],
+    quantization_tolerance: f64,
+) -> Option<(usize, f64)> {
+    let mut fits = candidates
+        .iter()
+        .enumerate()
+        .filter_map(|(index, candidate)| {
+            let trim = candidate.trim.as_ref()?;
+            let mut max_residual = 0.0_f64;
+            for point in &mesh.vertices {
+                let measure = surface_measure(
+                    candidate.surface,
+                    candidate.inverse.apply_point(*point),
+                    None,
+                )?;
+                max_residual = max_residual.max(measure.residual);
+            }
+            if is_planar_surface(candidate.surface) && max_residual > quantization_tolerance {
+                return None;
+            }
+            trim.contains_mesh(mesh, candidate.inverse, quantization_tolerance)
+                .then_some((index, max_residual))
+        })
+        .collect::<Vec<_>>();
+    fits.sort_by(|left, right| left.1.total_cmp(&right.1));
+    let best_deflection = fits.first()?.1;
+    fits.retain(|(_, deflection)| *deflection <= best_deflection + quantization_tolerance);
+    let [(index, deflection)] = fits.as_slice() else {
+        return None;
+    };
     Some((*index, *deflection))
 }
 
@@ -940,6 +979,7 @@ struct CircularHole {
 enum AnalyticTrim {
     Planar(PlanarTrim),
     Cylindrical(CylindricalTrim),
+    Conical(ConicalTrim),
 }
 
 impl AnalyticTrim {
@@ -952,6 +992,7 @@ impl AnalyticTrim {
         match self {
             Self::Planar(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
             Self::Cylindrical(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
+            Self::Conical(trim) => trim.contains_mesh(mesh, inverse_body, tolerance),
         }
     }
 }
@@ -982,6 +1023,20 @@ struct CylindricalTrim {
     angular_span: f64,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ConicalTrim {
+    origin: Point3,
+    axis: Vector3,
+    ref_direction: Vector3,
+    radius: f64,
+    ratio: f64,
+    slope: f64,
+    min_axial: f64,
+    max_axial: f64,
+    angular_start: f64,
+    angular_span: f64,
+}
+
 impl CylindricalTrim {
     fn contains_mesh(
         self,
@@ -1003,6 +1058,43 @@ impl CylindricalTrim {
                             self.angular_span,
                             angular,
                             tolerance / self.radius,
+                        )
+                })
+        })
+    }
+}
+
+impl ConicalTrim {
+    fn contains_mesh(
+        self,
+        mesh: &cadmpeg_ir::tessellation::Tessellation,
+        inverse_body: cadmpeg_ir::transform::Transform,
+        tolerance: f64,
+    ) -> bool {
+        mesh.vertices.iter().all(|point| {
+            let point = inverse_body.apply_point(*point);
+            let axial = point.vector_from(self.origin).dot(self.axis);
+            let local_radius = self.radius + axial * self.slope;
+            let angular = cone_angle(
+                point,
+                self.origin,
+                self.axis,
+                self.ref_direction,
+                self.ratio,
+            );
+            axial.is_finite()
+                && local_radius.is_finite()
+                && axial >= self.min_axial - tolerance
+                && axial <= self.max_axial + tolerance
+                && angular.is_some_and(|angular| {
+                    self.angular_span >= std::f64::consts::TAU - EPS_CYLINDER_ANGLE
+                        || circular_interval_contains(
+                            self.angular_start,
+                            self.angular_span,
+                            angular,
+                            tolerance
+                                / (local_radius.abs() * self.ratio.min(1.0))
+                                    .max(EPS_DISPLAY_QUANTIZATION),
                         )
                 })
         })
@@ -1485,6 +1577,170 @@ fn cylindrical_trim(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
+fn conical_trim(
+    face: &cadmpeg_ir::topology::Face,
+    surface: &SurfaceGeometry,
+    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
+    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
+    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
+    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
+    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
+    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+) -> Option<ConicalTrim> {
+    let SurfaceGeometry::Cone {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+        ratio,
+        half_angle,
+    } = surface
+    else {
+        return None;
+    };
+    let axis = axis.unit()?;
+    let slope = half_angle.tan();
+    if !radius.is_finite()
+        || !ratio.is_finite()
+        || *radius <= EPS_DISPLAY_QUANTIZATION
+        || *ratio <= 0.0
+        || !slope.is_finite()
+    {
+        return None;
+    }
+    let [loop_id] = face.loops.as_slice() else {
+        return None;
+    };
+    let loop_ = *loops.get(loop_id)?;
+    if loop_.face != face.id || loop_.coedges.is_empty() || !loop_.vertex_uses.is_empty() {
+        return None;
+    }
+    let tolerance = face.tolerance.unwrap_or(0.0).max(EPS_DISPLAY_QUANTIZATION);
+    let mut axial_bounds = None::<(f64, f64)>;
+    let mut angles = Vec::new();
+    for (index, coedge_id) in loop_.coedges.iter().enumerate() {
+        let coedge = *coedges.get(coedge_id)?;
+        if coedge.owner_loop != loop_.id
+            || coedge.next != loop_.coedges[(index + 1) % loop_.coedges.len()]
+            || coedge.previous
+                != loop_.coedges[(index + loop_.coedges.len() - 1) % loop_.coedges.len()]
+        {
+            return None;
+        }
+        let edge = *edges.get(&coedge.edge)?;
+        let curve = curves.get(edge.curve.as_ref()?)?;
+        match curve {
+            CurveGeometry::Line { direction, .. } => {
+                if direction.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT {
+                    return None;
+                }
+            }
+            CurveGeometry::Nurbs(nurbs) => {
+                if nurbs.degree != 1
+                    || nurbs.periodic
+                    || nurbs.control_points.len() != 2
+                    || nurbs.control_points.iter().any(|point| {
+                        analytic_surface_residual(surface, *point)
+                            .is_none_or(|residual| residual > tolerance)
+                    })
+                {
+                    return None;
+                }
+            }
+            CurveGeometry::Ellipse {
+                center,
+                axis: curve_axis,
+                major_direction,
+                major_radius,
+                minor_radius,
+            } => {
+                let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
+                let transverse = axis.cross(reference).unit()?;
+                let major_direction = major_direction.unit()?;
+                let center_delta = center.vector_from(*origin);
+                let center_axial = center_delta.dot(axis);
+                let center_radial = center_delta - axis.scale(center_axial);
+                let expected_radius = (*radius + center_axial * slope).abs();
+                let reference_aligned = major_direction.dot(reference).abs();
+                let transverse_aligned = major_direction.dot(transverse).abs();
+                let aligned_radii = if reference_aligned >= 1.0 - EPS_AXIS_ALIGNMENT {
+                    (*major_radius - expected_radius).abs() <= tolerance
+                        && (*minor_radius - expected_radius * *ratio).abs() <= tolerance
+                } else if transverse_aligned >= 1.0 - EPS_AXIS_ALIGNMENT {
+                    (*major_radius - expected_radius * *ratio).abs() <= tolerance
+                        && (*minor_radius - expected_radius).abs() <= tolerance
+                } else {
+                    false
+                };
+                if curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                    || !major_radius.is_finite()
+                    || !minor_radius.is_finite()
+                    || *major_radius <= tolerance
+                    || *minor_radius <= tolerance
+                    || center_radial.norm() > tolerance
+                    || !aligned_radii
+                {
+                    return None;
+                }
+            }
+            CurveGeometry::Circle {
+                center,
+                axis: curve_axis,
+                radius: curve_radius,
+                ..
+            } => {
+                if (*ratio - 1.0).abs() > EPS_AXIS_ALIGNMENT
+                    || curve_axis.unit()?.dot(axis).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                    || !curve_radius.is_finite()
+                {
+                    return None;
+                }
+                let center_delta = center.vector_from(*origin);
+                let center_axial = center_delta.dot(axis);
+                let center_radial = center_delta - axis.scale(center_axial);
+                let expected_radius = (*radius + center_axial * slope).abs();
+                if center_radial.norm() > tolerance
+                    || (*curve_radius - expected_radius).abs() > tolerance
+                {
+                    return None;
+                }
+            }
+            _ => return None,
+        }
+        for vertex_id in [edge.start.clone(), edge.end.clone()] {
+            let point = *points.get(&vertices.get(&vertex_id)?.point)?;
+            if analytic_surface_residual(surface, point)? > tolerance {
+                return None;
+            }
+            let axial = point.vector_from(*origin).dot(axis);
+            let angle = cone_angle(point, *origin, axis, *ref_direction, *ratio)?;
+            if !axial.is_finite() || !angle.is_finite() {
+                return None;
+            }
+            axial_bounds = Some(match axial_bounds {
+                Some((min_axial, max_axial)) => (min_axial.min(axial), max_axial.max(axial)),
+                None => (axial, axial),
+            });
+            angles.push(angle);
+        }
+    }
+    let (min_axial, max_axial) = axial_bounds?;
+    let (angular_start, angular_span) = circular_interval(&angles)?;
+    (max_axial - min_axial > tolerance).then_some(ConicalTrim {
+        origin: *origin,
+        axis,
+        ref_direction: *ref_direction,
+        radius: *radius,
+        ratio: *ratio,
+        slope,
+        min_axial,
+        max_axial,
+        angular_start,
+        angular_span,
+    })
+}
+
 fn cylinder_angle(
     point: Point3,
     origin: Point3,
@@ -1496,6 +1752,28 @@ fn cylinder_angle(
     let transverse = axis.cross(reference).unit()?;
     let delta = point.vector_from(origin);
     let angle = delta.dot(transverse).atan2(delta.dot(reference));
+    angle
+        .is_finite()
+        .then_some(angle.rem_euclid(std::f64::consts::TAU))
+}
+
+fn cone_angle(
+    point: Point3,
+    origin: Point3,
+    axis: Vector3,
+    ref_direction: Vector3,
+    ratio: f64,
+) -> Option<f64> {
+    if !ratio.is_finite() || ratio <= 0.0 {
+        return None;
+    }
+    let axis = axis.unit()?;
+    let reference = (ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
+    let transverse = axis.cross(reference).unit()?;
+    let delta = point.vector_from(origin);
+    let major = delta.dot(reference);
+    let minor = delta.dot(transverse);
+    let angle = (minor / ratio).atan2(major);
     angle
         .is_finite()
         .then_some(angle.rem_euclid(std::f64::consts::TAU))
@@ -1563,6 +1841,10 @@ fn analytic_trim(
             face, surface, loops, coedges, edges, vertices, points, curves,
         )
         .map(AnalyticTrim::Cylindrical),
+        SurfaceGeometry::Cone { .. } => conical_trim(
+            face, surface, loops, coedges, edges, vertices, points, curves,
+        )
+        .map(AnalyticTrim::Conical),
         _ => None,
     }
 }
@@ -1880,6 +2162,35 @@ fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<V
             let radial_unit = radial.unit()?;
             (radial_unit.scale(radial.norm() - major_radius) + axis.scale(axial)).unit()
         }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } => {
+            let axis = axis.unit()?;
+            let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
+            let transverse = axis.cross(reference).unit()?;
+            let slope = half_angle.tan();
+            if !radius.is_finite() || !ratio.is_finite() || *ratio <= 0.0 || !slope.is_finite() {
+                return None;
+            }
+            let delta = point.vector_from(*origin);
+            let axial = delta.dot(axis);
+            let major = delta.dot(reference);
+            let minor = delta.dot(transverse);
+            let elliptical_radius = major.hypot(minor / *ratio);
+            if elliptical_radius <= f64::EPSILON {
+                return None;
+            }
+            let local_radius = *radius + axial * slope;
+            (reference.scale(major / elliptical_radius)
+                + transverse.scale(minor / (*ratio * *ratio * elliptical_radius))
+                - axis.scale(slope * local_radius.signum()))
+            .unit()
+        }
         SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
             transform
                 .apply_vector(analytic_surface_normal(
@@ -1888,8 +2199,7 @@ fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<V
                 )?)
                 .unit()
         }
-        SurfaceGeometry::Cone { .. }
-        | SurfaceGeometry::Nurbs(_)
+        SurfaceGeometry::Nurbs(_)
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Transformed { .. }

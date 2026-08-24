@@ -813,6 +813,47 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
 }
 
 #[test]
+fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
+    let mut model = model_with_body();
+    let face = add_cylindrical_patch_face(&mut model, "inconsistent-normals", 0.0, 1.0);
+    model.shells[0].faces.push(face.clone());
+    let deflection = 0.1;
+    model.tessellations.push(Tessellation {
+        id: "inconsistent-normals-mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(5.0 - deflection, 0.0, 0.25),
+            Point3::new(0.0, 5.0 - deflection, 0.25),
+            Point3::new(5.0 - deflection, 0.0, 0.75),
+        ],
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: vec![
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ],
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    });
+
+    assert_eq!(
+        assign_unique_surface_owners(&mut model),
+        vec!["inconsistent-normals-mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert!(model.tessellations[0]
+        .chordal_deflection
+        .is_some_and(|value| (value - deflection).abs() <= f64::EPSILON * 128.0));
+}
+
+#[test]
 fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
     let mut model = model_with_body();
     let face = add_square_face(&mut model, "off-surface", 0.0);
@@ -941,6 +982,120 @@ fn cone_support_binds_display_list_face() {
     assert_eq!(assign_unique_surface_owners(&mut model), vec!["cone-mesh"]);
     assert_eq!(model.tessellations[0].faces, vec![face]);
     assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+}
+
+#[test]
+fn cone_chordal_display_list_uses_analytic_normal_for_ownership() {
+    let mut model = model_with_body();
+    let cone = SurfaceGeometry::Cone {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 3.0,
+        ratio: 0.5,
+        half_angle: std::f64::consts::FRAC_PI_4,
+    };
+    let axial = 2.0;
+    let surface_radius = 3.0 + axial * std::f64::consts::FRAC_PI_4.tan();
+    let face = add_face(
+        &mut model,
+        "cone-cache",
+        cone.clone(),
+        [
+            Point3::new(surface_radius, 0.0, axial),
+            Point3::new(0.0, surface_radius * 0.5, axial),
+            Point3::new(-surface_radius, 0.0, axial),
+            Point3::new(0.0, -surface_radius * 0.5, axial),
+        ],
+    );
+    model.shells[0].faces.push(face.clone());
+    let cache_radius = surface_radius - 0.1;
+    let vertices = vec![
+        Point3::new(cache_radius, 0.0, axial),
+        Point3::new(0.0, cache_radius * 0.5, axial),
+        Point3::new(-cache_radius, 0.0, axial),
+    ];
+    let normals = vertices
+        .iter()
+        .map(|point| analytic_surface_normal(&cone, *point).unwrap())
+        .collect();
+    model.tessellations.push(Tessellation {
+        id: "cone-cache-mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices,
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals,
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    });
+
+    assert_eq!(
+        assign_unique_surface_owners(&mut model),
+        vec!["cone-cache-mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+    assert!(model.tessellations[0]
+        .chordal_deflection
+        .is_some_and(|deflection| deflection > 0.09 && deflection < 0.11));
+}
+
+#[test]
+fn conical_trim_uses_scaled_angular_coordinate() {
+    let trim = ConicalTrim {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 3.0,
+        ratio: 0.5,
+        slope: 1.0,
+        min_axial: 0.0,
+        max_axial: 2.0,
+        angular_start: 0.0,
+        angular_span: std::f64::consts::FRAC_PI_2,
+    };
+    let mesh = |point: Point3, id: &str| Tessellation {
+        id: id.into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![point],
+        triangles: Vec::new(),
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    };
+    let point_at = |angle: f64| {
+        let local_radius = 4.0;
+        Point3::new(
+            local_radius * angle.cos(),
+            local_radius * trim.ratio * angle.sin(),
+            1.0,
+        )
+    };
+
+    assert!(trim.contains_mesh(
+        &mesh(point_at(std::f64::consts::FRAC_PI_4), "inside"),
+        cadmpeg_ir::transform::Transform::identity(),
+        0.0,
+    ));
+    assert!(!trim.contains_mesh(
+        &mesh(point_at(3.0 * std::f64::consts::FRAC_PI_4), "outside"),
+        cadmpeg_ir::transform::Transform::identity(),
+        0.0,
+    ));
 }
 
 #[test]
