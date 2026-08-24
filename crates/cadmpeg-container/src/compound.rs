@@ -732,7 +732,7 @@ impl CompoundState {
                 .ok_or_else(|| CodecError::Malformed("CFB FAT sector is absent".into()))?;
             fat.extend(
                 data.chunks_exact(4)
-                    .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte chunk"))),
+                    .map(|word| le_u32(word, 0).expect("four-byte chunk")),
             );
         }
         if fat.len() < sector_count {
@@ -809,7 +809,7 @@ impl CompoundState {
         ctx.charge_retained(mini_fat_byte_count as u64, "retain CFB mini FAT", None)?;
         let mini_fat = join_sectors(bytes, sector_size, sector_count, &mini_fat_chain)?
             .chunks_exact(4)
-            .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte chunk")))
+            .map(|word| le_u32(word, 0).expect("four-byte chunk"))
             .collect::<Vec<_>>();
         drop(mini_fat_scratch);
         let root = &directory[0];
@@ -1200,7 +1200,7 @@ impl CompoundPrefixProbe {
             };
             fat.extend(
                 raw.chunks_exact(4)
-                    .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte chunk"))),
+                    .map(|word| le_u32(word, 0).expect("four-byte chunk")),
             );
             loaded_fat_count += 1;
         }
@@ -1336,7 +1336,7 @@ fn parse_directory(
         if !matches!(object_type, 0 | 1 | 2 | 5) {
             return malformed("invalid CFB directory object type");
         }
-        let name_len = usize::from(u16::from_le_bytes([raw[64], raw[65]]));
+        let name_len = usize::from(le_u16(raw, 64).expect("directory name length"));
         let name = if object_type == 0 {
             if name_len != 0
                 || raw[..68].iter().any(|byte| *byte != 0)
@@ -1369,7 +1369,7 @@ fn parse_directory(
         if object_type != 0 && color > 1 {
             return malformed("invalid CFB directory node color");
         }
-        let mut size = u64::from_le_bytes(raw[120..128].try_into().expect("eight-byte field"));
+        let mut size = le_u64(raw, 120).expect("directory stream size");
         if major_version == 3 {
             size &= 0xffff_ffff;
         }
@@ -1377,10 +1377,10 @@ fn parse_directory(
             name,
             object_type,
             color,
-            left: u32::from_le_bytes(raw[68..72].try_into().expect("four-byte field")),
-            right: u32::from_le_bytes(raw[72..76].try_into().expect("four-byte field")),
-            child: u32::from_le_bytes(raw[76..80].try_into().expect("four-byte field")),
-            start_sector: u32::from_le_bytes(raw[116..120].try_into().expect("four-byte field")),
+            left: le_u32(raw, 68).expect("directory left pointer"),
+            right: le_u32(raw, 72).expect("directory right pointer"),
+            child: le_u32(raw, 76).expect("directory child pointer"),
+            start_sector: le_u32(raw, 116).expect("directory start sector"),
             size,
         });
     }
@@ -1629,14 +1629,13 @@ fn sector_slice(bytes: &[u8], sector_size: usize, count: usize, id: u32) -> Opti
 }
 
 fn le_u16(bytes: &[u8], offset: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(
-        bytes.get(offset..offset + 2)?.try_into().ok()?,
-    ))
+    View::u16_le_at(bytes, offset)
 }
 fn le_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(
-        bytes.get(offset..offset + 4)?.try_into().ok()?,
-    ))
+    View::u32_le_at(bytes, offset)
+}
+fn le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
+    View::u64_le_at(bytes, offset)
 }
 fn malformed<T>(message: impl Into<String>) -> Result<T, CodecError> {
     Err(CodecError::Malformed(message.into()))

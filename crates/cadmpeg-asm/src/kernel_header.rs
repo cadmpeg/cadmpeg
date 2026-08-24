@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Kernel header metadata shared by binary ASM, binary ACIS, and text streams.
 
+use cadmpeg_core::decode::View;
+
 /// The recognized metadata fields of an ASM or ACIS model stream.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KernelHeader {
@@ -107,6 +109,6 @@ fn read_tagged_f64(bytes: &[u8], at: usize) -> Option<(f64, usize)> {
     if *bytes.get(at)? != 0x06 {
         return None;
     }
-    let value = f64::from_le_bytes(bytes.get(at + 1..at + 9)?.try_into().ok()?);
+    let value = View::f64_le_at(bytes, at + 1)?;
     Some((value, at + 9))
 }

@@ -379,7 +379,7 @@ fn u16_at(bytes: &[u8], offset: u64) -> Result<u16, CodecError> {
     let raw = bytes
         .get(start..start + 2)
         .ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))?;
-    Ok(u16::from_le_bytes([raw[0], raw[1]]))
+    View::u16_le_at(raw, 0).ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))
 }
 
 fn u32_at(bytes: &[u8], offset: u64) -> Result<u32, CodecError> {
@@ -388,7 +388,7 @@ fn u32_at(bytes: &[u8], offset: u64) -> Result<u32, CodecError> {
     let raw = bytes
         .get(start..start + 4)
         .ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))?;
-    Ok(u32::from_le_bytes(raw.try_into().expect("four-byte slice")))
+    View::u32_le_at(raw, 0).ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))
 }
 
 fn u64_at(bytes: &[u8], offset: u64) -> Result<u64, CodecError> {
@@ -397,9 +397,7 @@ fn u64_at(bytes: &[u8], offset: u64) -> Result<u64, CodecError> {
     let raw = bytes
         .get(start..start + 8)
         .ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))?;
-    Ok(u64::from_le_bytes(
-        raw.try_into().expect("eight-byte slice"),
-    ))
+    View::u64_le_at(raw, 0).ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))
 }
 
 fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
@@ -650,7 +648,8 @@ fn classify_end_records(
                 let raw = bytes
                     .get(start..start + 8)
                     .ok_or_else(|| CodecError::Malformed("truncated ZIP64 end record".into()))?;
-                let body = u64::from_le_bytes(raw.try_into().expect("eight-byte slice"));
+                let body = View::u64_le_at(raw, 0)
+                    .ok_or_else(|| CodecError::Malformed("truncated ZIP64 end record".into()))?;
                 (
                     "zip64-end-record",
                     12_u64

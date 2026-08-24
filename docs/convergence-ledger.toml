@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "e98702616d5c628211fe7b3fe15ed21bc3282917"
+measured_at = "33fc5ff5a83de6b21d4bbfb84428d809ef193ec2"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -27,10 +27,10 @@ test_line_debt = 0
 production_line_debt = 0
 
 [reasons]
-from_endian_bytes = "four u32::from_le_bytes calls compare already-copied layer color arrays in deterministic source order; these are not bounded decode-window reads and remain intentional exceptions"
+from_endian_bytes = "The remaining 93 calls are intentional exceptions: View's 16 typed-reader implementations; CATIA's seven padded 24-bit or partial-width local token arrays; Creo's 36 compact-token IEEE reconstructions; F3D's two output color packings; Inventor's three field-reordered GUID reads; NX's seven reconstructed or copied scalar, footer, and checksum arrays; Rhino's four copied layer-color arrays; SLDPRT's nine copied component/tag arrays and output packing; the inspect scalar's one normalized local lane; the fuzz generator's one RGB packing; and Protein's seven fixed arrays returned by take. None reads a bounded decode window as a standard-width scalar."
 
 [ceilings]
-from_endian_bytes = 115
+from_endian_bytes = 93
 codec_error_malformed_format = 0
 loss_note_struct_literals = 0
 bare_tolerance_literals = 0
