@@ -397,12 +397,6 @@ pub(crate) fn is_legacy_parameter_owner_88_class(class_tag: &str) -> bool {
     matches!(class_tag, "284" | "282" | "336" | "325" | "297")
 }
 
-/// Whether a parameter family admits a retained owner reference without a
-/// primary owner frame.
-pub(crate) fn parameter_owner_may_be_absent(class_tag: &str) -> bool {
-    class_tag == "287"
-}
-
 fn valid_design_parameter_family(discriminator: Option<u64>, source_kind: &str, tail: u8) -> bool {
     match tail {
         16 => {
@@ -483,10 +477,7 @@ pub fn decode_parameter_owners(
             // A parameter can retain a source owner reference after Fusion has
             // omitted that owner's primary frame. Keep the parameter native;
             // projection reports the unresolved binding as a loss.
-            if parameter_owner_may_be_absent(&parameter.class_tag) {
-                continue;
-            }
-            return Err(malformed("has no primary indexed header"));
+            continue;
         };
         let (entry, records) = streams
             .get(scope)

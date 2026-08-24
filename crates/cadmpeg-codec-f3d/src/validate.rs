@@ -8708,7 +8708,6 @@ fn validate_dimension_null_locus_pairs<'a>(
 /// Validate parameter records, family discriminators, and owner shape.
 fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
-    let owners_by_index = &ctx.owners_by_index;
     let mut parameter_indices = HashSet::new();
     for parameter in &native.design_parameters {
         let native_stream = design_stream(&parameter.id);
@@ -8723,12 +8722,7 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let owner_shape_valid = match parameter.kind {
             records::DesignParameterKind::User => parameter.owner_record_index.is_none(),
             records::DesignParameterKind::Dimension | records::DesignParameterKind::Feature => {
-                parameter.owner_record_index.is_some_and(|owner| {
-                    owners_by_index.contains_key(&(native_stream, owner))
-                        || design::decode::parameters::parameter_owner_may_be_absent(
-                            &parameter.class_tag,
-                        )
-                })
+                parameter.owner_record_index.is_some()
             }
         };
         let offsets_ordered = parameter.byte_offset < parameter.expression_offset

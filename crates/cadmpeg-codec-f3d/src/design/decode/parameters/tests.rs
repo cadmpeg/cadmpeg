@@ -845,29 +845,15 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert_eq!(owner.frame_length, 104);
     assert_eq!(owner.evaluated_value_offset, 40);
 
-    let unresolved_parameter = crate::records::DesignParameter {
-        class_tag: "287".into(),
-        ..parameter.clone()
-    };
     let unresolved = with_scan(&archive(stream, &[]), |scan| {
-        crate::design::decode::parameters::decode_parameter_owners(
-            scan,
-            std::slice::from_ref(&unresolved_parameter),
-            &[],
-        )
-    })
-    .expect("missing owner frame is retained as an unresolved binding");
-    assert!(unresolved.is_empty());
-
-    let error = with_scan(&archive(stream, &[]), |scan| {
         crate::design::decode::parameters::decode_parameter_owners(
             scan,
             std::slice::from_ref(&parameter),
             &[],
         )
     })
-    .expect_err("an unadmitted parameter family must retain the missing-owner refusal");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    .expect("missing owner frame is retained as an unresolved binding");
+    assert!(unresolved.is_empty());
 
     let mut extended = owner_frame();
     extended.push(0);
