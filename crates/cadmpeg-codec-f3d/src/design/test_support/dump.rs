@@ -72,7 +72,7 @@ pub(crate) use crate::design::dimensions::{
 };
 pub(crate) use crate::design::edge_resolve::{
     feature_input_topology_id, partial_historical_edge_selection,
-    resolved_edge_candidate_intersection, resolved_edge_candidate_intersection_with_deleted_proofs,
+    resolved_edge_candidate_intersection,
 };
 pub(crate) use crate::design::face_resolve::{
     resolved_body_recipe_shape, resolved_face_group, resolved_historical_split_face_target_group,

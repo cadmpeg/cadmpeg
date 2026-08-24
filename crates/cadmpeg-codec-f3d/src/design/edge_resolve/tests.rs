@@ -1143,38 +1143,6 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         None
     );
     assert_eq!(resolved_edge_candidate_intersection(&[], [&[17][..]]), None);
-    // Two reference sets that share no edge name no edge of this operand, so a
-    // proof drawn from outside those references cannot select one either.
-    assert_eq!(
-        resolved_edge_candidate_intersection_with_deleted_proofs(
-            &[selector(0, &[17])],
-            [&[17][..], &[18][..]],
-            &[],
-            Some(17),
-        ),
-        None
-    );
-    let mut deleted_triplet = selector(0, &[]);
-    deleted_triplet.clause_triplet_edge_slots = vec![Some([vec![17, 19], vec![17, 20]]), None];
-    assert_eq!(
-        resolved_edge_candidate_intersection_with_deleted_proofs(
-            &[deleted_triplet],
-            [&[18][..], &[19][..]],
-            &[17],
-            None,
-        ),
-        Some(17)
-    );
-    // The same proof stands where the references do share the edge.
-    assert_eq!(
-        resolved_edge_candidate_intersection_with_deleted_proofs(
-            &[selector(0, &[17])],
-            [&[17, 20][..], &[17, 21][..]],
-            &[],
-            Some(17),
-        ),
-        Some(17)
-    );
     assert_eq!(
         resolved_edge_candidate_intersection(
             &[
@@ -1309,73 +1277,6 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
     assert_eq!(
         resolved_edge_candidate_intersection(&[common.clone()], [&[17][..]]),
         Some(17)
-    );
-    assert_eq!(
-        crate::design::edge_resolve::corroborated_deleted_reference_candidate(
-            &[common.clone()],
-            [&[20][..], &[17][..]],
-            &[17, 19],
-        ),
-        Some(17)
-    );
-    assert_eq!(
-        crate::design::edge_resolve::corroborated_deleted_reference_candidate(
-            &[common.clone()],
-            [&[17][..], &[18][..]],
-            &[17, 18],
-        ),
-        None
-    );
-    assert_eq!(
-        crate::design::edge_resolve::corroborated_deleted_reference_candidate(
-            &[common.clone()],
-            [&[17][..]],
-            &[19],
-        ),
-        None
-    );
-    assert_eq!(
-        crate::design::edge_resolve::unique_deleted_triplet_candidate(&[common.clone()], &[17, 20]),
-        Some(17)
-    );
-    assert_eq!(
-        crate::design::edge_resolve::resolved_edge_candidate_intersection_with_deleted_proofs(
-            &[common.clone()],
-            [&[17, 18][..]],
-            &[17, 20],
-            None,
-        ),
-        Some(17)
-    );
-    assert_eq!(
-        crate::design::edge_resolve::resolved_edge_candidate_intersection_with_deleted_proofs(
-            &[common.clone()],
-            [&[18][..]],
-            &[17, 20],
-            None,
-        ),
-        None
-    );
-    assert_eq!(
-        crate::design::edge_resolve::resolved_edge_candidate_intersection_with_deleted_proofs(
-            &[common.clone()],
-            [&[17, 18][..]],
-            &[17, 20],
-            Some(18),
-        ),
-        None
-    );
-    assert_eq!(
-        crate::design::edge_resolve::unique_deleted_triplet_candidate(&[common.clone()], &[17, 18]),
-        None
-    );
-    assert_eq!(
-        crate::design::edge_resolve::unique_deleted_triplet_candidate(&[common.clone()], &[20]),
-        None
-    );
-    assert_eq!(
-        crate::design::edge_resolve::unique_deleted_triplet_candidate(&[], &[17]),
-        None
     );
     assert_eq!(
         resolved_edge_candidate_intersection(&[common], [&[19][..]]),

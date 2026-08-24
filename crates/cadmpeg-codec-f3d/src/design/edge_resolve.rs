@@ -2011,62 +2011,6 @@ pub(crate) fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> V
     }
 }
 
-pub(crate) fn unique_deleted_triplet_candidate(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
-    deleted_boundary_edges: &[i64],
-) -> Option<i64> {
-    if selector_contexts.is_empty() || deleted_boundary_edges.is_empty() {
-        return None;
-    }
-    let mut candidates = selector_contexts
-        .iter()
-        .flat_map(|selector| selector.clause_triplet_edge_slots.iter())
-        .flatten()
-        .flat_map(|triplets| triplets.iter())
-        .flatten()
-        .copied()
-        .filter(|edge| deleted_boundary_edges.contains(edge))
-        .collect::<Vec<_>>();
-    candidates.sort_unstable();
-    candidates.dedup();
-    match candidates.as_slice() {
-        [edge] => Some(*edge),
-        _ => None,
-    }
-}
-
-pub(crate) fn corroborated_deleted_reference_candidate<'a>(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
-    reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
-    deleted_boundary_edges: &[i64],
-) -> Option<i64> {
-    let selector_supports = |edge: i64| {
-        selector_contexts.iter().any(|selector| {
-            selector.incidence_matching_edge_slots.contains(&edge)
-                || selector.boundary_count_matching_edge_slots.contains(&edge)
-                || selector
-                    .clause_triplet_edge_slots
-                    .iter()
-                    .flatten()
-                    .any(|pair| pair.iter().any(|edges| edges.contains(&edge)))
-        })
-    };
-    let mut candidates = reference_edge_sets
-        .into_iter()
-        .filter_map(|edges| match edges {
-            [edge] => Some(*edge),
-            _ => None,
-        })
-        .filter(|edge| deleted_boundary_edges.contains(edge) && selector_supports(*edge))
-        .collect::<Vec<_>>();
-    candidates.sort_unstable();
-    candidates.dedup();
-    match candidates.as_slice() {
-        [edge] => Some(*edge),
-        _ => None,
-    }
-}
-
 pub(crate) fn resolved_edge_candidate_intersection<'a>(
     selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
@@ -2117,22 +2061,6 @@ pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
         [edge] => Some(*edge),
         _ => None,
     }
-}
-
-pub(crate) fn resolved_edge_candidate_intersection_with_deleted_proofs<'a>(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
-    shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
-    deleted_boundary_edges: &[i64],
-    deleted_reference: Option<i64>,
-) -> Option<i64> {
-    let deleted_triplet =
-        unique_deleted_triplet_candidate(selector_contexts, deleted_boundary_edges);
-    resolved_edge_candidate_intersection_with_extra_proofs(
-        selector_contexts,
-        shared_edge_sets,
-        [deleted_reference],
-        deleted_triplet,
-    )
 }
 
 fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
