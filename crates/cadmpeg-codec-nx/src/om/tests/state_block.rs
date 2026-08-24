@@ -244,6 +244,24 @@ fn operation_state_block_stops_before_untyped_tail() {
 }
 
 #[test]
+fn operation_state_block_keeps_a_large_opaque_prefix_sparse() {
+    const OPAQUE_PREFIX_BYTES: usize = 128 * 1024;
+    let mut bytes = vec![0xf0; OPAQUE_PREFIX_BYTES];
+    let status_start = bytes.len();
+    bytes.extend([
+        0x41, 0x83, 0x20, 0x3f, 0x44, 0x83, 0x21, 0x4b, 0xff, 0x83, 0x22, 0xff,
+    ]);
+    let boundary = bytes.len();
+
+    let block = super::operation_state_block_before_boundary(&bytes, 0, boundary, 500)
+        .expect("status chain after large opaque prefix");
+    assert_eq!(block.offset, 500 + status_start);
+    assert_eq!(block.rows.len(), 2);
+    assert!(block.messages.is_empty());
+    assert_eq!(block.status_end_offset, 500 + boundary);
+}
+
+#[test]
 fn operation_state_block_prefers_boundary_closed_path() {
     let mut bytes = vec![
         0x41, 0x80, 0x01, 0x3f, 0x41, 0x80, 0x02, 0x3f, 0x41, 0x80, 0x03, 0x3f, 0x31, 0x80, 0x04,
