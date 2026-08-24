@@ -852,12 +852,16 @@ mod tests {
         bytes
     }
 
-    fn typed_shell(attr: u16, node_id: u32, region: u32) -> Vec<u8> {
+    fn typed_shell_with_body(attr: u16, node_id: u32, body: u32, region: u32) -> Vec<u8> {
         let mut bytes = typed_prefix(SHELL_TAG, attr, node_id);
-        for value in [1, 3, 1, 38, 1, 1, region, 1] {
+        for value in [1, body, 1, 38, 1, 1, region, 1] {
             push_ref(&mut bytes, value);
         }
         bytes
+    }
+
+    fn typed_shell(attr: u16, node_id: u32, region: u32) -> Vec<u8> {
+        typed_shell_with_body(attr, node_id, 3, region)
     }
 
     fn typed_region(attr: u16, node_id: u32, refs: [u32; 5], kind: u8) -> Vec<u8> {
@@ -951,6 +955,42 @@ mod tests {
             facts.bodies[0].topology_refs,
             [7, 8, 0x8000, 10, 11, 12, 13]
         );
+    }
+
+    #[test]
+    fn extended_references_close_every_typed_ownership_edge() {
+        const BODY: u32 = 40_000;
+        const SHELL: u32 = 40_001;
+        const REGION: u32 = 40_002;
+        const FACE: u16 = 40_003;
+
+        let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
+        bytes.extend(body_node_with_topology(
+            BODY as u16,
+            7,
+            1,
+            [SHELL, 1, 1, 1, REGION, 1, 1],
+        ));
+        bytes.extend(typed_shell_with_body(SHELL as u16, 8, BODY, REGION));
+        bytes.extend(typed_region(REGION as u16, 9, [1, BODY, 1, 1, SHELL], b'S'));
+        bytes.extend(typed_face(FACE, 10, [1, 1, 1, SHELL, 12]));
+
+        let facts = scan(&bytes);
+        let hierarchy = facts
+            .hierarchies(&HashSet::from([FACE]))
+            .expect("extended typed references close the ownership graph");
+        assert_eq!(hierarchy.len(), 1);
+        assert_eq!(hierarchy[0].body.attr, BODY as u16);
+        assert_eq!(hierarchy[0].shells[0].attr, SHELL as u16);
+        assert_eq!(
+            hierarchy[0]
+                .regions
+                .iter()
+                .map(|region| region.attr)
+                .collect::<Vec<_>>(),
+            vec![REGION as u16]
+        );
+        assert_eq!(hierarchy[0].faces.as_slice(), &[(FACE, SHELL as u16)]);
     }
 
     #[test]
