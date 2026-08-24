@@ -1099,7 +1099,8 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
         return None;
     }
 
-    let mut coverage = vec![0u8; length];
+    let mut coverage =
+        cadmpeg_core::decode::alloc_filled(length, 0u8, "catia standard boundary coverage").ok()?;
     for &(start, edge_count, _, _) in &matches {
         for offset in 0..edge_count {
             coverage[(start + offset) % length] =

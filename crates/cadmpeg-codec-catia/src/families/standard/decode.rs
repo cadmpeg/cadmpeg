@@ -2900,7 +2900,9 @@ fn standard_limit_curve_bindings(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    let mut edge_curves = vec![Vec::<StandardLimitCurveBinding>::new(); supports.len()];
+    let mut edge_curves =
+        std::iter::repeat_n(Vec::<StandardLimitCurveBinding>::new(), supports.len())
+            .collect::<Vec<_>>();
     for (curve, points) in curve_points.iter().enumerate() {
         for (edge, support) in supports.iter().enumerate() {
             if !matches!(
@@ -3722,7 +3724,8 @@ fn attach_standard_topology(
             &initial_assignment,
             Some(work_budget),
         )?;
-        let mut branch_preferred_edges = vec![false; options.len()];
+        let mut branch_preferred_edges =
+            std::iter::repeat_n(false, options.len()).collect::<Vec<_>>();
         for edge in branch_groups
             .iter()
             .flat_map(|group| group.edges.iter().copied())
@@ -3767,7 +3770,8 @@ fn attach_standard_topology(
             // accept the unconstrained bounded result only when it is uniquely
             // determined.
             retry_rejected_mesh_solution(preferred, || {
-                let unconstrained = vec![false; circle_constraint_edges.len()];
+                let unconstrained =
+                    std::iter::repeat_n(false, circle_constraint_edges.len()).collect::<Vec<_>>();
                 mesh_quotient::parse_standard_mesh_candidate_outcome(
                     spine,
                     &edge_faces,
@@ -3966,13 +3970,25 @@ fn standard_boundary_roles(
         };
     }
     let Some(surface_id) = bindings.get(face_index).map(|binding| &binding.0) else {
-        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+        return std::iter::repeat_n(
+            LoopBoundaryRole::Unspecified,
+            face_topology.boundaries.len(),
+        )
+        .collect();
     };
     let Some(&surface_index) = surface_indices.get(surface_id) else {
-        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+        return std::iter::repeat_n(
+            LoopBoundaryRole::Unspecified,
+            face_topology.boundaries.len(),
+        )
+        .collect();
     };
     let Some(surface) = ir.model.surfaces.get(surface_index) else {
-        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+        return std::iter::repeat_n(
+            LoopBoundaryRole::Unspecified,
+            face_topology.boundaries.len(),
+        )
+        .collect();
     };
     let Some(boundaries) = face_topology
         .boundaries
@@ -3989,7 +4005,11 @@ fn standard_boundary_roles(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
+        return std::iter::repeat_n(
+            LoopBoundaryRole::Unspecified,
+            face_topology.boundaries.len(),
+        )
+        .collect();
     };
     crate::boundary_roles::classify_planar_boundary_roles(&surface.geometry, &boundaries)
 }
@@ -4080,7 +4100,8 @@ fn emit_standard_topology(
         .enumerate()
         .map(|(index, curve)| (curve.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let mut edge_coedges = vec![Vec::new(); ir.model.edges.len()];
+    let mut edge_coedges =
+        std::iter::repeat_n(Vec::new(), ir.model.edges.len()).collect::<Vec<_>>();
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
         let boundary_roles = standard_boundary_roles(
             ir,
@@ -4609,7 +4630,7 @@ fn bind_standard_curve_branch_group(
                 .collect::<HashSet<_>>()
         };
 
-    let mut grouped = vec![false; group.len()];
+    let mut grouped = std::iter::repeat_n(false, group.len()).collect::<Vec<_>>();
     let mut normalized = candidates
         .iter()
         .map(|pairs| normalize(pairs))
@@ -4836,7 +4857,7 @@ fn bind_ordered_standard_curve_branches_with_focus(
             is_ranked_family(left) && std::mem::discriminant(left) == std::mem::discriminant(right)
         };
     let normalized = normalize(candidates);
-    let mut grouped = vec![false; supports.len()];
+    let mut grouped = std::iter::repeat_n(false, supports.len()).collect::<Vec<_>>();
     for first in 0..supports.len() {
         if grouped[first]
             || !is_focused(first)
@@ -5195,7 +5216,7 @@ fn standard_curve_branch_groups(
         .iter()
         .map(|pairs| normalize(pairs))
         .collect::<Vec<_>>();
-    let mut checked = vec![false; supports.len()];
+    let mut checked = std::iter::repeat_n(false, supports.len()).collect::<Vec<_>>();
     let mut groups = Vec::new();
     for first in 0..supports.len() {
         if checked[first] || !ranked_family(&supports[first].geometry) {
@@ -5260,13 +5281,13 @@ fn standard_curve_branch_assignment_dependencies(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     groups: &[StandardCurveBranchGroup],
 ) -> Vec<Vec<usize>> {
-    let mut grouped = vec![false; supports.len()];
+    let mut grouped = std::iter::repeat_n(false, supports.len()).collect::<Vec<_>>();
     for edge in groups.iter().flat_map(|group| group.edges.iter().copied()) {
         if let Some(grouped_edge) = grouped.get_mut(edge) {
             *grouped_edge = true;
         }
     }
-    let mut dependencies = vec![Vec::new(); supports.len()];
+    let mut dependencies = std::iter::repeat_n(Vec::new(), supports.len()).collect::<Vec<_>>();
     for group in groups {
         let external = supports
             .iter()
@@ -5481,7 +5502,7 @@ pub(crate) fn standard_native_support_edge_ids(
     endpoint_candidates: &[Vec<usize>],
 ) -> Vec<Option<u32>> {
     if supports.len() != endpoint_candidates.len() {
-        return vec![None; supports.len()];
+        return std::iter::repeat_n(None, supports.len()).collect();
     }
 
     let exact_edge_ids = supports
@@ -5506,7 +5527,8 @@ pub(crate) fn standard_native_support_edge_ids(
             .then_some(support.tag)
         })
         .collect::<Vec<_>>();
-    let mut fallback_candidates = vec![Vec::<u32>::new(); supports.len()];
+    let mut fallback_candidates =
+        std::iter::repeat_n(Vec::<u32>::new(), supports.len()).collect::<Vec<_>>();
 
     if let Some(vertex_roster) = vertex_roster {
         let point_by_identity = vertex_roster

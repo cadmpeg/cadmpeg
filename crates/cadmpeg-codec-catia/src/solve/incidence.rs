@@ -3568,9 +3568,20 @@ where
         orientation_budget: &WorkBudget<'_>,
         solution_visitor: Option<MeshEndpointSolutionVisitor<'_>>,
     ) -> bool {
-        let mut active = vec![false; choices.len()];
+        let Some(mut active) =
+            alloc_filled(choices.len(), false, "catia incidence active edges").ok()
+        else {
+            return false;
+        };
         let mut constraints = HashSet::<(usize, usize)>::new();
-        let mut point_support_edges = vec![HashMap::<usize, Vec<usize>>::new(); face_edges.len()];
+        let Some(mut point_support_edges) = alloc_filled(
+            face_edges.len(),
+            HashMap::<usize, Vec<usize>>::new(),
+            "catia incidence point support edges",
+        )
+        .ok() else {
+            return false;
+        };
         let mut component_faces = HashSet::new();
         for &edge in component {
             active[edge] = true;
@@ -3984,7 +3995,8 @@ where
             partial_solution_valid.and_then(|constraint| constraint.assignment_predecessors),
             partial_solution_valid.and_then(|constraint| constraint.assignment_dependencies),
         )?;
-        let mut face_edges = vec![Vec::new(); face_count];
+        let mut face_edges =
+            alloc_filled(face_count, Vec::new(), "catia incidence face edges").ok()?;
         for (edge, faces) in edge_faces.iter().copied().enumerate() {
             for (rank, face) in faces.into_iter().enumerate() {
                 if (rank == 0 || face != faces[0]) && !face_edges[face].contains(&edge) {
@@ -3992,8 +4004,13 @@ where
                 }
             }
         }
-        let mut fixed = vec![None; choices.len()];
-        let mut degrees = vec![BTreeMap::<usize, u8>::new(); face_count];
+        let mut fixed = alloc_filled(choices.len(), None, "catia incidence fixed edges").ok()?;
+        let mut degrees = alloc_filled(
+            face_count,
+            BTreeMap::<usize, u8>::new(),
+            "catia incidence face degrees",
+        )
+        .ok()?;
         for (edge, pairs) in choices.iter().enumerate() {
             let [pair] = pairs.as_slice() else {
                 continue;

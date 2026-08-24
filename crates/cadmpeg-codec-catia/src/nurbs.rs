@@ -755,7 +755,8 @@ fn nurbs_basis_values(
     {
         return None;
     }
-    let mut basis = vec![0.0; count + degree];
+    let mut basis =
+        cadmpeg_core::decode::alloc_filled(count + degree, 0.0, "catia NURBS basis values").ok()?;
     for (index, value) in basis.iter_mut().enumerate() {
         if (knots.get(index)? <= &parameter && &parameter < knots.get(index + 1)?)
             || (parameter == *knots.last()? && index + 1 == count)

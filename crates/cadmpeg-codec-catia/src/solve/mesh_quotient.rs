@@ -2274,7 +2274,8 @@ impl MeshQuotient {
                         }) {
                             return false;
                         }
-                        let mut selected = vec![None; edge_candidates.len()];
+                        let mut selected =
+                            std::iter::repeat_n(None, edge_candidates.len()).collect::<Vec<_>>();
                         for (local_edge, &edge) in edge_ids.iter().enumerate() {
                             let [left, right] = edges[local_edge];
                             let [Some(left), Some(right)] = [assigned[left], assigned[right]]
@@ -2484,7 +2485,8 @@ impl MeshQuotient {
             if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
                 return Vec::new();
             }
-            let mut counts = vec![0usize; boundary_domains.len()];
+            let mut counts =
+                std::iter::repeat_n(0usize, boundary_domains.len()).collect::<Vec<_>>();
             for faces in edge_faces {
                 for (rank, face) in faces.iter().copied().enumerate() {
                     if rank == 0 || face != faces[0] {
@@ -2497,7 +2499,7 @@ impl MeshQuotient {
         if face_incidence_counts.as_ref().is_some_and(Vec::is_empty) {
             return None;
         }
-        let mut assignment = vec![None; roots.len()];
+        let mut assignment = std::iter::repeat_n(None, roots.len()).collect::<Vec<_>>();
         let shared_budget = budget;
         for component in components {
             let support_count = component
@@ -2571,7 +2573,8 @@ impl MeshQuotient {
                 if budget.is_some_and(|budget| !budget.charge_by(edge_ids.len().max(1))) {
                     return None;
                 }
-                let mut face_edges = vec![Vec::new(); boundary_domains.len()];
+                let mut face_edges =
+                    std::iter::repeat_n(Vec::new(), boundary_domains.len()).collect::<Vec<_>>();
                 for (edge, faces) in local_edge_faces.as_ref()?.iter().copied().enumerate() {
                     for (rank, face) in faces.into_iter().enumerate() {
                         if rank == 0 || face != faces[0] {
@@ -2600,7 +2603,8 @@ impl MeshQuotient {
                 .iter()
                 .map(|root| domains[*root].clone())
                 .collect::<Vec<_>>();
-            let mut root_edges = vec![Vec::new(); component.len()];
+            let mut root_edges =
+                std::iter::repeat_n(Vec::new(), component.len()).collect::<Vec<_>>();
             for (edge, [left, right]) in local_edges.iter().copied().enumerate() {
                 root_edges[left].push(edge);
                 if right != left {
@@ -2669,8 +2673,8 @@ impl MeshQuotient {
                 closed_faces.as_deref(),
                 incidence.map(|(_, boundary_domains)| boundary_domains),
                 &component_points,
-                &mut vec![None; component.len()],
-                &mut vec![0; point_count],
+                &mut std::iter::repeat_n(None, component.len()).collect::<Vec<_>>(),
+                &mut std::iter::repeat_n(0, point_count).collect::<Vec<_>>(),
                 &mut solutions,
                 &mut states,
                 state_limit,
@@ -3568,7 +3572,7 @@ impl MeshQuotient {
         else {
             return PointAssignmentOutcome::Complete(Vec::new());
         };
-        let mut root_edges = vec![Vec::new(); roots.len()];
+        let mut root_edges = std::iter::repeat_n(Vec::new(), roots.len()).collect::<Vec<_>>();
         for (edge_index, edge) in edge_roots.iter().enumerate() {
             root_edges[edge[0]].push(edge_index);
             if edge[1] != edge[0] {
@@ -3594,7 +3598,7 @@ impl MeshQuotient {
             &root_edges,
             edge_candidates,
             &edge_neighbors,
-            &mut vec![None; domains.len()],
+            &mut std::iter::repeat_n(None, domains.len()).collect::<Vec<_>>(),
             &mut HashSet::new(),
             &mut solutions,
             solution_limit,
@@ -6830,7 +6834,7 @@ fn resolve_standard_mesh_endpoint_candidates(
         edge_candidates: &edge_candidates,
         edge_rows,
         vertex_points,
-        selected: vec![None; face_count],
+        selected: std::iter::repeat_n(None, face_count).collect(),
         states: 0,
         solution: None,
         ambiguous: false,
@@ -6982,7 +6986,8 @@ where
         .zip(&class_constraint.active)
         .map(|((partial, preferred), class)| *partial || *preferred || *class)
         .collect::<Vec<_>>();
-    let mut assignment_predecessors = vec![None; completed_edge_candidates.len()];
+    let mut assignment_predecessors =
+        std::iter::repeat_n(None, completed_edge_candidates.len()).collect::<Vec<_>>();
     for &(left, right) in &class_constraint.ordered {
         assignment_predecessors[right] = Some(
             assignment_predecessors[right].map_or(left, |predecessor: usize| predecessor.max(left)),
