@@ -202,7 +202,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             .and_then(|native| native.rsplit_once(':').map(|(history, _)| history))
     }
 
-    const FRAME_TOLERANCE: f64 = 1.0e-8;
+    const FRAME_TOLERANCE: f64 = 1e-8;
 
     let stored_frame = |feature: &cadmpeg_ir::features::Feature| {
         let origin = parse_point3_mm(feature.source_properties.get("Origin")?)?;

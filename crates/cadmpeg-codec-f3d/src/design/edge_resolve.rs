@@ -8,6 +8,9 @@ use crate::records::{
 };
 use std::collections::{HashMap, HashSet};
 
+const EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9: f64 = 1e-9;
+const EPS_EDGE_RESOLVE_RADIUS_EDGE_IDENTITY_GROUP_CANDIDATES_E9: f64 = 1e-9;
+
 pub(crate) fn resolved_edge_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
@@ -1422,7 +1425,7 @@ pub(crate) fn radius_edge_group_candidates(
     if operands.is_empty() || !radius.is_finite() || radius <= 0.0 {
         return None;
     }
-    let tolerance = 1.0e-9 * (1.0 + radius.abs());
+    let tolerance = EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9 * (1.0 + radius.abs());
     let mut chain = Vec::new();
     for operand in operands {
         if let Some(edge) = resolved_edge_operand(operand) {
@@ -1463,7 +1466,8 @@ fn radius_edge_identity_group_candidates(
     if operands.is_empty() || !radius.is_finite() || radius <= 0.0 {
         return None;
     }
-    let tolerance = 1.0e-9 * (1.0 + radius.abs());
+    let tolerance =
+        EPS_EDGE_RESOLVE_RADIUS_EDGE_IDENTITY_GROUP_CANDIDATES_E9 * (1.0 + radius.abs());
     // Radius candidates on identity operands describe the complete operation
     // transition, not one member. They prove a group only when that group has
     // one member. A multi-member group requires an exact contribution from

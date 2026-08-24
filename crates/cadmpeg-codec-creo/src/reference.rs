@@ -6,6 +6,14 @@ use cadmpeg_core::bytes::find_in;
 use crate::scalar::{self, ScalarCache};
 use crate::vecmath::{cross, dot, normalize_with_length};
 
+const EPS_REFERENCE_ELLIPSE_CARRIERS_E9: f64 = 1e-9;
+const EPS_REFERENCE_ELLIPSE_CARRIERS_E12: f64 = 1e-12;
+const EPS_REFERENCE_LINE3D_FIELDS_E12: f64 = 1e-12;
+const EPS_REFERENCE_LINE3D_FIELDS_E9: f64 = 1e-9;
+const EPS_REFERENCE_ARC_Z_FIELDS_E9: f64 = 1e-9;
+const EPS_REFERENCE_ARC_Z_FIELDS_E12: f64 = 1e-12;
+const EPS_REFERENCE_ARC_Z_FIELDS_E10: f64 = 1e-10;
+
 /// Stored reference-line family.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReferenceLineKind {
@@ -128,9 +136,9 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
             .chain(conic.end.iter())
             .map(|value| value.abs())
             .fold(1.0_f64, f64::max);
-        if (first_length - 1.0).abs() > 1e-9
-            || (second_length - 1.0).abs() > 1e-9
-            || dot(first_frame, second_frame).abs() > 1e-9
+        if (first_length - 1.0).abs() > EPS_REFERENCE_ELLIPSE_CARRIERS_E9
+            || (second_length - 1.0).abs() > EPS_REFERENCE_ELLIPSE_CARRIERS_E9
+            || dot(first_frame, second_frame).abs() > EPS_REFERENCE_ELLIPSE_CARRIERS_E9
         {
             continue;
         }
@@ -153,14 +161,20 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
             let (first_direction, first_radius) = normalize_with_length(endpoint_deltas[0])?;
             let (_, second_radius) = normalize_with_length(endpoint_deltas[1])?;
             ((0..3).all(|index| {
-                (endpoint_deltas[0][index] + endpoint_deltas[1][index]).abs() <= 1e-9 * scale
-            }) && dot(first_direction, axis).abs() <= 1e-9
-                && (first_radius - second_radius).abs() <= 1e-9 * scale)
+                (endpoint_deltas[0][index] + endpoint_deltas[1][index]).abs()
+                    <= EPS_REFERENCE_ELLIPSE_CARRIERS_E9 * scale
+            }) && dot(first_direction, axis).abs() <= EPS_REFERENCE_ELLIPSE_CARRIERS_E9
+                && (first_radius - second_radius).abs()
+                    <= EPS_REFERENCE_ELLIPSE_CARRIERS_E9 * scale)
                 .then_some(())?;
             let radius_scale = major_radius.max(1.0);
-            if (first_radius - major_radius).abs() <= 1e-9 * radius_scale {
+            if (first_radius - major_radius).abs()
+                <= EPS_REFERENCE_ELLIPSE_CARRIERS_E9 * radius_scale
+            {
                 Some(first_direction)
-            } else if (first_radius - minor_radius).abs() <= 1e-9 * radius_scale {
+            } else if (first_radius - minor_radius).abs()
+                <= EPS_REFERENCE_ELLIPSE_CARRIERS_E9 * radius_scale
+            {
                 normalize_with_length(cross(first_direction, axis)).map(|(direction, _)| direction)
             } else {
                 None
@@ -184,15 +198,16 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
                 let first = dot(delta, first_frame);
                 let second = dot(delta, second_frame);
                 let plane = dot(delta, axis);
-                plane.abs() <= 1e-9 * scale
+                plane.abs() <= EPS_REFERENCE_ELLIPSE_CARRIERS_E9 * scale
                     && ((first / first_radius).powi(2) + (second / second_radius).powi(2) - 1.0)
                         .abs()
-                        <= 1e-9
+                        <= EPS_REFERENCE_ELLIPSE_CARRIERS_E9
             })
         };
         let direct = mapping_is_valid(radii[0], radii[1]);
         let swapped = mapping_is_valid(radii[1], radii[0]);
-        let equal_radii = (radii[0] - radii[1]).abs() <= 1e-12 * radii[0].max(radii[1]);
+        let equal_radii = (radii[0] - radii[1]).abs()
+            <= EPS_REFERENCE_ELLIPSE_CARRIERS_E12 * radii[0].max(radii[1]);
         let (first_radius, second_radius) = if direct && (!swapped || equal_radii) {
             (radii[0], radii[1])
         } else if swapped && !direct {
@@ -213,7 +228,7 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
                     major_direction,
                 )
             })
-            .find(|projection| projection.abs() > 1e-12 * scale);
+            .find(|projection| projection.abs() > EPS_REFERENCE_ELLIPSE_CARRIERS_E12 * scale);
         if orientation.is_some_and(f64::is_sign_negative) {
             major_direction = major_direction.map(|value| -value);
         }
@@ -828,9 +843,9 @@ fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3]
         let stored_length = values[6].abs();
         let scale = distance.max(stored_length).max(1.0);
         (distance.is_finite()
-            && distance > 1e-12
+            && distance > EPS_REFERENCE_LINE3D_FIELDS_E12
             && stored_length > 0.0
-            && (distance - stored_length).abs() <= 1e-9 * scale)
+            && (distance - stored_length).abs() <= EPS_REFERENCE_LINE3D_FIELDS_E9 * scale)
             .then_some((start, first, second, stored_length))
     });
     let mut candidates = candidates;
@@ -956,10 +971,10 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
                 .all(|value| value.is_finite())
             && first_distance.is_finite()
             && second_distance.is_finite()
-            && (first_distance - radius).abs() <= 1e-9 * scale
-            && (second_distance - radius).abs() <= 1e-9 * scale
+            && (first_distance - radius).abs() <= EPS_REFERENCE_ARC_Z_FIELDS_E9 * scale
+            && (second_distance - radius).abs() <= EPS_REFERENCE_ARC_Z_FIELDS_E9 * scale
             && normal_length.is_finite()
-            && normal_length > 1e-12 * scale * scale)
+            && normal_length > EPS_REFERENCE_ARC_Z_FIELDS_E12 * scale * scale)
             .then(|| normal.map(|value| value / normal_length))
     };
     let explicit = (0..body.len()).filter_map(|start| {
@@ -992,8 +1007,8 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<Refe
         (diameter.is_finite()
             && radius > 0.0
             && values.iter().all(|value| value.is_finite())
-            && delta[2].abs() <= 1e-10 * scale
-            && (diameter - 2.0 * radius).abs() <= 1e-9 * scale)
+            && delta[2].abs() <= EPS_REFERENCE_ARC_Z_FIELDS_E10 * scale
+            && (diameter - 2.0 * radius).abs() <= EPS_REFERENCE_ARC_Z_FIELDS_E9 * scale)
             .then_some(ReferenceCircle {
                 entity_id,
                 center,

@@ -28,6 +28,8 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::AnnotationBuilder;
 
+const EPS_AXIS_ALIGNMENT: f64 = 1e-9;
+
 pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -354,7 +356,9 @@ pub(in super::super) fn circular_section_profile_from_cylinder(
         return None;
     };
     let axis = normalized([axis.x, axis.y, axis.z])?;
-    (dot(axis, transform.normal).abs() >= 1.0 - 1e-9 && radius.is_finite() && *radius > 0.0)
+    (dot(axis, transform.normal).abs() >= 1.0 - EPS_AXIS_ALIGNMENT
+        && radius.is_finite()
+        && *radius > 0.0)
         .then_some(())?;
     let delta = [
         origin.x - transform.origin[0],

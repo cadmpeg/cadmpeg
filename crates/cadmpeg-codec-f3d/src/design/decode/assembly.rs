@@ -236,7 +236,7 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
 
 /// Maximum component error accepted when a legacy hole direction is compared
 /// with the solved connector frame's third basis column.
-const EPS_LEGACY_AS_BUILT_DIRECTION: f64 = 1.0e-10;
+const EPS_LEGACY_AS_BUILT_DIRECTION: f64 = 1e-10;
 
 /// Decode the two ordered construction/face-selection pairs of a 421-byte
 /// `As-built` scope and derive their local frames from the stored solved frame.

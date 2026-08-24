@@ -29,6 +29,8 @@ use crate::writer::primitives::{
 };
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
+const EPS_EDITED_DIRECTION_UNIT: f64 = 1e-9;
+
 #[derive(Clone, Copy)]
 pub(crate) struct PatchNatives<'a> {
     pub(crate) baseline: Option<&'a F3dNative>,
@@ -2927,7 +2929,7 @@ pub(crate) fn validate_curve_edits(
             {
                 finite_point(*origin)
                     && finite_vector(*direction)
-                    && (direction.norm() - 1.0).abs() <= 1e-9
+                    && (direction.norm() - 1.0).abs() <= EPS_EDITED_DIRECTION_UNIT
             }
             CurveGeometry::Circle {
                 center,

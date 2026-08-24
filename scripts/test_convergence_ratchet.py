@@ -151,11 +151,35 @@ class PatternFilters(unittest.TestCase):
         self.assertTrue(ratchet.is_production_rs(Path("crates/c/src/decode.rs")))
 
     def test_bare_tolerance_includes_seven_eight_eleven(self) -> None:
-        text = "a 1e-6 b 1e-7 c 1e-8 d 1e-9 e 1e-10 f 1e-11 g 1e-12 h 1e-18\n"
+        text = (
+            "a 1e-6 b 1e-7 c 1e-8 d 1e-9 e 1e-10 f 1e-11 g 1e-12 "
+            "h 1e-18 i 1.0e-9 j 1.00E-10\n"
+        )
         self.assertEqual(
             ratchet.BARE_TOLERANCE.findall(text),
-            ["1e-6", "1e-7", "1e-8", "1e-9", "1e-10", "1e-11", "1e-12"],
+            [
+                "1e-6",
+                "1e-7",
+                "1e-8",
+                "1e-9",
+                "1e-10",
+                "1e-11",
+                "1e-12",
+                "1.0e-9",
+                "1.00E-10",
+            ],
         )
+
+    def test_bare_tolerance_excludes_named_threshold_initializers(self) -> None:
+        text = (
+            "const EPS_DIRECT: f64 = 1e-9;\n"
+            "pub(crate) static EPS_STATIC: f64 = 1.0e-10;\n"
+            "let direct = 1e-9;\n"
+            "let formatted = 1.0e-10;\n"
+            "const DERIVED: f64 = f64::from_bits(1e-9 as u64);\n"
+        )
+        masked = ratchet.mask_rust_non_code(text)
+        self.assertEqual(ratchet.count_bare_tolerance_literals(masked), 2)
 
     def test_from_endian_counts_non_codec_crates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

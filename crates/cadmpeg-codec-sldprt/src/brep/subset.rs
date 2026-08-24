@@ -10,7 +10,7 @@ use super::{Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
 
 const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
-const POINT_TOLERANCE_MM: f64 = 1.0e-7;
+const POINT_TOLERANCE_MM: f64 = 1e-7;
 
 fn nurbs_point(curve: &cadmpeg_ir::geometry::NurbsCurve, parameter: f64) -> Option<Point3> {
     let degree = usize::try_from(curve.degree).ok()?;

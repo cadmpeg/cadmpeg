@@ -24,6 +24,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+const EPS_PROFILE_SELECT_TRANSITION_PROFILE_SELECTION_E7: f64 = 1e-7;
+const EPS_PROFILE_SELECT_TRANSITION_SPATIAL_PROFILE_SELECTION_E7: f64 = 1e-7;
+const EPS_PROFILE_SELECT_HISTORICAL_SELECTION_REGIONS_E7: f64 = 1e-7;
+
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
 /// native selection together with the known sketch.
@@ -935,7 +939,9 @@ fn transition_profile_selection(
     }
     let topology = state.topology.as_ref()?;
     let inserted_faces = &state.transition.as_ref()?.topology.faces.inserted;
-    let tolerance = resolution.linear_tolerance.max(1.0e-7);
+    let tolerance = resolution
+        .linear_tolerance
+        .max(EPS_PROFILE_SELECT_TRANSITION_PROFILE_SELECTION_E7);
     let inserted = transition_inserted_profile_selection(
         sketch,
         entities,
@@ -1169,7 +1175,8 @@ fn transition_spatial_profile_selection(
         return None;
     }
     let topology = state.topology.as_ref()?;
-    let tolerance = linear_tolerance.max(1.0e-7);
+    let tolerance =
+        linear_tolerance.max(EPS_PROFILE_SELECT_TRANSITION_SPATIAL_PROFILE_SELECTION_E7);
     let unique = |faces: &[i64], topology: &crate::history_records::AsmHistoricalTopology| {
         let mut indices = faces
             .iter()
@@ -1431,7 +1438,7 @@ fn historical_selection_regions(
     linear_tolerance: f64,
     arrangement_budget: &WorkBudget<'_>,
 ) -> Option<ResolvedProfileSelection> {
-    let tolerance = linear_tolerance.max(1.0e-7);
+    let tolerance = linear_tolerance.max(EPS_PROFILE_SELECT_HISTORICAL_SELECTION_REGIONS_E7);
     let mut states = HashMap::new();
     for state in histories.iter().flat_map(|history| &history.states) {
         states

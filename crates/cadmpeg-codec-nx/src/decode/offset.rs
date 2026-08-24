@@ -19,6 +19,13 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_OFFSET_OFFSET_SURFACE_PARAMETERS_WITH_TOLERANCE_WITH_INDEX_E12: f64 = 1e-12;
+const EPS_OFFSET_PARAMETER_DERIVATIVE_STEP_E6: f64 = 1e-6;
+const EPS_OFFSET_CORRECT_INTERSECTION_PARAMETERS_E6: f64 = 1e-6;
+const EPS_OFFSET_CORRECT_INTERSECTION_PARAMETERS_E11: f64 = 1e-11;
+const EPS_OFFSET_INTERSECTION_PARAMETER_TANGENT_E8: f64 = 1e-8;
+const EPS_OFFSET_SOLVE_DAMPED_LEAST_SQUARES_4X4_E12: f64 = 1e-12;
+
 pub(crate) fn saved_offset_carriers(
     ir: &CadIr,
     graph: &Graph,
@@ -799,8 +806,12 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index(
         parameters.u -= step_u;
         parameters.v -= step_v;
         clamp_surface_parameters(&mut parameters, domain);
-        if step_u.abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
-            && step_v.abs() <= 1.0e-12 * (1.0 + parameters.v.abs())
+        if step_u.abs()
+            <= EPS_OFFSET_OFFSET_SURFACE_PARAMETERS_WITH_TOLERANCE_WITH_INDEX_E12
+                * (1.0 + parameters.u.abs())
+            && step_v.abs()
+                <= EPS_OFFSET_OFFSET_SURFACE_PARAMETERS_WITH_TOLERANCE_WITH_INDEX_E12
+                    * (1.0 + parameters.v.abs())
         {
             break;
         }
@@ -917,8 +928,8 @@ pub(crate) fn clamp_surface_parameters(
 
 pub(crate) fn parameter_derivative_step(parameter: f64, domain: Option<[f64; 2]>) -> f64 {
     domain.map_or_else(
-        || 1.0e-6 * (1.0 + parameter.abs()),
-        |domain| 1.0e-6 * (domain[1] - domain[0]).abs().max(1.0),
+        || EPS_OFFSET_PARAMETER_DERIVATIVE_STEP_E6 * (1.0 + parameter.abs()),
+        |domain| EPS_OFFSET_PARAMETER_DERIVATIVE_STEP_E6 * (domain[1] - domain[0]).abs().max(1.0),
     )
 }
 
@@ -1229,8 +1240,9 @@ pub(crate) fn correct_intersection_parameters(
             .map(|value| value * value)
             .sum::<f64>()
             .sqrt();
-        if equality_error <= fit_tolerance * 1.0e-6
-            && residual[3].abs() <= 1.0e-11 * (1.0 + scale.abs())
+        if equality_error <= fit_tolerance * EPS_OFFSET_CORRECT_INTERSECTION_PARAMETERS_E6
+            && residual[3].abs()
+                <= EPS_OFFSET_CORRECT_INTERSECTION_PARAMETERS_E11 * (1.0 + scale.abs())
         {
             return Some(corrected);
         }
@@ -1283,7 +1295,7 @@ pub(crate) fn intersection_parameter_tangent(
             derivatives[side][0].y * u + derivatives[side][1].y * v,
             derivatives[side][0].z * u + derivatives[side][1].z * v,
         ))?;
-        if dot_vector(mapped, chord) < 1.0 - 1.0e-8 {
+        if dot_vector(mapped, chord) < 1.0 - EPS_OFFSET_INTERSECTION_PARAMETER_TANGENT_E8 {
             return None;
         }
         tangent[side * 2] = u;
@@ -1471,7 +1483,7 @@ pub(crate) fn solve_damped_least_squares_4x4(
         normal[index][index]
             .max(0.0)
             .sqrt()
-            .max(max_column_scale * 1.0e-12)
+            .max(max_column_scale * EPS_OFFSET_SOLVE_DAMPED_LEAST_SQUARES_4X4_E12)
     });
     let scaled_normal: [[f64; 4]; 4] = std::array::from_fn(|row| {
         std::array::from_fn(|column| {

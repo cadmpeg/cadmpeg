@@ -5,6 +5,15 @@
 use super::*;
 use crate::geometry::{knots_nondecreasing, knots_strictly_increasing};
 
+const EPS_GEOMETRY_PAYLOADS_UNIT_VECTOR_E9: f64 = 1e-9;
+const EPS_GEOMETRY_PAYLOADS_ORTHONORMAL_E9: f64 = 1e-9;
+const EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E9: f64 = 1e-9;
+const EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E10: f64 = 1e-10;
+
+const EPS_ROLLING_BALL_RADIUS: f64 = 1e-9;
+const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1e-9;
+const EPS_HELIX_RADIUS: f64 = 1e-9;
+
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {
         if mesh.body.as_ref().is_some_and(|body| {
@@ -272,13 +281,14 @@ pub(super) fn degenerate(v: &Vector3) -> bool {
 }
 
 fn unit_vector(v: &Vector3) -> bool {
-    (v.norm() - 1.0).abs() <= 1.0e-9
+    (v.norm() - 1.0).abs() <= EPS_GEOMETRY_PAYLOADS_UNIT_VECTOR_E9
 }
 
 fn orthonormal(left: &Vector3, right: &Vector3) -> bool {
     unit_vector(left)
         && unit_vector(right)
-        && (left.x * right.x + left.y * right.y + left.z * right.z).abs() <= 1.0e-9
+        && (left.x * right.x + left.y * right.y + left.z * right.z).abs()
+            <= EPS_GEOMETRY_PAYLOADS_ORTHONORMAL_E9
 }
 
 fn point3_finite(point: &crate::math::Point3) -> bool {
@@ -1432,7 +1442,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             let minor_length =
                 (path.minor.x.powi(2) + path.minor.y.powi(2) + path.minor.z.powi(2)).sqrt();
             let circular_path = major_length > 0.0
-                && (major_length - minor_length).abs() <= 1.0e-9 * major_length.max(1.0);
+                && (major_length - minor_length).abs()
+                    <= EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E9 * major_length.max(1.0);
             let profile_valid = match construction.profile {
                 crate::geometry::HelixSurfaceProfile::Circle { length, radius } => {
                     length.is_finite() && radius.is_finite() && radius != 0.0
@@ -1789,7 +1800,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && first_radius > 0.0
                     && second_radius.is_finite()
                     && (first_radius - second_radius).abs()
-                        <= 1e-9 * first_radius.max(second_radius).max(1.0)
+                        <= EPS_ROLLING_BALL_RADIUS * first_radius.max(second_radius).max(1.0)
             });
             if *degree == 0
                 || knots.len() != sites.len()
@@ -2199,7 +2210,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 normal.x.is_finite()
                     && normal.y.is_finite()
                     && normal.z.is_finite()
-                    && (normal.norm() - 1.0).abs() <= 1.0e-10
+                    && (normal.norm() - 1.0).abs() <= EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E10
             });
             let range_valid = parameter_range.is_none_or(|range| {
                 range.iter().all(|value| value.is_finite()) && range[0] < range[1]
@@ -2249,7 +2260,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 ]
                 .into_iter()
                 .all(f64::is_finite)
-                || (reference_direction.norm() - 1.0).abs() > 1e-9
+                || (reference_direction.norm() - 1.0).abs() > EPS_SPATIAL_CURVE_DIRECTION
             {
                 bounds_err(findings, &procedural.id.0, "invalid spatial curve offset");
             }
@@ -2635,7 +2646,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if degenerate(major) || degenerate(minor) || degenerate(axis) {
             bounds_err(findings, &procedural.id.0, "helix frame is degenerate");
         }
-        if (major.norm() - minor.norm()).abs() > 1e-9 {
+        if (major.norm() - minor.norm()).abs() > EPS_HELIX_RADIUS {
             bounds_err(
                 findings,
                 &procedural.id.0,

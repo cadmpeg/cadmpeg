@@ -20,7 +20,7 @@ use cadmpeg_ir::sketches::{
     SketchTextHorizontalAlignment as Horizontal, SketchTextVerticalAlignment as Vertical,
 };
 
-const EPS_POINT_PROJECTION: f64 = 1.0e-6;
+const EPS_POINT_PROJECTION: f64 = 1e-6;
 
 #[test]
 fn sketch_text_alignment_ordinals_project_to_named_positions() {

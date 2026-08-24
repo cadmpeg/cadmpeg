@@ -14,6 +14,8 @@ use crate::records::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+const EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9: f64 = 1e-9;
+
 /// Admit the legacy reference-aware face-target frame that omits its zero
 /// `Side1Offset` owner and parameter.
 pub(crate) fn extrude_omits_zero_side_one_offset(
@@ -2039,7 +2041,7 @@ pub(crate) fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
             ..
         }) => {
             !(planar_point(center)
-                && reference_direction.z.abs() <= 1.0e-9
+                && reference_direction.z.abs() <= EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9
                 && sketch_normal_sign(normal).is_some())
         }
         Some(SketchCurveGeometry::Nurbs { control_points, .. }) => {
@@ -2982,8 +2984,8 @@ mod tests {
 
     #[test]
     fn extrude_target_geometry_requires_one_forward_parallel_plane() {
-        const TARGET_LINEAR_TOLERANCE: f64 = 1.0e-9;
-        const TARGET_ANGULAR_TOLERANCE: f64 = 1.0e-9;
+        const TARGET_LINEAR_TOLERANCE: f64 = 1e-9;
+        const TARGET_ANGULAR_TOLERANCE: f64 = 1e-9;
 
         let face_with_surface = |slot: i64, surface: &str| Face {
             id: face(slot),

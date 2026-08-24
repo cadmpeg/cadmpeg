@@ -13,6 +13,8 @@ use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
+const EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9: f64 = 1e-9;
+
 const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 
 /// Decode every structurally complete Canvas geometry and image-asset record.
@@ -285,9 +287,9 @@ fn decode_geometry_payload(payload: &[u8]) -> Option<(f32, Point3, Vector3, Vect
     let u_axis = Vector3::new(u[0], u[1], u[2]);
     let v_axis = Vector3::new(v[0], v[1], v[2]);
     if !origin.into_iter().all(f64::is_finite)
-        || (u_axis.norm() - 1.0).abs() > 1.0e-9
-        || (v_axis.norm() - 1.0).abs() > 1.0e-9
-        || u_axis.dot(v_axis).abs() > 1.0e-9
+        || (u_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
+        || (v_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
+        || u_axis.dot(v_axis).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
     {
         return None;
     }

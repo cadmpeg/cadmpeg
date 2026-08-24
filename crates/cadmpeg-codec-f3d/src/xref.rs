@@ -30,6 +30,8 @@ use crate::records::{
     DesignComponentInsertConstruction, DesignParameterScope, XrefDesign, XrefReference,
 };
 
+const EPS_XREF_DECODE_RIGID_MATRIX_E8: f64 = 1e-8;
+
 /// Top-level container entry holding the external-reference table.
 pub const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";
 /// Top-level container entry holding the document-properties slot.
@@ -1279,7 +1281,7 @@ fn decode_rigid_matrix(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
     if !rows.iter().flatten().all(|value| value.is_finite()) || rows[3] != [0.0, 0.0, 0.0, 1.0] {
         return None;
     }
-    let tolerance = 1.0e-8;
+    let tolerance = EPS_XREF_DECODE_RIGID_MATRIX_E8;
     for left in 0..3 {
         for right in 0..3 {
             let dot = (0..3)

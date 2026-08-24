@@ -26,6 +26,14 @@ use crate::transform::Transform;
 use crate::CadIr;
 use cadmpeg_core::decode::alloc_filled;
 
+const EPS_EVAL_SPATIAL_POINTS_ARE_REFLECTIONS_E12: f64 = 1e-12;
+const EPS_EVAL_SPATIAL_POINTS_ARE_REFLECTIONS_E9: f64 = 1e-9;
+const EPS_EVAL_REFINE_NURBS_SURFACE_PARAMETERS_E12: f64 = 1e-12;
+const EPS_EVAL_CLAMPED_NURBS_PCURVE_ENDPOINT_FRAMES_E12: f64 = 1e-12;
+const EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E12: f64 = 1e-12;
+const EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9: f64 = 1e-9;
+const EPS_EVAL_MODEL_CURVE_PARAMETER_NEAR_POINT_WITH_TOLERANCE_E12: f64 = 1e-12;
+
 /// Test whether two model-space points are reflections across a line carrier.
 ///
 /// The line is unbounded for the reflection operation but its two stored
@@ -42,7 +50,7 @@ pub fn spatial_points_are_reflections(
         axis_end.z - axis_start.z,
     );
     let axis_length = axis.norm();
-    if !axis_length.is_finite() || axis_length <= 1.0e-12 {
+    if !axis_length.is_finite() || axis_length <= EPS_EVAL_SPATIAL_POINTS_ARE_REFLECTIONS_E12 {
         return false;
     }
     let midpoint = Point3::new(
@@ -66,8 +74,9 @@ pub fn spatial_points_are_reflections(
             .max(second.x.abs())
             .max(second.y.abs())
             .max(second.z.abs());
-    axis.cross(from_axis).norm() <= 1.0e-9 * axis_length * scale
-        && axis.dot(separation).abs() <= 1.0e-9 * axis_length * scale
+    axis.cross(from_axis).norm() <= EPS_EVAL_SPATIAL_POINTS_ARE_REFLECTIONS_E9 * axis_length * scale
+        && axis.dot(separation).abs()
+            <= EPS_EVAL_SPATIAL_POINTS_ARE_REFLECTIONS_E9 * axis_length * scale
 }
 
 /// Recover native parameters for an analytic surface point.
@@ -831,8 +840,10 @@ fn refine_nurbs_surface_parameters(
             break;
         };
         parameters = candidate;
-        if scale * step.u.abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
-            && scale * step.v.abs() <= 1.0e-12 * (1.0 + parameters.v.abs())
+        if scale * step.u.abs()
+            <= EPS_EVAL_REFINE_NURBS_SURFACE_PARAMETERS_E12 * (1.0 + parameters.u.abs())
+            && scale * step.v.abs()
+                <= EPS_EVAL_REFINE_NURBS_SURFACE_PARAMETERS_E12 * (1.0 + parameters.v.abs())
         {
             break;
         }
@@ -1816,13 +1827,17 @@ fn clamped_nurbs_pcurve_endpoint_frames(
         .iter()
         .skip(1)
         .map(|point| Point2::new(point.u - start.u, point.v - start.v))
-        .find(|tangent| tangent.u.hypot(tangent.v) > 1.0e-12)?;
+        .find(|tangent| {
+            tangent.u.hypot(tangent.v) > EPS_EVAL_CLAMPED_NURBS_PCURVE_ENDPOINT_FRAMES_E12
+        })?;
     let end_tangent = control_points
         .iter()
         .rev()
         .skip(1)
         .map(|point| Point2::new(end.u - point.u, end.v - point.v))
-        .find(|tangent| tangent.u.hypot(tangent.v) > 1.0e-12)?;
+        .find(|tangent| {
+            tangent.u.hypot(tangent.v) > EPS_EVAL_CLAMPED_NURBS_PCURVE_ENDPOINT_FRAMES_E12
+        })?;
     Some([(start, start_tangent), (end, end_tangent)])
 }
 
@@ -1837,13 +1852,15 @@ fn fitted_nurbs_offset_candidate(
         let (result_point, result_tangent) = result[ordinal];
         let source_length = source_tangent.u.hypot(source_tangent.v);
         let result_length = result_tangent.u.hypot(result_tangent.v);
-        if source_length <= 1.0e-12 || result_length <= 1.0e-12 {
+        if source_length <= EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E12
+            || result_length <= EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E12
+        {
             return None;
         }
         let parallel_error =
             (source_tangent.u * result_tangent.v - source_tangent.v * result_tangent.u).abs()
                 / (source_length * result_length);
-        if parallel_error > 1.0e-9 {
+        if parallel_error > EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9 {
             return None;
         }
         let offset = Point2::new(
@@ -1859,15 +1876,18 @@ fn fitted_nurbs_offset_candidate(
                 .max(source_point.v.abs())
                 .max(result_point.u.abs())
                 .max(result_point.v.abs());
-        if tangential.abs() > linear_tolerance.max(1.0e-9 * coordinate_scale) {
+        if tangential.abs()
+            > linear_tolerance.max(EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9 * coordinate_scale)
+        {
             return None;
         }
         distances[ordinal] =
             (-source_tangent.v * offset.u + source_tangent.u * offset.v) / source_length;
     }
     let scale = 1.0 + distances[0].abs().max(distances[1].abs());
-    ((distances[0] - distances[1]).abs() <= linear_tolerance.max(1.0e-9 * scale)
-        && distances[0].abs() > linear_tolerance.max(1.0e-9))
+    ((distances[0] - distances[1]).abs()
+        <= linear_tolerance.max(EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9 * scale)
+        && distances[0].abs() > linear_tolerance.max(EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9))
     .then_some((distances[0] + distances[1]) * 0.5)
 }
 
@@ -3294,7 +3314,8 @@ fn model_curve_parameter_near_point_with_tolerance(
         let Some(mut parameter) = parameter else {
             continue;
         };
-        let endpoint_tolerance = 1.0e-12 * (1.0 + range[0].abs().max(range[1].abs()));
+        let endpoint_tolerance = EPS_EVAL_MODEL_CURVE_PARAMETER_NEAR_POINT_WITH_TOLERANCE_E12
+            * (1.0 + range[0].abs().max(range[1].abs()));
         if parameter < range[0] && range[0] - parameter <= endpoint_tolerance {
             parameter = range[0];
         } else if parameter > range[1] && parameter - range[1] <= endpoint_tolerance {

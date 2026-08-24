@@ -17,6 +17,9 @@ use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 const EPS_SENSE_ALIGN: f64 = 1e-8;
+const EPS_RADIUS_NONZERO: f64 = 1e-12;
+const EPS_RESIDUAL_AGREEMENT: f64 = 1e-9;
+const EPS_SURFACE_DIFFERENCE_STEP: f64 = 1e-6;
 
 pub(in super::super) fn add_extrusion_pcurve(
     ir: &mut CadIr,
@@ -99,7 +102,7 @@ pub(in super::super) fn revolution_boundary_pcurve(
             let uv = [dot(relative, u_axis), dot(relative, v_axis)];
             let radial = [uv[0] - center[0], uv[1] - center[1]];
             let radius = radial[0].hypot(radial[1]);
-            (radius > 1e-12).then_some(())?;
+            (radius > EPS_RADIUS_NONZERO).then_some(())?;
             let start = radial[1].atan2(radial[0]);
             let direction = if dot(normal, axis_direction).is_sign_negative() {
                 -std::f64::consts::TAU
@@ -177,7 +180,8 @@ pub(in super::super) fn revolution_boundary_pcurve(
                 (base_u, radial_distance)
             };
             let scale = minor_radius.abs().max(radial_distance).max(1.0);
-            (positive_residual.min(negative_residual) <= 1e-9 * scale * scale).then_some(())?;
+            (positive_residual.min(negative_residual) <= EPS_RESIDUAL_AGREEMENT * scale * scale)
+                .then_some(())?;
             let v = axial.atan2(signed_ring - major_radius);
             Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v]))
         }
@@ -248,7 +252,7 @@ pub(in super::super) fn revolution_face_sense(
             [point.x, point.y],
             [tangent.x, tangent.y],
             0.5,
-            (upper - lower).abs() * 1e-6,
+            (upper - lower).abs() * EPS_SURFACE_DIFFERENCE_STEP,
         )
     } else if let Some((center, radius, start, delta)) = profile_arc(segment) {
         let angle = start + 0.5 * delta;
@@ -259,7 +263,7 @@ pub(in super::super) fn revolution_face_sense(
             ],
             [-delta.signum() * angle.sin(), delta.signum() * angle.cos()],
             0.0,
-            1e-6,
+            EPS_SURFACE_DIFFERENCE_STEP,
         )
     } else {
         (
@@ -269,7 +273,7 @@ pub(in super::super) fn revolution_face_sense(
             ],
             [segment.3[0] - segment.2[0], segment.3[1] - segment.2[1]],
             0.0,
-            1e-6,
+            EPS_SURFACE_DIFFERENCE_STEP,
         )
     };
     let outward = if profile_area.is_sign_positive() {
@@ -292,8 +296,10 @@ pub(in super::super) fn revolution_face_sense(
     let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, pcurve_parameter)?;
     let before_u = cadmpeg_ir::eval::surface_point(surface, uv.u - u_epsilon, uv.v)?;
     let after_u = cadmpeg_ir::eval::surface_point(surface, uv.u + u_epsilon, uv.v)?;
-    let before_v = cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v - 1e-6)?;
-    let after_v = cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v + 1e-6)?;
+    let before_v =
+        cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v - EPS_SURFACE_DIFFERENCE_STEP)?;
+    let after_v =
+        cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v + EPS_SURFACE_DIFFERENCE_STEP)?;
     let du = [
         after_u.x - before_u.x,
         after_u.y - before_u.y,

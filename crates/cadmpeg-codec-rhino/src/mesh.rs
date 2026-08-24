@@ -21,6 +21,8 @@ use crate::chunks::{
 use crate::curves::{error, GeometryError};
 use crate::wire::Uuid;
 
+const EPS_MESH_SYNCHRONIZATION_OK_E6: f64 = 1e-6;
+
 /// Decode context and root view used for mesh expansion.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MeshExpand<'a> {
@@ -1019,9 +1021,9 @@ fn parse_f64_points(bytes: &[u8]) -> Result<Vec<[f64; 3]>, GeometryError> {
 fn synchronization_ok(double: &[[f64; 3]], float: &[[f32; 3]]) -> bool {
     double.iter().zip(float).all(|(a, b)| {
         let scale = b.iter().copied().map(f32::abs).fold(0.0_f32, f32::max) as f64;
-        a.iter()
-            .zip(b)
-            .all(|(left, right)| (*left - f64::from(*right)).abs() <= scale * 1.0e-6)
+        a.iter().zip(b).all(|(left, right)| {
+            (*left - f64::from(*right)).abs() <= scale * EPS_MESH_SYNCHRONIZATION_OK_E6
+        })
     })
 }
 

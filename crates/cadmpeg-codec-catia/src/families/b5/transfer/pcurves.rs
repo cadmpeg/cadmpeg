@@ -24,6 +24,9 @@ use super::{
     TransferPlan, POINT_TOLERANCE,
 };
 
+const EPS_PCURVE_RESIDUAL: f64 = 1e-9;
+const EPS_PCURVE_PARAMETER: f64 = 1e-12;
+
 pub(super) fn sphere_great_circle_geometry(
     pcurve: &B5SphereGreatCirclePcurve,
     surface: &B5Surface,
@@ -122,7 +125,7 @@ pub(super) fn oriented_line_plan(
             direction: vector(direction),
         },
         parameter_range: Some(range),
-        edge_tolerance: (residual > 1e-9).then_some(residual + 1e-9),
+        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
         cache_fit_tolerance: None,
     })
 }
@@ -154,15 +157,16 @@ pub(super) fn oriented_circle_plan(
     };
     let angles = [start_uv[dimension] / scale, end_uv[dimension] / scale];
     let delta = angles[1] - angles[0];
-    if !delta.is_finite() || delta == 0.0 || delta.abs() > std::f64::consts::TAU + 1e-9 {
+    if !delta.is_finite()
+        || delta == 0.0
+        || delta.abs() > std::f64::consts::TAU + EPS_PCURVE_RESIDUAL
+    {
         return None;
     }
     let direction = delta.signum();
-    if pcurve
-        .control_points
-        .windows(2)
-        .any(|points| direction * (points[1][dimension] - points[0][dimension]) / scale < -1e-12)
-    {
+    if pcurve.control_points.windows(2).any(|points| {
+        direction * (points[1][dimension] - points[0][dimension]) / scale < -EPS_PCURVE_PARAMETER
+    }) {
         return None;
     }
 
@@ -211,7 +215,7 @@ pub(super) fn oriented_circle_plan(
     Some(CurvePlan {
         geometry,
         parameter_range: Some(parameter_range),
-        edge_tolerance: (residual > 1e-9).then_some(residual + 1e-9),
+        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
         cache_fit_tolerance: None,
     })
 }
@@ -295,7 +299,7 @@ pub(super) fn oriented_nurbs_range(
     Some(CurvePlan {
         geometry,
         parameter_range: Some(range),
-        edge_tolerance: (residual > 1e-9).then_some(residual + 1e-9),
+        edge_tolerance: (residual > EPS_PCURVE_RESIDUAL).then_some(residual + EPS_PCURVE_RESIDUAL),
         cache_fit_tolerance: None,
     })
 }

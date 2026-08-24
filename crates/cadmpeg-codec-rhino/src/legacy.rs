@@ -24,6 +24,8 @@ use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, Frami
 use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
 
+const EPS_LEGACY_SAME_POINT_E12: f64 = 1e-12;
+
 const TCODE_COMMENT: u32 = 0x0000_0001;
 const TCODE_RH_POINT: u32 = 0x0010_0001;
 const TCODE_LEGACY_CRV: u32 = 0x0001_0008;
@@ -464,7 +466,7 @@ fn union(parents: &mut [usize], left: usize, right: usize) {
 }
 
 fn same_point(left: Point3, right: Point3, tolerance: f64) -> bool {
-    let tolerance = tolerance.max(1.0e-12);
+    let tolerance = tolerance.max(EPS_LEGACY_SAME_POINT_E12);
     (left.x - right.x).abs() <= tolerance
         && (left.y - right.y).abs() <= tolerance
         && (left.z - right.z).abs() <= tolerance

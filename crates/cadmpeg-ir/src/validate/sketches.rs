@@ -10,6 +10,17 @@ use crate::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
+const EPS_SKETCHES_VALID_SPATIAL_CIRCLE_FRAME_E9: f64 = 1e-9;
+const EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9: f64 = 1e-9;
+const EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E12: f64 = 1e-12;
+const EPS_SKETCHES_SPATIAL_PARALLEL_LINE_DISTANCE_E12: f64 = 1e-12;
+const EPS_SKETCHES_SPATIAL_PARALLEL_LINE_DISTANCE_E9: f64 = 1e-9;
+const EPS_SKETCHES_SPATIAL_LENGTH_PARAMETER_MATCHES_E9: f64 = 1e-9;
+const EPS_SKETCHES_CHECK_SKETCHES_E9: f64 = 1e-9;
+const EPS_SKETCHES_CHECK_SKETCHES_E12: f64 = 1e-12;
+const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E12: f64 = 1e-12;
+const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E9: f64 = 1e-9;
+
 fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
     findings.push(Finding {
         check,
@@ -35,10 +46,10 @@ fn valid_spatial_circle_frame(
     let reference_length = reference.norm();
     normal_length.is_finite()
         && reference_length.is_finite()
-        && (normal_length - 1.0).abs() <= 1.0e-9
-        && (reference_length - 1.0).abs() <= 1.0e-9
+        && (normal_length - 1.0).abs() <= EPS_SKETCHES_VALID_SPATIAL_CIRCLE_FRAME_E9
+        && (reference_length - 1.0).abs() <= EPS_SKETCHES_VALID_SPATIAL_CIRCLE_FRAME_E9
         && (normal.x * reference.x + normal.y * reference.y + normal.z * reference.z).abs()
-            <= 1.0e-9
+            <= EPS_SKETCHES_VALID_SPATIAL_CIRCLE_FRAME_E9
 }
 
 fn spatial_oriented_endpoints(
@@ -111,8 +122,8 @@ fn spatial_oriented_endpoints(
     })
 }
 
-const EPS_FULL_CIRCLE_OFFSET: f64 = 1.0e-9;
-const EPS_OFFSET_SWEEP: f64 = 1.0e-12;
+const EPS_FULL_CIRCLE_OFFSET: f64 = 1e-9;
+const EPS_OFFSET_SWEEP: f64 = 1e-12;
 
 fn sketch_curve_offset_matches(
     source: &SketchGeometry,
@@ -253,13 +264,15 @@ fn sketch_curve_offset_matches(
         let result_sweep = result_end.0 - result_start.0;
         let angle_in_sweep = |angle: f64, start: f64, end: f64| {
             let sweep = end - start;
-            if sweep.abs() >= std::f64::consts::TAU - 1.0e-9 {
+            if sweep.abs() >= std::f64::consts::TAU - EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 {
                 return true;
             }
             if sweep.is_sign_positive() {
-                (angle - start).rem_euclid(std::f64::consts::TAU) <= sweep + 1.0e-9
+                (angle - start).rem_euclid(std::f64::consts::TAU)
+                    <= sweep + EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9
             } else {
-                (start - angle).rem_euclid(std::f64::consts::TAU) <= -sweep + 1.0e-9
+                (start - angle).rem_euclid(std::f64::consts::TAU)
+                    <= -sweep + EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9
             }
         };
         let angular_overlap = [source_start.0, source_end.0]
@@ -274,10 +287,12 @@ fn sketch_curve_offset_matches(
             && result_sweep.abs() > EPS_OFFSET_SWEEP
             && source_sweep.signum() == result_sweep.signum()
             && angular_overlap
-            && (source_center.u - result_center.u).abs() <= 1.0e-9 * scale
-            && (source_center.v - result_center.v).abs() <= 1.0e-9 * scale
+            && (source_center.u - result_center.u).abs()
+                <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale
+            && (source_center.v - result_center.v).abs()
+                <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale
             && (source_sweep.signum() * (source_radius.0 - result_radius.0) - expected).abs()
-                <= 1.0e-9 * scale;
+                <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale;
     }
 
     if let Some(distance) =
@@ -285,7 +300,8 @@ fn sketch_curve_offset_matches(
     {
         let scale = 1.0 + distance.abs().max(expected.abs());
         return expected.is_finite()
-            && (distance - expected).abs() <= linear_tolerance.max(1.0e-9 * scale);
+            && (distance - expected).abs()
+                <= linear_tolerance.max(EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale);
     }
 
     let (
@@ -307,20 +323,24 @@ fn sketch_curve_offset_matches(
     let result_dv = result_end.v - result_start.v;
     let source_length = source_du.hypot(source_dv);
     let result_length = result_du.hypot(result_dv);
-    if source_length <= 1.0e-12 || result_length <= 1.0e-12 {
+    if source_length <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E12
+        || result_length <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E12
+    {
         return false;
     }
     let scale = 1.0 + expected.abs();
     let parallel = (source_du * result_dv - source_dv * result_du).abs()
-        <= 1.0e-9 * source_length * result_length;
+        <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * source_length * result_length;
     let normal_u = -source_dv / source_length;
     let normal_v = source_du / source_length;
     let distance_at = |point: &crate::math::Point2| {
         (point.u - source_start.u) * normal_u + (point.v - source_start.v) * normal_v
     };
     parallel
-        && (distance_at(result_start) - expected).abs() <= 1.0e-9 * scale
-        && (distance_at(result_end) - expected).abs() <= 1.0e-9 * scale
+        && (distance_at(result_start) - expected).abs()
+            <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale
+        && (distance_at(result_end) - expected).abs()
+            <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale
 }
 
 fn spatial_parallel_line_distance(
@@ -357,9 +377,10 @@ fn spatial_parallel_line_distance(
         first_direction.z * second_direction.x - first_direction.x * second_direction.z,
         first_direction.x * second_direction.y - first_direction.y * second_direction.x,
     );
-    if first_length <= 1.0e-12
-        || second_length <= 1.0e-12
-        || cross.norm() > 1.0e-9 * first_length * second_length
+    if first_length <= EPS_SKETCHES_SPATIAL_PARALLEL_LINE_DISTANCE_E12
+        || second_length <= EPS_SKETCHES_SPATIAL_PARALLEL_LINE_DISTANCE_E12
+        || cross.norm()
+            > EPS_SKETCHES_SPATIAL_PARALLEL_LINE_DISTANCE_E9 * first_length * second_length
     {
         return None;
     }
@@ -437,7 +458,7 @@ fn spatial_length_parameter_matches(
     };
     measured.is_some_and(|measured| {
         let scale = 1.0 + measured.abs().max(expected.abs());
-        (measured - expected).abs() <= 1.0e-9 * scale
+        (measured - expected).abs() <= EPS_SKETCHES_SPATIAL_LENGTH_PARAMETER_MATCHES_E9 * scale
     })
 }
 
@@ -462,7 +483,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 &sketch.id.0,
                 "sketch plane has a degenerate axis",
             );
-        } else if dot.abs() > 1.0e-9 * normal * u_norm {
+        } else if dot.abs() > EPS_SKETCHES_CHECK_SKETCHES_E9 * normal * u_norm {
             finding(
                 findings,
                 Check::GeometricConsistency,
@@ -713,9 +734,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 + profile.normal.y * profile.u_axis.y
                 + profile.normal.z * profile.u_axis.z;
             if !finite3(profile.origin)
-                || (normal_length - 1.0).abs() > 1.0e-9
-                || (u_length - 1.0).abs() > 1.0e-9
-                || dot.abs() > 1.0e-9
+                || (normal_length - 1.0).abs() > EPS_SKETCHES_CHECK_SKETCHES_E9
+                || (u_length - 1.0).abs() > EPS_SKETCHES_CHECK_SKETCHES_E9
+                || dot.abs() > EPS_SKETCHES_CHECK_SKETCHES_E9
             {
                 finding(
                     findings,
@@ -817,7 +838,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 let distance = (end.x - start.x)
                     .hypot(end.y - start.y)
                     .hypot(end.z - start.z);
-                if !finite3(*start) || !finite3(*end) || distance <= 1.0e-12 {
+                if !finite3(*start) || !finite3(*end) || distance <= EPS_SKETCHES_CHECK_SKETCHES_E12
+                {
                     finding(findings, Check::Bounds, id, "invalid spatial sketch line");
                 }
             }
@@ -1024,7 +1046,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             } => {
                 !sources.is_empty()
                     && !results.is_empty()
-                    && (normal.norm() - 1.0).abs() <= 1.0e-9
+                    && (normal.norm() - 1.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
                     && distance.0.is_finite()
                     && distance.0 > 0.0
                     && matches!(
@@ -1172,7 +1194,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 };
                 let matches = measured.zip(expected).is_some_and(|(measured, expected)| {
                     let scale = 1.0 + measured.max(expected);
-                    (measured - expected).abs() <= 1.0e-9 * scale
+                    (measured - expected).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                 });
                 if !matches {
                     finding(
@@ -1226,7 +1248,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 };
                 let matches = measured.zip(expected).is_some_and(|(measured, expected)| {
                     let scale = 1.0 + measured.max(expected);
-                    (measured - expected).abs() <= 1.0e-9 * scale
+                    (measured - expected).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                 });
                 if !matches {
                     finding(
@@ -1350,7 +1372,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Some(Some(crate::features::ParameterValue::Length(value))) => {
                             let expected = value.0 * factor;
                             let scale = 1.0 + expected.abs().max(distance.0);
-                            (expected - distance.0).abs() <= 1.0e-9 * scale
+                            (expected - distance.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9 * scale
                         }
                         _ => false,
                     },
@@ -1394,10 +1416,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     line.x * direction.y - line.y * direction.x,
                 );
                 if !direction_norm.is_finite()
-                    || (direction_norm - 1.0).abs() > 1.0e-9
+                    || (direction_norm - 1.0).abs() > EPS_SKETCHES_CHECK_SKETCHES_E9
                     || !line_norm.is_finite()
-                    || line_norm <= 1.0e-12
-                    || cross.norm() > 1.0e-9 * line_norm
+                    || line_norm <= EPS_SKETCHES_CHECK_SKETCHES_E12
+                    || cross.norm() > EPS_SKETCHES_CHECK_SKETCHES_E9 * line_norm
                 {
                     finding(
                         findings,
@@ -1451,7 +1473,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     + directions[0].direction[1] * directions[1].direction[1];
                 expected_instances == Some(instances.len())
                     && seed_arity > 0
-                    && dot.abs() <= 1.0e-9
+                    && dot.abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
                     && instances
                         .first()
                         .is_some_and(|instance| instance.indices == [0, 0])
@@ -1460,7 +1482,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         direction.count > 0
                             && direction.spacing.0.is_finite()
                             && direction.direction.iter().all(|value| value.is_finite())
-                            && (length - 1.0).abs() <= 1.0e-9
+                            && (length - 1.0).abs() <= EPS_SKETCHES_CHECK_SKETCHES_E9
                     })
                     && instances.iter().all(|instance| {
                         instance.indices[0] < directions[0].count
@@ -1570,10 +1592,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && lengths.len() == entities.len()
                     && lengths[1..].iter().all(|length| {
                         (length - lengths[0]).abs()
-                            <= ir
-                                .tolerances
-                                .linear
-                                .max(1.0e-9 * (1.0 + length.abs().max(lengths[0].abs())))
+                            <= ir.tolerances.linear.max(
+                                EPS_SKETCHES_CHECK_SKETCHES_E9
+                                    * (1.0 + length.abs().max(lengths[0].abs())),
+                            )
                     })
             }
             Constraint::ParallelLineSetDistance {
@@ -1617,7 +1639,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 let measurement_matches =
                     measured.zip(expected).is_some_and(|(measured, expected)| {
                         (measured - expected).abs()
-                            <= tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())))
+                            <= tolerance.max(
+                                EPS_SKETCHES_CHECK_SKETCHES_E9
+                                    * (1.0 + measured.abs().max(expected.abs())),
+                            )
                     });
                 !first.is_empty()
                     && !second.is_empty()
@@ -1647,10 +1672,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     && radii.len() == entities.len()
                     && radii[1..].iter().all(|radius| {
                         (radius - radii[0]).abs()
-                            <= ir
-                                .tolerances
-                                .linear
-                                .max(1.0e-9 * (1.0 + radius.abs().max(radii[0].abs())))
+                            <= ir.tolerances.linear.max(
+                                EPS_SKETCHES_CHECK_SKETCHES_E9
+                                    * (1.0 + radius.abs().max(radii[0].abs())),
+                            )
                     })
             }
             Constraint::Offset {
@@ -1819,11 +1844,13 @@ fn planar_parallel_line_distance(first: &SketchGeometry, second: &SketchGeometry
         crate::math::Point2::new(second_end.u - second_start.u, second_end.v - second_start.v);
     let first_length = first_direction.u.hypot(first_direction.v);
     let second_length = second_direction.u.hypot(second_direction.v);
-    if first_length <= 1.0e-12 || second_length <= 1.0e-12 {
+    if first_length <= EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E12
+        || second_length <= EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E12
+    {
         return None;
     }
     let cross = first_direction.u * second_direction.v - first_direction.v * second_direction.u;
-    if cross.abs() > 1.0e-9 * first_length * second_length {
+    if cross.abs() > EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E9 * first_length * second_length {
         return None;
     }
     let offset = crate::math::Point2::new(

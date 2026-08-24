@@ -33,6 +33,13 @@ use crate::solve::UnionFind;
 
 const E5_ENDPOINT_MATCH_TOLERANCE: f64 = 2e-3;
 const EPS_AXIS_ALIGN: f64 = 1e-8;
+const EPS_DIRECTION_COMPONENT: f64 = 1e-9;
+const EPS_NORMAL_ORTHO: f64 = 1e-10;
+const EPS_AXIS_ORTHO: f64 = 1e-6;
+const EPS_EXPECTED_NORMAL_ALIGN: f64 = 1e-6;
+const EPS_NONZERO_COMPONENT: f64 = 1e-12;
+const EPS_PARAMETER_AGREEMENT: f64 = 1e-9;
+const EPS_CARRIER_DIRECTION_ALIGN: f64 = 1e-9;
 
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
@@ -236,7 +243,9 @@ pub(crate) fn append_e5_planes(
                         else {
                             continue;
                         };
-                        if direction[0].abs() <= 1e-9 || direction[1].abs() > 1e-9 {
+                        if direction[0].abs() <= EPS_DIRECTION_COMPONENT
+                            || direction[1].abs() > EPS_DIRECTION_COMPONENT
+                        {
                             continue;
                         }
                         let Some(&candidate) = carrier_axes.get(surface) else {
@@ -245,7 +254,7 @@ pub(crate) fn append_e5_planes(
                         let candidate = canonical_direction(candidate);
                         if normal.is_some_and(|value| {
                             value.x * candidate.x + value.y * candidate.y + value.z * candidate.z
-                                < 1.0 - 1e-10
+                                < 1.0 - EPS_NORMAL_ORTHO
                         }) {
                             consistent = false;
                         } else {
@@ -479,7 +488,7 @@ pub(crate) fn solve_e5_plane_frame(
             || !residual.is_finite()
             || !orthogonality.is_finite()
             || residual > 2e-3
-            || orthogonality.abs() > 1e-6
+            || orthogonality.abs() > EPS_AXIS_ORTHO
         {
             continue;
         }
@@ -498,7 +507,7 @@ pub(crate) fn solve_e5_plane_frame(
         }
         if expected_normal.is_some_and(|expected| {
             let alignment = normal.dot(expected);
-            !alignment.is_finite() || alignment.abs() < 1.0 - 1e-6
+            !alignment.is_finite() || alignment.abs() < 1.0 - EPS_EXPECTED_NORMAL_ALIGN
         }) {
             continue;
         }
@@ -516,7 +525,7 @@ pub(crate) fn solve_e5_plane_frame(
     for (normal, mut u_axis) in candidates {
         let first = [u_axis.x, u_axis.y, u_axis.z]
             .into_iter()
-            .find(|value| value.abs() > 1e-12)?;
+            .find(|value| value.abs() > EPS_NONZERO_COMPONENT)?;
         let uv_scale = if first < 0.0 {
             u_axis = Vector3::new(-u_axis.x, -u_axis.y, -u_axis.z);
             [-1.0, -1.0]
@@ -741,7 +750,7 @@ pub(crate) fn plane_frame_residual(
 pub(crate) fn canonical_direction(mut direction: Vector3) -> Vector3 {
     let first = [direction.x, direction.y, direction.z]
         .into_iter()
-        .find(|value| value.abs() > 1e-12)
+        .find(|value| value.abs() > EPS_NONZERO_COMPONENT)
         .unwrap_or(1.0);
     if first < 0.0 {
         direction = Vector3::new(-direction.x, -direction.y, -direction.z);
@@ -2117,13 +2126,13 @@ fn parameter_range_agreement_tolerance(left: [f64; 2], right: [f64; 2]) -> Optio
     let parameter_scale = left_span.max(right_span);
     if !parameter_scale.is_finite()
         || parameter_scale == 0.0
-        || (left_span - right_span).abs() > 1e-9 * parameter_scale
-        || (left[0] - right[0]).abs() > 1e-9 * parameter_scale
-        || (left[1] - right[1]).abs() > 1e-9 * parameter_scale
+        || (left_span - right_span).abs() > EPS_PARAMETER_AGREEMENT * parameter_scale
+        || (left[0] - right[0]).abs() > EPS_PARAMETER_AGREEMENT * parameter_scale
+        || (left[1] - right[1]).abs() > EPS_PARAMETER_AGREEMENT * parameter_scale
     {
         return None;
     }
-    Some(1e-9 * parameter_scale)
+    Some(EPS_PARAMETER_AGREEMENT * parameter_scale)
 }
 
 pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
@@ -2139,7 +2148,7 @@ pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGe
             },
         ) => {
             (*left_origin).distance(*right_origin) <= 2e-3
-                && (*left_direction).dot(*right_direction) >= 1.0 - 1e-9
+                && (*left_direction).dot(*right_direction) >= 1.0 - EPS_CARRIER_DIRECTION_ALIGN
         }
         (
             CurveGeometry::Circle {
@@ -2157,8 +2166,9 @@ pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGe
         ) => {
             (*left_center).distance(*right_center) <= 2e-3
                 && (left_radius - right_radius).abs() <= 2e-3
-                && (*left_axis).dot(*right_axis) >= 1.0 - 1e-9
-                && (*left_ref_direction).dot(*right_ref_direction) >= 1.0 - 1e-9
+                && (*left_axis).dot(*right_axis) >= 1.0 - EPS_CARRIER_DIRECTION_ALIGN
+                && (*left_ref_direction).dot(*right_ref_direction)
+                    >= 1.0 - EPS_CARRIER_DIRECTION_ALIGN
         }
         (CurveGeometry::Nurbs(left), CurveGeometry::Nurbs(right)) => left == right,
         _ => false,

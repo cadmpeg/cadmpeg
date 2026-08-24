@@ -10,6 +10,10 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
 
+const EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E9: f64 = 1e-9;
+const EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E12: f64 = 1e-12;
+const EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12: f64 = 1e-12;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct MoveBodyTranslationRecord {
     pub(super) selection_offset: usize,
@@ -72,11 +76,15 @@ pub(super) fn move_body_translation_record(
         if matrix
             .iter()
             .zip([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
-            .any(|(actual, expected)| (*actual - expected).abs() > 1.0e-9)
+            .any(|(actual, expected)| {
+                (*actual - expected).abs() > EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E9
+            })
             || payload.get(matrix_offset + 72..matrix_offset + 80)
                 != Some(1u64.to_le_bytes().as_slice())
             || (0..3).any(|index| scalar(matrix_offset + 80 + index * 8).is_none())
-            || scalar(matrix_offset + 104).is_none_or(|value| (value - 1.0).abs() > 1.0e-9)
+            || scalar(matrix_offset + 104).is_none_or(|value| {
+                (value - 1.0).abs() > EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E9
+            })
         {
             continue;
         }
@@ -93,7 +101,7 @@ pub(super) fn move_body_translation_record(
             &mut translation_m.y,
             &mut translation_m.z,
         ] {
-            if component.abs() <= 1.0e-12 {
+            if component.abs() <= EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E12 {
                 *component = 0.0;
             }
         }
@@ -236,9 +244,12 @@ pub(crate) fn enrich_history_move_face_translations(
         };
         if rest.iter().any(|candidate| {
             candidate.is_none_or(|candidate| {
-                (candidate.x - first.x).abs() > 1.0e-12
-                    || (candidate.y - first.y).abs() > 1.0e-12
-                    || (candidate.z - first.z).abs() > 1.0e-12
+                (candidate.x - first.x).abs()
+                    > EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12
+                    || (candidate.y - first.y).abs()
+                        > EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12
+                    || (candidate.z - first.z).abs()
+                        > EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12
             })
         }) {
             continue;

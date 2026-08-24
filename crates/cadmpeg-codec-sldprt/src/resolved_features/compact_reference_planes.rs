@@ -5,6 +5,9 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::HashSet;
 
+const EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_REFERENCE_PLANE_RECORD_E9: f64 = 1e-9;
+const EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9: f64 = 1e-9;
+
 const COMPACT_REFERENCE_PLANE_CLASS: &[u8] = b"moCompRefPlane_c";
 const COMPACT_REFERENCE_PLANE_RECORD_LEN: usize = 67;
 const COMPACT_COMPONENT_PLANE_RECORD_LEN: usize = 138;
@@ -155,12 +158,15 @@ fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
         Vector3::new(scalar(39)?, scalar(47)?, scalar(55)?),
         Vector3::new(scalar(63)?, scalar(71)?, scalar(79)?),
     ];
-    (basis
-        .iter()
-        .all(|vector| (vector.norm() - 1.0).abs() <= 1.0e-9)
-        && basis[0].dot(basis[1]).abs() <= 1.0e-9
-        && basis[0].dot(basis[2]).abs() <= 1.0e-9
-        && basis[1].dot(basis[2]).abs() <= 1.0e-9)
+    (basis.iter().all(|vector| {
+        (vector.norm() - 1.0).abs()
+            <= EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_REFERENCE_PLANE_RECORD_E9
+    }) && basis[0].dot(basis[1]).abs()
+        <= EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_REFERENCE_PLANE_RECORD_E9
+        && basis[0].dot(basis[2]).abs()
+            <= EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_REFERENCE_PLANE_RECORD_E9
+        && basis[1].dot(basis[2]).abs()
+            <= EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_REFERENCE_PLANE_RECORD_E9)
         .then_some(source)
 }
 
@@ -221,12 +227,18 @@ pub(super) fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, V
             if source == 0
                 || bytes.get(8..14) != Some(&[0; 6])
                 || bytes.get(14) != Some(&1)
-                || (u_axis.dot(u_axis) - 1.0).abs() > 1.0e-9
-                || (v_axis.dot(v_axis) - 1.0).abs() > 1.0e-9
-                || (normal.dot(normal) - 1.0).abs() > 1.0e-9
-                || (expected_normal.x - normal.x).abs() > 1.0e-9
-                || (expected_normal.y - normal.y).abs() > 1.0e-9
-                || (expected_normal.z - normal.z).abs() > 1.0e-9
+                || (u_axis.dot(u_axis) - 1.0).abs()
+                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+                || (v_axis.dot(v_axis) - 1.0).abs()
+                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+                || (normal.dot(normal) - 1.0).abs()
+                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+                || (expected_normal.x - normal.x).abs()
+                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+                || (expected_normal.y - normal.y).abs()
+                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+                || (expected_normal.z - normal.z).abs()
+                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
                 || scalar(12)? != 1.0
                 || bytes.get(119..122) != Some(&[0; 3])
                 || bytes.get(122..126) != Some(&4u32.to_le_bytes())

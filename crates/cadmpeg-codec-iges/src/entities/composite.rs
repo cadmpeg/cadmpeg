@@ -19,6 +19,8 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_COMPOSITE_CLOSE_E10: f64 = 1e-10;
+
 const MAX_COMPOSITE_CHILDREN: usize = 100_000;
 const MAX_COMPOSITE_DEGREE: usize = 1024;
 const MAX_COMPOSITE_DEPTH: usize = 64;
@@ -543,9 +545,9 @@ fn close(left: Point3, right: Point3) -> bool {
         .max(right.y.abs())
         .max(right.z.abs())
         .max(1.0);
-    (left.x - right.x).abs() <= scale * 1.0e-10
-        && (left.y - right.y).abs() <= scale * 1.0e-10
-        && (left.z - right.z).abs() <= scale * 1.0e-10
+    (left.x - right.x).abs() <= scale * EPS_COMPOSITE_CLOSE_E10
+        && (left.y - right.y).abs() <= scale * EPS_COMPOSITE_CLOSE_E10
+        && (left.z - right.z).abs() <= scale * EPS_COMPOSITE_CLOSE_E10
 }
 
 fn close_with_tolerance(left: Point3, right: Point3, tolerance: Option<f64>) -> bool {

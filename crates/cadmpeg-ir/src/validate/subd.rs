@@ -9,6 +9,8 @@ use crate::math::{Point3, Vector3};
 use crate::subd::{SubdSurface, SubdSymmetryKind};
 use crate::validate::geometry_payloads::bounds_err;
 
+const EPS_SUBD_CHECK_PROCEDURAL_SURFACES_E9: f64 = 1e-9;
+
 const SUBD_SYMMETRY_FRAME_EPS: f64 = 1e-9;
 
 fn finite_point(point: &Point3) -> bool {
@@ -405,7 +407,7 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             ]
             .into_iter()
             .all(f64::is_finite)
-                || (axis_direction.norm() - 1.0).abs() > 1e-9
+                || (axis_direction.norm() - 1.0).abs() > EPS_SUBD_CHECK_PROCEDURAL_SURFACES_E9
             {
                 bounds_err(findings, &procedural.id.0, "invalid revolution axis");
             }

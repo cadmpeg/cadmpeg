@@ -30,6 +30,9 @@ use super::skamp::{
     section_line_entity_fixed_coordinate, section_segment_rows, unique_section_skamp_segment,
 };
 
+const EPS_RADIUS_NONZERO: f64 = 1e-12;
+const EPS_RADIUS_AGREEMENT: f64 = 1e-9;
+
 pub(crate) fn resolved_section_radii(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, f64> {
@@ -206,7 +209,7 @@ pub(crate) fn resolved_section_radii(
             .iter()
             .filter_map(|id| points.get(id))
             .map(|point| (point[0] - center[0]).hypot(point[1] - center[1]))
-            .filter(|radius| radius.is_finite() && *radius > 1e-12)
+            .filter(|radius| radius.is_finite() && *radius > EPS_RADIUS_NONZERO)
             .collect::<Vec<_>>();
         let Some(radius) = endpoint_radii.first().copied() else {
             continue;
@@ -217,7 +220,7 @@ pub(crate) fn resolved_section_radii(
             .fold(radius.max(1.0), f64::max);
         if endpoint_radii
             .iter()
-            .all(|candidate| (*candidate - radius).abs() <= 1e-9 * scale)
+            .all(|candidate| (*candidate - radius).abs() <= EPS_RADIUS_AGREEMENT * scale)
         {
             candidates.entry(radius_id).or_default().push(radius);
         }
@@ -316,7 +319,7 @@ pub(crate) fn resolved_section_radii(
             let scale = values.iter().copied().fold(value.max(1.0), f64::max);
             if !values
                 .iter()
-                .all(|candidate| (*candidate - value).abs() <= 1e-9 * scale)
+                .all(|candidate| (*candidate - value).abs() <= EPS_RADIUS_AGREEMENT * scale)
             {
                 remaining.retain(|radius_id| !component.contains(radius_id));
                 continue;
@@ -457,7 +460,7 @@ pub(crate) fn section_fixed_coordinate_line_carrier(
         return None;
     };
     let scale = first.abs().max(second.abs()).max(1.0);
-    ((first - second).abs() <= 1e-9 * scale).then(|| {
+    ((first - second).abs() <= EPS_RADIUS_AGREEMENT * scale).then(|| {
         if fixed_coordinate == 0 {
             SketchGeometry::ReferenceLine {
                 origin: Point2::new(first, 0.0),
@@ -522,7 +525,7 @@ pub(crate) fn section_axis_reference_line_geometry(
         .fold(value.abs().max(1.0), f64::max);
     values
         .iter()
-        .all(|candidate| (*candidate - value).abs() <= 1e-9 * scale)
+        .all(|candidate| (*candidate - value).abs() <= EPS_RADIUS_AGREEMENT * scale)
         .then_some(())?;
     let (origin, direction) = if fixed_coordinate == 0 {
         (Point2::new(value, 0.0), Point2::new(0.0, 1.0))

@@ -8,6 +8,11 @@ use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeom
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::SketchGeometry;
 
+const EPS_NURBS_SIGNED_UNIT_CHART_E9: f64 = 1e-9;
+const EPS_NURBS_PLACED_TABULATED_CYLINDER_DIRECTRIX_E9: f64 = 1e-9;
+
+const EPS_PLANAR_COORDINATE: f64 = 1e-12;
+
 pub(in super::super) fn extruded_geometry_surface(
     transform: &crate::placement::FeatureSectionTransform,
     geometry: &SketchGeometry,
@@ -211,7 +216,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     nurbs
         .control_points
         .iter()
-        .all(|point| point.z.abs() <= 1e-12)
+        .all(|point| point.z.abs() <= EPS_PLANAR_COORDINATE)
         .then(|| SketchGeometry::Nurbs {
             degree: nurbs.degree,
             knots: nurbs.knots,
@@ -496,7 +501,8 @@ pub(in super::super) fn signed_unit_chart(
     offset: f64,
 ) -> Option<(f64, f64)> {
     let close = |left: f64, right: f64| {
-        (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
+        (left - right).abs()
+            <= EPS_NURBS_SIGNED_UNIT_CHART_E9 * left.abs().max(right.abs()).max(1.0)
     };
     let mut matches = Vec::new();
     for first_sign in [-1.0, 1.0] {
@@ -589,7 +595,9 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
         return None;
     }
     let close = |left: f64, right: f64| {
-        (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
+        (left - right).abs()
+            <= EPS_NURBS_PLACED_TABULATED_CYLINDER_DIRECTRIX_E9
+                * left.abs().max(right.abs()).max(1.0)
     };
     let axis_matches = |axis: usize, coordinate: usize| match layout {
         FrameLayout::LegacyReflected => {

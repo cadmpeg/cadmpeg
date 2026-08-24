@@ -17,6 +17,9 @@ use crate::records::{
 use cadmpeg_ir::math::Point2;
 use std::collections::{HashMap, HashSet};
 
+const EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9: f64 = 1e-9;
+const EPS_CONSTRAINTS_SCALAR_CLOSE_E9: f64 = 1e-9;
+
 /// Project each native relation as an exact atomic constraint or an explicitly
 /// native aggregate when its semantic members do not prove neutral loci.
 pub fn project_sketch_constraints(
@@ -274,7 +277,7 @@ pub(crate) fn exact_rectangular_pattern(
     let source = directions
         .iter()
         .map(|direction| {
-            if direction.direction[2].abs() > 1.0e-9 {
+            if direction.direction[2].abs() > EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9 {
                 return None;
             }
             let count_parameter = parameters.iter().find(|parameter| {
@@ -319,7 +322,7 @@ pub(crate) fn exact_rectangular_pattern(
     }
     let dot = source[0].direction[0] * source[1].direction[0]
         + source[0].direction[1] * source[1].direction[1];
-    if dot.abs() > 1.0e-9 {
+    if dot.abs() > EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9 {
         return None;
     }
     let directions = rectangular_pattern_directions(&source, distance_form)?;
@@ -760,7 +763,8 @@ fn rotated_sketch_geometry_matches(
 pub(crate) fn scalar_close(first: f64, second: f64) -> bool {
     first.is_finite()
         && second.is_finite()
-        && (first - second).abs() <= 1.0e-9 * (1.0 + first.abs().max(second.abs()))
+        && (first - second).abs()
+            <= EPS_CONSTRAINTS_SCALAR_CLOSE_E9 * (1.0 + first.abs().max(second.abs()))
 }
 
 pub(crate) fn translated_sketch_geometry_matches(

@@ -24,6 +24,8 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry};
 use std::collections::{HashMap, HashSet};
 
+const EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8: f64 = 1e-8;
+
 #[derive(Debug, Clone)]
 struct DimensionedArcNative {
     center: [f64; 2],
@@ -379,7 +381,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     lanes: &[FeatureInputLane],
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = 1e-8;
 
     let sketches_by_feature = features
         .iter()
@@ -717,7 +719,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             if entities.iter().any(|entity| {
                 entity.sketch == **sketch
                     && matches!(&entity.geometry, SketchGeometry::Circle { center: existing, radius: existing_radius }
-                        if quantize(*existing, 1.0e-8) == quantize(center, 1.0e-8)
+                        if quantize(*existing, EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8) == quantize(center, EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8)
                             && same_dimension_length(existing_radius.0, radius))
             }) {
                 continue;
@@ -917,7 +919,7 @@ pub(crate) fn project_marker_dimensioned_circles(
     lanes: &[FeatureInputLane],
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = 1e-8;
 
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
     let radial_records_by_lane = lanes

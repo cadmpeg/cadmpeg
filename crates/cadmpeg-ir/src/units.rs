@@ -8,6 +8,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+const EPS_UNITS_DEFAULT_2_E6: f64 = 1e-6;
+const EPS_UNITS_DEFAULT_2_E10: f64 = 1e-10;
+
 /// The canonical IR length unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -54,8 +57,8 @@ pub struct Tolerances {
 impl Default for Tolerances {
     fn default() -> Self {
         Tolerances {
-            linear: 1e-6,
-            angular: 1e-10,
+            linear: EPS_UNITS_DEFAULT_2_E6,
+            angular: EPS_UNITS_DEFAULT_2_E10,
         }
     }
 }

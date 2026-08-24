@@ -14,6 +14,9 @@ use crate::layout::display_lists_compact_face_header as compact_face;
 use crate::layout::display_lists_extended_face_header as extended_face;
 use crate::layout::display_lists_scene_source_binding as scene_src;
 
+const EPS_TESSELLATION_ASSIGN_UNIQUE_ANALYTIC_OWNERS_E9: f64 = 1e-9;
+const EPS_TESSELLATION_PLANAR_TRIM_E9: f64 = 1e-9;
+
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
 const SCENE_SOURCE_MARKER: &[u8] = &scene_src::MARKER_VALUE;
 
@@ -448,7 +451,8 @@ pub(crate) fn assign_unique_analytic_owners(
             .iter()
             .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
             .fold(1.0_f64, f64::max);
-        let quantization_tolerance = coordinate_scale * f64::from(f32::EPSILON) * 8.0 + 1.0e-9;
+        let quantization_tolerance = coordinate_scale * f64::from(f32::EPSILON) * 8.0
+            + EPS_TESSELLATION_ASSIGN_UNIQUE_ANALYTIC_OWNERS_E9;
         let mut owners = candidates
             .iter()
             .filter(|(_, _, surface, tolerance, inverse, _)| {
@@ -551,7 +555,10 @@ fn planar_trim(
     curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
 ) -> Option<PlanarTrim> {
     let frame = plane_frame(surface)?;
-    let tolerance = face.tolerance.unwrap_or(0.0).max(1.0e-9);
+    let tolerance = face
+        .tolerance
+        .unwrap_or(0.0)
+        .max(EPS_TESSELLATION_PLANAR_TRIM_E9);
     let mut polygons = Vec::new();
     let mut holes = Vec::new();
     for loop_id in &face.loops {
@@ -582,7 +589,7 @@ fn planar_trim(
             let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
             if !radius.is_finite()
                 || *radius <= tolerance
-                || axis.dot(frame.normal).abs() < 1.0 - 1.0e-9
+                || axis.dot(frame.normal).abs() < 1.0 - EPS_TESSELLATION_PLANAR_TRIM_E9
                 || analytic_surface_residual(surface, *center)? > tolerance
                 || analytic_surface_residual(surface, boundary_point)? > tolerance
                 || (boundary_point.distance(*center) - radius).abs() > tolerance

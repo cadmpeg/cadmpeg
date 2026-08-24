@@ -29,6 +29,8 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_EMIT_CANONICAL_TRIM_RANGE_E6: f64 = 1e-6;
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_topology(
     ir: &mut CadIr,
@@ -835,7 +837,8 @@ pub(crate) fn canonical_trim_range(ir: &CadIr, basis: &CurveId, raw: [f64; 2]) -
         }
         CurveGeometry::Nurbs(nurbs) => {
             let domain = [*nurbs.knots.first()?, *nurbs.knots.last()?];
-            let epsilon = 1.0e-6 * (1.0 + domain[0].abs().max(domain[1].abs()));
+            let epsilon =
+                EPS_EMIT_CANONICAL_TRIM_RANGE_E6 * (1.0 + domain[0].abs().max(domain[1].abs()));
             if raw
                 .iter()
                 .any(|value| *value < domain[0] - epsilon || *value > domain[1] + epsilon)

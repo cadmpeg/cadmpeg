@@ -34,6 +34,9 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_PCURVES_EXACT_ANALYTIC_ISOCURVE_PCURVE_E10: f64 = 1e-10;
+const EPS_PCURVES_BLEND_BOUNDARY_SPINE_GEOMETRY_MATCHES_E8: f64 = 1e-8;
+
 pub(crate) fn pcurve_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     let PcurveGeometry::Nurbs { knots, .. } = geometry else {
         return None;
@@ -1387,7 +1390,8 @@ pub(crate) fn exact_analytic_isocurve_pcurve(
         (last.u - first.u) / parameter_span,
         (last.v - first.v) / parameter_span,
     );
-    let angular_tolerance = (tolerance / curve_speed.max(tolerance)).max(1.0e-10);
+    let angular_tolerance = (tolerance / curve_speed.max(tolerance))
+        .max(EPS_PCURVES_EXACT_ANALYTIC_ISOCURVE_PCURVE_E10);
     let u_constant = samples
         .iter()
         .all(|(_, uv)| (uv.u - first.u).abs() <= angular_tolerance);
@@ -1852,7 +1856,8 @@ pub(crate) fn blend_boundary_spine_geometry_matches(
     let Some(tangent) = model_curve_tangent(ir, &spine, parameters.u) else {
         return false;
     };
-    let angular_tolerance = (tolerance / radius).max(1.0e-8);
+    let angular_tolerance =
+        (tolerance / radius).max(EPS_PCURVES_BLEND_BOUNDARY_SPINE_GEOMETRY_MATCHES_E8);
     radial.dot(tangent).abs() <= angular_tolerance
 }
 

@@ -26,7 +26,7 @@ use crate::records::{
 };
 use std::collections::HashMap;
 
-const EPS_HOLE_TEST_VALUE: f64 = 1.0e-12;
+const EPS_HOLE_TEST_VALUE: f64 = 1e-12;
 
 fn assert_f64_array<const N: usize>(actual: [f64; N], expected: [f64; N]) {
     for (actual, expected) in actual.into_iter().zip(expected) {

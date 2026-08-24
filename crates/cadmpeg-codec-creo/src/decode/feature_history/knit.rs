@@ -19,6 +19,9 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_NORMAL_ALIGNMENT: f64 = 1e-9;
+const EPS_OFFSET_AGREEMENT: f64 = 1e-9;
+
 pub(in super::super) fn filled_surface_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -373,7 +376,7 @@ pub(in super::super) fn thicken_plane_offset(
             }
         });
         let output_normal = normalized(output.normal)?;
-        if dot(source_normal, output_normal).abs() < 1.0 - 1e-9 {
+        if dot(source_normal, output_normal).abs() < 1.0 - EPS_NORMAL_ALIGNMENT {
             return None;
         }
         let displacement = std::array::from_fn(|index| output.origin[index] - source.origin[index]);
@@ -385,7 +388,7 @@ pub(in super::super) fn thicken_plane_offset(
             .map(|offset| offset.abs())
             .collect::<Vec<_>>(),
     )?;
-    let tolerance = 1e-9 * magnitude.max(1.0);
+    let tolerance = EPS_OFFSET_AGREEMENT * magnitude.max(1.0);
     let side = if offsets
         .iter()
         .all(|offset| (*offset - magnitude).abs() <= tolerance)

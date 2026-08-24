@@ -23,6 +23,8 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_CONSTRAINT_COORDINATE: f64 = 1e-9;
+
 pub(in super::super) fn section_segment_verhor_definition(
     segment: &crate::feature::FeatureSegment,
     sketch: &SketchId,
@@ -783,10 +785,10 @@ pub(in super::super) fn section_dimension_constraints(
                                     .chain(second_point)
                                     .map(|coordinate| coordinate.abs())
                                     .fold(1.0, f64::max);
-                                let same_u =
-                                    (first_point[0] - second_point[0]).abs() <= 1e-9 * scale;
-                                let same_v =
-                                    (first_point[1] - second_point[1]).abs() <= 1e-9 * scale;
+                                let same_u = (first_point[0] - second_point[0]).abs()
+                                    <= EPS_CONSTRAINT_COORDINATE * scale;
+                                let same_v = (first_point[1] - second_point[1]).abs()
+                                    <= EPS_CONSTRAINT_COORDINATE * scale;
                                 if same_u != same_v {
                                     if let (Some(first), Some(second)) = (
                                         section_point_locus(definition, sketch, first_id),

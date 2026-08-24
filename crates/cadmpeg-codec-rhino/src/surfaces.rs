@@ -14,6 +14,10 @@ use crate::settings::{
 };
 use crate::wire::Uuid;
 
+const EPS_SURFACES_READ_REVOLUTION_E10: f64 = 1e-10;
+const EPS_SURFACES_VALIDATE_PLANE_E10: f64 = 1e-10;
+const EPS_SURFACES_CLOSE_E10: f64 = 1e-10;
+
 pub(crate) const NURBS_CURVE: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xdd, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
@@ -321,7 +325,7 @@ fn read_revolution(
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
     let angular_interval =
         finite_increasing(interval(reader)?.0, reader.position(), "revolution angle")?;
-    if angular_interval[1] - angular_interval[0] > TAU + 1.0e-10 {
+    if angular_interval[1] - angular_interval[0] > TAU + EPS_SURFACES_READ_REVOLUTION_E10 {
         return Err(error(
             reader.position(),
             "revolution angle span exceeds one turn",
@@ -1074,12 +1078,12 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
         .into_iter()
         .chain(value.equation)
         .all(f64::is_finite)
-        || (x.norm() - 1.0).abs() > 1.0e-10
-        || (y.norm() - 1.0).abs() > 1.0e-10
-        || (z.norm() - 1.0).abs() > 1.0e-10
-        || x.dot(y).abs() > 1.0e-10
-        || x.dot(z).abs() > 1.0e-10
-        || y.dot(z).abs() > 1.0e-10
+        || (x.norm() - 1.0).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
+        || (y.norm() - 1.0).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
+        || (z.norm() - 1.0).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
+        || x.dot(y).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
+        || x.dot(z).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
+        || y.dot(z).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
         || !close(x.cross(y), z)
     {
         return Err(error(
@@ -1103,7 +1107,9 @@ fn vector(value: crate::settings::Vector3) -> Vector3 {
 }
 
 fn close(a: Vector3, b: Vector3) -> bool {
-    (a.x - b.x).abs() <= 1.0e-10 && (a.y - b.y).abs() <= 1.0e-10 && (a.z - b.z).abs() <= 1.0e-10
+    (a.x - b.x).abs() <= EPS_SURFACES_CLOSE_E10
+        && (a.y - b.y).abs() <= EPS_SURFACES_CLOSE_E10
+        && (a.z - b.z).abs() <= EPS_SURFACES_CLOSE_E10
 }
 
 #[cfg(test)]

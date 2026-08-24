@@ -10,8 +10,8 @@
 use super::prelude::*;
 use cadmpeg_ir::sketches::SketchOffsetPair;
 
-const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
-const TEST_DISTANCE_EPSILON: f64 = 1.0e-9;
+const TEST_LINEAR_TOLERANCE: f64 = 1e-6;
+const TEST_DISTANCE_EPSILON: f64 = 1e-9;
 const TEST_ANGLE_ROUNDING: f64 = 5.0e-7;
 
 #[test]

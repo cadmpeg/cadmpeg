@@ -28,6 +28,12 @@ use super::meta::{
     decode_types, design_primary_frames, metadata_for_bulk_stream, stream_types_by_class_tag,
 };
 
+const EPS_SKETCH_DECODE_PATTERN_DEFINITION_E6: f64 = 1e-6;
+const EPS_SKETCH_DECODE_CIRCULAR_ARC_E9: f64 = 1e-9;
+const EPS_SKETCH_DECODE_CIRCULAR_ARC_E12: f64 = 1e-12;
+const EPS_SKETCH_DECODE_LINE_COMPONENTS_E9: f64 = 1e-9;
+const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1e-12;
+
 /// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
 /// the record index carried at header offset seven.
 pub(crate) struct IndexedRecordOffsets {
@@ -592,7 +598,7 @@ pub(crate) fn identity_matrix() -> [[f64; 4]; 4] {
 }
 
 pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
-    const EPSILON: f64 = 1.0e-10;
+    const EPSILON: f64 = 1e-10;
     if !transform.iter().flatten().all(|value| value.is_finite())
         || transform[3] != [0.0, 0.0, 0.0, 1.0]
     {
@@ -1385,7 +1391,7 @@ pub(crate) fn decode_pattern_definition(
                 f64_at(direction_at + 16)?,
             ];
             let length = direction.iter().map(|axis| axis * axis).sum::<f64>();
-            if (length - 1.0).abs() > 1.0e-6 {
+            if (length - 1.0).abs() > EPS_SKETCH_DECODE_PATTERN_DEFINITION_E6 {
                 return None;
             }
             directions.push(SketchPatternDirection {
@@ -3192,13 +3198,13 @@ fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
     let dot = normal.x * reference_direction.x
         + normal.y * reference_direction.y
         + normal.z * reference_direction.z;
-    if (normal.norm() - 1.0).abs() > 1.0e-9
-        || (reference_direction.norm() - 1.0).abs() > 1.0e-9
-        || dot.abs() > 1.0e-9
+    if (normal.norm() - 1.0).abs() > EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
+        || (reference_direction.norm() - 1.0).abs() > EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
+        || dot.abs() > EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
         || values[9] <= 0.0
-        || values[10].abs() > std::f64::consts::TAU + 1.0e-9
-        || values[11].abs() > std::f64::consts::TAU + 1.0e-9
-        || (values[11] - values[10]).abs() < 1.0e-12
+        || values[10].abs() > std::f64::consts::TAU + EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
+        || values[11].abs() > std::f64::consts::TAU + EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
+        || (values[11] - values[10]).abs() < EPS_SKETCH_DECODE_CIRCULAR_ARC_E12
     {
         return None;
     }
@@ -3467,7 +3473,9 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
         return None;
     }
     let displacement_direction = displacement.scale(1.0 / length);
-    if (direction.norm() - 1.0).abs() > 1.0e-9 || (stored_normal.norm() - 1.0).abs() > 1.0e-9 {
+    if (direction.norm() - 1.0).abs() > EPS_SKETCH_DECODE_LINE_COMPONENTS_E9
+        || (stored_normal.norm() - 1.0).abs() > EPS_SKETCH_DECODE_LINE_COMPONENTS_E9
+    {
         return None;
     }
     // Start plus displacement carries the bounded line and is corroborated by
@@ -3482,7 +3490,9 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
     let dot = direction.dot(stored_normal);
     let projected_normal = stored_normal - direction.scale(dot);
     let projected_length = projected_normal.norm();
-    let normal = if projected_length.is_finite() && projected_length > 1.0e-12 {
+    let normal = if projected_length.is_finite()
+        && projected_length > EPS_SKETCH_DECODE_LINE_COMPONENTS_E12
+    {
         projected_normal.scale(1.0 / projected_length)
     } else {
         // Spatial line carriers can store a unit auxiliary vector parallel to

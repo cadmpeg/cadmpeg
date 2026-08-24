@@ -15,9 +15,9 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::BTreeSet;
 
-/// Non-zero hole-axis direction acceptance.
 const EPS_NONZERO_HOLE_DIRECTION: f64 = 1e-12;
 
+/// Non-zero hole-axis direction acceptance.
 pub(crate) fn hole_feature_is_incomplete(
     profile: Option<&ProfileRef>,
     face: Option<&FaceSelection>,

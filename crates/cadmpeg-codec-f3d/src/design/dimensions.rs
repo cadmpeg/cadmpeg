@@ -18,7 +18,51 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-const PRESENTATION_MIN_LINE_LENGTH: f64 = 1.0e-12;
+const EPS_DIMENSIONS_OWNER_SCOPED_PARALLEL_LINE_SET_DIMENSION_DEFINITION_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_OWNER_SCOPED_LINE_LENGTH_DIMENSION_DEFINITION_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_UNIQUE_POINT_CLASS_DIMENSION_DEFINITION_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_OWNER_SCOPED_SPATIAL_LINE_LENGTH_DIMENSION_DEFINITION_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_OWNER_SCOPED_SPATIAL_PARALLEL_LINE_SET_DIMENSION_DEFINITION_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_SPATIAL_COUNTED_OFFSET_DIMENSION_DEFINITION_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_SPATIAL_POINT_DISTANCE_MATCHES_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_MATCHES_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_E12: f64 = 1e-12;
+const EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_RADIAL_DIMENSION_DEFINITION_AT_TOLERANCE_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_ANNOTATION_OFFSET_DIMENSION_DEFINITION_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_RADIAL_LOCUS_DIMENSION_DEFINITION_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_RADIAL_EXTENSION_ANNOTATION_GROUP_E12: f64 = 1e-12;
+const EPS_DIMENSIONS_RADIAL_EXTENSION_ANNOTATION_GROUP_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_EXACT_COINCIDENT_LOCI_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_RECIPE_LINEAR_DIMENSION_CANDIDATES_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_PARALLEL_LINE_DISTANCE_E12: f64 = 1e-12;
+const EPS_DIMENSIONS_PARALLEL_LINE_DISTANCE_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_POINT_LINE_SEPARATION_E12: f64 = 1e-12;
+const EPS_DIMENSIONS_LINEAR_MEASUREMENT_MATCHES_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E12: f64 = 1e-12;
+const EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_EXACT_LINE_ARC_TANGENCY_E12: f64 = 1e-12;
+const EPS_DIMENSIONS_EXACT_LINE_ARC_TANGENCY_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_EXACT_EQUAL_SIZE_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_EXACT_EQUAL_SIZE_E12: f64 = 1e-12;
+const EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_EXACT_COUNTED_OFFSET_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_OFFSET_PARAMETER_FACTOR_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_LINE_ANGLE_MATCHES_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_EXACT_OFFSET_CONSTRAINT_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_OFFSET_SOURCE_REVERSED_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_PARALLEL_LINE_OFFSET_E12: f64 = 1e-12;
+const EPS_DIMENSIONS_PARALLEL_LINE_OFFSET_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_REFLECTED_GEOMETRY_MATCHES_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_SKETCH_POINTS_CLOSE_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_PLANAR_POINT_E9: f64 = 1e-9;
+const EPS_DIMENSIONS_SKETCH_NORMAL_SIGN_E9: f64 = 1e-9;
+
+const PRESENTATION_MIN_LINE_LENGTH: f64 = 1e-12;
 
 /// Record slices shared by every dimension-constraint projection: the sketch
 /// placements, parameter and companion tables, the locus/group/annotation
@@ -1875,8 +1919,10 @@ pub(crate) fn owner_scoped_parallel_line_set_dimension_definition(
                 continue;
             };
             let expected = evaluated_mm.abs();
-            let tolerance =
-                linear_tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())));
+            let tolerance = linear_tolerance.max(
+                EPS_DIMENSIONS_OWNER_SCOPED_PARALLEL_LINE_SET_DIMENSION_DEFINITION_E9
+                    * (1.0 + measured.abs().max(expected.abs())),
+            );
             if (measured - expected).abs() > tolerance {
                 continue;
             }
@@ -1933,8 +1979,10 @@ pub(crate) fn owner_scoped_line_length_dimension_definition(
                 return false;
             };
             let measured = (end.u - start.u).hypot(end.v - start.v);
-            let tolerance =
-                linear_tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())));
+            let tolerance = linear_tolerance.max(
+                EPS_DIMENSIONS_OWNER_SCOPED_LINE_LENGTH_DIMENSION_DEFINITION_E9
+                    * (1.0 + measured.abs().max(expected.abs())),
+            );
             (measured - expected.abs()).abs() <= tolerance
         })
         .collect::<Vec<_>>();
@@ -1998,7 +2046,9 @@ pub(crate) fn unique_point_class_dimension_definition(
                 .abs()
                 .max(first.v.abs())
                 .max(second.u.abs().max(second.v.abs()));
-        (second.u - first.u).hypot(second.v - first.v) <= linear_tolerance.max(1.0e-9 * scale)
+        (second.u - first.u).hypot(second.v - first.v)
+            <= linear_tolerance
+                .max(EPS_DIMENSIONS_UNIQUE_POINT_CLASS_DIMENSION_DEFINITION_E9 * scale)
     };
     let mut classes = Vec::<Vec<&cadmpeg_ir::sketches::SketchEntity>>::new();
     for point in points {
@@ -2030,8 +2080,10 @@ pub(crate) fn unique_point_class_dimension_definition(
             let du = second_position.u - first_position.u;
             let dv = second_position.v - first_position.v;
             let measured = du.hypot(dv);
-            let tolerance =
-                linear_tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())));
+            let tolerance = linear_tolerance.max(
+                EPS_DIMENSIONS_UNIQUE_POINT_CLASS_DIMENSION_DEFINITION_E9
+                    * (1.0 + measured.abs().max(expected.abs())),
+            );
             if (measured - expected).abs() > tolerance {
                 continue;
             }
@@ -2667,8 +2719,10 @@ pub(crate) fn owner_scoped_spatial_line_length_dimension_definition(
                 return false;
             };
             let measured = (end.x - start.x).hypot((end.y - start.y).hypot(end.z - start.z));
-            let tolerance =
-                linear_tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())));
+            let tolerance = linear_tolerance.max(
+                EPS_DIMENSIONS_OWNER_SCOPED_SPATIAL_LINE_LENGTH_DIMENSION_DEFINITION_E9
+                    * (1.0 + measured.abs().max(expected.abs())),
+            );
             (measured - expected).abs() <= tolerance
         })
         .map(|entity| entity.id.clone())
@@ -2866,8 +2920,10 @@ pub(crate) fn owner_scoped_spatial_parallel_line_set_dimension_definition(
             let Some(measured) = measured else {
                 continue;
             };
-            let tolerance =
-                linear_tolerance.max(1.0e-9 * (1.0 + measured.abs().max(expected.abs())));
+            let tolerance = linear_tolerance.max(
+                EPS_DIMENSIONS_OWNER_SCOPED_SPATIAL_PARALLEL_LINE_SET_DIMENSION_DEFINITION_E9
+                    * (1.0 + measured.abs().max(expected.abs())),
+            );
             if (measured - expected).abs() > tolerance {
                 continue;
             }
@@ -2982,7 +3038,7 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
     if !native_kind.starts_with("Linear Dimension")
         || native_state != Some(0x20)
         || !distance.is_finite()
-        || distance <= 1.0e-9
+        || distance <= EPS_DIMENSIONS_SPATIAL_COUNTED_OFFSET_DIMENSION_DEFINITION_E9
     {
         return None;
     }
@@ -3063,7 +3119,8 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
     let normal_length = normal.norm();
     if matching_profiles.next().is_some()
         || !normal_length.is_finite()
-        || (normal_length - 1.0).abs() > 1.0e-9
+        || (normal_length - 1.0).abs()
+            > EPS_DIMENSIONS_SPATIAL_COUNTED_OFFSET_DIMENSION_DEFINITION_E9
     {
         return None;
     }
@@ -3135,7 +3192,9 @@ pub(crate) fn spatial_point_distance_matches(
         + (second.z - first.z).powi(2))
     .sqrt();
     let scale = 1.0 + measured.max(expected.abs());
-    expected.is_finite() && (measured - expected.abs()).abs() <= 1.0e-9 * scale
+    expected.is_finite()
+        && (measured - expected.abs()).abs()
+            <= EPS_DIMENSIONS_SPATIAL_POINT_DISTANCE_MATCHES_E9 * scale
 }
 
 pub(crate) fn spatial_parallel_line_distance_matches(
@@ -3147,7 +3206,9 @@ pub(crate) fn spatial_parallel_line_distance_matches(
         return false;
     };
     let scale = 1.0 + measured.max(expected.abs());
-    expected.is_finite() && (measured - expected.abs()).abs() <= 1.0e-9 * scale
+    expected.is_finite()
+        && (measured - expected.abs()).abs()
+            <= EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_MATCHES_E9 * scale
 }
 
 fn spatial_parallel_line_distance(
@@ -3174,9 +3235,10 @@ fn spatial_parallel_line_distance(
     let first_length = first_direction.norm();
     let second_length = second_direction.norm();
     let cross = first_direction.cross(second_direction);
-    if first_length <= 1.0e-12
-        || second_length <= 1.0e-12
-        || cross.norm() > 1.0e-9 * first_length * second_length
+    if first_length <= EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_E12
+        || second_length <= EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_E12
+        || cross.norm()
+            > EPS_DIMENSIONS_SPATIAL_PARALLEL_LINE_DISTANCE_E9 * first_length * second_length
     {
         return None;
     }
@@ -3364,7 +3426,8 @@ fn radial_dimension_definition_at_tolerance(
     };
     let evaluated = evaluated_value * 10.0;
     let scale = 1.0 + measured.abs().max(evaluated.abs());
-    let tolerance = linear_tolerance.max(1.0e-9 * scale);
+    let tolerance =
+        linear_tolerance.max(EPS_DIMENSIONS_RADIAL_DIMENSION_DEFINITION_AT_TOLERANCE_E9 * scale);
     if !evaluated.is_finite()
         || !tolerance.is_finite()
         || tolerance < 0.0
@@ -3487,8 +3550,12 @@ pub(crate) fn annotation_offset_dimension_definition(
         }
         let result = projected.get(&(scope, result_record_index))?;
         let distance = sketch_curve_offset(&source.geometry, &result.geometry)?;
-        let tolerance = linear_tolerance.max(1.0e-9 * (1.0 + distance.abs().max(expected.abs())));
-        (distance.abs() > 1.0e-9 && (distance.abs() - expected.abs()).abs() <= tolerance)
+        let tolerance = linear_tolerance.max(
+            EPS_DIMENSIONS_ANNOTATION_OFFSET_DIMENSION_DEFINITION_E9
+                * (1.0 + distance.abs().max(expected.abs())),
+        );
+        (distance.abs() > EPS_DIMENSIONS_ANNOTATION_OFFSET_DIMENSION_DEFINITION_E9
+            && (distance.abs() - expected.abs()).abs() <= tolerance)
             .then_some((result, distance))?
     } else {
         let matches = curves
@@ -3502,9 +3569,12 @@ pub(crate) fn annotation_offset_dimension_definition(
             .filter_map(|curve| {
                 let result = projected.get(&(scope, curve.record_index))?;
                 let distance = sketch_curve_offset(&source.geometry, &result.geometry)?;
-                let tolerance =
-                    linear_tolerance.max(1.0e-9 * (1.0 + distance.abs().max(expected.abs())));
-                (distance.abs() > 1.0e-9 && (distance.abs() - expected.abs()).abs() <= tolerance)
+                let tolerance = linear_tolerance.max(
+                    EPS_DIMENSIONS_ANNOTATION_OFFSET_DIMENSION_DEFINITION_E9
+                        * (1.0 + distance.abs().max(expected.abs())),
+                );
+                (distance.abs() > EPS_DIMENSIONS_ANNOTATION_OFFSET_DIMENSION_DEFINITION_E9
+                    && (distance.abs() - expected.abs()).abs() <= tolerance)
                     .then_some((result, distance))
             })
             .collect::<Vec<_>>();
@@ -3616,7 +3686,8 @@ pub(crate) fn radial_locus_dimension_definition(
                         .max(center.v.abs())
                         .max(witness.u.abs())
                         .max(witness.v.abs());
-                (center.u - witness.u).hypot(center.v - witness.v) <= 1.0e-9 * scale
+                (center.u - witness.u).hypot(center.v - witness.v)
+                    <= EPS_DIMENSIONS_RADIAL_LOCUS_DIMENSION_DEFINITION_E9 * scale
             })
         })
         .filter_map(|entity| {
@@ -3655,13 +3726,14 @@ pub(crate) fn radial_extension_annotation_group(
     let du = end.u - start.u;
     let dv = end.v - start.v;
     let length = du.hypot(dv);
-    if length <= 1.0e-12 {
+    if length <= EPS_DIMENSIONS_RADIAL_EXTENSION_ANNOTATION_GROUP_E12 {
         return false;
     }
     let relative_u = point.u - start.u;
     let relative_v = point.v - start.v;
     relative_u.mul_add(dv, -relative_v * du).abs()
-        <= 1.0e-9 * (1.0 + length + relative_u.abs().max(relative_v.abs()))
+        <= EPS_DIMENSIONS_RADIAL_EXTENSION_ANNOTATION_GROUP_E9
+            * (1.0 + length + relative_u.abs().max(relative_v.abs()))
 }
 
 /// Remove generic relation parses whose exact stream position is owned by a
@@ -4086,7 +4158,8 @@ pub(crate) fn exact_coincident_loci(
             let matches = member_loci
                 .iter()
                 .filter(|(_, candidate)| {
-                    (candidate.u - position.u).hypot(candidate.v - position.v) <= 1.0e-9
+                    (candidate.u - position.u).hypot(candidate.v - position.v)
+                        <= EPS_DIMENSIONS_EXACT_COINCIDENT_LOCI_E9
                 })
                 .collect::<Vec<_>>();
             let [matched] = matches.as_slice() else {
@@ -4134,12 +4207,12 @@ fn midpoint_constraint(
         unreachable!("point operand matched above")
     };
     let midpoint = Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5);
-    ((position.u - midpoint.u).abs() <= 1.0e-9 && (position.v - midpoint.v).abs() <= 1.0e-9).then(
-        || Definition::Midpoint {
+    ((position.u - midpoint.u).abs() <= EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9
+        && (position.v - midpoint.v).abs() <= EPS_DIMENSIONS_MIDPOINT_CONSTRAINT_E9)
+        .then(|| Definition::Midpoint {
             point: SketchLocus::Entity(point.id.clone()),
             entity: line.id.clone(),
-        },
-    )
+        })
 }
 
 pub(crate) fn indirect_angular_lines(
@@ -4308,7 +4381,9 @@ pub(crate) fn recipe_linear_dimension_candidates(
                 .max(left.v.abs())
                 .max(right.u.abs())
                 .max(right.v.abs());
-        (left.u - right.u).abs() <= 1.0e-9 * scale && (left.v - right.v).abs() <= 1.0e-9 * scale
+        (left.u - right.u).abs() <= EPS_DIMENSIONS_RECIPE_LINEAR_DIMENSION_CANDIDATES_E9 * scale
+            && (left.v - right.v).abs()
+                <= EPS_DIMENSIONS_RECIPE_LINEAR_DIMENSION_CANDIDATES_E9 * scale
     };
     let point_on_endpoint =
         |point: &cadmpeg_ir::sketches::SketchEntity, line: &cadmpeg_ir::sketches::SketchEntity| {
@@ -4453,9 +4528,11 @@ pub(crate) fn recipe_extension_point_dimension(
                     let dv = end.v - start.v;
                     let norm_squared = du * du + dv * dv;
                     let axis_aligned = if horizontal {
-                        dv.abs() <= 1.0e-9 * (1.0 + du.abs())
+                        dv.abs()
+                            <= EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9 * (1.0 + du.abs())
                     } else {
-                        du.abs() <= 1.0e-9 * (1.0 + dv.abs())
+                        du.abs()
+                            <= EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9 * (1.0 + dv.abs())
                     };
                     if norm_squared <= 1.0e-18 || !axis_aligned {
                         return false;
@@ -4467,11 +4544,13 @@ pub(crate) fn recipe_extension_point_dimension(
                     let relative_u = detached.u - start.u;
                     let relative_v = detached.v - start.v;
                     let carrier_error = relative_u.mul_add(dv, -relative_v * du).abs();
-                    let carrier_tolerance = 1.0e-9
+                    let carrier_tolerance = EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9
                         * (1.0 + norm_squared.sqrt() + relative_u.abs().max(relative_v.abs()));
                     let projection = (relative_u * du + relative_v * dv) / norm_squared;
                     carrier_error <= carrier_tolerance
-                        && !(-1.0e-9..=1.0 + 1.0e-9).contains(&projection)
+                        && !(-EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9
+                            ..=1.0 + EPS_DIMENSIONS_RECIPE_EXTENSION_POINT_DIMENSION_E9)
+                            .contains(&projection)
                 })
         });
         if qualifies {
@@ -4554,11 +4633,13 @@ fn parallel_line_distance(
         Point2::new(second_end.u - second_start.u, second_end.v - second_start.v);
     let first_length = first_direction.u.hypot(first_direction.v);
     let second_length = second_direction.u.hypot(second_direction.v);
-    if first_length <= 1.0e-12 || second_length <= 1.0e-12 {
+    if first_length <= EPS_DIMENSIONS_PARALLEL_LINE_DISTANCE_E12
+        || second_length <= EPS_DIMENSIONS_PARALLEL_LINE_DISTANCE_E12
+    {
         return None;
     }
     let cross = first_direction.u * second_direction.v - first_direction.v * second_direction.u;
-    if cross.abs() > 1.0e-9 * first_length * second_length {
+    if cross.abs() > EPS_DIMENSIONS_PARALLEL_LINE_DISTANCE_E9 * first_length * second_length {
         return None;
     }
     let offset = Point2::new(
@@ -4651,7 +4732,7 @@ pub(crate) fn point_line_separation(
     };
     let direction = Point2::new(line.1.u - line.0.u, line.1.v - line.0.v);
     let length = direction.u.hypot(direction.v);
-    if length <= 1.0e-12 || !evaluated_mm.is_finite() {
+    if length <= EPS_DIMENSIONS_POINT_LINE_SEPARATION_E12 || !evaluated_mm.is_finite() {
         return false;
     }
     let offset = Point2::new(point.u - line.0.u, point.v - line.0.v);
@@ -4669,7 +4750,8 @@ fn linear_measurement_matches(measured: f64, expected: f64, linear_tolerance: f6
     }
     let expected = expected.abs();
     let scale = 1.0 + measured.abs().max(expected);
-    (measured.abs() - expected).abs() <= linear_tolerance.max(1.0e-9 * scale)
+    (measured.abs() - expected).abs()
+        <= linear_tolerance.max(EPS_DIMENSIONS_LINEAR_MEASUREMENT_MATCHES_E9 * scale)
 }
 
 pub(crate) fn two_locus_distance_dimension(
@@ -4712,16 +4794,24 @@ pub(crate) fn counted_role_relation_at_tolerance(
             let du = end.u - start.u;
             let dv = end.v - start.v;
             let length = du.hypot(dv);
-            if length <= 1.0e-12 {
+            if length <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E12 {
                 return None;
             }
             match owner_role {
-                0x40 if dv.abs() <= 1.0e-9 * length => Some(Definition::Horizontal {
-                    entity: entity.id.clone(),
-                }),
-                0x80 if du.abs() <= 1.0e-9 * length => Some(Definition::Vertical {
-                    entity: entity.id.clone(),
-                }),
+                0x40 if dv.abs()
+                    <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
+                {
+                    Some(Definition::Horizontal {
+                        entity: entity.id.clone(),
+                    })
+                }
+                0x80 if du.abs()
+                    <= EPS_DIMENSIONS_COUNTED_ROLE_RELATION_AT_TOLERANCE_E9 * length =>
+                {
+                    Some(Definition::Vertical {
+                        entity: entity.id.clone(),
+                    })
+                }
                 _ => None,
             }
         }
@@ -4802,7 +4892,7 @@ fn exact_line_arc_tangency(
         };
     let line_direction = Point2::new(line_end.u - line_start.u, line_end.v - line_start.v);
     let line_length = line_direction.u.hypot(line_direction.v);
-    if radius <= 0.0 || line_length <= 1.0e-12 {
+    if radius <= 0.0 || line_length <= EPS_DIMENSIONS_EXACT_LINE_ARC_TANGENCY_E12 {
         return false;
     }
     [line_start, line_end].into_iter().any(|line_point| {
@@ -4821,7 +4911,7 @@ fn exact_line_arc_tangency(
                 && (line_point.v - arc_point.v).abs() <= point_tolerance
                 && (line_direction.u * radius_direction.u + line_direction.v * radius_direction.v)
                     .abs()
-                    <= 1.0e-9 * line_length * radius
+                    <= EPS_DIMENSIONS_EXACT_LINE_ARC_TANGENCY_E9 * line_length * radius
         })
     })
 }
@@ -4924,8 +5014,8 @@ fn circular_entity_contains_point(
     }
 }
 
-const EPS_CIRCULAR_TANGENCY: f64 = 1.0e-9;
-const EPS_CIRCULAR_TANGENCY_LENGTH: f64 = 1.0e-12;
+const EPS_CIRCULAR_TANGENCY: f64 = 1e-9;
+const EPS_CIRCULAR_TANGENCY_LENGTH: f64 = 1e-12;
 
 fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
     use cadmpeg_ir::sketches::SketchGeometry as Geometry;
@@ -4937,7 +5027,8 @@ fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
         return false;
     }
     let close = |first: f64, second: f64| {
-        (first - second).abs() <= 1.0e-9 * (1.0 + first.abs().max(second.abs()))
+        (first - second).abs()
+            <= EPS_DIMENSIONS_EXACT_EQUAL_SIZE_E9 * (1.0 + first.abs().max(second.abs()))
     };
     match (&first.geometry, &second.geometry) {
         (
@@ -4953,7 +5044,9 @@ fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
             let first_length = (first_end.u - first_start.u).hypot(first_end.v - first_start.v);
             let second_length =
                 (second_end.u - second_start.u).hypot(second_end.v - second_start.v);
-            first_length > 1.0e-12 && second_length > 1.0e-12 && close(first_length, second_length)
+            first_length > EPS_DIMENSIONS_EXACT_EQUAL_SIZE_E12
+                && second_length > EPS_DIMENSIONS_EXACT_EQUAL_SIZE_E12
+                && close(first_length, second_length)
         }
         (
             Geometry::Circle { radius: first, .. } | Geometry::Arc { radius: first, .. },
@@ -4975,8 +5068,8 @@ fn exact_equal_size(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
     }
 }
 
-const EPS_CENTERED_RELATION: f64 = 1.0e-9;
-const EPS_OFFSET_SWEEP: f64 = 1.0e-12;
+const EPS_CENTERED_RELATION: f64 = 1e-9;
+const EPS_OFFSET_SWEEP: f64 = 1e-12;
 
 fn exact_centered_entity_relation(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
@@ -5088,33 +5181,41 @@ pub(crate) fn exact_counted_dimension_relation(
         .u
         .mul_add(second_direction.u, second_direction.v * second_direction.v)
         .sqrt();
-    if first_length <= 1.0e-9 || second_length <= 1.0e-9 {
+    if first_length <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9
+        || second_length <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9
+    {
         return None;
     }
     let scale = first_length * second_length;
     let cross = first_direction
         .u
         .mul_add(second_direction.v, -first_direction.v * second_direction.u);
-    if cross.abs() <= scale * 1.0e-9 {
+    if cross.abs() <= scale * EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9 {
         let signed_offset = parallel_line_offset(&first.geometry, &second.geometry)?;
-        return Some(if signed_offset.abs() <= 1.0e-9 * (1.0 + first_length) {
-            Definition::Collinear {
-                first: first.id.clone(),
-                second: second.id.clone(),
-            }
-        } else {
-            Definition::Parallel {
-                first: first.id.clone(),
-                second: second.id.clone(),
-            }
-        });
+        return Some(
+            if signed_offset.abs()
+                <= EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9 * (1.0 + first_length)
+            {
+                Definition::Collinear {
+                    first: first.id.clone(),
+                    second: second.id.clone(),
+                }
+            } else {
+                Definition::Parallel {
+                    first: first.id.clone(),
+                    second: second.id.clone(),
+                }
+            },
+        );
     }
     let dot = first_direction
         .u
         .mul_add(second_direction.u, first_direction.v * second_direction.v);
-    (dot.abs() <= scale * 1.0e-9).then(|| Definition::Perpendicular {
-        first: first.id.clone(),
-        second: second.id.clone(),
+    (dot.abs() <= scale * EPS_DIMENSIONS_EXACT_COUNTED_DIMENSION_RELATION_E9).then(|| {
+        Definition::Perpendicular {
+            first: first.id.clone(),
+            second: second.id.clone(),
+        }
     })
 }
 
@@ -5125,7 +5226,8 @@ pub(crate) fn point_lies_on_sketch_geometry(
     use cadmpeg_ir::sketches::SketchGeometry;
 
     let close = |left: f64, right: f64| {
-        (left - right).abs() <= 1.0e-9 * (1.0 + left.abs().max(right.abs()))
+        (left - right).abs()
+            <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 * (1.0 + left.abs().max(right.abs()))
     };
     match geometry {
         SketchGeometry::Point { position } => sketch_points_close(point, *position),
@@ -5139,12 +5241,16 @@ pub(crate) fn point_lies_on_sketch_geometry(
             let parameter =
                 relative.u.mul_add(direction.u, relative.v * direction.v) / length_squared;
             let cross = relative.u.mul_add(direction.v, -relative.v * direction.u);
-            (-1.0e-9..=1.0 + 1.0e-9).contains(&parameter)
-                && cross.abs() <= 1.0e-9 * (1.0 + length_squared.sqrt())
+            (-EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                ..=1.0 + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9)
+                .contains(&parameter)
+                && cross.abs()
+                    <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                        * (1.0 + length_squared.sqrt())
         }
         SketchGeometry::ReferenceLine { origin, direction } => {
             let length = direction.u.hypot(direction.v);
-            if length <= 1.0e-9 {
+            if length <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 {
                 return false;
             }
             let relative = Point2::new(point.u - origin.u, point.v - origin.v);
@@ -5152,7 +5258,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
                 .u
                 .mul_add(direction.v, -relative.v * direction.u)
                 .abs()
-                <= 1.0e-9 * (1.0 + length)
+                <= EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9 * (1.0 + length)
         }
         SketchGeometry::Circle { center, radius } => {
             close((point.u - center.u).hypot(point.v - center.v), radius.0)
@@ -5169,7 +5275,7 @@ pub(crate) fn point_lies_on_sketch_geometry(
                     relative.v.atan2(relative.u),
                     start_angle.0,
                     end_angle.0,
-                    1.0e-9,
+                    EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9,
                 )
         }
         SketchGeometry::Ellipse {
@@ -5189,7 +5295,12 @@ pub(crate) fn point_lies_on_sketch_geometry(
             let y = (-relative.u).mul_add(sin, relative.v * cos) / minor_radius.0;
             close(x.mul_add(x, y * y), 1.0)
                 && match (start_angle, end_angle) {
-                    (Some(start), Some(end)) => angle_in_sweep(y.atan2(x), start.0, end.0, 1.0e-9),
+                    (Some(start), Some(end)) => angle_in_sweep(
+                        y.atan2(x),
+                        start.0,
+                        end.0,
+                        EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9,
+                    ),
                     (None, None) => true,
                     _ => false,
                 }
@@ -5213,7 +5324,8 @@ pub(crate) fn point_lies_on_sketch_geometry(
             close(x, parameter.cosh())
                 && match (start_parameter, end_parameter) {
                     (Some(start), Some(end)) => {
-                        parameter >= *start - 1.0e-9 && parameter <= *end + 1.0e-9
+                        parameter >= *start - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                            && parameter <= *end + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                     }
                     (None, None) => true,
                     _ => false,
@@ -5237,7 +5349,8 @@ pub(crate) fn point_lies_on_sketch_geometry(
             close(x, focal_length.0 * parameter * parameter)
                 && match (start_parameter, end_parameter) {
                     (Some(start), Some(end)) => {
-                        parameter >= *start - 1.0e-9 && parameter <= *end + 1.0e-9
+                        parameter >= *start - EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                            && parameter <= *end + EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
                     }
                     (None, None) => true,
                     _ => false,
@@ -5250,7 +5363,8 @@ pub(crate) fn point_lies_on_sketch_geometry(
             weights,
             periodic: false,
         } => {
-            let tolerance = 1.0e-9 * (1.0 + point.u.abs().max(point.v.abs()));
+            let tolerance = EPS_DIMENSIONS_POINT_LIES_ON_SKETCH_GEOMETRY_E9
+                * (1.0 + point.u.abs().max(point.v.abs()));
             cadmpeg_ir::eval::nurbs_pcurve_contains_point(
                 *degree,
                 knots,
@@ -5335,7 +5449,7 @@ pub(crate) fn exact_counted_offset(
                 linear_tolerance,
             )
         })?;
-        if distance.abs() <= 1.0e-9 {
+        if distance.abs() <= EPS_DIMENSIONS_EXACT_COUNTED_OFFSET_E9 {
             return None;
         }
         let source_reversed = offset_source_reversed(distance, &mut canonical_distance)?;
@@ -5360,7 +5474,8 @@ pub(crate) fn offset_parameter_factor(distance: f64, parameter_value: f64) -> Op
     let scale = 1.0 + distance.abs().max(parameter_value.abs());
     (distance.is_finite()
         && parameter_value.is_finite()
-        && (distance - parameter_value.abs()).abs() <= scale * 1.0e-9)
+        && (distance - parameter_value.abs()).abs()
+            <= scale * EPS_DIMENSIONS_OFFSET_PARAMETER_FACTOR_E9)
         .then(|| {
             if parameter_value.is_sign_positive() {
                 1.0
@@ -5403,7 +5518,8 @@ pub(crate) fn line_angle_matches(
     let angle = cosine.acos();
     let supplementary = std::f64::consts::PI - angle;
     let scale = 1.0 + expected.abs();
-    (angle - expected).abs() <= scale * 1.0e-9 || (supplementary - expected).abs() <= scale * 1.0e-9
+    (angle - expected).abs() <= scale * EPS_DIMENSIONS_LINE_ANGLE_MATCHES_E9
+        || (supplementary - expected).abs() <= scale * EPS_DIMENSIONS_LINE_ANGLE_MATCHES_E9
 }
 
 pub(crate) fn exact_offset_constraint(
@@ -5465,7 +5581,7 @@ pub(crate) fn exact_offset_constraint(
             return None;
         }
         let distance = parallel_line_offset(&source.geometry, &result.geometry)?;
-        if distance.abs() <= 1.0e-9 {
+        if distance.abs() <= EPS_DIMENSIONS_EXACT_OFFSET_CONSTRAINT_E9 {
             return None;
         }
         let source_reversed = offset_source_reversed(distance, &mut canonical_distance)?;
@@ -5490,7 +5606,7 @@ fn offset_source_reversed(distance: f64, canonical: &mut Option<f64>) -> Option<
         return Some(distance.is_sign_negative());
     };
     let scale = 1.0 + magnitude.max(expected);
-    if (magnitude - expected).abs() > scale * 1.0e-9 {
+    if (magnitude - expected).abs() > scale * EPS_DIMENSIONS_OFFSET_SOURCE_REVERSED_E9 {
         return None;
     }
     Some(distance.is_sign_negative())
@@ -5611,20 +5727,31 @@ fn sketch_curve_offset(
                     .max(result_radius.0);
             let source_sweep = source_end.0 - source_start.0;
             let result_sweep = result_end.0 - result_start.0;
-            let angular_overlap = [source_start.0, source_end.0]
-                .into_iter()
-                .any(|angle| angle_in_sweep(angle, result_start.0, result_end.0, 1.0e-9))
-                || [result_start.0, result_end.0]
-                    .into_iter()
-                    .any(|angle| angle_in_sweep(angle, source_start.0, source_end.0, 1.0e-9));
+            let angular_overlap = [source_start.0, source_end.0].into_iter().any(|angle| {
+                angle_in_sweep(
+                    angle,
+                    result_start.0,
+                    result_end.0,
+                    EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9,
+                )
+            }) || [result_start.0, result_end.0].into_iter().any(|angle| {
+                angle_in_sweep(
+                    angle,
+                    source_start.0,
+                    source_end.0,
+                    EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9,
+                )
+            });
             (source_radius.0 > 0.0
                 && result_radius.0 > 0.0
                 && source_sweep.abs() > EPS_OFFSET_SWEEP
                 && result_sweep.abs() > EPS_OFFSET_SWEEP
                 && source_sweep.signum() == result_sweep.signum()
                 && angular_overlap
-                && (source_center.u - result_center.u).abs() <= 1.0e-9 * scale
-                && (source_center.v - result_center.v).abs() <= 1.0e-9 * scale)
+                && (source_center.u - result_center.u).abs()
+                    <= EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9 * scale
+                && (source_center.v - result_center.v).abs()
+                    <= EPS_DIMENSIONS_SKETCH_CURVE_OFFSET_E9 * scale)
                 .then_some(source_sweep.signum() * (source_radius.0 - result_radius.0))
         }
         _ => parallel_line_offset(source, result),
@@ -5657,12 +5784,14 @@ fn parallel_line_offset(
     let result_dv = result_end.v - result_start.v;
     let source_length = source_du.hypot(source_dv);
     let result_length = result_du.hypot(result_dv);
-    if source_length <= 1.0e-12 || result_length <= 1.0e-12 {
+    if source_length <= EPS_DIMENSIONS_PARALLEL_LINE_OFFSET_E12
+        || result_length <= EPS_DIMENSIONS_PARALLEL_LINE_OFFSET_E12
+    {
         return None;
     }
     let parallel_error =
         (source_du * result_dv - source_dv * result_du).abs() / (source_length * result_length);
-    if parallel_error > 1.0e-9 {
+    if parallel_error > EPS_DIMENSIONS_PARALLEL_LINE_OFFSET_E9 {
         return None;
     }
     let normal_u = -source_dv / source_length;
@@ -5673,7 +5802,8 @@ fn parallel_line_offset(
     let start_distance = distance_at(result_start);
     let end_distance = distance_at(result_end);
     let scale = 1.0 + start_distance.abs().max(end_distance.abs());
-    ((start_distance - end_distance).abs() <= scale * 1.0e-9).then_some(start_distance)
+    ((start_distance - end_distance).abs() <= scale * EPS_DIMENSIONS_PARALLEL_LINE_OFFSET_E9)
+        .then_some(start_distance)
 }
 
 fn reflected_symmetry<'a>(
@@ -5773,7 +5903,8 @@ fn reflected_geometry_matches(
             },
         ) => {
             let radius_scale = 1.0 + first_radius.0.abs().max(second_radius.0.abs());
-            (first_radius.0 - second_radius.0).abs() <= 1.0e-9 * radius_scale
+            (first_radius.0 - second_radius.0).abs()
+                <= EPS_DIMENSIONS_REFLECTED_GEOMETRY_MATCHES_E9 * radius_scale
                 && reflect_point(*first_center, *axis_start, *axis_end)
                     .is_some_and(|reflected| sketch_points_close(reflected, *second_center))
         }
@@ -5797,8 +5928,10 @@ fn reflected_geometry_matches(
             let sweep_scale = 1.0 + first_sweep.max(second_sweep);
             if first_radius.0 <= 0.0
                 || second_radius.0 <= 0.0
-                || (first_radius.0 - second_radius.0).abs() > 1.0e-9 * radius_scale
-                || (first_sweep - second_sweep).abs() > 1.0e-9 * sweep_scale
+                || (first_radius.0 - second_radius.0).abs()
+                    > EPS_DIMENSIONS_REFLECTED_GEOMETRY_MATCHES_E9 * radius_scale
+                || (first_sweep - second_sweep).abs()
+                    > EPS_DIMENSIONS_REFLECTED_GEOMETRY_MATCHES_E9 * sweep_scale
                 || !reflect_point(*first_center, *axis_start, *axis_end)
                     .is_some_and(|reflected| sketch_points_close(reflected, *second_center))
             {
@@ -5857,7 +5990,8 @@ fn sketch_points_close(first: Point2, second: Point2) -> bool {
             .max(first.v.abs())
             .max(second.u.abs())
             .max(second.v.abs());
-    (first.u - second.u).abs() <= scale * 1.0e-9 && (first.v - second.v).abs() <= scale * 1.0e-9
+    (first.u - second.u).abs() <= scale * EPS_DIMENSIONS_SKETCH_POINTS_CLOSE_E9
+        && (first.v - second.v).abs() <= scale * EPS_DIMENSIONS_SKETCH_POINTS_CLOSE_E9
 }
 
 pub(crate) fn relation_kind_name(relation: &SketchRelation) -> String {
@@ -5894,11 +6028,16 @@ pub(crate) fn relation_kind_name(relation: &SketchRelation) -> String {
 }
 
 pub(crate) fn planar_point(point: &Point3) -> bool {
-    point.x.is_finite() && point.y.is_finite() && point.z.is_finite() && point.z.abs() <= 1.0e-9
+    point.x.is_finite()
+        && point.y.is_finite()
+        && point.z.is_finite()
+        && point.z.abs() <= EPS_DIMENSIONS_PLANAR_POINT_E9
 }
 
 pub(crate) fn sketch_normal_sign(normal: &Vector3) -> Option<f64> {
-    (normal.x.abs() <= 1.0e-9 && normal.y.abs() <= 1.0e-9 && (normal.z.abs() - 1.0).abs() <= 1.0e-9)
+    (normal.x.abs() <= EPS_DIMENSIONS_SKETCH_NORMAL_SIGN_E9
+        && normal.y.abs() <= EPS_DIMENSIONS_SKETCH_NORMAL_SIGN_E9
+        && (normal.z.abs() - 1.0).abs() <= EPS_DIMENSIONS_SKETCH_NORMAL_SIGN_E9)
         .then_some(normal.z.signum())
 }
 

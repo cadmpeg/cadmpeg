@@ -17,6 +17,8 @@ use super::edits::{
 use cadmpeg_asm::edit::AsmEditSet;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
+const EPS_RECORDS_LINE_SCALAR_COUNT_E9: f64 = 1e-9;
+
 pub(crate) fn patch_material_assignments(
     bytes: &mut [u8],
     edits: &[DesignMaterialAssignment],
@@ -676,7 +678,9 @@ fn line_scalar_count(bytes: &[u8], values_at: usize) -> Result<usize, CodecError
         .and_then(|()| Some([view.f64_le()?, view.f64_le()?, view.f64_le()?]));
     if let Some(normal) = full_normal {
         let length = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
-        if normal.iter().all(|value| value.is_finite()) && (length - 1.0).abs() <= 1.0e-9 {
+        if normal.iter().all(|value| value.is_finite())
+            && (length - 1.0).abs() <= EPS_RECORDS_LINE_SCALAR_COUNT_E9
+        {
             return Ok(12);
         }
     }

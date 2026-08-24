@@ -19,6 +19,11 @@ use super::placement::{
     hole_placement, plane_envelope_corners, ExtrusionSpan, PartialCapOutline, SimpleHoleGeometry,
 };
 
+const EPS_AXIS_ALIGNMENT: f64 = 1e-9;
+const EPS_CENTER_AGREEMENT: f64 = 1e-9;
+const EPS_OFFSET_NONZERO: f64 = 1e-12;
+const EPS_EXTENT_AGREEMENT: f64 = 1e-9;
+
 pub fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleHoleGeometry> {
     let cap_rows = feature_outline_planes(scan, feature_id)?
         .into_iter()
@@ -229,8 +234,8 @@ pub fn circular_sweep_cylinder_from_cap_outlines(
 ) -> Option<SurfaceGeometry> {
     let (_, axis, _) = hole_placement(caps.map(|(id, origin, normal, _)| (id, origin, normal)))?;
     let axis_index = (0..3).find(|index| {
-        axis[*index].abs() > 1.0 - 1e-9
-            && (0..3).all(|other| other == *index || axis[other].abs() < 1e-9)
+        axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
+            && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_ALIGNMENT)
     })?;
     let radial = (0..3)
         .filter(|index| *index != axis_index)
@@ -246,10 +251,9 @@ pub fn circular_sweep_cylinder_from_cap_outlines(
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     if circles.iter().skip(1).any(|(other_center, other_radius)| {
-        radial
-            .iter()
-            .any(|index| (center[*index] - other_center[*index]).abs() > 1e-9 * scale)
-            || (radius - other_radius).abs() > 1e-9 * scale
+        radial.iter().any(|index| {
+            (center[*index] - other_center[*index]).abs() > EPS_CENTER_AGREEMENT * scale
+        }) || (radius - other_radius).abs() > EPS_CENTER_AGREEMENT * scale
     }) {
         return None;
     }
@@ -491,7 +495,7 @@ pub fn extrusion_span(
             .map(|(left, right)| left * right)
             .sum::<f64>()
             .abs();
-        if (parallel / normal_length - 1.0).abs() > 1e-9 {
+        if (parallel / normal_length - 1.0).abs() > EPS_AXIS_ALIGNMENT {
             continue;
         }
         let offset = origin
@@ -500,13 +504,13 @@ pub fn extrusion_span(
             .zip(direction)
             .map(|((coordinate, base), axis)| (coordinate - base) * axis)
             .sum::<f64>();
-        if offset.abs() <= 1e-12 {
+        if offset.abs() <= EPS_OFFSET_NONZERO {
             continue;
         }
         let scale = offset.abs().max(1.0);
         if !offsets
             .iter()
-            .any(|known| (known - offset).abs() <= 1e-9 * scale)
+            .any(|known| (known - offset).abs() <= EPS_EXTENT_AGREEMENT * scale)
         {
             offsets.push(offset);
         }
@@ -552,7 +556,7 @@ pub fn extrusion_extent_and_direction(
     let first = span.upper;
     let second = -span.lower;
     let scale = first.max(second).max(1.0);
-    let extent = if (first - second).abs() <= 1e-9 * scale {
+    let extent = if (first - second).abs() <= EPS_EXTENT_AGREEMENT * scale {
         ExtrudeExtent::Symmetric {
             side: blind_extrude_side(first + second),
         }

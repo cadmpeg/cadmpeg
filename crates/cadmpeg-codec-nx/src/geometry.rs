@@ -22,6 +22,10 @@ use crate::framing::{
 };
 use crate::vec3_at::vec3_be_at;
 
+const EPS_GEOMETRY_CONE_E6: f64 = 1e-6;
+const EPS_GEOMETRY_IS_UNIT_E6: f64 = 1e-6;
+const EPS_GEOMETRY_IS_ORTHONORMAL_FRAME_E6: f64 = 1e-6;
+
 /// A decoded analytic surface and its source offset.
 #[derive(Debug, Clone)]
 pub struct DecodedSurface {
@@ -264,7 +268,7 @@ fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
         || !cos_half.is_finite()
         || sin_half == 0.0
         || cos_half == 0.0
-        || (sin_half * sin_half + cos_half * cos_half - 1.0).abs() > 1.0e-6
+        || (sin_half * sin_half + cos_half * cos_half - 1.0).abs() > EPS_GEOMETRY_CONE_E6
     {
         return None;
     }
@@ -377,14 +381,15 @@ fn is_unit(v: [f64; 3]) -> bool {
         return false;
     }
     let n2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
-    (n2 - 1.0).abs() < 1.0e-6
+    (n2 - 1.0).abs() < EPS_GEOMETRY_IS_UNIT_E6
 }
 
 /// Return whether two finite vectors form the serialized analytic normal/x-axis frame.
 fn is_orthonormal_frame(axis: [f64; 3], x_axis: [f64; 3]) -> bool {
     is_unit(axis)
         && is_unit(x_axis)
-        && (axis[0] * x_axis[0] + axis[1] * x_axis[1] + axis[2] * x_axis[2]).abs() < 1.0e-6
+        && (axis[0] * x_axis[0] + axis[1] * x_axis[1] + axis[2] * x_axis[2]).abs()
+            < EPS_GEOMETRY_IS_ORTHONORMAL_FRAME_E6
 }
 
 fn valid_position(v: [f64; 3]) -> bool {

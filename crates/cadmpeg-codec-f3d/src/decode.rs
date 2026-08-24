@@ -400,7 +400,7 @@ fn datum_plane_frame_is_resolved(
     normal: &cadmpeg_ir::math::Vector3,
     u_axis: &cadmpeg_ir::math::Vector3,
 ) -> bool {
-    const EPS_DATUM_PLANE_ORTHOGONAL: f64 = 1.0e-10;
+    const EPS_DATUM_PLANE_ORTHOGONAL: f64 = 1e-10;
 
     let (Some(normal), Some(u_axis)) = (normal.unit(), u_axis.unit()) else {
         return false;
@@ -417,7 +417,7 @@ fn datum_coordinate_system_is_resolved(
     y_axis: &cadmpeg_ir::math::Vector3,
     z_axis: &cadmpeg_ir::math::Vector3,
 ) -> bool {
-    const EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL: f64 = 1.0e-9;
+    const EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL: f64 = 1e-9;
 
     let axes = [*x_axis, *y_axis, *z_axis];
     point_is_finite(origin)

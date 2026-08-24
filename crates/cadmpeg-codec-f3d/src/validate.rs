@@ -35,6 +35,9 @@ use crate::{design, history, ids, native, records};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::{Check, Finding, Severity};
 
+const EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E10: f64 = 1e-10;
+const EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E8: f64 = 1e-8;
+
 /// Resolve the native design stream that owns a record `id`, defaulting to the
 /// primary design stream when the id carries no stream qualifier.
 fn design_stream(id: &str) -> &str {
@@ -2604,11 +2607,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 && (0..3).all(|row| {
                                     (0..3).all(|column| {
                                         (transform[row][column] - first[row][column]).abs()
-                                            <= 1.0e-10
+                                            <= EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E10
                                     })
                                 })
                         })
-                        && (distance - extent.abs()).abs() <= 1.0e-8
+                        && (distance - extent.abs()).abs()
+                            <= EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E8
                         && instances
                             .transforms
                             .iter()
@@ -2618,7 +2622,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 (0..3).all(|axis| {
                                     (transform[axis][3] - first[axis][3] - delta[axis] * fraction)
                                         .abs()
-                                        <= 1.0e-8
+                                        <= EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E8
                                 })
                             })
                         && instances

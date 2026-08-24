@@ -26,6 +26,14 @@ use std::f64::consts::TAU;
 use std::fmt::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const EPS_WRITER_SAME_FLOAT_E10: f64 = 1e-10;
+const EPS_WRITER_SAME_RANGE_E10: f64 = 1e-10;
+const EPS_WRITER_NURBS_PLANE_NORMAL_E10: f64 = 1e-10;
+const EPS_WRITER_NURBS_PLANE_NORMAL_E12: f64 = 1e-12;
+const EPS_WRITER_NURBS_IS_CLOSED_E10: f64 = 1e-10;
+const EPS_WRITER_VALIDATE_ARC_SWEEP_E10: f64 = 1e-10;
+const EPS_WRITER_CLOSE_POINT_WITH_TOLERANCE_E8: f64 = 1e-8;
+
 const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "cards",
     "copious_data",
@@ -35,7 +43,7 @@ const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "product_occurrence_expansion",
     "transformations",
 ];
-const FRAME_REPAIR_DOT_LIMIT: f64 = 1.0e-6;
+const FRAME_REPAIR_DOT_LIMIT: f64 = 1e-6;
 const DEPENDENT_TOPOLOGY_STATUS: &str = "00010000";
 const BOUNDARY_PREFERENCE_MODEL_CURVES: i32 = 1;
 const CURVE_ON_SURFACE_CREATION_UNSPECIFIED: i32 = 0;
@@ -1678,7 +1686,7 @@ fn curve_matches_pcurve(curve: &CurveGeometry, range: [f64; 2], pcurve: &Pcurve)
 }
 
 fn same_float(left: f64, right: f64) -> bool {
-    (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10
+    (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * EPS_WRITER_SAME_FLOAT_E10
 }
 
 fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
@@ -2956,9 +2964,9 @@ fn resolve_entity_references(entities: &mut [Entity]) -> Result<(), CodecError> 
 }
 
 fn same_range(left: [f64; 2], right: [f64; 2]) -> bool {
-    left.into_iter()
-        .zip(right)
-        .all(|(left, right)| (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10)
+    left.into_iter().zip(right).all(|(left, right)| {
+        (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * EPS_WRITER_SAME_RANGE_E10
+    })
 }
 
 fn validate_brep_pcurve_uses(
@@ -4454,7 +4462,7 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
         return None;
     }
     let scale = distances.into_iter().fold(1.0, f64::max);
-    let tolerance = 1.0e-10 * scale;
+    let tolerance = EPS_WRITER_NURBS_PLANE_NORMAL_E10 * scale;
     let mut first_direction = None;
     for point in points.iter().skip(1) {
         let direction = point.vector_from(origin);
@@ -4470,7 +4478,7 @@ fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
     let Some(first_direction) = first_direction else {
         return Some(Vector3::new(0.0, 0.0, 1.0));
     };
-    let normal_threshold = 1.0e-12 * scale * first_direction.norm();
+    let normal_threshold = EPS_WRITER_NURBS_PLANE_NORMAL_E12 * scale * first_direction.norm();
     let mut normal = None;
     for point in points.iter().skip(1) {
         let candidate = first_direction.cross(point.vector_from(origin));
@@ -4538,7 +4546,7 @@ fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> boo
         .map(|point| point.distance(start))
         .filter(|distance| distance.is_finite())
         .fold(1.0, f64::max);
-    start.distance(end) <= 1.0e-10 * scale
+    start.distance(end) <= EPS_WRITER_NURBS_IS_CLOSED_E10 * scale
 }
 
 fn flatten_curve(geometry: &CurveGeometry) -> Result<CurveGeometry, CodecError> {
@@ -4692,7 +4700,7 @@ fn placement(
 
 fn validate_arc_sweep(range: [f64; 2]) -> Result<(), CodecError> {
     let sweep = range[1] - range[0];
-    if !(0.0..=TAU + 1.0e-10).contains(&sweep) || sweep == 0.0 {
+    if !(0.0..=TAU + EPS_WRITER_VALIDATE_ARC_SWEEP_E10).contains(&sweep) || sweep == 0.0 {
         return Err(CodecError::NotImplemented(
             "IGES conic writer requires a non-zero ordered span no larger than one revolution"
                 .into(),
@@ -4788,7 +4796,7 @@ fn close_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f
         .max(right.y.abs())
         .max(right.z.abs())
         .max(1.0);
-    let tolerance = (scale * 1.0e-8).max(explicit_tolerance);
+    let tolerance = (scale * EPS_WRITER_CLOSE_POINT_WITH_TOLERANCE_E8).max(explicit_tolerance);
     (left.x - right.x).abs() <= tolerance
         && (left.y - right.y).abs() <= tolerance
         && (left.z - right.z).abs() <= tolerance

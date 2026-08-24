@@ -34,6 +34,11 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
+const EPS_TYPED_RELATIONS_TYPED_MARKER_RELATION_DEFINITION_IN_SKETCH_E12: f64 = 1e-12;
+const EPS_TYPED_RELATIONS_SKETCH_ENTITY_MIDPOINT_E12: f64 = 1e-12;
+const EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E12: f64 = 1e-12;
+const EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9: f64 = 1e-9;
+
 #[cfg(test)]
 pub(super) fn typed_marker_relation_definition(
     marker: &SketchInputEntity,
@@ -424,7 +429,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 };
                 let raw = end_angle.0 - start_angle.0;
                 let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
-                if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+                if sweep <= EPS_TYPED_RELATIONS_TYPED_MARKER_RELATION_DEFINITION_IN_SKETCH_E12
+                    && raw.abs()
+                        > EPS_TYPED_RELATIONS_TYPED_MARKER_RELATION_DEFINITION_IN_SKETCH_E12
+                {
                     sweep = std::f64::consts::TAU;
                 }
                 if !same_dimension_angle(sweep, angle) {
@@ -467,7 +475,9 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             };
             let raw = end.0 - start.0;
             let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
-            if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+            if sweep <= EPS_TYPED_RELATIONS_TYPED_MARKER_RELATION_DEFINITION_IN_SKETCH_E12
+                && raw.abs() > EPS_TYPED_RELATIONS_TYPED_MARKER_RELATION_DEFINITION_IN_SKETCH_E12
+            {
                 sweep = std::f64::consts::TAU;
             }
             if !same_dimension_angle(sweep, angle) {
@@ -800,7 +810,9 @@ fn sketch_entity_midpoint(entity: &SketchEntity) -> Option<Point2> {
         } => {
             let raw = end_angle.0 - start_angle.0;
             let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
-            if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+            if sweep <= EPS_TYPED_RELATIONS_SKETCH_ENTITY_MIDPOINT_E12
+                && raw.abs() > EPS_TYPED_RELATIONS_SKETCH_ENTITY_MIDPOINT_E12
+            {
                 sweep = std::f64::consts::TAU;
             }
             let angle = start_angle.0 + sweep * 0.5;
@@ -848,12 +860,14 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             }
             let raw = end_angle.0 - start_angle.0;
             let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
-            if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+            if sweep <= EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E12
+                && raw.abs() > EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E12
+            {
                 sweep = std::f64::consts::TAU;
             }
             let parameter = ((point.v - center.v).atan2(point.u - center.u) - start_angle.0)
                 .rem_euclid(std::f64::consts::TAU);
-            parameter <= sweep + 1.0e-9
+            parameter <= sweep + EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9
         }
         SketchGeometry::Ellipse {
             center,
@@ -870,7 +884,7 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
             let x = du * cosine + dv * sine;
             let y = -du * sine + dv * cosine;
             let equation = (x / major_radius.0).powi(2) + (y / minor_radius.0).powi(2);
-            if (equation - 1.0).abs() > 1.0e-9 {
+            if (equation - 1.0).abs() > EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9 {
                 return false;
             }
             match (start_angle, end_angle) {
@@ -879,10 +893,12 @@ pub(super) fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2)
                         .rem_euclid(std::f64::consts::TAU);
                     let raw = end.0 - start.0;
                     let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
-                    if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+                    if sweep <= EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E12
+                        && raw.abs() > EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E12
+                    {
                         sweep = std::f64::consts::TAU;
                     }
-                    parameter <= sweep + 1.0e-9
+                    parameter <= sweep + EPS_TYPED_RELATIONS_SKETCH_ENTITY_CONTAINS_POINT_E9
                 }
                 (None, None) => true,
                 _ => false,

@@ -13,6 +13,9 @@ use super::LEN_TO_MM;
 
 use crate::layout::rolling_ball_blend_00_38 as blend_rec;
 
+const EPS_BLEND_PARSE_RAW_E12: f64 = 1e-12;
+const EPS_BLEND_PARSE_BLEND_E12: f64 = 1e-12;
+
 /// One exact constant-radius blend construction.
 #[derive(Debug, Clone)]
 pub(crate) struct BlendCarrier {
@@ -86,8 +89,8 @@ fn parse_raw(bytes: &[u8], offset: usize) -> Option<RawCarrier> {
         View::f64_be_at(bytes, body + blend_rec::SIDE1)?,
     ];
     if values.iter().any(|value| !value.is_finite())
-        || (values[2].abs() - 1.0).abs() > 1.0e-12
-        || (values[3].abs() - 1.0).abs() > 1.0e-12
+        || (values[2].abs() - 1.0).abs() > EPS_BLEND_PARSE_RAW_E12
+        || (values[3].abs() - 1.0).abs() > EPS_BLEND_PARSE_RAW_E12
     {
         return None;
     }
@@ -103,7 +106,7 @@ fn parse_blend(bytes: &[u8], offset: usize) -> Option<BlendCarrier> {
     let raw = parse_raw(bytes, offset)?;
     let [first_radius, second_radius, first_side, second_side] = raw.values;
     if first_radius.abs() <= f64::EPSILON
-        || (first_radius.abs() - second_radius.abs()).abs() > 1.0e-12
+        || (first_radius.abs() - second_radius.abs()).abs() > EPS_BLEND_PARSE_BLEND_E12
     {
         return None;
     }

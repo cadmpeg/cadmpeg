@@ -29,6 +29,9 @@ use super::skamp::{
     section_skamp_selected_point, SectionPointSource, SectionSymmetryAxis,
 };
 
+const EPS_MISSING_COEFFICIENT: f64 = 1e-12;
+const EPS_COORDINATE_AGREEMENT: f64 = 1e-9;
+
 pub(crate) fn resolved_section_coordinates(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, [Option<f64>; 2]> {
@@ -355,7 +358,7 @@ pub(crate) fn resolved_section_coordinates(
         } else {
             delta_u.abs()
         };
-        if missing_coefficient > 1e-12 {
+        if missing_coefficient > EPS_MISSING_COEFFICIENT {
             equations.push(equation);
         }
     }
@@ -594,14 +597,14 @@ pub(crate) fn section_linear_distance_coordinate(
         let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
         values
             .iter()
-            .all(|value| (*value - first).abs() <= 1e-9 * scale)
+            .all(|value| (*value - first).abs() <= EPS_COORDINATE_AGREEMENT * scale)
             .then_some(first)
     };
     let equal_coordinate = |coordinate: usize| -> Option<bool> {
         let first = point_coordinate(first, coordinate)?;
         let second = point_coordinate(second, coordinate)?;
         let scale = first.abs().max(second.abs()).max(1.0);
-        Some((first - second).abs() <= 1e-9 * scale)
+        Some((first - second).abs() <= EPS_COORDINATE_AGREEMENT * scale)
     };
     let equal_u = equal_coordinate(0);
     let equal_v = equal_coordinate(1);

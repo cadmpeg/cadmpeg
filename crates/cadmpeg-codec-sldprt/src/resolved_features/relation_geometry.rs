@@ -38,7 +38,7 @@ pub(crate) fn project_relation_point_geometry(
     lanes: &[FeatureInputLane],
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = 1e-8;
 
     let sketches_by_feature = features
         .iter()
@@ -407,7 +407,7 @@ pub(crate) fn project_relation_solved_line_geometry(
     lanes: &[FeatureInputLane],
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = 1e-8;
 
     let sketches_by_feature = features
         .iter()
@@ -565,7 +565,7 @@ pub(crate) fn project_relation_solved_point_geometry(
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
 ) {
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = 1e-8;
 
     let sketches_by_feature = features
         .iter()

@@ -20,6 +20,10 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
+const EPS_BLEND_BLEND_SURFACE_PARAMETERS_INNER_E12: f64 = 1e-12;
+const EPS_BLEND_REFINE_BLEND_SURFACE_PARAMETERS_WITH_INDEX_E12: f64 = 1e-12;
+const EPS_BLEND_BLEND_SURFACE_CONTACT_DIRECTION_E12: f64 = 1e-12;
+
 pub(crate) fn decoded_surface_point(
     ir: &CadIr,
     surface: &SurfaceId,
@@ -136,7 +140,7 @@ pub(crate) fn blend_surface_parameters_inner(
                 point.z - center.z,
             ))?;
             let alpha = signed_angle(first, second, tangent);
-            if !alpha.is_finite() || alpha.abs() <= 1.0e-12 {
+            if !alpha.is_finite() || alpha.abs() <= EPS_BLEND_BLEND_SURFACE_PARAMETERS_INNER_E12 {
                 return None;
             }
             let theta = signed_angle(first, radial, tangent);
@@ -153,7 +157,7 @@ pub(crate) fn blend_surface_parameters_inner(
                     ))
                 })
                 .min_by(|first, second| {
-                    if (first.1 - second.1).abs() <= 1.0e-12 {
+                    if (first.1 - second.1).abs() <= EPS_BLEND_BLEND_SURFACE_PARAMETERS_INNER_E12 {
                         first.2.total_cmp(&second.2)
                     } else {
                         first.1.total_cmp(&second.1)
@@ -443,8 +447,12 @@ pub(crate) fn refine_blend_surface_parameters_with_index(
         let Some(candidate) = accepted else {
             break;
         };
-        let converged = (candidate.u - parameters.u).abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
-            && (candidate.v - parameters.v).abs() <= 1.0e-12 * (1.0 + parameters.v.abs());
+        let converged = (candidate.u - parameters.u).abs()
+            <= EPS_BLEND_REFINE_BLEND_SURFACE_PARAMETERS_WITH_INDEX_E12
+                * (1.0 + parameters.u.abs())
+            && (candidate.v - parameters.v).abs()
+                <= EPS_BLEND_REFINE_BLEND_SURFACE_PARAMETERS_WITH_INDEX_E12
+                    * (1.0 + parameters.v.abs());
         parameters = candidate;
         if converged {
             break;
@@ -1887,7 +1895,7 @@ pub(crate) fn blend_surface_contact_direction(
         point.z - frame.0.z,
     ))?;
     let sweep = signed_angle(frame.2, frame.3, frame.1);
-    if !sweep.is_finite() || sweep.abs() <= 1.0e-12 {
+    if !sweep.is_finite() || sweep.abs() <= EPS_BLEND_BLEND_SURFACE_CONTACT_DIRECTION_E12 {
         return None;
     }
     let angle = signed_angle(frame.2, radial, frame.1);

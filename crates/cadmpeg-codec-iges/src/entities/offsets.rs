@@ -18,6 +18,8 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_OFFSETS_PROJECT_E10: f64 = 1e-10;
+
 fn coordinate(point: Point3, index: u8) -> Option<f64> {
     match index {
         1 => Some(point.x),
@@ -273,7 +275,7 @@ pub(super) fn project(
                 let distance = distance * factor;
                 let geometry = match &source.geometry {
                     CurveGeometry::Line { origin, direction }
-                        if normal.dot(*direction).abs() <= 1.0e-10 =>
+                        if normal.dot(*direction).abs() <= EPS_OFFSETS_PROJECT_E10 =>
                     {
                         CurveGeometry::Line {
                             origin: origin.translated(normal.cross(*direction), distance),
@@ -285,7 +287,7 @@ pub(super) fn project(
                         axis,
                         ref_direction,
                         radius,
-                    } if normal.dot(*axis).abs() >= 1.0 - 1.0e-10 => {
+                    } if normal.dot(*axis).abs() >= 1.0 - EPS_OFFSETS_PROJECT_E10 => {
                         let offset_radius = radius - distance * normal.dot(*axis).signum();
                         if offset_radius <= 0.0 {
                             losses.push(entity_loss(
@@ -371,7 +373,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                if normal.dot(*direction).abs() > 1.0e-10 {
+                if normal.dot(*direction).abs() > EPS_OFFSETS_PROJECT_E10 {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",
@@ -485,7 +487,7 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                if normal.dot(*direction).abs() > 1.0e-10 {
+                if normal.dot(*direction).abs() > EPS_OFFSETS_PROJECT_E10 {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",

@@ -61,6 +61,8 @@ use super::{
     embedded_pcurve_geometry, id, inherited_attribute_target, AnnotationRecord, AsmBrep, Carriers,
     Reachable, WireShellTopology,
 };
+const EPS_EMIT_EMIT_EDGES_E9: f64 = 1e-9;
+
 /// Emit a kept surface carrier and, when present, its procedural-surface
 /// construction and nested support carriers.
 fn emit_carrier_surface(
@@ -3584,10 +3586,11 @@ pub(crate) fn emit_edges(
                             // so the range still anchors on the edge's
                             // vertices.
                             let sweep = b - a;
-                            let full_period = (sweep.abs() - std::f64::consts::TAU).abs() < 1.0e-9;
+                            let full_period = (sweep.abs() - std::f64::consts::TAU).abs()
+                                < EPS_EMIT_EMIT_EDGES_E9;
                             if !full_period {
                                 a = a.rem_euclid(std::f64::consts::TAU);
-                                if std::f64::consts::TAU - a < 1.0e-9 {
+                                if std::f64::consts::TAU - a < EPS_EMIT_EMIT_EDGES_E9 {
                                     a = 0.0;
                                 }
                                 b = a + sweep;

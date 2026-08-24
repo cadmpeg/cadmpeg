@@ -41,6 +41,8 @@ use crate::layout::extended_wide_104_profile_curve as wide_104;
 // order. The first layout that accepts the bytes at `offset` yields the pair;
 // order is load-bearing because a record can satisfy more than one layout's
 // guards and the earliest entry must win.
+const EPS_ENDPOINTS_CURRENT_WIDE_ARC_DIRECT_MARKERS_E9: f64 = 1e-9;
+
 type CurveEndpointDecoder = fn(&[u8], usize) -> Option<[u32; 2]>;
 
 const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
@@ -973,7 +975,7 @@ pub(super) fn current_wide_arc_direct_markers<'a>(
             Point2::new(start_u, start_v),
             Point2::new(end_u, end_v),
             &candidates,
-            1.0e-9,
+            EPS_ENDPOINTS_CURRENT_WIDE_ARC_DIRECT_MARKERS_E9,
         )
     };
     let direct = resolve(raw)?;

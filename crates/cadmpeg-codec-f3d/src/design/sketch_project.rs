@@ -20,6 +20,11 @@ use crate::records::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+const EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9: f64 = 1e-9;
+const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9: f64 = 1e-9;
+const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9: f64 = 1e-9;
+const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12: f64 = 1e-12;
+
 fn sketch_text_horizontal_alignment(
     code: Option<u32>,
 ) -> Option<cadmpeg_ir::sketches::SketchTextHorizontalAlignment> {
@@ -134,7 +139,7 @@ pub fn project_sketch_design(
         .filter(|curve| sketch_curve_is_spatial(curve))
         .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
         .chain(points.iter().filter_map(|point| {
-            (sketch_point_depth(point)?.abs() > 1.0e-9)
+            (sketch_point_depth(point)?.abs() > EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9)
                 .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
         }))
         .collect::<HashSet<_>>();
@@ -230,12 +235,17 @@ pub fn project_sketch_design(
                 radius,
                 start_angle,
                 end_angle,
-            } if planar_point(center) && reference_direction.z.abs() <= 1.0e-9 && *radius > 0.0 => {
+            } if planar_point(center)
+                && reference_direction.z.abs() <= EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9
+                && *radius > 0.0 =>
+            {
                 let orientation = sketch_normal_sign(normal)?;
                 let phase = reference_direction.y.atan2(reference_direction.x);
                 let start_angle = phase + orientation * start_angle;
                 let end_angle = phase + orientation * end_angle;
-                if (end_angle - start_angle).abs() >= std::f64::consts::TAU - 1.0e-9 {
+                if (end_angle - start_angle).abs()
+                    >= std::f64::consts::TAU - EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9
+                {
                     SketchGeometry::Circle {
                         center: Point2::new(center.x, center.y),
                         radius: Length(*radius),
@@ -352,7 +362,7 @@ pub fn project_spatial_sketch_design(
         .filter(|curve| sketch_curve_is_spatial(curve))
         .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
         .chain(points.iter().filter_map(|point| {
-            (sketch_point_depth(point)?.abs() > 1.0e-9)
+            (sketch_point_depth(point)?.abs() > EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9)
                 .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
         }))
         .chain(surfaces.iter().filter_map(|surface| {
@@ -494,7 +504,10 @@ pub fn project_spatial_sketch_design(
                         let center = transform_point(placement, center);
                         let normal = transform_vector(placement, normal);
                         let reference_direction = transform_vector(placement, reference_direction);
-                        if (end_angle - start_angle).abs() >= std::f64::consts::TAU - 1.0e-9 {
+                        if (end_angle - start_angle).abs()
+                            >= std::f64::consts::TAU
+                                - EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9
+                        {
                             SpatialSketchGeometry::Circle {
                                 center,
                                 normal,
@@ -752,9 +765,12 @@ pub fn project_spatial_sketch_constraints(
                                 .max(second_position.x.abs())
                                 .max(second_position.y.abs())
                                 .max(second_position.z.abs());
-                        if (first_position.x - second_position.x).abs() > scale * 1.0e-9
-                            || (first_position.y - second_position.y).abs() > scale * 1.0e-9
-                            || (first_position.z - second_position.z).abs() > scale * 1.0e-9
+                        if (first_position.x - second_position.x).abs()
+                            > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                            || (first_position.y - second_position.y).abs()
+                                > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                            || (first_position.z - second_position.z).abs()
+                                > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
                         {
                             return None;
                         }
@@ -810,9 +826,12 @@ pub fn project_spatial_sketch_constraints(
                         (start.z + end.z) * 0.5,
                     );
                     let scale = 1.0 + midpoint.x.abs().max(midpoint.y.abs()).max(midpoint.z.abs());
-                    if (position.x - midpoint.x).abs() > scale * 1.0e-9
-                        || (position.y - midpoint.y).abs() > scale * 1.0e-9
-                        || (position.z - midpoint.z).abs() > scale * 1.0e-9
+                    if (position.x - midpoint.x).abs()
+                        > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                        || (position.y - midpoint.y).abs()
+                            > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                        || (position.z - midpoint.z).abs()
+                            > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
                     {
                         return None;
                     }
@@ -843,7 +862,10 @@ pub fn project_spatial_sketch_constraints(
                     };
                     let line = end.vector_from(start);
                     let cross = line.cross(direction);
-                    if line.norm() <= 1.0e-12 || cross.norm() > 1.0e-9 * line.norm() {
+                    if line.norm() <= EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12
+                        || cross.norm()
+                            > EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9 * line.norm()
+                    {
                         return None;
                     }
                     Definition::ParallelToDirection {

@@ -51,6 +51,12 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1e-9;
+const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1e-12;
+const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1e-8;
+const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9: f64 = 1e-9;
+const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12: f64 = 1e-12;
+
 /// Design record slices projected together into the neutral construction
 /// history: the parameter, owner, and scope tables plus the construction
 /// operand, fillet-radius, edge, edge-identity, face, and whole-body recipe
@@ -3243,7 +3249,11 @@ pub(crate) fn project_offset_faces(
         Some(_) => return None,
     };
     let distance = match (parameter_distance, fixed_distance) {
-        (Some(parameter), Some(fixed)) if (parameter.0 - fixed.0).abs() <= 1.0e-9 => parameter,
+        (Some(parameter), Some(fixed))
+            if (parameter.0 - fixed.0).abs() <= EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9 =>
+        {
+            parameter
+        }
         (Some(distance), None) | (None, Some(distance)) => distance,
         _ => return None,
     };
@@ -4012,26 +4022,27 @@ pub(crate) fn matrix_axis_angle(
 
     let trace = transform[0][0] + transform[1][1] + transform[2][2];
     let angle = ((trace - 1.0) * 0.5).clamp(-1.0, 1.0).acos();
-    if angle.abs() <= 1.0e-12 {
+    if angle.abs() <= EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12 {
         return None;
     }
-    let (x, y, z) = if (std::f64::consts::PI - angle).abs() <= 1.0e-8 {
-        let x = ((transform[0][0] + 1.0) * 0.5).max(0.0).sqrt();
-        let y = ((transform[1][1] + 1.0) * 0.5).max(0.0).sqrt()
-            * (transform[0][1] + transform[1][0]).signum();
-        let z = ((transform[2][2] + 1.0) * 0.5).max(0.0).sqrt()
-            * (transform[0][2] + transform[2][0]).signum();
-        (x, y, z)
-    } else {
-        let scale = 2.0 * angle.sin();
-        (
-            (transform[2][1] - transform[1][2]) / scale,
-            (transform[0][2] - transform[2][0]) / scale,
-            (transform[1][0] - transform[0][1]) / scale,
-        )
-    };
+    let (x, y, z) =
+        if (std::f64::consts::PI - angle).abs() <= EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8 {
+            let x = ((transform[0][0] + 1.0) * 0.5).max(0.0).sqrt();
+            let y = ((transform[1][1] + 1.0) * 0.5).max(0.0).sqrt()
+                * (transform[0][1] + transform[1][0]).signum();
+            let z = ((transform[2][2] + 1.0) * 0.5).max(0.0).sqrt()
+                * (transform[0][2] + transform[2][0]).signum();
+            (x, y, z)
+        } else {
+            let scale = 2.0 * angle.sin();
+            (
+                (transform[2][1] - transform[1][2]) / scale,
+                (transform[0][2] - transform[2][0]) / scale,
+                (transform[1][0] - transform[0][1]) / scale,
+            )
+        };
     let norm = x.hypot(y).hypot(z);
-    (norm > 1.0e-12).then_some(AxisAngle {
+    (norm > EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12).then_some(AxisAngle {
         origin: Point3::new(0.0, 0.0, 0.0),
         direction: Vector3::new(x / norm, y / norm, z / norm),
         angle: Angle(angle),
@@ -7635,7 +7646,7 @@ pub(crate) fn project_extrude(
         });
     let along = match (parameter_along, fixed_along) {
         (Some(parameter), Some((fixed, AlongDirection::SignedDistance)))
-            if (parameter.0 - fixed.0).abs() <= 1.0e-9 =>
+            if (parameter.0 - fixed.0).abs() <= EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9 =>
         {
             Some((parameter, AlongDirection::SignedDistance))
         }
@@ -7927,7 +7938,9 @@ pub(crate) fn project_extrude(
         .and_then(|fixed| fixed.taper_angle.as_ref())
         .map(|fixed| Angle(fixed.value));
     let draft = match (parameter_draft, fixed_draft) {
-        (Some(parameter), Some(fixed)) if (parameter.0 - fixed.0).abs() <= 1.0e-12 => {
+        (Some(parameter), Some(fixed))
+            if (parameter.0 - fixed.0).abs() <= EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12 =>
+        {
             Some(parameter)
         }
         (Some(angle), None) | (None, Some(angle)) => Some(angle),

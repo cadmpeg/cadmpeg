@@ -11,7 +11,7 @@ use crate::sketches::SketchGeometry;
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
-const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
+const TEST_LINEAR_TOLERANCE: f64 = 1e-6;
 
 #[test]
 fn trimmed_concentric_arcs_validate_as_offsets() {

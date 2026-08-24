@@ -24,6 +24,10 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::layout::compact_analytic_header as analytic;
 
+const EPS_BREP_UNIT_LENGTH_E9: f64 = 1e-9;
+const EPS_BREP_ORTHONORMAL_E9: f64 = 1e-9;
+const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1e-9;
+
 mod attrib;
 mod blend;
 pub(crate) mod entity;
@@ -95,13 +99,14 @@ fn analytic_value_count(tt: u8) -> Option<usize> {
 }
 
 fn unit_length(values: &[f64]) -> bool {
-    (norm3(values) - 1.0).abs() <= 1.0e-9
+    (norm3(values) - 1.0).abs() <= EPS_BREP_UNIT_LENGTH_E9
 }
 
 fn orthonormal(left: &[f64], right: &[f64]) -> bool {
     unit_length(left)
         && unit_length(right)
-        && (left[0] * right[0] + left[1] * right[1] + left[2] * right[2]).abs() <= 1.0e-9
+        && (left[0] * right[0] + left[1] * right[1] + left[2] * right[2]).abs()
+            <= EPS_BREP_ORTHONORMAL_E9
 }
 
 fn valid_carrier_frame(tt: u8, values: &[f64]) -> bool {
@@ -126,7 +131,8 @@ fn valid_carrier_scalars(tt: u8, values: &[f64]) -> bool {
             values[6] >= 0.0
                 && values[7].abs() > f64::EPSILON
                 && values[8] > 0.0
-                && (values[7] * values[7] + values[8] * values[8] - 1.0).abs() <= 1.0e-9
+                && (values[7] * values[7] + values[8] * values[8] - 1.0).abs()
+                    <= EPS_BREP_VALID_CARRIER_SCALARS_E9
         }
         tag::SPHERE => values[3] > 0.0,
         tag::TORUS => values[6].abs() > f64::EPSILON && values[7] > 0.0,

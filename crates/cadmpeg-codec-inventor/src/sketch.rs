@@ -20,6 +20,9 @@ use crate::pmdc::{
 };
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
+const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1e-10;
+const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1e-10;
+
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
 const TRANSFORM_TYPE: [u8; 16] = inventor_id(0x9087_4d18);
 const POINT_TYPE: [u8; 16] = sketch_entity_id(0xce52_df35);
@@ -1472,7 +1475,8 @@ fn line_carrier_matches(
     let origin_scale = norm * from_origin[0].hypot(from_origin[1]).max(1.0);
     let carrier_error =
         (direction[0] * from_origin[1] - direction[1] * from_origin[0]).abs() / origin_scale;
-    parallel_error <= 1.0e-10 && carrier_error <= 1.0e-10
+    parallel_error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
+        && carrier_error <= EPS_SKETCH_LINE_CARRIER_MATCHES_E10
 }
 
 fn resolve_point(
@@ -1529,7 +1533,7 @@ fn project_placement(
     if matrix[3]
         .iter()
         .zip([0.0, 0.0, 0.0, 1.0])
-        .any(|(actual, expected)| (actual - expected).abs() > 1.0e-10)
+        .any(|(actual, expected)| (actual - expected).abs() > EPS_SKETCH_PROJECT_PLACEMENT_E10)
     {
         return None;
     }
@@ -1542,11 +1546,11 @@ fn project_placement(
         direction.direction[2],
     )
     .unit()?;
-    if u_axis.dot(v_axis).abs() > 1.0e-10
-        || u_axis.dot(normal).abs() > 1.0e-10
-        || v_axis.dot(normal).abs() > 1.0e-10
-        || u_axis.cross(v_axis).dot(normal) < 1.0 - 1.0e-10
-        || normal.dot(stored_direction) < 1.0 - 1.0e-10
+    if u_axis.dot(v_axis).abs() > EPS_SKETCH_PROJECT_PLACEMENT_E10
+        || u_axis.dot(normal).abs() > EPS_SKETCH_PROJECT_PLACEMENT_E10
+        || v_axis.dot(normal).abs() > EPS_SKETCH_PROJECT_PLACEMENT_E10
+        || u_axis.cross(v_axis).dot(normal) < 1.0 - EPS_SKETCH_PROJECT_PLACEMENT_E10
+        || normal.dot(stored_direction) < 1.0 - EPS_SKETCH_PROJECT_PLACEMENT_E10
     {
         return None;
     }

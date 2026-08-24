@@ -31,6 +31,12 @@ use crate::brep::{
 };
 use crate::native::PropertyRecord;
 
+const EPS_TOPOLOGY_TRANSFER_NORMALIZE_PCURVE_PARAMETER_RANGE_E9: f64 = 1e-9;
+const EPS_TOPOLOGY_TRANSFER_SIMILARITY_E10: f64 = 1e-10;
+const EPS_TOPOLOGY_TRANSFER_TRANSFORMS_EQUAL_E12: f64 = 1e-12;
+const EPS_TOPOLOGY_TRANSFER_NORMALIZE_OCCT_CURVE_RANGE_E9: f64 = 1e-9;
+const EPS_TOPOLOGY_TRANSFER_NORMALIZE_OCCT_CURVE_RANGE_E12: f64 = 1e-12;
+
 type IndexedPolygon = (Vec<Point3>, Option<Vec<f64>>, f64);
 
 pub(crate) struct TopologyOccurrence {
@@ -1302,7 +1308,7 @@ fn normalize_pcurve_parameter_range(
         .into_iter()
         .chain(domain)
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    let tolerance = scale * 1.0e-9;
+    let tolerance = scale * EPS_TOPOLOGY_TRANSFER_NORMALIZE_PCURVE_PARAMETER_RANGE_E9;
     for value in &mut range {
         if (*value - domain[0]).abs() <= tolerance {
             *value = domain[0];
@@ -1473,7 +1479,7 @@ fn similarity(transform: Transform) -> Result<Similarity, CodecError> {
         ),
     ];
     let scale = columns[0].norm();
-    let tolerance = 1.0e-10 * scale.max(1.0);
+    let tolerance = EPS_TOPOLOGY_TRANSFER_SIMILARITY_E10 * scale.max(1.0);
     if !scale.is_finite()
         || scale <= 0.0
         || columns
@@ -1648,7 +1654,10 @@ fn transforms_equal(left: Transform, right: Transform) -> bool {
         .into_iter()
         .flatten()
         .zip(right.rows.into_iter().flatten())
-        .all(|(left, right)| left.to_bits() == right.to_bits() || (left - right).abs() <= 1.0e-12)
+        .all(|(left, right)| {
+            left.to_bits() == right.to_bits()
+                || (left - right).abs() <= EPS_TOPOLOGY_TRANSFER_TRANSFORMS_EQUAL_E12
+        })
 }
 
 fn is_reversed(orientation: TextOrientation) -> bool {
@@ -1702,11 +1711,16 @@ pub(crate) fn normalize_occt_curve_range(
             let [start, end] = range?;
             let sweep = end - start;
             let tau = std::f64::consts::TAU;
-            if !start.is_finite() || !end.is_finite() || (sweep - tau).abs() <= 1.0e-9 {
+            if !start.is_finite()
+                || !end.is_finite()
+                || (sweep - tau).abs() <= EPS_TOPOLOGY_TRANSFER_NORMALIZE_OCCT_CURVE_RANGE_E9
+            {
                 return Some([start, end]);
             }
             let canonical_start = start.rem_euclid(tau);
-            let canonical_start = if (tau - canonical_start).abs() <= 1.0e-12 {
+            let canonical_start = if (tau - canonical_start).abs()
+                <= EPS_TOPOLOGY_TRANSFER_NORMALIZE_OCCT_CURVE_RANGE_E12
+            {
                 0.0
             } else {
                 canonical_start

@@ -23,14 +23,26 @@ use crate::records::{
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+const EPS_HISTORY_HEM_GAP_LENGTH_FORM_E7: f64 = 1e-7;
+const EPS_HISTORY_HEM_DIRECTION_FROM_TRANSITION_E7: f64 = 1e-7;
+const EPS_HISTORY_PARALLEL_DIRECTIONS_E7: f64 = 1e-7;
+const EPS_HISTORY_RESOLVE_THREAD_FACE_BY_TRANSITION_E9: f64 = 1e-9;
+const EPS_HISTORY_CYCLIC_POINT_SUBSEQUENCE_E12: f64 = 1e-12;
+const EPS_HISTORY_SAME_AXIS_LINE_E9: f64 = 1e-9;
+const EPS_HISTORY_SAME_AXIS_LINE_E8: f64 = 1e-8;
+const EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9: f64 = 1e-9;
+const EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9: f64 = 1e-9;
+const EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8: f64 = 1e-8;
+const EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9: f64 = 1e-9;
+
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
 /// Relative tolerance for matching independently decoded millimetre point carriers.
-const WORK_POINT_POSITION_TOLERANCE: f64 = 1.0e-9;
+const WORK_POINT_POSITION_TOLERANCE: f64 = 1e-9;
 /// Relative tolerance for admitting an oriented planar Hole support face.
-const HOLE_SUPPORT_NORMAL_TOLERANCE: f64 = 1.0e-9;
+const HOLE_SUPPORT_NORMAL_TOLERANCE: f64 = 1e-9;
 /// Relative tolerance for the Hole point lying on its support plane.
-const HOLE_SUPPORT_POINT_TOLERANCE: f64 = 1.0e-8;
+const HOLE_SUPPORT_POINT_TOLERANCE: f64 = 1e-8;
 
 pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
     if history.states.is_empty()
@@ -3116,7 +3128,7 @@ fn hem_gap_length_form(cylinders: &[&AsmHistoricalCylinder]) -> Option<HemGapLen
         return None;
     }
     let thickness = outer - inner;
-    let tolerance = 1.0e-7 * (1.0 + outer.abs() + inner.abs());
+    let tolerance = EPS_HISTORY_HEM_GAP_LENGTH_FORM_E7 * (1.0 + outer.abs() + inner.abs());
     if (2.0 * inner - thickness).abs() <= tolerance {
         Some(HemGapLengthForm::Open)
     } else if 2.0 * inner < thickness - tolerance {
@@ -3180,7 +3192,7 @@ fn hem_direction_from_transition(
         if !first.is_finite() {
             continue;
         }
-        let sign_tolerance = 1.0e-7
+        let sign_tolerance = EPS_HISTORY_HEM_DIRECTION_FROM_TRANSITION_E7
             * (1.0
                 + plane.origin.x.abs()
                 + plane.origin.y.abs()
@@ -3225,7 +3237,7 @@ fn parallel_directions(left: cadmpeg_ir::math::Vector3, right: cadmpeg_ir::math:
     let dot = left
         .scale(1.0 / left_length)
         .dot(right.scale(1.0 / right_length));
-    dot.is_finite() && (dot.abs() - 1.0).abs() <= 1.0e-7
+    dot.is_finite() && (dot.abs() - 1.0).abs() <= EPS_HISTORY_PARALLEL_DIRECTIONS_E7
 }
 
 fn history_state_pair(
@@ -4234,7 +4246,7 @@ fn resolve_thread_face_by_transition(
     {
         return None;
     }
-    let tolerance = 1.0e-9 * (1.0 + maximum_radius.abs());
+    let tolerance = EPS_HISTORY_RESOLVE_THREAD_FACE_BY_TRANSITION_E9 * (1.0 + maximum_radius.abs());
     let mut matching_faces = topology
         .faces
         .iter()
@@ -4416,7 +4428,7 @@ fn cyclic_point_subsequence(
         let dx = left.x - right.x;
         let dy = left.y - right.y;
         let dz = left.z - right.z;
-        dx.mul_add(dx, dy.mul_add(dy, dz * dz)) <= 1.0e-12
+        dx.mul_add(dx, dy.mul_add(dy, dz * dz)) <= EPS_HISTORY_CYCLIC_POINT_SUBSEQUENCE_E12
     };
     let matches_orientation = |candidate: &[cadmpeg_ir::math::Point3]| {
         construction.iter().enumerate().any(|(start, point)| {
@@ -7278,11 +7290,11 @@ pub(crate) fn same_axis_line(
     right: (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
 ) -> bool {
     let direction_dot = left.1.dot(right.1);
-    if (direction_dot.abs() - 1.0).abs() > 1.0e-9 {
+    if (direction_dot.abs() - 1.0).abs() > EPS_HISTORY_SAME_AXIS_LINE_E9 {
         return false;
     }
     let distance = right.0.vector_from(left.0).cross(left.1).norm();
-    distance.is_finite() && distance <= 1.0e-8
+    distance.is_finite() && distance <= EPS_HISTORY_SAME_AXIS_LINE_E8
 }
 
 /// Bind persistent Mirror plane selections to exact planes in the selected
@@ -7389,7 +7401,7 @@ pub(crate) fn bind_mirror_selection_planes(
             + plane.normal.y * plane.normal.y
             + plane.normal.z * plane.normal.z)
             .sqrt();
-        if !norm.is_finite() || (norm - 1.0).abs() > 1.0e-9 {
+        if !norm.is_finite() || (norm - 1.0).abs() > EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9 {
             continue;
         }
         construction.plane_origin = Some(plane.origin);
@@ -7506,7 +7518,8 @@ fn historical_mirror_plane(
 fn mirror_planes_coincident(left: &HistoricalMirrorPlane, right: &HistoricalMirrorPlane) -> bool {
     let dot = left.normal.dot(right.normal);
     let normal_distance = right.origin.vector_from(left.origin).dot(left.normal);
-    (dot.abs() - 1.0).abs() <= 1.0e-9 && normal_distance.abs() <= 1.0e-8
+    (dot.abs() - 1.0).abs() <= EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9
+        && normal_distance.abs() <= EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8
 }
 
 fn historical_mirror_plane_in_state(
@@ -7624,7 +7637,7 @@ fn historical_loop_plane(
             + axis.direction.y * axis.direction.y
             + axis.direction.z * axis.direction.z)
             .sqrt();
-        if !norm.is_finite() || (norm - 1.0).abs() > 1.0e-9 {
+        if !norm.is_finite() || (norm - 1.0).abs() > EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9 {
             return None;
         }
         planes.push(HistoricalMirrorPlane {

@@ -15,6 +15,10 @@ use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
 
 use crate::container::ContainerScan;
 
+const EPS_SWIFT_RENDERED_NOMINAL_E7: f64 = 1e-7;
+const EPS_SWIFT_RENDERED_NOMINAL_E6: f64 = 1e-6;
+const EPS_SWIFT_APPROXIMATELY_EQUAL_E9: f64 = 1e-9;
+
 const ROOT_CLASS: &str = "PrizMetrik.GdtAnalysisSupport.GdtPart";
 const ENTITY_TOKEN: &[u8] = b"\x06Entity";
 const MAX_DEPTH: usize = 32;
@@ -1576,7 +1580,15 @@ fn rendered_nominal(
     rendered_dimensions: &[RenderedDimension],
 ) -> Option<f64> {
     const LENGTH_SCALES_MM: &[f64] = &[
-        1.0e-7, 1.0e-6, 1.0e-3, 0.0254, 1.0, 10.0, 25.4, 304.8, 1000.0,
+        EPS_SWIFT_RENDERED_NOMINAL_E7,
+        EPS_SWIFT_RENDERED_NOMINAL_E6,
+        1.0e-3,
+        0.0254,
+        1.0,
+        10.0,
+        25.4,
+        304.8,
+        1000.0,
     ];
     let exponent = i32::try_from(decimal_places).ok()?;
     let precision = 10.0_f64.powi(exponent);
@@ -1874,7 +1886,7 @@ fn diameters_equivalent(left: f64, right: f64) -> bool {
 
 fn approximately_equal(left: f64, right: f64) -> bool {
     let scale = left.abs().max(right.abs()).max(1.0);
-    (left - right).abs() <= scale * 1.0e-9
+    (left - right).abs() <= scale * EPS_SWIFT_APPROXIMATELY_EQUAL_E9
 }
 
 fn deviation(

@@ -9,6 +9,9 @@ include!("../seed_paths.rs");
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
+const SEED_LINEAR_TOLERANCE: f64 = 1e-6;
+const SEED_ANGULAR_TOLERANCE: f64 = 1e-10;
+
 fn main() {
     let seeds = [
         ("empty_zip", empty_zip()),
@@ -101,8 +104,8 @@ fn smbh_header_prefix() -> Vec<u8> {
     push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
     push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
     push_tagged_f64(&mut b, 60.0);
-    push_tagged_f64(&mut b, 1e-6);
-    push_tagged_f64(&mut b, 1e-10);
+        push_tagged_f64(&mut b, SEED_LINEAR_TOLERANCE);
+        push_tagged_f64(&mut b, SEED_ANGULAR_TOLERANCE);
     b
 }
 
@@ -117,8 +120,8 @@ fn synthetic_smbh() -> Vec<u8> {
     push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
     push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
     push_tagged_f64(&mut b, 60.0);
-    push_tagged_f64(&mut b, 1e-6);
-    push_tagged_f64(&mut b, 1e-10);
+        push_tagged_f64(&mut b, SEED_LINEAR_TOLERANCE);
+        push_tagged_f64(&mut b, SEED_ANGULAR_TOLERANCE);
 
     b.extend_from_slice(&[0x0d, 0x04, b'b', b'o', b'd', b'y', 0x11]);
     let active_len = b.len();
@@ -142,8 +145,8 @@ fn synthetic_binary_file4() -> Vec<u8> {
     push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
     push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
     push_tagged_f64(&mut b, 60.0);
-    push_tagged_f64(&mut b, 1e-6);
-    push_tagged_f64(&mut b, 1e-10);
+        push_tagged_f64(&mut b, SEED_LINEAR_TOLERANCE);
+        push_tagged_f64(&mut b, SEED_ANGULAR_TOLERANCE);
 
     b.extend_from_slice(&[0x11, 0x0d, 0x0b]);
     b.extend_from_slice(b"delta_state");

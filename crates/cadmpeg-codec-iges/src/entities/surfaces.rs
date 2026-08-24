@@ -17,6 +17,8 @@ use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_SURFACES_SIMILARITY_ORIENTATION_E10: f64 = 1e-10;
+
 const MAX_SURFACE_POLES: usize = 1_000_000;
 
 fn unit_vector(vector: Vector3) -> Option<Vector3> {
@@ -37,7 +39,7 @@ fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> {
     if !squared_scale.is_finite() || squared_scale <= 0.0 {
         return None;
     }
-    let tolerance = squared_scale * 1.0e-10;
+    let tolerance = squared_scale * EPS_SURFACES_SIMILARITY_ORIENTATION_E10;
     if (y.dot(y) - squared_scale).abs() > tolerance
         || (z.dot(z) - squared_scale).abs() > tolerance
         || x.dot(y).abs() > tolerance
@@ -47,7 +49,8 @@ fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> {
         return None;
     }
     let determinant = x.dot(y.cross(z));
-    let determinant_tolerance = squared_scale.sqrt() * squared_scale * 1.0e-10;
+    let determinant_tolerance =
+        squared_scale.sqrt() * squared_scale * EPS_SURFACES_SIMILARITY_ORIENTATION_E10;
     (determinant.is_finite() && determinant.abs() > determinant_tolerance)
         .then(|| determinant.signum())
 }

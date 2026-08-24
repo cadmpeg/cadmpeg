@@ -16,6 +16,8 @@ use super::edges::{b5_support_endpoints, b5_vertex_point};
 use super::{annotate, distance, B5SupportPlan, SurfacePlan, TransferPlan};
 use crate::assemble::cgm_source;
 
+const EPS_VERTEX_RESIDUAL_INCREMENT: f64 = 1e-9;
+
 pub(super) fn transfer_vertex_tolerances(
     graph: &B5Graph,
     supports: &B5SupportPlan,
@@ -50,11 +52,13 @@ pub(super) fn transfer_vertex_tolerances(
                 [(vertices[1], reverse[0]), (vertices[0], reverse[1])]
             };
             for (vertex, residual) in residuals {
-                if residual > 1e-9 && residual.is_finite() {
+                if residual > EPS_VERTEX_RESIDUAL_INCREMENT && residual.is_finite() {
                     tolerances
                         .entry(vertex)
-                        .and_modify(|tolerance| *tolerance = tolerance.max(residual + 1e-9))
-                        .or_insert(residual + 1e-9);
+                        .and_modify(|tolerance| {
+                            *tolerance = tolerance.max(residual + EPS_VERTEX_RESIDUAL_INCREMENT);
+                        })
+                        .or_insert(residual + EPS_VERTEX_RESIDUAL_INCREMENT);
                 }
             }
         }

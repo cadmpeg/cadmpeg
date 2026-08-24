@@ -16,6 +16,15 @@ use cadmpeg_ir::topology::Sense;
 use std::collections::{HashMap, HashSet};
 
 use super::AsmBrep;
+const EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9: f64 = 1e-9;
+const EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10: f64 = 1e-10;
+const EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10: f64 = 1e-10;
+const EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10: f64 = 1e-10;
+const EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12: f64 = 1e-12;
+const EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10: f64 = 1e-10;
+const EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10: f64 = 1e-10;
+const EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9: f64 = 1e-9;
+
 /// Ordered typed values pulled from a carrier record's payload.
 pub(crate) struct Carrier {
     pub(crate) positions: Vec<[f64; 3]>,
@@ -337,7 +346,7 @@ pub(crate) fn pcurve_ranges_on_domain(
     edge: Option<&Record>,
 ) -> Option<Vec<[f64; 2]>> {
     let (&first, &last) = (candidate.knots.first()?, candidate.knots.last()?);
-    let tolerance = 1.0e-9 * (last - first).abs().max(1.0);
+    let tolerance = EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9 * (last - first).abs().max(1.0);
     let mut ranges = edge
         .and_then(edge_pcurve_parameter_ranges)
         .into_iter()
@@ -583,7 +592,7 @@ pub(crate) fn analytic_procedural_surface(
         } => {
             let (center, normal, ref_direction, radius) = rational_four_arc_circle(directrix)?;
             let axis = direction.unit()?;
-            if 1.0 - axis.dot(normal).abs() > 1.0e-10 {
+            if 1.0 - axis.dot(normal).abs() > EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10 {
                 return None;
             }
             Some(SurfaceGeometry::Cylinder {
@@ -636,7 +645,7 @@ fn analytic_rolling_ball_surface(
     ) = (first, second)
     {
         let (origin, axis) = linear_nurbs_spine(spine)?;
-        let tolerance = 1.0e-10
+        let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
             * radius
                 .max(point_vector(*first_origin, *second_origin).norm())
                 .max(1.0);
@@ -644,12 +653,12 @@ fn analytic_rolling_ball_surface(
         let second_normal = second_normal.unit()?;
         let support_intersection = first_normal.cross(second_normal);
         let support_intersection_norm = support_intersection.norm();
-        if support_intersection_norm <= 1.0e-10
+        if support_intersection_norm <= EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
             || 1.0
                 - axis
                     .dot(support_intersection.scale(1.0 / support_intersection_norm))
                     .abs()
-                > 1.0e-10
+                > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
         {
             return None;
         }
@@ -657,7 +666,7 @@ fn analytic_rolling_ball_surface(
             (*first_origin, first_normal),
             (*second_origin, second_normal),
         ] {
-            if axis.dot(plane_normal).abs() > 1.0e-10
+            if axis.dot(plane_normal).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
                 || (point_vector(plane_origin, origin).dot(plane_normal).abs() - radius).abs()
                     > tolerance
             {
@@ -699,12 +708,12 @@ fn analytic_rolling_ball_surface(
     let plane_normal = plane_normal.unit()?;
     let cylinder_axis = cylinder_axis.unit()?;
     let scale = major_radius.max(radius).max(cylinder_radius.abs()).max(1.0);
-    let tolerance = 1.0e-10 * scale;
+    let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * scale;
     let center_offset = point_vector(*cylinder_origin, center);
     let axial_offset = center_offset.dot(cylinder_axis);
     let radial_offset = center_offset - cylinder_axis.scale(axial_offset);
-    if 1.0 - axis.dot(plane_normal).abs() > 1.0e-10
-        || 1.0 - axis.dot(cylinder_axis).abs() > 1.0e-10
+    if 1.0 - axis.dot(plane_normal).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
+        || 1.0 - axis.dot(cylinder_axis).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
         || (point_vector(*plane_origin, center).dot(plane_normal).abs() - radius).abs() > tolerance
         || radial_offset.norm() > tolerance
         || ((major_radius - cylinder_radius.abs()).abs() - radius).abs() > tolerance
@@ -757,7 +766,7 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
         return None;
     }
     let axis = point_vector(origin, farthest).unit()?;
-    let tolerance = 1.0e-10 * extent.max(1.0);
+    let tolerance = EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10 * extent.max(1.0);
     if curve
         .control_points
         .iter()
@@ -782,7 +791,7 @@ pub(crate) fn rational_four_arc_circle(
     {
         return None;
     }
-    let knot_tolerance = 1.0e-12
+    let knot_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12
         * (curve.knots[curve.knots.len() - 1] - curve.knots[0])
             .abs()
             .max(1.0);
@@ -840,7 +849,7 @@ pub(crate) fn rational_four_arc_circle(
         .collect::<Option<Vec<_>>>()?;
     let base_weight = quadratics[0][0][3];
     let weight_scale = base_weight.abs().max(1.0);
-    let weight_tolerance = 1.0e-10 * weight_scale;
+    let weight_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10 * weight_scale;
     if !base_weight.is_finite()
         || base_weight == 0.0
         || quadratics.iter().any(|span| {
@@ -871,7 +880,7 @@ pub(crate) fn rational_four_arc_circle(
         .map(|pair| point_distance(pair[0], pair[1]))
         .fold(0.0_f64, f64::max)
         .max(1.0);
-    let tolerance = 1.0e-10 * scale;
+    let tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10 * scale;
     if point_distance(quadratic_points[0][0], quadratic_points[3][2]) > tolerance
         || quadratic_points
             .windows(2)
@@ -910,7 +919,9 @@ pub(crate) fn rational_four_arc_circle(
             return None;
         }
         let span_normal = span_normal.scale(1.0 / span_normal_norm);
-        if normal.is_some_and(|normal: Vector3| normal.dot(span_normal) < 1.0 - 1.0e-10) {
+        if normal.is_some_and(|normal: Vector3| {
+            normal.dot(span_normal) < 1.0 - EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10
+        }) {
             return None;
         }
         normal.get_or_insert(span_normal);
@@ -943,7 +954,8 @@ fn reduce_homogeneous_bezier_to_quadratic(mut control: Vec<[f64; 4]>) -> Option<
             .flatten()
             .fold(1.0_f64, |scale, value| scale.max(value.abs()));
         if (0..4).any(|coordinate| {
-            (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs() > 1.0e-10 * scale
+            (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs()
+                > EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10 * scale
         }) {
             return None;
         }
@@ -991,7 +1003,8 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
         else {
             continue;
         };
-        let tolerance = 1.0e-9 * (last - first).abs().max(1.0);
+        let tolerance =
+            EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9 * (last - first).abs().max(1.0);
         if *start < *first && *first - *start <= tolerance {
             *start = *first;
         }

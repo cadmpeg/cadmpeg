@@ -14,6 +14,11 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_FULL_TURN: f64 = 1e-12;
+const EPS_DIRECTION_COMPONENT: f64 = 1e-12;
+const EPS_AXIS_ALIGNMENT: f64 = 1e-10;
+const EPS_AXIS_OFFSET: f64 = 1e-9;
+
 pub(in super::super) fn resolved_revolution_axis(
     definition: &crate::feature::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
@@ -61,7 +66,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     else {
         return None;
     };
-    if (angle.abs() - std::f64::consts::TAU).abs() > 1e-12 {
+    if (angle.abs() - std::f64::consts::TAU).abs() > EPS_FULL_TURN {
         return None;
     }
 
@@ -107,7 +112,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
     let mut direction = normalized([first_direction.x, first_direction.y, first_direction.z])?;
     if direction
         .iter()
-        .find(|component| component.abs() > 1e-12)
+        .find(|component| component.abs() > EPS_DIRECTION_COMPONENT)
         .is_some_and(|component| component.is_sign_negative())
     {
         direction = direction.map(|component| -component);
@@ -134,18 +139,19 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             candidate_direction.y,
             candidate_direction.z,
         ])?;
-        ((dot(direction, candidate_direction).abs() - 1.0).abs() <= 1e-10).then_some(())?;
+        ((dot(direction, candidate_direction).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT)
+            .then_some(())?;
         let displacement = [
             candidate_origin.x - origin[0],
             candidate_origin.y - origin[1],
             candidate_origin.z - origin[2],
         ];
         let radial = cross(displacement, direction);
-        (dot(radial, radial).sqrt() <= 1e-9 * scale).then_some(())?;
+        (dot(radial, radial).sqrt() <= EPS_AXIS_OFFSET * scale).then_some(())?;
     }
     for normal in plane_normals {
         let normal = normalized([normal.x, normal.y, normal.z])?;
-        ((dot(direction, normal).abs() - 1.0).abs() <= 1e-10).then_some(())?;
+        ((dot(direction, normal).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT).then_some(())?;
     }
     for center in sphere_centers {
         let displacement = [
@@ -154,7 +160,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             center.z - origin[2],
         ];
         let radial = cross(displacement, direction);
-        (dot(radial, radial).sqrt() <= 1e-9 * scale).then_some(())?;
+        (dot(radial, radial).sqrt() <= EPS_AXIS_OFFSET * scale).then_some(())?;
     }
     Some(RevolutionAxis {
         origin: Point3::new(origin[0], origin[1], origin[2]),

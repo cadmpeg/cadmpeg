@@ -22,6 +22,8 @@ use cadmpeg_asm::edit::{
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::sab;
 
+const EPS_ORTHONORMAL: f64 = 1e-9;
+
 #[cfg(test)]
 use cadmpeg_asm::asm_header::stream_ref_width;
 
@@ -49,8 +51,6 @@ pub(crate) fn valid_edited_nurbs_direction(
         && after_knots.iter().all(|value| value.is_finite())
         && knots_nondecreasing(after_knots)
 }
-
-const EPS_ORTHONORMAL: f64 = 1e-9;
 
 pub(crate) fn orthonormal_pair(first: Vector3, second: Vector3) -> bool {
     finite_vector(first)

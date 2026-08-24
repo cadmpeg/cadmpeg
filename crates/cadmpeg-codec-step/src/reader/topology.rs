@@ -35,6 +35,12 @@ use super::geometry::surface_parameter_periods;
 use super::index::CarrierIndex;
 use super::StageOutcome;
 
+const EPS_TOPOLOGY_ENDPOINT_PARAMETER_TRANSFORM_E12: f64 = 1e-12;
+const EPS_TOPOLOGY_ENDPOINT_PARAMETER_TRANSFORM_E9: f64 = 1e-9;
+const EPS_TOPOLOGY_SURFACE_PARAMETER_SEEDS_E12: f64 = 1e-12;
+const EPS_TOPOLOGY_SELECT_ASSOCIATED_PCURVE_E9: f64 = 1e-9;
+const EPS_TOPOLOGY_CLAMP_SELECTION_PARAMETER_E12: f64 = 1e-12;
+
 pub(super) struct TopologyData {
     pub body_by_root: BTreeMap<u64, Vec<BodyId>>,
     shape_representation_relationships: BTreeMap<u64, Vec<u64>>,
@@ -2917,8 +2923,8 @@ fn implicit_face_points(
     })
 }
 
-const IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE: f64 = 1.0e-12;
-const IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE: f64 = 1.0e-12;
+const IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE: f64 = 1e-12;
+const IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE: f64 = 1e-12;
 
 fn implicit_face_plane(
     bounds: &[u64],
@@ -3163,13 +3169,16 @@ fn endpoint_parameter_transform(
         let destination_end = destination[1][axis];
         let source_span = source_end - source_start;
         let destination_span = destination_end - destination_start;
-        let source_endpoint_tolerance = 1.0e-12 * (1.0 + source_start.abs().max(source_end.abs()));
-        let destination_tolerance =
-            1.0e-9 * (1.0 + destination_start.abs().max(destination_end.abs()));
+        let source_endpoint_tolerance = EPS_TOPOLOGY_ENDPOINT_PARAMETER_TRANSFORM_E12
+            * (1.0 + source_start.abs().max(source_end.abs()));
+        let destination_tolerance = EPS_TOPOLOGY_ENDPOINT_PARAMETER_TRANSFORM_E9
+            * (1.0 + destination_start.abs().max(destination_end.abs()));
         let destination_collapses = destination_span.abs() <= destination_tolerance;
         let source_is_constant = source_bounds.is_some_and(|bounds| {
             let [lower, upper] = bounds[axis];
-            (upper - lower).abs() <= 1.0e-9 * (1.0 + lower.abs().max(upper.abs()))
+            (upper - lower).abs()
+                <= EPS_TOPOLOGY_ENDPOINT_PARAMETER_TRANSFORM_E9
+                    * (1.0 + lower.abs().max(upper.abs()))
         });
         let scale = if source_span.abs() > source_endpoint_tolerance {
             if destination_collapses {
@@ -3192,8 +3201,10 @@ fn endpoint_parameter_transform(
             return None;
         }
         if preserved_axes[axis]
-            && ((scale - 1.0).abs() > 1.0e-12
-                || offset.abs() > 1.0e-9 * (1.0 + source_start.abs().max(destination_start.abs())))
+            && ((scale - 1.0).abs() > EPS_TOPOLOGY_ENDPOINT_PARAMETER_TRANSFORM_E12
+                || offset.abs()
+                    > EPS_TOPOLOGY_ENDPOINT_PARAMETER_TRANSFORM_E9
+                        * (1.0 + source_start.abs().max(destination_start.abs())))
         {
             return None;
         }
@@ -3240,7 +3251,8 @@ fn surface_parameter_seeds(seed: f64, domain: Option<[f64; 2]>) -> Vec<f64> {
         values.extend([0.0, -1.0, 1.0]);
     }
     values.retain(|value| value.is_finite());
-    values.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-12);
+    values
+        .dedup_by(|left, right| (*left - *right).abs() <= EPS_TOPOLOGY_SURFACE_PARAMETER_SEEDS_E12);
     values
 }
 
@@ -3432,7 +3444,7 @@ fn select_associated_pcurve(
             parameter_range,
         })
     };
-    let tie_tolerance = 1.0e-9_f64.max(best * 1.0e-9);
+    let tie_tolerance = 1.0e-9_f64.max(best * EPS_TOPOLOGY_SELECT_ASSOCIATED_PCURVE_E9);
     let equally_good = scores
         .iter()
         .filter(|score| (**score - best).abs() <= tie_tolerance)
@@ -3577,7 +3589,8 @@ fn clamp_selection_parameter(value: f64, domain: Option<[f64; 2]>) -> f64 {
     let Some([lower, upper]) = domain else {
         return value;
     };
-    let tolerance = 1.0e-12 * (1.0 + lower.abs().max(upper.abs()));
+    let tolerance =
+        EPS_TOPOLOGY_CLAMP_SELECTION_PARAMETER_E12 * (1.0 + lower.abs().max(upper.abs()));
     if value < lower && lower - value <= tolerance {
         lower
     } else if value > upper && value - upper <= tolerance {

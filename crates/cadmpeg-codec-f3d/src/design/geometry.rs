@@ -8,6 +8,11 @@ use cadmpeg_ir::geometry::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3};
 use std::collections::{HashMap, HashSet};
 
+const EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6: f64 = 1e-6;
+const EPS_GEOMETRY_CERTIFIED_CIRCLE_E6: f64 = 1e-6;
+const EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12: f64 = 1e-12;
+const EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10: f64 = 1e-10;
+
 /// Format-side work cap for arrangement edge retention walks.
 ///
 /// Session `work_budget` callers take `min(this, policy.max_work_units)`.
@@ -1718,7 +1723,7 @@ fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<Certif
             [start.u.abs(), start.v.abs(), end.u.abs(), end.v.abs()]
         })
         .fold(1.0_f64, f64::max);
-    let tolerance = 1.0e-6 * scale;
+    let tolerance = EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6 * scale;
     let mut vertices = Vec::new();
     let mut tubes = Vec::new();
     for segment in segments {
@@ -1742,7 +1747,8 @@ fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<Certif
 }
 
 fn certified_circle(center: Point2, radius: f64) -> Option<CertifiedProfileLoop> {
-    let tolerance = 1.0e-6 * (1.0 + center.u.abs().max(center.v.abs()).max(radius));
+    let tolerance =
+        EPS_GEOMETRY_CERTIFIED_CIRCLE_E6 * (1.0 + center.u.abs().max(center.v.abs()).max(radius));
     let tubes = certified_arc_tubes(center, radius, 0.0, std::f64::consts::TAU, tolerance)?;
     let vertices = tubes.iter().map(|tube| tube.start).collect();
     Some(CertifiedProfileLoop { vertices, tubes })
@@ -2044,7 +2050,7 @@ fn horizontal_ray_arc_winding(
     }
     let principal = ordinate.asin();
     let sweep = end_angle - start_angle;
-    let angles = if principal.cos().abs() <= 1.0e-12 {
+    let angles = if principal.cos().abs() <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
         vec![principal]
     } else {
         vec![principal, std::f64::consts::PI - principal]
@@ -2056,20 +2062,24 @@ fn horizontal_ray_arc_winding(
             let parameter = directed_angle_parameter(angle, start_angle, end_angle)?;
             let derivative = radius * angle.cos() * sweep;
             let second_derivative = -radius * angle.sin() * sweep * sweep;
-            let direction = if parameter <= 1.0e-12 && derivative.abs() <= 1.0e-12 {
+            let direction = if parameter <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12
+                && derivative.abs() <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12
+            {
                 second_derivative
-            } else if parameter >= 1.0 - 1.0e-12 && derivative.abs() <= 1.0e-12 {
+            } else if parameter >= 1.0 - EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12
+                && derivative.abs() <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12
+            {
                 -second_derivative
             } else {
                 derivative
             };
-            if parameter <= 1.0e-12 {
+            if parameter <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
                 (direction > 0.0).then_some(1)
-            } else if parameter >= 1.0 - 1.0e-12 {
+            } else if parameter >= 1.0 - EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
                 (direction < 0.0).then_some(-1)
-            } else if direction > 1.0e-12 {
+            } else if direction > EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
                 Some(1)
-            } else if direction < -1.0e-12 {
+            } else if direction < -EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
                 Some(-1)
             } else {
                 None
@@ -3029,7 +3039,8 @@ fn tangent_nested_line_profile(
     let same_ray = |left: (f64, f64), right: (f64, f64)| {
         let dot = left.0 * right.0 + left.1 * right.1;
         let cross = left.0 * right.1 - left.1 * right.0;
-        dot > 1.0 - 1.0e-10 && cross.abs() <= 1.0e-10
+        dot > 1.0 - EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10
+            && cross.abs() <= EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10
     };
     if directions.iter().enumerate().any(|(index, direction)| {
         directions

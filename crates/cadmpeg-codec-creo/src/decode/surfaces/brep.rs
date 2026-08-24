@@ -34,6 +34,9 @@ use super::super::sweep::line_pcurve;
 
 use super::fc05_model_frame;
 
+const EPS_CAP_AXIS_ALIGNMENT: f64 = 1e-9;
+const EPS_CAP_TRANSLATION_AGREEMENT: f64 = 1e-9;
+
 pub(in super::super) fn transfer_native_brep(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -679,7 +682,8 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
         let Some((first_cap, first_ordinate)) = placed_caps.first().copied() else {
             continue;
         };
-        let Some(axis_index) = (0..3).find(|axis| first_cap.normal[*axis].abs() > 1.0 - 1e-9)
+        let Some(axis_index) =
+            (0..3).find(|axis| first_cap.normal[*axis].abs() > 1.0 - EPS_CAP_AXIS_ALIGNMENT)
         else {
             continue;
         };
@@ -693,10 +697,9 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             .iter()
             .map(|(plane, ordinate)| plane.origin[axis_index] - ordinate)
             .collect::<Vec<_>>();
-        if translations
-            .iter()
-            .any(|translation| (translation - translations[0]).abs() > 1e-9)
-        {
+        if translations.iter().any(|translation| {
+            (translation - translations[0]).abs() > EPS_CAP_TRANSLATION_AGREEMENT
+        }) {
             continue;
         }
         let axis_origin = first_ordinate + translations[0];

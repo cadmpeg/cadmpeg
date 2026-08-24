@@ -10,6 +10,10 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+const EPS_SKETCH_EDGES_PROJECT_EDGE_E9: f64 = 1e-9;
+const EPS_SKETCH_EDGES_CIRCLE_CONTAINS_POINT_E9: f64 = 1e-9;
+const EPS_SKETCH_EDGES_ELLIPSE_CONTAINS_POINT_E9: f64 = 1e-9;
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn project_endpoint_constraints(
     sketch: &SketchId,
@@ -100,7 +104,10 @@ pub(super) fn project_edge(
         v_axis,
     );
     let line = || Some(SketchGeometry::Line { start, end });
-    let tolerance = edge.tolerance.unwrap_or(1.0e-9).max(1.0e-9);
+    let tolerance = edge
+        .tolerance
+        .unwrap_or(EPS_SKETCH_EDGES_PROJECT_EDGE_E9)
+        .max(EPS_SKETCH_EDGES_PROJECT_EDGE_E9);
     match edge.curve.as_ref().and_then(|id| curves.get(id).copied()) {
         Some(CurveGeometry::Circle { center, radius, .. }) => {
             let center = project_point(*center, origin, u_axis, v_axis);
@@ -109,7 +116,7 @@ pub(super) fn project_edge(
             {
                 return line();
             }
-            if (start.u - end.u).hypot(start.v - end.v) <= 1.0e-9 {
+            if (start.u - end.u).hypot(start.v - end.v) <= EPS_SKETCH_EDGES_PROJECT_EDGE_E9 {
                 Some(SketchGeometry::Circle {
                     center,
                     radius: cadmpeg_ir::features::Length(*radius),
@@ -160,7 +167,7 @@ pub(super) fn project_edge(
             ) {
                 return line();
             }
-            let full = (start.u - end.u).hypot(start.v - end.v) <= 1.0e-9;
+            let full = (start.u - end.u).hypot(start.v - end.v) <= EPS_SKETCH_EDGES_PROJECT_EDGE_E9;
             let parameter = |point: Point2| {
                 let du = point.u - center.u;
                 let dv = point.v - center.v;
@@ -216,7 +223,8 @@ pub(super) fn circle_contains_point(
     let distance = (point.u - center.u).hypot(point.v - center.v);
     distance.is_finite()
         && radius.is_finite()
-        && (distance - radius.abs()).abs() <= tolerance.max(radius.abs() * 1.0e-9)
+        && (distance - radius.abs()).abs()
+            <= tolerance.max(radius.abs() * EPS_SKETCH_EDGES_CIRCLE_CONTAINS_POINT_E9)
 }
 
 pub(super) fn ellipse_contains_point(
@@ -248,7 +256,11 @@ pub(super) fn ellipse_contains_point(
     );
     let distance = (point.u - reconstructed.u).hypot(point.v - reconstructed.v);
     distance.is_finite()
-        && distance <= tolerance.max(major_radius.abs().max(minor_radius.abs()) * 1.0e-9)
+        && distance
+            <= tolerance.max(
+                major_radius.abs().max(minor_radius.abs())
+                    * EPS_SKETCH_EDGES_ELLIPSE_CONTAINS_POINT_E9,
+            )
 }
 
 pub(super) fn project_point(

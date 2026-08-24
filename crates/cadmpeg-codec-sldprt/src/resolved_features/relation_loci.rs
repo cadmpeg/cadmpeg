@@ -21,6 +21,10 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
+const EPS_RELATION_LOCI_SAME_DIMENSION_ANGLE_E9: f64 = 1e-9;
+const EPS_RELATION_LOCI_MARKER_CENTER_DIMENSIONED_ENTITY_E8: f64 = 1e-8;
+const EPS_RELATION_LOCI_SAME_DIMENSION_LENGTH_E9: f64 = 1e-9;
+
 pub(super) fn linked_single_arc_entity(
     marker: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
@@ -1036,7 +1040,7 @@ pub(super) fn canonical_profile_loci(
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
 ) -> Vec<(Point2, SketchLocus)> {
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = 1e-8;
     let mut loci = sketch_entities
         .iter()
         .filter(|entity| entity.sketch == *sketch)
@@ -1312,7 +1316,8 @@ fn line_line_angle(first: &SketchEntity, second: &SketchEntity) -> Option<f64> {
 }
 
 pub(super) fn same_dimension_angle(left: f64, right: f64) -> bool {
-    (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
+    (left - right).abs()
+        <= EPS_RELATION_LOCI_SAME_DIMENSION_ANGLE_E9 * left.abs().max(right.abs()).max(1.0)
 }
 
 pub(super) fn unique_profile_point_line_entity(
@@ -1579,8 +1584,13 @@ fn marker_center_dimensioned_entity(
                 | SketchGeometry::Arc { center, radius, .. } => (center, radius.0),
                 _ => return None,
             };
-            (quantize(candidate_center, 1.0e-8) == quantize(center, 1.0e-8)
-                && same_dimension_length(radius, expected_radius))
+            (quantize(
+                candidate_center,
+                EPS_RELATION_LOCI_MARKER_CENTER_DIMENSIONED_ENTITY_E8,
+            ) == quantize(
+                center,
+                EPS_RELATION_LOCI_MARKER_CENTER_DIMENSIONED_ENTITY_E8,
+            ) && same_dimension_length(radius, expected_radius))
             .then_some(entity.id.clone())
         })
         .collect::<Vec<_>>();
@@ -1618,7 +1628,8 @@ fn unique_dimensioned_circle_entity(
 }
 
 pub(super) fn same_dimension_length(left: f64, right: f64) -> bool {
-    (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
+    (left - right).abs()
+        <= EPS_RELATION_LOCI_SAME_DIMENSION_LENGTH_E9 * left.abs().max(right.abs()).max(1.0)
 }
 
 pub(super) fn marker_point_locus(
@@ -1943,7 +1954,7 @@ pub(super) fn profile_loci_by_marker(
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, Vec<SketchLocus>> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = 1e-8;
     let qualified_point_markers = lanes
         .iter()
         .flat_map(|lane| &lane.relation_instances)
@@ -2403,7 +2414,7 @@ pub(super) fn marker_transform_candidates_by_feature(
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, Vec<MarkerTransform>> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = 1e-8;
 
     let sketches_by_feature = features
         .iter()

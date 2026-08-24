@@ -18,6 +18,20 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
 use std::collections::{HashMap, HashSet};
 
+const EPS_AXES_LINE_REFERENCE_DIRECTION_E9: f64 = 1e-9;
+const EPS_AXES_DECLARED_LINE_REFERENCE_DIRECTIONS_E9: f64 = 1e-9;
+const EPS_AXES_CANONICAL_UNIT_DIRECTION_E12: f64 = 1e-12;
+const EPS_AXES_LINEAR_PATTERN_DISPLAY_DIRECTIONS_E9: f64 = 1e-9;
+const EPS_AXES_COMPACT_LINE_REFERENCE_DIRECTIONS_E9: f64 = 1e-9;
+const EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9: f64 = 1e-9;
+const EPS_AXES_REVOLUTION_TEMPORARY_AXIS_E9: f64 = 1e-9;
+const EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9: f64 = 1e-9;
+const EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9: f64 = 1e-9;
+const EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9: f64 = 1e-9;
+const EPS_AXES_COMMON_GENERATED_SURFACE_AXIS_E9: f64 = 1e-9;
+const EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9: f64 = 1e-9;
+const EPS_AXES_PROFILE_ROSTER_PRINCIPAL_AXIS_ENDPOINTS_E9: f64 = 1e-9;
+
 pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
     let class_offset = usize::try_from(class_offset).ok()?;
     let scalar = |offset: usize| {
@@ -29,7 +43,7 @@ pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Opt
         let norm =
             (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
                 .sqrt();
-        ((norm - 1.0).abs() <= 1.0e-9).then_some(Vector3::new(
+        ((norm - 1.0).abs() <= EPS_AXES_LINE_REFERENCE_DIRECTION_E9).then_some(Vector3::new(
             direction.x / norm,
             direction.y / norm,
             direction.z / norm,
@@ -101,11 +115,9 @@ pub(super) fn declared_line_reference_directions(
             let norm =
                 (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
                     .sqrt();
-            ((norm - 1.0).abs() <= 1.0e-9).then_some(Vector3::new(
-                direction.x / norm,
-                direction.y / norm,
-                direction.z / norm,
-            ))
+            ((norm - 1.0).abs() <= EPS_AXES_DECLARED_LINE_REFERENCE_DIRECTIONS_E9).then_some(
+                Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
+            )
         };
         let addressed = payload.get(handle + 8..handle + 12) == Some(&[0; 4])
             && View::u32_le_at(payload, handle + 12).is_some_and(|address| address != 0);
@@ -135,7 +147,13 @@ pub(super) fn declared_line_reference_directions(
 }
 
 pub(super) fn canonical_unit_direction(direction: Vector3) -> Vector3 {
-    let component = |value: f64| if value.abs() <= 1.0e-12 { 0.0 } else { value };
+    let component = |value: f64| {
+        if value.abs() <= EPS_AXES_CANONICAL_UNIT_DIRECTION_E12 {
+            0.0
+        } else {
+            value
+        }
+    };
     Vector3::new(
         component(direction.x),
         component(direction.y),
@@ -152,7 +170,7 @@ pub(super) fn linear_pattern_display_directions(
 ) -> Vec<Vector3> {
     const VALUE_OFFSET: usize = 32;
     const DIRECTION_OFFSET: usize = 161;
-    const LENGTH_TOLERANCE_M: f64 = 1.0e-8;
+    const LENGTH_TOLERANCE_M: f64 = 1e-8;
 
     let end = object_end.min(payload.len());
     ["D3", "D4"]
@@ -192,11 +210,9 @@ pub(super) fn linear_pattern_display_directions(
             let norm =
                 (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
                     .sqrt();
-            ((norm - 1.0).abs() <= 1.0e-9).then_some(Vector3::new(
-                direction.x / norm,
-                direction.y / norm,
-                direction.z / norm,
-            ))
+            ((norm - 1.0).abs() <= EPS_AXES_LINEAR_PATTERN_DISPLAY_DIRECTIONS_E9).then_some(
+                Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
+            )
         })
         .collect()
 }
@@ -285,11 +301,9 @@ pub(super) fn compact_line_reference_directions(
             let norm =
                 (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
                     .sqrt();
-            ((norm - 1.0).abs() <= 1.0e-9).then_some(Vector3::new(
-                direction.x / norm,
-                direction.y / norm,
-                direction.z / norm,
-            ))
+            ((norm - 1.0).abs() <= EPS_AXES_COMPACT_LINE_REFERENCE_DIRECTIONS_E9).then_some(
+                Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
+            )
         };
         let mut directions = Vec::new();
         let tagged_token = |offset: usize| {
@@ -474,7 +488,7 @@ pub(super) fn revolution_line_reference_inputs(
         let dy = scalar(direction_offset + 8)?;
         let dz = scalar(direction_offset + 16)?;
         let norm = (dx * dx + dy * dy + dz * dz).sqrt();
-        ((norm - 1.0).abs() <= 1.0e-9).then_some((
+        ((norm - 1.0).abs() <= EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9).then_some((
             Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
             Vector3::new(dx / norm, dy / norm, dz / norm),
         ))
@@ -529,7 +543,7 @@ pub(super) fn revolution_line_reference_inputs(
                     continue;
                 }
                 let norm = (dx * dx + dy * dy + dz * dz).sqrt();
-                if (norm - 1.0).abs() <= 1.0e-9 {
+                if (norm - 1.0).abs() <= EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9 {
                     candidates.push((
                         handle_start,
                         6,
@@ -728,7 +742,7 @@ pub(super) fn revolution_line_reference_inputs(
                         continue;
                     }
                     let norm = (dx * dx + dy * dy + dz * dz).sqrt();
-                    if (norm - 1.0).abs() > 1.0e-9 {
+                    if (norm - 1.0).abs() > EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9 {
                         continue;
                     }
                     let candidate = (
@@ -813,7 +827,7 @@ pub(super) fn revolution_temporary_axis(
         let norm =
             (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
                 .sqrt();
-        if (norm - 1.0).abs() > 1.0e-9 {
+        if (norm - 1.0).abs() > EPS_AXES_REVOLUTION_TEMPORARY_AXIS_E9 {
             return None;
         }
         let record_end = declaration + 311;
@@ -1083,7 +1097,7 @@ pub(crate) fn bind_profile_revolution_axes(
             construction.extent.as_ref(),
             Some(cadmpeg_ir::features::RevolveExtent::OneSided {
                 termination: cadmpeg_ir::features::Termination::Angle { angle },
-            }) if (angle.0.abs() - std::f64::consts::TAU).abs() <= 1.0e-9
+            }) if (angle.0.abs() - std::f64::consts::TAU).abs() <= EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9
         ) {
             surfaces
         } else {
@@ -1133,7 +1147,7 @@ pub(super) fn profile_roster_construction_axis(
     sketch: &Sketch,
     surfaces: &[Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = 1e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
 
@@ -1203,10 +1217,12 @@ pub(super) fn profile_roster_construction_axis(
     let end = point(end);
     let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
     let length = (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z).sqrt();
-    (length.is_finite() && length > 1.0e-9).then_some(cadmpeg_ir::features::RevolutionAxis {
-        origin: start,
-        direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
-    })
+    (length.is_finite() && length > EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9).then_some(
+        cadmpeg_ir::features::RevolutionAxis {
+            origin: start,
+            direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+        },
+    )
 }
 
 fn profile_generated_surface_axis(
@@ -1217,9 +1233,9 @@ fn profile_generated_surface_axis(
     transform: &MarkerTransform,
     surfaces: &[Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = 1e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
-    const LINE_TOLERANCE: f64 = 1.0e-6;
+    const LINE_TOLERANCE: f64 = 1e-6;
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
 
     let mut axis = common_generated_surface_axis(surfaces)?;
@@ -1228,7 +1244,7 @@ fn profile_generated_surface_axis(
         axis.origin.y - origin.y,
         axis.origin.z - origin.z,
     );
-    if axis.direction.dot(normal).abs() > 1.0e-9
+    if axis.direction.dot(normal).abs() > EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9
         || relative_origin.dot(normal).abs() > LINE_TOLERANCE
     {
         return None;
@@ -1293,8 +1309,8 @@ fn profile_generated_surface_axis(
 pub(super) fn common_generated_surface_axis(
     surfaces: &[Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
-    const DIRECTION_TOLERANCE: f64 = 1.0e-9;
-    const LINE_TOLERANCE: f64 = 1.0e-6;
+    const DIRECTION_TOLERANCE: f64 = 1e-9;
+    const LINE_TOLERANCE: f64 = 1e-6;
 
     let axes = surfaces
         .iter()
@@ -1318,7 +1334,7 @@ pub(super) fn common_generated_surface_axis(
         return None;
     }
     let length = direction.norm();
-    if !length.is_finite() || length <= 1.0e-9 {
+    if !length.is_finite() || length <= EPS_AXES_COMMON_GENERATED_SURFACE_AXIS_E9 {
         return None;
     }
     let mut direction = Vector3::new(
@@ -1328,7 +1344,9 @@ pub(super) fn common_generated_surface_axis(
     );
     for (candidate_origin, candidate_direction) in &axes[1..] {
         let candidate_length = candidate_direction.norm();
-        if !candidate_length.is_finite() || candidate_length <= 1.0e-9 {
+        if !candidate_length.is_finite()
+            || candidate_length <= EPS_AXES_COMMON_GENERATED_SURFACE_AXIS_E9
+        {
             return None;
         }
         let candidate_direction = Vector3::new(
@@ -1394,7 +1412,9 @@ pub(super) fn profile_roster_origin_axis_endpoints(
         return None;
     };
     let [origin_u, origin_v] = origin.coordinates_m?;
-    if origin_u.abs() > 1.0e-9 || origin_v.abs() > 1.0e-9 {
+    if origin_u.abs() > EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
+        || origin_v.abs() > EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
+    {
         return None;
     }
     let mut candidates = markers
@@ -1420,7 +1440,10 @@ pub(super) fn profile_roster_origin_axis_endpoints(
         let [u, v] = [candidate[1][0] - origin_u, candidate[1][1] - origin_v];
         if lines.iter().any(|line| {
             let [line_u, line_v] = [line[1][0] - origin_u, line[1][1] - origin_v];
-            (u * line_v - v * line_u).abs() <= 1.0e-9 * u.hypot(v) * line_u.hypot(line_v)
+            (u * line_v - v * line_u).abs()
+                <= EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
+                    * u.hypot(v)
+                    * line_u.hypot(line_v)
         }) {
             continue;
         }
@@ -1438,7 +1461,9 @@ pub(super) fn profile_roster_origin_axis_endpoints(
                 let relative_u = u - origin_u;
                 let relative_v = v - origin_v;
                 (relative_u * line_v - relative_v * line_u).abs()
-                    <= 1.0e-9 * relative_u.hypot(relative_v) * line_u.hypot(line_v)
+                    <= EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9
+                        * relative_u.hypot(relative_v)
+                        * line_u.hypot(line_v)
             })
             .count()
     };
@@ -1472,7 +1497,10 @@ pub(super) fn profile_roster_principal_axis_endpoints(
             .iter()
             .filter(|marker| curve_endpoints.contains(marker.id.as_str()))
             .filter_map(|marker| marker.coordinates_m)
-            .filter(|[u, v]| (u * axis_v - v * axis_u).abs() <= 1.0e-9)
+            .filter(|[u, v]| {
+                (u * axis_v - v * axis_u).abs()
+                    <= EPS_AXES_PROFILE_ROSTER_PRINCIPAL_AXIS_ENDPOINTS_E9
+            })
             .count()
     };
     let axes = [[[0.0, 0.0], [1.0, 0.0]], [[0.0, 0.0], [0.0, 1.0]]];
@@ -1646,7 +1674,7 @@ fn bounded_profile_axis_coordinates(
     curve_endpoints: &HashSet<&str>,
     endpoints: [[f64; 2]; 2],
 ) -> bool {
-    const TOLERANCE_M: f64 = 1.0e-9;
+    const TOLERANCE_M: f64 = 1e-9;
 
     let [[start_u, start_v], [end_u, end_v]] = endpoints;
     let delta_u = end_u - start_u;

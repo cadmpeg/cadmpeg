@@ -32,6 +32,10 @@ use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry};
 use cadmpeg_ir::topology::Face;
 use std::collections::{HashMap, HashSet};
 
+const EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9: f64 = 1e-9;
+const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E8: f64 = 1e-8;
+const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E9: f64 = 1e-9;
+
 pub(super) fn bind_circular_profile_by_dimension(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut [Sketch],
@@ -1622,7 +1626,8 @@ pub(super) fn unique_cylindrical_face(
     if !radius.is_finite() || radius <= 0.0 {
         return None;
     }
-    let tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+    let tolerance = (radius.abs() * EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9)
+        .max(EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9);
     let cylindrical = surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
@@ -1704,7 +1709,7 @@ pub(super) fn unique_planar_face(
         normal.y / normal_length,
         normal.z / normal_length,
     );
-    let tolerance = 1.0e-8
+    let tolerance = EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E8
         * origin
             .x
             .abs()
@@ -1735,7 +1740,8 @@ pub(super) fn unique_planar_face(
                 let distance = displacement.x * normal.x
                     + displacement.y * normal.y
                     + displacement.z * normal.z;
-                ((alignment.abs() - 1.0).abs() <= 1.0e-9 && distance.abs() <= tolerance)
+                ((alignment.abs() - 1.0).abs() <= EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E9
+                    && distance.abs() <= tolerance)
                     .then_some(&surface.id)
             }
             _ => None,

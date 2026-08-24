@@ -174,6 +174,11 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
+const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1e-8;
+const EPS_SCOPES_SAME_TRANSFORM_BASIS_E10: f64 = 1e-10;
+const EPS_SCOPES_EXACT_CIRCULAR_PATTERN_AXIS_E12: f64 = 1e-12;
+const EPS_SCOPES_VALID_RIGHT_HANDED_COIL_TRANSFORM_E10: f64 = 1e-10;
+
 mod assembly_carrier_paths;
 pub(crate) mod extrude_sheet_metal;
 pub(crate) mod legacy_class_397;
@@ -4125,7 +4130,7 @@ fn exact_rectangular_pattern_instances(
             }
             let delta = translation_delta(&first.0, &final_candidate.0);
             let distance = delta.iter().map(|value| value * value).sum::<f64>().sqrt();
-            if (distance - extent.abs()).abs() > 1.0e-8 {
+            if (distance - extent.abs()).abs() > EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8 {
                 continue;
             }
             let mut run = vec![*first];
@@ -4139,7 +4144,10 @@ fn exact_rectangular_pattern_instances(
                             && translation_delta(&first.0, &candidate.0)
                                 .iter()
                                 .zip(delta)
-                                .all(|(value, total)| (*value - total * fraction).abs() <= 1.0e-8)
+                                .all(|(value, total)| {
+                                    (*value - total * fraction).abs()
+                                        <= EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8
+                                })
                     })
                     .collect::<Vec<_>>();
                 let [candidate] = matches.as_slice() else {
@@ -4215,7 +4223,11 @@ fn exact_rigid_transform_candidates(
 }
 
 fn same_transform_basis(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> bool {
-    (0..3).all(|row| (0..3).all(|column| (left[row][column] - right[row][column]).abs() <= 1.0e-10))
+    (0..3).all(|row| {
+        (0..3).all(|column| {
+            (left[row][column] - right[row][column]).abs() <= EPS_SCOPES_SAME_TRANSFORM_BASIS_E10
+        })
+    })
 }
 
 fn translation_delta(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> [f64; 3] {
@@ -5055,11 +5067,12 @@ fn exact_circular_pattern_axis(
     {
         return None;
     }
-    let direction = if (displacement_length - 1.0).abs() <= 1.0e-12 {
-        displacement
-    } else {
-        displacement.map(|component| component / displacement_length)
-    };
+    let direction =
+        if (displacement_length - 1.0).abs() <= EPS_SCOPES_EXACT_CIRCULAR_PATTERN_AXIS_E12 {
+            displacement
+        } else {
+            displacement.map(|component| component / displacement_length)
+        };
     Some((origin, direction))
 }
 
@@ -6332,7 +6345,7 @@ fn exact_shifted_cylinder_primitive_prologue(
 }
 
 fn cylinder_transform_preserves_projected_geometry(transform: &[[f64; 4]; 4]) -> bool {
-    const EPS_CYLINDER_FRAME: f64 = 1.0e-10;
+    const EPS_CYLINDER_FRAME: f64 = 1e-10;
     transform[0][3].abs() <= EPS_CYLINDER_FRAME
         && transform[1][3].abs() <= EPS_CYLINDER_FRAME
         && transform[2][3].abs() <= EPS_CYLINDER_FRAME
@@ -8241,7 +8254,7 @@ const HOLE_POINT_DATA_TYPE_GUID: &str = "F2A7590D-6654-4674-B393-A2AEF4FEC48A";
 const HOLE_FACE_SELECTION_TYPE_GUID: &str = "5A1BF548-241F-46FD-9FB5-E4B05126EB9D";
 
 /// Accepted norm error for a serialized Hole drilling direction.
-const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
+const EPS_HOLE_DIRECTION_NORM: f64 = 1e-12;
 
 /// Decode the exact point-and-direction carrier owned by a `Hole` scope.
 ///
@@ -9729,7 +9742,7 @@ fn valid_right_handed_coil_transform(transform: &[[f64; 4]; 4]) -> bool {
         .zip(axis)
         .map(|(left, right)| left * right)
         .sum::<f64>()
-        > 1.0 - 1.0e-10
+        > 1.0 - EPS_SCOPES_VALID_RIGHT_HANDED_COIL_TRANSFORM_E10
 }
 
 fn exact_coil_discriminators(

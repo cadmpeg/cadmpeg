@@ -64,6 +64,10 @@ use super::typed_relations::{
 #[cfg(test)]
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 
+const EPS_TRANSFORMS_AXIS_ALIGNED_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1e-8;
+const EPS_TRANSFORMS_AFFINE_SKETCH_FRAME_MARKER_TRANSFORM_E8: f64 = 1e-8;
+const EPS_TRANSFORMS_DIMENSIONED_CIRCLE_SURFACE_TRANSFORMS_E8: f64 = 1e-8;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct MarkerTransform {
     swap: bool,
@@ -135,7 +139,10 @@ fn axis_aligned_sketch_frame_marker_transform(
         let matches = vector
             .iter()
             .enumerate()
-            .filter(|(_, value)| (value.abs() - 1.0).abs() <= 1.0e-8)
+            .filter(|(_, value)| {
+                (value.abs() - 1.0).abs()
+                    <= EPS_TRANSFORMS_AXIS_ALIGNED_SKETCH_FRAME_MARKER_TRANSFORM_E8
+            })
             .map(|(index, value)| (index, if *value < 0.0 { -1 } else { 1 }))
             .collect::<Vec<_>>();
         let [(index, sign)] = matches.as_slice() else {
@@ -144,7 +151,10 @@ fn axis_aligned_sketch_frame_marker_transform(
         vector
             .iter()
             .enumerate()
-            .all(|(candidate, value)| candidate == *index || value.abs() <= 1.0e-8)
+            .all(|(candidate, value)| {
+                candidate == *index
+                    || value.abs() <= EPS_TRANSFORMS_AXIS_ALIGNED_SKETCH_FRAME_MARKER_TRANSFORM_E8
+            })
             .then_some((*index, *sign))
     };
     let (normal_axis, _) = axis(normal)?;
@@ -203,7 +213,7 @@ fn affine_sketch_frame_marker_transform(
     }
     let normal_axis =
         (0..3).max_by(|left, right| normal[*left].abs().total_cmp(&normal[*right].abs()))?;
-    if normal[normal_axis].abs() <= 1.0e-8 {
+    if normal[normal_axis].abs() <= EPS_TRANSFORMS_AFFINE_SKETCH_FRAME_MARKER_TRANSFORM_E8 {
         return None;
     }
     let native_axes = (0..3)
@@ -292,7 +302,10 @@ pub(super) fn dimensioned_circle_surface_transforms(
             continue;
         };
         let alignment = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
-        if !alignment.is_finite() || (alignment.abs() - 1.0).abs() > 1.0e-8 {
+        if !alignment.is_finite()
+            || (alignment.abs() - 1.0).abs()
+                > EPS_TRANSFORMS_DIMENSIONED_CIRCLE_SURFACE_TRANSFORMS_E8
+        {
             continue;
         }
         let radius_key = (radius / quantum).round() as i64;

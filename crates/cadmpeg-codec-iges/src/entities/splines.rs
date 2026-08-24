@@ -16,6 +16,8 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_SPLINES_SURFACE_POINT_CLOSE_E10: f64 = 1e-10;
+
 const MAX_SPLINE_SEGMENTS: usize = 100_000;
 const MAX_SPLINE_SURFACE_POLES: usize = 1_000_000;
 
@@ -71,7 +73,8 @@ fn terminal_intervals(
 
 fn surface_point_close(left: Point3, right: Point3) -> bool {
     let close = |left: f64, right: f64| {
-        (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10
+        (left - right).abs()
+            <= left.abs().max(right.abs()).max(1.0) * EPS_SPLINES_SURFACE_POINT_CLOSE_E10
     };
     close(left.x, right.x) && close(left.y, right.y) && close(left.z, right.z)
 }

@@ -8,6 +8,12 @@ use cadmpeg_core::decode::View;
 
 use crate::psb::{compact_int, short_form_float};
 
+const EPS_SCALAR_DECODE_REFLECTED_XY_CYLINDER_LOCAL_SYSTEM_E9: f64 = 1e-9;
+const EPS_SCALAR_DECODE_PREFIXED_ORTHOGONAL_PLANE_SUPPORT_E9: f64 = 1e-9;
+const EPS_SCALAR_DECODE_TRAILING_RANK_ORTHOGONAL_PLANE_SUPPORT_E9: f64 = 1e-9;
+const EPS_SCALAR_DECODE_REFLECTED_COMPONENT_PLANE_SUPPORT_E9: f64 = 1e-9;
+const EPS_SCALAR_DECODE_TRAILING_RANK_REFLECTED_PLANE_SUPPORT_E9: f64 = 1e-9;
+
 /// Counted `double_xar` dictionary stored in a model-level scalar section.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DoubleXarTable {
@@ -807,9 +813,15 @@ fn decode_reflected_xy_cylinder_local_system(
         .all(f64::is_finite)
         .then_some(())?;
     let scale = first_x.abs().max(first_y.abs()).max(1.0);
-    ((first_x.mul_add(first_x, first_y * first_y) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
-    ((stored_first_y - first_y).abs() <= 1e-9 * scale).then_some(())?;
-    ((stored_first_x - first_x).abs() <= 1e-9 * scale).then_some(())?;
+    ((first_x.mul_add(first_x, first_y * first_y) - 1.0).abs()
+        <= EPS_SCALAR_DECODE_REFLECTED_XY_CYLINDER_LOCAL_SYSTEM_E9 * scale)
+        .then_some(())?;
+    ((stored_first_y - first_y).abs()
+        <= EPS_SCALAR_DECODE_REFLECTED_XY_CYLINDER_LOCAL_SYSTEM_E9 * scale)
+        .then_some(())?;
+    ((stored_first_x - first_x).abs()
+        <= EPS_SCALAR_DECODE_REFLECTED_XY_CYLINDER_LOCAL_SYSTEM_E9 * scale)
+        .then_some(())?;
 
     let mut origin = [0.0; 3];
     for value in &mut origin {
@@ -906,8 +918,12 @@ fn decode_prefixed_orthogonal_plane_support(
         .all(f64::is_finite)
         .then_some(())?;
     let scale = first_x.abs().max(first_z.abs()).max(1.0);
-    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
-    ((stored_first_x_magnitude.abs() - first_x.abs()).abs() <= 1e-9 * scale).then_some(())?;
+    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs()
+        <= EPS_SCALAR_DECODE_PREFIXED_ORTHOGONAL_PLANE_SUPPORT_E9 * scale)
+        .then_some(())?;
+    ((stored_first_x_magnitude.abs() - first_x.abs()).abs()
+        <= EPS_SCALAR_DECODE_PREFIXED_ORTHOGONAL_PLANE_SUPPORT_E9 * scale)
+        .then_some(())?;
 
     let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
     Some((
@@ -950,8 +966,12 @@ fn decode_trailing_rank_orthogonal_plane_support(
         .all(f64::is_finite)
         .then_some(())?;
     let scale = first_x.abs().max(first_z.abs()).max(1.0);
-    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
-    ((stored_first_x_magnitude.abs() - first_x.abs()).abs() <= 1e-9 * scale).then_some(())?;
+    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs()
+        <= EPS_SCALAR_DECODE_TRAILING_RANK_ORTHOGONAL_PLANE_SUPPORT_E9 * scale)
+        .then_some(())?;
+    ((stored_first_x_magnitude.abs() - first_x.abs()).abs()
+        <= EPS_SCALAR_DECODE_TRAILING_RANK_ORTHOGONAL_PLANE_SUPPORT_E9 * scale)
+        .then_some(())?;
 
     let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
     Some((
@@ -993,9 +1013,14 @@ fn decode_reflected_component_plane_support(
         .all(f64::is_finite)
         .then_some(())?;
     let scale = first_x.abs().max(first_z.abs()).max(1.0);
-    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
-    ((second_x - first_z).abs() <= 1e-9 * scale).then_some(())?;
-    ((stored_first_x - first_x).abs() <= 1e-9 * scale).then_some(())?;
+    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs()
+        <= EPS_SCALAR_DECODE_REFLECTED_COMPONENT_PLANE_SUPPORT_E9 * scale)
+        .then_some(())?;
+    ((second_x - first_z).abs() <= EPS_SCALAR_DECODE_REFLECTED_COMPONENT_PLANE_SUPPORT_E9 * scale)
+        .then_some(())?;
+    ((stored_first_x - first_x).abs()
+        <= EPS_SCALAR_DECODE_REFLECTED_COMPONENT_PLANE_SUPPORT_E9 * scale)
+        .then_some(())?;
 
     let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
     Some((
@@ -1039,7 +1064,9 @@ fn decode_trailing_rank_reflected_plane_support(
         .all(f64::is_finite)
         .then_some(())?;
     let scale = first_y.abs().max(first_z.abs()).max(1.0);
-    ((first_y.mul_add(first_y, first_z * first_z) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
+    ((first_y.mul_add(first_y, first_z * first_z) - 1.0).abs()
+        <= EPS_SCALAR_DECODE_TRAILING_RANK_REFLECTED_PLANE_SUPPORT_E9 * scale)
+        .then_some(())?;
     (stored_second_y == first_z).then_some(())?;
     (stored_first_y == first_y).then_some(())?;
 

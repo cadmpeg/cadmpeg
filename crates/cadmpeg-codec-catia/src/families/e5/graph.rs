@@ -7,6 +7,8 @@ use cadmpeg_core::decode::View;
 
 use crate::wire;
 
+const EPS_PARAMETER_ENDPOINT: f64 = 1e-9;
+
 /// Resolved graph of an E5 `0D 03` record stream: bodies, faces, edges, and
 /// the geometry records they reference. Produced by [`parse_topology`], which
 /// walks every class-tagged record, resolves cross-record references, and
@@ -697,7 +699,7 @@ fn parse_jet_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5P
         || multiplicities != expected_multiplicities
         || multiplicities.iter().sum::<u32>() != degree + 1 + 3 * u32::try_from(site_count).ok()?
         || range_values[0] != 0.0
-        || (range_values[1] - final_knot).abs() > 1e-9 * final_knot.abs()
+        || (range_values[1] - final_knot).abs() > EPS_PARAMETER_ENDPOINT * final_knot.abs()
         || x.iter()
             .chain(&y)
             .chain(&dx)

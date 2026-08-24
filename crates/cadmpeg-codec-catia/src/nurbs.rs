@@ -11,6 +11,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
+const EPS_NURBS_CANONICAL_MODEL_CURVE_RANGE_E9: f64 = 1e-9;
+
 const EPS_PERIODIC_RANGE: f64 = 1e-9;
 const EPS_HELIX_FRAME: f64 = 1e-9;
 const SMALL_RELATIVE_HELIX_TOLERANCE: f64 = 1e-6;
@@ -276,7 +278,8 @@ pub(crate) fn canonical_model_curve_range(
         }
         CurveGeometry::Nurbs(nurbs) => {
             let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
-            let tolerance = 1.0e-9_f64.max((upper - lower).abs() * 1.0e-9);
+            let tolerance =
+                1.0e-9_f64.max((upper - lower).abs() * EPS_NURBS_CANONICAL_MODEL_CURVE_RANGE_E9);
             if nurbs.periodic {
                 (range[1] - range[0] <= upper - lower + tolerance).then_some(range)
             } else if range[0] >= lower && range[1] <= upper {

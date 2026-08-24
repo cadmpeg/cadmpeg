@@ -21,6 +21,8 @@ use crate::topology::{
 };
 use crate::units::Units;
 
+const EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9: f64 = 1e-9;
+
 /// Face input used to construct [`unit_cube`].
 type FaceDef = (
     &'static str,
@@ -290,7 +292,7 @@ pub fn directed_subd_sum() -> CadIr {
             basepoint: Vector3::new(0.0, 0.0, 0.0),
             revision_form: None,
         },
-        cache_fit_tolerance: Some(1.0e-9),
+        cache_fit_tolerance: Some(EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9),
         record_bounds: None,
     });
     ir.model.subds.push(SubdSurface {

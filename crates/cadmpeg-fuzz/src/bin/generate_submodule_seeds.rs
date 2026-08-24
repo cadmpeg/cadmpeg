@@ -6,6 +6,9 @@ use std::io::Write as _;
 
 include!("../seed_paths.rs");
 
+const EPS_GENERATE_SUBMODULE_SEEDS_GENERATE_ACIS_HEADER_SEED_E6: f64 = 1e-6;
+const EPS_GENERATE_SUBMODULE_SEEDS_GENERATE_ACIS_HEADER_SEED_E10: f64 = 1e-10;
+
 fn main() {
     generate_acis_header_seed();
     generate_f3d_submodule_seeds();
@@ -28,7 +31,7 @@ fn generate_acis_header_seed() {
         header.push(u8::try_from(value.len()).expect("short synthetic string"));
         header.extend_from_slice(value.as_bytes());
     }
-    for value in [1.0_f64, 1.0e-6, 1.0e-10] {
+    for value in [1.0_f64, EPS_GENERATE_SUBMODULE_SEEDS_GENERATE_ACIS_HEADER_SEED_E6, EPS_GENERATE_SUBMODULE_SEEDS_GENERATE_ACIS_HEADER_SEED_E10] {
         header.push(0x06);
         header.extend_from_slice(&value.to_le_bytes());
     }

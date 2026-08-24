@@ -41,6 +41,11 @@ use crate::wire::records::ConsolidatedRecord;
 
 const EPS_PARAM_RESOLUTION_SPAN: f64 = 1e-7;
 const EPS_PARAM_TOLERANCE_SPAN: f64 = 1e-9;
+const EPS_CIRCLE_AXIS_ORTHO: f64 = 1e-6;
+const EPS_APEX_DISTANCE: f64 = 1e-6;
+const EPS_RANGE_ENDPOINT: f64 = 1e-9;
+const EPS_RANGE_GAP: f64 = 1e-6;
+const EPS_CROSS_PRODUCT: f64 = 1e-6;
 
 fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
@@ -141,7 +146,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         let normal_norm = normal.norm();
         if !normal_norm.is_finite()
             || normal_norm == 0.0
-            || (normal.dot(*axis) / normal_norm).abs() > 1e-6
+            || (normal.dot(*axis) / normal_norm).abs() > EPS_CIRCLE_AXIS_ORTHO
         {
             return None;
         }
@@ -5902,10 +5907,10 @@ pub(crate) fn standard_pcurve_geometry(
                     origin.y + apex_offset * axis.y,
                     origin.z + apex_offset * axis.z,
                 );
-                if start.distance_squared(apex) <= 1e-6 {
+                if start.distance_squared(apex) <= EPS_APEX_DISTANCE {
                     uv[0].u = uv[1].u;
                 }
-                if end.distance_squared(apex) <= 1e-6 {
+                if end.distance_squared(apex) <= EPS_APEX_DISTANCE {
                     uv[1].u = uv[0].u;
                 }
             }
@@ -6720,13 +6725,13 @@ pub(crate) fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2
 
     ranges.iter().enumerate().all(|(left_index, left)| {
         ranges[left_index + 1..].iter().all(|right| {
-            let coincident =
-                (right[0] - left[0]).abs() <= 1e-9 && (right[1] - left[1]).abs() <= 1e-9;
+            let coincident = (right[0] - left[0]).abs() <= EPS_RANGE_ENDPOINT
+                && (right[1] - left[1]).abs() <= EPS_RANGE_ENDPOINT;
             coincident
                 || !segments(*left).iter().any(|left| {
                     segments(*right)
                         .iter()
-                        .any(|right| left[1].min(right[1]) - left[0].max(right[0]) > 1e-6)
+                        .any(|right| left[1].min(right[1]) - left[0].max(right[0]) > EPS_RANGE_GAP)
                 })
         })
     })
@@ -6770,8 +6775,10 @@ pub(crate) fn standard_circle_param_range(
         )
     });
     let range = ranges.next()?;
-    if ranges.any(|other| (other[0] - range[0]).abs() > 1e-9 || (other[1] - range[1]).abs() > 1e-9)
-    {
+    if ranges.any(|other| {
+        (other[0] - range[0]).abs() > EPS_RANGE_ENDPOINT
+            || (other[1] - range[1]).abs() > EPS_RANGE_ENDPOINT
+    }) {
         return None;
     }
     Some(range)
@@ -6918,7 +6925,7 @@ fn circle_axis_from_endpoints(
         return None;
     }
     let normal = start_radius.cross(end_radius);
-    (normal.norm() > 1e-6 * start_length * end_length)
+    (normal.norm() > EPS_CROSS_PRODUCT * start_length * end_length)
         .then(|| unit_vector(normal))
         .flatten()
 }

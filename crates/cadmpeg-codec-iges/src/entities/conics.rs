@@ -15,6 +15,9 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_CONICS_PROJECT_E12: f64 = 1e-12;
+const EPS_CONICS_PROJECT_E10: f64 = 1e-10;
+
 pub(super) struct ConicProjection {
     pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
@@ -132,7 +135,7 @@ pub(super) fn project(
             .max(coeff_e.abs())
             .max(coeff_f.abs())
             .max(1.0);
-        let zero = |value: f64| value.abs() <= coefficient_scale * 1.0e-12;
+        let zero = |value: f64| value.abs() <= coefficient_scale * EPS_CONICS_PROJECT_E12;
         if !zero(*coeff_b) || (!zero(*coeff_d) && !zero(*coeff_e)) {
             losses.push(entity_loss(
                 entry,
@@ -171,7 +174,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "conic placement collapses the y axis"));
             continue;
         };
-        if basis_x.dot(basis_y).abs() > 1.0e-10 {
+        if basis_x.dot(basis_y).abs() > EPS_CONICS_PROJECT_E10 {
             losses.push(entity_loss(
                 entry,
                 "conic placement produces non-orthogonal principal axes",

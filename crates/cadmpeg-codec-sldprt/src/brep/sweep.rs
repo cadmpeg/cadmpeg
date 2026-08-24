@@ -21,6 +21,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::LEN_TO_MM;
 
+const EPS_SWEEP_UNIT3_E9: f64 = 1e-9;
+const EPS_SWEEP_PROFILE_NURBS_E9: f64 = 1e-9;
+
 /// A parsed swept- or spun-surface carrier.
 #[derive(Debug, Clone)]
 pub(crate) struct SweepCarrier {
@@ -59,7 +62,7 @@ fn unit3(bytes: &[u8], at: usize) -> Option<Vector3> {
         return None;
     }
     let norm = (x * x + y * y + z * z).sqrt();
-    if (norm - 1.0).abs() > 1.0e-9 {
+    if (norm - 1.0).abs() > EPS_SWEEP_UNIT3_E9 {
         return None;
     }
     Some(Vector3::new(x, y, z))
@@ -164,7 +167,7 @@ pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
         && minor_radius.is_finite()
         && major_radius > 0.0
         && minor_radius > 0.0
-        && axis.dot(major).abs() <= 1.0e-9)
+        && axis.dot(major).abs() <= EPS_SWEEP_PROFILE_NURBS_E9)
     {
         return None;
     }

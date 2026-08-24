@@ -47,6 +47,18 @@ use super::catalogue::NATIVE_CATALOGUE;
 use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
 use cadmpeg_ir::native::catalogue::Phase;
 
+const EPS_ATTACH_HOLE_AXIS_PLACEMENTS_FOR_BODY_E12: f64 = 1e-12;
+const EPS_ATTACH_CYLINDRICAL_FACE_WITNESSES_E9: f64 = 1e-9;
+const EPS_ATTACH_CYLINDRICAL_FACE_WITNESSES_E12: f64 = 1e-12;
+const EPS_ATTACH_PLANE_ANNULUS_WITNESS_E9: f64 = 1e-9;
+const EPS_ATTACH_PLANE_ANNULUS_WITNESS_E12: f64 = 1e-12;
+const EPS_ATTACH_COUNTERBORE_CYLINDERS_E9: f64 = 1e-9;
+const EPS_ATTACH_COUNTERBORE_CYLINDERS_E12: f64 = 1e-12;
+const EPS_ATTACH_BLIND_BORE_CYLINDERS_E9: f64 = 1e-9;
+const EPS_ATTACH_BLIND_BORE_CYLINDERS_E12: f64 = 1e-12;
+const EPS_ATTACH_SIMPLE_HOLE_CHAMFERS_E9: f64 = 1e-9;
+const EPS_ATTACH_SIMPLE_HOLE_CHAMFERS_E12: f64 = 1e-12;
+
 pub(crate) fn attach(
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
@@ -6108,7 +6120,10 @@ fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement
     let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
         return Vec::new();
     };
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let angular_tolerance = ir
+        .tolerances
+        .angular
+        .max(EPS_ATTACH_HOLE_AXIS_PLACEMENTS_FOR_BODY_E12);
     let mut placements = Vec::new();
     for (origin, axis, _) in bores {
         let Some(mut axis) = unit_vector(axis) else {
@@ -6282,8 +6297,14 @@ fn cylindrical_face_witnesses(
             .or_default()
             .push(coedge);
     }
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let linear_tolerance = ir
+        .tolerances
+        .linear
+        .max(EPS_ATTACH_CYLINDRICAL_FACE_WITNESSES_E9);
+    let angular_tolerance = ir
+        .tolerances
+        .angular
+        .max(EPS_ATTACH_CYLINDRICAL_FACE_WITNESSES_E12);
     let mut witnesses = Vec::new();
     for face in body_faces
         .iter()
@@ -6404,8 +6425,14 @@ fn plane_annulus_witness(
             .or_default()
             .push(coedge);
     }
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let linear_tolerance = ir
+        .tolerances
+        .linear
+        .max(EPS_ATTACH_PLANE_ANNULUS_WITNESS_E9);
+    let angular_tolerance = ir
+        .tolerances
+        .angular
+        .max(EPS_ATTACH_PLANE_ANNULUS_WITNESS_E12);
     let mut matches = 0;
     for face in body_faces {
         if face.loops.len() != 2 {
@@ -6503,8 +6530,14 @@ fn counterbore_cylinders(
     if cylinders.is_empty() || cylinders.len() % 2 != 0 {
         return None;
     }
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let linear_tolerance = ir
+        .tolerances
+        .linear
+        .max(EPS_ATTACH_COUNTERBORE_CYLINDERS_E9);
+    let angular_tolerance = ir
+        .tolerances
+        .angular
+        .max(EPS_ATTACH_COUNTERBORE_CYLINDERS_E12);
     let mut candidates = cadmpeg_core::decode::alloc_filled(
         cylinders.len(),
         Vec::<(usize, CounterboreCylinderWitness)>::new(),
@@ -6632,8 +6665,11 @@ fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBor
             .or_default()
             .push(coedge);
     }
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let linear_tolerance = ir.tolerances.linear.max(EPS_ATTACH_BLIND_BORE_CYLINDERS_E9);
+    let angular_tolerance = ir
+        .tolerances
+        .angular
+        .max(EPS_ATTACH_BLIND_BORE_CYLINDERS_E12);
     let mut cap_stations = Vec::new();
     for (station_ordinal, station) in cylinder.stations.iter().enumerate() {
         let cylinder_loop = &cylinder.loop_ids[station_ordinal];
@@ -6832,8 +6868,11 @@ fn simple_hole_chamfers(
             .push(coedge);
     }
 
-    let linear_tolerance = ir.tolerances.linear.max(1e-9);
-    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let linear_tolerance = ir.tolerances.linear.max(EPS_ATTACH_SIMPLE_HOLE_CHAMFERS_E9);
+    let angular_tolerance = ir
+        .tolerances
+        .angular
+        .max(EPS_ATTACH_SIMPLE_HOLE_CHAMFERS_E12);
     let mut treatments = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let Some(body_faces) = connected_solid_body_faces(ir, &body) else {

@@ -8,9 +8,10 @@ Patterns (production filter — see ``docs/convergence-ledger.toml``):
   exceptions remain, so the honest end state is not zero)
 * ``CodecError::Malformed(format!`` (multiline-aware)
 * ``LossNote {`` struct literals (not ``-> LossNote {`` or the struct definition)
-* bare ``1e-6`` / ``1e-7`` / ``1e-8`` / ``1e-9`` / ``1e-10`` / ``1e-11`` /
-  ``1e-12`` in ``crates/**/src`` (counts occurrences only; does not see naming
-  or collapse of distinct values)
+* bare scientific-notation tolerance values from ``1e-6`` through ``1e-12``
+  at use sites in ``crates/**/src``; the numeric initializer of a named
+  ``const`` or ``static`` is the declaration that gives the threshold its
+  required intent
 * non-literal ``vec![value; count]`` repeats (parsed-count allocations)
 
 Modes:
@@ -71,7 +72,14 @@ LOSS_NOTE_LIT = re.compile(r"LossNote\s*\{")
 LOSS_NOTE_RETURN = re.compile(r"->\s*LossNote\s*\{")
 LOSS_NOTE_STRUCT = re.compile(r"\b(?:pub(?:\([^)]*\))?\s+)?struct\s+LossNote\s*\{")
 LOSS_NOTE_IMPL = re.compile(r"\bimpl(?:\s*<[^>]*>)?\s+LossNote\s*\{")
-BARE_TOLERANCE = re.compile(r"(?<![0-9A-Za-z_.])1[eE]-(?:6|7|8|9|10|11|12)\b")
+BARE_TOLERANCE = re.compile(
+    r"(?<![0-9A-Za-z_.])1(?:\.0+)?[eE]-(?:6|7|8|9|10|11|12)\b"
+)
+NAMED_TOLERANCE_DECL = re.compile(
+    r"^\s*(?:(?:pub(?:\([^)]*\))?|unsafe)\s+)*"
+    r"(?:const|static)(?:\s+mut)?\s+[A-Za-z_][A-Za-z0-9_]*"
+    r"\s*(?::[^=;]+)?=\s*"
+)
 # `vec![value; count]` where count is not a decimal/hex literal.
 VEC_REPEAT = re.compile(r"vec!\s*\[(?:[^\];]|;)*;\s*([^\]]+)\]", re.MULTILINE)
 VEC_REPEAT_LITERAL = re.compile(r"^(?:0x[0-9a-fA-F]+|\d+)$")
@@ -87,6 +95,8 @@ FILTER_DESCRIPTION = (
     "exclude tests/ and benches/ path segments; exclude files named tests.rs or "
     "*test*.rs; lexically mask Rust comments and literals, then strip "
     "cfg(test)-attributed items with blank-preserving elision. "
+    "bare tolerance literals count at use sites; named const/static numeric "
+    "initializers are declarations and are excluded. "
     "from_endian_bytes uses that same crates/**/src glob (not codec crates only). "
     "Placement metrics: scan crates/**/*.rs by ownership, structural entry "
     "points, standard mod resolution, and test-only #[path] ancestry; "
@@ -226,7 +236,7 @@ def count_legacy_metrics() -> dict[str, int]:
             ):
                 continue
             counts["loss_note_struct_literals"] += 1
-        counts["bare_tolerance_literals"] += len(BARE_TOLERANCE.findall(text))
+        counts["bare_tolerance_literals"] += count_bare_tolerance_literals(text)
         for match in VEC_REPEAT.finditer(text):
             if not VEC_REPEAT_LITERAL.fullmatch(match.group(1).strip()):
                 counts["nonliteral_vec_repeat"] += 1
@@ -270,7 +280,18 @@ def count_bare_tolerances() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
         text = metric_source_text(path)
-        total += len(BARE_TOLERANCE.findall(text))
+        total += count_bare_tolerance_literals(text)
+    return total
+
+
+def count_bare_tolerance_literals(text: str) -> int:
+    """Count tolerance literals that are not named threshold definitions."""
+    total = 0
+    for line in text.splitlines():
+        for match in BARE_TOLERANCE.finditer(line):
+            if NAMED_TOLERANCE_DECL.match(line[: match.start()]):
+                continue
+            total += 1
     return total
 
 
