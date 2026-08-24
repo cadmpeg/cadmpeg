@@ -614,10 +614,12 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
     endpoint_witnesses: &mut EndpointWitnesses,
 ) -> bool {
-    // A failed fit can become solvable when its opposite lane is filled by an
-    // earlier wave. Keep that dependency as the retry key; repeating the same
-    // failed inverse after unrelated progress only burns the model-wide cap.
+    // A failed fit can become solvable when either lane is filled by an
+    // earlier wave. Keep those dependencies as the direct and coupled retry
+    // keys; unrelated progress must not repeat the same inverse problems.
     let mut failed_attempts = BTreeMap::<(ProceduralCurveId, usize), Option<PcurveGeometry>>::new();
+    let mut failed_coupled_attempts =
+        BTreeMap::<ProceduralCurveId, [Option<PcurveGeometry>; 2]>::new();
     let mut lane_geometry_exhausted = false;
     loop {
         let before = pending_support_lanes_requiring_completion(ir, pending);
@@ -634,6 +636,7 @@ pub(super) fn complete_support_uv_with_budget_and_endpoint_witnesses(
             coupled_support_budget,
             coupled_geometry_budget,
             &mut failed_attempts,
+            &mut failed_coupled_attempts,
             endpoint_witnesses,
         );
         let after = pending_support_lanes_requiring_completion(ir, pending);
@@ -807,6 +810,7 @@ fn complete_support_uv_wave(
     coupled_support_budget: &SupportUvBudget<'_>,
     coupled_geometry_budget: &GeometryWorkBudget<'_>,
     failed_attempts: &mut BTreeMap<(ProceduralCurveId, usize), Option<PcurveGeometry>>,
+    failed_coupled_attempts: &mut BTreeMap<ProceduralCurveId, [Option<PcurveGeometry>; 2]>,
     endpoint_witnesses: &mut EndpointWitnesses,
 ) -> bool {
     let mut lane_geometry_exhausted = false;
@@ -1266,6 +1270,7 @@ fn complete_support_uv_wave(
             pending,
             coupled_support_budget,
             coupled_geometry_budget,
+            failed_coupled_attempts,
             endpoint_witnesses,
         );
     }
@@ -1355,6 +1360,7 @@ fn complete_coupled_support_uv(
     pending: &[PendingExt11SupportUv],
     coupled_support_budget: &SupportUvBudget<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
+    failed_attempts: &mut BTreeMap<ProceduralCurveId, [Option<PcurveGeometry>; 2]>,
     endpoint_witnesses: &mut EndpointWitnesses,
 ) -> bool {
     if geometry_budget.exhausted() {
@@ -1371,6 +1377,13 @@ fn complete_coupled_support_uv(
         let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
             continue;
         };
+        let lane_state = context.sides.each_ref().map(|side| side.pcurve.clone());
+        if failed_attempts
+            .get(procedural_id)
+            .is_some_and(|previous| previous == &lane_state)
+        {
+            continue;
+        }
         let missing = context
             .sides
             .each_ref()
@@ -1455,6 +1468,7 @@ fn complete_coupled_support_uv(
             )
         });
         let Some(lanes) = lanes else {
+            failed_attempts.insert(procedural_id.clone(), lane_state);
             lane_geometry_exhausted |= lane_geometry_budget.exhausted();
             let _ = parent_geometry_budget.consume_child(&lane_geometry_budget);
             continue;
@@ -1554,11 +1568,13 @@ pub(super) fn complete_coupled_support_uv_with_geometry_budget_for_test(
 ) {
     let coupled_support_budget = new_support_uv_budget();
     let geometry_budget = GeometryWorkBudget::new(geometry_work);
+    let mut failed_attempts = BTreeMap::new();
     complete_coupled_support_uv(
         ir,
         pending,
         &coupled_support_budget,
         &geometry_budget,
+        &mut failed_attempts,
         &mut BTreeMap::new(),
     );
 }
