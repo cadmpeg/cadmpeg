@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "4ea4eb12f3cd72267844dfc20c626397de9c4f62"
+measured_at = "e98702616d5c628211fe7b3fe15ed21bc3282917"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -26,6 +26,9 @@ path_test_includes = 0
 test_line_debt = 0
 production_line_debt = 0
 
+[reasons]
+from_endian_bytes = "four u32::from_le_bytes calls compare already-copied layer color arrays in deterministic source order; these are not bounded decode-window reads and remain intentional exceptions"
+
 [ceilings]
 from_endian_bytes = 115
 codec_error_malformed_format = 0
@@ -34,9 +37,5 @@ bare_tolerance_literals = 0
 nonliteral_vec_repeat = 0
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 17910
+test_line_debt = 0
 production_line_debt = 0
-
-[reasons]
-from_endian_bytes = "four u32::from_le_bytes calls compare already-copied layer color arrays in deterministic source order; these are not bounded decode-window reads and remain intentional exceptions"
-test_line_debt = "The current tree retains CATIA native test support at 3,777 lines, IGES parameter tests at 16,915 lines, IGES structure tests at 2,893 lines, IGES native counted-list tests at 2,182 lines, IGES drawing test support at 2,066 lines, IGES solid test support at 2,041 lines, and IGES writer encoding tests at 2,036 lines while test ownership migration remains incomplete; this change adds the V4 Type 402 Form 16 explicit-empty-pointer-group witness to the owning parameter tests."
