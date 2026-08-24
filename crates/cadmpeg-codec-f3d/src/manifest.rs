@@ -274,6 +274,19 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, Code
                     "value is empty",
                 ));
             }
+            if !cursor.exhausted() {
+                let lineage_urn = cursor.utf16("top-level manifest lineage URN")?;
+                let lineage_urn = lineage_urn.as_bytes();
+                if lineage_urn.len() <= 4
+                    || !lineage_urn[..4].eq_ignore_ascii_case(b"urn:")
+                    || !lineage_urn[4..].iter().all(u8::is_ascii_graphic)
+                {
+                    return Err(malformed(
+                        "top-level manifest lineage URN",
+                        "value is not a nonempty ASCII URN",
+                    ));
+                }
+            }
         }
         1 if !cursor.exhausted() => {
             cursor.expect_utf16("top-level manifest export marker", "NA_EXPORT")?;
@@ -673,6 +686,13 @@ mod tests {
 
         let manifest = parse_top_level(&bytes).unwrap();
         assert_eq!(manifest.asset_folder_bases, ["Simulation", "Design Base"]);
+
+        push_utf16(&mut bytes, "urn:synthetic:lineage").unwrap();
+        let with_lineage = parse_top_level(&bytes).unwrap();
+        assert_eq!(
+            with_lineage.asset_folder_bases,
+            ["Simulation", "Design Base"]
+        );
     }
 
     #[test]

@@ -173,7 +173,8 @@ repeat asset_folder_count:
 u32       terminal_word           0
 terminal:
   end of file
-  or u8 0, nonempty LP-UTF16 document_display_name, end of file
+  or u8 0, nonempty LP-UTF16 document_display_name,
+           optional nonempty LP-UTF16 lineage_urn beginning `urn:`, end of file
   or u8 1, end of file
   or u8 1, LP-UTF16 `NA_EXPORT`, end of file
 ```
