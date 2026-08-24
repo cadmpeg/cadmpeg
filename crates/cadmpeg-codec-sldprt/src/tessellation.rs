@@ -1531,7 +1531,10 @@ fn circular_interval(angles: &[f64]) -> Option<(f64, f64)> {
 }
 
 fn circular_interval_contains(start: f64, span: f64, angle: f64, tolerance: f64) -> bool {
-    (angle - start).rem_euclid(std::f64::consts::TAU) <= span + tolerance
+    let distance = (angle - start).rem_euclid(std::f64::consts::TAU);
+    // Quantized display-list angles can fall just before the start boundary.
+    // The wrapped distance is then near TAU, rather than near zero.
+    distance <= span + tolerance || distance + tolerance >= std::f64::consts::TAU
 }
 
 // The trim grammars share the same indexed topology maps.

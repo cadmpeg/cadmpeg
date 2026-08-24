@@ -867,6 +867,32 @@ fn cylindrical_trim_uses_the_short_boundary_arc() {
 }
 
 #[test]
+fn cylindrical_trim_accepts_quantized_points_within_boundary_tolerance() {
+    let start = 1.0;
+    let span = 0.5;
+    let tolerance = f64::EPSILON * 4096.0;
+
+    assert!(circular_interval_contains(
+        start,
+        span,
+        start - tolerance * 0.5,
+        tolerance,
+    ));
+    assert!(circular_interval_contains(
+        start,
+        span,
+        start + span + tolerance * 0.5,
+        tolerance,
+    ));
+    assert!(!circular_interval_contains(
+        start,
+        span,
+        start - tolerance * 2.0,
+        tolerance,
+    ));
+}
+
+#[test]
 fn cone_support_binds_display_list_face() {
     let mut model = model_with_body();
     let cone = SurfaceGeometry::Cone {
