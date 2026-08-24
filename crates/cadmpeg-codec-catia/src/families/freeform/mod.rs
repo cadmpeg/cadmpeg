@@ -1247,7 +1247,7 @@ pub(crate) fn append_freeform_surface_pools(
             surface: surface_id,
             definition: ProceduralSurfaceDefinition::RollingBallJet {
                 degree: jet.degree,
-                multiplicities: vec![jet.degree + 1; jet.knots.len()],
+                multiplicities: std::iter::repeat_n(jet.degree + 1, jet.knots.len()).collect(),
                 knots: jet.knots,
                 sites,
             },

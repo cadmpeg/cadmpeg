@@ -70,7 +70,9 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         let next = labels.len();
         face_components.push(*labels.entry(root).or_insert(next));
     }
-    let mut component_faces = vec![Vec::new(); labels.len()];
+    let mut component_faces =
+        cadmpeg_core::decode::alloc_filled(labels.len(), Vec::new(), "catia b5 component faces")
+            .ok()?;
     for (face, component) in face_components.iter().copied().enumerate() {
         component_faces[component].push(face);
     }
@@ -140,7 +142,12 @@ pub(super) fn orient_loop_members(
             uses.entry(edge).or_default().push((node, sense));
         }
     }
-    let mut constraints = vec![Vec::<(usize, bool)>::new(); loop_ids.len()];
+    let mut constraints = cadmpeg_core::decode::alloc_filled(
+        loop_ids.len(),
+        Vec::<(usize, bool)>::new(),
+        "catia b5 loop-orientation constraints",
+    )
+    .ok()?;
     for occurrences in uses.values().filter(|occurrences| occurrences.len() == 2) {
         let [(left, left_reversed), (right, right_reversed)] = occurrences.as_slice() else {
             unreachable!("filtered to two occurrences");
@@ -156,7 +163,12 @@ pub(super) fn orient_loop_members(
         }
     }
 
-    let mut flips = vec![None; loop_ids.len()];
+    let mut flips = cadmpeg_core::decode::alloc_filled(
+        loop_ids.len(),
+        None,
+        "catia b5 loop-orientation assignments",
+    )
+    .ok()?;
     for root in 0..loop_ids.len() {
         if flips[root].is_some() {
             continue;
@@ -314,7 +326,8 @@ fn b5_boundary_roles(
     if face.loops.len() == 1 {
         return vec![LoopBoundaryRole::Outer];
     }
-    let unspecified = vec![LoopBoundaryRole::Unspecified; face.loops.len()];
+    let unspecified =
+        std::iter::repeat_n(LoopBoundaryRole::Unspecified, face.loops.len()).collect();
     let Some(surface_id) = surface_ids.get(&face.surface) else {
         return unspecified;
     };

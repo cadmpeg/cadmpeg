@@ -142,7 +142,8 @@ pub(crate) fn classify_planar_boundary_roles(
     surface: &SurfaceGeometry,
     boundaries: &[Vec<Point3>],
 ) -> Vec<LoopBoundaryRole> {
-    let unspecified = || vec![LoopBoundaryRole::Unspecified; boundaries.len()];
+    let unspecified =
+        || std::iter::repeat_n(LoopBoundaryRole::Unspecified, boundaries.len()).collect();
     if boundaries.len() == 1 {
         return vec![LoopBoundaryRole::Outer];
     }
@@ -251,7 +252,8 @@ pub(crate) fn classify_planar_boundary_roles(
     }) {
         return unspecified();
     }
-    let mut roles = vec![LoopBoundaryRole::Inner; boundaries.len()];
+    let mut roles: Vec<_> =
+        std::iter::repeat_n(LoopBoundaryRole::Inner, boundaries.len()).collect();
     roles[outer] = LoopBoundaryRole::Outer;
     roles
 }

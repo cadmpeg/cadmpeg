@@ -956,7 +956,8 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
                 .push((node, if reversed { -1 } else { 1 }));
         }
     }
-    let mut adjacency = vec![Vec::<(usize, i8)>::new(); locations.len()];
+    let mut adjacency =
+        std::iter::repeat_n(Vec::<(usize, i8)>::new(), locations.len()).collect::<Vec<_>>();
     for uses in occurrences.values().filter(|uses| uses.len() == 2) {
         let [(left, left_r), (right, right_r)] = uses.as_slice() else {
             unreachable!("filtered to two occurrences");
@@ -965,7 +966,7 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
         adjacency[*left].push((*right, relation));
         adjacency[*right].push((*left, relation));
     }
-    let mut solved = vec![None; locations.len()];
+    let mut solved = std::iter::repeat_n(None, locations.len()).collect::<Vec<_>>();
     for root in 0..locations.len() {
         if solved[root].is_some() {
             continue;
