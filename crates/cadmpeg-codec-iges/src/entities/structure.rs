@@ -136,40 +136,36 @@ fn subfigure_definition_directory_fields_valid(entry: &DirectoryEntry, dialect: 
 
 fn subfigure_definition_label_display_valid(
     entry: &DirectoryEntry,
-    dialect: Dialect,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
     entry.label_display == 0
-        || (!matches!(dialect, Dialect::V4_0)
-            && u32::try_from(entry.label_display)
-                .ok()
-                .filter(|sequence| sequence % 2 == 1)
-                .is_some_and(|sequence| {
-                    entries
-                        .get(&sequence)
-                        .is_some_and(|target| target.entity_type == 402 && target.form == 5)
-                }))
+        || u32::try_from(entry.label_display)
+            .ok()
+            .filter(|sequence| sequence % 2 == 1)
+            .is_some_and(|sequence| {
+                entries
+                    .get(&sequence)
+                    .is_some_and(|target| target.entity_type == 402 && target.form == 5)
+            })
 }
 
 fn subfigure_definition_transform_valid(
     entry: &DirectoryEntry,
-    dialect: Dialect,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> bool {
-    (!matches!(dialect, Dialect::V4_0) || entry.transform == 0)
-        && resolve_transform(
-            entry.transform,
-            entries,
-            records,
-            global.length_factor_mm(),
-            global.real_precision(),
-            &mut BTreeSet::new(),
-            ctx,
-        )
-        .is_ok()
+    resolve_transform(
+        entry.transform,
+        entries,
+        records,
+        global.length_factor_mm(),
+        global.real_precision(),
+        &mut BTreeSet::new(),
+        ctx,
+    )
+    .is_ok()
 }
 
 #[derive(Clone)]
@@ -2599,15 +2595,8 @@ pub(super) fn project(
         definitions.insert(entry.sequence, SubfigureDefinition { depth, members });
         if name_valid
             && subfigure_definition_directory_fields_valid(entry, global.dialect())
-            && subfigure_definition_label_display_valid(entry, global.dialect(), &entries)
-            && subfigure_definition_transform_valid(
-                entry,
-                global.dialect(),
-                &entries,
-                &records,
-                global,
-                ctx,
-            )
+            && subfigure_definition_label_display_valid(entry, &entries)
+            && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)
         {
             definition_fields_valid.insert(entry.sequence);
         }
@@ -2731,15 +2720,8 @@ pub(super) fn project(
             && designator_valid
             && display_valid
             && subfigure_definition_directory_fields_valid(entry, global.dialect())
-            && subfigure_definition_label_display_valid(entry, global.dialect(), &entries)
-            && subfigure_definition_transform_valid(
-                entry,
-                global.dialect(),
-                &entries,
-                &records,
-                global,
-                ctx,
-            )
+            && subfigure_definition_label_display_valid(entry, &entries)
+            && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)
         {
             network_definition_fields_valid.insert(entry.sequence);
         }
