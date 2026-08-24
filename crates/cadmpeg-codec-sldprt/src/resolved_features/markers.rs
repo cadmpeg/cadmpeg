@@ -2836,6 +2836,26 @@ pub(super) fn linked_profile_point(payload: &[u8], offset: usize) -> Option<Link
         && native_code == Some(2)
         && locus == Some(&[0x05, 0x00, 0x01, 0x00])
         && link_count == Some(&2u16.to_le_bytes());
+    let current_four_link_profile_layout = marker == Some(SKETCH_MARKER)
+        && native_code == Some(0)
+        && profile_layout
+        && link_count == Some(&4u16.to_le_bytes());
+    let current_four_link_short_tail = current_four_link_profile_layout
+        && payload.get(offset + 108..offset + 142) == Some(&[0; 34])
+        && payload.get(offset + 142..offset + 144) == Some(&[0x02, 0x00])
+        && payload.get(offset + 144..offset + 150) == Some(&[0; 6])
+        && View::u32_le_at(payload, offset + 150)
+            .is_some_and(|identity| !matches!(identity, 0 | u32::MAX))
+        && sketch_marker_prefix_at(payload, offset.saturating_add(154));
+    let current_four_link_long_tail = current_four_link_profile_layout
+        && payload.get(offset + 108..offset + 142) == Some(&[0; 34])
+        && payload.get(offset + 142..offset + 144) == Some(&[0x02, 0x00])
+        && View::u32_le_at(payload, offset + 144)
+            .is_some_and(|identity| !matches!(identity, 0 | u32::MAX))
+        && payload.get(offset + 148..offset + 152) == Some(&[0; 4])
+        && payload.get(offset + 152..offset + 154) == Some(&[0; 2])
+        && payload.get(offset + 154..offset + 158) == Some(&[1, 0, 0, 0])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(158));
     if !matches!(
         marker,
         Some(prefix)
@@ -2851,7 +2871,7 @@ pub(super) fn linked_profile_point(payload: &[u8], offset: usize) -> Option<Link
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
         || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
         || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
-        || !matches!(link_count, Some([2 | 3, 0]))
+        || (!matches!(link_count, Some([2 | 3, 0])) && !current_four_link_profile_layout)
         || payload.get(offset + 102..offset + 108) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
     {
         return None;
@@ -2875,7 +2895,9 @@ pub(super) fn linked_profile_point(payload: &[u8], offset: usize) -> Option<Link
         && payload.get(offset + 152..offset + 154) == Some(&[0; 2])
         && payload.get(offset + 154..offset + 158) != Some(&0u32.to_le_bytes())
         && sketch_marker_prefix_at(payload, offset.checked_add(158)?);
-    let valid_tail = long_tail
+    let valid_tail = current_four_link_short_tail
+        || current_four_link_long_tail
+        || long_tail
         || ((profile_layout || legacy_geometry_long_layout || current_geometry_long_layout)
             && standard_tail);
     if !valid_tail {

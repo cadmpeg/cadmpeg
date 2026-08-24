@@ -15,6 +15,7 @@ use cadmpeg_ir::math::Point3;
 
 mod alternate_profile_points;
 mod dimension_carriers;
+mod four_link_profile_points;
 mod lanes;
 mod profile_curves;
 mod profile_points;
