@@ -224,6 +224,26 @@ pub struct FeatureOperationBodyPartitionUse {
     pub parasolid_group_members: Vec<String>,
 }
 
+/// Exact partition ownership of one labeled or unlabeled body-write GROUP.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBodyWriteGroupPartitionUse {
+    /// Globally unique partition-use identity.
+    pub id: String,
+    /// Labeled or unlabeled body-write frame carrying the GROUP node.
+    pub body_write: String,
+    /// Persistent body identity carried by the frame.
+    pub body_identity: u8,
+    /// Partition-local GROUP node carried by the frame.
+    pub group_node: u32,
+    /// Unique partition namespace containing every matched GROUP record.
+    pub partition_stream_ordinal: u32,
+    /// Ordered GROUP record updates retained inside the partition scope.
+    pub parasolid_group_records: Vec<String>,
+    /// Current ordered GROUP members resolved inside the partition scope.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parasolid_group_members: Vec<String>,
+}
+
 /// Exact direct tagged-reference field retained from one feature operation.
 ///
 /// The tag and object identity are native evidence. They do not assign a
@@ -3326,10 +3346,10 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
         };
         labels.extend(
             section
-                .operation_labels()
+                .operation_records_with_label_ordinals()
                 .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, label)| {
+                .filter_map(|(ordinal, record)| {
+                    let label = record.label;
                     let raw_object_indices: [Option<Vec<u8>>; 4] = std::array::from_fn(|slot| {
                         let start = label.object_index_offsets[slot] - record_area_offset;
                         let end = if slot + 1 < label.object_index_offsets.len() {
@@ -3702,6 +3722,66 @@ pub fn feature_operation_body_partition_uses(
                 group_node: write.group_node,
                 parasolid_group_records,
                 parasolid_group_members,
+            })
+        })
+        .collect()
+}
+
+/// Resolve body-write GROUP nodes directly through their partition ownership.
+///
+/// The relation requires at least one retained GROUP record and exactly one
+/// partition namespace for that node. Labeled and independently bounded
+/// unlabeled writes participate in the same persistent body-identity domain.
+pub fn feature_body_write_group_partition_uses(
+    writes: &[FeatureOperationBodyWrite],
+    unlabeled_writes: &[FeatureUnlabeledOperationBodyWrite],
+    groups: &[crate::native::parasolid::ParasolidGroupRecord],
+    group_members: &[crate::native::parasolid::ParasolidGroupMember],
+) -> Vec<FeatureBodyWriteGroupPartitionUse> {
+    let candidates = writes
+        .iter()
+        .map(|write| (write.id.as_str(), write.body_identity, write.group_node))
+        .chain(
+            unlabeled_writes
+                .iter()
+                .map(|write| (write.id.as_str(), write.body_identity, write.group_node)),
+        );
+    candidates
+        .filter_map(|(id, body_identity, group_node)| {
+            let matching_groups = groups
+                .iter()
+                .filter(|group| group.node_id == group_node)
+                .collect::<Vec<_>>();
+            (!matching_groups.is_empty()).then_some(())?;
+            let partitions = matching_groups
+                .iter()
+                .filter_map(|group| group.partition_stream_ordinal)
+                .collect::<BTreeSet<_>>();
+            let mut partitions = partitions.into_iter();
+            let partition_stream_ordinal = partitions.next()?;
+            partitions.next().is_none().then_some(())?;
+            matching_groups
+                .iter()
+                .all(|group| group.partition_stream_ordinal == Some(partition_stream_ordinal))
+                .then_some(())?;
+            Some(FeatureBodyWriteGroupPartitionUse {
+                id: id.replacen("body-write", "body-write-group-partition-use", 1),
+                body_write: id.to_string(),
+                body_identity,
+                group_node,
+                partition_stream_ordinal,
+                parasolid_group_records: matching_groups
+                    .into_iter()
+                    .map(|group| group.id.clone())
+                    .collect(),
+                parasolid_group_members: group_members
+                    .iter()
+                    .filter(|member| {
+                        member.partition_stream_ordinal == partition_stream_ordinal
+                            && member.group_node_id == group_node
+                    })
+                    .map(|member| member.id.clone())
+                    .collect(),
             })
         })
         .collect()

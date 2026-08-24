@@ -59,10 +59,11 @@
 //! complete body lineage is unambiguous. Assembly files may contain only
 //! references to external child parts.
 //!
-//! Ordered feature-operation records, body dependencies, Boolean operations,
-//! sketch record lanes, and numeric expressions transfer from the NX object
-//! model. Current-body writers and their complete earlier dependency closure
-//! transfer as active; other operation suppression remains unresolved. Embedded
+//! Ordered feature-operation records, body-write GROUP ownership, body
+//! dependencies, Boolean operations, sketch record lanes, and numeric
+//! expressions transfer from the NX object model. Current-body writers and
+//! their complete earlier dependency closure transfer as active; other
+//! operation suppression remains unresolved. Embedded
 //! JT coordinates and triangle connectivity transfer as canonical tessellations.
 //! Complete design history, assembly occurrence placement, material and appearance
 //! assignment and `.prt` writing are not supported.

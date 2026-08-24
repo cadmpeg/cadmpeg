@@ -240,6 +240,9 @@ header slots, their token offsets, complete record and payload bounds and
 digests, and source offsets. Body-write frames in this payload belong to the
 unlabeled record and use the same body-identity, GROUP-node, and body-image
 grammar as labeled operation writes; they do not attach to an adjacent label.
+Operation identities use the zero-based ordinal in the complete validated
+header sequence. An unlabeled header consumes its ordinal. Filtering unlabeled
+records does not renumber later labels or pair a payload with another label.
 
 An operation-payload text frame is `marker:u8, length:u8,
 text[length - 2], 00`. The length is `text_byte_count + 2`, and the trailing
@@ -1772,6 +1775,17 @@ same node ID in that scope belongs to the relation in stream order. Equal node
 IDs in other partitions do not participate. A resolved partition scope with no
 retained GROUP update keeps the scoped node relation without importing a
 record from another partition.
+
+A labeled or unlabeled body-write GROUP also establishes a direct partition
+scope when at least one retained GROUP record has that node ID and every such
+record belongs to one partition namespace. Zero records, an unpaired record,
+or matches in multiple partition namespaces reject the relation. The relation
+binds the frame's persistent body identity to that partition. Every labeled
+write carrying the same body identity writes the unique body in that partition
+when the partition contains exactly one body. Zero or multiple partition bodies
+leave operation outputs unresolved. This direct GROUP relation is independent
+of the plain cached-body history relation and does not equate a partition tuple
+alias with a body identity.
 
 A Parasolid GROUP record is `kind:u16 BE=90, xmt:xmt_ref,
 node_id:u32 BE, leading_refs[4], selector:u8, linked_ref:xmt_ref,

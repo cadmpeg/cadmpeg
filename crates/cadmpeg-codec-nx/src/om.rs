@@ -3051,7 +3051,8 @@ impl<'a> Section<'a> {
         })
     }
 
-    /// Decode strictly framed operation labels from the pointed record area.
+    /// Decode strictly framed operation labels for parser/cache tests.
+    #[cfg(test)]
     pub fn operation_labels(&self) -> Vec<OperationLabel<'a>> {
         self.cached_operation_labels.to_vec()
     }

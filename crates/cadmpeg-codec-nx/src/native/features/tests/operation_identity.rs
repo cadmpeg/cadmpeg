@@ -2,7 +2,9 @@
 
 use super::*;
 use crate::native::om::{OmOperationStateJournalGroup, OmOperationStateJournalRow};
-use crate::test_support::{composed_feature_history_payload, prt_with_named_payloads};
+use crate::test_support::{
+    composed_feature_history_payload, composed_feature_history_section, prt_with_named_payloads,
+};
 use std::collections::BTreeMap;
 
 fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabel {
@@ -55,6 +57,45 @@ fn operation_header_identity_witness_survives_reordering() {
         Some(identity.as_str())
     );
     assert!(reordered[2].stable_identity.is_none());
+}
+
+#[test]
+fn feature_label_identity_retains_the_complete_header_ordinal() {
+    const HEADER: &[u8] = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff";
+    let mut section = composed_feature_history_section(&[
+        (&[0xff; 4], "BLOCK", b"first".to_vec()),
+        (&[0xff; 4], "SKETCH", b"second".to_vec()),
+    ]);
+    let second_header = section
+        .windows(HEADER.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == HEADER).then_some(offset))
+        .nth(1)
+        .expect("second operation header");
+    let mut unlabeled = HEADER.to_vec();
+    unlabeled.extend_from_slice(&[0xff; 4]);
+    unlabeled.extend_from_slice(b"unlabeled");
+    section.splice(second_header..second_header, unlabeled);
+    let payload_len = (section.len() - 16) as u32;
+    section[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend_from_slice(&section);
+    let container = crate::container::scan_bytes(prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        payload,
+    )]))
+    .expect("feature-history fixture");
+
+    let labels = super::feature_operation_labels(&container);
+    assert_eq!(labels.len(), 2);
+    assert!(labels[0].id.ends_with("-0000000000"));
+    assert!(labels[1].id.ends_with("-0000000002"));
+    let records = super::feature_operation_records(&container);
+    assert_eq!(records[1].operation_label, labels[1].id);
 }
 
 #[test]
@@ -321,6 +362,58 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         &bindings,
         &interrupted_streams,
         &groups,
+        &[],
+    )
+    .is_empty());
+}
+
+#[test]
+fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
+    let unlabeled = FeatureUnlabeledOperationBodyWrite {
+        id: "unlabeled-body-write".into(),
+        operation_record: "unlabeled-record".into(),
+        ordinal: 0,
+        body_identity: 11,
+        group_node: 99,
+        raw_group_node: vec![99],
+        group_node_source_offset: 10,
+        body_image_object_index: 20,
+        body_image_data_block: Some("block".into()),
+        raw_body_image_object_index: vec![20],
+        body_image_object_index_source_offset: 11,
+        byte_len: 12,
+        source_offset: 9,
+    };
+    let group =
+        |id: &str, partition_stream_ordinal| crate::native::parasolid::ParasolidGroupRecord {
+            id: id.into(),
+            stream_ordinal: partition_stream_ordinal + 1,
+            stream_kind: "deltas".into(),
+            partition_stream_ordinal: Some(partition_stream_ordinal),
+            xmt: 10,
+            node_id: 99,
+            references: vec![3, 4, 5, 6, 7],
+            selector: 4,
+            linked_reference_status: 0,
+            byte_len: 20,
+            inflated_offset: 0,
+        };
+
+    let uses = super::feature_body_write_group_partition_uses(
+        &[],
+        std::slice::from_ref(&unlabeled),
+        &[group("owned", 2)],
+        &[],
+    );
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].body_identity, 11);
+    assert_eq!(uses[0].partition_stream_ordinal, 2);
+    assert_eq!(uses[0].parasolid_group_records, ["owned"]);
+
+    assert!(super::feature_body_write_group_partition_uses(
+        &[],
+        &[unlabeled],
+        &[group("first", 2), group("collision", 4)],
         &[],
     )
     .is_empty());

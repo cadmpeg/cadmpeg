@@ -1198,6 +1198,8 @@ fn attach_feature_operations(
         .feature_operation_body_image_segment_uses
         .as_slice();
     let operation_body_partition_uses = features.feature_operation_body_partition_uses.as_slice();
+    let body_write_group_partition_uses =
+        features.feature_body_write_group_partition_uses.as_slice();
     let operation_common_frames = features.feature_operation_common_frames.as_slice();
     let operation_terminal_frames = features.feature_operation_terminal_frames.as_slice();
     let payload_strings = features.feature_payload_strings.as_slice();
@@ -1710,10 +1712,25 @@ fn attach_feature_operations(
         }
         bodies_by_segment_binding.insert(binding.id.as_str(), stream_bodies);
     }
-    let body_image_outputs_by_write = operation_body_image_outputs_by_write(
+    let mut body_image_outputs_by_write = operation_body_image_outputs_by_write(
         operation_body_image_segment_uses,
         &bodies_by_segment_binding,
     );
+    for (write, body) in operation_body_group_partition_outputs_by_write(
+        operation_body_writes,
+        body_write_group_partition_uses,
+        &ir.model.bodies,
+    ) {
+        match body_image_outputs_by_write.entry(write) {
+            Entry::Vacant(entry) => {
+                entry.insert(body);
+            }
+            Entry::Occupied(entry) if entry.get() == &body => {}
+            Entry::Occupied(entry) => {
+                entry.remove();
+            }
+        }
+    }
     let explicit_hole_outputs = primary_hole_outputs(
         simple_hole_templates,
         &body_references,
@@ -8236,6 +8253,49 @@ fn operation_body_image_outputs_by_write<'a>(
         outputs.insert(write, body.clone());
     }
     outputs
+}
+
+fn operation_body_group_partition_outputs_by_write<'a>(
+    writes: &'a [crate::native::features::FeatureOperationBodyWrite],
+    uses: &[crate::native::features::FeatureBodyWriteGroupPartitionUse],
+    bodies: &[cadmpeg_ir::topology::Body],
+) -> BTreeMap<&'a str, BodyId> {
+    let mut partitions_by_identity = BTreeMap::<u8, Option<u32>>::new();
+    for use_ in uses {
+        match partitions_by_identity.entry(use_.body_identity) {
+            Entry::Vacant(entry) => {
+                entry.insert(Some(use_.partition_stream_ordinal));
+            }
+            Entry::Occupied(mut entry)
+                if entry
+                    .get()
+                    .is_some_and(|partition| partition != use_.partition_stream_ordinal) =>
+            {
+                entry.insert(None);
+            }
+            Entry::Occupied(_) => {}
+        }
+    }
+    let unique_bodies = partitions_by_identity
+        .into_iter()
+        .filter_map(|(identity, partition)| {
+            let partition = partition?;
+            let prefix = format!("nx:s{partition}:body#");
+            let mut matches = bodies.iter().filter(|body| body.id.0.starts_with(&prefix));
+            let body = matches.next()?;
+            matches.next().is_none().then_some(())?;
+            Some((identity, body.id.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    writes
+        .iter()
+        .filter_map(|write| {
+            unique_bodies
+                .get(&write.body_identity)
+                .cloned()
+                .map(|body| (write.id.as_str(), body))
+        })
+        .collect()
 }
 
 fn complete_operation_body_image_outputs(

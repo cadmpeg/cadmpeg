@@ -147,6 +147,41 @@ fn duplicate_body_image_uses_do_not_assign_an_output() {
     assert!(super::operation_body_image_outputs_by_write(&uses, &bodies).is_empty());
 }
 
+#[test]
+fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
+    let write_a = native_body_write("write-a");
+    let mut write_b = native_body_write("write-b");
+    write_b.group_node = 2;
+    let use_ = crate::native::features::FeatureBodyWriteGroupPartitionUse {
+        id: "partition-use".into(),
+        body_write: "unlabeled-write".into(),
+        body_identity: 17,
+        group_node: 3,
+        partition_stream_ordinal: 4,
+        parasolid_group_records: vec!["group".into()],
+        parasolid_group_members: Vec::new(),
+    };
+    let body = cadmpeg_ir::topology::Body {
+        id: BodyId("nx:s4:body#8".into()),
+        kind: cadmpeg_ir::topology::BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    };
+
+    let writes = [write_a, write_b];
+    let outputs = super::operation_body_group_partition_outputs_by_write(
+        &writes,
+        &[use_],
+        std::slice::from_ref(&body),
+    );
+
+    assert_eq!(outputs.get("write-a"), Some(&body.id));
+    assert_eq!(outputs.get("write-b"), Some(&body.id));
+}
+
 fn group_member(
     id: &str,
     family: &str,
