@@ -329,10 +329,10 @@ eight-byte fingerprint, and one terminal byte for both class and member
 declarations. The decomposition does not assign a member type, cardinality,
 ownership, or access role.
 
-### OM-08. Feature body-write cross-checks
+### OM-08. Blend-created faces
 
-**Question.** Which serialized extrusion field names the profile body image,
-and how does a blend construction identify the faces created by that blend?
+**Question.** How does a blend construction identify the faces created by that
+blend?
 
 **Known.** A nested operation body-write frame retains the persistent body
 identity, partition-local GROUP node, endpoint tag, and write-state body-image
@@ -350,12 +350,9 @@ in the selected stream without requiring body-image block resolution.
 **Need.** We must identify the blend construction relation that assigns the
 created-face subset.
 
-**Conflict.** Extrusion profile references resolve to construction data blocks
-whose identities differ from the operation body-write image. The embedded
-endpoint field inside a body-write frame is the frame's body-image field, not
-an independent profile-body witness. GROUP membership assigns topology to
-the producing feature but does not by itself identify which member faces carry
-a particular blend-surface construction.
+**Conflict.** GROUP membership assigns topology to the producing feature but
+does not by itself identify which member faces carry a particular blend-surface
+construction.
 
 ### OM-10. Operation suppression fields
 
