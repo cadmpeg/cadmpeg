@@ -409,6 +409,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
             Point3::new(1.0, 0.0, 1.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });

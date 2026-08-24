@@ -270,6 +270,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                     Point3::new(3.0, 6.0, 1.0),
                 ],
                 weights: None,
+                normal_reversed: false,
                 u_periodic: false,
                 v_periodic: false,
             }),

@@ -143,6 +143,7 @@ fn decode_surfaces(
                     v_count: descriptor.v_count as u32,
                     control_points,
                     weights,
+                    normal_reversed: node.byte_at(18)? == b'-',
                     u_periodic: descriptor.u_periodic,
                     v_periodic: descriptor.v_periodic,
                 }),

@@ -72,6 +72,7 @@ fn pcurve_fit_keeps_exact_points_at_a_degenerate_surface_boundary() {
             Point3::new(1.0, 1.0, 0.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });

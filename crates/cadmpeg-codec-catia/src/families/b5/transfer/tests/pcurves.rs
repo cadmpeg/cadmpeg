@@ -1248,6 +1248,7 @@ fn tensor_surface_contraction_preserves_exact_isocurve() {
             Point3::new(2.0, 1.0, 2.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };

@@ -260,6 +260,7 @@ fn free_plane_and_rational_nurbs_surface_round_trip() {
                     Point3::new(3.0, 2.0, 1.0),
                 ],
                 weights: Some(vec![1.0, 0.75, 0.5, 1.0]),
+                normal_reversed: false,
                 u_periodic: false,
                 v_periodic: false,
             },

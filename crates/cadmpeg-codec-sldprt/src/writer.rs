@@ -3492,6 +3492,7 @@ mod nurbs_write_tests {
             v_count: 2,
             control_points: vec![Point3::new(0.0, 0.0, 0.0); 20],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -3529,6 +3530,7 @@ mod nurbs_write_tests {
             v_count: 4,
             control_points: vec![Point3::new(0.0, 0.0, 0.0); 12],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };

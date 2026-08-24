@@ -72,6 +72,7 @@ fn assert_same_surfaces(actual: &[Surface], expected: &[Surface]) {
         assert_eq!(actual.v_count, expected.v_count);
         assert_eq!(actual.u_periodic, expected.u_periodic);
         assert_eq!(actual.v_periodic, expected.v_periodic);
+        assert_eq!(actual.normal_reversed, expected.normal_reversed);
         assert_same_f64s(&actual.u_knots, &expected.u_knots);
         assert_same_f64s(&actual.v_knots, &expected.v_knots);
         assert_same_points3(&actual.control_points, &expected.control_points);
@@ -268,6 +269,25 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
         panic!("expected NURBS pcurve");
     };
     assert!(!periodic);
+}
+
+#[test]
+fn nurbs_surface_retains_reversed_carrier_normal() {
+    let mut stream = bspline_partition_stream();
+    let surface = stream
+        .windows(2)
+        .position(|window| window == [0, 124])
+        .expect("B_SURFACE record");
+    stream[surface + 18] = b'-';
+
+    let [surface] = crate::nurbs::surfaces(&stream)
+        .try_into()
+        .expect("one surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("expected NURBS surface");
+    };
+
+    assert!(surface.normal_reversed);
 }
 
 #[test]

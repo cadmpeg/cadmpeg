@@ -85,6 +85,7 @@ fn generated_source_less_face_writes_nurbs_surface_carrier() {
             cadmpeg_ir::math::Point3::new(20.0, 10.0, 4.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: true,
         v_periodic: false,
     });
@@ -129,6 +130,7 @@ fn generated_source_less_face_writes_rational_nurbs_surface_carrier() {
             cadmpeg_ir::math::Point3::new(12.0, 8.0, 3.0),
         ],
         weights: Some(vec![1.0, 0.75, 1.25, 1.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: true,
     });
@@ -565,6 +567,7 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
             cadmpeg_ir::math::Point3::new(10.0, 10.0, 3.0),
         ],
         weights: Some(vec![1.0, 0.8, 1.2, 1.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: true,
     });

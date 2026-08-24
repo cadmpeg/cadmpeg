@@ -4590,6 +4590,11 @@ fn model_surface_point_by_id_inner(
         let partials =
             surface_partials_with_budget(&support.geometry, boundary_u, boundary_v, budget)?;
         let normal = partials.du.cross(partials.dv);
+        let normal = if nurbs.normal_reversed {
+            scale_vector(normal, -1.0)
+        } else {
+            normal
+        };
         let magnitude = normal.norm();
         let oriented_normal = (magnitude.is_finite() && magnitude > 0.0).then(|| {
             Vector3::new(
@@ -4779,6 +4784,12 @@ fn model_surface_point_by_id_inner(
             }
             _ => surface_partials_with_budget(&surface.geometry, u, v, budget).map(|partials| {
                 let normal = partials.du.cross(partials.dv);
+                let normal = match &surface.geometry {
+                    SurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed => {
+                        scale_vector(normal, -1.0)
+                    }
+                    _ => normal,
+                };
                 let magnitude = normal.norm();
                 let oriented_normal = (magnitude.is_finite() && magnitude > 0.0).then(|| {
                     Vector3::new(

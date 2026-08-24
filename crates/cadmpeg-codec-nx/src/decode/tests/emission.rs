@@ -1252,6 +1252,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                     Point3::new(10.0, 5.0, 0.0),
                 ],
                 weights: None,
+                normal_reversed: false,
                 u_periodic: false,
                 v_periodic: false,
             }),

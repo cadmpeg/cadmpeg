@@ -54,6 +54,9 @@ pub struct NurbsSurface {
     /// Per-pole weights in control-point order; `None` denotes non-rational.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weights: Option<Vec<f64>>,
+    /// Whether the carrier's oriented normal is opposite `Pu × Pv`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub normal_reversed: bool,
     /// Whether the surface is periodic in u.
     pub u_periodic: bool,
     /// Whether the surface is periodic in v.

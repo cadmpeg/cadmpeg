@@ -39,6 +39,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
             cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
         ],
         weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -253,6 +254,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             .flat_map(|(x, y)| [Point3::new(x, y, 0.0), Point3::new(x, y, 1.0)])
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: true,
         v_periodic: false,
     };
@@ -424,6 +426,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
         v_count: 2,
         control_points,
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -459,6 +462,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
         v_count: 2,
         control_points,
         weights: Some(vec![1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };

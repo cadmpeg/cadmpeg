@@ -1226,6 +1226,7 @@ fn offset_surface_accepts_an_identity_checked_class_31_cache() {
         u_knots: vec![0.0, 0.0, 1.0, 1.0],
         v_knots: vec![0.0, 0.0, 1.0, 1.0],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });

@@ -693,6 +693,7 @@ fn unsupported_surface_membership_does_not_reject_endpoint_candidates() {
             Point3::new(1.0, 1.0, 0.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });

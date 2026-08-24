@@ -370,6 +370,7 @@ pub(super) fn revolve_nurbs(
         v_count: u32::try_from(angular_count).ok()?,
         control_points,
         weights: Some(weights),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })

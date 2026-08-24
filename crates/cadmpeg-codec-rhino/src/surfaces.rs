@@ -513,6 +513,7 @@ fn revolution_nurbs(
             .map_err(|_| error(offset, "revolution V count overflow"))?,
         control_points,
         weights: Some(weights),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: profile.periodic,
     };
@@ -573,6 +574,7 @@ fn sum_nurbs(
         v_count: u32::try_from(v_count).map_err(|_| error(offset, "sum V count overflow"))?,
         control_points,
         weights,
+        normal_reversed: false,
         u_periodic: first.periodic,
         v_periodic: second.periodic,
     })
@@ -630,6 +632,7 @@ pub(crate) fn extrusion_nurbs(
         v_count: 2,
         control_points,
         weights,
+        normal_reversed: false,
         u_periodic: start.periodic,
         v_periodic: false,
     };
@@ -874,6 +877,7 @@ pub(crate) fn read_nurbs_surface(
         v_count: u32::try_from(v_count).expect("validated count fits u32"),
         control_points,
         weights,
+        normal_reversed: false,
         u_periodic,
         v_periodic,
     })

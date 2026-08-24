@@ -452,6 +452,7 @@ fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
             Point3::new(3.0, 2.0, z),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })
@@ -474,6 +475,7 @@ fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
             })
             .collect(),
         weights: Some(vec![2.0; 9]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })
@@ -496,6 +498,7 @@ fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
             })
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })
@@ -523,6 +526,7 @@ fn quadratic_paraboloid_surface() -> SurfaceGeometry {
             })
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })
@@ -725,6 +729,7 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
             .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });
@@ -749,6 +754,7 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
             .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });
@@ -801,6 +807,7 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
             .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });
@@ -1686,6 +1693,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
             })
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };

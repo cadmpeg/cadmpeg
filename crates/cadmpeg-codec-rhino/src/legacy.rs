@@ -403,6 +403,7 @@ fn legacy_surface(
             .map_err(|_| CodecError::Malformed("V1 surface pole count overflow".to_string()))?,
         control_points,
         weights,
+        normal_reversed: false,
         u_periodic: closed[0] == 2,
         v_periodic: closed[1] == 2,
     })

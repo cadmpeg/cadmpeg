@@ -1048,6 +1048,7 @@ fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
             })
             .collect(),
         weights: Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -1142,6 +1143,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
             Point3::new(0.0, 0.0, 1.0),
         ],
         weights: Some(vec![2.0, 2.0, 3.0, 4.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -1159,6 +1161,7 @@ fn shared_extrusion_generator_requires_equivalent_boundaries_and_separated_nets(
             Point3::new(0.0, 1.0, 1.0),
         ],
         weights: Some(vec![6.0, 8.0, 8.0, 8.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -1210,6 +1213,7 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
             .flat_map(|x| [Point3::new(x, 0.0, 0.0), Point3::new(x, 0.0, 2.0)])
             .collect(),
         weights: Some(vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };

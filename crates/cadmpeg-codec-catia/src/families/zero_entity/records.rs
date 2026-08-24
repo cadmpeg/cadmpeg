@@ -1846,6 +1846,7 @@ fn zero_entity_nurbs_surface(data: &[u8], record: usize) -> Option<SurfaceGeomet
         v_count: layout.v_count,
         control_points,
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     }))

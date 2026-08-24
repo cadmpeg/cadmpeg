@@ -1645,6 +1645,7 @@ fn parse_binary_surface(
                 })?,
                 control_points,
                 weights,
+                normal_reversed: false,
                 u_periodic: false,
                 v_periodic: false,
             })
@@ -1685,6 +1686,7 @@ fn parse_binary_surface(
                 })?,
                 control_points,
                 weights,
+                normal_reversed: false,
                 u_periodic,
                 v_periodic,
             })?)
@@ -3269,6 +3271,7 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
         v_count: v_count as u32,
         control_points,
         weights,
+        normal_reversed: false,
         u_periodic,
         v_periodic,
     })
@@ -3302,6 +3305,7 @@ fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Co
         v_count: v_count as u32,
         control_points,
         weights,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })
@@ -4194,6 +4198,7 @@ pub(crate) mod tests {
                 })
                 .collect(),
             weights: None,
+            normal_reversed: false,
             u_periodic: true,
             v_periodic: false,
         };

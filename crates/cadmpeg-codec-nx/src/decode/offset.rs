@@ -274,7 +274,10 @@ fn offset_candidate_sample_error(
     let u = u0 + (u1 - u0) * 0.5;
     let v = v0 + (v1 - v0) * 0.5;
     let support_partials = nurbs_surface_partials_with_budget(support, u, v, geometry_budget)?;
-    let normal = unit_vector(cross_vector(support_partials.du, support_partials.dv))?;
+    let normal = oriented_nurbs_normal(
+        support,
+        cross_vector(support_partials.du, support_partials.dv),
+    )?;
     let candidate_point =
         cadmpeg_ir::eval::nurbs_surface_point_with_budget(candidate, u, v, geometry_budget)?;
     let expected = Point3::new(
@@ -630,7 +633,7 @@ pub(crate) fn certified_curved_offset_cache_fit_with_budget(
             }
             continue;
         }
-        let normal = unit_vector(normal_vector)?;
+        let normal = oriented_nurbs_normal(support, normal_vector)?;
         let u_lipschitz = residual_u_bound + distance.abs() * normal_u_numerator / minimum_normal;
         let v_lipschitz = residual_v_bound + distance.abs() * normal_v_numerator / minimum_normal;
         let expected = Point3::new(
@@ -800,7 +803,7 @@ pub(crate) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
     };
     let u_direction = difference(point(1, 0), point(0, 0));
     let v_direction = difference(point(0, 1), point(0, 0));
-    let normal = unit_vector(cross_vector(u_direction, v_direction))?;
+    let normal = oriented_nurbs_normal(surface, cross_vector(u_direction, v_direction))?;
 
     let positive_collinear = |increment: Vector3, direction: Vector3| {
         increment.x.is_finite()
@@ -837,6 +840,15 @@ pub(crate) fn translation_net_normal(surface: &NurbsSurface) -> Option<Vector3> 
         }
     }
     Some(normal)
+}
+
+fn oriented_nurbs_normal(surface: &NurbsSurface, normal: Vector3) -> Option<Vector3> {
+    let normal = unit_vector(normal)?;
+    Some(if surface.normal_reversed {
+        Vector3::new(-normal.x, -normal.y, -normal.z)
+    } else {
+        normal
+    })
 }
 
 pub(crate) fn positive_weights(weights: Option<&[f64]>) -> bool {
@@ -2291,6 +2303,7 @@ mod tests {
                 })
                 .collect(),
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -2328,6 +2341,7 @@ mod tests {
                     Point3::new(1.0, 1.0, 0.0),
                 ],
                 weights: Some(vec![1.0; 4]),
+                normal_reversed: false,
                 u_periodic: false,
                 v_periodic: false,
             }),

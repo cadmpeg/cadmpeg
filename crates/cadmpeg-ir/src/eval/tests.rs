@@ -31,6 +31,7 @@ fn bilinear_surface() -> NurbsSurface {
             Point3::new(1.0, 1.0, 0.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     }
@@ -219,6 +220,7 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
             Point3::new(1.0, 1.0, 0.0),
         ],
         weights: Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -276,6 +278,7 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
             Point3::new(1.0, 1.0, 0.0),
         ],
         weights: Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -512,6 +515,7 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
             Point3::new(3.0, -1.0, 5.0),
         ],
         weights: Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -562,6 +566,7 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
             Point3::new(2.0, 3.0, 0.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -592,6 +597,7 @@ fn quadratic_surface_second_partials_follow_stored_parameterization() {
             })
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -719,6 +725,7 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
                     })
                     .collect(),
                 weights: None,
+                normal_reversed: false,
                 u_periodic: false,
                 v_periodic: false,
             }),
@@ -756,6 +763,55 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
     assert!((point.x - 0.25).abs() <= epsilon);
     assert!((point.y - 1.2).abs() <= epsilon);
     assert!((point.z - 1.4).abs() <= epsilon);
+}
+
+#[test]
+fn offset_uses_the_nurbs_carrier_normal_orientation() {
+    let support_id = SurfaceId("support".into());
+    let offset_id = SurfaceId("offset".into());
+    let construction = ProceduralSurfaceId("offset-construction".into());
+    let mut support = bilinear_surface();
+    support.normal_reversed = true;
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.surfaces = vec![
+        Surface {
+            id: support_id.clone(),
+            geometry: SurfaceGeometry::Nurbs(support),
+            source_object: None,
+        },
+        Surface {
+            id: offset_id.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: construction.clone(),
+            },
+            source_object: None,
+        },
+    ];
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction,
+        surface: offset_id.clone(),
+        definition: ProceduralSurfaceDefinition::Offset {
+            support: support_id,
+            distance: 2.0,
+            u_sense: None,
+            v_sense: None,
+            support_extension: None,
+            extension_flags: Vec::new(),
+            revision_form: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let point =
+        model_surface_point_by_id(&crate::index::ModelIndex::new(&ir), &offset_id, 0.2, 0.3)
+            .expect("oriented offset point");
+
+    let expected = Point3::new(0.2, 0.3, -2.0);
+    let epsilon = 64.0 * f64::EPSILON;
+    assert!((point.x - expected.x).abs() <= epsilon);
+    assert!((point.y - expected.y).abs() <= epsilon);
+    assert!((point.z - expected.z).abs() <= epsilon);
 }
 
 #[test]
@@ -1125,6 +1181,7 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
             Point3::new(2.0, 3.0, 0.0),
         ],
         weights: Some(vec![1.0, 1.0, 2.0, 2.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -1157,6 +1214,7 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
             Point3::new(2.0, 3.0, 1.0),
         ],
         weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
