@@ -6950,7 +6950,12 @@ pub(crate) fn project_surface_patch(
     if groups.len() != boundary_count || scope.surface_patch_boundaries.len() != boundary_count {
         return None;
     }
-    let mut occupied = vec![false; scope.reference_members.len()];
+    let mut occupied = cadmpeg_core::decode::alloc_filled(
+        scope.reference_members.len(),
+        false,
+        "f3d surface-patch reference occupancy",
+    )
+    .ok()?;
     for boundary in &groups {
         let group_ordinal = usize::try_from(boundary.scope_reference_ordinal).ok()?;
         let member_ordinal = group_ordinal.checked_add(1)?;

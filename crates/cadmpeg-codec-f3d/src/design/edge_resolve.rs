@@ -1584,7 +1584,8 @@ fn bipartite_assignment(
             return None;
         }
     }
-    let mut assignment = vec![0; candidate_sets.len()];
+    let mut assignment =
+        cadmpeg_core::decode::alloc_filled(candidate_sets.len(), 0, "f3d edge assignment").ok()?;
     for (edge, member) in edge_members {
         assignment[member] = edge;
     }

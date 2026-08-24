@@ -1257,7 +1257,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         return Err(malformed(name, "primary grip vertex map is incomplete"));
     }
 
-    let mut edge_by_half = vec![None; half_edges.len()];
+    let mut edge_by_half =
+        ctx.alloc_filled(half_edges.len(), None, "f3d subd half-edge ownership")?;
     let mut edge_vertices = Vec::with_capacity(live_vertices);
     for (edge_slot, root) in edge_roots.iter().copied().enumerate() {
         let Some(root) = root else { continue };

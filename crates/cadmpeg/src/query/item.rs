@@ -398,7 +398,7 @@ fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(Str
     out.push_str(&paths.join("\t"));
     out.push('\n');
 
-    let mut empty_counts = vec![0usize; paths.len()];
+    let mut empty_counts = std::iter::repeat_n(0usize, paths.len()).collect::<Vec<_>>();
     let row_count = values.len();
     for value in values {
         for (i, path) in paths.iter().enumerate() {

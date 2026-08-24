@@ -85,7 +85,8 @@ MOD_DECL = re.compile(
 FILTER_DESCRIPTION = (
     "legacy metrics: production .rs under crates/**/src via is_production_rs; "
     "exclude tests/ and benches/ path segments; exclude files named tests.rs or "
-    "*test*.rs; strip cfg(test)-attributed items with blank-preserving elision. "
+    "*test*.rs; lexically mask Rust comments and literals, then strip "
+    "cfg(test)-attributed items with blank-preserving elision. "
     "from_endian_bytes uses that same crates/**/src glob (not codec crates only). "
     "Placement metrics: scan crates/**/*.rs by ownership, structural entry "
     "points, standard mod resolution, and test-only #[path] ancestry; "

@@ -326,7 +326,7 @@ fn read_window(path: &Path, offset: u64, len: u64) -> Result<Vec<u8>> {
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     file.seek(SeekFrom::Start(offset))
         .with_context(|| format!("seeking to 0x{offset:x} in {}", path.display()))?;
-    let mut buffer = vec![0u8; want];
+    let mut buffer = std::iter::repeat_n(0u8, want).collect::<Vec<_>>();
     file.read_exact(&mut buffer).with_context(|| {
         format!(
             "reading {want} bytes at 0x{offset:x} from {}",

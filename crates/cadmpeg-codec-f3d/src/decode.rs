@@ -3283,7 +3283,11 @@ fn mesh_texture_assignments(
             "F3D mesh texture-id count differs from the triangle count".into(),
         ));
     }
-    let mut triangles = vec![Vec::new(); textures.len()];
+    let mut triangles = cadmpeg_core::decode::alloc_filled(
+        textures.len(),
+        Vec::new(),
+        "f3d mesh texture assignments",
+    )?;
     for (triangle, texture_id) in texture_ids.iter().enumerate() {
         if *texture_id == 0 {
             continue;

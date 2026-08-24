@@ -380,7 +380,8 @@ pub(crate) fn admit_history_bound_scope_variants(
             .push(index);
     }
 
-    let mut admitted = vec![true; scopes.len()];
+    let mut admitted =
+        cadmpeg_core::decode::alloc_filled(scopes.len(), true, "f3d scope admission")?;
     for indices in groups.values().filter(|indices| indices.len() > 1) {
         let history_bound = indices
             .iter()

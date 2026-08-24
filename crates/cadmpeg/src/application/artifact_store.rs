@@ -34,7 +34,9 @@ impl ArtifactStore {
     pub fn read_prefix(path: &Path, n: usize) -> Result<Vec<u8>> {
         let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
         let mut buf = Vec::with_capacity(n);
-        let mut chunk = vec![0_u8; 64 * 1024].into_boxed_slice();
+        let mut chunk = std::iter::repeat_n(0_u8, 64 * 1024)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         while buf.len() < n {
             let remaining = n - buf.len();
             let chunk_len = remaining.min(chunk.len());
