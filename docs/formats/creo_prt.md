@@ -833,7 +833,7 @@ suffix do not contribute carrier geometry.
 
 A referenced inline-cylinder envelope begins with one complete `32` model
 reference, followed by three first-directrix-coordinate scalars, six
-positional surface-row scalars forming two model-space outline corners, and a
+first-directrix-coordinate scalars forming two model-space outline corners, and a
 structural `e3`. The first and third directrix scalars are the axial parameter
 bounds; the middle scalar is retained parameter data. The model reference does
 not contribute geometry. The body after `e3` uses the ordinary inline

@@ -4015,7 +4015,8 @@ fn decode_inline_referenced_cylinder_envelope(
 
     let mut corners = [[0.0; 3]; 2];
     for value in corners.iter_mut().flatten() {
-        let (decoded, next) = decode_row_scalar(kind, body, cursor, cache)?;
+        let (decoded, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
         decoded.is_finite().then_some(())?;
         *value = decoded;
         cursor = next;

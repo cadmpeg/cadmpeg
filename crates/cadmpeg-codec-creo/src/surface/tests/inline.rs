@@ -40,6 +40,19 @@ fn push_inline_test_first_directrix(bytes: &mut Vec<u8>, value: f64) {
     bytes.extend_from_slice(&raw[1..]);
 }
 
+fn push_inline_test_signed_first_directrix(bytes: &mut Vec<u8>, value: f64) {
+    if value > 0.0 {
+        push_inline_test_first_directrix(bytes, value);
+    } else if value < 0.0 {
+        let raw = value.to_be_bytes();
+        assert_eq!(raw[0], 0xc0, "test directrix coordinate must be negative");
+        bytes.push(0x46);
+        bytes.extend_from_slice(&raw[1..]);
+    } else {
+        bytes.push(0x0f);
+    }
+}
+
 #[test]
 fn referenced_inline_cylinder_envelope_uses_outer_axial_bounds() {
     let mut body = vec![0x32, 0, 0, 0, 0, 0, 0, 0];
@@ -69,7 +82,7 @@ fn referenced_inline_compact_x_cylinder_accepts_oblique_trim_containment() {
         push_inline_test_first_directrix(&mut body, value);
     }
     for value in [-2.0, 2.0, -4.0, -2.0, 3.0, -3.0] {
-        push_inline_test_scalar(&mut body, value);
+        push_inline_test_signed_first_directrix(&mut body, value);
     }
     body.push(0xe3);
     body.extend_from_slice(&[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4]);
