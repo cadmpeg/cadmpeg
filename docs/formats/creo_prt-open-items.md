@@ -260,7 +260,7 @@ construct their curves and endpoints.
 
 **Question.** What model-space equation does each positional cylinder body outside the defined analytic and generated round-edge forms encode?
 
-**Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay." define the recognized cylinder row families and their placement invariants, including the `11 10 13` placement-witnessed inline cylinder and generated type-24 round-edge endpoint bodies.
+**Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay." define the recognized cylinder row families and their placement invariants, including the `11 10 13` placement-witnessed inline cylinder and generated type-24 round-edge endpoint bodies. The first directrix-coordinate positive DICT lattice covers prefixes `4b..a3`.
 
 **Need.** We must know the equation to construct the cylinder carrier.
 

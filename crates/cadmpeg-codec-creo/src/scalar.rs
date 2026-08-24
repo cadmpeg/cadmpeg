@@ -358,7 +358,7 @@ pub fn decode_tabulated_cylinder_first_coordinate(
     if data.get(offset) == Some(&0x4a) {
         return ieee7(data, offset, 0xc0);
     }
-    if matches!(head, 0x5b..=0xa3) {
+    if matches!(head, 0x4b..=0xa3) {
         return ieee7_dict(data, offset, 0x3f75 + u16::from(head));
     }
     if matches!(head, 0xa5..=0xa6) {
@@ -1726,6 +1726,19 @@ mod tests {
         assert_eq!(
             high_value,
             f64::from_be_bytes([0x40, 0x18, 0, 0, 0, 0, 0, 0])
+        );
+    }
+
+    #[test]
+    fn first_directrix_coordinate_uses_the_complete_positive_dict_lattice() {
+        let encoded = [0x51, 0x20, 0xbb, 0xca, 0xab, 0x7c, 0x66];
+
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&encoded, 0, &ScalarCache::default()),
+            Some((
+                f64::from_be_bytes([0x3f, 0xc6, 0x20, 0xbb, 0xca, 0xab, 0x7c, 0x66]),
+                encoded.len()
+            ))
         );
     }
 

@@ -1248,7 +1248,7 @@ Ambiguous separators or a missing unique owner leave the bytes opaque.
 Each packed point body contains two directrix coordinates. A control point is
 numeric only when two defined scalar tokens consume its entire bounded body;
 partial scalar matches do not assign either coordinate.
-In the first-coordinate lane, prefixes `5b..a3` use the positive DICT mapping.
+In the first-coordinate lane, prefixes `4b..a3` use the positive DICT mapping.
 Negative prefixes `b2..cf`, `d0..dc`, `dd`, and `de..df` derive their two
 leading IEEE bytes by adding the prefix to `BF2D`, `BF2E`, `BF2F`, and `BF32`,
 respectively. Negative prefixes `a5..a6` and `a7..ae` add to `BF2B` and `BF2C`.
