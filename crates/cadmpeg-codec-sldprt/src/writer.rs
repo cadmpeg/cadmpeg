@@ -2776,16 +2776,16 @@ fn write_typed_body_hierarchy(
             .map(|shell| shell_attrs[shell])
             .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
         typed_prefix(out, 0x0c, body_attr, 0x1000_0000 + index as u32);
-        for value in [5, 6, 1, 1, 1, 1] {
-            typed_ref(out, value);
+        for value in [5_u32, 6, 1, 1, 1, 1] {
+            typed_ref(out, value)?;
         }
         bef64(out, 1000.0);
         bef64(out, TYPED_BODY_LINEAR_RESOLUTION);
-        for value in [1, 1, 1] {
-            typed_ref(out, value);
+        for value in [1_u32, 1, 1] {
+            typed_ref(out, value)?;
         }
         out.push(1);
-        typed_ref(out, 2);
+        typed_ref(out, 2_u32)?;
         out.push(match body.kind {
             BodyKind::Solid => 1,
             BodyKind::Wire => 2,
@@ -2794,10 +2794,10 @@ fn write_typed_body_hierarchy(
         });
         out.push(1);
         for value in [first_shell, 1, 1, 1, 1, 1, 1] {
-            typed_ref(out, value);
+            typed_ref(out, value)?;
         }
         for value in [first_region, 1, 1, 1] {
-            typed_ref(out, value);
+            typed_ref(out, value)?;
         }
     }
 
@@ -2822,7 +2822,7 @@ fn write_typed_body_hierarchy(
             0x2000_0000 + index as u32,
         );
         for value in [1, body_attrs[body], 1, 1, 1, 1, region_attrs[&region.id], 1] {
-            typed_ref(out, value);
+            typed_ref(out, value)?;
         }
     }
 
@@ -2859,7 +2859,7 @@ fn write_typed_body_hierarchy(
             0x3000_0000 + index as u32,
         );
         for value in [1, body, next_region, previous_region, shell_head] {
-            typed_ref(out, value);
+            typed_ref(out, value)?;
         }
         out.push(b'S');
     }
@@ -2870,10 +2870,10 @@ fn write_typed_body_hierarchy(
             .copied()
             .ok_or_else(|| CodecError::Malformed("typed face has no shell".into()))?;
         typed_prefix(out, 0x0e, faces[&face.id], 0x4000_0000 + index as u32);
-        typed_ref(out, 1);
+        typed_ref(out, 1_u32)?;
         out.extend_from_slice(&MAGIC);
         for value in [1, 1, 0, shell, surfaces[&face.surface]] {
-            typed_ref(out, value);
+            typed_ref(out, value)?;
         }
         out.push(match face.sense {
             Sense::Forward => 0x2b,
@@ -2890,8 +2890,26 @@ fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
     be32(out, node_id);
 }
 
-fn typed_ref(out: &mut Vec<u8>, value: u16) {
-    be16(out, value);
+/// Emit one Parasolid XT pointer in its compact or extended two-cell form.
+///
+/// The high bit of the first cell is the form discriminator, so `0x7fff` is
+/// the first value that requires two cells. Two u16 cells provide 31 payload
+/// bits; refusing a larger value keeps the writer from emitting a truncated
+/// pointer.
+fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError> {
+    let value = value.into();
+    if value > 0x7fff_ffff {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
+        ));
+    }
+    if value <= 0x7ffe {
+        be16(out, value as u16);
+    } else {
+        be16(out, 0x8000 | (value as u16 & 0x7fff));
+        be16(out, (value >> 15) as u16);
+    }
+    Ok(())
 }
 
 fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
@@ -3743,6 +3761,26 @@ mod nurbs_write_tests {
             ),
             (3, 4, 2, 1)
         );
+    }
+
+    #[test]
+    fn writes_typed_reference_boundaries() {
+        for (value, expected) in [
+            (0x7ffe_u32, vec![0x7f, 0xfe]),
+            (0x7fff_u32, vec![0xff, 0xff, 0, 0]),
+            (0x8000_u32, vec![0x80, 0, 0, 1]),
+            (0x7fff_ffff_u32, vec![0xff, 0xff, 0xff, 0xff]),
+        ] {
+            let mut bytes = Vec::new();
+            typed_ref(&mut bytes, value).expect("reference is representable");
+            assert_eq!(bytes, expected, "encoded reference {value:#x}");
+        }
+
+        assert!(matches!(
+            typed_ref(&mut Vec::new(), 0x8000_0000_u32),
+            Err(CodecError::NotImplemented(message))
+                if message.contains("31-bit XT pointer range")
+        ));
     }
 
     #[test]
