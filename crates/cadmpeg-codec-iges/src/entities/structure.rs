@@ -311,6 +311,30 @@ fn flow_associativity_directory_valid(entry: &DirectoryEntry, dialect: Dialect) 
     }
 }
 
+fn flow_connection_target_valid(target: &DirectoryEntry, form: i64, dialect: Dialect) -> bool {
+    if form != 18 {
+        return target.entity_type == 132;
+    }
+    target.entity_type == 132
+        || (!matches!(dialect, Dialect::V4_0)
+            && target.entity_type == 402
+            && matches!(target.form, 1 | 7 | 14 | 15))
+}
+
+fn flow_display_target_valid(target: &DirectoryEntry, form: i64, dialect: Dialect) -> bool {
+    target.entity_type == 312
+        || (form == 18 && !matches!(dialect, Dialect::V4_0) && target.entity_type == 212)
+}
+
+fn flow_continuation_target_valid(target: &DirectoryEntry, form: i64, dialect: Dialect) -> bool {
+    target.entity_type == 402
+        && if form == 18 {
+            target.form == 18 || (!matches!(dialect, Dialect::V4_0) && target.form == 11)
+        } else {
+            target.form == 20
+        }
+}
+
 fn array_mask_valid(
     record: &ParameterRecord,
     count_index: usize,
@@ -1575,17 +1599,13 @@ fn flow_associativity(
             .is_some_and(|target| target.entity_type == 402 && target.form == form)
     });
     let connections_valid = connections.iter().all(|sequence| {
-        entries.get(sequence).is_some_and(|target| {
-            if form == 18 {
-                target.entity_type == 132
-                    || (target.entity_type == 402 && matches!(target.form, 1 | 7 | 14 | 15))
-            } else {
-                target.entity_type == 132
-            }
-        }) && (form == 20
-            || records.get(sequence).is_some_and(|member| {
-                has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
-            }))
+        entries
+            .get(sequence)
+            .is_some_and(|target| flow_connection_target_valid(target, form, dialect))
+            && (form == 20
+                || records.get(sequence).is_some_and(|member| {
+                    has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
+                }))
     });
     let joins_valid = joins.iter().all(|sequence| {
         (form == 20
@@ -1597,22 +1617,18 @@ fn flow_associativity(
                 .is_some_and(|target| flow_join_target_valid(target))
     });
     let displays_valid = displays.iter().all(|sequence| {
-        entries.get(sequence).is_some_and(|target| {
-            target.entity_type == 312 || (form == 18 && target.entity_type == 212)
-        })
+        entries
+            .get(sequence)
+            .is_some_and(|target| flow_display_target_valid(target, form, dialect))
     });
     let continuations_valid = continuations.iter().flatten().all(|sequence| {
-        entries.get(sequence).is_some_and(|target| {
-            target.entity_type == 402
-                && if form == 18 {
-                    matches!(target.form, 11 | 18)
-                } else {
-                    target.form == 20
-                }
-        }) && (form == 20
-            || records.get(sequence).is_some_and(|member| {
-                has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
-            }))
+        entries
+            .get(sequence)
+            .is_some_and(|target| flow_continuation_target_valid(target, form, dialect))
+            && (form == 20
+                || records.get(sequence).is_some_and(|member| {
+                    has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
+                }))
     });
     (cursor == record.parameter_end()
         && associated_valid

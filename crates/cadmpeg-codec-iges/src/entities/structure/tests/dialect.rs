@@ -10,7 +10,10 @@ use crate::global::Dialect;
 use crate::test_support::*;
 use crate::IgesCodec;
 
-use super::super::{flow_associativity_directory_valid, type402_structure_valid};
+use super::super::{
+    flow_associativity_directory_valid, flow_connection_target_valid,
+    flow_continuation_target_valid, flow_display_target_valid, type402_structure_valid,
+};
 
 #[test]
 fn v4_flow_associativity_requires_entity_use_flag_three() {
@@ -144,6 +147,66 @@ fn v4_type402_structure_is_ignored_for_each_predefined_associativity_path() {
         );
         assert!(type402_structure_valid(&entry(form, 0), Dialect::V5_0));
     }
+}
+
+#[test]
+fn v4_flow_uses_only_the_v4_target_classes() {
+    let target = |entity_type, form| DirectoryEntry {
+        source_offset: 0,
+        sequence: 3,
+        entity_type,
+        parameter_start: 0,
+        structure: 0,
+        line_font: 0,
+        level: 0,
+        view: 0,
+        transform: 0,
+        label_display: 0,
+        status: Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag: 0,
+            hierarchy: 0,
+        },
+        line_weight: 0,
+        color: 0,
+        parameter_line_count: 0,
+        form,
+        reserved: [[b' '; 8]; 2],
+        label: [b' '; 8],
+        subscript: 0,
+    };
+
+    let connect_point = target(132, 0);
+    let group = target(402, 1);
+    let template = target(312, 0);
+    let note = target(212, 0);
+    let flow = target(402, 18);
+    let old_connect_node = target(402, 11);
+
+    assert!(flow_connection_target_valid(
+        &connect_point,
+        18,
+        Dialect::V4_0
+    ));
+    assert!(!flow_connection_target_valid(&group, 18, Dialect::V4_0));
+    assert!(flow_connection_target_valid(&group, 18, Dialect::V5_3));
+
+    assert!(flow_display_target_valid(&template, 18, Dialect::V4_0));
+    assert!(!flow_display_target_valid(&note, 18, Dialect::V4_0));
+    assert!(flow_display_target_valid(&note, 18, Dialect::V5_3));
+
+    assert!(flow_continuation_target_valid(&flow, 18, Dialect::V4_0));
+    assert!(!flow_continuation_target_valid(
+        &old_connect_node,
+        18,
+        Dialect::V4_0
+    ));
+    assert!(flow_continuation_target_valid(
+        &old_connect_node,
+        18,
+        Dialect::V5_3
+    ));
 }
 
 #[test]
