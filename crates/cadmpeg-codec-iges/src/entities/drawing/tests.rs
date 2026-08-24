@@ -292,7 +292,14 @@ fn clipping_plane_use_flag_follows_the_declared_dialect() {
         label: [b' '; 8],
         subscript: 0,
     };
-    assert!(clipping_plane_valid(&target, Dialect::V4_0));
+    for use_flag in [0, 1, 2, 5] {
+        target.status.use_flag = use_flag;
+        assert!(clipping_plane_valid(&target, Dialect::V4_0), "{use_flag}");
+    }
+    for use_flag in [3, 4] {
+        target.status.use_flag = use_flag;
+        assert!(!clipping_plane_valid(&target, Dialect::V4_0), "{use_flag}");
+    }
     assert!(!clipping_plane_valid(&target, Dialect::V5_0));
     target.status.use_flag = 1;
     assert!(clipping_plane_valid(&target, Dialect::V5_0));

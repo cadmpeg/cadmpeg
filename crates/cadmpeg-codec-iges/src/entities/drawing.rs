@@ -74,7 +74,11 @@ fn views_visible_directory_valid(entry: &DirectoryEntry) -> bool {
 }
 
 fn clipping_plane_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
-    entry.entity_type == 108 && (matches!(dialect, Dialect::V4_0) || entry.status.use_flag == 1)
+    entry.entity_type == 108
+        && match dialect {
+            Dialect::V4_0 => matches!(entry.status.use_flag, 0 | 1 | 2 | 5),
+            _ => entry.status.use_flag == 1,
+        }
 }
 
 #[derive(Debug, PartialEq)]
