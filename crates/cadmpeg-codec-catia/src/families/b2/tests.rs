@@ -190,7 +190,10 @@ fn b2_reference_list_parser_reads_compact_refs_and_unit_tail() {
 
 #[test]
 fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
-    use crate::families::b2::records::B2OwnerReferenceEncoding;
+    use crate::{
+        families::b2::records::{B2OwnerIdentityEncoding, B2OwnerReferenceEncoding},
+        wire::bytes::AllocationReferenceEncoding,
+    };
 
     let packets = crate::families::b2::records::b2_owner_packets(&b2_owner_packet_stream());
     assert_eq!(packets.len(), 1);
@@ -202,6 +205,16 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
     assert_eq!(
         packets[0].references,
         [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]
+    );
+    assert_eq!(
+        packets[0].identity_encodings,
+        std::array::from_fn(
+            |index| B2OwnerIdentityEncoding::Allocation(if index % 2 == 0 {
+                AllocationReferenceEncoding::TaggedU16
+            } else {
+                AllocationReferenceEncoding::BackwardDistance
+            })
+        )
     );
     assert_eq!(
         packets[0].numeric_tail.header,
@@ -225,6 +238,16 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
         packets[0].references,
         [216, 3, 540, 7, 223, 19, 545, 31, 606]
     );
+    assert_eq!(
+        packets[0].identity_encodings,
+        std::array::from_fn(|index| {
+            if index % 2 == 0 {
+                B2OwnerIdentityEncoding::Allocation(AllocationReferenceEncoding::WidthCoded)
+            } else {
+                B2OwnerIdentityEncoding::RawU8
+            }
+        })
+    );
 
     let packets =
         crate::families::b2::records::b2_owner_packets(&b2_all_compact_owner_packet_stream());
@@ -236,6 +259,10 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
     assert_eq!(
         packets[0].references,
         [278, 324, 276, 268, 277, 374, 199, 195, 279]
+    );
+    assert_eq!(
+        packets[0].identity_encodings,
+        [B2OwnerIdentityEncoding::Allocation(AllocationReferenceEncoding::WidthCoded); 9]
     );
 }
 
@@ -257,6 +284,58 @@ fn b2_owner_packet_parser_rejects_invalid_numeric_tail_framing() {
         invalid[tail + offset..tail + offset + replacement.len()].copy_from_slice(&replacement);
         assert!(crate::families::b2::records::b2_owner_packets(&invalid).is_empty());
     }
+}
+
+#[test]
+fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
+    let (mut bytes, target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let targets =
+        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records);
+
+    assert_eq!(
+        targets
+            .iter()
+            .map(|target| (
+                target.owner_pos,
+                target.slot,
+                target.distance,
+                target.target_pos,
+                target.target_class,
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (owner_pos, 0, 1, target_positions[4], 0x5e),
+            (owner_pos, 2, 4, target_positions[1], 0x5e),
+            (owner_pos, 4, 2, target_positions[3], 0x5e),
+            (owner_pos, 6, 3, target_positions[2], 0x5d),
+            (owner_pos, 8, 5, target_positions[0], 0x5d),
+        ]
+    );
+
+    let records = crate::wire::records::consolidated_records_in_sources(
+        &bytes,
+        [
+            std::iter::once(0..owner_pos),
+            std::iter::once(owner_pos..bytes.len()),
+        ],
+    );
+    let packets = crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records);
+    let [packet] = packets.as_slice() else {
+        panic!("one source-scoped owner packet")
+    };
+    assert_eq!(packet.source_index, 1);
+    assert!(
+        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records)
+            .is_empty()
+    );
+
+    bytes.insert(owner_pos, 0x00);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert!(
+        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records)
+            .is_empty()
+    );
 }
 
 #[test]

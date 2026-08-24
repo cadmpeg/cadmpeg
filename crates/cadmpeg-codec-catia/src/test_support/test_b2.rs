@@ -109,6 +109,26 @@ pub(crate) fn b2_width_coded_owner_packet_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn b2_width_coded_owner_with_allocation_stream() -> (Vec<u8>, [usize; 5], usize) {
+    let mut bytes = Vec::new();
+    let mut target_positions = [0usize; 5];
+    for (index, class) in [0x5d, 0x5e, 0x5d, 0x5e, 0x5e].into_iter().enumerate() {
+        target_positions[index] = bytes.len();
+        bytes.extend_from_slice(&[0xb2, 0x03, class, 0x00, 0x05]);
+    }
+    let owner_pos = bytes.len();
+    let mut owner = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
+    for distance in [1u8, 4, 2, 3, 5] {
+        owner.push(4 * distance + 1);
+        owner.push(0);
+    }
+    owner.pop();
+    owner.extend_from_slice(&owner_numeric_tail());
+    owner[3] = u8::try_from(owner.len() - 5).expect("fixed owner packet length");
+    bytes.extend_from_slice(&owner);
+    (bytes, target_positions, owner_pos)
+}
+
 pub(crate) fn b2_all_compact_owner_packet_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
     for value in [278, 324, 276, 268, 277, 374, 199, 195, 279] {

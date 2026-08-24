@@ -22,7 +22,7 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 280;
+pub const CATIA_NATIVE_VERSION: u32 = 281;
 /// Native schema version associating exact scalar nominals with `Range` intervals.
 #[cfg(test)]
 pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
@@ -249,6 +249,20 @@ pub struct CatiaOwnerNumericTail {
     pub bounds: [[f32; 2]; 3],
 }
 
+/// One fixed-nine owner identity resolved within its allocation source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaOwnerIdentityTarget {
+    /// Zero-based identity slot in the fixed-nine packet.
+    pub slot: u8,
+    /// Decoded backward distance.
+    pub distance: u32,
+    /// Byte offset of the selected class-`0x5d` or class-`0x5e` record.
+    pub target_byte_offset: u64,
+    /// Selected record class.
+    pub target_class: u8,
+}
+
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -260,6 +274,8 @@ pub enum CatiaOwnerPacketPayload {
         reference_encoding: CatiaOwnerReferenceEncoding,
         /// Nine persistent identities in serialization order.
         references: [u32; 9],
+        /// Exact wire addressing form of each identity in source order.
+        identity_encodings: [CatiaOwnerIdentityEncoding; 9],
         /// Structurally decoded 62-byte class-specific numeric tail.
         numeric_tail: CatiaOwnerNumericTail,
     },
@@ -282,10 +298,16 @@ pub struct CatiaConsolidatedOwnerPacket {
     pub id: String,
     /// Record byte offset.
     pub byte_offset: u64,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
     /// Width-coded header token.
     pub header_token: u32,
     /// Count-specific reference lane and tail.
     pub payload: CatiaOwnerPacketPayload,
+    /// Backward-distance identities resolved within this packet's contiguous
+    /// class-`0x5d`/`0x5e` allocation sequence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identity_targets: Vec<CatiaOwnerIdentityTarget>,
     /// Structurally adjacent class-`0x5f` face node, when the narrow relation
     /// predicate succeeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -800,6 +822,17 @@ pub enum CatiaAllocationReferenceEncoding {
     TaggedU8,
     /// `0a <u16le>`.
     TaggedU16,
+}
+
+/// Wire addressing form of one fixed-nine owner identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaOwnerIdentityEncoding {
+    /// One token from the allocation-reference grammar.
+    Allocation(CatiaAllocationReferenceEncoding),
+    /// Raw one-byte weak identity in the width-coded alternating dialect.
+    RawU8,
 }
 
 /// One structurally complete width-coded class-`0x5e` edge node.
@@ -6468,28 +6501,53 @@ fn consolidated_owner_packets(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<CatiaConsolidatedOwnerPacket> {
+    let mut identity_targets = HashMap::<(usize, usize), Vec<CatiaOwnerIdentityTarget>>::new();
+    for target in
+        crate::families::b2::records::b2_owner_identity_targets_from_records(bytes, records)
+    {
+        identity_targets
+            .entry((target.source_index, target.owner_pos))
+            .or_default()
+            .push(CatiaOwnerIdentityTarget {
+                slot: target.slot,
+                distance: target.distance,
+                target_byte_offset: target.target_pos as u64,
+                target_class: target.target_class,
+            });
+    }
     let face_nodes =
         crate::families::b2::records::b2_adjacent_face_owners_from_records(bytes, records)
             .into_iter()
-            .map(|linked| (linked.owner.pos, linked.face_node))
+            .map(|linked| {
+                (
+                    (linked.owner.source_index, linked.owner.pos),
+                    linked.face_node,
+                )
+            })
             .chain(
                 crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
                     bytes, records,
                 )
                 .into_iter()
-                .map(|linked| (linked.owner.pos, linked.face_node)),
+                .map(|linked| {
+                    (
+                        (linked.owner.source_index, linked.owner.pos),
+                        linked.face_node,
+                    )
+                }),
             )
             .collect::<HashMap<_, _>>();
     let fixed = crate::families::b2::records::b2_owner_packets_from_records(bytes, records);
     let fixed_positions = fixed
         .iter()
-        .map(|packet| packet.pos)
+        .map(|packet| (packet.source_index, packet.pos))
         .collect::<HashSet<_>>();
     let mut packets = fixed
         .into_iter()
         .map(|packet| {
             (
                 packet.pos,
+                packet.source_index,
                 packet.header_token,
                 CatiaOwnerPacketPayload::FixedNine {
                     reference_encoding: match packet.reference_encoding {
@@ -6504,6 +6562,16 @@ fn consolidated_owner_packets(
                         }
                     },
                     references: packet.references,
+                    identity_encodings: packet.identity_encodings.map(|encoding| match encoding {
+                        crate::families::b2::records::B2OwnerIdentityEncoding::Allocation(
+                            encoding,
+                        ) => CatiaOwnerIdentityEncoding::Allocation(
+                            native_allocation_reference_encoding(encoding),
+                        ),
+                        crate::families::b2::records::B2OwnerIdentityEncoding::RawU8 => {
+                            CatiaOwnerIdentityEncoding::RawU8
+                        }
+                    }),
                     numeric_tail: CatiaOwnerNumericTail {
                         header: packet.numeric_tail.header,
                         lower: packet.numeric_tail.lower,
@@ -6516,10 +6584,11 @@ fn consolidated_owner_packets(
         .chain(
             crate::families::b2::records::b2_counted_owners_from_records(bytes, records)
                 .into_iter()
-                .filter(|packet| !fixed_positions.contains(&packet.pos))
+                .filter(|packet| !fixed_positions.contains(&(packet.source_index, packet.pos)))
                 .map(|packet| {
                     (
                         packet.pos,
+                        packet.source_index,
                         packet.header_token,
                         CatiaOwnerPacketPayload::Counted {
                             references: packet.references,
@@ -6529,16 +6598,22 @@ fn consolidated_owner_packets(
                 }),
         )
         .collect::<Vec<_>>();
-    packets.sort_by_key(|(pos, _, _)| *pos);
+    packets.sort_by_key(|(pos, source_index, _, _)| (*pos, *source_index));
     packets
         .into_iter()
         .map(
-            |(pos, header_token, payload)| CatiaConsolidatedOwnerPacket {
+            |(pos, source_index, header_token, payload)| CatiaConsolidatedOwnerPacket {
                 id: format!("catia:consolidated:owner-packet#{pos:010}"),
                 byte_offset: pos as u64,
+                source_index,
                 header_token,
                 payload,
-                face_node: face_nodes.get(&pos).map(|face_node| CatiaFaceNodeRelation {
+                identity_targets: identity_targets
+                    .remove(&(source_index, pos))
+                    .unwrap_or_default(),
+                face_node: face_nodes
+                    .get(&(source_index, pos))
+                    .map(|face_node| CatiaFaceNodeRelation {
                     byte_offset: face_node.pos as u64,
                     byte_len: (pos - face_node.pos) as u64,
                     header_token: face_node.header_token,
@@ -6552,7 +6627,7 @@ fn consolidated_owner_packets(
                     },
                     target: face_node.target,
                     terminal: face_node.terminal,
-                }),
+                    }),
             },
         )
         .collect()

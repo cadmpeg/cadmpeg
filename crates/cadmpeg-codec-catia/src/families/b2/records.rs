@@ -170,14 +170,35 @@ pub struct B2OwnerNumericTail {
 pub struct B2OwnerPacket {
     /// Record byte offset.
     pub pos: usize,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
     /// Width-coded header token.
     pub header_token: u32,
     /// Reference grammar selected by the complete fixed-nine reference lane.
     pub reference_encoding: B2OwnerReferenceEncoding,
     /// Nine compact persistent identities following the `0x89` count.
     pub references: [u32; 9],
+    /// Exact wire addressing form of each identity in source order.
+    pub identity_encodings: [B2OwnerIdentityEncoding; 9],
     /// Fixed-width class-specific numeric tail.
     pub numeric_tail: B2OwnerNumericTail,
+}
+
+/// One fixed-nine owner identity resolved by its backward-distance token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct B2OwnerIdentityTarget {
+    /// Owning class-`0x62` packet offset.
+    pub owner_pos: usize,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
+    /// Zero-based identity slot in the fixed-nine packet.
+    pub slot: u8,
+    /// Decoded backward distance.
+    pub distance: u32,
+    /// Selected class-`0x5d` or class-`0x5e` record offset.
+    pub target_pos: usize,
+    /// Selected record class.
+    pub target_class: u8,
 }
 
 /// Count-framed class-`0x62` owner record with a class-specific tail.
@@ -185,6 +206,8 @@ pub struct B2OwnerPacket {
 pub struct B2CountedOwner {
     /// Record byte offset.
     pub pos: usize,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
     /// Width-coded header token.
     pub header_token: u32,
     /// Persistent identities selected by the leading `0x80+n` count.
@@ -205,6 +228,15 @@ pub enum B2OwnerReferenceEncoding {
     WidthCodedStrong,
     /// All nine identities use the compact-integer reference grammar.
     AllCompact,
+}
+
+/// Wire addressing form of one identity in a fixed-nine owner packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum B2OwnerIdentityEncoding {
+    /// One token from the allocation-reference grammar.
+    Allocation(AllocationReferenceEncoding),
+    /// Raw one-byte weak identity in the width-coded alternating dialect.
+    RawU8,
 }
 
 /// Count-prefixed class-`0x61` reference record.
@@ -592,9 +624,9 @@ pub(crate) fn b2_counted_owners_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2CountedOwner> {
-    b_family_frames_from_records(records, 0x62)
+    b2_owner_frames(records)
         .into_iter()
-        .filter_map(|frame| {
+        .filter_map(|(frame, source_index)| {
             let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
             if count == 0 {
                 return None;
@@ -605,6 +637,7 @@ pub(crate) fn b2_counted_owners_from_records(
                 .collect::<Option<Vec<_>>>()?;
             (at < frame.end).then(|| B2CountedOwner {
                 pos: frame.pos,
+                source_index,
                 header_token: frame.header_token,
                 reference_encodings: references
                     .iter()
@@ -633,9 +666,9 @@ pub(crate) fn b2_owner_packets_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2OwnerPacket> {
-    b_family_frames_from_records(records, 0x62)
+    b2_owner_frames(records)
         .into_iter()
-        .filter_map(|frame| {
+        .filter_map(|(frame, source_index)| {
             let candidates = [
                 B2OwnerReferenceEncoding::TaggedU16Strong,
                 B2OwnerReferenceEncoding::WidthCodedStrong,
@@ -644,10 +677,72 @@ pub(crate) fn b2_owner_packets_from_records(
             .into_iter()
             .filter_map(|encoding| b2_fixed_owner_packet(data, frame, encoding))
             .collect::<Vec<_>>();
-            let [packet] = candidates.try_into().ok()?;
+            let [mut packet] = candidates.try_into().ok()?;
+            packet.source_index = source_index;
             Some(packet)
         })
         .collect()
+}
+
+/// Resolve backward-distance identities in fixed-nine owner packets within
+/// one contiguous record source and its local class-`0x5d`/`0x5e` allocation
+/// sequence.
+pub(crate) fn b2_owner_identity_targets_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2OwnerIdentityTarget> {
+    let packets = b2_owner_packets_from_records(data, records)
+        .into_iter()
+        .map(|packet| ((packet.source_index, packet.pos), packet))
+        .collect::<BTreeMap<_, _>>();
+    let mut allocation = Vec::<usize>::new();
+    let mut targets = Vec::new();
+    for (index, record) in records.iter().enumerate() {
+        if index > 0 && !crate::wire::records::records_are_contiguous(&records[index - 1..=index]) {
+            allocation.clear();
+        }
+        if record.family == crate::wire::records::ConsolidatedFamily::B
+            && matches!(record.class, 0x5d | 0x5e)
+        {
+            allocation.push(index);
+        }
+        let Some(packet) = packets.get(&(record.source_index, record.range.start)) else {
+            continue;
+        };
+        for (slot, (distance, encoding)) in (0u8..).zip(
+            packet
+                .references
+                .iter()
+                .copied()
+                .zip(packet.identity_encodings),
+        ) {
+            if encoding
+                != B2OwnerIdentityEncoding::Allocation(
+                    AllocationReferenceEncoding::BackwardDistance,
+                )
+            {
+                continue;
+            }
+            let Some(target_index) = usize::try_from(distance)
+                .ok()
+                .and_then(|distance| allocation.len().checked_sub(distance))
+                .and_then(|ordinal| allocation.get(ordinal))
+                .copied()
+            else {
+                continue;
+            };
+            let target = &records[target_index];
+            targets.push(B2OwnerIdentityTarget {
+                owner_pos: packet.pos,
+                source_index: packet.source_index,
+                slot,
+                distance,
+                target_pos: target.range.start,
+                target_class: target.class,
+            });
+        }
+    }
+    targets
 }
 
 fn b2_fixed_owner_packet(
@@ -660,31 +755,76 @@ fn b2_fixed_owner_packet(
     }
     let mut at = frame.payload + 1;
     let mut references = [0u32; 9];
-    for (index, reference) in references.iter_mut().enumerate() {
-        *reference = match reference_encoding {
-            B2OwnerReferenceEncoding::TaggedU16Strong if index % 2 == 0 => {
-                tagged_u16_ref(data, &mut at)?
-            }
-            B2OwnerReferenceEncoding::TaggedU16Strong => compact_int(data, &mut at)?,
+    let mut identity_encodings = [B2OwnerIdentityEncoding::RawU8; 9];
+    for (index, (reference, identity_encoding)) in references
+        .iter_mut()
+        .zip(&mut identity_encodings)
+        .enumerate()
+    {
+        (*reference, *identity_encoding) = match reference_encoding {
+            B2OwnerReferenceEncoding::TaggedU16Strong if index % 2 == 0 => (
+                tagged_u16_ref(data, &mut at)?,
+                B2OwnerIdentityEncoding::Allocation(AllocationReferenceEncoding::TaggedU16),
+            ),
+            B2OwnerReferenceEncoding::TaggedU16Strong => compact_owner_identity(data, &mut at)?,
             B2OwnerReferenceEncoding::WidthCodedStrong if index % 2 == 0 => {
-                compact_int(data, &mut at)?
+                compact_owner_identity(data, &mut at)?
             }
             B2OwnerReferenceEncoding::WidthCodedStrong => {
                 let value = u32::from(*data.get(at)?);
                 at += 1;
-                value
+                (value, B2OwnerIdentityEncoding::RawU8)
             }
-            B2OwnerReferenceEncoding::AllCompact => compact_int(data, &mut at)?,
+            B2OwnerReferenceEncoding::AllCompact => compact_owner_identity(data, &mut at)?,
         };
     }
     let numeric_tail = b2_owner_numeric_tail(data.get(at..frame.end)?)?;
     Some(B2OwnerPacket {
         pos: frame.pos,
+        source_index: 0,
         header_token: frame.header_token,
         reference_encoding,
         references,
+        identity_encodings,
         numeric_tail,
     })
+}
+
+fn b2_owner_frames(records: &[ConsolidatedRecord]) -> Vec<(ConsolidatedFrame, usize)> {
+    records
+        .iter()
+        .filter(|record| {
+            record.physically_contiguous
+                && record.family == ConsolidatedFamily::B
+                && record.class == 0x62
+        })
+        .map(|record| {
+            (
+                ConsolidatedFrame {
+                    pos: record.range.start,
+                    payload: record.payload.start,
+                    end: record.range.end,
+                    header_token: record.header_token,
+                },
+                record.source_index,
+            )
+        })
+        .collect()
+}
+
+fn compact_owner_identity(data: &[u8], at: &mut usize) -> Option<(u32, B2OwnerIdentityEncoding)> {
+    let lead = *data.get(*at)?;
+    let encoding = match lead % 4 {
+        1 => AllocationReferenceEncoding::BackwardDistance,
+        3 if lead != 0 => AllocationReferenceEncoding::OwnedChild,
+        2 if lead != 0 => AllocationReferenceEncoding::Selector2,
+        0 if lead != 0 => AllocationReferenceEncoding::WidthCoded,
+        _ => return None,
+    };
+    Some((
+        compact_int(data, at)?,
+        B2OwnerIdentityEncoding::Allocation(encoding),
+    ))
 }
 
 fn tagged_u16_ref(data: &[u8], at: &mut usize) -> Option<u32> {

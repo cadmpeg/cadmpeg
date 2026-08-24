@@ -749,8 +749,11 @@ fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
     let [packet] = native.consolidated_owner_packets.as_slice() else {
         panic!("one consolidated owner packet")
     };
+    assert_eq!(packet.source_index, 0);
+    assert!(packet.identity_targets.is_empty());
     let crate::native::CatiaOwnerPacketPayload::FixedNine {
         references,
+        identity_encodings,
         numeric_tail,
         ..
     } = &packet.payload
@@ -758,6 +761,16 @@ fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
         panic!("fixed-nine owner payload")
     };
     assert_eq!(*references, [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]);
+    assert_eq!(
+        *identity_encodings,
+        std::array::from_fn(
+            |index| crate::native::CatiaOwnerIdentityEncoding::Allocation(if index % 2 == 0 {
+                crate::native::CatiaAllocationReferenceEncoding::TaggedU16
+            } else {
+                crate::native::CatiaAllocationReferenceEncoding::BackwardDistance
+            },)
+        )
+    );
     assert_eq!(numeric_tail.header, [0x84, 0x41, 0xbb, 0x05, 0x0d]);
     assert_eq!(numeric_tail.lower, [-0.0, 4.5]);
     assert_eq!(numeric_tail.upper, [12.25, 7.0]);
@@ -792,6 +805,37 @@ fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
         .store(&mut namespace)
         .expect("store invalid CATIA owner packet");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_fixed_owner_allocation_targets() {
+    let (bytes, target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+
+    assert_eq!(packet.byte_offset, owner_pos as u64);
+    assert_eq!(packet.source_index, 0);
+    assert_eq!(
+        packet
+            .identity_targets
+            .iter()
+            .map(|target| (
+                target.slot,
+                target.distance,
+                target.target_byte_offset,
+                target.target_class,
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (0, 1, target_positions[4] as u64, 0x5e),
+            (2, 4, target_positions[1] as u64, 0x5e),
+            (4, 2, target_positions[3] as u64, 0x5e),
+            (6, 3, target_positions[2] as u64, 0x5d),
+            (8, 5, target_positions[0] as u64, 0x5d),
+        ]
+    );
 }
 
 #[test]
