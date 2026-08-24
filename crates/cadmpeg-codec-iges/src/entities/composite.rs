@@ -45,6 +45,10 @@ fn composite_use_flag_valid(use_flag: u8, dialect: Dialect) -> bool {
     }
 }
 
+fn composite_line_font_valid(line_font: i64, hierarchy: u8, dialect: Dialect) -> bool {
+    !matches!(dialect, Dialect::V4_0) || hierarchy == 1 || line_font != 0
+}
+
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
     IgesLossCode::CompositeCarrierDegraded
         .note(format!(
@@ -916,6 +920,13 @@ pub(super) fn project(
             losses.push(entity_loss(
                 entry,
                 "Type 102 Entity Use Flag must be 00 in IGES 4.0",
+            ));
+            continue;
+        }
+        if !composite_line_font_valid(entry.line_font, entry.status.hierarchy, global.dialect()) {
+            losses.push(entity_loss(
+                entry,
+                "Type 102 Line Font must be nonzero in IGES 4.0 unless Hierarchy is 01",
             ));
             continue;
         }

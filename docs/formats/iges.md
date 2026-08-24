@@ -141,9 +141,11 @@ Global strings are unlimited-length Hollerith strings. IGES 4.0 permits every 7-
 
 ## Directory Entry section
 
-IGES 4.0 Table 3 narrows the valid Entity Use Flag values for Type 108 clipping planes to `00`, `01`, `02`, and `05`; `03` and `04` do not project.
+IGES 4.0 [Table 3](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b/pdf/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf) narrows the valid Entity Use Flag values for Type 108 clipping planes to `00`, `01`, `02`, and `05`; `03` and `04` do not project.
 
 IGES 4.0 Table 3 requires Entity Use Flag `00` for Type 102 Composite Curve entries.
+
+IGES 4.0 Type 102 entries require a nonzero Line Font field unless Hierarchy is `01`, which ignores the display-attribute fields. Effective IGES 5.0 accepts Line Font `0` as “no line font specified” under Edit Change Order E504 in the [IGES 5.0 Recommended Practices Guide](https://nvlpubs.nist.gov/nistpubs/Legacy/IR/nistir4600.pdf).
 
 For effective IGES 4.0, the mechanical/document read envelope is intersected with the 4.0 entity table. Direction (Type 123), Boundary (Type 141), Bounded Surface (Type 143), Selected Component (Type 182), Manifold Solid B-rep Object (Type 186), analytic B-rep surfaces (Types 190, 192, 194, 196, and 198), New General Note (Type 213), Units Data (Type 316), and B-rep topology (Types 502, 504, 508, 510, and 514) are outside that table. Shared standard entity forms are narrowed to Type 110, 216, 218, and 430 Form 0; Type 118 Forms 0 and 1; Type 214 Forms 1 through 11; Type 402 Forms 1 through 16 and 18; Type 404 Form 0; Type 406 Forms 1 through 18; Type 410 Form 0; and Type 416 Forms 0 through 2. Type 306 Form 0 and Macro Instance Entity types 600 through 699 and 10000 through 99999 are admitted as native-only extension records. Type 406 Forms 5001 through 9999 are also admitted as implementor-defined opaque properties under their common `NP` and variable-value layout. Type 125 Forms 0 through 4 remain admitted because the Flash Entity is a standard geometry entity in the 4.0 table. An outside-envelope record remains in the native `entities` arena, is excluded from neutral projection, and charges `iges/entity.outside-envelope`. These entity and form rules are defined by [IGES 4.0 §§3.1.3, 3.15, 4.2.1, 4.3.1–4.3.12, and 4.3.6](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b/pdf/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf).
 
