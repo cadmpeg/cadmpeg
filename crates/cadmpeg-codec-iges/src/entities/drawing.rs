@@ -69,8 +69,14 @@ fn view_directory_valid(entry: &DirectoryEntry) -> bool {
     entry.entity_type == 410 && matches!(entry.form, 0 | 1) && entry.status.use_flag != 0
 }
 
-fn views_visible_directory_valid(entry: &DirectoryEntry) -> bool {
-    entry.entity_type == 402 && matches!(entry.form, 3 | 4 | 19) && entry.status.subordinate == 0
+fn views_visible_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    entry.entity_type == 402
+        && matches!(entry.form, 3 | 4 | 19)
+        && entry.status.subordinate == 0
+        && (!matches!(
+            dialect,
+            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3
+        ) || entry.status.use_flag == 1)
 }
 
 fn clipping_plane_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
@@ -436,7 +442,7 @@ pub(super) fn project(
                     && weight_valid
             })
         });
-        if views_visible_directory_valid(entry) && blocks_valid {
+        if views_visible_directory_valid(entry, global.dialect()) && blocks_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
@@ -519,7 +525,7 @@ pub(super) fn project(
                     .is_some_and(|sequence| entries.contains_key(&sequence))
             })
         });
-        if views_visible_directory_valid(entry) && views_valid && entities_valid {
+        if views_visible_directory_valid(entry, global.dialect()) && views_valid && entities_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(

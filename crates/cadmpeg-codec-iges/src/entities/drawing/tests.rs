@@ -99,18 +99,23 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
 
     for form in [3, 4, 19] {
         let mut visible = directory_entry(402, form);
-        assert!(views_visible_directory_valid(&visible));
+        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
+        assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
         visible.status.subordinate = 1;
-        assert!(!views_visible_directory_valid(&visible));
+        assert!(!views_visible_directory_valid(&visible, Dialect::V4_0));
+        assert!(!views_visible_directory_valid(&visible, Dialect::V5_0));
         visible.status.subordinate = 0;
         visible.status.use_flag = 0;
-        assert!(views_visible_directory_valid(&visible));
+        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
+        assert!(!views_visible_directory_valid(&visible, Dialect::V5_0));
         visible.status.use_flag = 2;
-        assert!(views_visible_directory_valid(&visible));
+        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
+        assert!(!views_visible_directory_valid(&visible, Dialect::V5_0));
         visible.status.use_flag = 1;
         visible.status.blank = 1;
         visible.status.hierarchy = 3;
-        assert!(views_visible_directory_valid(&visible));
+        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
+        assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
         for field in 0..4 {
             let mut candidate = directory_entry(402, form);
             match field {
@@ -119,14 +124,76 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
                 2 => candidate.line_weight = 1,
                 _ => candidate.color = 1,
             }
-            assert!(views_visible_directory_valid(&candidate));
+            assert!(views_visible_directory_valid(&candidate, Dialect::V4_0));
+            assert!(views_visible_directory_valid(&candidate, Dialect::V5_0));
         }
         visible.level = 2;
         visible.view = 3;
         visible.transform = 5;
         visible.label_display = 7;
-        assert!(views_visible_directory_valid(&visible));
+        assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
+        assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
     }
+}
+
+#[test]
+fn decode_view_visibility_use_flag_follows_v4_and_v5_rules() {
+    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let decode = |global: &[u8], status: &'static str| {
+        IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global(
+                    &[
+                        OwnedTestEntity {
+                            entity_type: 410,
+                            form: 0,
+                            label: "VIEW".into(),
+                            status: "00000100",
+                            parameters: "410,1,1,0,0,0,0,0,0,1,3,0;".into(),
+                        },
+                        OwnedTestEntity {
+                            entity_type: 402,
+                            form: 3,
+                            label: "VISIBLE".into(),
+                            status,
+                            parameters: "402,1,0,1;".into(),
+                        },
+                    ],
+                    global,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+
+    let v4 = decode(GLOBAL_V4, "00000200");
+    assert!(v4.report().losses.iter().all(|loss| {
+        loss.code != IgesLossCode::EntityNotProjected.kind()
+            || loss
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                != Some("directory_entry:D3")
+    }));
+    assert_eq!(
+        v4.ir().native.namespace("iges").unwrap().arenas["view_visibility"].len(),
+        1
+    );
+
+    let v5 = decode(GLOBAL_V5_0, "00000200");
+    assert!(
+        v5.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::EntityNotProjected.kind()
+                && loss
+                    .provenance
+                    .as_ref()
+                    .and_then(|provenance| provenance.tag.as_deref())
+                    == Some("directory_entry:D3")
+        }),
+        "{:#?}",
+        v5.report().losses
+    );
 }
 
 #[test]
