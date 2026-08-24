@@ -1148,7 +1148,7 @@ mod nx {
     }
 
     fn record(tag: u8, len: usize) -> Vec<u8> {
-        let mut r = vec![0u8; len];
+        let mut r = std::iter::repeat_n(0u8, len).collect::<Vec<_>>();
         r[0] = 0x00;
         r[1] = tag;
         r

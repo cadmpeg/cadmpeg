@@ -100,7 +100,8 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
         }
         if !mesh.triangle_groups.is_empty() {
-            let mut memberships = vec![0u32; mesh.triangles.len()];
+            let mut memberships =
+                std::iter::repeat_n(0u32, mesh.triangles.len()).collect::<Vec<_>>();
             let mut source_ids = std::collections::BTreeSet::new();
             let valid = mesh.triangle_groups.iter().all(|group| {
                 !group.triangles.is_empty()
@@ -131,7 +132,8 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         if !mesh.texture_assignments.is_empty() {
-            let mut memberships = vec![0u32; mesh.triangles.len()];
+            let mut memberships =
+                std::iter::repeat_n(0u32, mesh.triangles.len()).collect::<Vec<_>>();
             let mut source_ids = std::collections::BTreeSet::new();
             let mut anonymous_textures = std::collections::BTreeSet::new();
             let valid = mesh.texture_assignments.iter().all(|assignment| {

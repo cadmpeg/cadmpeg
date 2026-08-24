@@ -2171,6 +2171,7 @@ pub(super) fn sequential_tessellation(
     }
     let triangle_count = u32::try_from(mesh.triangles.len())
         .map_err(|_| CodecError::Malformed("tessellation triangle count overflow".into()))?;
+    let strip_lengths = std::iter::repeat_n(3_u32, triangle_count as usize).collect::<Vec<_>>();
     Ok(cadmpeg_ir::tessellation::Tessellation {
         id: mesh.id.clone(),
         body: mesh.body.clone(),
@@ -2178,9 +2179,9 @@ pub(super) fn sequential_tessellation(
         chordal_deflection: mesh.chordal_deflection,
         source_object: mesh.source_object.clone(),
         vertices,
-        triangles: triangles_from_strips(&vec![3; triangle_count as usize])?,
+        triangles: triangles_from_strips(&strip_lengths)?,
         feature_edges: Vec::new(),
-        strip_lengths: vec![3; triangle_count as usize],
+        strip_lengths,
         normals,
         corner_normals: Vec::new(),
         triangle_groups: Vec::new(),

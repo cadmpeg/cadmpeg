@@ -1747,7 +1747,7 @@ pub(super) fn ordered_compact_line_profile(
     if lines.len() < 3 {
         return None;
     }
-    let mut used = vec![false; lines.len()];
+    let mut used = std::iter::repeat_n(false, lines.len()).collect::<Vec<_>>();
     let mut profile = Vec::with_capacity(lines.len());
     let first = lines.first()?;
     used[0] = true;

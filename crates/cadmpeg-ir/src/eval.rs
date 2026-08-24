@@ -1187,13 +1187,13 @@ fn bspline_span(knots: &[f64], degree: usize, count: usize, t: f64) -> Option<us
 /// Non-zero basis function values at `t` for the given span (Cox–de Boor).
 fn bspline_basis(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
     let mut values = vec![1.0];
-    let mut left = vec![0.0; degree + 1];
-    let mut right = vec![0.0; degree + 1];
+    let mut left = std::iter::repeat_n(0.0, degree + 1).collect::<Vec<_>>();
+    let mut right = std::iter::repeat_n(0.0, degree + 1).collect::<Vec<_>>();
     for j in 1..=degree {
         left[j] = t - knots[span + 1 - j];
         right[j] = knots[span + j] - t;
         let mut saved = 0.0;
-        let mut next = vec![0.0; j + 1];
+        let mut next = std::iter::repeat_n(0.0, j + 1).collect::<Vec<_>>();
         for (r, &value) in values.iter().enumerate().take(j) {
             let denominator = right[r + 1] + left[j - r];
             let factor = if denominator == 0.0 {
@@ -1245,7 +1245,7 @@ fn bspline_basis_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -
 
 fn bspline_basis_second_derivative(knots: &[f64], degree: usize, span: usize, t: f64) -> Vec<f64> {
     if degree < 2 {
-        return vec![0.0; degree + 1];
+        return std::iter::repeat_n(0.0, degree + 1).collect();
     }
     let lower = bspline_basis_derivative(knots, degree - 1, span, t);
     let lower_start = span - (degree - 1);

@@ -1332,7 +1332,7 @@ fn planar_sheet_brep_payload(
         payload.extend(bytes);
         direct.extend(bytes);
     }
-    let mesh_presence = vec![0; model.faces.len()];
+    let mesh_presence = std::iter::repeat_n(0, model.faces.len()).collect::<Vec<_>>();
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     let solid = 0_i32.to_le_bytes();
@@ -2012,7 +2012,7 @@ fn multi_face_brep_payload(
         payload.extend(bytes);
         direct.extend(bytes);
     }
-    let mesh_presence = vec![0; model.faces.len()];
+    let mesh_presence = std::iter::repeat_n(0, model.faces.len()).collect::<Vec<_>>();
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     let solid = if body.kind == BodyKind::Solid {

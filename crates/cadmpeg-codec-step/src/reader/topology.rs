@@ -2711,7 +2711,7 @@ fn connected_face_components(
         }
     }
 
-    let mut neighbors = vec![BTreeSet::new(); face_ids.len()];
+    let mut neighbors = std::iter::repeat_n(BTreeSet::new(), face_ids.len()).collect::<Vec<_>>();
     for group in faces_by_edge.values().chain(faces_by_vertex.values()) {
         for &face in group {
             neighbors[face].extend(group.iter().copied().filter(|other| *other != face));

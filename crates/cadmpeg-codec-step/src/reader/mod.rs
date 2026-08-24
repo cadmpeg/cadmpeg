@@ -979,7 +979,7 @@ fn byte_accounting(
     exchange: &Exchange,
     typed_records: &HashSet<u64>,
 ) -> ByteAccounting {
-    let mut classes = vec![ByteClass::Unclassified; input.len()];
+    let mut classes = std::iter::repeat_n(ByteClass::Unclassified, input.len()).collect::<Vec<_>>();
     for record in exchange.records.values() {
         let class = if typed_records.contains(&record.id) {
             ByteClass::Typed

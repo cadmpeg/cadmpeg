@@ -474,7 +474,7 @@ fn revolution_nurbs(
     let profile_weights = profile
         .weights
         .clone()
-        .unwrap_or_else(|| vec![1.0; profile_count]);
+        .unwrap_or_else(|| std::iter::repeat_n(1.0, profile_count).collect());
     let mut control_points = Vec::with_capacity(angular_count * profile_count);
     let mut weights = Vec::with_capacity(control_points.capacity());
     for ((theta, radial_scale), angular_weight) in angular.into_iter().zip(angular_weights) {
@@ -535,8 +535,14 @@ fn sum_nurbs(
     u_count
         .checked_mul(v_count)
         .ok_or_else(|| error(offset, "sum surface control count overflow"))?;
-    let first_weights = first.weights.clone().unwrap_or_else(|| vec![1.0; u_count]);
-    let second_weights = second.weights.clone().unwrap_or_else(|| vec![1.0; v_count]);
+    let first_weights = first
+        .weights
+        .clone()
+        .unwrap_or_else(|| std::iter::repeat_n(1.0, u_count).collect());
+    let second_weights = second
+        .weights
+        .clone()
+        .unwrap_or_else(|| std::iter::repeat_n(1.0, v_count).collect());
     let rational = first.weights.is_some() || second.weights.is_some();
     let mut control_points = Vec::with_capacity(u_count * v_count);
     let mut weights = rational.then(|| Vec::with_capacity(control_points.capacity()));

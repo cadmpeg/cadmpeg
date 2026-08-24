@@ -984,13 +984,14 @@ fn read_mesh_sides(
             reader.skip(chunk.next_offset - reader.position())?;
             warnings.push(format!("Brep mesh cache degraded: {error}"));
             Ok((
-                vec![
+                std::iter::repeat_n(
                     RawBrepMeshSlot {
                         mesh: None,
                         present: false,
-                    };
-                    face_count
-                ],
+                    },
+                    face_count,
+                )
+                .collect(),
                 chunk.range(),
             ))
         }
@@ -1362,7 +1363,7 @@ fn typed_slot(array: &RawBrepChildren, index: i32, expected: RawBrepBaseType) ->
 }
 
 fn validate_edge_incidences(raw: &RawBrep) -> Result<(), GeometryError> {
-    let mut actual = vec![Vec::new(); raw.vertices.len()];
+    let mut actual = std::iter::repeat_n(Vec::new(), raw.vertices.len()).collect::<Vec<_>>();
     for (vertex, record) in raw.vertices.iter().enumerate() {
         for edge in &record.edges {
             actual[vertex].push(*edge);

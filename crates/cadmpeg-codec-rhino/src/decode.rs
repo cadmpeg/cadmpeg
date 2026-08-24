@@ -4713,7 +4713,7 @@ fn region_shell_groups(raw: &crate::brep::RawBrep, components: &[usize]) -> Shel
             groups.entry(component).or_default().push(face);
         }
         let mut shell_faces = Vec::new();
-        let mut face_groups = vec![0; components.len()];
+        let mut face_groups = std::iter::repeat_n(0, components.len()).collect::<Vec<_>>();
         let mut region_labels = Vec::new();
         for (group, (component, faces)) in groups.into_iter().enumerate() {
             for face in &faces {
@@ -4754,7 +4754,7 @@ fn region_shell_groups(raw: &crate::brep::RawBrep, components: &[usize]) -> Shel
             .or_default()
             .push(face);
     }
-    let mut face_groups = vec![0; components.len()];
+    let mut face_groups = std::iter::repeat_n(0, components.len()).collect::<Vec<_>>();
     let mut region_labels = Vec::new();
     let mut shell_faces = Vec::new();
     for (group, ((region, _component), faces)) in grouped.into_iter().enumerate() {
@@ -4777,7 +4777,7 @@ fn region_shell_groups_without_records(components: &[usize]) -> ShellGrouping {
     for (face, component) in components.iter().copied().enumerate() {
         groups.entry(component).or_default().push(face);
     }
-    let mut face_groups = vec![0; components.len()];
+    let mut face_groups = std::iter::repeat_n(0, components.len()).collect::<Vec<_>>();
     let mut region_labels = Vec::new();
     let mut shell_faces = Vec::new();
     for (group, (_component, faces)) in groups.into_iter().enumerate() {

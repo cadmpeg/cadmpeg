@@ -551,7 +551,7 @@ fn synthetic_cfb_seed() -> Vec<u8> {
     const FREE: u32 = 0xffff_ffff;
     const END: u32 = 0xffff_fffe;
     const FAT: u32 = 0xffff_fffd;
-    let mut file = vec![0_u8; SECTOR * 13];
+    let mut file = std::iter::repeat_n(0_u8, SECTOR * 13).collect::<Vec<_>>();
     file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
     put_u16(&mut file, 24, 0x003e);
     put_u16(&mut file, 26, 3);

@@ -1116,7 +1116,8 @@ pub(crate) fn project_profiled_hole_constructions(
                 .map(move |feature| (feature.id.as_str(), history_index))
         })
         .collect::<HashMap<_, _>>();
-    let mut unowned_incomplete_holes = vec![Vec::<(String, u32)>::new(); histories.len()];
+    let mut unowned_incomplete_holes =
+        std::iter::repeat_n(Vec::<(String, u32)>::new(), histories.len()).collect::<Vec<_>>();
     for feature in features.iter() {
         let FeatureDefinition::Hole {
             diameter,
@@ -2374,7 +2375,7 @@ fn partition_seeded_hole_axes(
         seed_directions.push(direction);
     }
 
-    let mut partitions = vec![Vec::new(); siblings.len()];
+    let mut partitions = std::iter::repeat_n(Vec::new(), siblings.len()).collect::<Vec<_>>();
     for placement in candidates {
         let HolePlacement::Axis { axis, .. } = placement else {
             return;

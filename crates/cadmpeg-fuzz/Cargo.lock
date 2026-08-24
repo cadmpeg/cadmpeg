@@ -159,6 +159,7 @@ dependencies = [
 name = "cadmpeg-codec-nx"
 version = "0.5.1"
 dependencies = [
+ "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
  "flate2",
@@ -172,6 +173,7 @@ dependencies = [
 name = "cadmpeg-codec-rhino"
 version = "0.5.1"
 dependencies = [
+ "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
  "crc32fast",
@@ -235,6 +237,7 @@ dependencies = [
 name = "cadmpeg-core"
 version = "0.5.1"
 dependencies = [
+ "memchr",
  "serde",
  "serde_json",
  "thiserror",

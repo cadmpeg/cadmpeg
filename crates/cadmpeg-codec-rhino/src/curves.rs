@@ -698,7 +698,7 @@ fn elevate_to_degree(
     }
     let weights = curve
         .weights
-        .unwrap_or_else(|| vec![1.0; curve.control_points.len()]);
+        .unwrap_or_else(|| std::iter::repeat_n(1.0, curve.control_points.len()).collect());
     if weights.len() != curve.control_points.len() {
         return Err(error(offset, "polycurve segment weight count mismatch"));
     }
