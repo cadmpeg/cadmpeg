@@ -81,7 +81,7 @@ const MESH_TEXTURE_FILENAME_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5
 const MESH_TEXTURE_FILENAME_TYPE_VERSION: u32 = 0;
 const MESH_COLLECTION_OWNER_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
 const MESH_COLLECTION_OWNER_BASE_TYPE_GUID: &str = "42054630-20A0-40E1-B969-CFE9E742F5C9";
-const MESH_COLLECTION_OWNER_TYPE_VERSION: u32 = 23;
+const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 2] = [15, 23];
 const MESH_BODY_OWNER_TYPE_GUID: &str = "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA";
 const MESH_BODY_OWNER_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
 const MESH_BODY_OWNER_TYPE_VERSION: u32 = 4;
@@ -1071,10 +1071,14 @@ fn parse_mesh_collection_owner_record(
     bytes: &[u8],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshCollectionOwnerRecord, CodecError> {
+    let admitted_version = MESH_COLLECTION_OWNER_TYPE_VERSIONS
+        .contains(&frame.design_type.version)
+        .then_some(frame.design_type.version)
+        .unwrap_or(MESH_COLLECTION_OWNER_TYPE_VERSIONS[1]);
     let identity = parse_typed_identity(
         bytes,
         frame,
-        MESH_COLLECTION_OWNER_TYPE_VERSION,
+        admitted_version,
         MESH_COLLECTION_OWNER_BASE_TYPE_GUID,
         FUSION_MODULE,
         "mesh-collection-owner",
@@ -2156,7 +2160,7 @@ mod tests {
             design_type(
                 MESH_COLLECTION_OWNER_TYPE_GUID,
                 Some(MESH_COLLECTION_OWNER_BASE_TYPE_GUID),
-                MESH_COLLECTION_OWNER_TYPE_VERSION,
+                MESH_COLLECTION_OWNER_TYPE_VERSIONS[1],
                 FUSION_MODULE,
                 vec![u64::from(COLLECTION_OWNER)],
             ),
@@ -2630,6 +2634,28 @@ mod tests {
             ),
             Err(CodecError::Malformed(_))
         ));
+    }
+
+    #[test]
+    fn mesh_collection_owner_accepts_legacy_version_fifteen() {
+        const EXPECTED_COLLECTION: u32 = 100;
+        let mut graph = synthetic_mesh_graph(false);
+        graph
+            .meta
+            .types
+            .iter_mut()
+            .find(|design_type| {
+                design_type
+                    .type_guid
+                    .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
+            })
+            .expect("collection-owner type")
+            .version = MESH_COLLECTION_OWNER_TYPE_VERSIONS[0];
+        let frame = sole_typed_frame(&graph, MESH_COLLECTION_OWNER_TYPE_GUID);
+
+        let owner = parse_mesh_collection_owner_record(&graph.bytes, frame)
+            .expect("legacy collection owner");
+        assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
     }
 
     #[test]
