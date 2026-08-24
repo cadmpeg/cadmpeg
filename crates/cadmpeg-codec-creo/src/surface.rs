@@ -2038,9 +2038,8 @@ fn type24_round_edge_shell_end(body: &[u8], cache: &scalar::ScalarCache) -> Opti
         [0x5a, 0xb2, ..] => Some(2),
         [0x18, ..] => Some(1),
         [0xeb..=0xed, 0xba, _, _, _, ..] => Some(5),
-        [0x19 | 0x32, ..] => {
-            scalar::decode_round_edge_coordinate(body, 1, cache).map(|(_, end)| end)
-        }
+        [0x32, _, _, _, _, _, _, _, ..] => Some(8),
+        [0x19, ..] => scalar::decode_round_edge_coordinate(body, 1, cache).map(|(_, end)| end),
         _ => None,
     }
 }

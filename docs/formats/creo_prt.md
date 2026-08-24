@@ -941,12 +941,13 @@ two model-space endpoint triples, and an optional generated-entity reference.
 This production applies only when the bounded row has no complete inline
 non-plane envelope or local-system body. An inline body owns the carrier and
 is not reinterpreted as a generated round-edge replay.
-The control shell is one of `1b <control> 00`, `34 <control> 00`, `32
-<scalar>`, `19 <scalar>`, `eb ba <payload3>`, `ec ba <payload3>`, `ed ba
-<payload3>`, `5a b2`, or a bare `18`. The two edge parameters use the first
-tabulated-cylinder directrix-coordinate lane. A positive DICT parameter with
-prefix `p` in `4b..a3` reconstructs IEEE bytes two through seven with
-`q = (p + 75) mod 256`; byte one is `3f` when `q >= 80` and `40` otherwise.
+The control shell is one of `1b <control> 00`, `34 <control> 00`, a `32`
+model-reference token with a seven-byte tail, `19 <scalar>`, `eb ba
+<payload3>`, `ec ba <payload3>`, `ed ba <payload3>`, `5a b2`, or a bare `18`.
+The control shell does not contribute geometry. The two edge parameters use
+the first tabulated-cylinder directrix-coordinate lane. A positive DICT
+parameter with prefix `p` in `4b..a3` reconstructs IEEE bytes two through seven
+with `q = (p + 75) mod 256`; byte one is `3f` when `q >= 80` and `40` otherwise.
 The signed directrix lattice handles all other parameter prefixes. The
 separator after the first parameter is one byte in `11..14`, or three bytes
 beginning with `00` or `34`; separator payload bytes are not scalar fields.
