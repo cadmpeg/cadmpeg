@@ -304,6 +304,10 @@ fn deltas_walks_every_transformable_value_family() {
     stream.extend_from_slice(&1u32.to_be_bytes());
     stream.extend_from_slice(&89u16.to_be_bytes());
     stream.resize(stream.len() + 24, 0);
+    stream.extend_from_slice(&[0, 98]);
+    stream.extend_from_slice(&2u32.to_be_bytes());
+    stream.extend_from_slice(&98u16.to_be_bytes());
+    stream.extend_from_slice(&[0, b'N', 0, b'X']);
     let census = crate::deltas::walk(&stream);
 
     assert_eq!(
@@ -312,7 +316,7 @@ fn deltas_walks_every_transformable_value_family() {
             .iter()
             .map(|record| record.kind)
             .collect::<Vec<_>>(),
-        [85, 86, 87, 88, 89]
+        [85, 86, 87, 88, 89, 98]
     );
     for family in [
         "ENTITY_55",
@@ -323,6 +327,39 @@ fn deltas_walks_every_transformable_value_family() {
     ] {
         assert_eq!(census.full_counts[family], 1);
     }
+    assert_eq!(census.full_counts["ENTITY_62"], 1);
+
+    let values = crate::parasolid::entity_value_records_at(
+        &stream,
+        census.records.iter().map(|record| record.offset),
+    );
+    assert_eq!(values.unicode[0].value, "NX");
+}
+
+#[test]
+fn deltas_does_not_resynchronize_at_an_unowned_value_marker() {
+    let stream = [0xfe, 0x00, 0x62, 0, 0, 0, 2, 0, 98, 0, b'N', 0, b'X'];
+    let census = crate::deltas::walk(&stream);
+    assert!(census.records.is_empty());
+    assert!(census.tombstones.is_empty());
+    assert!(!census.full_counts.contains_key("ENTITY_62"));
+}
+
+#[test]
+fn deltas_admits_a_value_owned_by_a_unique_entity_reference() {
+    let stream = [
+        0xfe, 0x00, 0x52, 0, 0, 0, 1, 0, 20, 0, 0, 0, 7, 0, 0x51, 0, 0, 0, 1, 0, 41, 0, 0, 0, 1, 0,
+        33, 0, 20, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
+    ];
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [82, 81]
+    );
 }
 
 #[test]

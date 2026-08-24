@@ -749,10 +749,22 @@ satisfy its complete family grammar.
 
 Type-81 entity/attribute-list records and type-82 through type-89 and type-98 value records use the complete grammars defined in section 9.4. Type-81 individually `01`-prefixed reference layouts retain their serialized form and the terminal `00` closes the record. Counted value records end after the declared value lane. Length-framed printable type-84 records end after their terminal `00`. These records participate in the deltas byte ledger but do not replace topology or geometry records.
 
-The deltas byte ledger owns type-82 through type-89 values at their sequential
-record offsets. Native value transfer reads these families only from the
-ledger-owned offsets. A value-record-shaped byte run inside another admitted
-record is part of that enclosing record and does not create a second value.
+The deltas byte ledger admits a type-82 through type-89 or type-98 value record
+when it begins at the stream or transmit-header boundary, begins immediately
+after an admitted ledger production, or has an XMT identity referenced by a
+complete type-81 record in the same stream. Repeated type-81 and value XMT
+identities in a deltas stream are historical events and retain every complete
+occurrence. A complete value frame with no owner bounds one opaque span; its
+payload is not searched for nested records. Type-98 does not use compact
+tombstone, tagged-reference, or following-record form-selection grammar.
+
+In a partition or plain stream, a value record is admitted only when its XMT
+and complete frame are unique and it is referenced by a unique complete
+type-81 record, or when a unique type-80 definition and type-99 field-name list
+reference a unique type-84 or type-98 character record. These ownership rules
+do not require the type-81 definition to resolve. A value-record-shaped byte
+run inside another record or without one of these owners does not create a
+native value.
 
 Type-91 records are `type:005b [ff], xmt, flag:u32 BE, reference_status[6]`. The record XMT is non-null and `flag` is binary. Each `reference_status` entry is a nonzero encoded XMT followed by a status byte in `0..=1`. The optional `ff` envelope byte precedes the XMT identity. A complete escaped layout takes precedence over a coincidental longer direct layout beginning at that `ff`. The record ends after the sixth status byte. Type-91 records participate in the deltas byte ledger, retain exact serialized bytes in the semantic lane, and do not replace topology or geometry records.
 
@@ -2251,6 +2263,11 @@ Type-85 point, type-86 vector, and type-89 direction value records are `00 <55|5
 A type-98 Unicode value record is `00 62 [ff], count:u32 BE, xmt, code_unit[count]:u16 BE`. The count is positive and the complete code-unit lane is valid UTF-16. The decoded value is the Unicode scalar string represented by that lane. Type-85 through type-89 and type-98 records have non-null XMT identities, end after their counted lane, and have no terminator.
 
 A trailing type-81 reference resolves a value only when exactly one value record of all type-82 through type-89 and type-98 families in the same stream has the referenced XMT. A collision between families or duplicate records leaves the reference unresolved. Reference order and every serialized value lane remain ordered. Pointer fields have no value-record family and are always transmitted empty.
+
+Value-record framing ownership and semantic value resolution are separate.
+Repeated deltas events with one XMT remain exact native events when a complete
+type-81 record references that XMT, but the type-81 field value remains
+unresolved until one current value event is selected.
 
 Trailing type-81 reference slot `5 + i` supplies declared type-80 field `i`.
 The assignment is valid only when the referenced value family matches the

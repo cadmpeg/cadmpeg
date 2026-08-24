@@ -2482,8 +2482,11 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
     records
 }
 
-/// Decode ledger-owned value families and recover complete Unicode records.
-pub(crate) fn parasolid_entity_value_records(streams: &[Stream]) -> ParasolidEntityValueRecords {
+/// Decode value records from their retained deltas or attribute owners.
+pub(crate) fn parasolid_entity_value_records(
+    streams: &[Stream],
+    deltas_records: &[ParasolidDeltasRecord],
+) -> ParasolidEntityValueRecords {
     let mut records = ParasolidEntityValueRecords {
         integers: Vec::new(),
         doubles: Vec::new(),
@@ -2498,15 +2501,22 @@ pub(crate) fn parasolid_entity_value_records(streams: &[Stream]) -> ParasolidEnt
         .enumerate()
         .filter(|(_, stream)| stream.kind.is_parasolid())
     {
-        let census = crate::deltas::walk(&stream.inflated);
-        let mut values = crate::parasolid::entity_value_records_at(
-            &stream.inflated,
-            census
-                .records
+        let owned_offsets = match stream.kind {
+            StreamKind::Deltas => deltas_records
                 .iter()
-                .filter_map(|record| matches!(record.kind, 82..=89).then_some(record.offset)),
-        );
-        values.unicode = crate::parasolid::entity_unicode_records(&stream.inflated);
+                .filter_map(|record| {
+                    (record.stream_ordinal == stream_ordinal as u32
+                        && matches!(record.kind, 82..=89 | 98))
+                    .then(|| usize::try_from(record.inflated_offset).ok())
+                    .flatten()
+                })
+                .collect::<Vec<_>>(),
+            StreamKind::Partition | StreamKind::Plain => {
+                crate::parasolid::referenced_value_record_offsets(&stream.inflated)
+            }
+            StreamKind::Preview => unreachable!("preview streams were filtered out"),
+        };
+        let values = crate::parasolid::entity_value_records_at(&stream.inflated, owned_offsets);
         for record in values.integers {
             records.integers.push(ParasolidEntity52IntegerRecord {
                 id: format!(
@@ -3146,8 +3156,9 @@ mod tests {
         outer.extend_from_slice(&20u16.to_be_bytes());
         outer.extend_from_slice(&0.25f64.to_be_bytes());
 
-        let records =
-            super::parasolid_entity_value_records(&[stream(StreamKind::Deltas, "SCH_TEST", outer)]);
+        let streams = [stream(StreamKind::Deltas, "SCH_TEST", outer)];
+        let events = super::parasolid_deltas_events(&streams);
+        let records = super::parasolid_entity_value_records(&streams, &events.records);
 
         assert_eq!(records.integers.len(), 1);
         assert_eq!(records.integers[0].values.len(), 4);

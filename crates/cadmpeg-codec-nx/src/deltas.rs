@@ -2,7 +2,7 @@
 //! Walk status-byte-framed Parasolid deltas records.
 #![deny(clippy::disallowed_methods)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::read_xmt_width as read_xmt;
 use crate::vec3_at::vec3_be_at;
@@ -639,6 +639,8 @@ pub fn walk(stream: &[u8]) -> Census {
         .transmit_header
         .as_ref()
         .map_or(0, |header| header.end);
+    let mut value_boundary = true;
+    let mut referenced_value_offsets = None::<BTreeSet<usize>>;
     let mut intersection_schema_anchor_seen = false;
     while offset + 4 <= stream.len() {
         intersection_schema_anchor_seen |=
@@ -646,12 +648,14 @@ pub fn walk(stream: &[u8]) -> Census {
         if let Some(preamble) = schema_reference_preamble(stream, offset, stream.len()) {
             census.bytes_decoded += preamble.end - preamble.offset;
             offset = preamble.end;
+            value_boundary = true;
             census.schema_reference_preambles.push(preamble);
             continue;
         }
         if let Some(declaration) = inline_schema_declaration(stream, offset, stream.len()) {
             census.bytes_decoded += declaration.end - declaration.offset;
             offset = declaration.end;
+            value_boundary = true;
             census.inline_schema_declarations.push(declaration);
             continue;
         }
@@ -660,6 +664,7 @@ pub fn walk(stream: &[u8]) -> Census {
         {
             census.bytes_decoded += map.end - map.offset;
             offset = map.end;
+            value_boundary = true;
             census.reference_type_maps.push(map);
             continue;
         }
@@ -674,6 +679,7 @@ pub fn walk(stream: &[u8]) -> Census {
                 record_family_name(&record).expect("shared records have admitted deltas families");
             *census.full_counts.entry(name).or_default() += 1;
             offset = record.end;
+            value_boundary = true;
             census.records.push(record);
             continue;
         }
@@ -688,6 +694,7 @@ pub fn walk(stream: &[u8]) -> Census {
             };
             *census.full_counts.entry(family).or_default() += 1;
             offset = record.end;
+            value_boundary = true;
             census.records.push(record);
             continue;
         }
@@ -704,6 +711,7 @@ pub fn walk(stream: &[u8]) -> Census {
             };
             *census.full_counts.entry(family).or_default() += 1;
             offset = record.end;
+            value_boundary = true;
             census.records.push(record);
             continue;
         }
@@ -711,6 +719,7 @@ pub fn walk(stream: &[u8]) -> Census {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("TYPE_141").or_default() += 1;
             offset = record.end;
+            value_boundary = true;
             census.records.push(record);
             continue;
         }
@@ -718,6 +727,7 @@ pub fn walk(stream: &[u8]) -> Census {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("TYPE_45").or_default() += 1;
             offset = record.end;
+            value_boundary = true;
             census.records.push(record);
             continue;
         }
@@ -725,6 +735,7 @@ pub fn walk(stream: &[u8]) -> Census {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("TYPE_67").or_default() += 1;
             offset = record.end;
+            value_boundary = true;
             census.records.push(record);
             continue;
         }
@@ -732,6 +743,7 @@ pub fn walk(stream: &[u8]) -> Census {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("TYPE_70").or_default() += 1;
             offset = record.end;
+            value_boundary = true;
             census.records.push(record);
             continue;
         }
@@ -739,6 +751,7 @@ pub fn walk(stream: &[u8]) -> Census {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("ATTDEF_LIST").or_default() += 1;
             offset = record.end;
+            value_boundary = true;
             census.records.push(record);
             continue;
         }
@@ -746,6 +759,7 @@ pub fn walk(stream: &[u8]) -> Census {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("TYPE_101").or_default() += 1;
             offset = record.end;
+            value_boundary = true;
             census.records.push(record);
             continue;
         }
@@ -755,6 +769,7 @@ pub fn walk(stream: &[u8]) -> Census {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("INTERSECTION_DATA").or_default() += 1;
             offset = record.end;
+            value_boundary = true;
             census.records.push(record);
             continue;
         }
@@ -763,36 +778,67 @@ pub fn walk(stream: &[u8]) -> Census {
         };
         let Some(name) = family_name(kind) else {
             offset += 1;
+            value_boundary = false;
             continue;
         };
         if kind == 12 {
             if let Some(revision) = body_revision_prefix(stream, offset) {
                 census.bytes_decoded += revision.prefix_end - revision.offset;
                 offset = revision.prefix_end;
+                value_boundary = true;
                 census.body_revisions.push(revision);
                 continue;
             }
         }
+        let value_owned = !is_value_family(kind)
+            || value_boundary
+            || referenced_value_offsets
+                .get_or_insert_with(|| {
+                    crate::parasolid::referenced_value_event_offsets(stream)
+                        .into_iter()
+                        .collect()
+                })
+                .contains(&offset);
+        if !value_owned {
+            if let Some((parsed_kind, _, byte_len)) =
+                crate::parasolid::entity_value_record_identity_at(stream, offset)
+            {
+                if parsed_kind == kind {
+                    offset += byte_len;
+                    continue;
+                }
+            }
+        }
         let decoded = fixed_signature(kind)
             .and_then(|signature| consume_fixed(stream, offset, kind, signature))
-            .or_else(|| consume_variable(stream, offset, kind));
+            .or_else(|| {
+                value_owned
+                    .then(|| consume_variable(stream, offset, kind))
+                    .flatten()
+            });
         if let Some(record) = decoded {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry(name).or_default() += 1;
             offset = record.end;
+            value_boundary = true;
             census.records.push(record);
             continue;
         }
-        if let Some(xmt) = compact_tombstone(stream, offset) {
+        if let Some(xmt) = (kind != 98)
+            .then(|| compact_tombstone(stream, offset))
+            .flatten()
+        {
             if xmt > 1 {
                 *census.tombstone_counts.entry(name).or_default() += 1;
                 census.tombstones.push(Tombstone { kind, xmt, offset });
                 census.bytes_decoded += 6;
                 offset += 6;
+                value_boundary = true;
                 continue;
             }
         }
         offset += 1;
+        value_boundary = false;
     }
     census.term_use_numeric_tails = term_use_numeric_tails(stream, &census);
     census.bytes_decoded += census
@@ -2086,7 +2132,7 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
 }
 
 fn is_tagged_reference_kind(kind: u16) -> bool {
-    family_name(kind).is_some() || matches!(kind, 79 | 80)
+    (family_name(kind).is_some() && kind != 98) || matches!(kind, 79 | 80)
 }
 
 fn is_reference_type_kind(kind: u16) -> bool {
@@ -2694,7 +2740,7 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
                 .collect();
             (record.xmt, record.byte_len, references)
         }
-        82..=89 => {
+        82..=89 | 98 => {
             let (parsed_kind, xmt, byte_len) =
                 crate::parasolid::entity_value_record_identity_at(stream, offset)?;
             (parsed_kind == kind).then_some(())?;
@@ -2718,6 +2764,10 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
         offset,
         end,
     })
+}
+
+fn is_value_family(kind: u16) -> bool {
+    matches!(kind, 82..=89 | 98)
 }
 
 fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
@@ -3287,7 +3337,7 @@ fn plausible_next(stream: &[u8], offset: usize) -> bool {
 }
 
 fn is_next_kind(kind: u16) -> bool {
-    family_name(kind).is_some() || matches!(kind, 70 | 79 | 80)
+    (family_name(kind).is_some() && kind != 98) || matches!(kind, 70 | 79 | 80)
 }
 
 pub(crate) fn family_name(kind: u16) -> Option<&'static str> {
@@ -3328,6 +3378,7 @@ pub(crate) fn family_name(kind: u16) -> Option<&'static str> {
         87 => "ENTITY_57",
         88 => "ENTITY_58",
         89 => "ENTITY_59",
+        98 => "ENTITY_62",
         90 => "GROUP",
         91 => "TYPE_91",
         101 => "TYPE_101",

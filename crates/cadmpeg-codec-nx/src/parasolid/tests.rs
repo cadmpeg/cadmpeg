@@ -471,6 +471,41 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
 }
 
 #[test]
+fn partition_values_require_a_unique_entity_reference() {
+    let mut bytes = parasolid_entity_records_stream();
+    let owned = crate::parasolid::referenced_value_record_offsets(&bytes);
+    assert_eq!(owned.len(), 3);
+
+    bytes.extend_from_slice(&[0, 98]);
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&200u16.to_be_bytes());
+    bytes.extend_from_slice(&[0, b'N', 0, b'X']);
+
+    assert_eq!(
+        crate::parasolid::referenced_value_record_offsets(&bytes),
+        owned
+    );
+}
+
+#[test]
+fn partition_character_values_can_be_owned_by_a_field_name_list() {
+    let mut bytes = parasolid_entity_records_stream();
+    let definition_offset = crate::parasolid::attribute_definitions(&bytes)[0].offset;
+    bytes[definition_offset + 24..definition_offset + 26].copy_from_slice(&34u16.to_be_bytes());
+    bytes.extend_from_slice(&[0, 0x63]);
+    bytes.extend_from_slice(&1u32.to_be_bytes());
+    bytes.extend_from_slice(&34u16.to_be_bytes());
+    bytes.extend_from_slice(&37u16.to_be_bytes());
+    let unicode_offset = bytes.len();
+    bytes.extend_from_slice(&[0, 98]);
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&37u16.to_be_bytes());
+    bytes.extend_from_slice(&[0, b'N', 0, b'X']);
+
+    assert!(crate::parasolid::referenced_value_record_offsets(&bytes).contains(&unicode_offset));
+}
+
+#[test]
 fn parasolid_extraction_classifies_partition_and_schema() {
     let f = single_part_prt();
     let streams = extract_streams(&f);

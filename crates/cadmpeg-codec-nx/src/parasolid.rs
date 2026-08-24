@@ -9,7 +9,7 @@
 //! as [`StreamKind::Preview`].
 #![deny(clippy::disallowed_methods)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compression::inflate_zlib_member;
 use cadmpeg_core::bytes::{contains, find};
@@ -330,14 +330,99 @@ pub(crate) fn entity_value_records_at(
     records
 }
 
-/// Recover complete type-98 Unicode records pending an enclosing ledger owner.
-pub(crate) fn entity_unicode_records(bytes: &[u8]) -> Vec<Entity62UnicodeRecord> {
-    entity_value_records_at(
-        bytes,
-        (0..bytes.len().saturating_sub(1))
-            .filter(|offset| bytes.get(*offset..*offset + 2) == Some([0, 0x62].as_slice())),
-    )
-    .unicode
+/// Locate unique snapshot values owned by typed attribute relations.
+pub(crate) fn referenced_value_record_offsets(bytes: &[u8]) -> Vec<usize> {
+    let referenced_xmts = referenced_value_xmts(bytes, ValueMultiplicity::UniqueSnapshot);
+    value_record_candidates(bytes)
+        .into_iter()
+        .filter_map(|(xmt, offsets)| {
+            let [offset] = offsets.as_slice() else {
+                return None;
+            };
+            referenced_xmts.contains(&xmt).then_some(*offset)
+        })
+        .collect()
+}
+
+/// Locate historical value events owned by typed attribute relations.
+pub(crate) fn referenced_value_event_offsets(bytes: &[u8]) -> Vec<usize> {
+    let referenced_xmts = referenced_value_xmts(bytes, ValueMultiplicity::HistoricalEvents);
+    value_record_candidates(bytes)
+        .into_iter()
+        .filter(|(xmt, _)| referenced_xmts.contains(xmt))
+        .flat_map(|(_, offsets)| offsets)
+        .collect()
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ValueMultiplicity {
+    UniqueSnapshot,
+    HistoricalEvents,
+}
+
+fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTreeSet<u32> {
+    let mut referenced = BTreeSet::new();
+    let mut entities = BTreeMap::<u32, Vec<Entity51Record>>::new();
+    for record in entity_51_records(bytes) {
+        entities.entry(record.xmt).or_default().push(record);
+    }
+    for records in entities.into_values() {
+        if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
+            continue;
+        }
+        for record in records {
+            referenced.extend(record.leading_references);
+            referenced.extend(record.trailing_references);
+        }
+    }
+
+    let mut field_name_lists = BTreeMap::<u32, Vec<FieldNamesRecord>>::new();
+    for record in field_names_records(bytes) {
+        field_name_lists.entry(record.xmt).or_default().push(record);
+    }
+    let mut definitions = BTreeMap::<u32, Vec<AttributeDefinition<'_>>>::new();
+    for definition in attribute_definitions(bytes) {
+        definitions
+            .entry(definition.xmt)
+            .or_default()
+            .push(definition);
+    }
+    let mut referenced_lists = BTreeSet::new();
+    for records in definitions.into_values() {
+        if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
+            continue;
+        }
+        referenced_lists.extend(
+            records.into_iter().filter_map(|record| {
+                (record.field_names_xmt > 1).then_some(record.field_names_xmt)
+            }),
+        );
+    }
+    for (xmt, records) in field_name_lists {
+        if !referenced_lists.contains(&xmt)
+            || (multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1)
+        {
+            continue;
+        }
+        for record in records {
+            referenced.extend(record.name_xmts);
+        }
+    }
+    referenced
+}
+
+fn value_record_candidates(bytes: &[u8]) -> BTreeMap<u32, Vec<usize>> {
+    let mut candidates = BTreeMap::<u32, Vec<usize>>::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let Some(frame) = value_record_frame_at(bytes, offset) else {
+            offset += 1;
+            continue;
+        };
+        candidates.entry(frame.xmt()).or_default().push(offset);
+        offset = frame.next_offset();
+    }
+    candidates
 }
 
 /// Return `(kind, xmt, byte_len)` for one complete value record.
@@ -391,7 +476,6 @@ impl ValueRecordFrame<'_> {
         }
     }
 
-    #[cfg(test)]
     fn next_offset(self) -> usize {
         match self {
             Self::Counted { end, .. } => end,

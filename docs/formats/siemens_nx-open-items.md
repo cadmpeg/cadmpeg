@@ -282,16 +282,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** Several admitted deltas families choose between direct and escaped candidates by requiring the candidate end to precede a recognized next record kind. An unrecognized but valid successor can therefore suppress the correct reading, and marker-shaped payload bytes can favor the wrong reading.
 
-### PS-33. Unindexed stream and value-record framing
-
-**Question.** Which container relation bounds an unindexed Parasolid stream, and which enclosing production bounds each type-82 through type-89 value record?
-
-**Known.** In an unindexed canonical part payload, each complete zlib member inside `/Root/UG_PART/UG_PART` is one embedded stream. Its zlib end marker and integrity trailer bound its compressed extent, and its inflated form has no minimum byte length. A Parasolid transmit stream has a complete `PS 00 00` header and schema token. Counted value records and terminated character records have typed field grammars. Type-82 through type-89 native values are read only from offsets owned by the deltas record ledger, so marker-shaped bytes inside another admitted record cannot create those values. Type-98 Unicode values do not yet use this ownership path.
-
-**Need.** We must establish a schema-owned boundary for ledger resynchronization through untyped gaps and for type-98 Unicode values.
-
-**Conflict.** The record ledger resynchronizes one byte at a time through untyped gaps, and type-98 Unicode recovery still searches independently. A marker-shaped run in an unowned gap or opaque type-98-containing payload can enter the decoded value set.
-
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization
