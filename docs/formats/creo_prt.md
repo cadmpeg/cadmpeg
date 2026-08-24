@@ -1091,12 +1091,16 @@ torus; exact `radius1 = 0` selects a sphere whose radius is `radius2`.
 
 A selector envelope stores `<selector0> <v0> <selector1> <v1>` followed by the
 same two XYZ outline corners, optional replay reference, and `e3`. A selector
-is one byte `11`, `14`, `17`, `18`, or `20`, or the three-byte image
+is one byte in `11..14`, or `17`, `18`, or `20`, or the three-byte image
 `00 11 13`. Selector bytes do not contribute geometry. The local system and
 family suffix use the ordinary inline grammar. The two stored axial values
 are the local-system axis parameters and the outline is the placement witness.
 Every scalar in this envelope is the negation of its first
 tabulated-cylinder directrix-coordinate value.
+`92 <i48>` and `da <i48>` each occupy one outline-coordinate slot. The integer
+payload is not a coordinate. When exactly one transverse coordinate is absent,
+its signed corner span equals the other transverse span. An absent axial
+coordinate or two absent transverse coordinates withhold the envelope.
 
 An obliquely trimmed cylinder can instead store four consecutive envelope
 bounds `u0 v0 u1 v1` without a separator. The `u` bounds use the positive

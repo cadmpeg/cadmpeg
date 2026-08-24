@@ -301,29 +301,44 @@ fn compact_y_image_uses_the_unique_envelope_axis_witness() {
 
 #[test]
 fn selector_envelope_places_a_compact_y_cylinder() {
-    let mut body = vec![0x11];
-    push_inline_test_signed_first_directrix(&mut body, 4.0);
-    body.push(0x14);
-    push_inline_test_signed_first_directrix(&mut body, -4.0);
-    for value in [2.0, 4.0, 2.0, -2.0, -4.0, -2.0] {
-        push_inline_test_signed_first_directrix(&mut body, value);
-    }
-    body.push(0xe3);
-    body.extend_from_slice(&[0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18]);
-    for value in [0.0, 0.0, 0.0] {
-        push_inline_test_scalar(&mut body, value);
-    }
-    body.extend_from_slice(&[0x2f, 0x00, 0x00, 0xe3]);
-
-    let InlineSurfaceCarrier::Cylinder(frame) = inline_surface_body(
-        SurfaceKind::Cylinder,
-        &body,
-        &scalar::ScalarCache::default(),
-    )
-    .and_then(|body| body.carrier)
-    .expect("selector envelope resolves the compact frame") else {
-        panic!("inline body resolves a cylinder carrier");
+    let build = |placeholder_slots: &[usize]| {
+        let mut body = vec![0x12];
+        push_inline_test_signed_first_directrix(&mut body, 4.0);
+        body.push(0x14);
+        push_inline_test_signed_first_directrix(&mut body, -4.0);
+        for (index, value) in [2.0, 4.0, 2.0, -2.0, -4.0, -2.0].into_iter().enumerate() {
+            if placeholder_slots.contains(&index) {
+                body.extend_from_slice(&[0xda, 0, 0, 0, 0, 0, 1]);
+            } else {
+                push_inline_test_signed_first_directrix(&mut body, value);
+            }
+        }
+        body.extend_from_slice(&[0xf7, 0x40, 0xe3]);
+        body.extend_from_slice(&[0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18]);
+        for value in [0.0, 0.0, 0.0] {
+            push_inline_test_scalar(&mut body, value);
+        }
+        body.extend_from_slice(&[0x2f, 0x00, 0x00, 0xe3]);
+        body
     };
+    let decode = |body: &[u8]| {
+        inline_surface_body(SurfaceKind::Cylinder, body, &scalar::ScalarCache::default())
+            .and_then(|body| body.carrier)
+            .and_then(|carrier| match carrier {
+                InlineSurfaceCarrier::Cylinder(frame) => Some(frame),
+                _ => None,
+            })
+    };
+    let frame = decode(&build(&[])).expect("complete selector envelope");
+    assert_eq!(decode(&build(&[5])), Some(frame));
+    for placeholder_slots in [&[1][..], &[3, 5][..]] {
+        assert!(decode_inline_selector_cylinder_envelope(
+            SurfaceKind::Cylinder,
+            &build(placeholder_slots),
+            &scalar::ScalarCache::default(),
+        )
+        .is_none());
+    }
     assert_eq!(frame.origin, [0.0, 0.0, 0.0]);
     assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
     assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);

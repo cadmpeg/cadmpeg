@@ -4030,7 +4030,7 @@ fn decode_inline_selector_cylinder_envelope(
     (kind == SurfaceKind::Cylinder).then_some(())?;
     let selector_end = |cursor: usize| match body.get(cursor..) {
         Some([0x00, 0x11, 0x13, ..]) => Some(cursor + 3),
-        Some([0x11 | 0x14 | 0x17 | 0x18 | 0x20, ..]) => Some(cursor + 1),
+        Some([0x11..=0x14 | 0x17 | 0x18 | 0x20, ..]) => Some(cursor + 1),
         _ => None,
     };
     let decode_coordinate = |cursor| {
@@ -4047,13 +4047,48 @@ fn decode_inline_selector_cylinder_envelope(
     (first_axial.is_finite() && second_axial.is_finite() && first_axial != second_axial)
         .then_some(())?;
 
-    let mut corners = [[0.0; 3]; 2];
+    let mut corners = [[None; 3]; 2];
     for coordinate in corners.iter_mut().flatten() {
+        if matches!(body.get(cursor), Some(0x92 | 0xda)) {
+            body.get(cursor..cursor.checked_add(7)?)?;
+            cursor += 7;
+            continue;
+        }
         let (decoded, next) = decode_coordinate(cursor)?;
-        *coordinate = decoded;
+        *coordinate = Some(decoded);
         cursor = next;
     }
     let close = inline_surface_envelope_close(body, cursor)?;
+    let axial_span = (second_axial - first_axial).abs();
+    let mut spans =
+        std::array::from_fn::<_, 3, _>(|axis| Some(corners[1][axis]? - corners[0][axis]?));
+    let axial_axes = (0..3)
+        .filter(|axis| spans[*axis].is_some_and(|span| inline_close(span.abs(), axial_span)))
+        .collect::<Vec<_>>();
+    let [axis_index] = axial_axes.as_slice() else {
+        return None;
+    };
+    let radial_axes: [usize; 2] = (0..3)
+        .filter(|axis| axis != axis_index)
+        .collect::<Vec<_>>()
+        .try_into()
+        .ok()?;
+    match radial_axes.map(|axis| spans[axis]) {
+        [Some(first), Some(second)] => inline_close(first.abs(), second.abs()).then_some(())?,
+        [Some(known), None] => spans[radial_axes[1]] = Some(known),
+        [None, Some(known)] => spans[radial_axes[0]] = Some(known),
+        [None, None] => return None,
+    }
+    for radial_axis in radial_axes {
+        match corners.map(|corner| corner[radial_axis]) {
+            [None, Some(second)] => corners[0][radial_axis] = Some(second - spans[radial_axis]?),
+            [Some(first), None] => corners[1][radial_axis] = Some(first + spans[radial_axis]?),
+            [Some(_), Some(_)] => {}
+            [None, None] => return None,
+        }
+    }
+    let complete_corner = |[x, y, z]: [Option<f64>; 3]| Some([x?, y?, z?]);
+    let corners = [complete_corner(corners[0])?, complete_corner(corners[1])?];
     Some(InlineSurfaceEnvelope {
         axial: [first_axial, second_axial],
         corners,
