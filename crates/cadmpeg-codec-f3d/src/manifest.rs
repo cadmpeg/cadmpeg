@@ -413,7 +413,7 @@ fn parse_asset_header(bytes: &[u8]) -> Result<AssetManifestHeader, CodecError> {
                 cursor.finish("revision-10 Fusion asset manifest")?;
                 None
             }
-            20 => parse_current_design_asset(&mut cursor)?,
+            14 | 20 => parse_current_design_asset(&mut cursor)?,
             _ => {
                 return Err(malformed(
                     "Fusion asset manifest revision",
@@ -948,6 +948,22 @@ mod tests {
 
         let header = parse_asset_header(&bytes).unwrap();
         assert_eq!(header.base_name, "Linked Design");
+        assert_eq!(header.fusion_subtype, None);
+    }
+
+    #[test]
+    fn revision_fourteen_uses_the_ascii_subtype_header() {
+        let mut bytes =
+            encode_asset_header("Design 14", DESIGN_GUID, SECONDARY_GUID, DESIGN_ASSET_TYPE)
+                .unwrap();
+        push_u32(&mut bytes, 14);
+        push_u32(&mut bytes, 0);
+        push_ascii(&mut bytes, "Neutron3DAssetType").unwrap();
+        bytes.push(0);
+        push_ascii(&mut bytes, "").unwrap();
+
+        let header = parse_asset_header(&bytes).unwrap();
+        assert_eq!(header.base_name, "Design 14");
         assert_eq!(header.fusion_subtype, None);
     }
 

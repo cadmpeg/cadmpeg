@@ -445,6 +445,7 @@ fn strip_scope_variant_provenance(value: &mut serde_json::Value, top_level: bool
                     && matches!(
                         key.as_str(),
                         "id" | "class_tag"
+                            | "frame_length"
                             | "history_state_id"
                             | "previous_history_state_id"
                             | "paired_class_tag"

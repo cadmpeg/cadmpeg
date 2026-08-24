@@ -101,6 +101,7 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
     newer.id = "f3d:stream:design-parameter-scope#200".into();
     newer.byte_offset = 200;
     newer.class_tag = "404".into();
+    newer.frame_length = 340;
     newer.history_state_id = Some(9);
     newer.reference_member_offsets = vec![210, 220, 230];
     newer.paired_class_tag = "258".into();
