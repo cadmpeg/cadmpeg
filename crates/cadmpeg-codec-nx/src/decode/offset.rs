@@ -849,6 +849,76 @@ pub(crate) fn positive_weights(weights: Option<&[f64]>) -> bool {
             .all(|weight| weight.is_finite() && *weight > 0.0)
 }
 
+fn offset_support_control_hull_excludes_point(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    point: Point3,
+    allowance: f64,
+    visited: &mut BTreeSet<SurfaceId>,
+) -> bool {
+    if !allowance.is_finite() || allowance < 0.0 || !visited.insert(surface.clone()) {
+        return false;
+    }
+    let excluded =
+        index
+            .surfaces(surface.0.as_str())
+            .is_some_and(|carrier| match &carrier.geometry {
+                SurfaceGeometry::Nurbs(nurbs)
+                    if !nurbs.control_points.is_empty()
+                        && positive_weights(nurbs.weights.as_deref())
+                        && nurbs.control_points.iter().all(|control| {
+                            control.x.is_finite() && control.y.is_finite() && control.z.is_finite()
+                        }) =>
+                {
+                    let (minimum, maximum) = nurbs.control_points.iter().fold(
+                        (
+                            Point3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY),
+                            Point3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY),
+                        ),
+                        |(minimum, maximum), control| {
+                            (
+                                Point3::new(
+                                    minimum.x.min(control.x),
+                                    minimum.y.min(control.y),
+                                    minimum.z.min(control.z),
+                                ),
+                                Point3::new(
+                                    maximum.x.max(control.x),
+                                    maximum.y.max(control.y),
+                                    maximum.z.max(control.z),
+                                ),
+                            )
+                        },
+                    );
+                    point.x < minimum.x - allowance
+                        || point.x > maximum.x + allowance
+                        || point.y < minimum.y - allowance
+                        || point.y > maximum.y + allowance
+                        || point.z < minimum.z - allowance
+                        || point.z > maximum.z + allowance
+                }
+                SurfaceGeometry::Procedural { construction } => index
+                    .procedural_surfaces(construction.0.as_str())
+                    .filter(|procedural| &procedural.surface == surface)
+                    .and_then(|procedural| match &procedural.definition {
+                        ProceduralSurfaceDefinition::Offset {
+                            support, distance, ..
+                        } => Some((support, distance)),
+                        _ => None,
+                    })
+                    .is_some_and(|(support, distance)| {
+                        let allowance = allowance + distance.abs();
+                        allowance.is_finite()
+                            && offset_support_control_hull_excludes_point(
+                                index, support, point, allowance, visited,
+                            )
+                    }),
+                _ => false,
+            });
+    visited.remove(surface);
+    excluded
+}
+
 #[cfg(test)]
 pub(crate) fn offset_surface_parameters(
     ir: &CadIr,
@@ -922,6 +992,17 @@ pub(crate) fn offset_surface_parameters_with_tolerance_with_index_and_budget(
         tolerance.is_finite().then_some(tolerance)
     });
     if fit_tolerance.is_some_and(|tolerance| !tolerance.is_finite() || tolerance < 0.0) {
+        return None;
+    }
+    if fit_tolerance.is_some_and(|tolerance| {
+        offset_support_control_hull_excludes_point(
+            index,
+            support,
+            point,
+            tolerance + distance.abs(),
+            &mut BTreeSet::new(),
+        )
+    }) {
         return None;
     }
     let mut starts = Vec::with_capacity(3);
@@ -2225,5 +2306,48 @@ mod tests {
         );
         assert!(budget.consumed() > 0);
         assert!(!budget.exhausted());
+    }
+
+    #[test]
+    fn positive_weight_control_hull_bounds_offset_queries() {
+        let support = SurfaceId("synthetic:hull-support".into());
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+            id: support.clone(),
+            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                u_degree: 1,
+                v_degree: 1,
+                u_knots: vec![0.0, 0.0, 1.0, 1.0],
+                v_knots: vec![0.0, 0.0, 1.0, 1.0],
+                u_count: 2,
+                v_count: 2,
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                weights: Some(vec![1.0; 4]),
+                u_periodic: false,
+                v_periodic: false,
+            }),
+            source_object: None,
+        });
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+
+        assert!(offset_support_control_hull_excludes_point(
+            &index,
+            &support,
+            Point3::new(100.0, 0.5, 0.0),
+            1.1,
+            &mut BTreeSet::new(),
+        ));
+        assert!(!offset_support_control_hull_excludes_point(
+            &index,
+            &support,
+            Point3::new(2.0, 0.5, 0.0),
+            1.1,
+            &mut BTreeSet::new(),
+        ));
     }
 }
