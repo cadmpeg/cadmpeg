@@ -2459,6 +2459,13 @@ pub(crate) fn brep_body(
         .into_iter()
         .map(|face| Ok((face.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let face_color_definition = if color_attrs.is_empty() {
+        None
+    } else {
+        let key_node = take_attr(&mut next)?;
+        let definition_node = take_attr(&mut next)?;
+        Some((key_node, definition_node))
+    };
     for point in &ir.model.points {
         tag(&mut out, 0x1d);
         be16(&mut out, points[&point.id]);
@@ -2585,6 +2592,7 @@ pub(crate) fn brep_body(
         &surfaces,
         &face_owners,
         &color_attrs,
+        face_color_definition,
         schema_32001,
         &mut next,
         &mut out,
@@ -2604,6 +2612,7 @@ fn write_body_hierarchy(
     surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
     face_owners: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
     color_attrs: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    face_color_definition: Option<(u16, u16)>,
     schema_32001: bool,
     next: &mut u16,
     out: &mut Vec<u8>,
@@ -2700,18 +2709,26 @@ fn write_body_hierarchy(
         ));
     }
     write_typed_body_hierarchy(ir, faces, surfaces, next, out)?;
+    if let Some((key_node, definition_node)) = face_color_definition {
+        attribute_definition(out, key_node, definition_node);
+    }
     let mut face_owner_items = face_owners.iter().collect::<Vec<_>>();
     face_owner_items.sort_by_key(|(left, _)| *left);
     for (face, owner) in face_owner_items {
         let mut refs = [0; 6];
         refs[5] = color_attrs.get(face).copied().unwrap_or(0);
-        entity51(
-            out,
-            1,
-            *owner,
-            if schema_32001 { 0x001f } else { 0x0015 },
-            &refs,
-        );
+        let disc = if color_attrs.contains_key(face) {
+            face_color_definition
+                .map(|(_, definition_node)| definition_node)
+                .ok_or_else(|| {
+                    CodecError::Malformed("colored face has no color attribute definition".into())
+                })?
+        } else if schema_32001 {
+            0x001f
+        } else {
+            0x0015
+        };
+        entity51(out, 1, *owner, disc, &refs);
     }
     Ok(())
 }
@@ -2963,6 +2980,17 @@ fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     for value in [color.r, color.g, color.b] {
         bef64(out, f64::from(value));
     }
+}
+
+fn attribute_definition(out: &mut Vec<u8>, key_node: u16, definition_node: u16) {
+    const FAMILY: &[u8] = b"SDL/TYSA_COLOUR";
+    tag(out, 0x4f);
+    be32(out, FAMILY.len() as u32);
+    be16(out, key_node);
+    out.extend_from_slice(FAMILY);
+    tag(out, 0x50);
+    be32(out, 2);
+    be16(out, definition_node);
 }
 
 fn write_face_list(

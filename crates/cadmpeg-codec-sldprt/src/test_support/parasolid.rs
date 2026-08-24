@@ -749,6 +749,20 @@ pub(crate) fn bridge_owned(attr: u16, loop_attr: u16, surface_attr: u16, owner: 
     b
 }
 
+pub(crate) const FACE_COLOR_DEFINITION_ID: u16 = 16;
+
+pub(crate) fn face_color_definition() -> Vec<u8> {
+    let family = b"SDL/TYSA_COLOUR";
+    let mut b = vec![0x00, 0x4f];
+    be32(&mut b, family.len() as u32);
+    be16(&mut b, 15);
+    b.extend_from_slice(family);
+    b.extend_from_slice(&[0x00, 0x50]);
+    be32(&mut b, 2);
+    be16(&mut b, FACE_COLOR_DEFINITION_ID);
+    b
+}
+
 pub(crate) fn entity51(flags: u32, attr: u16, disc: u16, slots: &[u16]) -> Vec<u8> {
     let slot_count = match flags as u8 {
         1 | 3 => 6,

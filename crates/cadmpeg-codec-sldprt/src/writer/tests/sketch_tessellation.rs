@@ -509,8 +509,14 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     let mut body = Vec::new();
+    body.extend(face_color_definition());
     body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
-    body.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    body.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
     body.extend(entity53_color(900, [0.25, 0.5, 0.75]));
     body.extend(owned_triangle(0, 700, 0.0));
     let mut source = sldprt_with_body_and_material(&body, "Steel", [32, 64, 128]);

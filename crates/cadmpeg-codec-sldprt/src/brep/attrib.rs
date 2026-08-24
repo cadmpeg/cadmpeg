@@ -14,7 +14,7 @@
 //! dictionary, so a deltas body yields no bindings.
 
 use cadmpeg_core::decode::View;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::layout::attribute_instance_00_51 as attr_inst;
 
@@ -83,12 +83,18 @@ fn opens_record(buf: &[u8], at: usize) -> bool {
     buf.get(at) == Some(&0) && buf.get(at + 1).is_some_and(|tag| NODE_TAGS.contains(tag))
 }
 
-/// Map definition-record node ids to the supported family names.
-///
-/// A family candidate requires the exact supported name and the adjacent
-/// definition record. Duplicate definition identities must agree.
-fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
-    let mut found = HashMap::<u16, Option<&'static str>>::new();
+/// The stream-local attribute definitions that have a valid `KEY/ATTRIB_DEF`
+/// pairing. `ids` includes withheld conflicts; `names` contains only unique
+/// family names.
+#[derive(Debug, Default)]
+pub(crate) struct DefinitionTable {
+    pub(crate) ids: HashSet<u16>,
+    pub(crate) names: HashMap<u16, String>,
+}
+
+/// Collect valid `KEY/ATTRIB_DEF` pairings, retaining conflicts as `None`.
+fn definition_candidates(buf: &[u8]) -> HashMap<u16, Option<Vec<u8>>> {
+    let mut found = HashMap::<u16, Option<Vec<u8>>>::new();
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x4f) else {
             continue;
@@ -116,13 +122,14 @@ fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
         let Some(text) = buf.get(data..end) else {
             continue;
         };
-        let family = if text == ATOM_ID.as_bytes() {
-            ATOM_ID
-        } else if text == LAST_BODY_MODIFIER.as_bytes() {
-            LAST_BODY_MODIFIER
-        } else {
+        if text.is_empty()
+            || text
+                .iter()
+                .any(|byte| !byte.is_ascii() || !byte.is_ascii_graphic())
+        {
             continue;
-        };
+        }
+        let family = text.to_vec();
         let Some(p) = record_body(buf, end, 0x50) else {
             continue;
         };
@@ -134,15 +141,50 @@ fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
                 entry.insert(Some(family));
             }
             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                if entry.get().is_some_and(|previous| previous != family) {
+                if entry
+                    .get()
+                    .as_ref()
+                    .is_some_and(|previous| previous != &family)
+                {
                     *entry.get_mut() = None;
                 }
             }
         }
     }
     found
+}
+
+/// Resolve the stream-local attribute-definition table.
+pub(crate) fn definition_table(buf: &[u8]) -> DefinitionTable {
+    let candidates = definition_candidates(buf);
+    let ids = candidates.keys().copied().collect();
+    let names = candidates
         .into_iter()
-        .filter_map(|(node, family)| family.map(|family| (node, family)))
+        .filter_map(|(node, family)| {
+            family.and_then(|family| String::from_utf8(family).ok().map(|family| (node, family)))
+        })
+        .collect();
+    DefinitionTable { ids, names }
+}
+
+/// Map definition-record node ids to their stored family names.
+pub(crate) fn named_definitions(buf: &[u8]) -> HashMap<u16, String> {
+    definition_table(buf).names
+}
+
+/// Map definition-record node ids to the two supported native attribute
+/// families whose payload consumers are implemented here.
+fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
+    named_definitions(buf)
+        .into_iter()
+        .filter_map(|(node, family)| {
+            let family = match family.as_str() {
+                ATOM_ID => ATOM_ID,
+                LAST_BODY_MODIFIER => LAST_BODY_MODIFIER,
+                _ => return None,
+            };
+            Some((node, family))
+        })
         .collect()
 }
 
@@ -457,6 +499,21 @@ mod tests {
         let mut body = Vec::new();
         append_definition(&mut body, ATOM_ID, 15, 16);
         append_definition(&mut body, LAST_BODY_MODIFIER, 17, 16);
+        assert!(!definitions(&body).contains_key(&16));
+        let table = definition_table(&body);
+        assert!(table.ids.contains(&16));
+        assert!(!table.names.contains_key(&16));
+    }
+
+    #[test]
+    fn named_definitions_resolve_families_without_numeric_classification() {
+        let mut body = Vec::new();
+        append_definition(&mut body, "SDL/TYSA_COLOUR", 15, 16);
+
+        assert_eq!(
+            named_definitions(&body).get(&16).map(String::as_str),
+            Some("SDL/TYSA_COLOUR")
+        );
         assert!(!definitions(&body).contains_key(&16));
     }
 

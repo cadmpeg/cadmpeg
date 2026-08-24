@@ -1392,9 +1392,15 @@ remaining slots begin at body +14. A `00 52` INT_VALUES node carries a
 big-endian u32 count, a u16 node id, and that many big-endian u32 values.
 Names, definitions, lists, and instances must fit their node framing. A
 definition or list identity with conflicting payloads is not selected. The
-supported named attribute families include `ATOM_ID_2001` and
-`LAST_BODY_MODIFYING_FEATURE_ID`; their consumers use the definition name and
-the owner relation.
+supported named attribute families include `ATOM_ID_2001`,
+`LAST_BODY_MODIFYING_FEATURE_ID`, and `SDL/TYSA_COLOUR`; their consumers use
+the definition name and the owner relation. An `SDL/TYSA_COLOUR` instance
+whose final value slot is null-like frames the inline `00 53` color record at
+the exact node boundary. A non-null final value slot names the linked color
+through the same owner-local reference roster; it does not authorize an
+adjacent `00 53` record. An unnamed system definition uses the same two
+structural forms when its owner-local color record is valid; no numeric
+definition id selects that family.
 
 The bridge owner field `00 0e.ref0` joins a topology bridge to a face
 attribute when that entity relation is present. Typed FACE ownership remains

@@ -64,11 +64,23 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     let mut partition = Vec::new();
-    partition.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    partition.extend(face_color_definition());
+    partition.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
     partition.extend(entity53_color(900, [0.25, 0.5, 0.75]));
     partition.extend(owned_triangle(0, 700, 0.0));
     let mut deltas = Vec::new();
-    deltas.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    deltas.extend(face_color_definition());
+    deltas.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
     deltas.extend(entity53_color(900, [0.25, 0.5, 0.75]));
 
     let result = SldprtCodec
