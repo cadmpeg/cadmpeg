@@ -2694,17 +2694,11 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
                 .collect();
             (record.xmt, record.byte_len, references)
         }
-        82 => {
-            let record = crate::parasolid::entity_52_integer_record_at(stream, offset)?;
-            (record.xmt, record.byte_len, Vec::new())
-        }
-        83 => {
-            let record = crate::parasolid::entity_53_double_record_at(stream, offset)?;
-            (record.xmt, record.byte_len, Vec::new())
-        }
-        84 => {
-            let record = crate::parasolid::entity_54_string_record_at(stream, offset)?;
-            (record.xmt, record.byte_len, Vec::new())
+        82..=89 => {
+            let (parsed_kind, xmt, byte_len) =
+                crate::parasolid::entity_value_record_identity_at(stream, offset)?;
+            (parsed_kind == kind).then_some(())?;
+            (xmt, byte_len, Vec::new())
         }
         90 => return consume_group(stream, offset),
         91 => return consume_type_91(stream, offset),
@@ -3329,6 +3323,11 @@ pub(crate) fn family_name(kind: u16) -> Option<&'static str> {
         82 => "ENTITY_52",
         83 => "ENTITY_53",
         84 => "ENTITY_54",
+        85 => "ENTITY_55",
+        86 => "ENTITY_56",
+        87 => "ENTITY_57",
+        88 => "ENTITY_58",
+        89 => "ENTITY_59",
         90 => "GROUP",
         91 => "TYPE_91",
         101 => "TYPE_101",

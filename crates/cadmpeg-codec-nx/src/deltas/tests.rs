@@ -288,6 +288,44 @@ fn deltas_walks_complete_entity_value_records() {
 }
 
 #[test]
+fn deltas_walks_every_transformable_value_family() {
+    let mut stream = Vec::new();
+    for (kind, count, width) in [(85u8, 1u32, 24usize), (86, 1, 24), (87, 2, 24)] {
+        stream.extend_from_slice(&[0, kind]);
+        stream.extend_from_slice(&count.to_be_bytes());
+        stream.extend_from_slice(&u16::from(kind).to_be_bytes());
+        stream.resize(stream.len() + usize::try_from(count).unwrap() * width, 0);
+    }
+    stream.extend_from_slice(&[0, 88]);
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&88u16.to_be_bytes());
+    stream.extend_from_slice(&7u32.to_be_bytes());
+    stream.extend_from_slice(&[0, 89]);
+    stream.extend_from_slice(&1u32.to_be_bytes());
+    stream.extend_from_slice(&89u16.to_be_bytes());
+    stream.resize(stream.len() + 24, 0);
+    let census = crate::deltas::walk(&stream);
+
+    assert_eq!(
+        census
+            .records
+            .iter()
+            .map(|record| record.kind)
+            .collect::<Vec<_>>(),
+        [85, 86, 87, 88, 89]
+    );
+    for family in [
+        "ENTITY_55",
+        "ENTITY_56",
+        "ENTITY_57",
+        "ENTITY_58",
+        "ENTITY_59",
+    ] {
+        assert_eq!(census.full_counts[family], 1);
+    }
+}
+
+#[test]
 fn deltas_walks_complete_type_91_records() {
     fn record(escape: bool, xmt: u32, flag: u32) -> Vec<u8> {
         let mut bytes = vec![0, 91];

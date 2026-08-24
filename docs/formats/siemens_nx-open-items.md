@@ -286,11 +286,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which container relation bounds an unindexed Parasolid stream, and which enclosing production bounds each type-82 through type-89 value record?
 
-**Known.** In an unindexed canonical part payload, each complete zlib member inside `/Root/UG_PART/UG_PART` is one embedded stream. Its zlib end marker and integrity trailer bound its compressed extent, and its inflated form has no minimum byte length. A Parasolid transmit stream has a complete `PS 00 00` header and schema token. Counted value records and terminated character records have typed field grammars. Their grammar does not permit an interior record to acquire ownership solely because its bytes resemble a record start.
+**Known.** In an unindexed canonical part payload, each complete zlib member inside `/Root/UG_PART/UG_PART` is one embedded stream. Its zlib end marker and integrity trailer bound its compressed extent, and its inflated form has no minimum byte length. A Parasolid transmit stream has a complete `PS 00 00` header and schema token. Counted value records and terminated character records have typed field grammars. Type-82 through type-89 native values are read only from offsets owned by the deltas record ledger, so marker-shaped bytes inside another admitted record cannot create those values. Type-98 Unicode values do not yet use this ownership path.
 
-**Need.** We must parse value records sequentially from a schema-owned root or record boundary.
+**Need.** We must establish a schema-owned boundary for ledger resynchronization through untyped gaps and for type-98 Unicode values.
 
-**Conflict.** Value recovery searches byte by byte for independently plausible frames. An unowned marker-shaped payload can enter the decoded value set.
+**Conflict.** The record ledger resynchronizes one byte at a time through untyped gaps, and type-98 Unicode recovery still searches independently. A marker-shaped run in an unowned gap or opaque type-98-containing payload can enter the decoded value set.
 
 ## 2. Object model and body composition
 

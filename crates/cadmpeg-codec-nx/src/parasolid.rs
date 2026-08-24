@@ -258,7 +258,7 @@ pub struct Entity62UnicodeRecord {
 /// record starts with a two-byte tag. A single pass can dispatch only the
 /// matching record parser without changing any family-specific framing or
 /// value validation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct EntityValueRecords<'a> {
     /// Counted type-82 unsigned-integer records.
     pub(crate) integers: Vec<Entity52IntegerRecord>,
@@ -294,18 +294,9 @@ pub struct FieldNamesRecord {
 }
 
 /// Decode every attribute-value family in one bounded byte pass.
+#[cfg(test)]
 pub(crate) fn entity_value_records(bytes: &[u8]) -> EntityValueRecords<'_> {
-    let mut records = EntityValueRecords {
-        integers: Vec::new(),
-        doubles: Vec::new(),
-        strings: Vec::new(),
-        points: Vec::new(),
-        vectors: Vec::new(),
-        axes: Vec::new(),
-        tags: Vec::new(),
-        directions: Vec::new(),
-        unicode: Vec::new(),
-    };
+    let mut records = EntityValueRecords::default();
     let mut offset = 0;
     while offset < bytes.len() {
         let Some(frame) = value_record_frame_at(bytes, offset) else {
@@ -323,6 +314,43 @@ pub(crate) fn entity_value_records(bytes: &[u8]) -> EntityValueRecords<'_> {
         }
     }
     records
+}
+
+/// Decode value records at offsets owned by an enclosing record ledger.
+pub(crate) fn entity_value_records_at(
+    bytes: &[u8],
+    offsets: impl IntoIterator<Item = usize>,
+) -> EntityValueRecords<'_> {
+    let mut records = EntityValueRecords::default();
+    for offset in offsets {
+        if let Some(frame) = value_record_frame_at(bytes, offset) {
+            let _ = append_value_record(frame, &mut records);
+        }
+    }
+    records
+}
+
+/// Recover complete type-98 Unicode records pending an enclosing ledger owner.
+pub(crate) fn entity_unicode_records(bytes: &[u8]) -> Vec<Entity62UnicodeRecord> {
+    entity_value_records_at(
+        bytes,
+        (0..bytes.len().saturating_sub(1))
+            .filter(|offset| bytes.get(*offset..*offset + 2) == Some([0, 0x62].as_slice())),
+    )
+    .unicode
+}
+
+/// Return `(kind, xmt, byte_len)` for one complete value record.
+pub(crate) fn entity_value_record_identity_at(
+    bytes: &[u8],
+    offset: usize,
+) -> Option<(u16, u32, usize)> {
+    let frame = value_record_frame_at(bytes, offset)?;
+    Some((
+        u16::from(frame.tag()),
+        frame.xmt(),
+        frame.end().checked_sub(offset)?,
+    ))
 }
 
 #[derive(Clone, Copy)]
@@ -344,6 +372,26 @@ enum ValueRecordFrame<'a> {
 }
 
 impl ValueRecordFrame<'_> {
+    fn tag(self) -> u8 {
+        match self {
+            Self::Counted { tag, .. } => tag,
+            Self::String { .. } => 0x54,
+        }
+    }
+
+    fn xmt(self) -> u32 {
+        match self {
+            Self::Counted { xmt, .. } | Self::String { xmt, .. } => xmt,
+        }
+    }
+
+    fn end(self) -> usize {
+        match self {
+            Self::Counted { end, .. } | Self::String { end, .. } => end,
+        }
+    }
+
+    #[cfg(test)]
     fn next_offset(self) -> usize {
         match self {
             Self::Counted { end, .. } => end,
@@ -599,6 +647,7 @@ fn field_names_record_from_frame(bytes: &[u8], frame: FieldNamesFrame) -> Option
 }
 
 /// Decode one complete type-82 unsigned-integer record at `offset`.
+#[cfg(test)]
 pub(crate) fn entity_52_integer_record_at(
     bytes: &[u8],
     offset: usize,
@@ -614,6 +663,7 @@ pub(crate) fn entity_52_integer_record_at(
 }
 
 /// Decode one complete type-83 finite binary64 record at `offset`.
+#[cfg(test)]
 pub(crate) fn entity_53_double_record_at(
     bytes: &[u8],
     offset: usize,
@@ -668,6 +718,7 @@ fn valid_utf16_lane(raw: &[u8]) -> Option<()> {
     (!high_surrogate).then_some(())
 }
 
+#[cfg(test)]
 struct CountedValueRecord<T> {
     offset: usize,
     byte_len: usize,
@@ -715,6 +766,7 @@ fn counted_value_frame_at(
     })
 }
 
+#[cfg(test)]
 fn counted_value_record_at<T>(
     bytes: &[u8],
     offset: usize,
@@ -737,6 +789,7 @@ fn counted_value_record_at<T>(
 }
 
 /// Decode one complete type-84 printable string record at `offset`.
+#[cfg(test)]
 pub(crate) fn entity_54_string_record_at(
     bytes: &[u8],
     offset: usize,

@@ -2482,7 +2482,7 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
     records
 }
 
-/// Decode every attribute-value family with one scan per Parasolid stream.
+/// Decode ledger-owned value families and recover complete Unicode records.
 pub(crate) fn parasolid_entity_value_records(streams: &[Stream]) -> ParasolidEntityValueRecords {
     let mut records = ParasolidEntityValueRecords {
         integers: Vec::new(),
@@ -2498,7 +2498,15 @@ pub(crate) fn parasolid_entity_value_records(streams: &[Stream]) -> ParasolidEnt
         .enumerate()
         .filter(|(_, stream)| stream.kind.is_parasolid())
     {
-        let values = crate::parasolid::entity_value_records(&stream.inflated);
+        let census = crate::deltas::walk(&stream.inflated);
+        let mut values = crate::parasolid::entity_value_records_at(
+            &stream.inflated,
+            census
+                .records
+                .iter()
+                .filter_map(|record| matches!(record.kind, 82..=89).then_some(record.offset)),
+        );
+        values.unicode = crate::parasolid::entity_unicode_records(&stream.inflated);
         for record in values.integers {
             records.integers.push(ParasolidEntity52IntegerRecord {
                 id: format!(
@@ -3126,6 +3134,24 @@ mod tests {
             kind,
             schema: Some(schema.to_string()),
         }
+    }
+
+    #[test]
+    fn native_value_records_use_only_ledger_owned_offsets() {
+        let mut outer = vec![0x00, 0x52];
+        outer.extend_from_slice(&4u32.to_be_bytes());
+        outer.extend_from_slice(&10u16.to_be_bytes());
+        outer.extend_from_slice(&[0x00, 0x53]);
+        outer.extend_from_slice(&1u32.to_be_bytes());
+        outer.extend_from_slice(&20u16.to_be_bytes());
+        outer.extend_from_slice(&0.25f64.to_be_bytes());
+
+        let records =
+            super::parasolid_entity_value_records(&[stream(StreamKind::Deltas, "SCH_TEST", outer)]);
+
+        assert_eq!(records.integers.len(), 1);
+        assert_eq!(records.integers[0].values.len(), 4);
+        assert!(records.doubles.is_empty());
     }
 
     fn record(
