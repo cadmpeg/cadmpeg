@@ -706,6 +706,14 @@ Lengths are logical, before escape/large-index shifts. Each code is a Parasolid 
 
 Types carrying `node_id:u32` place it at record offset `+4` (after shifts). Every `u32` value is valid; node admission has no smaller numerical bound. FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records. Every POINT coordinate is finite and its converted millimeter value is finite; no normality or model-magnitude condition applies.
 
+A complete body-topology graph owns all of its fixed node frames. A typed XMT
+slot also owns one unique fixed node of the required family: SHELL owns BODY and
+REGION; FACE owns a surface carrier; EDGE and FIN own curve carriers; and
+VERTEX owns a POINT. OFFSET_SURF, BLEND_SURF, TRIMMED_CURVE, and SP_CURVE extend
+this ownership transitively through their typed support, spine, basis, pcurve,
+and original-curve slots. A fixed-record-shaped byte run with no such owner is
+not part of the body topology image.
+
 Type 38 is the XT `INTERSECTION` node. The canonical later-schema name of a
 single-byte delta `0x5a` record is `INTERSECTION_DATA`; it uses the
 `intersection_data` layout and is distinct from the two-byte type-90 `GROUP`

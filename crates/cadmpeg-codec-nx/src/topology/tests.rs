@@ -131,6 +131,90 @@ fn topology_accepts_high_node_identity_among_low_identity_neighbors() {
 }
 
 #[test]
+fn topology_admits_high_identity_carriers_from_typed_topology_slots() {
+    let mut stream = topology_partition_stream();
+    let initial_graph = Graph::parse(&stream);
+    for (kind, xmt) in [(50, 6), (30, 9), (29, 11)] {
+        let node = initial_graph.get(kind, xmt).unwrap();
+        let node_id_offset = node.pos + 4 + node.shift;
+        stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+    }
+
+    let graph = Graph::parse(&stream);
+
+    for (kind, xmt) in [(50, 6), (30, 9), (29, 11)] {
+        assert_eq!(
+            graph.get(kind, xmt).and_then(|node| node.u32_at(4)),
+            Some(u32::MAX)
+        );
+    }
+    assert!(graph.has_complete_body_topology());
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().model.points.len(), 1);
+}
+
+#[test]
+fn topology_rejects_unreferenced_high_identity_carrier() {
+    let mut stream = topology_partition_stream();
+    let plane_pos = stream
+        .windows(4)
+        .position(|window| window == [0, 50, 0, 6])
+        .unwrap();
+    let mut unreferenced = stream[plane_pos..plane_pos + 91].to_vec();
+    put_ref(&mut unreferenced, 2, 99);
+    unreferenced[4..8].copy_from_slice(&u32::MAX.to_be_bytes());
+    stream.extend(unreferenced);
+
+    let graph = Graph::parse(&stream);
+
+    assert!(graph.get(50, 99).is_none());
+    assert!(graph.has_complete_body_topology());
+}
+
+#[test]
+fn topology_admits_high_identity_region_from_shell_ownership() {
+    let mut stream = topology_partition_stream();
+    let initial_graph = Graph::parse(&stream);
+    let region = initial_graph.get(19, 12).unwrap();
+    let node_id_offset = region.pos + 4 + region.shift;
+    stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+
+    let graph = Graph::parse(&stream);
+
+    assert_eq!(graph.get(19, 12).and_then(Node::node_id), Some(u32::MAX));
+    assert!(graph.has_complete_body_topology());
+}
+
+#[test]
+fn topology_closes_high_identity_procedural_surface_dependencies() {
+    let mut stream = offset_surface_topology_partition_stream();
+    let initial_graph = Graph::parse(&stream);
+    let offset = initial_graph.get(60, 12).unwrap();
+    let node_id_offset = offset.pos + 4 + offset.shift;
+    stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+
+    let graph = Graph::parse(&stream);
+
+    assert_eq!(
+        graph.get(60, 12).and_then(|node| node.u32_at(4)),
+        Some(u32::MAX)
+    );
+    assert_eq!(graph.offset_surfaces().len(), 1);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+}
+
+#[test]
 fn topology_resolves_kernel_node_identity_only_within_one_unique_family() {
     let mut stream = topology_partition_stream();
     let graph = crate::topology::Graph::parse(&stream);

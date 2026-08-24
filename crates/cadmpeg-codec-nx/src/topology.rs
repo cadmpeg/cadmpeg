@@ -323,6 +323,80 @@ impl Node {
         let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
         crate::geometry::decode_curve_record(&self.bytes, self.kind, payload_shift)
     }
+
+    fn reference_targets(&self) -> Vec<(ReferenceRole, u32)> {
+        match self.kind {
+            13 => self.shell_fields().map_or_else(Vec::new, |fields| {
+                vec![
+                    (ReferenceRole::Body, fields.body),
+                    (ReferenceRole::Region, fields.region),
+                ]
+            }),
+            14 => self.face_fields().map_or_else(Vec::new, |fields| {
+                vec![(ReferenceRole::Surface, fields.surface)]
+            }),
+            16 => self.edge_fields().map_or_else(Vec::new, |fields| {
+                vec![(ReferenceRole::Curve, fields.curve)]
+            }),
+            17 => self.fin_fields().map_or_else(Vec::new, |fields| {
+                vec![(ReferenceRole::Curve, fields.curve_xmt)]
+            }),
+            18 => self.vertex_fields().map_or_else(Vec::new, |fields| {
+                vec![(ReferenceRole::Point, fields.point)]
+            }),
+            56 => {
+                let Some(mut at) = self.compact_tail_offset() else {
+                    return Vec::new();
+                };
+                if self.bytes.get(at) != Some(&b'R') {
+                    return Vec::new();
+                }
+                at += 1;
+                read_sequence_at(&self.bytes, &mut at, 3).map_or_else(Vec::new, |references| {
+                    vec![
+                        (ReferenceRole::Surface, references[0]),
+                        (ReferenceRole::Surface, references[1]),
+                        (ReferenceRole::Curve, references[2]),
+                    ]
+                })
+            }
+            60 => {
+                let Some(mut at) = self.compact_tail_offset() else {
+                    return Vec::new();
+                };
+                if !matches!(self.bytes.get(at), Some(b'V' | b'I' | b'U'))
+                    || !matches!(self.bytes.get(at + 1), Some(0 | 1))
+                {
+                    return Vec::new();
+                }
+                at += 2;
+                read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
+                    vec![(ReferenceRole::Surface, reference)]
+                })
+            }
+            133 => {
+                let Some(mut at) = self.compact_tail_offset() else {
+                    return Vec::new();
+                };
+                read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
+                    vec![(ReferenceRole::Curve, reference)]
+                })
+            }
+            137 => {
+                let Some(mut at) = self.compact_tail_offset() else {
+                    return Vec::new();
+                };
+                read_sequence_at(&self.bytes, &mut at, 3).map_or_else(Vec::new, |references| {
+                    vec![
+                        (ReferenceRole::Surface, references[0]),
+                        (ReferenceRole::Curve, references[1]),
+                        (ReferenceRole::Curve, references[2]),
+                    ]
+                })
+            }
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// An index of supported records keyed by `(node type, XMT identifier)`.
@@ -332,6 +406,15 @@ pub struct Graph {
     by_pos: BTreeMap<usize, (u8, u32)>,
     /// Record keys grouped by kind in their physical stream order.
     by_kind: BTreeMap<u8, Vec<(u8, u32)>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ReferenceRole {
+    Body,
+    Point,
+    Curve,
+    Region,
+    Surface,
 }
 
 /// A type-133 parameter restriction over a basis curve.
@@ -679,7 +762,7 @@ impl Graph {
 impl Graph {
     /// Parse supported fixed-record nodes from a neutral-binary stream.
     pub fn parse(stream: &[u8]) -> Self {
-        let baseline = Self::parse_fixed_records(stream, false);
+        let mut baseline = Self::parse_fixed_records(stream, false);
         let full_domain = Self::parse_fixed_records(stream, true);
         let preserves_baseline = baseline.nodes.iter().all(|(key, node)| {
             full_domain
@@ -687,14 +770,62 @@ impl Graph {
                 .get(key)
                 .is_some_and(|candidate| candidate.pos == node.pos && candidate.bytes == node.bytes)
         });
+        if !preserves_baseline {
+            return baseline;
+        }
         if !baseline.has_complete_body_topology()
             && full_domain.has_complete_body_topology()
             && full_domain.body_shape_face_count() != 0
-            && preserves_baseline
         {
             full_domain
         } else {
+            baseline.admit_referenced_full_domain_nodes(&full_domain);
             baseline
+        }
+    }
+
+    /// Admit full-domain nodes through unique typed XMT references.
+    fn admit_referenced_full_domain_nodes(&mut self, full_domain: &Self) {
+        let mut candidates = BTreeMap::<(ReferenceRole, u32), Option<&Node>>::new();
+        for node in full_domain.nodes.values() {
+            let Some(role) = ReferenceRole::for_kind(node.kind) else {
+                continue;
+            };
+            candidates
+                .entry((role, node.xmt))
+                .and_modify(|candidate| *candidate = None)
+                .or_insert(Some(node));
+        }
+        let mut required = self
+            .nodes
+            .values()
+            .flat_map(Node::reference_targets)
+            .filter(|(_, xmt)| *xmt > 1)
+            .collect::<BTreeSet<_>>();
+        let mut changed = false;
+        while let Some(target) = required.pop_first() {
+            let Some(Some(candidate)) = candidates.get(&target) else {
+                continue;
+            };
+            let key = (candidate.kind, candidate.xmt);
+            if self.nodes.contains_key(&key) {
+                continue;
+            }
+            required.extend(
+                candidate
+                    .reference_targets()
+                    .into_iter()
+                    .filter(|(_, xmt)| *xmt > 1),
+            );
+            self.by_pos.insert(candidate.pos, key);
+            self.nodes.insert(key, (*candidate).clone());
+            changed = true;
+        }
+        if changed {
+            self.by_kind.clear();
+            for &key in self.by_pos.values() {
+                self.by_kind.entry(key.0).or_default().push(key);
+            }
         }
     }
 
@@ -1171,6 +1302,19 @@ impl Graph {
             face_xmt = face.next_face;
         }
         (!visited.is_empty()).then(|| visited.into_iter().collect())
+    }
+}
+
+impl ReferenceRole {
+    fn for_kind(kind: u8) -> Option<Self> {
+        match kind {
+            12 => Some(Self::Body),
+            19 => Some(Self::Region),
+            29 => Some(Self::Point),
+            30..=32 | 38 | 133..=134 | 137 => Some(Self::Curve),
+            50..=54 | 56 | 60 | 124 => Some(Self::Surface),
+            _ => None,
+        }
     }
 }
 

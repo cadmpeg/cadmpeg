@@ -266,11 +266,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which stream invariant owns a fixed-node frame when the node does not participate in a complete body-topology graph?
 
-**Known.** `siemens_nx.md` §4.1 defines `node_id` as a big-endian u32 field with no smaller numerical bound. A full-domain interpretation is admitted when it preserves every baseline record and uniquely changes an incomplete body-topology graph into a complete graph. This proof admits mixed low and high node identities in topology families. It does not prove an unreferenced analytic carrier or a carrier whose owning topology is already complete without it.
+**Known.** `siemens_nx.md` §4.1 defines `node_id` as a big-endian u32 field with no smaller numerical bound. A full-domain interpretation is admitted when it preserves every baseline record and uniquely changes an incomplete body-topology graph into a complete graph. A typed XMT slot also admits the unique full-domain node of its required family, recursively through procedural carrier dependencies. These proofs admit mixed low and high node identities in topology, ownership, and carrier families. They do not prove a fixed frame with no complete-topology or typed-reference owner.
 
-**Need.** We must derive carrier and ownership-node admission from a serialized frame owner or from a typed reference closure. The proof must exclude complete-looking fixed records inside opaque payloads.
+**Need.** We must identify the sequential or enclosing owner of a fixed frame that has no complete-topology or typed-reference owner. The proof must exclude complete-looking fixed records inside opaque payloads.
 
-**Conflict.** The ambiguity baseline still rejects several fixed-node families when `node_id` is greater than `1,000,000`. The cutoff cannot reject a topology node that completes the body graph, but it can still reject a valid fixed carrier or ownership node without that graph witness.
+**Conflict.** The ambiguity baseline still rejects several fixed-node families when `node_id` is greater than `1,000,000`. The cutoff cannot reject a topology node that completes the body graph or a uniquely referenced ownership or carrier node. It can still reject a valid unowned fixed frame.
 
 ### PS-32. Direct and escaped record-form selection
 
