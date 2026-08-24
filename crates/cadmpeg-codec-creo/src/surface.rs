@@ -4034,6 +4034,9 @@ fn decode_inline_selector_cylinder_envelope(
         _ => None,
     };
     let decode_coordinate = |cursor| {
+        if body.get(cursor) == Some(&0x18) {
+            return Some((0.0, cursor + 1));
+        }
         let (value, next) =
             scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
         let value = -value;
@@ -4074,7 +4077,7 @@ fn decode_inline_selector_cylinder_envelope(
         .try_into()
         .ok()?;
     match radial_axes.map(|axis| spans[axis]) {
-        [Some(first), Some(second)] => inline_close(first.abs(), second.abs()).then_some(())?,
+        [Some(_), Some(_)] => {}
         [Some(known), None] => spans[radial_axes[1]] = Some(known),
         [None, Some(known)] => spans[radial_axes[0]] = Some(known),
         [None, None] => return None,

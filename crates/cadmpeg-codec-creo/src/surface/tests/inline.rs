@@ -347,6 +347,40 @@ fn selector_envelope_places_a_compact_y_cylinder() {
 }
 
 #[test]
+fn selector_envelope_decodes_bare_zero_and_oblique_outline() {
+    let mut body = vec![0x11, 0x18, 0x13];
+    push_inline_test_first_directrix(&mut body, 4.0);
+    for value in [5.0, 4.0] {
+        push_inline_test_first_directrix(&mut body, value);
+    }
+    body.push(0x18);
+    for value in [2.0, 2.0, 4.0] {
+        push_inline_test_first_directrix(&mut body, value);
+    }
+    body.push(0xe3);
+    body.extend_from_slice(&[0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f]);
+    for value in [3.0, 3.0, 0.0] {
+        push_inline_test_scalar(&mut body, value);
+    }
+    body.extend_from_slice(&[0x2f, 0x00, 0x00, 0xe3]);
+
+    let InlineSurfaceCarrier::Cylinder(frame) = inline_surface_body(
+        SurfaceKind::Cylinder,
+        &body,
+        &scalar::ScalarCache::default(),
+    )
+    .and_then(|body| body.carrier)
+    .expect("bare-zero selector envelope") else {
+        panic!("selector envelope resolves a cylinder");
+    };
+    assert_eq!(frame.origin, [-3.0, -3.0, 0.0]);
+    assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+    assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(frame.radius, 2.0);
+    assert_eq!(frame.length, Some(4.0));
+}
+
+#[test]
 fn compact_axis_image_selects_equal_spans_and_stored_axis_branch() {
     let mut local_system = vec![0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe6, 0x0f];
     push_inline_test_scalar(&mut local_system, 2.0);

@@ -1096,7 +1096,12 @@ is one byte in `11..14`, or `17`, `18`, or `20`, or the three-byte image
 family suffix use the ordinary inline grammar. The two stored axial values
 are the local-system axis parameters and the outline is the placement witness.
 Every scalar in this envelope is the negation of its first
-tabulated-cylinder directrix-coordinate value.
+tabulated-cylinder directrix-coordinate value. A bare `18` in an axial or
+outline-coordinate slot is exact zero and consumes one byte; the following
+byte begins the next selector or coordinate slot. Two complete transverse
+outline spans need not be equal because an oblique trim need not cover the
+full radial diameter. The local-system center and family radius must contain
+both spans under the carrier-placement witness.
 `92 <i48>` and `da <i48>` each occupy one outline-coordinate slot. The integer
 payload is not a coordinate. When exactly one transverse coordinate is absent,
 its signed corner span equals the other transverse span. An absent axial
