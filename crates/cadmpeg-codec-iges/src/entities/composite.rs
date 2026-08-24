@@ -2,7 +2,7 @@
 //! Ordered composite-curve projection.
 
 use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
-use super::geometry::{entity_loss, source_object, WireProjectionOutcome};
+use super::geometry::{entity_loss, resolve_transform, source_object, WireProjectionOutcome};
 use crate::directory::DirectoryEntry;
 use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
@@ -68,6 +68,112 @@ fn composite_logical_connector_use_valid(
             Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3
         )
         || use_flag == 4
+}
+
+fn composite_point_member(entry: &DirectoryEntry) -> bool {
+    matches!(entry.entity_type, 116 | 132) && entry.form == 0
+}
+
+struct CompositePointContext<'map, 'directory, 'parameter, 'decode> {
+    entries: &'map BTreeMap<u32, &'directory DirectoryEntry>,
+    records: &'map BTreeMap<u32, &'parameter ParameterRecord>,
+    global: &'map ProjectedGlobal,
+    ctx: Option<&'map DecodeContext<'decode>>,
+    tolerance: f64,
+}
+
+impl CompositePointContext<'_, '_, '_, '_> {
+    fn is_point(&self, sequence: u32) -> bool {
+        self.entries
+            .get(&sequence)
+            .is_some_and(|entry| composite_point_member(entry))
+    }
+
+    fn member_point(&self, sequence: u32) -> Option<Point3> {
+        let entry = self.entries.get(&sequence).copied()?;
+        if !composite_point_member(entry) {
+            return None;
+        }
+        let record = self.records.get(&sequence).copied()?;
+        let [x, y, z] = [record.number(1)?, record.number(2)?, record.number(3)?];
+        let transform = resolve_transform(
+            entry.transform,
+            self.entries,
+            self.records,
+            self.global.length_factor_mm(),
+            self.global.real_precision(),
+            &mut BTreeSet::new(),
+            self.ctx,
+        )
+        .ok()?;
+        let point = transform.point(Point3::new(
+            x * self.global.length_factor_mm(),
+            y * self.global.length_factor_mm(),
+            z * self.global.length_factor_mm(),
+        ));
+        (point.x.is_finite() && point.y.is_finite() && point.z.is_finite()).then_some(point)
+    }
+}
+
+fn composite_point_adjacency_valid(
+    ir: &CadIr,
+    index: &CompositeIndex,
+    child_sequences: &[u32],
+    context: &CompositePointContext<'_, '_, '_, '_>,
+) -> bool {
+    let all_points = child_sequences
+        .iter()
+        .copied()
+        .all(|sequence| context.is_point(sequence));
+    if child_sequences
+        .windows(2)
+        .any(|pair| context.is_point(pair[0]) && context.is_point(pair[1]))
+        && !(all_points && child_sequences.len() == 2)
+    {
+        return false;
+    }
+    for (position, sequence) in child_sequences.iter().enumerate() {
+        if !context.is_point(*sequence) {
+            continue;
+        }
+        let Some(point) = context.member_point(*sequence) else {
+            return false;
+        };
+        if position > 0 && !context.is_point(child_sequences[position - 1]) {
+            let Some((_, end)) = curve_endpoints(
+                ir,
+                &CurveId(format!(
+                    "iges:model:curve#D{}",
+                    child_sequences[position - 1]
+                )),
+                index,
+                context.tolerance,
+            ) else {
+                return false;
+            };
+            if !close_with_tolerance(end, point, Some(context.tolerance)) {
+                return false;
+            }
+        }
+        if position + 1 < child_sequences.len() && !context.is_point(child_sequences[position + 1])
+        {
+            let Some((start, _)) = curve_endpoints(
+                ir,
+                &CurveId(format!(
+                    "iges:model:curve#D{}",
+                    child_sequences[position + 1]
+                )),
+                index,
+                context.tolerance,
+            ) else {
+                return false;
+            };
+            if !close_with_tolerance(point, start, Some(context.tolerance)) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
@@ -1025,7 +1131,37 @@ pub(super) fn project(
             ));
             continue;
         }
-        let Some(children) = child_sequences
+        let point_context = CompositePointContext {
+            entries: &entries,
+            records: &records,
+            global,
+            ctx,
+            tolerance: join_tolerance,
+        };
+        if !composite_point_adjacency_valid(ir, &index, &child_sequences, &point_context) {
+            losses.push(entity_loss(
+                entry,
+                "point or connect-point adjacency is invalid",
+            ));
+            continue;
+        }
+        let curve_sequences = child_sequences
+            .iter()
+            .copied()
+            .filter(|sequence| {
+                entries
+                    .get(sequence)
+                    .is_none_or(|entry| !composite_point_member(entry))
+            })
+            .collect::<Vec<_>>();
+        if curve_sequences.is_empty() {
+            losses.push(entity_loss(
+                entry,
+                "composite has no parameterized curve constituent",
+            ));
+            continue;
+        }
+        let Some(children) = curve_sequences
             .iter()
             .map(|sequence| bounded_nurbs(ir, &index, *sequence, join_tolerance, ctx))
             .collect::<Option<Vec<_>>>()
@@ -1034,7 +1170,7 @@ pub(super) fn project(
                 ir,
                 &mut index,
                 entry,
-                &child_sequences,
+                &curve_sequences,
                 join_tolerance,
                 "a child has no bounded line or NURBS carrier",
                 &mut losses,
@@ -1055,7 +1191,7 @@ pub(super) fn project(
                 ir,
                 &mut index,
                 entry,
-                &child_sequences,
+                &curve_sequences,
                 join_tolerance,
                 "child endpoints do not join within the Global minimum resolution",
                 &mut losses,
@@ -1072,7 +1208,7 @@ pub(super) fn project(
                 ir,
                 &mut index,
                 entry,
-                &child_sequences,
+                &curve_sequences,
                 join_tolerance,
                 "its parameter range is empty",
                 &mut losses,
@@ -1094,7 +1230,7 @@ pub(super) fn project(
                 ir,
                 &mut index,
                 entry,
-                &child_sequences,
+                &curve_sequences,
                 join_tolerance,
                 "its start cannot be evaluated",
                 &mut losses,
@@ -1116,7 +1252,7 @@ pub(super) fn project(
                 ir,
                 &mut index,
                 entry,
-                &child_sequences,
+                &curve_sequences,
                 join_tolerance,
                 "its end cannot be evaluated",
                 &mut losses,
@@ -1187,7 +1323,7 @@ pub(super) fn project(
             definition: ProceduralCurveDefinition::Compound {
                 parameters: boundaries,
                 component_parameters: child_starts,
-                components: child_sequences
+                components: curve_sequences
                     .iter()
                     .map(|sequence| CurveId(format!("iges:model:curve#D{sequence}")))
                     .collect(),
