@@ -17,7 +17,7 @@ use crate::records::{
 
 const COMPONENT_MODULE: &str = "Component";
 const COMPONENT_NAMING_SPACE_BASE_TYPE_GUID: &str = "21F379C8-CAFD-4985-B461-767673A4C502";
-const COMPONENT_UUID_PREFIX_LENGTH: usize = 12;
+const COMPONENT_UUID_RESERVED_LENGTHS: [usize; 2] = [2, 3];
 
 /// Stable Design type identity of the record that owns the ordered feature
 /// scope list.
@@ -85,37 +85,43 @@ pub fn decode_component_naming_spaces(
         let bulk_name = format!("{prefix}BulkStream.dat");
         let bytes = scan.entry_bytes(&bulk_name)?;
         let mut by_component = HashMap::<u64, DesignComponentNamingSpace>::new();
-        for uuid_offset in COMPONENT_UUID_PREFIX_LENGTH..bytes.len().saturating_sub(4) {
-            let marker = uuid_offset - COMPONENT_UUID_PREFIX_LENGTH;
-            if bytes[marker] != 1 || bytes[marker + 9..uuid_offset] != [0, 0, 0] {
-                continue;
-            }
-            let Some(component_record_index) = View::u64_le_at(bytes, marker + 1) else {
-                continue;
-            };
-            if !component_entities.contains(&component_record_index) {
-                continue;
-            }
-            let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
-                continue;
-            };
-            if !is_guid_relaxed(&context_uuid) {
-                continue;
-            }
-            let binding = DesignComponentNamingSpace {
-                id: ids::native_design_component_naming_space_id(&bulk_name, marker),
-                byte_offset: marker as u64,
-                component_record_index,
-                context_uuid,
-                context_uuid_offset: uuid_offset as u64,
-            };
-            if let Some(existing) = by_component.insert(component_record_index, binding.clone()) {
-                if existing.context_uuid != binding.context_uuid {
-                    return Err(CodecError::Malformed(format!(
-                        "Design component {component_record_index} has conflicting context UUID bindings"
-                    )));
+        for reserved_len in COMPONENT_UUID_RESERVED_LENGTHS {
+            let prefix_len = 1 + 8 + reserved_len;
+            for uuid_offset in prefix_len..bytes.len().saturating_sub(4) {
+                let marker = uuid_offset - prefix_len;
+                if bytes[marker] != 1
+                    || !bytes[marker + 9..uuid_offset].iter().all(|byte| *byte == 0)
+                {
+                    continue;
                 }
-                by_component.insert(component_record_index, existing);
+                let Some(component_record_index) = View::u64_le_at(bytes, marker + 1) else {
+                    continue;
+                };
+                if !component_entities.contains(&component_record_index) {
+                    continue;
+                }
+                let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
+                    continue;
+                };
+                if !is_guid_relaxed(&context_uuid) {
+                    continue;
+                }
+                let binding = DesignComponentNamingSpace {
+                    id: ids::native_design_component_naming_space_id(&bulk_name, marker),
+                    byte_offset: marker as u64,
+                    component_record_index,
+                    context_uuid,
+                    context_uuid_offset: uuid_offset as u64,
+                };
+                if let Some(existing) = by_component.insert(component_record_index, binding.clone())
+                {
+                    if existing.context_uuid != binding.context_uuid {
+                        return Err(CodecError::Malformed(format!(
+                            "Design component {component_record_index} has conflicting context UUID bindings"
+                        )));
+                    }
+                    by_component.insert(component_record_index, existing);
+                }
             }
         }
         if let Some(missing) = component_entities

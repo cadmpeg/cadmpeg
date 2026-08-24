@@ -42,33 +42,44 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         zip.finish().unwrap().into_inner()
     }
 
-    fn binding(out: &mut Vec<u8>, component: u64, context_uuid: &str) {
+    fn binding(out: &mut Vec<u8>, component: u64, reserved_len: usize, context_uuid: &str) {
         out.push(1);
         out.extend_from_slice(&component.to_le_bytes());
-        out.extend_from_slice(&[0, 0, 0]);
+        out.extend(std::iter::repeat_n(0, reserved_len));
         out.extend_from_slice(&36_u32.to_le_bytes());
         for code_unit in context_uuid.encode_utf16() {
             out.extend_from_slice(&code_unit.to_le_bytes());
         }
     }
 
-    let mut bulk = vec![0xaa, 0xbb];
-    let marker = bulk.len();
-    binding(&mut bulk, 17, CONTEXT_UUID);
-    let decoded = with_scan(&archive(&bulk), |scan| {
-        crate::design::decode::meta::decode_component_naming_spaces(scan)
-    })
-    .expect("component naming space");
-    let [space] = decoded.as_slice() else {
-        panic!("expected one component naming space");
-    };
-    assert_eq!(space.component_record_index, 17);
-    assert_eq!(space.context_uuid, CONTEXT_UUID);
-    assert_eq!(space.byte_offset, marker as u64);
-    assert_eq!(space.context_uuid_offset, (marker + 12) as u64);
+    for reserved_len in [2, 3] {
+        let mut bulk = vec![0xaa, 0xbb];
+        let marker = bulk.len();
+        binding(&mut bulk, 17, reserved_len, CONTEXT_UUID);
+        let decoded = with_scan(&archive(&bulk), |scan| {
+            crate::design::decode::meta::decode_component_naming_spaces(scan)
+        })
+        .expect("component naming space");
+        let [space] = decoded.as_slice() else {
+            panic!("expected one component naming space");
+        };
+        assert_eq!(space.component_record_index, 17);
+        assert_eq!(space.context_uuid, CONTEXT_UUID);
+        assert_eq!(space.byte_offset, marker as u64);
+        assert_eq!(
+            space.context_uuid_offset,
+            (marker + 9 + reserved_len) as u64
+        );
+    }
 
-    let mut conflicting = bulk;
-    binding(&mut conflicting, 17, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb");
+    let mut conflicting = Vec::new();
+    binding(&mut conflicting, 17, 3, CONTEXT_UUID);
+    binding(
+        &mut conflicting,
+        17,
+        3,
+        "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb",
+    );
     let error = with_scan(&archive(&conflicting), |scan| {
         crate::design::decode::meta::decode_component_naming_spaces(scan)
     })
