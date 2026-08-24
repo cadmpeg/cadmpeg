@@ -1233,11 +1233,46 @@ Unstated regions:
 - `286..290` (4 B): The class-378 carrier payload before its repeated child reference is outside this table.
 - `323..399` (76 B): The class-378 carrier payload before its scope backlink is outside this table.
 
+## `assembly_variable_reference_operand_path_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 180 B
+
+Offsets are relative to the locator's indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 23 | 128 | `transform` | `f64[16]` | little | spec | Its rigid transform starts at offset 23 |
+| 152 | 11 | `scope_backlink` | `bytes[11]` | little | spec | its owning-scope backlink is at offset 152 |
+| 163 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | its path-wrapper reference is at offset 163 |
+| 174 | 4 | `constant_two` | `u32` | little | spec | u32 value 2 is at offset 174 |
+| 178 | 2 | `zero_tail` | `bytes[2]` | little | spec | two zero tail bytes occupy offsets 178 and 179 |
+
+Unstated regions:
+
+- `0..23` (23 B): Indexed header and fixed zero prefix.
+- `151..152` (1 B): Fixed zero separator.
+
+## `assembly_variable_reference_path_wrapper_continuation`
+
+Spec §Assembly operands · layout: byte offsets · size: 11 B
+
+One entry is repeated for each path record after the first.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `path_reference` | `bytes[11]` | little | spec | one marked reference |
+
 ## `assembly_operand_path_locator_reference_run`
 
 Spec §Assembly operands · layout: byte offsets · size: 26 B
 
-Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms, and offset 358 in the 633-, 732-, and 744-byte forms.
+Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, and offset 358 in the 633-, 732-, and 744-byte forms.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs`
@@ -1253,6 +1288,7 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The As-built form uses the two tabulated scope-relative locator-reference offsets. The class-430/262 748-byte Assemble form uses the same standard offsets.
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The standard assembly forms use the two tabulated scope-relative locator-reference offsets. The class-430/262 748-byte Assemble form is admitted by its class pair and frame length.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The variable-span class-283/264 and class-347/260 Assemble forms use the standard locator-reference offsets and are admitted by class pair.
 - `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The compact assembly forms use the two tabulated scope-relative locator-reference offsets. The class-430/262 744-byte Assemble form is admitted by its class pair and frame length.
 
 ## `assembly_as_built_421_scope`

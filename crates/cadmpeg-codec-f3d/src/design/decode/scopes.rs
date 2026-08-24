@@ -33,6 +33,7 @@ use crate::layout::assembly_legacy_class_412_path_425 as class_412_path;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
+use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
 use crate::layout::base_feature_body_snapshot_body_entry as snapshot_entry;
 use crate::layout::base_feature_body_snapshot_compact_preamble as snapshot_compact_preamble;
 use crate::layout::base_feature_body_snapshot_expanded_preamble as snapshot_expanded_preamble;
@@ -1519,8 +1520,12 @@ pub(crate) fn exact_assembly_alignment(
         {
             return None;
         }
-        let (alignment_start, alignment_end) =
-            crate::design::assembly::alignment_lane_bounds(scope.frame_length, lanes.len())?;
+        let (alignment_start, alignment_end) = crate::design::assembly::alignment_lane_bounds(
+            scope.frame_length,
+            &scope.class_tag,
+            &scope.paired_class_tag,
+            lanes.len(),
+        )?;
         let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
         let (angle, offset, owner_record_indices, value_offsets) = match alignment_lanes {
             [angle, offset_x, offset_y, offset_z] => (
@@ -1581,6 +1586,22 @@ pub(crate) fn exact_assembly_alignment(
                 .any(|owner| owner.class_tag != "284" || owner.frame_length != 103)
                 || !owner_reference_order_matches
                 || scope.reference_members.get(8..12) != Some(owner_record_indices.as_slice())
+            {
+                return None;
+            }
+        } else if crate::design::assembly::variable_reference_assembly_generation(
+            &scope.class_tag,
+            &scope.paired_class_tag,
+        ) {
+            if lanes
+                .iter()
+                .any(|owner| owner.class_tag != "289" || owner.frame_length != 103)
+                || scope
+                    .reference_members
+                    .windows(owner_record_indices.len())
+                    .filter(|members| *members == owner_record_indices.as_slice())
+                    .count()
+                    != 1
             {
                 return None;
             }
@@ -2709,7 +2730,10 @@ fn exact_assembly_operand_frames(
             || bytes.get(start + 26..start + 28)? != [0; 2]
             || bytes.get(start + 33..start + 40)? != [0; 7]
             || bytes.get(start + 173..start + 180)? != [0; 7]
-            || bytes
+            || !crate::design::assembly::variable_reference_assembly_generation(
+                &scope.class_tag,
+                &scope.paired_class_tag,
+            ) && bytes
                 .get(start + standard_tail_marker_offset..start + standard_tail_marker_offset + 4)?
                 != [0; 4]
         {
@@ -3567,8 +3591,11 @@ fn exact_assembly_operand_paths(
     let search_start = usize::try_from(scope.paired_byte_offset)
         .ok()?
         .checked_add(11)?;
-    let locator_offsets =
-        crate::design::assembly::operand_path_locator_offsets(scope.frame_length)?;
+    let locator_offsets = crate::design::assembly::operand_path_locator_offsets(
+        scope.frame_length,
+        &scope.class_tag,
+        &scope.paired_class_tag,
+    )?;
     let count_at = scope_at
         .checked_add(locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?)?;
     if View::u32_le_at(bytes, count_at)? != 2 {
@@ -3602,13 +3629,19 @@ fn exact_assembly_operand_paths(
         return None;
     };
     let first_start = usize::try_from(first.link.locator_byte_offset).ok()?;
-    let first_end = usize::try_from(first.link.wrapper_byte_offset)
-        .ok()?
-        .checked_add(path_wrapper::LEN)?;
+    let first_end = next_indexed_record_offset(
+        bytes,
+        usize::try_from(first.link.wrapper_byte_offset)
+            .ok()?
+            .checked_add(1)?,
+    )?;
     let second_start = usize::try_from(second.link.locator_byte_offset).ok()?;
-    let second_end = usize::try_from(second.link.wrapper_byte_offset)
-        .ok()?
-        .checked_add(path_wrapper::LEN)?;
+    let second_end = next_indexed_record_offset(
+        bytes,
+        usize::try_from(second.link.wrapper_byte_offset)
+            .ok()?
+            .checked_add(1)?,
+    )?;
     if first.link.locator_record_index == second.link.locator_record_index
         || (first_start < second_end && second_start < first_end)
     {
@@ -3625,54 +3658,116 @@ fn exact_assembly_operand_path_envelope(
     locator_at: usize,
 ) -> Option<DesignAssemblyOperandPath> {
     let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
-    if bytes.get(
-        locator_at.checked_add(path_locator::ZERO_RUN_10)?
-            ..locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
-    )? != [0; 10]
-        || exact_same_segment_record_reference(
-            bytes,
-            locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
-        )?
-        .0 == 0
-        || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
-        || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?).is_none()
-        || bytes.get(locator_at.checked_add(path_locator::ZERO_161)?) != Some(&0)
-    {
-        return None;
-    }
-    let (scope_record_index, locator_scope_reference_offset) = exact_same_segment_record_reference(
-        bytes,
-        locator_at.checked_add(path_locator::SCOPE_BACKLINK)?,
-    )?;
-    let (wrapper_record_index, wrapper_reference_offset) = exact_same_segment_record_reference(
-        bytes,
-        locator_at.checked_add(path_locator::WRAPPER_REFERENCE)?,
-    )?;
+    let variable_reference = crate::design::assembly::variable_reference_assembly_generation(
+        &scope.class_tag,
+        &scope.paired_class_tag,
+    );
+    let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) =
+        if variable_reference {
+            if locator_class_tag != "390"
+                || bytes
+                    .get(
+                        locator_at.checked_add(variable_path_locator::TRANSFORM + 16 * 8)?
+                            ..locator_at.checked_add(variable_path_locator::SCOPE_BACKLINK)?,
+                    )?
+                    .iter()
+                    .any(|byte| *byte != 0)
+                || rigid_transform_at(
+                    bytes,
+                    locator_at.checked_add(variable_path_locator::TRANSFORM)?,
+                )
+                .is_none()
+            {
+                return None;
+            }
+            (
+                variable_path_locator::LEN,
+                variable_path_locator::SCOPE_BACKLINK,
+                variable_path_locator::WRAPPER_REFERENCE,
+                variable_path_locator::CONSTANT_TWO,
+                variable_path_locator::ZERO_TAIL,
+            )
+        } else {
+            if bytes.get(
+                locator_at.checked_add(path_locator::ZERO_RUN_10)?
+                    ..locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+            )? != [0; 10]
+                || exact_same_segment_record_reference(
+                    bytes,
+                    locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+                )?
+                .0 == 0
+                || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
+                || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?)
+                    .is_none()
+                || bytes.get(locator_at.checked_add(path_locator::ZERO_161)?) != Some(&0)
+            {
+                return None;
+            }
+            (
+                path_locator::LEN,
+                path_locator::SCOPE_BACKLINK,
+                path_locator::WRAPPER_REFERENCE,
+                path_locator::CONSTANT_TWO,
+                path_locator::ZERO_TAIL_2,
+            )
+        };
+    let (scope_record_index, locator_scope_reference_offset) =
+        exact_same_segment_record_reference(bytes, locator_at.checked_add(scope_backlink)?)?;
+    let (wrapper_record_index, wrapper_reference_offset) =
+        exact_same_segment_record_reference(bytes, locator_at.checked_add(wrapper_reference)?)?;
     let path_record_index = locator_record_index.checked_add(1)?;
     if scope_record_index != scope.record_index
-        || wrapper_record_index != locator_record_index.checked_add(2)?
-        || View::u32_le_at(bytes, locator_at.checked_add(path_locator::CONSTANT_TWO)?)? != 2
-        || bytes.get(
-            locator_at.checked_add(path_locator::ZERO_TAIL_2)?
-                ..locator_at.checked_add(path_locator::LEN)?,
-        )? != [0; 2]
+        || if variable_reference {
+            !(locator_record_index.checked_add(2)?..=locator_record_index.checked_add(65)?)
+                .contains(&wrapper_record_index)
+        } else {
+            wrapper_record_index != locator_record_index.checked_add(2)?
+        }
+        || View::u32_le_at(bytes, locator_at.checked_add(constant_two)?)? != 2
+        || bytes.get(locator_at.checked_add(zero_tail)?..locator_at.checked_add(locator_length)?)?
+            != [0; 2]
     {
         return None;
     }
-    let path_at = locator_at.checked_add(path_locator::LEN)?;
-    let wrapper_at = next_indexed_record_offset(bytes, path_at.checked_add(1)?)?;
+    let path_at = locator_at.checked_add(locator_length)?;
+    if next_indexed_record_offset(bytes, locator_at.checked_add(1)?)? != path_at {
+        return None;
+    }
+    let mut path_spans = Vec::new();
+    let mut record_index = path_record_index;
+    let mut record_at = path_at;
+    let wrapper_at = loop {
+        if record_index == wrapper_record_index {
+            break record_at;
+        }
+        let next = next_indexed_record_offset(bytes, record_at.checked_add(1)?)?;
+        path_spans.push((record_index, record_at, next));
+        record_index = record_index.checked_add(1)?;
+        record_at = next;
+    };
     let wrapper_class_tag = exact_indexed_header_at(bytes, wrapper_at, wrapper_record_index)?;
-    let wrapper_end = wrapper_at.checked_add(path_wrapper::LEN)?;
-    if bytes.get(
-        wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)?
-            ..wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?,
-    )? != [0; 10]
+    let wrapper_end = next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)?;
+    let expected_wrapper_length = if variable_reference {
+        path_wrapper::LEN.checked_add(path_spans.len().checked_sub(1)?.checked_mul(11)?)?
+    } else {
+        path_wrapper::LEN
+    };
+    if variable_reference && wrapper_class_tag != "397"
+        || bytes.get(
+            wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)?
+                ..wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?,
+        )? != [0; 10]
         || bytes.get(wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?) != Some(&1)
         || View::u32_le_at(
             bytes,
             wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_WORD)?,
-        )? != 1
-        || next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)? != wrapper_end
+        )? != if variable_reference {
+            u32::try_from(path_spans.len()).ok()?
+        } else {
+            1
+        }
+        || wrapper_end != wrapper_at.checked_add(expected_wrapper_length)?
     {
         return None;
     }
@@ -3682,6 +3777,22 @@ fn exact_assembly_operand_path_envelope(
             wrapper_at.checked_add(path_wrapper::PATH_REFERENCE)?,
         )?;
     if referenced_path_record_index != path_record_index {
+        return None;
+    }
+    if variable_reference
+        && path_spans
+            .iter()
+            .skip(1)
+            .enumerate()
+            .any(|(ordinal, (record_index, _, _))| {
+                exact_same_segment_record_reference(
+                    bytes,
+                    wrapper_at + path_wrapper::LEN + ordinal * 11,
+                )
+                .map(|reference| reference.0)
+                    != Some(*record_index)
+            })
+    {
         return None;
     }
     let link = DesignAssemblyOperandPathLink {
@@ -3696,7 +3807,26 @@ fn exact_assembly_operand_path_envelope(
         wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
         path_reference_offset,
     };
-    exact_assembly_operand_path(bytes, path_at, path_record_index, wrapper_at, link)
+    let mut paths = path_spans.into_iter().map(|(record_index, start, limit)| {
+        exact_assembly_operand_path(bytes, start, record_index, limit, link.clone())
+    });
+    let mut path = paths.next()??;
+    if variable_reference && path.class_tag != "330" {
+        return None;
+    }
+    for continuation in paths {
+        let continuation = continuation?;
+        if !variable_reference || continuation.class_tag != "330" {
+            return None;
+        }
+        path.occurrence_guids.extend(continuation.occurrence_guids);
+        path.occurrence_guid_offsets
+            .extend(continuation.occurrence_guid_offsets);
+        path.identity_guids.extend(continuation.identity_guids);
+        path.identity_guid_offsets
+            .extend(continuation.identity_guid_offsets);
+    }
+    Some(path)
 }
 
 fn exact_assembly_operand_path(
@@ -3761,7 +3891,7 @@ fn exact_assembly_operand_path(
                 return None;
             }
         }
-        "329" | "386" | "390" => {
+        "329" | "330" | "386" | "390" => {
             if bytes.get(after_tag + 8..after_tag + 14)? != [0; 6] {
                 return None;
             }
@@ -3780,7 +3910,7 @@ fn exact_assembly_operand_path(
                 position = after_guid;
             }
             if position == limit {
-                if class_tag != "329" {
+                if !matches!(class_tag.as_str(), "329" | "330") {
                     return None;
                 }
             } else {

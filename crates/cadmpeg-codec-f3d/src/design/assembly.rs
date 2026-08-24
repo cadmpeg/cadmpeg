@@ -36,6 +36,21 @@ pub(crate) enum AssemblyOperandFrameVariant {
     LegacyClass388,
 }
 
+/// Whether a scope belongs to the variable-reference `Assemble` generation.
+///
+/// This generation keeps the standard operand and locator prefix while its
+/// owner and reference trailers grow with additional placement and limit
+/// groups. The class pair, rather than the total frame length, admits it.
+pub(crate) fn variable_reference_assembly_generation(
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> bool {
+    matches!(
+        (class_tag, paired_class_tag),
+        ("283", "264") | ("347", "260")
+    )
+}
+
 /// Select the exact operand-frame grammar admitted for an `Assemble` scope.
 ///
 /// The class-430 generation is keyed by both class tags because its 744- and
@@ -48,6 +63,9 @@ pub(crate) fn operand_frame_variant(
     class_tag: &str,
     paired_class_tag: &str,
 ) -> Option<AssemblyOperandFrameVariant> {
+    if variable_reference_assembly_generation(class_tag, paired_class_tag) {
+        return Some(AssemblyOperandFrameVariant::Standard);
+    }
     match frame_length {
         length
             if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64
@@ -187,10 +205,18 @@ pub(crate) fn legacy_as_built_421_generation(
 ///
 /// The serialized frame length fixes both the Cartesian/axial form and the
 /// number of placement lanes that precede the alignment values.
-pub(crate) const fn alignment_lane_bounds(
+pub(crate) fn alignment_lane_bounds(
     frame_length: u64,
+    class_tag: &str,
+    paired_class_tag: &str,
     owner_count: usize,
 ) -> Option<(usize, usize)> {
+    if variable_reference_assembly_generation(class_tag, paired_class_tag)
+        && owner_count >= 12
+        && matches!((owner_count - 12) % 4, 0 | 2)
+    {
+        return Some((8, 12));
+    }
     match (frame_length, owner_count) {
         (length, 28) if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64 => {
             Some((4, 8))
@@ -209,7 +235,14 @@ pub(crate) const fn alignment_lane_bounds(
 
 /// Return the scope-relative marker offsets of the two ordered operand-path
 /// locator references carried by a non-axial assembly frame.
-pub(crate) const fn operand_path_locator_offsets(frame_length: u64) -> Option<[usize; 2]> {
+pub(crate) fn operand_path_locator_offsets(
+    frame_length: u64,
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> Option<[usize; 2]> {
+    if variable_reference_assembly_generation(class_tag, paired_class_tag) {
+        return Some([366, 377]);
+    }
     match frame_length {
         399 => Some([51, 62]),
         length if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64 => Some([
@@ -337,7 +370,7 @@ fn project_path_operands(
                 .get(&(stream, root_guid.to_ascii_lowercase()))
                 .copied()
                 .flatten();
-            if occurrence.is_none() && path.class_tag != "386" {
+            if occurrence.is_none() && !matches!(path.class_tag.as_str(), "330" | "386") {
                 return None;
             }
             Some(JointOperand {
@@ -669,41 +702,81 @@ mod tests {
             (772, 10, (8, 10)),
         ] {
             assert_eq!(
-                super::alignment_lane_bounds(frame_length, owner_count),
+                super::alignment_lane_bounds(frame_length, "", "", owner_count),
                 Some(expected)
             );
         }
         for (frame_length, owner_count) in [(627, 6), (732, 6), (705, 8), (772, 8), (604, 4)] {
             assert_eq!(
-                super::alignment_lane_bounds(frame_length, owner_count),
+                super::alignment_lane_bounds(frame_length, "", "", owner_count),
                 None
             );
         }
+        for (class_tag, paired_class_tag) in [("283", "264"), ("347", "260")] {
+            for owner_count in [12, 14, 16, 20, 22, 36, 38, 44, 60] {
+                assert_eq!(
+                    super::alignment_lane_bounds(
+                        800 + owner_count as u64,
+                        class_tag,
+                        paired_class_tag,
+                        owner_count,
+                    ),
+                    Some((8, 12))
+                );
+            }
+            for owner_count in [0, 10, 13, 15] {
+                assert_eq!(
+                    super::alignment_lane_bounds(
+                        800 + owner_count as u64,
+                        class_tag,
+                        paired_class_tag,
+                        owner_count,
+                    ),
+                    None
+                );
+            }
+        }
+        assert_eq!(super::alignment_lane_bounds(869, "283", "260", 12), None);
     }
 
     #[test]
     fn operand_path_locator_offsets_follow_the_frame_layout() {
         let class_388_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
         assert_eq!(
-            super::operand_path_locator_offsets(class_388_length),
+            super::operand_path_locator_offsets(class_388_length, "388", "266"),
             Some([366, 377])
         );
         for frame_length in [627, 637, 692, 748] {
             assert_eq!(
-                super::operand_path_locator_offsets(frame_length),
+                super::operand_path_locator_offsets(frame_length, "", ""),
                 Some([366, 377])
             );
         }
         for frame_length in [633, 732, 744] {
             assert_eq!(
-                super::operand_path_locator_offsets(frame_length),
+                super::operand_path_locator_offsets(frame_length, "", ""),
                 Some([362, 373])
             );
         }
-        assert_eq!(super::operand_path_locator_offsets(671), Some([388, 399]));
+        assert_eq!(
+            super::operand_path_locator_offsets(671, "406", "261"),
+            Some([388, 399])
+        );
         for frame_length in [604, 705, 772] {
-            assert_eq!(super::operand_path_locator_offsets(frame_length), None);
+            assert_eq!(
+                super::operand_path_locator_offsets(frame_length, "", ""),
+                None
+            );
         }
+        assert_eq!(
+            super::operand_path_locator_offsets(869, "283", "264"),
+            Some([366, 377])
+        );
+        assert_eq!(
+            super::operand_path_locator_offsets(843, "347", "260"),
+            Some([366, 377])
+        );
+        assert_eq!(super::operand_path_locator_offsets(869, "283", "260"), None);
     }
 
     #[test]

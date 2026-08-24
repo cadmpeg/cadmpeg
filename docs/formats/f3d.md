@@ -1456,6 +1456,22 @@ placement lanes; ordinals 4 through 7 are angle, X, Y, and Z alignment lanes.
 The class pair is part of the admission key because the same frame lengths
 occur in other scope families.
 
+The class-283/264 and class-347/260 `Assemble` generations use class-289
+parameter-owner records with 103-byte owner frames. Both use the standard
+operand-frame prefix: operand references are at offsets 28 and 168, rigid
+row-major transforms start at offsets 40 and 180. In the direct-path subform,
+the operand-path-locator count is at offset 362 and the two marked locator
+references are at offsets 366 and 377. The second transform ends at offset 308. The variable reference
+trailer can start at that offset; there is no fixed zero tail marker. The total
+scope span varies with the owner and reference trailers. Owner ordinals 0 through 7 are two placement groups. Owner ordinals
+8 through 11 are the signed angle and signed local X, Y, and Z alignment
+lanes. Further owners are complete four-lane placement groups, optionally
+followed by one two-lane minimum/maximum limit group. The owner count is
+therefore `12 + 4n` or `14 + 4n`. The four alignment-owner references occur
+once as one contiguous run in the scope reference table; their position is
+not fixed because operand and additional-owner references can precede or
+follow them.
+
 The class-406/261 `Assemble` scope is a 671-byte standard form. It has six
 owners; the final two owners are its alignment lanes. Its two operand
 references are at offsets 28 and 168, and their row-major rigid transforms
@@ -1522,8 +1538,10 @@ carrier and identity envelopes are the path locator and wrapper for the
 external operand; the path record is class 386.
 
 An `Assemble` or `As-built` scope stores finite alignment parameter owners.
-The serialized frame length and total owner count select the lane layout; the
-class pair is an additional admission key for the 744- and 748-byte forms.
+The serialized frame length and total owner count select the lane layout in
+fixed-span generations. The class pair is an additional admission key for the
+744- and 748-byte forms and is the primary admission key for the variable-span
+class-283/264 and class-347/260 generations.
 The 399-byte `As-built` form and the 627-, 633-, 637-, and 692-byte `Assemble`
 forms have exactly four owners. All four are alignment lanes in owner-local
 order: signed angle, signed local X offset, signed local Y offset, and signed
@@ -1538,8 +1556,8 @@ exactly six owners: one group of `OffsetX`,
 and `alignOffset`. The 772-byte form has exactly ten owners: two such
 placement groups followed by `alignAngle` and `alignOffset`. The final scalar
 of each axial form is an alignment offset and maps to local Z. Apart from the
-class-383/258 form described above, no other frame-length, owner-count, and
-class-pair combination carries an assembly alignment. Joint forms store two
+class-383/258 and variable-span forms described above, no other frame-length,
+owner-count, and class-pair combination carries an assembly alignment. Joint forms store two
 operand frames. The 627-, 637-, and 692-byte
 forms store marked operand construction references at offsets 28 and 168 and
 row-major rigid 4×4 operand-local-to-model transforms at offsets 40 and 180.
@@ -1549,9 +1567,10 @@ references at offsets 28 and 167 and transforms at offsets 39 and 178. In the
 399-byte `As-built` form, the locator records store the operand construction
 references and transforms. Matrix translations are in centimetres. Alignment
 angles are in radians and alignment offsets are in centimetres. The alignment
-owner records are the final members of the scope reference table. Each value
-is the evaluated scalar duplicated from its parameter record by its parameter
-owner, independent of the owner-frame class and width.
+owner references are one ordered, contiguous scope-reference run unless an
+exact generation layout specifies fixed positions. Each value is the
+evaluated scalar duplicated from its parameter record by its parameter owner,
+independent of the owner-frame class and width.
 
 
 In a 421-byte `As-built` scope, the eleven-entry reference table starts with its marked entry at offset 189. Offset 185 stores u32 value 11. Entries 0 and 1 form the first operand-carrier pair, entries 2 and 3 form the second pair, entries 4 through 7 are the placement owners in `OffsetX`, `OffsetY`, `OffsetZ`, and `AngleZ` order, entry 8 is the solved connector-frame carrier, and entries 9 and 10 are the two degree-of-freedom limit owners. Offset 310 stores four `ff` bytes, offset 314 stores u32 value 8, offset 318 stores the UTF-16LE string `As-built`, and offset 334 stores the feature ordinal. The canonical alignment values are the `AngleZ` value followed by the three offsets. Each row in the generation map supplies the carrier pair, solved frame, paired header, and limit interpretation. The frame carrier stores one solved connector-frame matrix; it does not store either operand-local frame. The two operand-carrier pairs are direct construction/selection pairs and do not use the operand-path locator run of the 399-byte form.
@@ -1569,6 +1588,8 @@ An axial selector primary record has a 37-byte fixed prefix: its eleven-byte ind
 The two selectors of one construction carrier have the same selector GUIDs, external-object reference, segment, external asset GUID, link name, optional property GUID, version identity, and role GUID. Their axis-specific occurrence references can differ. The common role GUID uniquely identifies the `Component Insert` scope whose component construction carries that role. The insertion's projected occurrence qualifies the operand, and the selectors' common external-object identity names its connector. A frame reference can instead equal one `JointOrigin` scope record index while its transform equals that origin's solved frame. This form selects the current document root: the neutral operand has no occurrence or external-document qualifier, and its object is the `JointOrigin` feature.
 
 The 705- and 772-byte forms store no occurrence paths. Every other form stores a u32 count of two followed by two marked same-segment operand-path-locator references. The 399-byte `As-built` form stores the count at scope offset 47 and the references at offsets 51 and 62. The 627-, 637-, and 692-byte forms store the count at scope offset 362 and the references at offsets 366 and 377. The 633- and 732-byte forms store the count at offset 358 and the references at offsets 362 and 373. The class-430/262 744-byte form stores the count at offset 358 and the references at offsets 362 and 373; its 748-byte form uses offset 362 and offsets 366 and 377. Each reference resolves to exactly one locator envelope after the scope's paired indexed header. The locator record indices are distinct, and the two envelopes do not overlap. The first locator reference qualifies the first operand frame and the second locator reference qualifies the second operand frame. For `As-built`, each locator's nonzero reference at locator offset 21 is the operand construction reference and its transform at locator offset 33 is the operand frame.
+
+The direct-path subform of the class-283/264 and class-347/260 generations uses a 180-byte locator envelope. Its rigid transform starts at offset 23, its owning-scope backlink is at offset 152, its path-wrapper reference is at offset 163, u32 value 2 is at offset 174, and two zero tail bytes occupy offsets 178 and 179. One or more consecutive class-330 path records immediately follow the locator. Each contributes its ordered occurrence GUID and four identity GUIDs to one operand path. A class-330 path whose first occurrence GUID is not a current-document occurrence identifies an external operand; its first identity GUID is the external document identity. The class-397 wrapper follows the final path record. Its byte at offset 21 is one, its u32 at offset 22 is the path-record count, and its marked reference at offset 26 names the first path record. Each further path record has one marked reference in an eleven-byte run starting at wrapper offset 37. The wrapper length is therefore `37 + 11(C - 1)` for path-record count `C`.
 
 An operand-path locator is a fixed 190-byte indexed record with record index `N`. Its eleven-byte header is followed by ten zero bytes, a nonzero marked same-segment reference at offset 21, one zero byte at offset 32, a row-major rigid 4×4 transform at offset 33, one zero byte at offset 161, a marked backlink to the assembly-operation scope at offset 162, a marked reference to record index `N+2` at offset 173, u32 value 2 at offset 184, and two zero bytes at offset 188. The occurrence-path record starts at locator offset 190 and has record index `N+1`. The next indexed record is its wrapper at record index `N+2`. The wrapper is exactly 37 bytes: its eleven-byte indexed header, ten zero bytes, byte value 1 at offset 21, u32 value 1 at offset 22, and a marked reference to path record `N+1` at offset 26. The next indexed record starts at wrapper offset 37.
 

@@ -1598,12 +1598,48 @@ pub(crate) mod assembly_class_383_258_frame_378_carrier {
     pub(crate) const SCOPE_REFERENCE: usize = 399;
 }
 
+/// Byte offsets for the `assembly_variable_reference_operand_path_locator` record.
+///
+/// Spec §Assembly operands. Record length 180 B.
+///
+/// ```text
+/// Offsets are relative to the locator's indexed header.
+/// ```
+pub(crate) mod assembly_variable_reference_operand_path_locator {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 180;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const TRANSFORM: usize = 23;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_BACKLINK: usize = 152;
+    /// Offset of `wrapper_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_REFERENCE: usize = 163;
+    /// Offset of `constant_two` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const CONSTANT_TWO: usize = 174;
+    /// Offset of `zero_tail` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ZERO_TAIL: usize = 178;
+}
+
+/// Byte offsets for the `assembly_variable_reference_path_wrapper_continuation` record.
+///
+/// Spec §Assembly operands. Record length 11 B.
+///
+/// ```text
+/// One entry is repeated for each path record after the first.
+/// ```
+pub(crate) mod assembly_variable_reference_path_wrapper_continuation {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 11;
+    /// Offset of `path_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const PATH_REFERENCE: usize = 0;
+}
+
 /// Byte offsets for the `assembly_operand_path_locator_reference_run` record.
 ///
 /// Spec §Assembly operands. Record length 26 B.
 ///
 /// ```text
-/// Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms, and offset 358 in the 633-, 732-, and 744-byte forms.
+/// Offsets are relative to the count. The run starts at scope offset 47 in the 399-byte As-built form, offset 362 in the 627-, 637-, 692-, and 748-byte forms and the variable-span class-283/264 and class-347/260 forms, and offset 358 in the 633-, 732-, and 744-byte forms.
 /// ```
 pub(crate) mod assembly_operand_path_locator_reference_run {
     /// Record length in bytes. Spec §Assembly operands.

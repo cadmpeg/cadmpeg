@@ -17,6 +17,7 @@ use crate::design::decode::scopes::extrude_sheet_metal::{
 use crate::design::decode::scopes::legacy_class_415;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
+use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
 use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as class_296_legacy_prefix;
 use crate::layout::class_296_261_legacy_one_sided_distance_tail as class_296_legacy_distance;
 use crate::layout::class_296_261_legacy_one_sided_to_face_tail as class_296_legacy_to_face;
@@ -91,16 +92,41 @@ fn valid_assembly_operand_path_link(
     else {
         return false;
     };
-    let Ok(locator_length) = u64::try_from(path_locator::LEN) else {
+    let variable_reference = design::assembly::variable_reference_assembly_generation(
+        &scope.class_tag,
+        &scope.paired_class_tag,
+    );
+    let locator_length = if variable_reference {
+        variable_path_locator::LEN
+    } else {
+        path_locator::LEN
+    };
+    let Ok(locator_length) = u64::try_from(locator_length) else {
         return false;
     };
     let Some(path_byte_offset) = link.locator_byte_offset.checked_add(locator_length) else {
         return false;
     };
-    let Some(locator_scope_reference_offset) = link.locator_byte_offset.checked_add(163) else {
+    let scope_backlink = if variable_reference {
+        variable_path_locator::SCOPE_BACKLINK + 1
+    } else {
+        path_locator::SCOPE_BACKLINK + 1
+    };
+    let Some(locator_scope_reference_offset) = link
+        .locator_byte_offset
+        .checked_add(u64::try_from(scope_backlink).unwrap_or(u64::MAX))
+    else {
         return false;
     };
-    let Some(wrapper_reference_offset) = link.locator_byte_offset.checked_add(174) else {
+    let wrapper_reference = if variable_reference {
+        variable_path_locator::WRAPPER_REFERENCE + 1
+    } else {
+        path_locator::WRAPPER_REFERENCE + 1
+    };
+    let Some(wrapper_reference_offset) = link
+        .locator_byte_offset
+        .checked_add(u64::try_from(wrapper_reference).unwrap_or(u64::MAX))
+    else {
         return false;
     };
     let Some(path_reference_offset) = link.wrapper_byte_offset.checked_add(27) else {
@@ -112,7 +138,14 @@ fn valid_assembly_operand_path_link(
     class_tags_are_dynamic
         && link.locator_reference_offset == locator_reference_offset
         && link.locator_record_index.checked_add(1) == Some(path.record_index)
-        && link.locator_record_index.checked_add(2) == Some(link.wrapper_record_index)
+        && if variable_reference {
+            link.locator_record_index
+                .checked_add(2)
+                .zip(link.locator_record_index.checked_add(65))
+                .is_some_and(|(first, last)| (first..=last).contains(&link.wrapper_record_index))
+        } else {
+            link.locator_record_index.checked_add(2) == Some(link.wrapper_record_index)
+        }
         && path.byte_offset == path_byte_offset
         && link.locator_scope_reference_offset == locator_scope_reference_offset
         && link.wrapper_reference_offset == wrapper_reference_offset
@@ -2587,6 +2620,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     &scope.class_tag,
                     &scope.paired_class_tag,
                 );
+                let variable_reference = design::assembly::variable_reference_assembly_generation(
+                    &scope.class_tag,
+                    &scope.paired_class_tag,
+                );
                 let compact_frames = matches!(
                     operand_frame_variant,
                     Some(design::assembly::AssemblyOperandFrameVariant::Compact)
@@ -2655,6 +2692,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .count();
                 let alignment_lane_bounds = design::assembly::alignment_lane_bounds(
                     scope.frame_length,
+                    &scope.class_tag,
+                    &scope.paired_class_tag,
                     assembly_owner_count,
                 );
                 let operand_frames_link = if alignment.legacy_operand_carriers.is_some() {
@@ -2728,15 +2767,28 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     }
                     (Some(_), None, None) => axial_frames,
                     (Some(_), Some(paths), None) => {
-                        let locator_offsets =
-                            design::assembly::operand_path_locator_offsets(scope.frame_length);
+                        let locator_offsets = design::assembly::operand_path_locator_offsets(
+                            scope.frame_length,
+                            &scope.class_tag,
+                            &scope.paired_class_tag,
+                        );
                         let first_start = paths[0].link.locator_byte_offset;
                         let second_start = paths[1].link.locator_byte_offset;
-                        let wrapper_length = u64::try_from(path_wrapper::LEN).ok();
                         let envelope_ends = paths.each_ref().map(|path| {
-                            wrapper_length.and_then(|length| {
-                                path.link.wrapper_byte_offset.checked_add(length)
-                            })
+                            let continuation_count = if variable_reference {
+                                path.link
+                                    .wrapper_record_index
+                                    .checked_sub(path.link.locator_record_index)?
+                                    .checked_sub(2)?
+                            } else {
+                                0
+                            };
+                            u64::try_from(path_wrapper::LEN)
+                                .ok()?
+                                .checked_add(u64::from(continuation_count).checked_mul(11)?)
+                                .and_then(|length| {
+                                    path.link.wrapper_byte_offset.checked_add(length)
+                                })
                         });
                         !axial_frames
                             && locator_offsets.is_some_and(|offsets| {
@@ -2754,7 +2806,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         == path.occurrence_guid_offsets.len()
                                     && matches!(
                                         path.class_tag.as_str(),
-                                        "294" | "299" | "307" | "329" | "386" | "390"
+                                        "294" | "299" | "307" | "329" | "330" | "386" | "390"
                                     )
                                     && path.identity_guids.len() == path.identity_guid_offsets.len()
                                     && match path.class_tag.as_str() {
@@ -2764,6 +2816,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         "329" => {
                                             path.identity_guids.is_empty()
                                                 || path.identity_guids.len() == 4
+                                        }
+                                        "330" => {
+                                            !path.identity_guids.is_empty()
+                                                && path.identity_guids.len().is_multiple_of(4)
                                         }
                                         _ => false,
                                     }
@@ -2789,7 +2845,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         .all(|offset| *offset > path.byte_offset)
                                     && (matches!(
                                         path.class_tag.as_str(),
-                                        "294" | "299" | "307" | "386"
+                                        "294" | "299" | "307" | "330" | "386"
                                     ) || path.occurrence_guids.first().is_some_and(|guid| {
                                         native
                                             .design_component_occurrences
@@ -2968,6 +3024,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && scope.reference_members.get(9..11)
                                 == Some(limit_reference_indices.as_slice())
                     })
+                } else if design::assembly::variable_reference_assembly_generation(
+                    &scope.class_tag,
+                    &scope.paired_class_tag,
+                ) {
+                    scope
+                        .reference_members
+                        .windows(alignment.owner_record_indices.len())
+                        .filter(|members| *members == alignment.owner_record_indices.as_slice())
+                        .count()
+                        == 1
                 } else {
                     scope
                         .reference_members

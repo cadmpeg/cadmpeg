@@ -11,6 +11,7 @@
 pub(super) use super::*;
 
 mod assembly;
+mod assembly_variable_reference;
 mod combine;
 mod component_insert;
 mod derived_instance;
