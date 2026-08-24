@@ -21,7 +21,8 @@ use super::relation_records::{
     circle_dimension_handle_driver, relation_uses_dynamic_operands, relation_uses_solver_points,
 };
 use super::transforms::{
-    marker_entities, quantize, sketch_entity_loci, sketch_frame_marker_transform, ProfileAxis,
+    marker_entities, marker_transforms_with_frame_fallback, quantize, sketch_entity_loci,
+    sketch_frame_marker_transform, ProfileAxis,
 };
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -777,6 +778,7 @@ pub(crate) fn project_relation_solved_line_geometry(
         .collect::<HashMap<_, _>>();
 
     for lane in lanes {
+        let marker_roster = lane.sketch_entities.iter().collect::<Vec<_>>();
         for relation in &lane.relation_instances {
             let [first_operand, second_operand] = relation.operands.as_slice() else {
                 continue;
@@ -803,14 +805,15 @@ pub(crate) fn project_relation_solved_line_geometry(
                 {
                     [first_operand, second_operand]
                         .into_iter()
-                        .filter(|operand| !direct_line_reference(operand))
+                        .enumerate()
+                        .filter(|(_, operand)| !direct_line_reference(operand))
                         .collect::<Vec<_>>()
                 }
                 FeatureInputRelationFamily::PointLineDistance
                     if relation_uses_solver_line_operand(relation, 1)
                         && !direct_line_reference(second_operand) =>
                 {
-                    vec![second_operand]
+                    vec![(1, second_operand)]
                 }
                 FeatureInputRelationFamily::Angle
                     if relation_uses_solver_line_operand(relation, 0)
@@ -819,7 +822,8 @@ pub(crate) fn project_relation_solved_line_geometry(
                 {
                     [first_operand, second_operand]
                         .into_iter()
-                        .filter(|operand| !direct_line_reference(operand))
+                        .enumerate()
+                        .filter(|(_, operand)| !direct_line_reference(operand))
                         .collect::<Vec<_>>()
                 }
                 _ => continue,
@@ -863,7 +867,29 @@ pub(crate) fn project_relation_solved_line_geometry(
                 })
                 .collect::<Vec<_>>();
             points.sort_by_key(|marker| marker.offset);
-            let line_markers = |index: u16| {
+            let endpoint_line_markers = |operand_index: usize| {
+                relation_operand_marker(relation, operand_index, sketch, &markers_by_id)
+                    .and_then(|marker_id| {
+                        lane.sketch_entities
+                            .iter()
+                            .find(|marker| marker.id == marker_id)
+                    })
+                    .map(|marker| {
+                        marker_curve_endpoint_markers(
+                            &lane.native_payload,
+                            marker,
+                            &markers_by_id,
+                            &marker_roster,
+                        )
+                    })
+                    .and_then(|endpoints| {
+                        let [first, second] = endpoints.as_slice() else {
+                            return None;
+                        };
+                        Some([*first, *second])
+                    })
+            };
+            let fallback_line_markers = |index: u16| {
                 let pair = usize::from(index).checked_mul(2)?;
                 Some([*points.get(pair)?, *points.get(pair + 1)?])
             };
@@ -945,10 +971,24 @@ pub(crate) fn project_relation_solved_line_geometry(
                         .expect("coordinate-bearing roster points carry coordinates");
                     quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM)
                 });
-                let candidates = transforms
+                let transform_candidates = transforms
                     .get(relation.feature_ref.as_str())
+                    .map_or(&[][..], Vec::as_slice);
+                let transform_candidates = sketches
+                    .iter()
+                    .find(|candidate| candidate.id == *sketch)
+                    .map_or_else(
+                        || transform_candidates.to_vec(),
+                        |sketch| {
+                            marker_transforms_with_frame_fallback(
+                                transform_candidates,
+                                sketch,
+                                QUANTUM,
+                            )
+                        },
+                    );
+                let candidates = transform_candidates
                     .into_iter()
-                    .flatten()
                     .filter_map(|transform| {
                         Some((transform.apply(native[0])?, transform.apply(native[1])?))
                     })
@@ -1010,47 +1050,66 @@ pub(crate) fn project_relation_solved_line_geometry(
                     Point2::new(end.0 as f64 * QUANTUM, end.1 as f64 * QUANTUM),
                 ))
             };
-            let mut lines = Vec::with_capacity(line_operands.len());
-            for operand in line_operands {
-                let Some(markers) = line_markers(operand.entity_index) else {
-                    lines.clear();
-                    break;
-                };
-                let Some((start, end)) = transformed_line(markers) else {
-                    lines.clear();
-                    break;
-                };
-                lines.push((operand, markers, candidate("solver-line", start, end)));
-            }
-            if lines.is_empty() {
-                continue;
-            }
-            let valid = match relation.family {
-                FeatureInputRelationFamily::LineLineDistance => match lines.as_slice() {
-                    [(_, _, first), (_, _, second)] => line_line_distance(first, second)
-                        .is_some_and(|measured| same_dimension_length(measured, expected)),
-                    _ => false,
-                },
-                FeatureInputRelationFamily::PointLineDistance => match lines.as_slice() {
-                    [(_, _, line)] => point_position.is_some_and(|point| {
-                        point_line_distance_value(point, line)
-                            .is_some_and(|measured| same_dimension_length(measured, expected))
-                    }),
-                    _ => false,
-                },
-                FeatureInputRelationFamily::Angle => match lines.as_slice() {
-                    [(_, _, first), (_, _, second)] => {
-                        let angle = if relation_uses_dynamic_operands(relation) {
-                            unoriented_line_line_angle(first, second)
-                        } else {
-                            line_line_angle(first, second)
-                        };
-                        angle.is_some_and(|measured| same_dimension_angle(measured, expected))
-                    }
-                    _ => false,
-                },
-                _ => false,
+            let build_lines = |prefer_marker_endpoints: bool| {
+                let mut lines = Vec::with_capacity(line_operands.len());
+                for &(operand_index, operand) in &line_operands {
+                    let markers = if prefer_marker_endpoints {
+                        endpoint_line_markers(operand_index)
+                            .or_else(|| fallback_line_markers(operand.entity_index))
+                    } else {
+                        fallback_line_markers(operand.entity_index)
+                    };
+                    let Some(markers) = markers else {
+                        return Vec::new();
+                    };
+                    let Some((start, end)) = transformed_line(markers) else {
+                        return Vec::new();
+                    };
+                    lines.push((operand, markers, candidate("solver-line", start, end)));
+                }
+                lines
             };
+            let relation_lines_valid =
+                |lines: &[(&FeatureInputOperand, [&SketchInputEntity; 2], SketchEntity)]| {
+                    match relation.family {
+                        FeatureInputRelationFamily::LineLineDistance => match lines {
+                            [(_, _, first), (_, _, second)] => line_line_distance(first, second)
+                                .is_some_and(|measured| same_dimension_length(measured, expected)),
+                            _ => false,
+                        },
+                        FeatureInputRelationFamily::PointLineDistance => match lines {
+                            [(_, _, line)] => point_position.is_some_and(|point| {
+                                point_line_distance_value(point, line).is_some_and(|measured| {
+                                    same_dimension_length(measured, expected)
+                                })
+                            }),
+                            _ => false,
+                        },
+                        FeatureInputRelationFamily::Angle => match lines {
+                            [(_, _, first), (_, _, second)] => {
+                                let angle = if relation_uses_dynamic_operands(relation) {
+                                    unoriented_line_line_angle(first, second)
+                                } else {
+                                    line_line_angle(first, second)
+                                };
+                                angle.is_some_and(|measured| {
+                                    same_dimension_angle(measured, expected)
+                                })
+                            }
+                            _ => false,
+                        },
+                        _ => false,
+                    }
+                };
+            let mut lines = build_lines(true);
+            let mut valid = relation_lines_valid(&lines);
+            if !valid {
+                let fallback_lines = build_lines(false);
+                if !fallback_lines.is_empty() {
+                    lines = fallback_lines;
+                    valid = relation_lines_valid(&lines);
+                }
+            }
             if !valid {
                 if relation.family == FeatureInputRelationFamily::LineLineDistance
                     && relation_uses_dynamic_operands(relation)
@@ -2806,6 +2865,270 @@ mod relation_geometry_tests {
                     SketchEntityId("sldprt:model:sketch-entity#solver-point:test:30:1".into())
                 )
         ));
+    }
+
+    #[test]
+    fn solver_line_relation_prefers_marker_endpoint_join() {
+        use cadmpeg_ir::features::{
+            Feature, FeatureDefinition, FeatureId, Length, ParameterId, ParameterValue,
+        };
+        use cadmpeg_ir::math::{Point3, Vector3};
+        use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
+        use std::collections::BTreeMap;
+
+        const FEATURE: &str = "feature-native";
+        const LANE: &str = "lane#test";
+        let sketch_id = SketchId("sketch".into());
+        let feature = Feature {
+            id: FeatureId("feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: Some(sketch_id.clone()),
+            },
+            native_ref: Some(FEATURE.into()),
+        };
+        let point = |id: &str, ordinal: u32, offset: u64, u: f64, v: f64| {
+            let mut marker =
+                SketchInputEntity::new(id, LANE, ordinal, offset, SketchInputKind::Point);
+            marker.feature_ref = Some(FEATURE.into());
+            marker.coordinates_m = Some([u / 1000.0, v / 1000.0]);
+            marker
+        };
+        let mut first_start = point("first-start", 2, 10, 0.0, 0.0);
+        first_start.object_index = Some(2);
+        let mut first_end = point("first-end", 3, 11, 10.0, 0.0);
+        first_end.object_index = Some(3);
+        let mut second_start = point("second-start", 4, 12, 0.0, 5.0);
+        second_start.object_index = Some(4);
+        let mut second_end = point("second-end", 5, 13, 10.0, 5.0);
+        second_end.object_index = Some(5);
+        let mut first_line =
+            SketchInputEntity::new("first-line", LANE, 6, 20, SketchInputKind::LineOrCircle);
+        first_line.feature_ref = Some(FEATURE.into());
+        first_line.object_index = Some(0);
+        first_line.links = vec![
+            crate::records::SketchInputLink {
+                local_id: 0,
+                entity_ref: first_start.id.clone(),
+            },
+            crate::records::SketchInputLink {
+                local_id: 1,
+                entity_ref: first_end.id.clone(),
+            },
+        ];
+        let mut second_line =
+            SketchInputEntity::new("second-line", LANE, 7, 21, SketchInputKind::LineOrCircle);
+        second_line.feature_ref = Some(FEATURE.into());
+        second_line.object_index = Some(1);
+        second_line.links = vec![
+            crate::records::SketchInputLink {
+                local_id: 2,
+                entity_ref: second_start.id.clone(),
+            },
+            crate::records::SketchInputLink {
+                local_id: 3,
+                entity_ref: second_end.id.clone(),
+            },
+        ];
+        let relation = FeatureInputRelationInstance {
+            id: "relation".into(),
+            parent: LANE.into(),
+            ordinal: 0,
+            offset: 30,
+            family: FeatureInputRelationFamily::LineLineDistance,
+            class_ref: "class".into(),
+            feature_ref: FEATURE.into(),
+            scalar_refs: vec!["scalar".into()],
+            parameter_scalar_ref: Some("scalar".into()),
+            display_scalar_ref: None,
+            operands: [0_u16, 1]
+                .into_iter()
+                .enumerate()
+                .map(|(index, entity_index)| FeatureInputOperand {
+                    offset: 40 + index as u64,
+                    reference_ref: format!("reference-{index}"),
+                    kind: FeatureInputOperandKind::Native(0x812a),
+                    entity_index,
+                    entity_ref: None,
+                })
+                .collect(),
+        };
+        let lane = FeatureInputLane {
+            id: LANE.into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: vec![FeatureInputScalar {
+                id: "scalar".into(),
+                parent: LANE.into(),
+                feature_ref: Some(FEATURE.into()),
+                ordinal: 0,
+                offset: 30,
+                object_id: 0,
+                name: "distance".into(),
+                value: 0.005,
+                role: FeatureInputScalarRole::Driving,
+                entity_indices: vec![0, 1],
+                operands: relation.operands.clone(),
+            }],
+            relation_bindings: Vec::new(),
+            relation_instances: vec![relation],
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![
+                point("distractor-start", 0, 0, 0.0, 50.0),
+                point("distractor-end", 1, 1, 10.0, 50.0),
+                first_start,
+                first_end,
+                second_start,
+                second_end,
+                first_line,
+                second_line,
+            ],
+        };
+        let parameter = cadmpeg_ir::features::DesignParameter {
+            id: ParameterId("distance".into()),
+            owner: Some(feature.id.clone()),
+            ordinal: 0,
+            name: "distance".into(),
+            expression: "5mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(5.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some("scalar".into()),
+        };
+        let mut fallback_lane = lane.clone();
+        let fallback_relation = fallback_lane
+            .relation_instances
+            .first_mut()
+            .expect("synthetic relation");
+        fallback_relation.id = "fallback-relation".into();
+        fallback_relation.offset = 31;
+        fallback_relation.scalar_refs = vec!["fallback-scalar".into()];
+        fallback_relation.parameter_scalar_ref = Some("fallback-scalar".into());
+        for (operand, entity_index) in fallback_relation.operands.iter_mut().zip([1_u16, 2]) {
+            operand.entity_index = entity_index;
+        }
+        let fallback_operands = fallback_relation.operands.clone();
+        let fallback_scalar = fallback_lane.scalars.first_mut().expect("synthetic scalar");
+        fallback_scalar.id = "fallback-scalar".into();
+        fallback_scalar.offset = 31;
+        fallback_scalar.entity_indices = vec![1, 2];
+        fallback_scalar.operands = fallback_operands;
+        for marker in &mut fallback_lane.sketch_entities {
+            match marker.id.as_str() {
+                "first-line" => {
+                    marker.object_index = Some(1);
+                    marker.links = vec![
+                        crate::records::SketchInputLink {
+                            local_id: 4,
+                            entity_ref: "distractor-start".into(),
+                        },
+                        crate::records::SketchInputLink {
+                            local_id: 5,
+                            entity_ref: "distractor-end".into(),
+                        },
+                    ];
+                }
+                "second-line" => {
+                    marker.object_index = Some(2);
+                    marker.links = vec![
+                        crate::records::SketchInputLink {
+                            local_id: 6,
+                            entity_ref: "distractor-start".into(),
+                        },
+                        crate::records::SketchInputLink {
+                            local_id: 7,
+                            entity_ref: "distractor-end".into(),
+                        },
+                    ];
+                }
+                _ => {}
+            }
+        }
+        let fallback_parameter = cadmpeg_ir::features::DesignParameter {
+            id: ParameterId("fallback-distance".into()),
+            native_ref: Some("fallback-scalar".into()),
+            ..parameter.clone()
+        };
+        let sketches = vec![Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            visible: None,
+            placement: SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: Vec::new(),
+            native_ref: Some(LANE.into()),
+        }];
+        let mut entities = Vec::new();
+
+        project_relation_solved_line_geometry(
+            &mut entities,
+            &sketches,
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&lane),
+        );
+
+        let solver_lines = entities
+            .iter()
+            .filter(|entity| entity.geometry_ref.is_some())
+            .filter_map(|entity| match entity.geometry {
+                SketchGeometry::Line { start, end } => Some((start, end)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(solver_lines.len(), 2);
+        assert!(solver_lines.iter().any(|(start, end)| {
+            *start == Point2::new(0.0, 0.0) && *end == Point2::new(10.0, 0.0)
+        }));
+        assert!(solver_lines.iter().any(|(start, end)| {
+            *start == Point2::new(0.0, 5.0) && *end == Point2::new(10.0, 5.0)
+        }));
+
+        let mut fallback_entities = Vec::new();
+        project_relation_solved_line_geometry(
+            &mut fallback_entities,
+            &sketches,
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&fallback_parameter),
+            std::slice::from_ref(&fallback_lane),
+        );
+        let fallback_lines = fallback_entities
+            .iter()
+            .filter(|entity| entity.geometry_ref.is_some())
+            .filter_map(|entity| match entity.geometry {
+                SketchGeometry::Line { start, end } => Some((start, end)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(fallback_lines.len(), 2);
+        assert!(fallback_lines.iter().any(|(start, end)| {
+            *start == Point2::new(0.0, 0.0) && *end == Point2::new(10.0, 0.0)
+        }));
+        assert!(fallback_lines.iter().any(|(start, end)| {
+            *start == Point2::new(0.0, 5.0) && *end == Point2::new(10.0, 5.0)
+        }));
     }
 
     #[test]
