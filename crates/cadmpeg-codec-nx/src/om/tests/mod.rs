@@ -16,6 +16,7 @@ fn unique_candidate_stops_after_second_hit() {
     assert_eq!(yielded, 2);
 }
 
+mod control_lanes;
 mod index_and_lanes;
 mod instances_and_stores;
 mod operation_data_block_references;

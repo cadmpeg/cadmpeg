@@ -9427,22 +9427,54 @@ pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
     Some(values[..boundary].to_vec())
 }
 
-fn offset_store_product_anchored_form(bytes: &[u8]) -> Option<OffsetStoreControlForm> {
-    let product_offset =
-        unique_candidate((0..bytes.len()).filter(|offset| is_product_record(&bytes[*offset..])))?;
+fn joined_control_byte(control: &[u8], first_record: &[u8], offset: usize) -> Option<u8> {
+    if offset < control.len() {
+        control.get(offset).copied()
+    } else {
+        first_record.get(offset - control.len()).copied()
+    }
+}
+
+fn joined_control_u32_le(control: &[u8], first_record: &[u8], offset: usize) -> Option<u32> {
+    Some(
+        u32::from(joined_control_byte(control, first_record, offset)?)
+            | (u32::from(joined_control_byte(control, first_record, offset + 1)?) << 8)
+            | (u32::from(joined_control_byte(control, first_record, offset + 2)?) << 16)
+            | (u32::from(joined_control_byte(control, first_record, offset + 3)?) << 24),
+    )
+}
+
+fn offset_store_product_anchored_form(
+    control: &[u8],
+    first_record: &[u8],
+) -> Option<OffsetStoreControlForm> {
+    let product_offset = unique_candidate(
+        (0..control.len())
+            .filter(|offset| is_product_record(&control[*offset..]))
+            .chain(
+                (0..first_record.len())
+                    .filter(|offset| is_product_record(&first_record[*offset..]))
+                    .map(|offset| control.len() + offset),
+            ),
+    )?;
     let leading_width = product_offset % 4;
     (product_offset > leading_width).then_some(())?;
+    if product_offset >= control.len() {
+        let control_array_bytes = control.len().checked_sub(leading_width)?;
+        (!control_array_bytes.is_multiple_of(4)).then_some(())?;
+    }
     let leading_value = (leading_width != 0).then(|| {
-        bytes[..leading_width]
-            .iter()
-            .enumerate()
-            .fold(0u32, |value, (shift, byte)| {
-                value | (u32::from(*byte) << (shift * 8))
-            })
+        (0..leading_width).fold(0u32, |value, shift| {
+            value
+                | (u32::from(
+                    joined_control_byte(control, first_record, shift)
+                        .expect("leading byte precedes the validated product offset"),
+                ) << (shift * 8))
+        })
     });
     let values = (0..(product_offset - leading_width) / 4)
-        .map(|index| View::u32_le_at(bytes, leading_width + index * 4).expect("four-byte chunk"))
-        .collect();
+        .map(|index| joined_control_u32_le(control, first_record, leading_width + index * 4))
+        .collect::<Option<Vec<_>>>()?;
     Some(OffsetStoreControlForm::ProductAnchored {
         leading_value: leading_value.map(|value| (leading_width, value)),
         values,
@@ -9467,13 +9499,18 @@ pub enum OffsetStoreControlForm {
     },
 }
 
-/// Classify one complete offset-only store control block atomically.
+/// Classify one complete offset-only store control lane atomically.
 ///
-/// Exactly one admitted grammar must accept the complete control envelope.
-pub fn offset_store_control_form(bytes: &[u8]) -> Option<OffsetStoreControlForm> {
+/// Product-anchored storage may cross the physical boundary between the
+/// control block and the first column block. Exactly one admitted grammar must
+/// accept the complete control envelope.
+pub fn offset_store_control_form(
+    control: &[u8],
+    first_record: Option<&[u8]>,
+) -> Option<OffsetStoreControlForm> {
     match (
-        offset_store_control_values(bytes),
-        offset_store_product_anchored_form(bytes),
+        offset_store_control_values(control),
+        offset_store_product_anchored_form(control, first_record.unwrap_or_default()),
     ) {
         (Some(values), None) => Some(OffsetStoreControlForm::ZeroPrefixed { values }),
         (None, Some(form)) => Some(form),

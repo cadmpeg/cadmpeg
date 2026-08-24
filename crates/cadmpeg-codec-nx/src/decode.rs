@@ -370,12 +370,18 @@ fn offset_store_control_counts(container: &Container) -> (usize, usize) {
     container
         .indexed_om_sections()
         .into_iter()
-        .filter_map(|(_, section)| section.control)
-        .fold((0, 0), |(total, classified), control| {
+        .filter_map(|(_, section)| {
+            section
+                .control
+                .map(|control| (control, section.records.first().map(|record| record.bytes)))
+        })
+        .fold((0, 0), |(total, classified), (control, first_record)| {
             (
                 total + 1,
                 classified
-                    + usize::from(crate::om::offset_store_control_form(control.bytes).is_some()),
+                    + usize::from(
+                        crate::om::offset_store_control_form(control.bytes, first_record).is_some(),
+                    ),
             )
         })
 }

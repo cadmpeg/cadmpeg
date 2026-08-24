@@ -1581,7 +1581,7 @@ fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
 #[test]
 fn om_offset_store_control_form_requires_one_complete_grammar() {
     assert_eq!(
-        super::offset_store_control_form(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]),
+        super::offset_store_control_form(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff], None),
         Some(super::OffsetStoreControlForm::ZeroPrefixed {
             values: vec![0x1234, 0x00ff_ffff],
         })
@@ -1592,7 +1592,7 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     product.extend_from_slice(&0x1020u32.to_le_bytes());
     product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
     assert_eq!(
-        super::offset_store_control_form(&product),
+        super::offset_store_control_form(&product, None),
         Some(super::OffsetStoreControlForm::ProductAnchored {
             leading_value: Some((2, 0)),
             values: vec![7, 0x1020],
@@ -1600,8 +1600,8 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     );
 
     product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-    assert!(super::offset_store_control_form(&product).is_none());
-    assert!(super::offset_store_control_form(&[1, 2, 3, 4]).is_none());
+    assert!(super::offset_store_control_form(&product, None).is_none());
+    assert!(super::offset_store_control_form(&[1, 2, 3, 4], None).is_none());
 }
 
 #[test]

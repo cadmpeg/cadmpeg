@@ -1256,12 +1256,12 @@ pub enum DataBlockControlFormKind {
     ProductAnchored,
 }
 
-/// Atomic classification of one complete offset-store control block.
+/// Atomic classification of one complete offset-store control lane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockControlForm {
     /// Globally unique control-form identity.
     pub id: String,
-    /// Owning control block in the native `data_blocks` arena.
+    /// Opening control block in the native `data_blocks` arena.
     pub data_block: String,
     /// Selected complete control grammar.
     pub kind: DataBlockControlFormKind,
@@ -1273,7 +1273,7 @@ pub struct DataBlockControlForm {
     /// Compact leading little-endian value before a product-anchored array.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub leading_value: Option<u32>,
-    /// Exact serialized control-block length.
+    /// Exact serialized opening control-block length.
     pub byte_len: u64,
     /// Absolute file offset of the control block.
     pub source_offset: u64,
@@ -1294,12 +1294,12 @@ pub struct DataBlockControlValue {
     pub source_offset: u64,
 }
 
-/// Ordered little-endian value preceding a control-block product anchor.
+/// Ordered little-endian value preceding a store product anchor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockControlIndexValue {
     /// Globally unique value identity.
     pub id: String,
-    /// Owning control block in the native `data_blocks` arena.
+    /// Control block that opens the logical lane in the native `data_blocks` arena.
     pub data_block: String,
     /// Zero-based value order in the aligned prefix array.
     pub ordinal: u32,
@@ -3093,7 +3093,7 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
         .collect()
 }
 
-/// Classify every admitted complete offset-only store control block.
+/// Classify every admitted complete offset-only store control lane.
 pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlForm> {
     container
         .indexed_om_sections()
@@ -3102,7 +3102,10 @@ pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlFo
         .filter_map(|(section_ordinal, (entry, section))| {
             let control = section.control?;
             let (kind, leading_value_width, leading_value, value_count) =
-                match crate::om::offset_store_control_form(control.bytes)? {
+                match crate::om::offset_store_control_form(
+                    control.bytes,
+                    section.records.first().map(|record| record.bytes),
+                )? {
                     crate::om::OffsetStoreControlForm::ZeroPrefixed { values } => (
                         DataBlockControlFormKind::ZeroPrefixed,
                         None,
@@ -3151,7 +3154,10 @@ pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlV
                 return Vec::new();
             };
             let Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { values }) =
-                crate::om::offset_store_control_form(control.bytes)
+                crate::om::offset_store_control_form(
+                    control.bytes,
+                    section.records.first().map(|record| record.bytes),
+                )
             else {
                 return Vec::new();
             };
@@ -3187,7 +3193,10 @@ pub fn data_block_control_class_references(
                 return Vec::new();
             };
             if !matches!(
-                crate::om::offset_store_control_form(control.bytes),
+                crate::om::offset_store_control_form(
+                    control.bytes,
+                    section.records.first().map(|record| record.bytes),
+                ),
                 Some(crate::om::OffsetStoreControlForm::ZeroPrefixed { .. })
             ) {
                 return Vec::new();
@@ -3248,7 +3257,7 @@ pub fn data_block_control_class_references(
         .collect()
 }
 
-/// Decode aligned index arrays preceding a unique control-block product anchor.
+/// Decode aligned index arrays preceding a unique control-lane product anchor.
 pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockControlIndexValue> {
     container
         .indexed_om_sections()
@@ -3261,7 +3270,10 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
             let Some(crate::om::OffsetStoreControlForm::ProductAnchored {
                 leading_value,
                 values,
-            }) = crate::om::offset_store_control_form(control.bytes)
+            }) = crate::om::offset_store_control_form(
+                control.bytes,
+                section.records.first().map(|record| record.bytes),
+            )
             else {
                 return Vec::new();
             };
@@ -5626,7 +5638,7 @@ mod tests {
         bytes.extend_from_slice(&0x1020u32.to_le_bytes());
         bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
         assert_eq!(
-            crate::om::offset_store_control_form(&bytes),
+            crate::om::offset_store_control_form(&bytes, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
                 leading_value: Some((2, 0)),
                 values: vec![7, 0x1020],
@@ -5637,7 +5649,7 @@ mod tests {
         nonzero_leading.extend_from_slice(&7u32.to_le_bytes());
         nonzero_leading.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0tail");
         assert_eq!(
-            crate::om::offset_store_control_form(&nonzero_leading),
+            crate::om::offset_store_control_form(&nonzero_leading, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
                 leading_value: Some((3, 0x1234)),
                 values: vec![7],
@@ -5646,7 +5658,7 @@ mod tests {
 
         let mut duplicate = bytes;
         duplicate.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-        assert!(crate::om::offset_store_control_form(&duplicate).is_none());
+        assert!(crate::om::offset_store_control_form(&duplicate, None).is_none());
         assert_eq!(
             super::control_index_data_block(2, 700, 496).as_deref(),
             Some("nx:om-data-blocks-2:block#496")
