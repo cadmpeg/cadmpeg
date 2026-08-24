@@ -791,6 +791,45 @@ fn decode_types_scalar_and_string_property_forms() {
 }
 
 #[test]
+fn decode_admits_v4_region_fill_property() {
+    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[OwnedTestEntity {
+                    entity_type: 406,
+                    form: 4,
+                    label: "REGFILL".into(),
+                    status: "00000000",
+                    parameters: "406,2,1,0;".into(),
+                }],
+                GLOBAL_V4,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let property = &result.ir().native.namespace("iges").unwrap().arenas["properties"][0];
+    assert_eq!(property.fields()["form"], 4);
+    assert_eq!(property.fields()["property_kind"], "region_fill");
+    assert_eq!(property.fields()["fill_code"], 1);
+    assert_eq!(property.fields()["obsolete_pointer"], 0);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind())
+            .count(),
+        1
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind()));
+}
+
+#[test]
 fn decode_rejects_descending_drilled_hole_layer_range() {
     let result = IgesCodec
         .decode(
@@ -1605,6 +1644,44 @@ fn decode_preserves_legacy_signal_text_and_connect_associativities() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_preserves_v4_legacy_signal_text_and_connect_associativities() {
+    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(legacy_associativity_forms_file_with_global(GLOBAL_V4)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let associativities = &result.ir().native.namespace("iges").unwrap().arenas["associativities"];
+    for kind in [
+        "legacy_signal_string",
+        "legacy_text_node",
+        "legacy_connect_node",
+    ] {
+        assert!(
+            associativities
+                .iter()
+                .any(|value| value.fields()["kind"] == kind),
+            "missing V4 associativity kind {kind}"
+        );
+    }
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind())
+            .count(),
+        1
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind()));
 }
 
 #[test]

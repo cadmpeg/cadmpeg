@@ -70,9 +70,9 @@ fn envelope_a_v4_admits(entity_type: i64, form: i64) -> bool {
         214 => matches!(form, 1..=11),
         216 => form == 0,
         218 => form == 0,
-        402 => matches!(form, 1..=5 | 7 | 9 | 12..=16 | 18),
+        402 => matches!(form, 1..=16 | 18),
         404 => form == 0,
-        406 => matches!(form, 1..=3 | 5..=18) || implementor_defined_form(form),
+        406 => matches!(form, 1..=18) || implementor_defined_form(form),
         410 => form == 0,
         416 => matches!(form, 0..=2),
         430 => form == 0,
@@ -84,6 +84,10 @@ fn envelope_a_v4_admits(entity_type: i64, form: i64) -> bool {
 /// into the 5.0 release.  The gray-page application forms are not part of
 /// that release, and the B-rep entity family was held for 5.1.
 fn envelope_a_v5_0_admits(entity_type: i64, form: i64) -> bool {
+    if v4_appendix_i_compatibility_form(entity_type, form) {
+        return false;
+    }
+
     if envelope_a_v4_admits(entity_type, form) {
         return true;
     }
@@ -102,6 +106,11 @@ fn envelope_a_v5_0_admits(entity_type: i64, form: i64) -> bool {
         416 => form == 3,
         _ => false,
     }
+}
+
+/// IGES 4.0 Appendix I compatibility forms are obsolete in the V5.0 table.
+const fn v4_appendix_i_compatibility_form(entity_type: i64, form: i64) -> bool {
+    matches!((entity_type, form), (402, 6 | 8 | 10 | 11) | (406, 4))
 }
 
 fn property_form_admitted(form: i64) -> bool {

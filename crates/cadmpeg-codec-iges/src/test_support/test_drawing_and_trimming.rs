@@ -547,9 +547,9 @@ pub(crate) fn label_display_without_leader_file() -> Vec<u8> {
     ])
 }
 
-pub(crate) fn view_list_associativity_file(back_pointers: bool) -> Vec<u8> {
+fn view_list_associativity_entities(back_pointers: bool) -> Vec<OwnedTestEntity> {
     let suffix = if back_pointers { ",1,3,0" } else { "" };
-    owned_test_file(&[
+    vec![
         OwnedTestEntity {
             entity_type: 410,
             form: 0,
@@ -571,11 +571,22 @@ pub(crate) fn view_list_associativity_file(back_pointers: bool) -> Vec<u8> {
             status: "00000000",
             parameters: format!("116,1,2,3,0{suffix};"),
         },
-    ])
+    ]
 }
 
-pub(crate) fn legacy_associativity_forms_file() -> Vec<u8> {
-    owned_test_file(&[
+pub(crate) fn view_list_associativity_file(back_pointers: bool) -> Vec<u8> {
+    owned_test_file(&view_list_associativity_entities(back_pointers))
+}
+
+pub(crate) fn view_list_associativity_file_with_global(
+    back_pointers: bool,
+    global: &[u8],
+) -> Vec<u8> {
+    owned_test_file_with_global(&view_list_associativity_entities(back_pointers), global)
+}
+
+fn legacy_associativity_entities() -> Vec<OwnedTestEntity> {
+    vec![
         OwnedTestEntity {
             entity_type: 116,
             form: 0,
@@ -618,7 +629,15 @@ pub(crate) fn legacy_associativity_forms_file() -> Vec<u8> {
             status: "00000000",
             parameters: "110,0,0,0,1,0,0,1,9,0;".into(),
         },
-    ])
+    ]
+}
+
+pub(crate) fn legacy_associativity_forms_file() -> Vec<u8> {
+    owned_test_file(&legacy_associativity_entities())
+}
+
+pub(crate) fn legacy_associativity_forms_file_with_global(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global(&legacy_associativity_entities(), global)
 }
 
 pub(crate) fn legacy_text_node_font_pointer_file() -> Vec<u8> {

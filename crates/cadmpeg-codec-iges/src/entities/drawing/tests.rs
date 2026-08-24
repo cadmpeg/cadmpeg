@@ -715,3 +715,38 @@ fn decode_types_view_list_with_required_back_pointers() {
             && loss.message.contains("predefined associativity")
     }));
 }
+
+#[test]
+fn decode_types_v4_view_list_with_required_back_pointers() {
+    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(view_list_associativity_file_with_global(true, GLOBAL_V4)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let view_list = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+        .iter()
+        .find(|value| value.fields()["kind"] == "view_list")
+        .unwrap();
+    assert_eq!(view_list.fields()["declared_visible_count"], 1);
+    assert_eq!(view_list.fields()["view"], "iges:entity:directory#1");
+    assert_eq!(
+        view_list.fields()["visible_entities"][0],
+        "iges:entity:directory#5"
+    );
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind())
+            .count(),
+        1
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind()));
+}
