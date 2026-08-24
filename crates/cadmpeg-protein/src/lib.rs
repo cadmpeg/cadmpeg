@@ -272,7 +272,10 @@ pub fn record_frames(bytes: &[u8]) -> Option<Vec<RecordFrame>> {
                 .extend_from_slice(&page[continuation_page::BODY..]);
         } else if page.get(terminal_page::MARKER..terminal_page::USED) == Some(TERMINAL_MARKER) {
             let used = View::u16_le_at(page, terminal_page::USED)? as usize;
-            let mut frame = current.take()?;
+            let mut frame = current.take().unwrap_or_else(|| RecordFrame {
+                logical_offset,
+                bytes: RECORD_MARKER.to_vec(),
+            });
             frame
                 .bytes
                 .extend_from_slice(page.get(terminal_page::BODY..terminal_page::BODY + used)?);
@@ -980,6 +983,26 @@ mod tests {
         let mut truncated = stream.clone();
         truncated.truncate(16 + PAGE_SIZE + 1);
         assert!(record_frames(&truncated).is_none());
+    }
+
+    #[test]
+    fn standalone_terminal_page_carries_one_short_record() {
+        let mut record = Vec::new();
+        for value in ["S", "guid", "base", "library"] {
+            push_lp(&mut record, value);
+        }
+        let mut stream = (PAGE_SIZE as u32).to_le_bytes().to_vec();
+        stream.resize(STREAM_HEADER_LEN, 0);
+        stream.extend_from_slice(TERMINAL_MARKER);
+        stream.extend_from_slice(&(record.len() as u16).to_le_bytes());
+        stream.extend_from_slice(&[1, 0]);
+        stream.extend_from_slice(&record);
+        stream.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
+
+        let frames = record_frames(&stream).expect("standalone terminal page");
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].logical_offset, 0);
+        assert_eq!(frames[0].bytes, [RECORD_MARKER, &record].concat());
     }
 
     /// Lay records out as `InstanceProperties.bin` does: a 16-byte stream header,

@@ -537,9 +537,18 @@ pub fn decode_with_body_bindings<'a>(
         };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
-                if let Some((schema, category)) = catalog.get(name) {
-                    appearance.schema = Some(schema.clone());
-                    appearance.category = category.clone();
+                let mut matches = catalog.iter().filter(|((asset_id, schema), _)| {
+                    asset_id == name
+                        && appearance
+                            .schema
+                            .as_ref()
+                            .is_none_or(|expected| expected == schema)
+                });
+                if let Some(((_, schema), category)) = matches.next() {
+                    if matches.next().is_none() {
+                        appearance.schema = Some(schema.clone());
+                        appearance.category = category.clone();
+                    }
                 }
             }
         }
@@ -1774,7 +1783,7 @@ fn instance_properties<'a>(
 fn definition_catalog<'a>(
     ctx: &DecodeContext<'a>,
     protein: View<'a>,
-) -> Result<std::collections::HashMap<String, (String, Option<String>)>, CodecError> {
+) -> Result<std::collections::HashMap<(String, String), Option<String>>, CodecError> {
     let Some(entry) = nested_entry(ctx, protein, "AssetData/DefinitionIteratorProperties.bin")?
     else {
         return Ok(std::collections::HashMap::new());
@@ -1785,11 +1794,11 @@ fn definition_catalog<'a>(
     let mut definitions = std::collections::HashMap::new();
     for frame in frames {
         let definition = decode_definition_catalog_record(&frame.bytes)?;
-        merge_definition_catalog_record(&mut definitions, definition)?;
+        merge_definition_catalog_record(&mut definitions, definition);
     }
     Ok(definitions
         .into_iter()
-        .map(|(asset_id, definition)| (asset_id, (definition.schema, definition.category)))
+        .map(|((asset_id, schema), definition)| ((asset_id, schema), definition.category))
         .collect())
 }
 
@@ -1807,25 +1816,20 @@ struct DefinitionCatalogRecord {
 }
 
 fn merge_definition_catalog_record(
-    definitions: &mut std::collections::HashMap<String, DefinitionCatalogRecord>,
+    definitions: &mut std::collections::HashMap<(String, String), DefinitionCatalogRecord>,
     definition: DefinitionCatalogRecord,
-) -> Result<(), CodecError> {
-    match definitions.entry(definition.asset_id.clone()) {
+) {
+    let key = (definition.asset_id.clone(), definition.schema.clone());
+    match definitions.entry(key) {
         std::collections::hash_map::Entry::Vacant(entry) => {
             entry.insert(definition);
         }
-        std::collections::hash_map::Entry::Occupied(entry)
-            if entry.get().schema == definition.schema
-                && entry.get().base_asset_id == definition.base_asset_id
-                && entry.get().category == definition.category => {}
-        std::collections::hash_map::Entry::Occupied(entry) => {
-            return Err(CodecError::Malformed(format!(
-                "Protein definition catalog repeats asset {} with conflicting fields",
-                entry.key()
-            )));
+        std::collections::hash_map::Entry::Occupied(mut entry) => {
+            if entry.get().category != definition.category {
+                entry.get_mut().category = None;
+            }
         }
     }
-    Ok(())
 }
 
 fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRecord, CodecError> {

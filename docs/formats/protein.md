@@ -28,13 +28,13 @@ Each page is 136 bytes. Bytes 8 through 135 are the 128-byte page body. Record e
 | ------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Record start | `80 00 01 00` at bytes 4..8 | Opens a logical record and contributes the complete body at bytes 8..136.                                         |
 | Continuation | `80 00 00 00` at bytes 4..8 | Extends the current record with its complete body.                                                                |
-| Terminal     | `ff ff ff ff` at bytes 0..4 | Closes the current record; bytes 8..`8 + used` contribute, where `used` is the little-endian `u16` at bytes 4..6. |
+| Terminal     | `ff ff ff ff` at bytes 0..4 | Closes the current record, or carries one complete short record when no record is open; bytes 8..`8 + used` contribute, where `used` is the little-endian `u16` at bytes 4..6. |
 
 A record-start page or continuation page stores its four-byte marker at offset 4. Bytes 0 through 3 are a prefix; the specification states no field there.
 
 A terminal page stores `ff ff ff ff` at offset 0 and the used payload length as a little-endian u16 at offset 4. Bytes 6 through 7 are a suffix; the specification states no field there. `used` is at most 128.
 
-A new start page, continuation page, or terminal page without the required current-record state is invalid. A stream ending with an open record is valid: the last open record is complete. A record-start page also ends the record before it.
+A continuation page requires an open record. A terminal page without an open record carries one complete short record whose opening record marker is implicit. A stream ending with an open record is valid: the last open record is complete. A record-start page also ends the record before it.
 
 ## 4. Instance logical record
 
@@ -55,4 +55,4 @@ A `DefinitionIteratorProperties.bin` logical record has this sequence:
 
 The Boolean flag does not select the metadata layout. Format version `0` stores description only. Version `1` stores group and description. Version `2` stores category, group, and description. Version `3` stores category, group, subgroup, and description. The record has no further typed members after the last preview path. If page framing contributes bytes through the end of a start or continuation page, the remaining bytes are zero padding. The asset identifier joins the definition to the base asset identifier of an instance record. The joined definition supplies the instance schema identifier and its category when present.
 
-A definition stream can repeat one asset identifier. Repeated records denote one catalog entry when schema identifier, base asset identifier, and category agree. Group, subgroup, description, tags, and preview paths are descriptive metadata and can differ between repeats. A disagreement in an identity field is invalid.
+A definition stream can repeat one asset identifier under multiple schema identifiers. The pair `(asset identifier, schema identifier)` identifies a catalog entry. Base asset identifier, category, group, subgroup, description, tags, and preview paths are descriptive metadata and can differ between repeats. Differing categories make the joined category absent. A schema-bearing instance joins through the exact pair. A schema-less record joins only when its asset identifier has one catalog schema.

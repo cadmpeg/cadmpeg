@@ -183,7 +183,7 @@ fn definition_catalog_version_three_adds_subgroup() {
 }
 
 #[test]
-fn definition_catalog_deduplicates_equal_records_and_rejects_conflicts() {
+fn definition_catalog_uses_asset_and_schema_identity() {
     fn definition(asset: &str, category: &str) -> DefinitionCatalogRecord {
         DefinitionCatalogRecord {
             schema: "PrismMetalSchema".into(),
@@ -199,23 +199,27 @@ fn definition_catalog_deduplicates_equal_records_and_rejects_conflicts() {
     }
 
     let mut definitions = std::collections::HashMap::new();
-    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"))
-        .expect("first definition");
-    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"))
-        .expect("equal duplicate definition");
+    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"));
+    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"));
     assert_eq!(definitions.len(), 1);
 
     let mut alternate_description = definition("Prism-256", "Metal/Steel");
     alternate_description.description = "CCAF1000-E7D9-2CF1-9BA1-B9224CFEBAF6".into();
-    merge_definition_catalog_record(&mut definitions, alternate_description)
-        .expect("descriptive duplicate definition");
-    assert_eq!(definitions.len(), 1);
+    merge_definition_catalog_record(&mut definitions, alternate_description);
 
-    assert!(merge_definition_catalog_record(
-        &mut definitions,
-        definition("Prism-256", "Metal/Stainless")
-    )
-    .is_err());
+    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Stainless"));
+    let key = ("Prism-256".to_owned(), "PrismMetalSchema".to_owned());
+    assert_eq!(definitions[&key].category, None);
+
+    let mut second_schema = definition("Prism-256", "Metal/Steel");
+    second_schema.schema = "GenericSchema".into();
+    merge_definition_catalog_record(&mut definitions, second_schema);
+    assert_eq!(definitions.len(), 2);
+
+    let mut alternate_base = definition("Prism-256", "Metal/Steel");
+    alternate_base.base_asset_id = "another-base".into();
+    merge_definition_catalog_record(&mut definitions, alternate_base);
+    assert_eq!(definitions.len(), 2);
 }
 
 #[test]
