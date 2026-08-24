@@ -4,7 +4,7 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 
 use crate::directory::{DirectoryEntry, Status};
 use crate::global::Dialect;
@@ -49,26 +49,34 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
 #[test]
 fn drawing_presentation_directory_rules_match_the_iges_tables() {
     let mut drawing = directory_entry(404, 0);
-    assert!(drawing_directory_valid(&drawing));
+    assert!(drawing_directory_valid(&drawing, Dialect::V4_0));
+    assert!(drawing_directory_valid(&drawing, Dialect::V5_0));
     drawing.status.subordinate = 1;
-    assert!(!drawing_directory_valid(&drawing));
+    assert!(!drawing_directory_valid(&drawing, Dialect::V4_0));
+    assert!(!drawing_directory_valid(&drawing, Dialect::V5_0));
     drawing.status.subordinate = 0;
     drawing.status.use_flag = 2;
-    assert!(!drawing_directory_valid(&drawing));
+    assert!(drawing_directory_valid(&drawing, Dialect::V4_0));
+    assert!(!drawing_directory_valid(&drawing, Dialect::V5_0));
+    drawing.status.use_flag = 0;
+    assert!(!drawing_directory_valid(&drawing, Dialect::V4_0));
+    assert!(!drawing_directory_valid(&drawing, Dialect::V5_0));
     drawing.status.use_flag = 1;
     drawing.status.blank = 1;
     drawing.status.hierarchy = 3;
-    assert!(drawing_directory_valid(&drawing));
+    assert!(drawing_directory_valid(&drawing, Dialect::V4_0));
+    assert!(drawing_directory_valid(&drawing, Dialect::V5_0));
 
     for field in 0..4 {
-        let mut candidate = directory_entry(404, 1);
+        let mut candidate = directory_entry(404, 0);
         match field {
             0 => candidate.structure = 1,
             1 => candidate.line_font = 1,
             2 => candidate.line_weight = 1,
             _ => candidate.color = 1,
         }
-        assert!(!drawing_directory_valid(&candidate));
+        assert!(drawing_directory_valid(&candidate, Dialect::V4_0));
+        assert!(!drawing_directory_valid(&candidate, Dialect::V5_0));
     }
 
     let mut view = directory_entry(410, 0);
@@ -140,6 +148,108 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
         assert!(views_visible_directory_valid(&visible, Dialect::V4_0));
         assert!(views_visible_directory_valid(&visible, Dialect::V5_0));
     }
+}
+
+fn decode_drawing_directory_case(
+    global: &'static [u8],
+    drawing_status: &'static str,
+    nonzero_display_fields: bool,
+) -> DecodeResult {
+    const EMPTY: &[(u32, i64)] = &[];
+    const NONZERO: &[(u32, i64)] = &[(5, 1)];
+    let fields = if nonzero_display_fields {
+        (NONZERO, NONZERO, NONZERO, NONZERO)
+    } else {
+        (EMPTY, EMPTY, EMPTY, EMPTY)
+    };
+    IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
+                &[
+                    OwnedTestEntity {
+                        entity_type: 410,
+                        form: 0,
+                        label: "VIEW".into(),
+                        status: "00020200",
+                        parameters: "410,1,1,0,0,0,0,0,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 116,
+                        form: 0,
+                        label: "NOTELOC".into(),
+                        status: "00010100",
+                        parameters: "116,5,6,0,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 404,
+                        form: 0,
+                        label: "DRAWING".into(),
+                        status: drawing_status,
+                        parameters: "404,1,1,10,20,1,3;".into(),
+                    },
+                ],
+                global,
+                fields.0,
+                fields.1,
+                EMPTY,
+                fields.2,
+                fields.3,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap()
+}
+
+#[test]
+fn decode_drawing_directory_contract_follows_the_declared_dialect() {
+    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+
+    let v4 = decode_drawing_directory_case(GLOBAL_V4, "00000200", true);
+    let v4_drawings = &v4.ir().native.namespace("iges").unwrap().arenas["drawings"];
+    assert_eq!(v4_drawings.len(), 1);
+    assert!(!v4.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                == Some("directory_entry:D5")
+    }));
+
+    let v5_use = decode_drawing_directory_case(GLOBAL_V5_0, "00000200", false);
+    assert!(v5_use.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                == Some("directory_entry:D5")
+    }));
+
+    let v5_fields = decode_drawing_directory_case(GLOBAL_V5_0, "00000100", true);
+    assert!(v5_fields.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                == Some("directory_entry:D5")
+    }));
+
+    let v5_valid = decode_drawing_directory_case(GLOBAL_V5_0, "00000100", false);
+    assert_eq!(
+        v5_valid.ir().native.namespace("iges").unwrap().arenas["drawings"].len(),
+        1
+    );
+    assert!(!v5_valid.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .provenance
+                .as_ref()
+                .and_then(|provenance| provenance.tag.as_deref())
+                == Some("directory_entry:D5")
+    }));
 }
 
 #[test]

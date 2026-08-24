@@ -54,15 +54,20 @@ fn standard_color_valid(value: i64) -> bool {
     matches!(value, 0..=8)
 }
 
-fn drawing_directory_valid(entry: &DirectoryEntry) -> bool {
+fn drawing_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
     entry.entity_type == 404
         && matches!(entry.form, 0 | 1)
         && entry.status.subordinate == 0
-        && entry.status.use_flag == 1
-        && entry.structure == 0
-        && entry.line_font == 0
-        && entry.line_weight == 0
-        && entry.color == 0
+        && match dialect {
+            Dialect::V4_0 | Dialect::Legacy => entry.status.use_flag != 0,
+            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
+                entry.status.use_flag == 1
+                    && entry.structure == 0
+                    && entry.line_font == 0
+                    && entry.line_weight == 0
+                    && entry.color == 0
+            }
+        }
 }
 
 fn view_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
@@ -268,7 +273,7 @@ pub(super) fn project(
                     })
             })
         });
-        if drawing_directory_valid(entry) && views_valid && annotations_valid {
+        if drawing_directory_valid(entry, global.dialect()) && views_valid && annotations_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
