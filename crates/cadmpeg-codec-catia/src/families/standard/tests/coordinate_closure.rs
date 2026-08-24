@@ -1322,7 +1322,11 @@ fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
     assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Complete));
     assert_eq!(
         assignments,
-        vec![vec![[0, 1], [1, 1], [0, 2]], vec![[0, 2], [1, 1], [0, 2]],]
+        vec![
+            vec![[0, 0], [1, 1], [0, 2]],
+            vec![[0, 1], [1, 1], [0, 2]],
+            vec![[0, 2], [1, 1], [0, 2]],
+        ]
     );
 }
 
@@ -1342,15 +1346,12 @@ fn duplicate_face_assignment_visitor_reports_the_bound() {
 }
 
 #[test]
-fn duplicate_face_slots_do_not_budget_forced_assignments() {
-    const EDGE_COUNT: usize = 5_000;
+fn one_admitted_alternate_does_not_force_a_second_face() {
+    const EDGE_COUNT: usize = 8;
     let serialized = vec![[0, 0]; EDGE_COUNT];
     let allowed = vec![vec![1, 1]; EDGE_COUNT];
 
-    let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| true)
-        .expect("forced duplicate-face assignments");
-
-    assert_eq!(resolved, vec![[0, 1]; EDGE_COUNT]);
+    assert!(unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| true).is_none());
 }
 
 #[test]

@@ -3200,6 +3200,7 @@ fn attach_standard_topology(
     let mut deferred_port_edges = alloc_filled(supports.len(), false, "catia_deferred_port_edges")
         .map_err(|_| StandardTopologyFailure::TopologySearchExhausted)?;
     let mut open_face_domains = None;
+    let mut endpoint_face_assignments = None;
     apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
     for (support, faces) in supports.iter_mut().zip(&edge_faces) {
         support.faces = *faces;
@@ -3542,18 +3543,53 @@ fn attach_standard_topology(
             )
             .ok_or(StandardTopologyFailure::EdgeFaceAssignment)?;
         }
-        // A non-empty alternate domain remains a wildcard until the joint mesh
-        // quotient evaluates it. Face-local endpoint closure is incomplete:
-        // an unmatched row can occupy a face boundary only in that quotient.
-        let completed = (!allowed_faces.iter().any(|faces| !faces.is_empty()))
+        let has_alternates = allowed_faces.iter().any(|faces| !faces.is_empty());
+        let endpoint_closures = has_alternates
             .then(|| {
-                missing_edge::resolve_standard_duplicate_edge_faces(
-                    spine,
+                options
+                    .iter()
+                    .map(|pairs| {
+                        <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                            .ok()
+                            .map(|[pair]| pair)
+                    })
+                    .collect::<Option<Vec<_>>>()
+            })
+            .flatten()
+            .and_then(|pairs| {
+                missing_edge::repeated_face_endpoint_closures(
                     &edge_faces,
                     &allowed_faces,
+                    &pairs,
+                    face_count,
                 )
-            })
-            .flatten();
+            });
+        let endpoint_completed = endpoint_closures
+            .as_deref()
+            .and_then(|closures| match closures {
+                [closure] => Some(closure.clone()),
+                _ => None,
+            });
+        if endpoint_closures
+            .as_ref()
+            .is_some_and(|closures| closures.len() > 1)
+        {
+            endpoint_face_assignments = endpoint_closures;
+        }
+        // A non-empty domain remains open when endpoint degree closure does
+        // not select one complete incidence assignment. Face-local endpoint
+        // evidence cannot choose among multiple globally closed assignments.
+        let completed = endpoint_completed.or_else(|| {
+            (!has_alternates)
+                .then(|| {
+                    missing_edge::resolve_standard_duplicate_edge_faces(
+                        spine,
+                        &edge_faces,
+                        &allowed_faces,
+                    )
+                })
+                .flatten()
+        });
         if let Some(completed) = completed {
             edge_faces = completed;
             for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {
@@ -3991,6 +4027,10 @@ fn attach_standard_topology(
                     || !limit_curve_bindings[edge].is_empty()
             })
             .collect::<Vec<_>>();
+        let edge_direction_evidence = native_endpoint_evidence.as_ref().map_or_else(
+            || supports.iter().map(|_| false).collect::<Vec<_>>(),
+            |pairs| pairs.iter().map(Option::is_some).collect(),
+        );
         let point_on_face = |face: usize, point: usize| {
             if let Some(membership) = face_point_membership.as_ref() {
                 return membership
@@ -4098,6 +4138,7 @@ fn attach_standard_topology(
                     selected_edge_classes,
                     &edge_geometry,
                     &edge_identity_evidence,
+                    &edge_direction_evidence,
                     has_open_face_domains,
                     &partial_constraint_edges,
                     &partial_constraint_edges,
@@ -4142,6 +4183,7 @@ fn attach_standard_topology(
                         selected_edge_classes,
                         &edge_geometry,
                         &edge_identity_evidence,
+                        &edge_direction_evidence,
                         has_open_face_domains,
                         &partial_constraint_edges,
                         &partial_constraint_edges,
@@ -4169,10 +4211,19 @@ fn attach_standard_topology(
             };
         let outcome = if has_open_face_domains {
             let domains = open_face_domains.as_deref().unwrap_or_default();
-            match mesh_quotient::parse_standard_mesh_candidate_outcome_with_face_domains(
-                &edge_faces,
-                domains,
-                face_count,
+            let face_assignments = endpoint_face_assignments.as_deref().map_or(
+                mesh_quotient::MeshFaceAssignmentCandidates::Domains {
+                    edge_faces: &edge_faces,
+                    allowed_faces: domains,
+                    face_count,
+                },
+                |assignments| mesh_quotient::MeshFaceAssignmentCandidates::Concrete {
+                    assignments,
+                    face_count,
+                },
+            );
+            match mesh_quotient::parse_standard_mesh_candidate_outcome_with_face_assignments(
+                face_assignments,
                 work_budget,
                 |selected_edge_faces, branch_budget| {
                     let selected_supports = supports

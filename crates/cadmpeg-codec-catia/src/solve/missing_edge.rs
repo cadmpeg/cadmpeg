@@ -13,7 +13,7 @@ use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecor
 use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 use crate::solve::UnionFind;
 use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 /// Return the counted physical edge rows in their serialized table order.
@@ -680,6 +680,232 @@ pub(crate) fn refine_repeated_edge_face_candidates(
     Some(())
 }
 
+/// Resolve optional second-face incidences by complete endpoint-degree closure.
+///
+/// A repeated serialized pair contributes one use to its named face. Each
+/// admitted alternate either remains unused or supplies a second distinct face.
+/// Return every assignment found by the bounded search that gives degree two
+/// at every used face vertex.
+pub(crate) fn repeated_face_endpoint_closures(
+    edge_faces: &[[usize; 2]],
+    allowed_faces: &[Vec<usize>],
+    endpoint_pairs: &[[usize; 2]],
+    face_count: usize,
+) -> Option<Vec<Vec<[usize; 2]>>> {
+    const MAX_STATES: usize = 65_536;
+    const MAX_SOLUTIONS: usize = 4_096;
+
+    fn add_pair(degrees: &mut BTreeMap<usize, u8>, pair: [usize; 2]) -> Option<()> {
+        let start_add = 1 + u8::from(pair[0] == pair[1]);
+        if degrees
+            .get(&pair[0])
+            .copied()
+            .unwrap_or_default()
+            .checked_add(start_add)?
+            > 2
+            || (pair[0] != pair[1]
+                && degrees
+                    .get(&pair[1])
+                    .copied()
+                    .unwrap_or_default()
+                    .checked_add(1)?
+                    > 2)
+        {
+            return None;
+        }
+        *degrees.entry(pair[0]).or_default() += start_add;
+        if pair[0] != pair[1] {
+            *degrees.entry(pair[1]).or_default() += 1;
+        }
+        Some(())
+    }
+
+    fn remove_pair(degrees: &mut BTreeMap<usize, u8>, pair: [usize; 2]) {
+        let start_add = 1 + u8::from(pair[0] == pair[1]);
+        let start = degrees.get_mut(&pair[0]).expect("assigned face endpoint");
+        *start -= start_add;
+        if *start == 0 {
+            degrees.remove(&pair[0]);
+        }
+        if pair[0] != pair[1] {
+            let end = degrees.get_mut(&pair[1]).expect("assigned face endpoint");
+            *end -= 1;
+            if *end == 0 {
+                degrees.remove(&pair[1]);
+            }
+        }
+    }
+
+    struct Search<'a> {
+        branches: &'a [(usize, Vec<usize>)],
+        owners: &'a [usize],
+        endpoint_pairs: &'a [[usize; 2]],
+        states: usize,
+        exhausted: bool,
+        solutions: Vec<Vec<usize>>,
+    }
+
+    impl Search<'_> {
+        fn visit(
+            &mut self,
+            degrees: &mut [BTreeMap<usize, u8>],
+            assignment: &mut [usize],
+            used: &mut [bool],
+        ) {
+            if self.exhausted {
+                return;
+            }
+            if used.iter().all(|used| *used) {
+                if degrees
+                    .iter()
+                    .all(|face| face.values().all(|degree| *degree == 2))
+                {
+                    if self.solutions.len() == MAX_SOLUTIONS {
+                        self.exhausted = true;
+                    } else {
+                        self.solutions.push(assignment.to_vec());
+                    }
+                }
+                return;
+            }
+            let deficit = degrees.iter().enumerate().find_map(|(face, points)| {
+                points
+                    .iter()
+                    .find_map(|(&point, &degree)| (degree == 1).then_some((face, point)))
+            });
+            let mut choices = Vec::<(usize, usize)>::new();
+            if let Some((face, point)) = deficit {
+                for (branch, (edge, faces)) in self.branches.iter().enumerate() {
+                    if used[branch] || !self.endpoint_pairs[*edge].contains(&point) {
+                        continue;
+                    }
+                    choices.extend(
+                        faces
+                            .iter()
+                            .copied()
+                            .filter(|candidate| *candidate == face)
+                            .map(|candidate| (branch, candidate)),
+                    );
+                }
+            } else {
+                let branch = used
+                    .iter()
+                    .position(|used| !*used)
+                    .expect("unassigned branch");
+                choices.extend(
+                    self.branches[branch]
+                        .1
+                        .iter()
+                        .copied()
+                        .map(|face| (branch, face)),
+                );
+            }
+            for (branch, face) in choices {
+                if self.states >= MAX_STATES {
+                    self.exhausted = true;
+                    return;
+                }
+                self.states += 1;
+                let (edge, _) = &self.branches[branch];
+                let owner = self.owners[branch];
+                let adds_incidence = face != owner;
+                if adds_incidence
+                    && add_pair(&mut degrees[face], self.endpoint_pairs[*edge]).is_none()
+                {
+                    continue;
+                }
+                assignment[branch] = face;
+                used[branch] = true;
+                self.visit(degrees, assignment, used);
+                used[branch] = false;
+                if adds_incidence {
+                    remove_pair(&mut degrees[face], self.endpoint_pairs[*edge]);
+                }
+                if self.exhausted {
+                    return;
+                }
+            }
+        }
+    }
+
+    if edge_faces.len() != allowed_faces.len()
+        || edge_faces.len() != endpoint_pairs.len()
+        || edge_faces.iter().flatten().any(|face| *face >= face_count)
+        || allowed_faces
+            .iter()
+            .flatten()
+            .any(|face| *face >= face_count)
+    {
+        return None;
+    }
+    let mut degrees = vec![BTreeMap::<usize, u8>::new(); face_count];
+    for (edge, faces) in edge_faces.iter().copied().enumerate() {
+        add_pair(&mut degrees[faces[0]], endpoint_pairs[edge])?;
+        if faces[1] != faces[0] {
+            add_pair(&mut degrees[faces[1]], endpoint_pairs[edge])?;
+        }
+    }
+    let mut branches = Vec::new();
+    for (edge, faces) in edge_faces.iter().enumerate() {
+        if faces[0] != faces[1] || allowed_faces[edge].is_empty() {
+            continue;
+        }
+        let mut choices = vec![faces[0]];
+        choices.extend(
+            allowed_faces[edge]
+                .iter()
+                .copied()
+                .filter(|face| *face != faces[0]),
+        );
+        choices.sort_unstable();
+        choices.dedup();
+        branches.push((edge, choices));
+    }
+    if branches.is_empty() {
+        return Some(
+            degrees
+                .iter()
+                .all(|face| face.values().all(|degree| *degree == 2))
+                .then(|| edge_faces.to_vec())
+                .into_iter()
+                .collect(),
+        );
+    }
+    let owners = branches
+        .iter()
+        .map(|(edge, _)| edge_faces[*edge][0])
+        .collect::<Vec<_>>();
+    let mut search = Search {
+        branches: &branches,
+        owners: &owners,
+        endpoint_pairs,
+        states: 0,
+        exhausted: false,
+        solutions: Vec::new(),
+    };
+    search.visit(
+        &mut degrees,
+        &mut vec![0; branches.len()],
+        &mut vec![false; branches.len()],
+    );
+    if search.exhausted {
+        return None;
+    }
+    Some(
+        search
+            .solutions
+            .into_iter()
+            .map(|solution| {
+                let mut completed = edge_faces.to_vec();
+                for ((edge, _), face) in branches.iter().zip(solution) {
+                    completed[*edge][1] = face;
+                }
+                completed
+            })
+            .collect(),
+    )
+}
+
 pub(crate) fn unique_duplicate_face_assignment<F>(
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
@@ -754,19 +980,17 @@ where
     let mut assignment = serialized.to_vec();
     let mut branches = Vec::new();
     for edge in unresolved {
-        let mut options = allowed_faces[edge]
-            .iter()
-            .copied()
-            .filter(|face| *face != assignment[edge][0])
-            .collect::<Vec<_>>();
+        let mut options = vec![assignment[edge][0]];
+        options.extend(
+            allowed_faces[edge]
+                .iter()
+                .copied()
+                .filter(|face| *face != assignment[edge][0]),
+        );
         options.sort_unstable();
         options.dedup();
         match options.as_slice() {
-            // An empty alternate-face domain means that no distinct face is
-            // admitted for this repeated slot. Keep the serialized same-face
-            // incidence as an unresolved wildcard; the joint validator still
-            // decides whether that incidence closes the trim mesh.
-            [] => {}
+            [] => unreachable!("the serialized face is always retained"),
             [face] => assignment[edge][1] = *face,
             _ => branches.push((edge, options)),
         }
@@ -799,10 +1023,9 @@ pub(crate) enum DuplicateFaceAssignmentVisit {
 
 /// Visit concrete second-face assignments without materializing their product.
 ///
-/// A non-empty alternate entry replaces the serialized duplicate slot with one
-/// of its distinct faces. An empty entry retains the serialized same-face
-/// wildcard. The visitor returns `true` to continue and `false` to stop after
-/// a solved or otherwise terminal result.
+/// A repeated slot retains its serialized one-face incidence as one choice and
+/// adds each distinct admitted second face as another. The visitor returns
+/// `true` to continue and `false` to stop after a solved or terminal result.
 pub(crate) fn visit_duplicate_face_assignments<F>(
     serialized: &[[usize; 2]],
     allowed_faces: &[Vec<usize>],
@@ -872,14 +1095,11 @@ where
             }
             continue;
         }
-        let mut choices = allowed
-            .iter()
-            .copied()
-            .filter(|face| *face != faces[0])
-            .collect::<Vec<_>>();
+        let mut choices = vec![faces[0]];
+        choices.extend(allowed.iter().copied().filter(|face| *face != faces[0]));
         choices.sort_unstable();
         choices.dedup();
-        if !choices.is_empty() {
+        if choices.len() > 1 {
             branches.push((edge, choices));
         }
     }

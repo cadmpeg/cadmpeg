@@ -3028,13 +3028,21 @@ fn deferred_boundary_cycle_assignment(
         return (incidence.len() <= mesh.length
             && incidence.iter().all(|(edge, _)| missing.contains(edge)))
         .then(|| {
+            let slack = mesh.length - incidence.len();
+            let mut start = 0usize;
             incidence
                 .iter()
-                .map(|(edge, _)| MeshBoundaryEdgeCandidate {
-                    edge: *edge,
-                    start: 0,
-                    end: 0,
-                    reversed: None,
+                .enumerate()
+                .map(|(index, (edge, _))| {
+                    let span = 1 + usize::from(index == 0) * slack;
+                    let use_ = MeshBoundaryEdgeCandidate {
+                        edge: *edge,
+                        start,
+                        end: (start + span) % mesh.length,
+                        reversed: None,
+                    };
+                    start = (start + span) % mesh.length;
+                    use_
                 })
                 .collect()
         });
@@ -3095,27 +3103,34 @@ fn deferred_boundary_cycle_assignment(
             }
         }
         if valid {
-            let exact = mesh
-                .exact_uses
-                .iter()
-                .map(|(use_, _)| (use_.edge, *use_))
-                .collect::<HashMap<_, _>>();
-            return Some(
-                actual
-                    .into_iter()
-                    .map(|edge| {
-                        exact
-                            .get(&edge)
-                            .copied()
-                            .unwrap_or(MeshBoundaryEdgeCandidate {
-                                edge,
-                                start: 0,
-                                end: 0,
-                                reversed: None,
-                            })
-                    })
-                    .collect(),
-            );
+            let mut boundary = Vec::with_capacity(actual.len());
+            for index in 0..expected.len() {
+                let left_position = positions[index];
+                let right_position = if index + 1 == expected.len() {
+                    positions[0] + actual.len()
+                } else {
+                    positions[index + 1]
+                };
+                let (left, left_span) = mesh.exact_uses[index];
+                boundary.push(left);
+                let missing_count = right_position - left_position - 1;
+                let right = mesh.exact_uses[(index + 1) % expected.len()].0;
+                let mut start = (left.start + left_span) % mesh.length;
+                let capacity = (right.start + mesh.length - start) % mesh.length;
+                let slack = capacity - missing_count;
+                for offset in 1..=missing_count {
+                    let span = 1 + usize::from(offset == 1) * slack;
+                    let edge = actual[(left_position + offset) % actual.len()];
+                    boundary.push(MeshBoundaryEdgeCandidate {
+                        edge,
+                        start,
+                        end: (start + span) % mesh.length,
+                        reversed: None,
+                    });
+                    start = (start + span) % mesh.length;
+                }
+            }
+            return Some(boundary);
         }
     }
     None
@@ -4064,7 +4079,9 @@ where
         if components.is_empty() {
             rejection = IncidenceRejection::FixedAssignment;
             let pairs = fixed.into_iter().collect::<Option<Vec<_>>>()?;
-            if !boundary_domains_close(mesh_assignments, &pairs) || !solution_valid(&pairs) {
+            let boundary_closed = boundary_domains_close(mesh_assignments, &pairs);
+            let solution_valid = solution_valid(&pairs);
+            if !boundary_closed || !solution_valid {
                 return None;
             }
             if let Some(quotient) = mesh_quotient {

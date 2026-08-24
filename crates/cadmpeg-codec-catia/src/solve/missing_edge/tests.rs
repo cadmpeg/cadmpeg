@@ -189,3 +189,46 @@ fn handle_face_candidates_do_not_reopen_resolved_incidence() {
     assert_eq!(allowed[1], vec![4]);
     assert_eq!(allowed[2], vec![5]);
 }
+
+#[test]
+fn endpoint_degree_closure_selects_optional_second_face() {
+    let edge_faces = [[0, 1], [0, 0], [0, 1]];
+    let allowed = [Vec::new(), vec![1], Vec::new()];
+    let endpoint_pairs = [[0, 1], [1, 2], [2, 0]];
+
+    let completed = repeated_face_endpoint_closures(&edge_faces, &allowed, &endpoint_pairs, 2)
+        .expect("bounded endpoint closure");
+
+    assert_eq!(completed, vec![vec![[0, 1], [0, 1], [0, 1]]]);
+}
+
+#[test]
+fn endpoint_degree_closure_retains_one_face_incidences() {
+    let edge_faces = [[0, 1], [0, 0], [1, 1], [0, 1]];
+    let allowed = [Vec::new(), vec![1], vec![0], Vec::new()];
+    let endpoint_pairs = [[0, 1], [1, 2], [1, 2], [2, 0]];
+
+    let completed = repeated_face_endpoint_closures(&edge_faces, &allowed, &endpoint_pairs, 2)
+        .expect("bounded endpoint closure");
+
+    assert_eq!(completed, vec![edge_faces.to_vec()]);
+}
+
+#[test]
+fn endpoint_degree_closure_retains_symmetric_face_swaps() {
+    let edge_faces = [[0, 1], [2, 3], [2, 2], [3, 3]];
+    let allowed = [Vec::new(), Vec::new(), vec![0, 1], vec![0, 1]];
+    let endpoint_pairs = [[0, 1]; 4];
+
+    let mut completed = repeated_face_endpoint_closures(&edge_faces, &allowed, &endpoint_pairs, 4)
+        .expect("bounded endpoint closure");
+    completed.sort();
+
+    assert_eq!(
+        completed,
+        vec![
+            vec![[0, 1], [2, 3], [2, 0], [3, 1]],
+            vec![[0, 1], [2, 3], [2, 1], [3, 0]],
+        ]
+    );
+}
