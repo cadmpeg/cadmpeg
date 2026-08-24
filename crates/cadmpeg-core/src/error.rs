@@ -16,6 +16,9 @@ pub enum CodecError {
     /// The container was structurally malformed.
     #[error("malformed container: {0}")]
     Malformed(String),
+    /// The document supplied to an encoder violates its input contract.
+    #[error("invalid encoder input: {0}")]
+    InvalidInput(String),
     /// A required read extended past the end of its window after commitment.
     ///
     /// Distinct from [`CodecError::Malformed`]: a truncation is missing input,

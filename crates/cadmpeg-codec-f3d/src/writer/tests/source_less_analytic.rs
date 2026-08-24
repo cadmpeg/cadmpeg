@@ -1059,7 +1059,7 @@ fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
         })
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("open face cannot be emitted as a solid body");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
 }
 
 #[test]

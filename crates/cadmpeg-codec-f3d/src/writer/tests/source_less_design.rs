@@ -734,7 +734,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         })
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("source-less points require their direct owner backlink");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
     f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = Some(277);
     f3d_native_mut(&mut source_less).design_types[6]
         .entity_ids
@@ -746,7 +746,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         })
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("source-less points require a registered inverse companion");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
     f3d_native_mut(&mut source_less).design_types[6].entity_ids = vec![101];
     f3d_native_mut(&mut source_less).design_types[2].version = 10;
     let error = F3dCodec
