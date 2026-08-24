@@ -198,6 +198,18 @@ pub(crate) fn active_feature_closure(
                     .contains_key(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
         })
     });
+    let has_retained_history_input = active_features.iter().any(|id| {
+        features.get(id).is_some_and(|feature| {
+            matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
+                && feature
+                    .source_properties
+                    .keys()
+                    .any(|key| key.starts_with("segment_body_binding."))
+        })
+    });
+    if !has_neutral_body_writer && has_retained_history_input && !has_native_body_witness {
+        return Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter);
+    }
     if !has_neutral_body_writer && has_native_body_witness {
         active_features.extend(
             ir.model
@@ -566,6 +578,39 @@ mod tests {
         );
         assert_eq!(
             active_feature_closure(&ir, &[BodyId("other".into())]),
+            Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter)
+        );
+    }
+
+    #[test]
+    fn retained_history_input_alone_is_not_an_active_feature_closure() {
+        let body = BodyId("body".into());
+        let (ir, _) = closure_ir(vec![Feature {
+            id: FeatureId("initial".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::from([(
+                "segment_body_binding.0".into(),
+                "nx:segment-body-bindings:binding#0".into(),
+            )]),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![body.clone()],
+            definition: FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Resolved {
+                    bodies: vec![body.clone()],
+                    native: "test".into(),
+                },
+            },
+            native_ref: None,
+        }]);
+
+        assert_eq!(
+            active_feature_closure(&ir, &[body]),
             Err(ActiveFeatureClosureRejection::NoSelectedBodyWriter)
         );
     }
