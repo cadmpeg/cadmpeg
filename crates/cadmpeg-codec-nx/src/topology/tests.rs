@@ -170,10 +170,18 @@ fn topology_rejects_unreferenced_high_identity_carrier() {
     put_ref(&mut unreferenced, 2, 99);
     unreferenced[4..8].copy_from_slice(&u32::MAX.to_be_bytes());
     stream.extend(unreferenced);
+    let line_pos = stream
+        .windows(4)
+        .position(|window| window == [0, 30, 0, 9])
+        .unwrap();
+    let mut successor = stream[line_pos..line_pos + 67].to_vec();
+    put_ref(&mut successor, 2, 100);
+    stream.extend(successor);
 
     let graph = Graph::parse(&stream);
 
     assert!(graph.get(50, 99).is_none());
+    assert!(graph.get(30, 100).is_some());
     assert!(graph.has_complete_body_topology());
 }
 
