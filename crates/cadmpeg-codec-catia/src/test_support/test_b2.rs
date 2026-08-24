@@ -140,8 +140,12 @@ pub(crate) fn b2_all_compact_owner_packet_stream() -> Vec<u8> {
 }
 
 pub(crate) fn owner_numeric_tail() -> Vec<u8> {
+    owner_numeric_tail_for([-0.0, 4.5], [12.25, 7.0])
+}
+
+fn owner_numeric_tail_for(lower: [f64; 2], upper: [f64; 2]) -> Vec<u8> {
     let mut tail = vec![0x84, 0x41, 0xbb, 0x05, 0x0d];
-    for value in [-0.0f64, 4.5, 12.25, 7.0] {
+    for value in [lower[0], lower[1], upper[0], upper[1]] {
         tail.extend_from_slice(&value.to_le_bytes());
     }
     tail.push(0x01);
@@ -149,6 +153,65 @@ pub(crate) fn owner_numeric_tail() -> Vec<u8> {
         tail.extend_from_slice(&value.to_le_bytes());
     }
     tail
+}
+
+pub(crate) fn b2_owner_chart_stream(carrier_class: u8) -> Vec<u8> {
+    let mut bytes = match carrier_class {
+        0x28 => b2_cylinder_stream(),
+        0x2b => b2_torus_stream(),
+        0x32 => vec![0xa5, 0x03, 0x32, 0x00, 0x00, 0x00, 0x00, 0x05],
+        _ => panic!("owner-chart fixture requires an admitted analytic carrier"),
+    };
+    bytes.extend_from_slice(&b2_reference_list_stream());
+    let (lower, upper, side_values) = match carrier_class {
+        0x28 => (
+            [2.0, 3.0],
+            [5.0, 7.0],
+            vec![
+                vec![2.0, 3.0, 7.0],
+                vec![5.0, 3.0, 7.0],
+                vec![3.0, 2.0, 5.0],
+                vec![7.0, 2.0, 5.0],
+            ],
+        ),
+        0x2b => (
+            [2.0, 3.0],
+            [5.0, 7.0],
+            vec![
+                vec![3.0, 2.0, 5.0],
+                vec![7.0, 2.0, 5.0],
+                vec![2.0, 3.0, 7.0],
+                vec![5.0, 3.0, 7.0],
+            ],
+        ),
+        0x32 => (
+            [0.0, 0.0],
+            [596.25, 10.0],
+            vec![
+                vec![596.25],
+                vec![10.0, 596.25],
+                vec![10.0],
+                vec![596.25, 10.0],
+            ],
+        ),
+        _ => unreachable!("carrier class checked above"),
+    };
+    for (prefix, values) in [0x05, 0x09, 0x0d, 0x11].into_iter().zip(side_values) {
+        let length = u8::try_from(2 + values.len() * size_of::<f64>())
+            .expect("owner-chart parameter-point length");
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x18, length, 0x05, prefix, 0x12]);
+        for value in values {
+            bytes.extend_from_slice(&le_f64(value));
+        }
+    }
+    let mut owner = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
+    for value in [278, 324, 276, 268, 277, 374, 199, 195, 279] {
+        owner.extend_from_slice(&compact_uint_bytes(value));
+    }
+    owner.extend_from_slice(&owner_numeric_tail_for(lower, upper));
+    owner[3] = u8::try_from(owner.len() - 5).expect("owner-chart packet length");
+    bytes.extend_from_slice(&owner);
+    bytes
 }
 
 pub(crate) fn b2_counted_61_stream() -> Vec<u8> {

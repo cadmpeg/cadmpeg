@@ -50,7 +50,7 @@ pub struct B2ParameterPoint {
     pub pos: usize,
     /// Exclusive end of the complete framed record.
     pub end: usize,
-    /// Payload-layout discriminator (`0x12`, `0x1a`, or `0x2a`).
+    /// Payload-layout discriminator (`0x0a`, `0x12`, `0x1a`, or `0x2a`).
     pub layout: u8,
     /// First byte of the two-byte class-specific prefix.
     pub prefix: u8,
@@ -63,6 +63,11 @@ pub struct B2ParameterPoint {
 /// Layout-specific scalar lane of a class-`0x18` parameter-space record.
 #[derive(Debug, Clone, PartialEq)]
 pub enum B2ParameterPointPayload {
+    /// One retained scalar after two zero tuple fields are elided (`L=0x0a`).
+    Scalar {
+        /// Stored scalar.
+        value: f64,
+    },
     /// Two-coordinate UV point (`L=0x12`).
     Uv {
         /// Surface-chart coordinates.
@@ -199,6 +204,51 @@ pub struct B2OwnerIdentityTarget {
     pub target_pos: usize,
     /// Selected record class.
     pub target_class: u8,
+}
+
+/// Parameter axis held constant by selectors `0x05` and `0x09` in an owner
+/// chart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum B2OwnerChartSideAxis {
+    /// Selectors `0x05` and `0x09` carry the lower and upper first-parameter
+    /// sides.
+    FirstParameter,
+    /// Selectors `0x05` and `0x09` carry the lower and upper second-parameter
+    /// sides.
+    SecondParameter,
+}
+
+/// Carrier production that opens a fixed owner chart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum B2OwnerChartCarrier {
+    /// B-family class-`0x28` cylinder carrier.
+    B28,
+    /// B-family class-`0x2b` torus carrier.
+    B2b,
+    /// A-family class-`0x32` carrier.
+    A32,
+}
+
+/// One source-closed carrier chart terminated by a fixed-nine owner packet.
+///
+/// The relation is admitted only when the four ordered class-`0x18` records
+/// reproduce the owner's complete parameter rectangle.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2OwnerChart {
+    /// Fixed-nine owner packet offset.
+    pub owner_pos: usize,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
+    /// Carrier record offset.
+    pub carrier_pos: usize,
+    /// Family-and-class carrier production.
+    pub carrier: B2OwnerChartCarrier,
+    /// Immediately following class-`0x37` bridge-record offset.
+    pub bridge_pos: usize,
+    /// Axis held constant by selectors `0x05` and `0x09`.
+    pub side_axis: B2OwnerChartSideAxis,
+    /// Ordered selector records `0x05`, `0x09`, `0x0d`, and `0x11`.
+    pub parameter_points: [B2ParameterPoint; 4],
 }
 
 /// Count-framed class-`0x62` owner record with a class-specific tail.
@@ -745,6 +795,115 @@ pub(crate) fn b2_owner_identity_targets_from_records(
     targets
 }
 
+/// Decode source-closed carrier/reference/side/owner chart productions.
+pub(crate) fn b2_owner_charts_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2OwnerChart> {
+    let owners = b2_owner_packets_from_records(data, records)
+        .into_iter()
+        .map(|owner| ((owner.source_index, owner.pos), owner))
+        .collect::<BTreeMap<_, _>>();
+    let parameter_points = b2_parameter_points_from_records(data, records)
+        .into_iter()
+        .map(|point| (point.pos, point))
+        .collect::<BTreeMap<_, _>>();
+
+    records
+        .windows(7)
+        .filter_map(|window| {
+            let [carrier, references, side_05, side_09, side_0d, side_11, owner_record] = window
+            else {
+                return None;
+            };
+            let carrier_kind = match (carrier.family, carrier.class) {
+                (ConsolidatedFamily::B, 0x28) => B2OwnerChartCarrier::B28,
+                (ConsolidatedFamily::B, 0x2b) => B2OwnerChartCarrier::B2b,
+                (ConsolidatedFamily::A, 0x32) => B2OwnerChartCarrier::A32,
+                _ => return None,
+            };
+            if !crate::wire::records::records_are_contiguous(window)
+                || window.iter().any(|record| !record.physically_contiguous)
+                || window[1..]
+                    .iter()
+                    .any(|record| record.family != ConsolidatedFamily::B)
+                || references.class != 0x37
+                || [side_05.class, side_09.class, side_0d.class, side_11.class] != [0x18; 4]
+                || owner_record.class != 0x62
+            {
+                return None;
+            }
+            let owner = owners.get(&(owner_record.source_index, owner_record.range.start))?;
+            let points = [side_05, side_09, side_0d, side_11]
+                .map(|record| parameter_points.get(&record.range.start).cloned())
+                .into_iter()
+                .collect::<Option<Vec<_>>>()?;
+            let points: [B2ParameterPoint; 4] = points.try_into().ok()?;
+            if points.each_ref().map(|point| point.prefix) != [0x05, 0x09, 0x0d, 0x11]
+                || !owner_chart_bounds_match(carrier_kind, &points, &owner.numeric_tail)
+            {
+                return None;
+            }
+            Some(B2OwnerChart {
+                owner_pos: owner.pos,
+                source_index: owner.source_index,
+                carrier_pos: carrier.range.start,
+                carrier: carrier_kind,
+                bridge_pos: references.range.start,
+                side_axis: if carrier_kind == B2OwnerChartCarrier::B28 {
+                    B2OwnerChartSideAxis::FirstParameter
+                } else {
+                    B2OwnerChartSideAxis::SecondParameter
+                },
+                parameter_points: points,
+            })
+        })
+        .collect()
+}
+
+fn owner_chart_bounds_match(
+    carrier: B2OwnerChartCarrier,
+    points: &[B2ParameterPoint; 4],
+    tail: &B2OwnerNumericTail,
+) -> bool {
+    let [first_lower, first_upper, second_lower, second_upper] =
+        if carrier == B2OwnerChartCarrier::B28 {
+            [tail.lower[0], tail.upper[0], tail.lower[1], tail.upper[1]]
+        } else {
+            [tail.lower[1], tail.upper[1], tail.lower[0], tail.upper[0]]
+        };
+    let side_lower = [first_lower, second_lower, second_upper];
+    let side_upper = [first_upper, second_lower, second_upper];
+    let side_05 = parameter_point_matches_tuple(&points[0], side_lower);
+    let side_09 = parameter_point_matches_tuple(&points[1], side_upper);
+    let sides_reversed = parameter_point_matches_tuple(&points[0], side_upper)
+        && parameter_point_matches_tuple(&points[1], side_lower);
+    (side_05 && side_09 || sides_reversed)
+        && parameter_point_contains(&points[2], second_lower)
+        && parameter_point_contains(&points[3], second_upper)
+}
+
+fn parameter_point_scalars(point: &B2ParameterPoint) -> Vec<f64> {
+    match &point.payload {
+        B2ParameterPointPayload::Scalar { value } => vec![*value],
+        B2ParameterPointPayload::Uv { uv } => uv.to_vec(),
+        B2ParameterPointPayload::StationUv { station, uv } => vec![*station, uv[0], uv[1]],
+        B2ParameterPointPayload::FiveScalars { values } => values.to_vec(),
+    }
+}
+
+fn parameter_point_matches_tuple(point: &B2ParameterPoint, expected: [f64; 3]) -> bool {
+    let values = parameter_point_scalars(point);
+    expected
+        .into_iter()
+        .filter(|value| *value != 0.0)
+        .eq(values)
+}
+
+fn parameter_point_contains(point: &B2ParameterPoint, expected: f64) -> bool {
+    expected == 0.0 || parameter_point_scalars(point).contains(&expected)
+}
+
 fn b2_fixed_owner_packet(
     data: &[u8],
     frame: ConsolidatedFrame,
@@ -1121,6 +1280,9 @@ pub(crate) fn b2_parameter_points_from_records(
             let control = *data.get(frame.payload + 1)?;
             let at = frame.payload + 2;
             let payload = match layout {
+                0x0a => B2ParameterPointPayload::Scalar {
+                    value: f64_le(data, at)?,
+                },
                 0x12 => B2ParameterPointPayload::Uv {
                     uv: read_f64_array::<2>(data, at)?,
                 },
@@ -1137,6 +1299,7 @@ pub(crate) fn b2_parameter_points_from_records(
                 _ => return None,
             };
             let finite = match &payload {
+                B2ParameterPointPayload::Scalar { value } => value.is_finite(),
                 B2ParameterPointPayload::Uv { uv } => uv.iter().all(|v| v.is_finite()),
                 B2ParameterPointPayload::StationUv { station, uv } => {
                     station.is_finite() && uv.iter().all(|v| v.is_finite())

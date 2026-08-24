@@ -339,6 +339,90 @@ fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
 }
 
 #[test]
+fn owner_chart_requires_exact_source_closed_selector_rectangle() {
+    use crate::families::b2::records::{B2OwnerChartCarrier, B2OwnerChartSideAxis};
+
+    for (carrier_class, carrier, side_axis) in [
+        (
+            0x28,
+            B2OwnerChartCarrier::B28,
+            B2OwnerChartSideAxis::FirstParameter,
+        ),
+        (
+            0x2b,
+            B2OwnerChartCarrier::B2b,
+            B2OwnerChartSideAxis::SecondParameter,
+        ),
+        (
+            0x32,
+            B2OwnerChartCarrier::A32,
+            B2OwnerChartSideAxis::SecondParameter,
+        ),
+    ] {
+        let bytes = b2_owner_chart_stream(carrier_class);
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let [chart] = crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records)
+            .try_into()
+            .unwrap_or_else(|charts: Vec<_>| {
+                panic!("one class-{carrier_class:02x} owner chart, got {charts:?}")
+            });
+        assert_eq!(chart.source_index, 0);
+        assert_eq!(chart.carrier, carrier);
+        assert_eq!(chart.side_axis, side_axis);
+        assert_eq!(
+            chart.parameter_points.map(|point| point.prefix),
+            [0x05, 0x09, 0x0d, 0x11]
+        );
+
+        let owner_pos = chart.owner_pos;
+        let records = crate::wire::records::consolidated_records_in_sources(
+            &bytes,
+            [
+                std::iter::once(0..owner_pos),
+                std::iter::once(owner_pos..bytes.len()),
+            ],
+        );
+        assert!(
+            crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records).is_empty()
+        );
+    }
+}
+
+#[test]
+fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
+    let valid = b2_owner_chart_stream(0x2b);
+    let records = crate::wire::records::consolidated_records(&valid);
+    let side_05 = records
+        .iter()
+        .find(|record| record.class == 0x18)
+        .expect("first owner-chart side");
+
+    let mut wrong_selector = valid.clone();
+    wrong_selector[side_05.payload.start] = 0x09;
+    let records = crate::wire::records::consolidated_records(&wrong_selector);
+    assert!(
+        crate::families::b2::records::b2_owner_charts_from_records(&wrong_selector, &records)
+            .is_empty()
+    );
+
+    let mut wrong_bound = valid.clone();
+    wrong_bound[side_05.payload.start + 2..side_05.payload.start + 10]
+        .copy_from_slice(&8.0f64.to_le_bytes());
+    let records = crate::wire::records::consolidated_records(&wrong_bound);
+    assert!(
+        crate::families::b2::records::b2_owner_charts_from_records(&wrong_bound, &records)
+            .is_empty()
+    );
+
+    let mut separated = valid;
+    separated.insert(side_05.range.start, 0x00);
+    let records = crate::wire::records::consolidated_records(&separated);
+    assert!(
+        crate::families::b2::records::b2_owner_charts_from_records(&separated, &records).is_empty()
+    );
+}
+
+#[test]
 fn b2_counted_61_parser_separates_references_from_tail() {
     let records = crate::families::b2::records::b2_counted_61(&b2_counted_61_stream());
     assert_eq!(records.len(), 1);

@@ -361,7 +361,7 @@ population can displace the required face population.
 
 **Question.** What do the binary64 and binary32 lanes represent in tagged alternating and width-coded fixed-nine owner packets?
 
-**Known.** In the all-compact grammar, the three binary32 pairs are the model-space X, Y, and Z bounds of the owned face boundary. In tagged alternating packets with an established NURBS-carrier relation, the binary64 pairs are the carrier parameter rectangle and may cover a proper subdomain. The tagged binary32 lane is not a direct face-boundary box. Width-coded binary32 bounds can enclose more than one face boundary.
+**Known.** In the all-compact grammar, the three binary32 pairs are the model-space X, Y, and Z bounds of the owned face boundary. In tagged alternating packets with an established NURBS-carrier relation, the binary64 pairs are the carrier parameter rectangle and may cover a proper subdomain. The source-closed owner carrier chart in `catia.md` §6.4 also proves that the binary64 pairs are the carrier parameter rectangle for its fixed-nine packet. The tagged binary32 lane is not a direct face-boundary box. Width-coded binary32 bounds can enclose more than one face boundary.
 
 **Need.** We must define the binary64 lane in the all-compact and width-coded grammars and the binary32 lane in the tagged alternating and width-coded grammars.
 
@@ -369,7 +369,7 @@ population can displace the required face population.
 
 **Question.** Which field binds a fixed `b2`, `b3`, or `b4 03 62` owner packet to its face record?
 
-**Known.** A complete class-`0x5f` node immediately preceding a fixed-nine owner binds to that owner when its target's checked successor is the ninth owner identity. Terminal `03 05` admits every fixed-nine grammar. Terminal `03 03` admits the all-compact grammar only. The node target and owner identities are allocation-local. Every compact fixed-nine identity retains its wire addressing form. Backward-distance identities resolve within the packet's contiguous local class-`0x5d`/`0x5e` allocation sequence; raw weak identities do not enter that walk.
+**Known.** A complete class-`0x5f` node immediately preceding a fixed-nine owner binds to that owner when its target's checked successor is the ninth owner identity. Terminal `03 05` admits every fixed-nine grammar. Terminal `03 03` admits the all-compact grammar only. The node target and owner identities are allocation-local. Every compact fixed-nine identity retains its wire addressing form. Backward-distance identities resolve within the packet's contiguous local class-`0x5d`/`0x5e` allocation sequence; raw weak identities do not enter that walk. The source-closed carrier/reference/four-side/owner production binds the owner packet to one carrier chart and proves its complete parameter rectangle. This relation does not assign a standard face ordinal.
 
 **Need.** We must identify the allocation-group relation that maps the bound node target to a standard face ordinal without comparing local identities across groups.
 
@@ -387,9 +387,9 @@ population can displace the required face population.
 
 **Question.** What does each of the four prefix selectors in a `b2`, `b3`, or `b4 03 18` parameter-point record select?
 
-**Known.** The decoder retains the four selectors and the parameter-point payload.
+**Known.** The decoder retains the four selectors and the parameter-point payload. In the source-closed owner carrier chart, selectors `05` and `09` are opposing constant-parameter sides, and selectors `0d` and `11` contain the lower and upper orthogonal bounds. `B:28` uses constant first-parameter sides. `B:2b` and `A:32` use constant second-parameter sides. `catia.md` §6.4 defines the exact scalar relation and zero elision.
 
-**Need.** We must know the selectors to bind the point to its carrier and parameter role.
+**Need.** We must define these selectors outside the owner carrier chart and assign the remaining side-record scalars.
 
 ### SN-21. `b2 03 3b` chart program
 
@@ -427,7 +427,7 @@ population can displace the required face population.
 
 **Question.** What higher-level object does each derived `b2`, `b3`, or `b4 03 5f` to `0x62` packet relation represent?
 
-**Known.** A structurally complete class-`0x5f` face node retains either its compact or tagged-`u16` target encoding and its two terminal bytes. The `03 05` terminal form retains a derived relation to an immediately adjacent class-`0x62` packet when the checked successor identity matches the packet's final reference. The `03 03` terminal form retains the same relation for an all-compact fixed-nine packet. Other terminal and packet-grammar combinations remain unassigned. The relation does not assign a higher-level object or allocation role.
+**Known.** A structurally complete class-`0x5f` face node retains either its compact or tagged-`u16` target encoding and its two terminal bytes. The `03 05` terminal form retains a derived relation to an immediately adjacent class-`0x62` packet when the checked successor identity matches the packet's final reference. The `03 03` terminal form retains the same relation for an all-compact fixed-nine packet. Other terminal and packet-grammar combinations remain unassigned. A separate source-closed production proves that some fixed-nine packets terminate a support-bound carrier chart. Neither relation assigns a higher-level feature or standard face role.
 
 **Need.** We must know the object role to assign the owner to a feature or face.
 

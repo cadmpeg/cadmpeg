@@ -22,7 +22,7 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 281;
+pub const CATIA_NATIVE_VERSION: u32 = 282;
 /// Native schema version associating exact scalar nominals with `Range` intervals.
 #[cfg(test)]
 pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
@@ -263,6 +263,47 @@ pub struct CatiaOwnerIdentityTarget {
     pub target_class: u8,
 }
 
+/// Parameter axis held constant by selectors `0x05` and `0x09` in a
+/// consolidated owner chart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaOwnerChartSideAxis {
+    /// First surface parameter.
+    FirstParameter,
+    /// Second surface parameter.
+    SecondParameter,
+}
+
+/// Family-and-class carrier production that opens an owner chart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaOwnerChartCarrier {
+    /// B-family class-`0x28` cylinder carrier.
+    B28,
+    /// B-family class-`0x2b` torus carrier.
+    B2b,
+    /// A-family class-`0x32` carrier.
+    A32,
+}
+
+/// Source-closed carrier chart terminated by an owner packet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaOwnerChartRelation {
+    /// Carrier record byte offset.
+    pub carrier_byte_offset: u64,
+    /// Family-and-class carrier production.
+    pub carrier: CatiaOwnerChartCarrier,
+    /// Class-`0x37` bridge-record byte offset.
+    pub bridge_byte_offset: u64,
+    /// Axis held constant by selectors `0x05` and `0x09`.
+    pub side_axis: CatiaOwnerChartSideAxis,
+    /// Byte offsets of selectors `0x05`, `0x09`, `0x0d`, and `0x11`.
+    pub parameter_point_byte_offsets: [u64; 4],
+}
+
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -312,6 +353,9 @@ pub struct CatiaConsolidatedOwnerPacket {
     /// predicate succeeds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face_node: Option<CatiaFaceNodeRelation>,
+    /// Complete carrier/reference/side chart that this packet terminates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_chart: Option<CatiaOwnerChartRelation>,
 }
 
 /// One structurally complete consolidated `B:29` cone chart.
@@ -452,6 +496,11 @@ pub struct CatiaConsolidatedEmbeddedCylinder {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatiaConsolidatedParameterPointPayload {
+    /// One retained scalar after two zero tuple fields are elided.
+    Scalar {
+        /// Stored scalar.
+        value: f64,
+    },
     /// Two surface-chart coordinates.
     Uv {
         /// Surface-chart coordinates.
@@ -471,6 +520,22 @@ pub enum CatiaConsolidatedParameterPointPayload {
     },
 }
 
+#[cfg(test)]
+impl CatiaConsolidatedParameterPointPayload {
+    fn is_valid_for_layout(&self, layout: u8) -> bool {
+        match self {
+            Self::Scalar { value } => layout == 0x0a && value.is_finite(),
+            Self::Uv { uv } => layout == 0x12 && uv.iter().all(|value| value.is_finite()),
+            Self::StationUv { station, uv } => {
+                layout == 0x1a && station.is_finite() && uv.iter().all(|value| value.is_finite())
+            }
+            Self::FiveScalars { values } => {
+                layout == 0x2a && values.iter().all(|value| value.is_finite())
+            }
+        }
+    }
+}
+
 /// One complete consolidated `B:18` parameter-space record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -481,7 +546,7 @@ pub struct CatiaConsolidatedParameterPoint {
     pub byte_offset: u64,
     /// Complete framed-record length.
     pub byte_len: u64,
-    /// Payload-layout discriminator (`0x12`, `0x1a`, or `0x2a`).
+    /// Payload-layout discriminator (`0x0a`, `0x12`, `0x1a`, or `0x2a`).
     pub layout: u8,
     /// First byte of the two-byte class-specific prefix.
     pub prefix: u8,
@@ -6071,6 +6136,9 @@ fn consolidated_parameter_points(
         .enumerate()
         .map(|(index, point)| {
             let payload = match point.payload {
+                B2ParameterPointPayload::Scalar { value } => {
+                    CatiaConsolidatedParameterPointPayload::Scalar { value }
+                }
                 B2ParameterPointPayload::Uv { uv } => {
                     CatiaConsolidatedParameterPointPayload::Uv { uv }
                 }
@@ -6501,6 +6569,40 @@ fn consolidated_owner_packets(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<CatiaConsolidatedOwnerPacket> {
+    let owner_charts = crate::families::b2::records::b2_owner_charts_from_records(bytes, records)
+        .into_iter()
+        .map(|chart| {
+            (
+                (chart.source_index, chart.owner_pos),
+                CatiaOwnerChartRelation {
+                    carrier_byte_offset: chart.carrier_pos as u64,
+                    carrier: match chart.carrier {
+                        crate::families::b2::records::B2OwnerChartCarrier::B28 => {
+                            CatiaOwnerChartCarrier::B28
+                        }
+                        crate::families::b2::records::B2OwnerChartCarrier::B2b => {
+                            CatiaOwnerChartCarrier::B2b
+                        }
+                        crate::families::b2::records::B2OwnerChartCarrier::A32 => {
+                            CatiaOwnerChartCarrier::A32
+                        }
+                    },
+                    bridge_byte_offset: chart.bridge_pos as u64,
+                    side_axis: match chart.side_axis {
+                        crate::families::b2::records::B2OwnerChartSideAxis::FirstParameter => {
+                            CatiaOwnerChartSideAxis::FirstParameter
+                        }
+                        crate::families::b2::records::B2OwnerChartSideAxis::SecondParameter => {
+                            CatiaOwnerChartSideAxis::SecondParameter
+                        }
+                    },
+                    parameter_point_byte_offsets: chart
+                        .parameter_points
+                        .map(|point| point.pos as u64),
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
     let mut identity_targets = HashMap::<(usize, usize), Vec<CatiaOwnerIdentityTarget>>::new();
     for target in
         crate::families::b2::records::b2_owner_identity_targets_from_records(bytes, records)
@@ -6626,8 +6728,9 @@ fn consolidated_owner_packets(
                         }
                     },
                     target: face_node.target,
-                    terminal: face_node.terminal,
+                        terminal: face_node.terminal,
                     }),
+                owner_chart: owner_charts.get(&(source_index, pos)).cloned(),
             },
         )
         .collect()

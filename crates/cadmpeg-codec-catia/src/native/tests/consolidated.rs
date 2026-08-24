@@ -839,6 +839,32 @@ fn native_namespace_retains_fixed_owner_allocation_targets() {
 }
 
 #[test]
+fn native_namespace_retains_source_closed_owner_chart() {
+    let native = crate::native::CatiaNative::decode(&b2_owner_chart_stream(0x2b));
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+    let chart = packet.owner_chart.as_ref().expect("owner chart relation");
+    assert_eq!(chart.carrier, crate::native::CatiaOwnerChartCarrier::B2b);
+    assert_eq!(
+        chart.side_axis,
+        crate::native::CatiaOwnerChartSideAxis::SecondParameter
+    );
+    assert!(chart.carrier_byte_offset < chart.bridge_byte_offset);
+    assert!(chart.bridge_byte_offset < chart.parameter_point_byte_offsets[0]);
+    assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA owner chart");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA owner chart"),
+        native
+    );
+}
+
+#[test]
 fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
     let native = crate::native::CatiaNative::decode(&b2_adjacent_face_counted_owner_stream());
     let [packet] = native.consolidated_owner_packets.as_slice() else {
