@@ -136,6 +136,17 @@ class PatternFilters(unittest.TestCase):
             ["1e-6", "1e-7", "1e-8", "1e-9", "1e-10", "1e-11", "1e-12"],
         )
 
+    def test_vec_repeat_scanner_ignores_nested_delimiters_and_strings(self) -> None:
+        text = r'''
+            let bytes = vec![0u8; len];
+            let nested = vec![[0; 2]; outer_len];
+            let message = vec![format!("a; b")];
+            // vec![0; commented_len]
+        '''
+        self.assertEqual(
+            list(ratchet.iter_vec_repeat_counts(text)), ["len", "outer_len"]
+        )
+
     def test_from_endian_counts_non_codec_crates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

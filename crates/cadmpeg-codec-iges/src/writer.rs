@@ -7,6 +7,7 @@
 
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::loss::IgesLossCode;
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
@@ -4178,7 +4179,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
                 "IGES NURBS surface weight count does not match poles".into(),
             ));
         }
-        None => vec![1.0; pole_count],
+        None => alloc_filled(pole_count, 1.0, "iges NURBS surface weights")?,
     };
     let u_range = [nurbs.u_knots[u_degree], nurbs.u_knots[u_count]];
     let v_range = [nurbs.v_knots[v_degree], nurbs.v_knots[v_count]];
@@ -4668,7 +4669,7 @@ fn encode_nurbs(
                 "IGES NURBS weight count does not match control points".into(),
             ));
         }
-        None => vec![1.0; control_count],
+        None => alloc_filled(control_count, 1.0, "iges NURBS weights")?,
     };
     let polynomial = weights
         .first()

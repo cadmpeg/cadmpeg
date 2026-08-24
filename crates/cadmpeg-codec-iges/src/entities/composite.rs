@@ -7,7 +7,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
@@ -410,11 +410,19 @@ fn elevate_linear_bezier_to_degree(
         control_points.push(Point3::new(x / weight, y / weight, z / weight));
     }
     curve.degree = target_degree as u32;
-    curve.knots = [
-        vec![interval[0]; target_degree + 1],
-        vec![interval[1]; target_degree + 1],
-    ]
-    .concat();
+    let Some(knot_count) = target_degree.checked_add(1) else {
+        return false;
+    };
+    let Ok(mut knots) = alloc_filled(knot_count, interval[0], "iges composite elevated knots")
+    else {
+        return false;
+    };
+    let Ok(second_knots) = alloc_filled(knot_count, interval[1], "iges composite elevated knots")
+    else {
+        return false;
+    };
+    knots.extend(second_knots);
+    curve.knots = knots;
     curve.control_points = control_points;
     curve.weights = rational.then(|| homogeneous.into_iter().map(|entry| entry.0).collect());
     true
@@ -604,9 +612,15 @@ fn concatenate_nurbs(
             .iter()
             .map(|knot| (knot - child_start) + cursor)
             .collect::<Vec<_>>();
-        let mut child_weights = curve
-            .weights
-            .unwrap_or_else(|| vec![1.0; curve.control_points.len()]);
+        let mut child_weights = match curve.weights {
+            Some(weights) => weights,
+            None => alloc_filled(
+                curve.control_points.len(),
+                1.0,
+                "iges composite child weights",
+            )
+            .ok()?,
+        };
         if child_weights
             .iter()
             .any(|weight| !weight.is_finite() || *weight <= 0.0)

@@ -8,7 +8,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, knots_nondecreasing, Curve, CurveGeometry, NurbsCurve,
@@ -97,7 +97,12 @@ fn insert_homogeneous_curve_knot(
     if multiplicity >= degree {
         return Some(());
     }
-    let mut inserted = vec![[0.0; 4]; count + 1];
+    let mut inserted = alloc_filled(
+        count.checked_add(1)?,
+        [0.0; 4],
+        "iges surface knot insertion",
+    )
+    .ok()?;
     inserted[..=span - degree].copy_from_slice(&controls[..=span - degree]);
     inserted[span - multiplicity + 1..].copy_from_slice(&controls[span - multiplicity..]);
     for index in span - degree + 1..=span - multiplicity {
