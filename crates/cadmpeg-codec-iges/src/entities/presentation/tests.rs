@@ -297,6 +297,39 @@ fn color_definition_ignores_nonsemantic_directory_fields() {
 }
 
 #[test]
+fn v4_property_color_is_ignored_by_presentation_projection() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global_and_directory_fields(
+                &[OwnedTestEntity {
+                    entity_type: 406,
+                    form: 15,
+                    label: "NAME".into(),
+                    status: "00000000",
+                    parameters: "406,1,7HBRACKET;".into(),
+                }],
+                GLOBAL_V4,
+                &[(1, -5)],
+                &[],
+                &[],
+                &[],
+                &[],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let properties = &result.ir().native.namespace("iges").unwrap().arenas["product_properties"];
+    assert_eq!(properties.len(), 1);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::DisplayDataNotProjected.kind()
+            && loss
+                .message
+                .contains("Directory color number or definition pointer is invalid")
+    }));
+}
+
+#[test]
 fn color_definition_requires_a_standard_fallback_color() {
     let result = IgesCodec
         .decode(

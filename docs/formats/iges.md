@@ -183,6 +183,8 @@ Type 410 View Entity Directory Entries require the general subordinate-switch fi
 
 Type 404 Drawing Entity Directory Entries require subordinate status `00` and a nonzero Entity Use Flag in IGES 4.0; Structure, Line Font, Line Weight, and Color are ignored. IGES 5.0 through 5.3 require Entity Use Flag `01` and zero Structure, Line Font, Line Weight, and Color fields. Blank status and hierarchy are ignored. Form `0` is defined in the IGES 4.0 entity table, and Form `1` is the later rotated-drawing form. These requirements are defined by [IGES 4.0 §2.2, Table 3](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b/pdf/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf), the V5.0 per-entity Directory Entry rules incorporated by ECO E580 in the [IGES 5.0 Recommended Practices Guide](https://nvlpubs.nist.gov/nistpubs/Legacy/IR/nistir4600.pdf), and [IGES 5.3 §4.96](https://paulbourke.net/dataformats/iges/IGES.pdf).
 
+IGES 4.0 Type 406 Property Entity Directory Entries ignore Color. The presentation projector therefore does not resolve or validate the Color field for Type 406 entries in the 4.0 profile; the field remains a retained Directory value and does not create a color relationship. This is the Type 406 row in [IGES 4.0 Table 3](https://www.govinfo.gov/content/pkg/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b/pdf/GOVPUB-C13-7b81ba8b0f709555f162cb496aa63b3b.pdf).
+
 A Directory Entry whose fields do not satisfy the rules above does not refuse the file. The record quarantine section states the identity and retained bytes of a quarantined record, and the loss it charges.
 
 ## Parameter Data section

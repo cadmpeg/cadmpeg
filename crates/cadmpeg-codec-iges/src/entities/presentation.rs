@@ -129,6 +129,10 @@ fn text_template_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bo
     }
 }
 
+fn directory_color_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    !(matches!(dialect, Dialect::V4_0) && entry.entity_type == 406)
+}
+
 fn source_sequence(id: &str) -> Option<u32> {
     let marker = id.rfind("#D").into_iter().chain(id.rfind(":D")).max()? + 2;
     let digits = id[marker..].bytes().take_while(u8::is_ascii_digit).count();
@@ -470,7 +474,10 @@ pub(super) fn project(
         }
     };
 
-    for entry in directory.iter().filter(|entry| entry.color != 0) {
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.color != 0 && directory_color_is_semantic(entry, global.dialect()))
+    {
         if resolve(entry.color).is_none() {
             losses.push(loss(
                 entry,
