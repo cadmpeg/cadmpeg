@@ -36,6 +36,7 @@ use crate::layout::compact_legacy_90_geometry_line as legacy_90;
 use crate::layout::compact_legacy_96_profile_roster_curve as legacy_96_roster;
 use crate::layout::compact_legacy_terminal_diameter_circle as diam_circ;
 use crate::layout::current_extended_zero_tail_92_profile_curve as zero_tail_92;
+use crate::layout::current_profile_104_indexed_circle as profile_circle_104;
 use crate::layout::current_profile_circle_dimension as profile_circle_dim;
 use crate::layout::extended_geometry_104_indexed_arc as geom_104;
 use crate::layout::extended_geometry_104_indexed_circle as geom_circle_104;
@@ -3108,26 +3109,43 @@ pub(super) fn compact_profile_full_circle(
     let offset = usize::try_from(circle.offset).ok()?;
     let prefix = payload.get(offset..offset + SKETCH_MARKER.len())?;
     let kind = marker_native_code(payload, offset)?;
-    let supported_kind = prefix == LEGACY_EXTENDED_SKETCH_MARKER
-        && kind == 1
-        && circle.kind == SketchInputKind::LineOrCircle
-        || prefix == SKETCH_MARKER && kind == 2 && circle.kind == SketchInputKind::Arc;
+    let supported_kind = if kind == 1 && circle.kind == SketchInputKind::LineOrCircle {
+        prefix == LEGACY_EXTENDED_SKETCH_MARKER || prefix == SKETCH_MARKER
+    } else {
+        prefix == SKETCH_MARKER && kind == 2 && circle.kind == SketchInputKind::Arc
+    };
     if !supported_kind
-        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || payload.get(
+            offset + profile_circle_104::PROFILE_LOCUS
+                ..offset
+                    + profile_circle_104::PROFILE_LOCUS
+                    + profile_circle_104::PROFILE_LOCUS_VALUE.len(),
+        ) != Some(&profile_circle_104::PROFILE_LOCUS_VALUE)
         || marker_profile_curve_role(payload, offset) != Some(1)
-        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
-        || payload.get(offset + 31..offset + 39)
-            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
-        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
-        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
-        || payload.get(offset + 72..offset + 76) != Some(&1i32.to_le_bytes())
-        || payload.get(offset + 78..offset + 94)
-            != Some(&[
-                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
-                0xff, 0xff,
-            ])
-        || payload.get(offset + 94..offset + 96) != Some(&[0; 2])
+        || View::u16_le_at(payload, offset + profile_circle_104::STATE)
+            != Some(profile_circle_104::STATE_VALUE)
+        || payload.get(
+            offset + profile_circle_104::SELECTOR
+                ..offset + profile_circle_104::SELECTOR + profile_circle_104::SELECTOR_VALUE.len(),
+        ) != Some(&profile_circle_104::SELECTOR_VALUE)
+        || View::f64_le_at(payload, offset + profile_circle_104::STATE_SCALAR)
+            != Some(profile_circle_104::STATE_SCALAR_VALUE)
+        || View::u32_le_at(payload, offset + profile_circle_104::ENDPOINT_SELECTOR)
+            != Some(profile_circle_104::ENDPOINT_SELECTOR_VALUE)
+        || View::f64_le_at(payload, offset + profile_circle_104::SIGNED_RADIUS_SELECTOR)
+            != Some(profile_circle_104::SIGNED_RADIUS_SELECTOR_VALUE)
+        || payload.get(
+            offset + profile_circle_104::ARC_SELECTOR
+                ..offset + profile_circle_104::ARC_SELECTOR + 4,
+        ) != Some(&1i32.to_le_bytes())
+        || payload.get(
+            offset + profile_circle_104::REFERENCE_SENTINELS
+                ..offset
+                    + profile_circle_104::REFERENCE_SENTINELS
+                    + profile_circle_104::REFERENCE_SENTINELS_VALUE.len(),
+        ) != Some(&profile_circle_104::REFERENCE_SENTINELS_VALUE)
+        || View::u16_le_at(payload, offset + profile_circle_104::TERMINATOR)
+            != Some(profile_circle_104::TERMINATOR_VALUE)
         || !matches!(
             compact_indexed_curve_record_end(payload, offset),
             Some(
@@ -3137,9 +3155,12 @@ pub(super) fn compact_profile_full_circle(
     {
         return None;
     }
-    let radial_index = View::u16_le_at(payload, offset + 56)?;
+    let radial_index = View::u16_le_at(payload, offset + profile_circle_104::RADIAL_INDEX)?;
     if radial_index == 0
-        || payload.get(offset + 58..offset + 60) != Some(&radial_index.to_le_bytes())
+        || payload.get(
+            offset + profile_circle_104::RADIAL_INDEX_REPEAT
+                ..offset + profile_circle_104::RADIAL_INDEX_REPEAT + 2,
+        ) != Some(&radial_index.to_le_bytes())
     {
         return None;
     }

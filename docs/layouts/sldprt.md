@@ -705,6 +705,40 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `current_profile_104_indexed_circle`
+
+Spec §2 · layout: byte offsets · size: 104 B
+
+The repeated radial index uses the unique direct-object or one-based point-roster resolution rule.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | 104-byte compact profile-locus full circle |
+| 17 | 4 | `native_kind` | `u32` | little | spec | current prefix with native code `1` · value `1` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile-locus full circle · value `[4, 0, 2, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | u16 `1` at marker +29 · value `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_scalar` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `radial_index` | `u16` | little | spec | equal nonzero u16 values at marker +56 and marker +58 |
+| 58 | 2 | `radial_index_repeat` | `u16` | little | spec | equal nonzero u16 values at marker +56 and marker +58 |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 · value `1` |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | f64 `-1` at marker +64 · value `-1.0` |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | signed selector `1` or `-1` |
+| 76 | 2 | `auxiliary_index` | `u16` | little | spec | four `fe ff ff ff` sentinels |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | four `fe ff ff ff` sentinels · value `[254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255]` |
+| 94 | 2 | `terminator` | `u16` | little | spec | zero u16 at marker +94 · value `0` |
+| 96 | 8 | `trailer_identities` | `u32[2]` | little | spec | trailer identities |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `current_profile_circle_dimension`
 
 Spec §2 · layout: byte offsets · size: 145 B

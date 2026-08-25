@@ -330,6 +330,20 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
         super::compact_profile_full_circle(&payload, &current_circle, &markers),
         Some(([0.0, 0.0], 3.0))
     );
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    let mut current_kind_one_entities = entities.clone();
+    current_kind_one_entities[1].object_index = None;
+    let current_kind_one_markers = current_kind_one_entities.iter().collect::<Vec<_>>();
+    let current_kind_one_circle = &current_kind_one_entities[3];
+    assert_eq!(
+        super::compact_profile_full_circle(
+            &payload,
+            current_kind_one_circle,
+            &current_kind_one_markers,
+        ),
+        Some(([0.0, 0.0], 3.0))
+    );
+    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
     payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     payload[56..60].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);

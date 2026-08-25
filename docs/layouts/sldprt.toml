@@ -2247,6 +2247,153 @@ size = 9
 note = "The state value begins at +48; bytes +39 through +47 are reserved."
 
 [[record]]
+name = "current_profile_104_indexed_circle"
+kind = "byte"
+section = "2"
+anchor = "A 104-byte compact profile-locus full circle uses the extended prefix"
+size = 104
+endianness = "little"
+note = "The repeated radial index uses the unique direct-object or one-based point-roster resolution rule."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "104-byte compact profile-locus full circle"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "current prefix with native code `1`"
+value = 1
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile-locus full circle"
+value = [4, 0, 2, 0]
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+value = 1
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "u16 `1` at marker +29"
+value = 1
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 80 bf 00 00 04 00` at marker +31"
+value = [0, 0, 128, 191, 0, 0, 4, 0]
+
+[[record.field]]
+name = "state_scalar"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+value = 1.0
+
+[[record.field]]
+name = "radial_index"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "equal nonzero u16 values at marker +56 and marker +58"
+
+[[record.field]]
+name = "radial_index_repeat"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "equal nonzero u16 values at marker +56 and marker +58"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +60"
+value = 1
+
+[[record.field]]
+name = "signed_radius_selector"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "f64 `-1` at marker +64"
+value = -1.0
+
+[[record.field]]
+name = "arc_selector"
+offset = 72
+type = "i32"
+source = "spec"
+anchor = "signed selector `1` or `-1`"
+
+[[record.field]]
+name = "auxiliary_index"
+offset = 76
+type = "u16"
+source = "spec"
+anchor = "four `fe ff ff ff` sentinels"
+
+[[record.field]]
+name = "reference_sentinels"
+offset = 78
+type = "bytes[16]"
+source = "spec"
+anchor = "four `fe ff ff ff` sentinels"
+value = [254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255]
+
+[[record.field]]
+name = "terminator"
+offset = 94
+type = "u16"
+source = "spec"
+anchor = "zero u16 at marker +94"
+value = 0
+
+[[record.field]]
+name = "trailer_identities"
+offset = 96
+type = "u32[2]"
+source = "spec"
+anchor = "trailer identities"
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The profile locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
 name = "current_profile_circle_dimension"
 kind = "byte"
 section = "2"
