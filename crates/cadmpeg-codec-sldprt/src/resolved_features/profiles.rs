@@ -22,18 +22,18 @@ use super::endpoints::{
     compact_legacy_terminal_diameter_circle, compact_profile_full_circle, coordinate_circle_radius,
     coordinate_ellipse_axes, coordinate_roster_arc_center, coordinate_roster_full_circle,
     current_compact_roster_selected_axis, current_indexed_arc_reverses_center_sweep,
-    equal_index_coordinate_roster_full_circle, extended_declared_inline_line_endpoints,
-    extended_geometry_full_circle, extended_identity_inline_line_endpoints,
-    extended_linked_inline_line_endpoints, extended_wide_construction_line_roster_indices,
-    implicit_coordinate_roster_curve_endpoints, implicit_profile_chain_closure_endpoints,
-    indexed_arc_uses_coordinate_center, inferred_point_coordinates_by_index,
-    legacy_compact_diameter_arc_center, legacy_coordinate_circle_radius,
-    legacy_direct_compact_selected_axis_endpoint_indices, legacy_marker104_arc_center,
-    legacy_profile_radial_circle, legacy_undetailed_profile_line, legacy_unlocated_geometry_handle,
-    marker_is_selected_construction_line, marker_profile_curve_role, minor_arc_geometry,
-    output_curve_endpoint_markers, packed_compact_legacy_curve_endpoint_indices,
-    relation_reference_curve_record, terminal_relation_class_offset, unique_arc_center_marker,
-    wide_coordinate_roster_full_circle,
+    current_profile_circle_dimension, equal_index_coordinate_roster_full_circle,
+    extended_declared_inline_line_endpoints, extended_geometry_full_circle,
+    extended_identity_inline_line_endpoints, extended_linked_inline_line_endpoints,
+    extended_wide_construction_line_roster_indices, implicit_coordinate_roster_curve_endpoints,
+    implicit_profile_chain_closure_endpoints, indexed_arc_uses_coordinate_center,
+    inferred_point_coordinates_by_index, legacy_compact_diameter_arc_center,
+    legacy_coordinate_circle_radius, legacy_direct_compact_selected_axis_endpoint_indices,
+    legacy_marker104_arc_center, legacy_profile_radial_circle, legacy_undetailed_profile_line,
+    legacy_unlocated_geometry_handle, marker_is_selected_construction_line,
+    marker_profile_curve_role, minor_arc_geometry, output_curve_endpoint_markers,
+    packed_compact_legacy_curve_endpoint_indices, relation_reference_curve_record,
+    terminal_relation_class_offset, unique_arc_center_marker, wide_coordinate_roster_full_circle,
 };
 use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
 use super::markers::{
@@ -997,6 +997,13 @@ pub(crate) fn project_marker_backed_sketches(
                             )
                             .or_else(|| {
                                 compact_profile_full_circle(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                )
+                            })
+                            .or_else(|| {
+                                current_profile_circle_dimension(
                                     &lane.native_payload,
                                     marker,
                                     &object_markers,

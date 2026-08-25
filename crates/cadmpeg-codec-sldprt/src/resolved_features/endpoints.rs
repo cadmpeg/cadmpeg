@@ -36,6 +36,7 @@ use crate::layout::compact_legacy_90_geometry_line as legacy_90;
 use crate::layout::compact_legacy_96_profile_roster_curve as legacy_96_roster;
 use crate::layout::compact_legacy_terminal_diameter_circle as diam_circ;
 use crate::layout::current_extended_zero_tail_92_profile_curve as zero_tail_92;
+use crate::layout::current_profile_circle_dimension as profile_circle_dim;
 use crate::layout::extended_geometry_104_indexed_arc as geom_104;
 use crate::layout::extended_geometry_104_indexed_circle as geom_circle_104;
 use crate::layout::extended_geometry_locus_96_construction_line as locus_96;
@@ -3005,6 +3006,96 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
     let center_index = usize::from(center_index.checked_sub(1)?);
     let center = points.get(center_index)?.coordinates_m?;
     let radial = points.get(center_index.checked_add(1)?)?.coordinates_m?;
+    let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
+    (radius.is_finite() && radius > 0.0).then_some((center, radius))
+}
+
+pub(super) fn current_profile_circle_dimension(
+    payload: &[u8],
+    circle: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> Option<([f64; 2], f64)> {
+    let offset = usize::try_from(circle.offset).ok()?;
+    if circle.kind != SketchInputKind::LineOrCircle
+        || payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(profile_circle_dim::NATIVE_KIND_VALUE)
+        || payload.get(
+            offset + profile_circle_dim::PROFILE_LOCUS
+                ..offset + profile_circle_dim::PROFILE_LOCUS + 4,
+        ) != Some(&profile_circle_dim::PROFILE_LOCUS_VALUE)
+        || marker_profile_curve_role(payload, offset) != Some(profile_circle_dim::ROLE_VALUE)
+        || View::u16_le_at(payload, offset + profile_circle_dim::STATE)
+            != Some(profile_circle_dim::STATE_VALUE)
+        || payload.get(
+            offset + profile_circle_dim::SELECTOR
+                ..offset + profile_circle_dim::SELECTOR + profile_circle_dim::SELECTOR_VALUE.len(),
+        ) != Some(&profile_circle_dim::SELECTOR_VALUE)
+        || View::f64_le_at(payload, offset + profile_circle_dim::STATE_SCALAR)
+            != Some(profile_circle_dim::STATE_SCALAR_VALUE)
+        || View::u32_le_at(payload, offset + profile_circle_dim::ENDPOINT_SELECTOR)
+            != Some(profile_circle_dim::ENDPOINT_SELECTOR_VALUE)
+        || View::f64_le_at(payload, offset + profile_circle_dim::SIGNED_RADIUS_SELECTOR)
+            != Some(profile_circle_dim::SIGNED_RADIUS_SELECTOR_VALUE)
+        || View::i32_le_at(payload, offset + profile_circle_dim::ARC_SELECTOR)
+            .is_none_or(|selector| !matches!(selector, -1 | 1))
+        || payload.get(
+            offset + profile_circle_dim::REFERENCE_SENTINELS
+                ..offset
+                    + profile_circle_dim::REFERENCE_SENTINELS
+                    + profile_circle_dim::REFERENCE_SENTINELS_VALUE.len(),
+        ) != Some(&profile_circle_dim::REFERENCE_SENTINELS_VALUE)
+        || payload.get(
+            offset + profile_circle_dim::ZERO_TRAILER
+                ..offset
+                    + profile_circle_dim::ZERO_TRAILER
+                    + profile_circle_dim::ZERO_TRAILER_VALUE.len(),
+        ) != Some(&profile_circle_dim::ZERO_TRAILER_VALUE)
+        || !matches!(
+            View::u16_le_at(payload, offset + profile_circle_dim::DIMENSION_KIND),
+            Some(2 | 4)
+        )
+        || payload.get(
+            offset + profile_circle_dim::CLASS_MARKER
+                ..offset
+                    + profile_circle_dim::CLASS_MARKER
+                    + profile_circle_dim::CLASS_MARKER_VALUE.len(),
+        ) != Some(&profile_circle_dim::CLASS_MARKER_VALUE)
+        || View::u16_le_at(payload, offset + profile_circle_dim::CLASS_LENGTH)
+            != Some(profile_circle_dim::CLASS_LENGTH_VALUE)
+        || payload.get(
+            offset + profile_circle_dim::CLASS_NAME
+                ..offset
+                    + profile_circle_dim::CLASS_NAME
+                    + profile_circle_dim::CLASS_NAME_VALUE.len(),
+        ) != Some(&profile_circle_dim::CLASS_NAME_VALUE)
+    {
+        return None;
+    }
+    let radial_index = View::u16_le_at(payload, offset + profile_circle_dim::RADIAL_INDEX)?;
+    if radial_index == 0
+        || View::u16_le_at(payload, offset + profile_circle_dim::RADIAL_INDEX_REPEAT)
+            != Some(radial_index)
+    {
+        return None;
+    }
+    let feature_ref = circle.feature_ref.as_ref()?;
+    let mut points = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref.as_ref() == Some(feature_ref)
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .collect::<Vec<_>>();
+    points.sort_unstable_by_key(|marker| marker.offset);
+    let center = points.first()?.coordinates_m?;
+    let radial = points
+        .get(usize::from(radial_index).checked_sub(1)?)?
+        .coordinates_m?;
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }
