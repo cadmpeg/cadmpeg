@@ -1881,6 +1881,19 @@ fn try_decode_standard_population(
                 )
             }
         };
+        if matches!(
+            &definition,
+            ProceduralSurfaceDefinition::RollingBallJet { .. }
+        ) {
+            if let Some(surface_record) = surfaces
+                .iter_mut()
+                .find(|candidate| candidate.id == surface)
+            {
+                surface_record.geometry = SurfaceGeometry::Procedural {
+                    construction: procedural_id.clone(),
+                };
+            }
+        }
         annotate(
             &mut annotations,
             &procedural_id,
@@ -8148,6 +8161,14 @@ fn ensure_native_edge_support_surface(
     let id = SurfaceId(format!(
         "catia:standard:edge-support-surface#{surface_object_id}"
     ));
+    let procedural_id = match carrier {
+        crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {
+            Some(ProceduralSurfaceId(format!(
+                "catia:standard:edge-support-definition#{surface_object_id}"
+            )))
+        }
+        crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(_) => None,
+    };
     annotate(
         annotations,
         &id,
@@ -8161,7 +8182,11 @@ fn ensure_native_edge_support_surface(
             geometry.clone()
         }
         crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {
-            SurfaceGeometry::Unknown { record: None }
+            SurfaceGeometry::Procedural {
+                construction: procedural_id
+                    .clone()
+                    .expect("rolling-ball support procedure id"),
+            }
         }
     };
     ir.model.surfaces.push(Surface {
@@ -8169,14 +8194,14 @@ fn ensure_native_edge_support_surface(
         geometry,
         source_object: Some(source),
     });
-    if let crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
-        carrier_object_id,
-        definition,
-    } = carrier
+    if let (
+        Some(procedural_id),
+        crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+            carrier_object_id,
+            definition,
+        },
+    ) = (procedural_id, carrier)
     {
-        let procedural_id = ProceduralSurfaceId(format!(
-            "catia:standard:edge-support-definition#{surface_object_id}"
-        ));
         annotate(
             annotations,
             &procedural_id,

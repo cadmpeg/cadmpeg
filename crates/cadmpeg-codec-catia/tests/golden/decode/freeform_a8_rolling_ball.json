@@ -165,7 +165,8 @@
       "surfaces": [
         {
           "geometry": {
-            "kind": "unknown"
+            "construction": "catia:a8-rolling-ball:construction#0",
+            "kind": "procedural"
           },
           "id": "catia:a8-rolling-ball:surf#0",
           "source_object": {

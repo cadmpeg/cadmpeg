@@ -411,6 +411,7 @@ fn decode_e5_stream_transfers_circle_carrier() {
 
 #[test]
 fn decode_e5_stream_transfers_standalone_d8_carrier() {
+    const TEST_TOLERANCE: f64 = 1e-12;
     let mut stream = e5_d8_rolling_ball_stream();
     for id in 100..109 {
         append_e5_record(&mut stream, 0xfe, id, &[]);
@@ -426,6 +427,11 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
         panic!("one standalone rolling-ball construction");
     };
     assert_eq!(procedural.surface, result.ir().model.surfaces[0].id);
+    let surface = &result.ir().model.surfaces[0];
+    assert!(matches!(
+        &surface.geometry,
+        SurfaceGeometry::Procedural { construction } if construction == &procedural.id
+    ));
     assert!(matches!(
         procedural.definition,
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
@@ -439,6 +445,12 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
         loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
+    let point = cadmpeg_ir::eval::model_surface_point(result.ir(), &surface.geometry, 2.0, 0.5)
+        .expect("D8 surface point");
+    let expected = 2.0_f64.sqrt();
+    assert!((point.x - expected).abs() < TEST_TOLERANCE);
+    assert!((point.y - expected).abs() < TEST_TOLERANCE);
+    assert!(point.z.abs() < TEST_TOLERANCE);
 
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);

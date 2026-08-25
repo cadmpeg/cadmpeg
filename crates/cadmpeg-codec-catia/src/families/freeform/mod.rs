@@ -1262,6 +1262,10 @@ pub(crate) fn append_freeform_surface_pools(
         }
         let surface_index = ir.model.surfaces.len();
         let surface_id = SurfaceId(format!("catia:rolling-ball:surf#{surface_index}"));
+        let procedural_id = ProceduralSurfaceId(format!(
+            "catia:rolling-ball:construction#{}",
+            ir.model.procedural_surfaces.len()
+        ));
         annotate(
             annotations,
             &surface_id,
@@ -1272,14 +1276,12 @@ pub(crate) fn append_freeform_surface_pools(
         );
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Procedural {
+                construction: procedural_id.clone(),
+            },
             source_object: None,
         });
 
-        let procedural_id = ProceduralSurfaceId(format!(
-            "catia:rolling-ball:construction#{}",
-            ir.model.procedural_surfaces.len()
-        ));
         annotate(
             annotations,
             &procedural_id,
@@ -2624,6 +2626,10 @@ pub(crate) fn append_a8_rolling_ball_pools(
             "catia:a8-rolling-ball:surf#{}",
             ir.model.surfaces.len()
         ));
+        let procedural_id = ProceduralSurfaceId(format!(
+            "catia:a8-rolling-ball:construction#{}",
+            ir.model.procedural_surfaces.len()
+        ));
         annotate(
             annotations,
             &surface_id,
@@ -2634,14 +2640,12 @@ pub(crate) fn append_a8_rolling_ball_pools(
         );
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Procedural {
+                construction: procedural_id.clone(),
+            },
             source_object: Some(cgm_source("surface", jet.object_id)),
         });
 
-        let procedural_id = ProceduralSurfaceId(format!(
-            "catia:a8-rolling-ball:construction#{}",
-            ir.model.procedural_surfaces.len()
-        ));
         annotate(
             annotations,
             &procedural_id,

@@ -183,6 +183,8 @@ pub(crate) fn try_decode_e5(
     for (index, jet) in rolling_ball_jets.iter().enumerate() {
         let surface_index = surfaces.len() + index;
         let surface_id = SurfaceId(format!("catia:e5:surf#{surface_index}"));
+        let procedural_id =
+            ProceduralSurfaceId(format!("catia:e5:procedural-surf#{surface_index}"));
         annotate(
             &mut annotations,
             &surface_id,
@@ -194,11 +196,11 @@ pub(crate) fn try_decode_e5(
         annotations.derived(&surface_id, "geometry");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Unknown { record: None },
+            geometry: SurfaceGeometry::Procedural {
+                construction: procedural_id.clone(),
+            },
             source_object: None,
         });
-        let procedural_id =
-            ProceduralSurfaceId(format!("catia:e5:procedural-surf#{surface_index}"));
         annotate(
             &mut annotations,
             &procedural_id,
