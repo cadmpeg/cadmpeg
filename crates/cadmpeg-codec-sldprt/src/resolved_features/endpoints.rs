@@ -1154,6 +1154,7 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
     }
     let current_complete_roster =
         current_referenced_compact_curve_uses_marker_roster(payload, offset);
+    let record_end = compact_indexed_curve_record_end(payload, offset);
     let compact_96_complete_roster = compact_96_profile_line_uses_complete_roster(payload, offset);
     let complete_entity_roster = current_complete_roster
         || (extended_marker84_line_uses_point_roster(payload, offset)
@@ -1232,10 +1233,18 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
     };
     let fallback = (current_complete_roster
         && matches!(marker_native_code(payload, offset), Some(1 | 2))
-        && compact_indexed_curve_record_end(payload, offset)
-            == Some(CompactIndexedCurveRecordEnd::Marker84))
+        && record_end == Some(CompactIndexedCurveRecordEnd::Marker84))
     .then(|| resolve(false, false))
     .flatten();
+    if current_complete_roster && record_end == Some(CompactIndexedCurveRecordEnd::Marker84) {
+        // The referenced current 84-byte form defines the complete-roster
+        // interpretation. Its zero-based point-roster form is only the
+        // documented fallback when a complete-roster slot lacks coordinates.
+        return resolve(complete_entity_roster, one_based)
+            .or(fallback)
+            .map(|endpoints| endpoints.to_vec())
+            .unwrap_or_default();
+    }
     let candidates = distinct_marker_pairs([resolve(complete_entity_roster, one_based), fallback]);
     let [endpoints] = candidates.as_slice() else {
         return Vec::new();
