@@ -2475,7 +2475,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             | FeatureDefinition::MoveObjectUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved
             | FeatureDefinition::DeleteFaceUnresolved
-            | FeatureDefinition::MirrorFaceUnresolved => {}
+            | FeatureDefinition::MirrorFaceUnresolved
+            | FeatureDefinition::SubdivisionBodyUnresolved
+            | FeatureDefinition::TopologyOptimizationUnresolved => {}
             FeatureDefinition::ReferenceImage {
                 asset,
                 origin,

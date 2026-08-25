@@ -823,6 +823,26 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label and body-write relation identify the family, but the admitted object-index and payload lanes do not assign unique source-face, mirror-plane, or copy-or-replace roles.
 
+### OM-58. `SUBDIVISION_BODY` construction roles
+
+**Question.** Which serialized fields define the source body and subdivision roles of a body-writing `SUBDIVISION_BODY` operation?
+
+**Known.** `siemens_nx.md` §7.1 defines a body-writing `SUBDIVISION_BODY` record as a body-affecting subdivision-body construction. The label and body-write frame establish the family, but the record has no admitted object-index or payload relation assigning the source body or subdivision controls. Its body-identity segment use points to a plain stream without a unique model-body record.
+
+**Need.** We must identify the source body and subdivision controls to construct a complete neutral subdivision-body operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the bounded record and unresolved segment-body relation do not assign unique source-body or subdivision roles.
+
+### OM-59. `TOPOLOGY_OPTIMIZATION` construction roles
+
+**Question.** Which serialized fields define the input bodies, optimization objective, and result mode of a body-writing `TOPOLOGY_OPTIMIZATION` operation?
+
+**Known.** `siemens_nx.md` §7.1 defines a body-writing `TOPOLOGY_OPTIMIZATION` record as a body-affecting topology-optimization construction. The record carries two input blocks and a body-write frame, but the admitted block references and payload lanes do not assign their roles.
+
+**Need.** We must identify the input bodies, optimization objective, and result mode to construct a complete neutral topology-optimization operation and bind its result body.
+
+**Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded block and payload lanes do not assign unique input, objective, or result-mode roles.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

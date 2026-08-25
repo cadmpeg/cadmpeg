@@ -1913,6 +1913,16 @@ body-affecting face-mirror construction. Its source-face, mirror-plane, and
 copy or replace roles remain unresolved until the serialized construction
 relations assign them. A record without the body-write frame remains native.
 
+The `SUBDIVISION_BODY` operation label with a body-write frame identifies a
+body-affecting subdivision-body construction. Its source body and subdivision
+roles remain unresolved until the serialized construction relations assign
+them. A record without the body-write frame remains native.
+
+The `TOPOLOGY_OPTIMIZATION` operation label with a body-write frame identifies
+a body-affecting topology-optimization construction. Its input and optimization
+roles remain unresolved until the serialized construction relations assign
+them. A record without the body-write frame remains native.
+
 The `DATUM_PLANE` and `EXTRACT_DATUM_PLANE` operation labels identify datum-plane
 history operations. Their model-space frame remains unresolved until the
 operation's scalar-pair roles and coordinate space are established.

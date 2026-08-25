@@ -431,6 +431,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::DraftUnresolved => "draft",
             FeatureDefinition::DeleteFaceUnresolved => "delete face",
             FeatureDefinition::MirrorFaceUnresolved => "mirror face",
+            FeatureDefinition::SubdivisionBodyUnresolved => "subdivision body",
+            FeatureDefinition::TopologyOptimizationUnresolved => "topology optimization",
             _ => continue,
         };
         *unresolved_feature_families.entry(family).or_default() += 1;

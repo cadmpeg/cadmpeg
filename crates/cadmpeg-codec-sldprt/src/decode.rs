@@ -1618,6 +1618,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::DraftUnresolved
             | FeatureDefinition::BrepUnresolved
             | FeatureDefinition::MirrorFaceUnresolved
+            | FeatureDefinition::SubdivisionBodyUnresolved
+            | FeatureDefinition::TopologyOptimizationUnresolved
             | FeatureDefinition::DeleteFaceUnresolved => true,
             }
         })

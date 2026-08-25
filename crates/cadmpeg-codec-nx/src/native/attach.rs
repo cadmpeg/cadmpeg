@@ -5843,6 +5843,8 @@ fn body_writing_unresolved_feature_definition(
         }),
         "DELETE FACE" => Some(FeatureDefinition::DeleteFaceUnresolved),
         "MIRROR_FACE" => Some(FeatureDefinition::MirrorFaceUnresolved),
+        "SUBDIVISION_BODY" => Some(FeatureDefinition::SubdivisionBodyUnresolved),
+        "TOPOLOGY_OPTIMIZATION" => Some(FeatureDefinition::TopologyOptimizationUnresolved),
         "THREADS" => Some(FeatureDefinition::ThreadUnresolved),
         "DETAILED_THREAD" => Some(FeatureDefinition::DetailedThreadUnresolved),
         _ => None,

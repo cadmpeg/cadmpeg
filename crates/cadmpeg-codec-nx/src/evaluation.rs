@@ -343,6 +343,20 @@ fn rederived_body_census(
             FeatureDefinition::MirrorFaceUnresolved => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
+            FeatureDefinition::SubdivisionBodyUnresolved if feature.outputs.is_empty() => {}
+            FeatureDefinition::SubdivisionBodyUnresolved => {
+                return Err((
+                    feature.id.clone(),
+                    UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                ));
+            }
+            FeatureDefinition::TopologyOptimizationUnresolved if feature.outputs.is_empty() => {}
+            FeatureDefinition::TopologyOptimizationUnresolved => {
+                return Err((
+                    feature.id.clone(),
+                    UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                ));
+            }
             FeatureDefinition::Loft { op, .. } => {
                 apply_complete_boolean_outputs(
                     feature,
@@ -680,6 +694,8 @@ fn suppression_is_body_census_invariant(
                     | FeatureDefinition::Draft { .. }
                     | FeatureDefinition::DeleteFaceUnresolved
                     | FeatureDefinition::MirrorFaceUnresolved
+                    | FeatureDefinition::SubdivisionBodyUnresolved
+                    | FeatureDefinition::TopologyOptimizationUnresolved
                     | FeatureDefinition::ReplaceFace { .. }
             ))
 }
