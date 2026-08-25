@@ -374,7 +374,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must assign the eight-reference bridge and identify the allocation-group relation that maps the supported-surface identities or bound node target to a standard face ordinal without comparing local identities across groups.
 
-**Note.** The all-compact model-space box can nominate one geometric face, but this geometric witness does not define the source identity join.
+**Note.** The all-compact model-space box can nominate one geometric face, but this geometric witness does not define the source identity join. A count-framed `03 62` packet has a variable allocation-reference lane and an opaque nonempty tail; it is not a fixed-nine packet with the admitted numeric rectangle and model-space bounds. Its adjacent `03 5f` successor relation names the counted owner packet only. It does not join a standalone `a5 03 34` frame or assign a standard face ordinal. Control-net containment and boundary coincidence remain geometric candidates, not allocation identity.
 
 ### SN-19. Cone `pre_range_scalar`
 
