@@ -20,7 +20,7 @@ use super::edges::{
     nurbs_control_extent, nurbs_intrinsic_parameter_range, periodic_conic_edge_parameter_range,
     point_pair_alignments,
 };
-use super::equations::{cross, dot, CarrierEquation};
+use super::equations::{cross, dot, CarrierEquation, PlaneEquation};
 use super::planes::point_on_carrier;
 use super::vertices::model_points_agree;
 
@@ -142,23 +142,6 @@ fn map_two_chart_endpoint_sets(
         };
         Some(points)
     });
-    let surface_mismatch =
-        if let (Some(first_path), Some(second_path)) = (&mapped_samples[0], &mapped_samples[1]) {
-            !first_path
-                .iter()
-                .zip(second_path)
-                .all(|(first, second)| model_points_agree(*first, *second))
-        } else {
-            false
-        };
-    if surface_mismatch {
-        return TwoChartMappingOutcome {
-            missing_surface_paths,
-            unevaluable_paths,
-            surface_mismatch: true,
-            ..TwoChartMappingOutcome::default()
-        };
-    }
     let canonical = canonicalized_pcurve_endpoints(
         scan,
         pcurve.faces,
@@ -175,10 +158,20 @@ fn map_two_chart_endpoint_sets(
             paths: endpoint_sets,
             complete,
         });
+    let surface_mismatch =
+        if let (Some(first_path), Some(second_path)) = (&mapped_samples[0], &mapped_samples[1]) {
+            !first_path
+                .iter()
+                .zip(second_path)
+                .all(|(first, second)| model_points_agree(*first, *second))
+        } else {
+            false
+        };
     TwoChartMappingOutcome {
         endpoint_sets,
         missing_surface_paths,
         unevaluable_paths,
+        surface_mismatch,
         ..TwoChartMappingOutcome::default()
     }
 }
@@ -188,7 +181,10 @@ pub(crate) fn mapped_two_chart_endpoint_sets(
     ir: &CadIr,
     pcurve: &crate::curve::TwoChartPcurveSamples,
 ) -> Option<TwoChartEndpointSets> {
-    map_two_chart_endpoint_sets(scan, ir, pcurve).endpoint_sets
+    let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve);
+    (!mapping.surface_mismatch)
+        .then_some(mapping.endpoint_sets)
+        .flatten()
 }
 
 #[allow(dead_code)] // Kept as a focused endpoint-mapping test helper.
@@ -318,6 +314,7 @@ struct MappedPcurvePath {
 }
 
 type IndexedPcurvePath = (usize, (u32, [[f64; 2]; 2]));
+type SupportConePlaneWitness = ([[f64; 2]; 2], PlaneEquation);
 
 struct MappedPcurvePaths {
     mapped: Vec<MappedPcurvePath>,
@@ -404,6 +401,222 @@ fn pcurve_path_carrier_status(
         return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
     };
     pcurve_plane_carrier_status(&surface.geometry, face_carrier, other_carrier, endpoints)
+}
+
+fn pcurve_endpoint_carrier_status(
+    ir: &CadIr,
+    carriers: &BTreeMap<u32, CarrierEquation>,
+    faces: [u32; 2],
+    face_index: usize,
+    endpoints: [[f64; 2]; 2],
+) -> PcurveCarrierStatus {
+    let face_id = faces[face_index];
+    let other_id = faces[1 - face_index];
+    let Some(surface) = unique_model_surface(&ir.model.surfaces, face_id) else {
+        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingSurface);
+    };
+    let Some(face_carrier) = carriers.get(&face_id).copied() else {
+        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
+    };
+    let Some(other_carrier) = carriers.get(&other_id).copied() else {
+        return PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier);
+    };
+    let valid = endpoints.into_iter().all(|uv| {
+        let Some(point) = cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1]) else {
+            return false;
+        };
+        let point = [point.x, point.y, point.z];
+        point_on_carrier(point, face_carrier) && point_on_carrier(point, other_carrier)
+    });
+    if valid {
+        PcurveCarrierStatus::Validated
+    } else {
+        PcurveCarrierStatus::Rejected
+    }
+}
+
+fn mirrored_support_apex_cone(geometry: &SurfaceGeometry) -> Option<SurfaceGeometry> {
+    let SurfaceGeometry::Cone {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+        ratio,
+        half_angle,
+    } = geometry
+    else {
+        return None;
+    };
+    let axis_values = [axis.x, axis.y, axis.z];
+    let ref_values = [ref_direction.x, ref_direction.y, ref_direction.z];
+    let axis_length = dot(axis_values, axis_values).sqrt();
+    let ref_length = dot(ref_values, ref_values).sqrt();
+    if *radius != 0.0
+        || !ratio.is_finite()
+        || (*ratio - 1.0).abs() > EPS_NEAR_ZERO
+        || !half_angle.is_finite()
+        || !(0.0..std::f64::consts::FRAC_PI_2).contains(half_angle)
+        || !axis_length.is_finite()
+        || (axis_length - 1.0).abs() > EPS_ORTHO
+        || !ref_length.is_finite()
+        || (ref_length - 1.0).abs() > EPS_ORTHO
+        || dot(axis_values, ref_values).abs() > EPS_ORTHO
+        || !origin.x.is_finite()
+        || !origin.y.is_finite()
+        || !origin.z.is_finite()
+    {
+        return None;
+    }
+    Some(SurfaceGeometry::Cone {
+        origin: Point3::new(-origin.x, -origin.y, -origin.z),
+        axis: Vector3::new(-axis.x, -axis.y, -axis.z),
+        ref_direction: *ref_direction,
+        radius: *radius,
+        ratio: *ratio,
+        half_angle: *half_angle,
+    })
+}
+
+fn support_cone_witness_matches(
+    geometry: &SurfaceGeometry,
+    endpoints: [[f64; 2]; 2],
+    plane: PlaneEquation,
+) -> bool {
+    endpoints.into_iter().all(|uv| {
+        let Some(point) = cadmpeg_ir::eval::surface_point(geometry, uv[0], uv[1]) else {
+            return false;
+        };
+        point_on_carrier([point.x, point.y, point.z], CarrierEquation::Plane(plane))
+    })
+}
+
+fn collect_support_cone_plane_witness(
+    witnesses: &mut BTreeMap<u32, Vec<SupportConePlaneWitness>>,
+    planes: &BTreeMap<u32, PlaneEquation>,
+    faces: [u32; 2],
+    endpoint_sets: [Option<[[f64; 2]; 2]>; 2],
+) {
+    for face_index in 0..2 {
+        let Some(endpoints) = endpoint_sets[face_index] else {
+            continue;
+        };
+        let Some(plane) = planes.get(&faces[1 - face_index]).copied() else {
+            continue;
+        };
+        witnesses
+            .entry(faces[face_index])
+            .or_default()
+            .push((endpoints, plane));
+    }
+}
+
+fn unique_model_surface_mut(surfaces: &mut [Surface], face_id: u32) -> Option<&mut Surface> {
+    let ids = [
+        SurfaceId(format!("creo:visibgeom:surface#{face_id}")),
+        SurfaceId(format!("creo:novisgeom:surface#{face_id}")),
+        SurfaceId(format!("creo:actdatums:surface#{face_id}")),
+    ];
+    for id in ids {
+        let matches = surfaces
+            .iter()
+            .enumerate()
+            .filter_map(|(index, surface)| (surface.id == id).then_some(index))
+            .collect::<Vec<_>>();
+        if matches.is_empty() {
+            continue;
+        }
+        let [index] = matches.as_slice() else {
+            return None;
+        };
+        return surfaces.get_mut(*index);
+    }
+    None
+}
+
+/// Reconcile the signed frame of a radius-zero support cone from a pcurve
+/// endpoint and an independently placed adjacent plane.
+pub fn reconcile_support_apex_cone_parameter_branches(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let planes = super::planes::placed_planes(scan);
+    if planes.is_empty() {
+        return 0;
+    }
+    let mut witnesses = BTreeMap::<u32, Vec<SupportConePlaneWitness>>::new();
+    for pcurve in &scan.curves.pcurves {
+        let endpoint_sets = canonicalized_pcurve_endpoints(
+            scan,
+            pcurve.faces,
+            pcurve.face_0_endpoints,
+            pcurve.face_1_endpoints,
+        );
+        collect_support_cone_plane_witness(
+            &mut witnesses,
+            &planes,
+            pcurve.faces,
+            endpoint_sets.map(Some),
+        );
+    }
+    for pcurve in &scan.curves.bound_prototype_pcurves {
+        let endpoint_sets = canonicalized_pcurve_endpoints(
+            scan,
+            pcurve.faces,
+            pcurve.face_0_endpoints,
+            pcurve.face_1_endpoints,
+        );
+        collect_support_cone_plane_witness(
+            &mut witnesses,
+            &planes,
+            pcurve.faces,
+            endpoint_sets.map(Some),
+        );
+    }
+    for pcurve in &scan.curves.two_chart_pcurves {
+        let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve);
+        let Some(endpoint_sets) = mapping.endpoint_sets else {
+            continue;
+        };
+        collect_support_cone_plane_witness(
+            &mut witnesses,
+            &planes,
+            pcurve.faces,
+            endpoint_sets.paths,
+        );
+    }
+
+    let mut reconciled = 0;
+    for (face_id, face_witnesses) in witnesses {
+        let Some(surface) = unique_model_surface_mut(&mut ir.model.surfaces, face_id) else {
+            continue;
+        };
+        let Some(mirrored) = mirrored_support_apex_cone(&surface.geometry) else {
+            continue;
+        };
+        let current_matches = face_witnesses.iter().all(|(endpoints, plane)| {
+            support_cone_witness_matches(&surface.geometry, *endpoints, *plane)
+        });
+        let mirrored_matches = face_witnesses
+            .iter()
+            .all(|(endpoints, plane)| support_cone_witness_matches(&mirrored, *endpoints, *plane));
+        if current_matches || !mirrored_matches {
+            continue;
+        }
+        surface.geometry = mirrored;
+        reconciled += 1;
+        if let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, face_id) {
+            annotate(
+                annotations,
+                &surface.id,
+                "VisibGeom",
+                row.offset as u64,
+                "support_apex_cone_pcurve_branch",
+                Exactness::Derived,
+            );
+        }
+    }
+    reconciled
 }
 
 fn map_pcurve_paths(
@@ -547,78 +760,86 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     let path_activity = PcurvePathActivity::from_scan(scan);
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     let mut diagnostics = PcurveEndpointDiagnostics::default();
-    let mut process_paths =
-        |curve_id: u32, faces: [u32; 2], paths: Vec<IndexedPcurvePath>, authoritative: bool| {
-            let mut mapped_paths = Vec::new();
-            let mut carrier_mapped_paths = Vec::new();
-            let mut carrier_proof_available = false;
-            for (face_index, (face_id, endpoints)) in paths {
-                let mapped = map_pcurve_paths(ir, [(face_id, endpoints)]);
-                diagnostics.paths += mapped.paths;
-                diagnostics.missing_surfaces += mapped.missing_surfaces;
-                diagnostics.unevaluable_paths += mapped.unevaluable_paths;
-                diagnostics.mapped_paths += mapped.mapped.len();
-                mapped_paths.extend(mapped.mapped.iter().copied());
-                match pcurve_path_carrier_status(ir, carriers, faces, face_index, endpoints) {
-                    PcurveCarrierStatus::Validated => {
-                        carrier_proof_available = true;
-                        diagnostics.carrier_validated_paths += 1;
-                        carrier_mapped_paths.extend(mapped.mapped);
-                    }
-                    PcurveCarrierStatus::Rejected => {
-                        carrier_proof_available = true;
-                        diagnostics.carrier_rejected_paths += 1;
-                    }
-                    PcurveCarrierStatus::Unknown(reason) => {
-                        diagnostics.carrier_unknown_paths += 1;
-                        match reason {
-                            PcurveCarrierUnknownReason::MissingSurface => {
-                                diagnostics.carrier_unknown_missing_surface_paths += 1;
-                            }
-                            PcurveCarrierUnknownReason::MissingCarrier => {
-                                diagnostics.carrier_unknown_missing_carrier_paths += 1;
-                            }
-                            PcurveCarrierUnknownReason::UnsupportedPair => {
-                                diagnostics.carrier_unknown_unsupported_pair_paths += 1;
-                            }
-                            PcurveCarrierUnknownReason::ParallelPlanePair => {
-                                diagnostics.carrier_unknown_parallel_plane_paths += 1;
-                            }
-                            PcurveCarrierUnknownReason::UnsupportedPath => {
-                                diagnostics.carrier_unknown_unsupported_path_paths += 1;
-                            }
-                        }
-                    }
-                }
-            }
-            let selected_paths = if carrier_proof_available {
-                carrier_mapped_paths
+    let mut process_paths = |curve_id: u32,
+                             faces: [u32; 2],
+                             paths: Vec<IndexedPcurvePath>,
+                             authoritative: bool,
+                             endpoint_carrier_proof: bool| {
+        let mut mapped_paths = Vec::new();
+        let mut carrier_mapped_paths = Vec::new();
+        let mut carrier_proof_available = false;
+        for (face_index, (face_id, endpoints)) in paths {
+            let mapped = map_pcurve_paths(ir, [(face_id, endpoints)]);
+            diagnostics.paths += mapped.paths;
+            diagnostics.missing_surfaces += mapped.missing_surfaces;
+            diagnostics.unevaluable_paths += mapped.unevaluable_paths;
+            diagnostics.mapped_paths += mapped.mapped.len();
+            mapped_paths.extend(mapped.mapped.iter().copied());
+            let carrier_status = if endpoint_carrier_proof {
+                pcurve_endpoint_carrier_status(ir, carriers, faces, face_index, endpoints)
             } else {
-                mapped_paths
+                pcurve_path_carrier_status(ir, carriers, faces, face_index, endpoints)
             };
-            if carrier_proof_available && selected_paths.is_empty() {
-                diagnostics.carrier_rejected_records += 1;
-            }
-            match pcurve_endpoint_evidence_from_mapped(&selected_paths) {
-                Some(mut evidence) => {
-                    evidence.authoritative = authoritative;
-                    diagnostics.accepted_records += 1;
-                    diagnostics.complete_records += usize::from(evidence.complete);
-                    candidates.entry(curve_id).or_default().push(evidence);
+            match carrier_status {
+                PcurveCarrierStatus::Validated => {
+                    carrier_proof_available = true;
+                    diagnostics.carrier_validated_paths += 1;
+                    carrier_mapped_paths.extend(mapped.mapped);
                 }
-                None if selected_paths.is_empty() && !carrier_proof_available => {
-                    diagnostics.unmapped_records += 1;
+                PcurveCarrierStatus::Rejected => {
+                    carrier_proof_available = true;
+                    diagnostics.carrier_rejected_paths += 1;
                 }
-                None => {
-                    diagnostics.inconsistent_records += 1;
-                    if diagnostics.mismatch_samples.len() < PCURVE_MISMATCH_SAMPLE_LIMIT {
-                        if let Some(detail) = pcurve_mismatch_detail(curve_id, &selected_paths) {
-                            diagnostics.mismatch_samples.push(detail);
+                PcurveCarrierStatus::Unknown(reason) => {
+                    diagnostics.carrier_unknown_paths += 1;
+                    match reason {
+                        PcurveCarrierUnknownReason::MissingSurface => {
+                            diagnostics.carrier_unknown_missing_surface_paths += 1;
+                        }
+                        PcurveCarrierUnknownReason::MissingCarrier => {
+                            diagnostics.carrier_unknown_missing_carrier_paths += 1;
+                        }
+                        PcurveCarrierUnknownReason::UnsupportedPair => {
+                            diagnostics.carrier_unknown_unsupported_pair_paths += 1;
+                        }
+                        PcurveCarrierUnknownReason::ParallelPlanePair => {
+                            diagnostics.carrier_unknown_parallel_plane_paths += 1;
+                        }
+                        PcurveCarrierUnknownReason::UnsupportedPath => {
+                            diagnostics.carrier_unknown_unsupported_path_paths += 1;
                         }
                     }
                 }
             }
+        }
+        let selected_paths = if carrier_proof_available {
+            carrier_mapped_paths
+        } else {
+            mapped_paths
         };
+        if carrier_proof_available && selected_paths.is_empty() {
+            diagnostics.carrier_rejected_records += 1;
+        }
+        match pcurve_endpoint_evidence_from_mapped(&selected_paths) {
+            Some(mut evidence) => {
+                evidence.authoritative = authoritative;
+                diagnostics.accepted_records += 1;
+                diagnostics.complete_records += usize::from(evidence.complete);
+                candidates.entry(curve_id).or_default().push(evidence);
+            }
+            None if selected_paths.is_empty() && !carrier_proof_available => {
+                diagnostics.unmapped_records += 1;
+            }
+            None => {
+                diagnostics.inconsistent_records += 1;
+                if diagnostics.mismatch_samples.len() < PCURVE_MISMATCH_SAMPLE_LIMIT {
+                    if let Some(detail) = pcurve_mismatch_detail(curve_id, &selected_paths) {
+                        diagnostics.mismatch_samples.push(detail);
+                    }
+                }
+            }
+        }
+    };
     for (curve_id, faces, first, second, prototype) in scan
         .curves
         .pcurves
@@ -660,7 +881,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
             .enumerate()
             .filter(|(_, (face_id, _))| !ignored_surface_ids.contains(face_id))
             .collect::<Vec<_>>();
-        process_paths(curve_id, faces, paths, false);
+        process_paths(curve_id, faces, paths, false, false);
     }
     for pcurve in &scan.curves.two_chart_pcurves {
         diagnostics.records += 1;
@@ -672,7 +893,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         diagnostics.two_chart_no_sample_records += usize::from(mapping.no_samples);
         let Some(endpoint_sets) = mapping.endpoint_sets else {
             diagnostics.two_chart_unmapped_records += 1;
-            process_paths(pcurve.curve_id, pcurve.faces, Vec::new(), true);
+            process_paths(pcurve.curve_id, pcurve.faces, Vec::new(), true, false);
             continue;
         };
         diagnostics.two_chart_mapped_records += 1;
@@ -701,7 +922,13 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
                 (!ignored_surface_ids.contains(&face_id)).then_some((index, (face_id, endpoints?)))
             })
             .collect::<Vec<_>>();
-        process_paths(pcurve.curve_id, pcurve.faces, paths, endpoint_sets.complete);
+        process_paths(
+            pcurve.curve_id,
+            pcurve.faces,
+            paths,
+            endpoint_sets.complete,
+            mapping.surface_mismatch,
+        );
     }
     let short_pcurves = crate::curve::fc02_short_pcurve_endpoints(
         &scan.curves.parameters,
@@ -724,7 +951,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         let paths = (!ignored_surface_ids.contains(&pcurve.faces[0]))
             .then_some(vec![(0, (pcurve.faces[0], face_0_endpoints))])
             .unwrap_or_default();
-        process_paths(pcurve.curve_id, pcurve.faces, paths, true);
+        process_paths(pcurve.curve_id, pcurve.faces, paths, true, false);
     }
     let mut evidence = BTreeMap::new();
     for (curve_id, candidates) in candidates {
@@ -1685,6 +1912,9 @@ mod tests {
         );
 
         pcurve.samples[1][1][0] = 0.6;
+        let mapping = map_two_chart_endpoint_sets(&scan, &ir, &pcurve);
+        assert!(mapping.surface_mismatch);
+        assert!(mapping.endpoint_sets.is_some());
         assert!(mapped_two_chart_endpoint_sets(&scan, &ir, &pcurve).is_none());
 
         pcurve.samples[1][1][0] = 0.5;
@@ -1699,6 +1929,80 @@ mod tests {
                 complete: false,
             })
         );
+    }
+
+    #[test]
+    fn two_chart_endpoint_carrier_proof_ignores_interior_disagreement() {
+        const EPS_EXPECTED_POINT: f64 = 1e-12;
+        let mut scan = crate::container::scan_bytes(Vec::new());
+        scan.curves
+            .two_chart_pcurves
+            .push(crate::curve::TwoChartPcurveSamples {
+                curve_id: 17,
+                faces: [1, 2],
+                samples: vec![
+                    [[0.0, 0.5], [0.0, -0.5]],
+                    [[std::f64::consts::FRAC_PI_2, 0.5], [1.0, 0.0]],
+                    [[std::f64::consts::PI, 0.5], [0.0, 0.5]],
+                ],
+                offset: 0,
+            });
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.extend([
+            Surface {
+                id: SurfaceId("creo:visibgeom:surface#1".to_string()),
+                geometry: SurfaceGeometry::Cone {
+                    origin: Point3::new(-1.0, 0.0, 0.0),
+                    axis: Vector3::new(1.0, 0.0, 0.0),
+                    ref_direction: Vector3::new(0.0, 0.0, -1.0),
+                    radius: 0.0,
+                    ratio: 1.0,
+                    half_angle: std::f64::consts::FRAC_PI_4,
+                },
+                source_object: None,
+            },
+            Surface {
+                id: SurfaceId("creo:visibgeom:surface#2".to_string()),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(-0.5, 0.0, 0.0),
+                    normal: Vector3::new(1.0, 0.0, 0.0),
+                    u_axis: Vector3::new(0.0, 1.0, 0.0),
+                },
+                source_object: None,
+            },
+        ]);
+        let carriers = BTreeMap::from([
+            (
+                1,
+                CarrierEquation::Cone(super::super::equations::ConeEquation {
+                    origin: [-1.0, 0.0, 0.0],
+                    axis: [1.0, 0.0, 0.0],
+                    ref_direction: [0.0, 0.0, -1.0],
+                    radius: 0.0,
+                    ratio: 1.0,
+                    half_angle: std::f64::consts::FRAC_PI_4,
+                }),
+            ),
+            (
+                2,
+                CarrierEquation::Plane(PlaneEquation {
+                    origin: [-0.5, 0.0, 0.0],
+                    normal: [1.0, 0.0, 0.0],
+                }),
+            ),
+        ]);
+        let (evidence, diagnostics) =
+            pcurve_edge_endpoint_evidence_with_carriers(&scan, &ir, &carriers);
+
+        assert_eq!(diagnostics.two_chart_surface_mismatch_records, 1);
+        assert_eq!(diagnostics.carrier_validated_paths, 2);
+        assert_eq!(diagnostics.accepted_records, 1);
+        let evidence = evidence.get(&17).expect("two-chart endpoint evidence");
+        assert!(evidence.complete);
+        assert!(
+            point_coordinate_error(evidence.points[0], [-0.5, 0.0, -0.5]) <= EPS_EXPECTED_POINT
+        );
+        assert!(point_coordinate_error(evidence.points[1], [-0.5, 0.0, 0.5]) <= EPS_EXPECTED_POINT);
     }
 
     #[test]
@@ -1989,5 +2293,41 @@ mod tests {
         assert_eq!(diagnostics.carrier_rejected_paths, 1);
         assert_eq!(diagnostics.carrier_rejected_records, 0);
         assert_eq!(diagnostics.accepted_records, 1);
+    }
+
+    #[test]
+    fn support_apex_cone_mirror_is_selected_by_plane_endpoint_witness() {
+        let current = SurfaceGeometry::Cone {
+            origin: Point3::new(1.0, 0.0, 0.0),
+            axis: Vector3::new(-1.0, 0.0, 0.0),
+            ref_direction: Vector3::new(0.0, 0.0, -1.0),
+            radius: 0.0,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        let mirrored = mirrored_support_apex_cone(&current).expect("support cone mirror");
+        let plane = PlaneEquation {
+            origin: [-0.5, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        };
+        let perpendicular_plane = PlaneEquation {
+            origin: [0.0, 0.0, 0.5],
+            normal: [0.0, 0.0, 1.0],
+        };
+        let endpoints = [[0.0, 0.5], [std::f64::consts::PI, 0.5]];
+
+        assert!(!support_cone_witness_matches(&current, endpoints, plane));
+        assert!(support_cone_witness_matches(&mirrored, endpoints, plane));
+        let perpendicular_endpoints = [[std::f64::consts::PI, 0.5]; 2];
+        assert!(support_cone_witness_matches(
+            &current,
+            perpendicular_endpoints,
+            perpendicular_plane
+        ));
+        assert!(support_cone_witness_matches(
+            &mirrored,
+            perpendicular_endpoints,
+            perpendicular_plane
+        ));
     }
 }

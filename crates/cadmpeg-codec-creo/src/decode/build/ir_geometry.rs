@@ -11,8 +11,8 @@ use cadmpeg_ir::AnnotationBuilder;
 use crate::container::ContainerScan;
 
 use super::super::analytic::{
-    retain_unresolved_visible_carriers, transfer_analytic_pcurve_carriers,
-    transfer_topology_bound_planes,
+    reconcile_support_apex_cone_parameter_branches, retain_unresolved_visible_carriers,
+    transfer_analytic_pcurve_carriers, transfer_topology_bound_planes,
 };
 use super::super::coverage::{
     curve_transfer_coverage, design_constraint_transfer_coverage, surface_transfer_coverage,
@@ -82,6 +82,8 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let constrained_slot_fillet_cylinder_count =
         transfer_constrained_slot_fillet_cylinders(scan, ir, annotations);
     let rowless_round_cylinder_count = transfer_rowless_round_cylinders(scan, ir, annotations);
+    let support_apex_cone_branch_count =
+        reconcile_support_apex_cone_parameter_branches(scan, ir, annotations);
     let analytic_pcurve_carriers = transfer_analytic_pcurve_carriers(scan, ir, annotations);
     let analytic_pcurve_carrier_count = analytic_pcurve_carriers.len();
     let nurbs_boundary_curves = transfer_nurbs_boundary_curves(ctx, scan, ir, annotations)?;
@@ -355,6 +357,12 @@ pub(super) fn transfer_and_record_scanned_geometry(
             "transferred_analytic_pcurve_carrier_count".to_string(),
             analytic_pcurve_carrier_count,
         );
+        if support_apex_cone_branch_count != 0 {
+            coverage.insert(
+                "reconciled_support_apex_cone_parameter_branch_count".to_string(),
+                support_apex_cone_branch_count,
+            );
+        }
         coverage.insert(
             "transferred_extrusion_plane_boundary_curve_count".to_string(),
             extrusion_plane_boundary_curve_count,
