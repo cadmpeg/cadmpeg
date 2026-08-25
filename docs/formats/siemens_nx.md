@@ -124,13 +124,17 @@ complete zlib payload accepted by the stream grammar. The containing row
 ordinal and word position preserve the wrapper's segment order.
 
 When the canonical segment index is present, its validated wrapper words are
-the complete compressed-stream directory. Unique physical members are ordered
+the preferred compressed-stream directory. Unique physical members are ordered
 by the first wrapper that addresses them in row and word order; additional
 words addressing the same zlib header remain additional links to that member.
 A standards-conforming zlib member elsewhere in the payload is not an indexed
-stream. When an indexed wrapper target begins with a standards-conforming zlib
-header, failure to reach its checksum-validated stream end rejects the indexed
-stream directory atomically.
+stream while the directory supplies at least one Parasolid member. If the
+directory supplies no Parasolid member, an unindexed member is admitted only
+when its inflated bytes contain a complete Parasolid structural record or
+tombstone. A text-only unindexed payload is not admitted as a body stream.
+When an indexed wrapper target begins with a standards-conforming zlib header,
+failure to reach its checksum-validated stream end rejects the indexed stream
+directory atomically.
 
 A partition or plain cached-body wrapper word begins a five-word segment tuple.
 The following word is zero, the next two words are object-index aliases naming
@@ -1799,12 +1803,16 @@ leave operation outputs unresolved. This direct GROUP relation is independent
 of the plain cached-body history relation and does not equate a partition tuple
 alias with a body identity.
 
-A Parasolid GROUP record is `kind:u16 BE=90, xmt:xmt_ref,
-node_id:u32 BE, leading_refs[4], selector:u8, linked_ref:xmt_ref,
-linked_status:u8`. Each leading reference has status 1. `selector` is 2, 4,
-or 9, and `linked_status` is zero or one. The current GROUP state is obtained
-by applying full records and compact tombstones in partition and paired-deltas
-event order by XMT identity.
+A Parasolid GROUP record has one of two reference layouts:
+`kind:u16 BE=90, xmt:xmt_ref, node_id:u32 BE, leading_refs[4],
+leading_status[4], selector:u8, linked_ref:xmt_ref, linked_status:u8`, or
+`kind:u16 BE=90, xmt:xmt_ref, node_id:u32 BE, leading_refs[4], selector:u8,
+linked_ref:xmt_ref, linked_status:u8`. The first layout is the status-framed
+form and each leading status is 1. The second layout is the
+unframed-leading-reference form used by partition and plain cached-body
+streams. `selector` is 2, 4, or 9, and `linked_status` is zero or one. The
+current GROUP state is obtained by applying full records and compact tombstones
+in partition and paired-deltas event order by XMT identity.
 
 The GROUP `linked_ref` is the tail of its member chain. A chain row is a
 type-91 record with six references. Slot zero equals the GROUP XMT, slot one
@@ -2377,7 +2385,7 @@ The B-spline knot type does not determine whether a control grid is rational or 
 
 Parasolid type-79 attribute identifiers are `00 4f [ff], name_len:u32 BE, xmt, name[name_len]`. The name is non-empty printable ASCII. Type-79 records are independent nodes and need not be adjacent to the type-80 definition that references them.
 
-A type-80 attribute definition is `00 50 [ff], field_count:u32 BE, xmt, next_definition, identifier, type_id:u32 BE, action[8], field_names, legal_owner[16], field_code[field_count]`. XMT and reference fields use the compact or extended XMT encoding. The definition XMT, identifier reference, and type ID are non-null. `identifier` must resolve uniquely to a type-79 record in the same stream; otherwise the definition remains untyped. `next_definition` and `field_names` may be null reference `1`. Each action code is in `0..=6`, and each legal-owner flag is binary. Each field code is in `0..=10`; zero is an ignored user-field extension, and codes 1 through 10 denote integer, real, character, point, vector, direction, axis, tag, pointer, and Unicode storage respectively. The definition identity is the type-80 XMT, not its type-79 identifier XMT. Definition order and physical adjacency do not participate in the join.
+A type-80 attribute definition is `00 50 [ff], field_count:u32 BE, xmt, next_definition, identifier, type_id:u32 BE, action[8], field_names, legal_owner[field_owner_count], field_code[field_count]`. `field_owner_count` is 16 or 14. The 14-byte form is complete only when the field-code lane ends at the next tagged record; this rejects an ambiguous truncated 16-byte form. XMT and reference fields use the compact or extended XMT encoding. The definition XMT, identifier reference, and type ID are non-null. `identifier` must resolve uniquely to a type-79 record in the same stream; otherwise the definition remains untyped. `next_definition` and `field_names` may be null reference `1`. Each action code is in `0..=6`, and each legal-owner flag is binary. Each field code is in `0..=10`; zero is an ignored user-field extension, and codes 1 through 10 denote integer, real, character, point, vector, direction, axis, tag, pointer, and Unicode storage respectively. The definition identity is the type-80 XMT, not its type-79 identifier XMT. Definition order and physical adjacency do not participate in the join.
 
 A type-99 field-name list is `00 63 [ff], field_count:u32 BE, xmt, name[field_count]`. The count is nonzero, and the XMT and every name reference are non-null. A type-80 `field_names` reference resolves only when exactly one same-stream type-99 record has that XMT, its count equals the definition's field count, and every ordered name reference resolves uniquely to a same-stream type-84 character or type-98 Unicode value. The resulting names correspond positionally to the definition's field codes.
 
@@ -2390,7 +2398,12 @@ affect framing. References are either consecutive XMT values or individually
 binary-status-prefixed XMT values followed by a binary terminal; the two forms
 are atomic. A
 topology attribute-list identity resolves only when exactly one type-81 record
-in the same stream has that xmt.
+in the same stream has that xmt. The head record owns the topology only when
+its first leading reference equals the topology XMT. Additional list records
+are reached transitively: a record whose third leading reference names an
+already reached list record and whose first leading reference repeats the same
+topology XMT is in that list. Duplicate XMT identities, missing links, or a
+different owner leave the additional record outside the topology relation.
 
 The terminal `00` of a status-prefixed type-81 or printable type-84 record may
 also be the leading `00` of the immediately following two-byte record tag. The
@@ -2448,7 +2461,7 @@ relation, or a value-family mismatch leaves the field unassigned.
 
 A shell, face, loop, edge, FIN, or vertex topology record with one uniquely resolved
 attribute-list identity owns every uniquely resolved attribute value referenced
-by that type-81 record. Each value record transfers as
+by each uniquely resolved type-81 record in that list. Each value record transfers as
 one topology-targeted source attribute whose values retain serialized lane
 order. The independently resolved class relation identifies the owning
 attribute definition. Integer and tag lanes transfer as integers, real lanes as

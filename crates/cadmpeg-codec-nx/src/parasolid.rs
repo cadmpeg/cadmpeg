@@ -106,6 +106,8 @@ pub struct AttributeDefinition<'a> {
     pub field_names_xmt: u32,
     /// Ordered legal-owner flags.
     pub legal_owner_flags: [u8; 16],
+    /// Number of legal-owner flags serialized by the definition.
+    pub legal_owner_flag_count: u8,
     /// Declared number of fields in the `00 50` record.
     pub field_count: u32,
     /// One serialized field code for every declared field.
@@ -1109,15 +1111,29 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             .then_some(())?;
             at += 8;
             let field_names_xmt = read_xmt(bytes, &mut at)?;
-            let legal_owner_flags: [u8; 16] = bytes.get(at..at + 16)?.try_into().ok()?;
-            legal_owner_flags
-                .iter()
-                .all(|flag| matches!(flag, 0 | 1))
-                .then_some(())?;
-            at += 16;
-            let field_codes_end = at.checked_add(usize::try_from(field_count).ok()?)?;
-            let field_codes = bytes.get(at..field_codes_end)?;
-            field_codes.iter().all(|code| *code <= 10).then_some(())?;
+            let field_count_usize = usize::try_from(field_count).ok()?;
+            let (legal_owner_flags, legal_owner_flag_count, field_codes) =
+                [16_usize, 14].into_iter().find_map(|flag_count| {
+                    let flags = bytes.get(at..at.checked_add(flag_count)?)?;
+                    flags
+                        .iter()
+                        .all(|flag| matches!(flag, 0 | 1))
+                        .then_some(())?;
+                    let field_codes_start = at.checked_add(flag_count)?;
+                    let field_codes_end = field_codes_start.checked_add(field_count_usize)?;
+                    let field_codes = bytes.get(field_codes_start..field_codes_end)?;
+                    field_codes.iter().all(|code| *code <= 10).then_some(())?;
+                    if flag_count == 14 && !attribute_definition_boundary(bytes, field_codes_end) {
+                        return None;
+                    }
+                    let mut legal_owner_flags = [0; 16];
+                    legal_owner_flags[..flag_count].copy_from_slice(flags);
+                    Some((
+                        legal_owner_flags,
+                        u8::try_from(flag_count).ok()?,
+                        field_codes,
+                    ))
+                })?;
             let mut matches = identifiers
                 .iter()
                 .filter(|identifier| identifier.xmt == identifier_xmt);
@@ -1134,11 +1150,18 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
                 action_codes,
                 field_names_xmt,
                 legal_owner_flags,
+                legal_owner_flag_count,
                 field_count,
                 field_codes,
             })
         })
         .collect()
+}
+
+fn attribute_definition_boundary(bytes: &[u8], offset: usize) -> bool {
+    bytes
+        .get(offset..offset.saturating_add(2))
+        .is_some_and(|tag| tag[0] == 0 && (0x4f..=0x63).contains(&tag[1]))
 }
 
 /// Locates, inflates, and classifies zlib streams in `/Root/UG_PART/UG_PART`.
@@ -1199,21 +1222,46 @@ pub fn extract_streams<'a>(
                 schema,
             });
         }
+        if streams.iter().any(|stream| stream.kind.is_parasolid()) {
+            return Ok(streams);
+        }
+        append_unindexed_structural_streams(ctx, part_view, start, &mut streams)?;
         return Ok(streams);
     }
 
+    append_all_zlib_streams(ctx, part_view, start, &mut streams, false)?;
+    Ok(streams)
+}
+
+fn append_all_zlib_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    part_view: View<'a>,
+    file_start: usize,
+    streams: &mut Vec<Stream>,
+    structural_only: bool,
+) -> Result<(), CodecError> {
+    let part = part_view.window();
+    let mut seen = streams
+        .iter()
+        .map(|stream| stream.file_offset)
+        .collect::<BTreeSet<_>>();
     let mut i = 0usize;
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
             if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i)? {
                 let (kind, schema) = classify(&inflated);
-                streams.push(Stream {
-                    file_offset: start + i,
-                    consumed,
-                    inflated,
-                    kind,
-                    schema,
-                });
+                let file_offset = file_start + i;
+                if seen.insert(file_offset)
+                    && (!structural_only || structural_stream_candidate(kind, &inflated))
+                {
+                    streams.push(Stream {
+                        file_offset,
+                        consumed,
+                        inflated,
+                        kind,
+                        schema,
+                    });
+                }
                 // Resume past the bytes this member consumed, not at the next
                 // byte: a spurious `78 xx` zlib header inside the compressed
                 // body would otherwise inflate into a second stream whose source
@@ -1227,7 +1275,31 @@ pub fn extract_streams<'a>(
         }
         i += 1;
     }
-    Ok(streams)
+    Ok(())
+}
+
+fn append_unindexed_structural_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    part_view: View<'a>,
+    file_start: usize,
+    streams: &mut Vec<Stream>,
+) -> Result<(), CodecError> {
+    append_all_zlib_streams(ctx, part_view, file_start, streams, true)
+}
+
+fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> bool {
+    if !kind.is_parasolid() {
+        return false;
+    }
+    let census = crate::deltas::walk(inflated);
+    if !census.records.is_empty() || !census.tombstones.is_empty() {
+        return true;
+    }
+    if kind == StreamKind::Deltas {
+        return false;
+    }
+    let graph = crate::topology::Graph::parse(inflated);
+    (12..=19).any(|topology_kind| graph.of_kind(topology_kind).next().is_some())
 }
 
 /// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`

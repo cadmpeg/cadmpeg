@@ -733,3 +733,38 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
     assert_eq!(streams[0].kind, StreamKind::Deltas);
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_REAL_1_9999"));
 }
+
+#[test]
+fn extraction_falls_back_to_unindexed_structural_streams_when_index_has_no_parasolid() {
+    let decoy = zlib_compress(
+        b"PS\0\0 (partition) SCH_DECOY_1_9999 unindexed text without structural records",
+    );
+    let real = zlib_compress(&parasolid_group_partition_stream());
+    let indexed_preview = zlib_compress(b"preview payload");
+    let mut payload = Vec::new();
+    for word in [0_u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.extend_from_slice(&decoy);
+    payload.extend_from_slice(&real);
+    let wrapper_offset = payload.len();
+    payload[0..4].copy_from_slice(
+        &u32::try_from(wrapper_offset)
+            .expect("synthetic wrapper offset")
+            .to_le_bytes(),
+    );
+    payload.extend_from_slice(&0x8000_0000_u32.to_le_bytes());
+    payload.extend_from_slice(&0_u32.to_le_bytes());
+    payload.extend_from_slice(&indexed_preview);
+
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    let streams = extract_streams(&file);
+
+    assert_eq!(streams.len(), 2);
+    assert!(streams.iter().any(|stream| {
+        stream.kind == StreamKind::Partition && stream.schema.as_deref() == Some("SCH_TEST_1_9999")
+    }));
+    assert!(streams
+        .iter()
+        .all(|stream| { stream.schema.as_deref() != Some("SCH_DECOY_1_9999") }));
+}

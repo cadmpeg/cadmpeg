@@ -469,6 +469,58 @@ fn deltas_walks_complete_group_records() {
 }
 
 #[test]
+fn deltas_walks_group_records_without_leading_statuses() {
+    let mut direct = vec![0, 90];
+    direct.extend_from_slice(&10u16.to_be_bytes());
+    direct.extend_from_slice(&11u32.to_be_bytes());
+    direct.extend_from_slice(
+        &[3, 4, 5, 6]
+            .into_iter()
+            .flat_map(u16::to_be_bytes)
+            .collect::<Vec<_>>(),
+    );
+    direct.push(4);
+    direct.extend_from_slice(&8u16.to_be_bytes());
+    direct.push(0);
+    let direct_len = direct.len();
+    direct.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&direct);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 90);
+    assert_eq!(census.records[0].xmt, 10);
+    assert_eq!(census.records[0].node_id, Some(11));
+    assert_eq!(census.records[0].references, [3, 4, 5, 6, 8]);
+    assert_eq!(census.records[0].canonical_bytes, direct[..direct_len]);
+    assert_eq!(census.records[0].end, direct_len);
+    assert_eq!(census.full_counts["GROUP"], 1);
+    assert_eq!(census.bytes_decoded, direct_len);
+
+    let residual = crate::deltas::semantic_residual(&direct);
+    assert!(residual[..direct_len].iter().all(|byte| *byte == 0xff));
+    assert_eq!(&residual[direct_len..], &[0xfe, 0xdc]);
+
+    let mut escaped = vec![0, 90, 0xff];
+    escaped.extend_from_slice(&10u16.to_be_bytes());
+    escaped.extend_from_slice(&11u32.to_be_bytes());
+    escaped.extend_from_slice(
+        &[3, 4, 5, 6]
+            .into_iter()
+            .flat_map(u16::to_be_bytes)
+            .collect::<Vec<_>>(),
+    );
+    escaped.push(9);
+    escaped.extend_from_slice(&8u16.to_be_bytes());
+    escaped.push(1);
+
+    let census = crate::deltas::walk(&escaped);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].xmt, 10);
+    assert_eq!(census.records[0].references, [3, 4, 5, 6, 8]);
+    assert_eq!(census.records[0].end, escaped.len());
+}
+
+#[test]
 fn deltas_walks_complete_attdef_lists() {
     let mut direct = vec![0, 74];
     direct.extend_from_slice(&3u32.to_be_bytes());

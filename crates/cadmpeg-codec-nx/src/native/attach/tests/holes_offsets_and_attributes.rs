@@ -1226,6 +1226,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         action_codes: [0; 8],
         field_names_xmt: 1,
         legal_owner_flags: [0; 16],
+        legal_owner_flag_count: 16,
         field_count: 1,
         field_codes: vec![2],
         inflated_offset: 100,
@@ -1338,6 +1339,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         action_codes: [0; 8],
         field_names_xmt: 1,
         legal_owner_flags: [0; 16],
+        legal_owner_flag_count: 16,
         field_count: 2,
         field_codes: vec![2, 3],
         inflated_offset: 100,
@@ -1487,6 +1489,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
         action_codes: [0; 8],
         field_names_xmt: 1,
         legal_owner_flags: [0; 16],
+        legal_owner_flag_count: 16,
         field_count: 2,
         field_codes: vec![3, 2],
         inflated_offset: 100,
@@ -1548,6 +1551,195 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
         .as_deref(),
         Some("SDL/TYSA_BLEND_ID.field_1.parasolid_type_2")
     );
+}
+
+#[test]
+fn topology_attribute_index_retains_linked_type_81_records() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    use cadmpeg_ir::ids::FaceId;
+    use cadmpeg_ir::AnnotationBuilder;
+
+    use crate::native::parasolid::{
+        ParasolidAttributeDefinition, ParasolidAttributeFieldUse, ParasolidAttributeFieldValueKind,
+        ParasolidEntity51NumericKind, ParasolidEntity51NumericUse, ParasolidEntity53DoubleRecord,
+        ParasolidTopologyAttributeClassUse, ParasolidTopologyAttributeListReference,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.model.faces[0].id = FaceId("nx:s3:face#60".into());
+    let reference = ParasolidTopologyAttributeListReference {
+        id: "topology-reference".into(),
+        stream_ordinal: 3,
+        topology_type: 14,
+        topology_xmt: 60,
+        attribute_list_xmt: 50,
+        attribute_list_record: Some("head".into()),
+        inflated_offset: 300,
+    };
+    let definition = ParasolidAttributeDefinition {
+        id: "definition".into(),
+        stream_ordinal: 3,
+        xmt: 34,
+        next_definition_xmt: 1,
+        identifier_xmt: 35,
+        identifier_inflated_offset: 90,
+        name: "CLASS".into(),
+        type_id: 8000,
+        action_codes: [0; 8],
+        field_names_xmt: 1,
+        legal_owner_flags: [0; 16],
+        legal_owner_flag_count: 16,
+        field_count: 1,
+        field_codes: vec![2],
+        inflated_offset: 100,
+    };
+    let class_uses = [
+        ParasolidTopologyAttributeClassUse {
+            id: "head-class".into(),
+            topology_attribute_reference: reference.id.clone(),
+            entity_51_record: "head".into(),
+            attribute_class_use: "head-class-use".into(),
+            definition_xmt: definition.xmt,
+            attribute_definition: definition.id.clone(),
+        },
+        ParasolidTopologyAttributeClassUse {
+            id: "child-class".into(),
+            topology_attribute_reference: reference.id.clone(),
+            entity_51_record: "child".into(),
+            attribute_class_use: "child-class-use".into(),
+            definition_xmt: definition.xmt,
+            attribute_definition: definition.id.clone(),
+        },
+    ];
+    let field_uses = [
+        ParasolidAttributeFieldUse {
+            id: "head-field".into(),
+            stream_ordinal: 3,
+            attribute_class_use: "head-class-use".into(),
+            entity_51_record: "head".into(),
+            attribute_definition: definition.id.clone(),
+            field_ordinal: 0,
+            field_code: 2,
+            reference_ordinal: 5,
+            value_kind: ParasolidAttributeFieldValueKind::Doubles,
+            value_use: "head-use".into(),
+            value_record: "head-value".into(),
+            inflated_offset: 200,
+        },
+        ParasolidAttributeFieldUse {
+            id: "child-field".into(),
+            stream_ordinal: 3,
+            attribute_class_use: "child-class-use".into(),
+            entity_51_record: "child".into(),
+            attribute_definition: definition.id.clone(),
+            field_ordinal: 0,
+            field_code: 2,
+            reference_ordinal: 5,
+            value_kind: ParasolidAttributeFieldValueKind::Doubles,
+            value_use: "child-use".into(),
+            value_record: "child-value".into(),
+            inflated_offset: 210,
+        },
+    ];
+    let numeric_uses = [
+        ParasolidEntity51NumericUse {
+            id: "head-use".into(),
+            stream_ordinal: 3,
+            entity_51_record: "head".into(),
+            reference_ordinal: 5,
+            referenced_xmt: 70,
+            kind: ParasolidEntity51NumericKind::Doubles,
+            value_record: "head-value".into(),
+            inflated_offset: 200,
+        },
+        ParasolidEntity51NumericUse {
+            id: "child-use".into(),
+            stream_ordinal: 3,
+            entity_51_record: "child".into(),
+            reference_ordinal: 5,
+            referenced_xmt: 71,
+            kind: ParasolidEntity51NumericKind::Doubles,
+            value_record: "child-value".into(),
+            inflated_offset: 210,
+        },
+    ];
+    let doubles = [
+        ParasolidEntity53DoubleRecord {
+            id: "head-value".into(),
+            stream_ordinal: 3,
+            xmt: 70,
+            values: vec![1.0],
+            byte_len: 18,
+            inflated_offset: 400,
+        },
+        ParasolidEntity53DoubleRecord {
+            id: "child-value".into(),
+            stream_ordinal: 3,
+            xmt: 71,
+            values: vec![2.0],
+            byte_len: 18,
+            inflated_offset: 410,
+        },
+    ];
+    let index = super::ParasolidTopologyAttributeIndex::new(
+        &ir,
+        std::slice::from_ref(&reference),
+        &class_uses,
+        std::slice::from_ref(&definition),
+        &field_uses,
+        &[],
+    );
+
+    assert_eq!(index.contexts.len(), 2);
+    assert_eq!(
+        index.class_names.get(reference.id.as_str()).copied(),
+        Some("CLASS")
+    );
+    assert_eq!(
+        index
+            .attribute_names
+            .field_name(&reference, "head-use")
+            .as_deref(),
+        Some("CLASS.field_0.parasolid_type_2")
+    );
+    assert_eq!(
+        index
+            .attribute_names
+            .field_name(&reference, "child-use")
+            .as_deref(),
+        Some("CLASS.field_0.parasolid_type_2")
+    );
+
+    let sources = super::ParasolidNumericAttributeSources {
+        numeric_uses: &numeric_uses,
+        integers: &[],
+        doubles: &doubles,
+    };
+    let mut annotations = AnnotationBuilder::new();
+    super::attach_parasolid_topology_numeric_attributes(
+        &mut ir,
+        &sources,
+        &index,
+        &mut annotations,
+    );
+    let attributes = ir
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| attribute.id.0.contains("topology-numeric-attribute"))
+        .collect::<Vec<_>>();
+    assert_eq!(attributes.len(), 2);
+    assert!(attributes.iter().all(|attribute| {
+        attribute.target == AttributeTarget::Face(FaceId("nx:s3:face#60".into()))
+            && attribute.name == "CLASS.field_0.parasolid_type_2"
+    }));
+    assert_ne!(attributes[0].id, attributes[1].id);
+    assert!(attributes
+        .iter()
+        .any(|attribute| { attribute.values == [AttributeValue::Float(1.0)] }));
+    assert!(attributes
+        .iter()
+        .any(|attribute| { attribute.values == [AttributeValue::Float(2.0)] }));
 }
 
 #[test]

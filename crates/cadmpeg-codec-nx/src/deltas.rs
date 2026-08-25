@@ -3008,6 +3008,15 @@ fn group_layout(
     offset: usize,
     envelope_len: usize,
 ) -> Option<(u32, u32, Vec<u32>, u8, u8, usize)> {
+    group_layout_with_statuses(stream, offset, envelope_len)
+        .or_else(|| group_layout_without_leading_statuses(stream, offset, envelope_len))
+}
+
+fn group_layout_with_statuses(
+    stream: &[u8],
+    offset: usize,
+    envelope_len: usize,
+) -> Option<(u32, u32, Vec<u32>, u8, u8, usize)> {
     let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
@@ -3019,6 +3028,41 @@ fn group_layout(
         at = at.checked_add(consumed)?;
         (stream.get(at) == Some(&1)).then_some(())?;
         at += 1;
+        references.push(reference);
+    }
+    let selector = *stream.get(at)?;
+    matches!(selector, 2 | 4 | 9).then_some(())?;
+    at += 1;
+    let (reference, consumed) = read_xmt(stream, at)?;
+    at = at.checked_add(consumed)?;
+    let linked_reference_status = *stream.get(at)?;
+    matches!(linked_reference_status, 0 | 1).then_some(())?;
+    at += 1;
+    references.push(reference);
+    Some((
+        xmt,
+        node_id,
+        references,
+        selector,
+        linked_reference_status,
+        at,
+    ))
+}
+
+fn group_layout_without_leading_statuses(
+    stream: &[u8],
+    offset: usize,
+    envelope_len: usize,
+) -> Option<(u32, u32, Vec<u32>, u8, u8, usize)> {
+    let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
+    (xmt > 1).then_some(())?;
+    let mut at = offset.checked_add(2 + envelope_len + consumed)?;
+    let node_id = View::u32_be_at(stream, at)?;
+    at += 4;
+    let mut references = Vec::new();
+    for _ in 0..4 {
+        let (reference, consumed) = read_xmt(stream, at)?;
+        at = at.checked_add(consumed)?;
         references.push(reference);
     }
     let selector = *stream.get(at)?;

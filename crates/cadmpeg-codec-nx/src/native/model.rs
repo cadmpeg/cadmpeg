@@ -528,6 +528,7 @@ impl NativeModel {
             parasolid_topology_attribute_list_references(parsed, &parasolid_entity_51_records);
         let parasolid_topology_attribute_class_uses = parasolid_topology_attribute_class_uses(
             &parasolid_topology_attribute_list_references,
+            &parasolid_entity_51_records,
             &parasolid_attribute_class_uses,
         );
         let om_record_areas = om_record_areas(container);

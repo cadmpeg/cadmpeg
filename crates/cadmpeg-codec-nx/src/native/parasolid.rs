@@ -1823,6 +1823,16 @@ pub struct ParasolidBlendSurfaceRecord {
     pub inflated_offset: u64,
 }
 
+fn default_legal_owner_flag_count() -> u8 {
+    16
+}
+
+// Serde's `skip_serializing_if` callback is required to receive `&T`.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_default_legal_owner_flag_count(value: &u8) -> bool {
+    *value == default_legal_owner_flag_count()
+}
+
 /// Named Parasolid attribute class declared in one inflated body stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidAttributeDefinition {
@@ -1848,6 +1858,12 @@ pub struct ParasolidAttributeDefinition {
     pub field_names_xmt: u32,
     /// Ordered legal-owner flags.
     pub legal_owner_flags: [u8; 16],
+    /// Number of legal-owner flags serialized by the definition.
+    #[serde(
+        default = "default_legal_owner_flag_count",
+        skip_serializing_if = "is_default_legal_owner_flag_count"
+    )]
+    pub legal_owner_flag_count: u8,
     /// Declared number of fields.
     pub field_count: u32,
     /// One serialized code for every declared field.
@@ -2261,6 +2277,7 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                     action_codes: definition.action_codes,
                     field_names_xmt: definition.field_names_xmt,
                     legal_owner_flags: definition.legal_owner_flags,
+                    legal_owner_flag_count: definition.legal_owner_flag_count,
                     field_count: definition.field_count,
                     field_codes: definition.field_codes.to_vec(),
                     inflated_offset: definition.offset as u64,
@@ -2859,8 +2876,26 @@ pub fn parasolid_entity_51_structured_uses(
 /// Resolve topology-owned attribute instances through their type-80 definition.
 pub fn parasolid_topology_attribute_class_uses(
     topology_references: &[ParasolidTopologyAttributeListReference],
+    entity_records: &[ParasolidEntity51Record],
     class_uses: &[ParasolidAttributeClassUse],
 ) -> Vec<ParasolidTopologyAttributeClassUse> {
+    let mut records_by_identity = BTreeMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
+    for record in entity_records {
+        records_by_identity
+            .entry((record.stream_ordinal, record.xmt))
+            .or_default()
+            .push(record);
+    }
+    let mut records_by_parent = BTreeMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
+    for record in entity_records {
+        let parent_xmt = record.leading_references[2];
+        if parent_xmt > 1 {
+            records_by_parent
+                .entry((record.stream_ordinal, parent_xmt))
+                .or_default()
+                .push(record);
+        }
+    }
     let mut class_uses_by_entity = BTreeMap::<&str, Vec<&ParasolidAttributeClassUse>>::new();
     for class_use in class_uses {
         class_uses_by_entity
@@ -2873,20 +2908,69 @@ pub fn parasolid_topology_attribute_class_uses(
         let Some(entity_id) = reference.attribute_list_record.as_deref() else {
             continue;
         };
-        let Some([class_use]) = class_uses_by_entity.get(entity_id).map(Vec::as_slice) else {
+        let Some([head]) = records_by_identity
+            .get(&(reference.stream_ordinal, reference.attribute_list_xmt))
+            .map(Vec::as_slice)
+        else {
             continue;
         };
-        uses.push(ParasolidTopologyAttributeClassUse {
-            id: format!(
-                "nx:s{}:topology-attribute-class-use#{}-{}",
-                reference.stream_ordinal, reference.topology_type, reference.topology_xmt
-            ),
-            topology_attribute_reference: reference.id.clone(),
-            entity_51_record: class_use.entity_51_record.clone(),
-            attribute_class_use: class_use.id.clone(),
-            definition_xmt: class_use.definition_xmt,
-            attribute_definition: class_use.attribute_definition.clone(),
-        });
+        if head.id != entity_id || head.leading_references[0] != reference.topology_xmt {
+            continue;
+        }
+
+        let mut members = Vec::new();
+        let mut pending = vec![head.xmt];
+        let mut seen = BTreeSet::from([head.xmt]);
+        while let Some(parent_xmt) = pending.pop() {
+            if parent_xmt == head.xmt {
+                members.push(head);
+            }
+            for child in records_by_parent
+                .get(&(reference.stream_ordinal, parent_xmt))
+                .into_iter()
+                .flatten()
+            {
+                if child.leading_references[0] != reference.topology_xmt {
+                    continue;
+                }
+                let Some([child]) = records_by_identity
+                    .get(&(reference.stream_ordinal, child.xmt))
+                    .map(Vec::as_slice)
+                else {
+                    continue;
+                };
+                if seen.insert(child.xmt) {
+                    pending.push(child.xmt);
+                    members.push(child);
+                }
+            }
+        }
+
+        let base_id = format!(
+            "nx:s{}:topology-attribute-class-use#{}-{}",
+            reference.stream_ordinal, reference.topology_type, reference.topology_xmt
+        );
+        for member in members {
+            let Some([class_use]) = class_uses_by_entity
+                .get(member.id.as_str())
+                .map(Vec::as_slice)
+            else {
+                continue;
+            };
+            let id = if member.id == head.id {
+                base_id.clone()
+            } else {
+                format!("{base_id}-{}", member.xmt)
+            };
+            uses.push(ParasolidTopologyAttributeClassUse {
+                id,
+                topology_attribute_reference: reference.id.clone(),
+                entity_51_record: class_use.entity_51_record.clone(),
+                attribute_class_use: class_use.id.clone(),
+                definition_xmt: class_use.definition_xmt,
+                attribute_definition: class_use.attribute_definition.clone(),
+            });
+        }
     }
     uses.sort_by(|first, second| first.id.cmp(&second.id));
     uses
@@ -3819,6 +3903,7 @@ mod tests {
             action_codes: [0; 8],
             field_names_xmt: 1,
             legal_owner_flags: [0; 16],
+            legal_owner_flag_count: 16,
             field_count: 3,
             field_codes: vec![1, 2, 3],
             inflated_offset: 40,
@@ -4033,6 +4118,7 @@ mod tests {
             action_codes: [0; 8],
             field_names_xmt: 1,
             legal_owner_flags: [0; 16],
+            legal_owner_flag_count: 16,
             field_count: 6,
             field_codes: vec![4, 5, 6, 7, 8, 10],
             inflated_offset: 40,
@@ -4092,6 +4178,7 @@ mod tests {
             action_codes: [0; 8],
             field_names_xmt,
             legal_owner_flags: [0; 16],
+            legal_owner_flag_count: 16,
             field_count: u32::try_from(field_codes.len()).expect("test field count fits u32"),
             field_codes,
             inflated_offset: 20,
@@ -4229,6 +4316,7 @@ mod tests {
             action_codes: [0; 8],
             field_names_xmt: 25,
             legal_owner_flags: [0; 16],
+            legal_owner_flag_count: 16,
             field_count: 3,
             field_codes: vec![2, 1, 1],
             inflated_offset: 20,
@@ -4482,6 +4570,7 @@ mod tests {
             action_codes: [0; 8],
             field_names_xmt: 1,
             legal_owner_flags: [0; 16],
+            legal_owner_flag_count: 16,
             field_count: 1,
             field_codes: vec![1],
             inflated_offset: 100,
@@ -4519,6 +4608,7 @@ mod tests {
 
         let uses = super::parasolid_topology_attribute_class_uses(
             std::slice::from_ref(&reference),
+            std::slice::from_ref(&entity),
             &instance_uses,
         );
         assert_eq!(uses.len(), 1);
@@ -4527,6 +4617,7 @@ mod tests {
         assert_eq!(uses[0].attribute_definition, definition.id);
         assert!(super::parasolid_topology_attribute_class_uses(
             std::slice::from_ref(&reference),
+            std::slice::from_ref(&entity),
             &[instance_uses[0].clone(), instance_uses[0].clone()],
         )
         .is_empty());
@@ -4540,9 +4631,75 @@ mod tests {
         .is_empty());
         assert!(super::parasolid_topology_attribute_class_uses(
             &[reference],
-            &super::parasolid_attribute_class_uses(&[invalid], &[definition]),
+            std::slice::from_ref(&invalid),
+            &super::parasolid_attribute_class_uses(&[invalid.clone()], &[definition]),
         )
         .is_empty());
+    }
+
+    #[test]
+    fn topology_attribute_class_uses_follow_type_81_attribute_list_links() {
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 0,
+            xmt: 20,
+            next_definition_xmt: 1,
+            identifier_xmt: 21,
+            identifier_inflated_offset: 10,
+            name: "CLASS".into(),
+            type_id: 8000,
+            action_codes: [0; 8],
+            field_names_xmt: 1,
+            legal_owner_flags: [0; 16],
+            legal_owner_flag_count: 16,
+            field_count: 1,
+            field_codes: vec![1],
+            inflated_offset: 20,
+        };
+        let head = ParasolidEntity51Record {
+            id: "head".into(),
+            stream_ordinal: 0,
+            xmt: 30,
+            flags: 1,
+            sequence: 1,
+            definition_xmt: 20,
+            leading_references: [40, 1, 1, 1, 1],
+            trailing_references: vec![50],
+            byte_len: 26,
+            inflated_offset: 30,
+        };
+        let child = ParasolidEntity51Record {
+            id: "child".into(),
+            xmt: 31,
+            sequence: 2,
+            leading_references: [40, 1, 30, 1, 1],
+            inflated_offset: 60,
+            ..head.clone()
+        };
+        let reference = ParasolidTopologyAttributeListReference {
+            id: "topology-reference".into(),
+            stream_ordinal: 0,
+            topology_type: 14,
+            topology_xmt: 40,
+            attribute_list_xmt: 30,
+            attribute_list_record: Some(head.id.clone()),
+            inflated_offset: 80,
+        };
+        let class_uses = super::parasolid_attribute_class_uses(
+            &[head.clone(), child.clone()],
+            std::slice::from_ref(&definition),
+        );
+
+        let uses = super::parasolid_topology_attribute_class_uses(
+            std::slice::from_ref(&reference),
+            &[head, child],
+            &class_uses,
+        );
+
+        assert_eq!(uses.len(), 2);
+        assert!(uses.iter().any(|use_| use_.entity_51_record == "head"));
+        assert!(uses.iter().any(|use_| use_.entity_51_record == "child"));
+        assert!(uses.iter().any(|use_| use_.id.ends_with("-31")));
     }
 
     #[test]
@@ -4621,6 +4778,7 @@ mod tests {
         assert_eq!(definitions[0].field_names_xmt, 0x30);
         assert_eq!(definitions[0].legal_owner_flags[4], 1);
         assert_eq!(definitions[0].legal_owner_flags[12], 1);
+        assert_eq!(definitions[0].legal_owner_flag_count, 16);
         assert_eq!(definitions[0].field_count, 1);
         assert_eq!(definitions[0].field_codes, [2]);
 
@@ -4639,6 +4797,36 @@ mod tests {
         bytes[52] = 0;
         bytes[20] = 0;
         assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
+    }
+
+    #[test]
+    fn parasolid_attribute_definition_accepts_fourteen_legal_owner_flags() {
+        let mut bytes = vec![0, 0x4f];
+        bytes.extend_from_slice(&5u32.to_be_bytes());
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        bytes.extend_from_slice(b"CLASS");
+        bytes.extend_from_slice(&[0, 0x50]);
+        bytes.extend_from_slice(&2u32.to_be_bytes());
+        bytes.extend_from_slice(&20u16.to_be_bytes());
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.extend_from_slice(&10u16.to_be_bytes());
+        bytes.extend_from_slice(&8000u32.to_be_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+        bytes.extend_from_slice(&[0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]);
+        bytes.extend_from_slice(&[2, 3]);
+        bytes.extend_from_slice(&[0, 0x4f]);
+
+        let definitions = crate::parasolid::attribute_definitions(&bytes);
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions[0].xmt, 20);
+        assert_eq!(definitions[0].legal_owner_flag_count, 14);
+        assert_eq!(
+            &definitions[0].legal_owner_flags[..14],
+            [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]
+        );
+        assert_eq!(&definitions[0].legal_owner_flags[14..], [0, 0]);
+        assert_eq!(definitions[0].field_codes, [2, 3]);
     }
 
     #[test]

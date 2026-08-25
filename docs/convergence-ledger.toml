@@ -34,9 +34,9 @@ bare_tolerance_literals = 708
 nonliteral_vec_repeat = 151
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 2112
+test_line_debt = 2176
 production_line_debt = 0
 
 [reasons]
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
-test_line_debt = "retaining exact GROUP controls adds two fields to an existing Parasolid deltas-record test literal"
+test_line_debt = "adding alternate Parasolid GROUP framing, 14-byte attribute definitions, and type-81 list-link fixtures increases owner-local test coverage"
