@@ -7199,6 +7199,512 @@ source = "spec"
 anchor = "a nonzero, non-null u32 identity at marker +165"
 
 [[record]]
+name = "legacy_geometry_locus_shifted_162_line_handle_point"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs"
+kind = "byte"
+section = "2"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+size = 162
+endianness = "little"
+note = "The coordinate tag is admitted as a line-handle point only with the child declaration and the following marker boundary."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "eight `ff` bytes at marker +5"
+
+[[record.field]]
+name = "prefix_sentinel"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native code `2` requires"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 21
+type = "bytes[2]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "zero_before_state_value"
+offset = 39
+type = "bytes[9]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "zero_before_coordinate_tag"
+offset = 56
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at marker +56 through +63"
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "coordinate tag `1e 00` at marker +64"
+
+[[record.field]]
+name = "coordinate_first"
+offset = 66
+type = "f64"
+source = "spec"
+anchor = "finite planar coordinates at marker +66 and +74"
+
+[[record.field]]
+name = "coordinate_second"
+offset = 74
+type = "f64"
+source = "spec"
+anchor = "finite planar coordinates at marker +66 and +74"
+
+[[record.gap]]
+offset = 82
+size = 2
+note = "The shifted line declaration state begins at marker +84."
+
+[[record.field]]
+name = "handle_state"
+offset = 84
+type = "u16"
+source = "spec"
+anchor = "`sgLineHandle` child declaration at marker +86"
+
+[[record.field]]
+name = "child_class_header"
+offset = 86
+type = "bytes[6]"
+source = "spec"
+anchor = "`sgLineHandle` child declaration at marker +86"
+
+[[record.field]]
+name = "child_class_name"
+offset = 92
+type = "bytes[12]"
+source = "spec"
+anchor = "`sgLineHandle` child declaration at marker +86"
+
+[[record.gap]]
+offset = 104
+size = 8
+note = "The short child-reference body precedes the framed sentinel."
+
+[[record.field]]
+name = "sentinel"
+offset = 112
+type = "bytes[4]"
+source = "spec"
+anchor = "sentinels at marker +112 and +128"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 116
+type = "bytes[42]"
+source = "spec"
+anchor = "The following sketch marker begins at the record size"
+
+[[record.field]]
+name = "identity"
+offset = 158
+type = "u32"
+source = "spec"
+anchor = "The following sketch marker begins at the record size"
+
+[[record]]
+name = "legacy_geometry_locus_shifted_177_arc_handle_point"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs"
+kind = "byte"
+section = "2"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+size = 177
+endianness = "little"
+note = "The arc child declaration and the following marker boundary make the coordinate-bearing marker a point."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "eight `ff` bytes at marker +5"
+
+[[record.field]]
+name = "prefix_sentinel"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native code `1` requires"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 21
+type = "bytes[2]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "zero_before_state_value"
+offset = 39
+type = "bytes[9]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "zero_before_coordinate_tag"
+offset = 56
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at marker +56 through +63"
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "coordinate tag `1e 00` at marker +64"
+
+[[record.field]]
+name = "coordinate_first"
+offset = 66
+type = "f64"
+source = "spec"
+anchor = "finite planar coordinates at marker +66 and +74"
+
+[[record.field]]
+name = "coordinate_second"
+offset = 74
+type = "f64"
+source = "spec"
+anchor = "finite planar coordinates at marker +66 and +74"
+
+[[record.gap]]
+offset = 82
+size = 2
+note = "The shifted arc declaration state begins at marker +84."
+
+[[record.field]]
+name = "handle_state"
+offset = 84
+type = "u16"
+source = "spec"
+anchor = "`sgArcHandle` child declaration at marker +98"
+
+[[record.gap]]
+offset = 86
+size = 12
+note = "The arc child reference body precedes its class declaration."
+
+[[record.field]]
+name = "child_class_header"
+offset = 98
+type = "bytes[6]"
+source = "spec"
+anchor = "`sgArcHandle` child declaration at marker +98"
+
+[[record.field]]
+name = "child_class_name"
+offset = 104
+type = "bytes[11]"
+source = "spec"
+anchor = "`sgArcHandle` child declaration at marker +98"
+
+[[record.gap]]
+offset = 115
+size = 12
+note = "The arc child-reference body precedes the framed sentinel."
+
+[[record.field]]
+name = "sentinel"
+offset = 127
+type = "bytes[4]"
+source = "spec"
+anchor = "sentinel at marker +127"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 131
+type = "bytes[42]"
+source = "spec"
+anchor = "The following sketch marker begins at the record size"
+
+[[record.field]]
+name = "identity"
+offset = 173
+type = "u32"
+source = "spec"
+anchor = "The following sketch marker begins at the record size"
+
+[[record]]
+name = "legacy_geometry_locus_shifted_178_line_handle_point"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs"
+kind = "byte"
+section = "2"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+size = 178
+endianness = "little"
+note = "The extended line child body and the following marker boundary make the coordinate-bearing marker a point."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "eight `ff` bytes at marker +5"
+
+[[record.field]]
+name = "prefix_sentinel"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native code `2` requires"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 21
+type = "bytes[2]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "zero_before_state_value"
+offset = 39
+type = "bytes[9]"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "A legacy-prefix shifted geometry-locus handle point"
+
+[[record.field]]
+name = "zero_before_coordinate_tag"
+offset = 56
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at marker +56 through +63"
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 64
+type = "bytes[2]"
+source = "spec"
+anchor = "coordinate tag `1e 00` at marker +64"
+
+[[record.field]]
+name = "coordinate_first"
+offset = 66
+type = "f64"
+source = "spec"
+anchor = "finite planar coordinates at marker +66 and +74"
+
+[[record.field]]
+name = "coordinate_second"
+offset = 74
+type = "f64"
+source = "spec"
+anchor = "finite planar coordinates at marker +66 and +74"
+
+[[record.gap]]
+offset = 82
+size = 2
+note = "The shifted line declaration state begins at marker +84."
+
+[[record.field]]
+name = "handle_state"
+offset = 84
+type = "u16"
+source = "spec"
+anchor = "`sgLineHandle` child declaration at marker +86"
+
+[[record.field]]
+name = "child_class_header"
+offset = 86
+type = "bytes[6]"
+source = "spec"
+anchor = "`sgLineHandle` child declaration at marker +86"
+
+[[record.field]]
+name = "child_class_name"
+offset = 92
+type = "bytes[12]"
+source = "spec"
+anchor = "`sgLineHandle` child declaration at marker +86"
+
+[[record.gap]]
+offset = 104
+size = 24
+note = "The extended child-reference body precedes the framed sentinel."
+
+[[record.field]]
+name = "sentinel"
+offset = 128
+type = "bytes[4]"
+source = "spec"
+anchor = "sentinels at marker +112 and +128"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 132
+type = "bytes[42]"
+source = "spec"
+anchor = "The following sketch marker begins at the record size"
+
+[[record.field]]
+name = "identity"
+offset = 174
+type = "u32"
+source = "spec"
+anchor = "The following sketch marker begins at the record size"
+
+[[record]]
 name = "current_geometry_locus_arc_handle_point"
 kind = "byte"
 section = "2"

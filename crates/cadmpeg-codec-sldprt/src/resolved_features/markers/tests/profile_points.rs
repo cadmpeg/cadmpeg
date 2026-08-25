@@ -146,6 +146,8 @@ fn shifted_geometry_locus_coordinates_require_the_record_trailer() {
 #[test]
 fn shifted_geometry_handle_children_are_points() {
     for (record_len, code, tag, sentinel, declaration_offset, declaration) in [
+        (162, 2u32, [0x1e, 0x00], 112, 86, b"sgLineHandle".as_slice()),
+        (178, 2u32, [0x1e, 0x00], 128, 86, b"sgLineHandle".as_slice()),
         (178, 2u32, [0x13, 0x00], 128, 86, b"sgLineHandle".as_slice()),
         (177, 1u32, [0x12, 0x00], 127, 98, b"sgArcHandle".as_slice()),
     ] {
@@ -184,6 +186,9 @@ fn shifted_geometry_handle_children_are_points() {
         };
         assert_eq!(entity.kind, SketchInputKind::Point);
         assert_eq!(entity.coordinates_m, Some([1.25, -2.5]));
+
+        payload[offset + sentinel] = 0;
+        assert_eq!(shifted_geometry_handle_coordinates(&payload, offset), None);
     }
 }
 

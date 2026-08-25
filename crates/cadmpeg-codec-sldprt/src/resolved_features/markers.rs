@@ -2629,7 +2629,7 @@ fn shifted_geometry_locus_coordinates(payload: &[u8], offset: usize) -> Option<[
         || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
         || !matches!(
             payload.get(offset + 64..offset + 66),
-            Some([0x12 | 0x13 | 0x16, 0x00])
+            Some([0x12 | 0x13 | 0x16 | 0x1e, 0x00])
         )
     {
         return None;

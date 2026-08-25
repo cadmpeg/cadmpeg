@@ -1771,6 +1771,121 @@ The arc-handle declaration makes the coordinate-bearing marker a point; the next
 | 123 | 42 | `zero_trailer` | `bytes[42]` | little | spec | 42 zero bytes at marker +123 |
 | 165 | 4 | `identity` | `u32` | little | spec | a nonzero, non-null u32 identity at marker +165 |
 
+## `legacy_geometry_locus_shifted_162_line_handle_point`
+
+Spec §2 · layout: byte offsets · size: 162 B
+
+The coordinate tag is admitted as a line-handle point only with the child declaration and the following marker boundary.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `prefix_sentinel` | `f32` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native code `2` requires |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 27 | 2 | `role` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 29 | 2 | `state` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 48 | 8 | `state_value` | `f64` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 56 | 8 | `zero_before_coordinate_tag` | `bytes[8]` | little | spec | eight zero bytes at marker +56 through +63 |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +64 |
+| 66 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 74 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 84 | 2 | `handle_state` | `u16` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 86 | 6 | `child_class_header` | `bytes[6]` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 92 | 12 | `child_class_name` | `bytes[12]` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 112 | 4 | `sentinel` | `bytes[4]` | little | spec | sentinels at marker +112 and +128 |
+| 116 | 42 | `zero_trailer` | `bytes[42]` | little | spec | The following sketch marker begins at the record size |
+| 158 | 4 | `identity` | `u32` | little | spec | The following sketch marker begins at the record size |
+
+Unstated regions:
+
+- `82..84` (2 B): The shifted line declaration state begins at marker +84.
+- `104..112` (8 B): The short child-reference body precedes the framed sentinel.
+
+## `legacy_geometry_locus_shifted_177_arc_handle_point`
+
+Spec §2 · layout: byte offsets · size: 177 B
+
+The arc child declaration and the following marker boundary make the coordinate-bearing marker a point.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `prefix_sentinel` | `f32` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native code `1` requires |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 27 | 2 | `role` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 29 | 2 | `state` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 48 | 8 | `state_value` | `f64` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 56 | 8 | `zero_before_coordinate_tag` | `bytes[8]` | little | spec | eight zero bytes at marker +56 through +63 |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +64 |
+| 66 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 74 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 84 | 2 | `handle_state` | `u16` | little | spec | `sgArcHandle` child declaration at marker +98 |
+| 98 | 6 | `child_class_header` | `bytes[6]` | little | spec | `sgArcHandle` child declaration at marker +98 |
+| 104 | 11 | `child_class_name` | `bytes[11]` | little | spec | `sgArcHandle` child declaration at marker +98 |
+| 127 | 4 | `sentinel` | `bytes[4]` | little | spec | sentinel at marker +127 |
+| 131 | 42 | `zero_trailer` | `bytes[42]` | little | spec | The following sketch marker begins at the record size |
+| 173 | 4 | `identity` | `u32` | little | spec | The following sketch marker begins at the record size |
+
+Unstated regions:
+
+- `82..84` (2 B): The shifted arc declaration state begins at marker +84.
+- `86..98` (12 B): The arc child reference body precedes its class declaration.
+- `115..127` (12 B): The arc child-reference body precedes the framed sentinel.
+
+## `legacy_geometry_locus_shifted_178_line_handle_point`
+
+Spec §2 · layout: byte offsets · size: 178 B
+
+The extended line child body and the following marker boundary make the coordinate-bearing marker a point.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `prefix_sentinel` | `f32` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native code `2` requires |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 27 | 2 | `role` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 29 | 2 | `state` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 48 | 8 | `state_value` | `f64` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 56 | 8 | `zero_before_coordinate_tag` | `bytes[8]` | little | spec | eight zero bytes at marker +56 through +63 |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +64 |
+| 66 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 74 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 84 | 2 | `handle_state` | `u16` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 86 | 6 | `child_class_header` | `bytes[6]` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 92 | 12 | `child_class_name` | `bytes[12]` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 128 | 4 | `sentinel` | `bytes[4]` | little | spec | sentinels at marker +112 and +128 |
+| 132 | 42 | `zero_trailer` | `bytes[42]` | little | spec | The following sketch marker begins at the record size |
+| 174 | 4 | `identity` | `u32` | little | spec | The following sketch marker begins at the record size |
+
+Unstated regions:
+
+- `82..84` (2 B): The shifted line declaration state begins at marker +84.
+- `104..128` (24 B): The extended child-reference body precedes the framed sentinel.
+
 ## `current_geometry_locus_arc_handle_point`
 
 Spec §2 · layout: byte offsets · size: 167 B
