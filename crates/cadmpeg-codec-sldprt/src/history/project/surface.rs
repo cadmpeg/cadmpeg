@@ -131,6 +131,7 @@ pub(crate) fn project_trim_surface(
             .get("Keep")
             .and_then(|value| crate::feature_schema::parse_trim_region(value))
             .unwrap_or(TrimRegion::Unresolved),
+        cell_selection: None,
     }
 }
 

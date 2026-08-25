@@ -3281,9 +3281,24 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
                 face_selections.push(support_faces);
             }
-            FeatureDefinition::TrimSurface { faces, tool, .. } => {
+            FeatureDefinition::TrimSurface {
+                faces,
+                tool,
+                keep,
+                cell_selection,
+            } => {
                 face_selections.push(faces);
                 paths.push(tool);
+                if cell_selection.as_ref().is_some_and(|selection| {
+                    !selection.is_valid()
+                        || !matches!(keep, crate::features::TrimRegion::Unresolved)
+                }) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "surface trim cell selection is invalid or conflicts with keep",
+                    );
+                }
             }
             FeatureDefinition::ExtendSurface {
                 faces, distance, ..

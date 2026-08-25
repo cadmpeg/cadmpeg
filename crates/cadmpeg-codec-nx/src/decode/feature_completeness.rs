@@ -321,12 +321,19 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
 }
 
 pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::TrimSurface { faces, tool, keep } = &feature.definition else {
+    let FeatureDefinition::TrimSurface {
+        faces,
+        tool,
+        keep,
+        cell_selection,
+    } = &feature.definition
+    else {
         return true;
     };
     face_selection_is_incomplete(faces)
         || path_ref_is_incomplete(tool)
         || matches!(keep, TrimRegion::Unresolved)
+        || cell_selection.is_some()
 }
 
 pub(crate) fn extend_surface_definition_is_incomplete(feature: &Feature) -> bool {

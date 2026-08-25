@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral construction-feature taxonomy.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::assets::AssetId;
 use crate::ids::{
@@ -1467,6 +1467,10 @@ pub enum FeatureDefinition {
         tool: PathRef,
         /// Region retained after trimming.
         keep: TrimRegion,
+        /// Explicit source cell selection when the operation removes a set of
+        /// partition cells rather than one canonical inside/outside region.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell_selection: Option<TrimCellSelection>,
     },
     /// Extends selected surface boundaries by a fixed distance.
     ExtendSurface {
@@ -2294,6 +2298,35 @@ pub enum TrimRegion {
     Inside,
     /// Retain the region outside the trimming path.
     Outside,
+}
+
+/// Cells removed by a trim operation from its partition of the target faces.
+///
+/// Cell ordinals are one-based within the operation's source partition. The
+/// total is part of the semantic value because the complement is the retained
+/// result and a selected set can contain neither all nor only the first cells.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct TrimCellSelection {
+    /// One-based ordinals of cells removed by the operation.
+    pub removed: Vec<u64>,
+    /// Number of cells in the operation's partition.
+    pub total: u64,
+}
+
+impl TrimCellSelection {
+    /// Whether the cell selection is a nonempty, in-range set.
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        let mut seen = HashSet::with_capacity(self.removed.len());
+        self.total > 0
+            && !self.removed.is_empty()
+            && self
+                .removed
+                .iter()
+                .all(|ordinal| *ordinal > 0 && *ordinal <= self.total)
+            && self.removed.iter().all(|ordinal| seen.insert(*ordinal))
+    }
 }
 
 /// Geometric law used to extend a surface boundary.

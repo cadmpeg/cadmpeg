@@ -349,6 +349,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
             faces: FaceSelection::Unresolved,
             tool: PathRef::Unresolved(_),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            ..
         }
     ));
     assert!(matches!(

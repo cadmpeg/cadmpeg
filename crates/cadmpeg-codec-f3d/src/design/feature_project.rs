@@ -44,7 +44,8 @@ use crate::records::{
     DesignFixedExtrudeDistance, DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
     DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
-    DesignSurfaceOffsetSupport, SketchCurveGeometry, SketchCurveIdentity,
+    DesignSurfaceOffsetSupport, DesignSurfaceTrimOperation, SketchCurveGeometry,
+    SketchCurveIdentity,
 };
 use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
@@ -7250,9 +7251,8 @@ fn project_replace_face(
 ///
 /// Fusion stores the surface target as a role-`0x04` body-recipe group and
 /// the trimming path as a role-`0x21` entity-selection group. The cell table
-/// that determines the retained side is decoded separately; until its source
-/// cells are mapped to a neutral region, retain the typed operation with an
-/// explicit unresolved region rather than falling back to an opaque feature.
+/// that selects the cells to remove is decoded separately and bound to the
+/// projected operation after the source selections have been resolved.
 pub(crate) fn project_surface_trim(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
@@ -7291,7 +7291,50 @@ pub(crate) fn project_surface_trim(
         faces: resolved_body_recipe_selection(scope, target_group, body_recipe_operands)?,
         tool: PathRef::Native(tool_group.id.clone()),
         keep: TrimRegion::Unresolved,
+        cell_selection: None,
     })
+}
+
+/// Bind the exact removed-cell set retained by a decoded `SurfaceTrim`.
+///
+/// A source trim selects cells for removal. That set is independent of the
+/// canonical inside/outside shorthand and must remain explicit when it is not
+/// reducible to one of those two regions.
+pub(crate) fn bind_surface_trim_cell_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[DesignParameterScope],
+    operations: &[DesignSurfaceTrimOperation],
+) {
+    for feature in features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(scope) = scopes.iter().find(|scope| scope.id == native_ref) else {
+            continue;
+        };
+        let Some(operation) = operations.iter().find(|operation| {
+            operation.scope_record_index == scope.record_index
+                && native_stream(&operation.id) == native_stream(&scope.id)
+        }) else {
+            continue;
+        };
+        let selection = cadmpeg_ir::features::TrimCellSelection {
+            removed: operation
+                .cell_entries
+                .iter()
+                .map(|entry| entry.ordinal)
+                .collect(),
+            total: u64::from(operation.trailing_value),
+        };
+        if !selection.is_valid() {
+            continue;
+        }
+        if let cadmpeg_ir::features::FeatureDefinition::TrimSurface { cell_selection, .. } =
+            &mut feature.definition
+        {
+            *cell_selection = Some(selection);
+        }
+    }
 }
 
 pub(crate) fn project_split(

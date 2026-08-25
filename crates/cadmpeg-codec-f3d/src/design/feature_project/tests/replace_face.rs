@@ -10,7 +10,7 @@ use super::prelude::*;
 
 use crate::records::{
     ConstructionRecipeKind, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
-    DesignConstructionOperandGroupFrame,
+    DesignConstructionOperandGroupFrame, DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation,
 };
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
 
@@ -224,8 +224,78 @@ fn surface_trim_projects_body_target_and_curve_tool() {
             faces: FaceSelection::Historical { ref faces, ref native, .. },
             tool: cadmpeg_ir::features::PathRef::Native(ref tool),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            cell_selection: None,
         } if faces.len() == 1
             && native == &target_group.id
             && tool == &tool_group.id
+    ));
+}
+
+#[test]
+fn surface_trim_binds_selected_cells_without_inventing_a_side() {
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#1200",
+        "SurfaceTrim",
+        1200,
+    );
+    let mut feature = cadmpeg_ir::features::Feature::new(
+        cadmpeg_ir::features::FeatureId::from("f3d:feature#1200"),
+        0,
+        FeatureDefinition::TrimSurface {
+            faces: FaceSelection::Unresolved,
+            tool: cadmpeg_ir::features::PathRef::Unresolved("tool".into()),
+            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            cell_selection: None,
+        },
+    );
+    feature.native_ref = Some(scope.id.clone());
+    let operation = DesignSurfaceTrimOperation {
+        id: "f3d:Design/BulkStream.dat:design-surface-trim-operation#1200".into(),
+        scope_record_index: 1200,
+        selection_record_index: 1,
+        selection_byte_offset: 0,
+        selection_next_record_index: 2,
+        selection_next_byte_offset: 0,
+        chain_records: Vec::new(),
+        cell_table_record_index: 3,
+        cell_table_byte_offset: 0,
+        cell_table_class_tag: "325".into(),
+        cell_table_frame_length: 0,
+        cell_table_paired_class_tag: "257".into(),
+        cell_table_paired_byte_offset: 0,
+        cell_count: 2,
+        cell_count_offset: 0,
+        cell_entries: vec![
+            DesignSurfaceTrimCellEntry {
+                record_index: 4,
+                record_reference_offset: 0,
+                ordinal: 1,
+                ordinal_offset: 0,
+            },
+            DesignSurfaceTrimCellEntry {
+                record_index: 5,
+                record_reference_offset: 0,
+                ordinal: 4,
+                ordinal_offset: 0,
+            },
+        ],
+        trailing_value: 5,
+        trailing_value_offset: 0,
+        trailing_zero_offset: 0,
+    };
+
+    super::bind_surface_trim_cell_selections(
+        std::slice::from_mut(&mut feature),
+        std::slice::from_ref(&scope),
+        std::slice::from_ref(&operation),
+    );
+
+    assert!(matches!(
+        feature.definition,
+        FeatureDefinition::TrimSurface {
+            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            cell_selection: Some(cadmpeg_ir::features::TrimCellSelection { removed, total }),
+            ..
+        } if removed == vec![1, 4] && total == 5
     ));
 }

@@ -51,7 +51,7 @@ fn surface_trim_selection_and_cell_table() -> (Vec<u8>, DesignParameterScope) {
     indexed_header(&mut bytes, *b"325", 817);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&2u32.to_le_bytes());
-    for (record_index, ordinal) in [(819u32, 10u64), (820, 20)] {
+    for (record_index, ordinal) in [(819u32, 1u64), (820, 4)] {
         bytes.push(1);
         bytes.extend_from_slice(&record_index.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
@@ -103,12 +103,32 @@ fn surface_trim_decodes_selection_chain_and_cell_table() {
             .iter()
             .map(|entry| (entry.record_index, entry.ordinal))
             .collect::<Vec<_>>(),
-        vec![(819, 10), (820, 20)]
+        vec![(819, 1), (820, 4)]
     );
     assert_eq!(operation.trailing_value, 5);
     assert_eq!(
         operation.trailing_zero_offset,
         operation.trailing_value_offset + 4
+    );
+}
+
+#[test]
+fn surface_trim_rejects_cell_ordinal_outside_partition() {
+    let (mut bytes, scope) = surface_trim_selection_and_cell_table();
+    let table_start = bytes
+        .windows(11)
+        .position(|window| window == [3, 0, 0, 0, b'3', b'2', b'5', 0x31, 3, 0, 0])
+        .expect("cell table header");
+    let ordinal = table_start + 25 + 11;
+    assert_eq!(
+        bytes[ordinal..ordinal + 8],
+        1u64.to_le_bytes(),
+        "first cell ordinal"
+    );
+    bytes[ordinal..ordinal + 8].copy_from_slice(&6u64.to_le_bytes());
+    assert!(
+        exact_surface_trim_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+            .is_none()
     );
 }
 

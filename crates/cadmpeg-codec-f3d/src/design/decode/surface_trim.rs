@@ -20,8 +20,9 @@ use std::collections::{HashMap, HashSet};
 ///
 /// The carrier is reached from the trimming entity selection. Two indexed
 /// records precede the cell table. The table itself is class-287 or class-325
-/// and has one 19-byte entry for each marked cell reference. The entry ordinal
-/// and trailing value are retained without assigning the retained-side rule.
+/// and has one 19-byte entry for each marked cell reference. The entries are
+/// cells selected for removal, and the trailing value is the total cell count
+/// of the operation's partition.
 pub(crate) fn exact_surface_trim_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -86,8 +87,14 @@ pub(crate) fn exact_surface_trim_operation(
     if paired != expected_paired || View::u32_le_at(bytes, trailing_zero_offset) != Some(0) {
         return None;
     }
+    let trailing_value = View::u32_le_at(bytes, trailing_value_offset)?;
+    if trailing_value == 0 {
+        return None;
+    }
+    let total_cells = u64::from(trailing_value);
     let mut cell_entries = Vec::with_capacity(cell_count_usize);
     let mut cell_record_indices = HashSet::with_capacity(cell_count_usize);
+    let mut cell_ordinals = HashSet::with_capacity(cell_count_usize);
     for ordinal in 0..cell_count_usize {
         let entry_start = entries_start.checked_add(ordinal.checked_mul(19)?)?;
         let cell_record_index = marked_record_reference(bytes, entry_start)?;
@@ -100,6 +107,10 @@ pub(crate) fn exact_surface_trim_operation(
         let cell_record_reference_offset = u64::try_from(entry_start.checked_add(1)?).ok()?;
         let ordinal_offset = u64::try_from(entry_start.checked_add(11)?).ok()?;
         let ordinal_value = View::u64_le_at(bytes, entry_start.checked_add(11)?)?;
+        if ordinal_value == 0 || ordinal_value > total_cells || !cell_ordinals.insert(ordinal_value)
+        {
+            return None;
+        }
         cell_entries.push(DesignSurfaceTrimCellEntry {
             record_index: cell_record_index,
             record_reference_offset: cell_record_reference_offset,
@@ -124,7 +135,7 @@ pub(crate) fn exact_surface_trim_operation(
         cell_count,
         cell_count_offset: u64::try_from(cell_count_offset).ok()?,
         cell_entries,
-        trailing_value: View::u32_le_at(bytes, trailing_value_offset)?,
+        trailing_value,
         trailing_value_offset: u64::try_from(trailing_value_offset).ok()?,
         trailing_zero_offset: u64::try_from(trailing_zero_offset).ok()?,
     })

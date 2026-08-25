@@ -1085,13 +1085,15 @@ fn semantic_writer_round_trips_trim_surface() {
             faces: FaceSelection::Resolved { faces, native },
             tool: PathRef::Edges(edges),
             keep: TrimRegion::Inside,
+            ..
         } if faces == std::slice::from_ref(&face_id) && native == &face && edges == std::slice::from_ref(&edge_id)
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::TrimSurface { faces, tool, keep } =
-            &mut ir_edit.model.features[0].definition
+        let FeatureDefinition::TrimSurface {
+            faces, tool, keep, ..
+        } = &mut ir_edit.model.features[0].definition
         else {
             panic!("typed trim surface");
         };

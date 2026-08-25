@@ -528,10 +528,21 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         | FeatureDefinition::DatumPrincipalPlane { .. } => false,
         FeatureDefinition::MeshImport { tessellations } => tessellations.is_empty(),
         FeatureDefinition::Decal { faces, .. } => !face_selection_is_resolved(faces),
-        FeatureDefinition::TrimSurface { faces, tool, keep } => {
+        FeatureDefinition::TrimSurface {
+            faces,
+            tool,
+            keep,
+            cell_selection,
+        } => {
             !face_selection_is_resolved(faces)
                 || !loft_path_is_resolved(tool)
-                || matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved)
+                || match cell_selection {
+                    Some(selection) => {
+                        !selection.is_valid()
+                            || !matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved)
+                    }
+                    None => matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved),
+                }
         }
         FeatureDefinition::CosmeticThread {
             face,
@@ -2420,6 +2431,11 @@ impl<'a> F3dDecodeSession<'a> {
                     histories: &self.native.asm_histories,
                 },
             )?;
+        crate::design::feature_project::bind_surface_trim_cell_selections(
+            &mut self.ir.model.features,
+            &self.native.design_parameter_scopes,
+            &self.native.design_surface_trim_operations,
+        );
         if let Some(geometry) = &self.geometry {
             bind_mesh_feature_definitions(
                 &mut self.ir.model.features,

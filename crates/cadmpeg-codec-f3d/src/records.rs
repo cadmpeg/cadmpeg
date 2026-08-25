@@ -3075,7 +3075,7 @@ pub struct DesignSurfaceTrimCellEntry {
     pub record_index: u32,
     /// Byte offset of the marked cell-record reference.
     pub record_reference_offset: u64,
-    /// Serialized entry ordinal. Its retained-side meaning is unresolved.
+    /// One-based partition ordinal of a cell selected for removal.
     pub ordinal: u64,
     /// Byte offset of the serialized entry ordinal.
     pub ordinal_offset: u64,
@@ -3117,7 +3117,7 @@ pub struct DesignSurfaceTrimOperation {
     pub cell_count_offset: u64,
     /// Ordered cell-table entries.
     pub cell_entries: Vec<DesignSurfaceTrimCellEntry>,
-    /// Serialized value after the counted cell-entry run. Its meaning is unresolved.
+    /// Total number of cells in the operation's partition.
     pub trailing_value: u32,
     /// Byte offset of `trailing_value`.
     pub trailing_value_offset: u64,

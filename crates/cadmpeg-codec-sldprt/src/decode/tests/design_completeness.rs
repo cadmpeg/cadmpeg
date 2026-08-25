@@ -738,6 +738,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             faces: face.clone(),
             tool: path.clone(),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            cell_selection: None,
         },
         FeatureDefinition::Draft {
             faces: face.clone(),

@@ -5315,6 +5315,7 @@ fn non_boolean_feature_definition_with_parameters(
             faces: FaceSelection::Unresolved,
             tool: PathRef::Unresolved("nx:unresolved".into()),
             keep: TrimRegion::Unresolved,
+            cell_selection: None,
         },
         "EXTEND_SHEET" => FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Unresolved,

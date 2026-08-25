@@ -887,6 +887,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             faces: FaceSelection::Unresolved,
             tool: cadmpeg_ir::features::PathRef::Unresolved("nx:unresolved".into()),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            cell_selection: None,
         }
     );
     assert_eq!(

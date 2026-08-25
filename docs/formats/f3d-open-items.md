@@ -252,28 +252,6 @@ the ordered face-selection groups.
 its payload. The physical thread construction and face selections decode
 without assigning a semantic role to that record.
 
-### DR-74. `SurfaceTrim` BRep-cell retention semantics
-
-**Question.** Which BRep-cell record and field select the side retained by a
-`SurfaceTrim` operation, and how does the selected cell map to
-`TrimRegion::Inside` or `TrimRegion::Outside`?
-
-**Known.** `f3d.md` §3.1 "A `SurfaceTrim` scope has four ordered references"
-defines the target body-recipe group, the trimming entity-selection group, the
-two-record chain, and the class-`287`/`325` BRep-cell table. The table has a
-counted run of marked cell records, one u64 ordinal per entry, a trailing u32,
-and a zero u32 before its paired header. The decoder retains the exact chain,
-table frame, cell references, ordinals, and tail values. The cell records
-retain the source cell topology and their body-recipe context. The target
-faces and trimming curves can be projected without assigning a retained-side
-value. No field in the typed target-and-tool groups is the retained-side
-selector.
-
-**Need.** A neutral `TrimSurface` must select the same result side and a
-source-less writer must emit the cell table and its selected-cell state. The
-decoder retains `TrimRegion::Unresolved` until the cell-table field and its
-inside/outside mapping are established.
-
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
