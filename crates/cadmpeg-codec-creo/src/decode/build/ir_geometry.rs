@@ -55,6 +55,18 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let positional_spline_replay_count = transfer_positional_spline_replays(scan, ir, annotations);
     let legacy_ascii_surface_carrier_count =
         transfer_legacy_ascii_surface_carriers(scan, ir, annotations);
+    let legacy_torus_sphere_carrier_count = scan
+        .surfaces
+        .legacy_carriers
+        .iter()
+        .filter(|carrier| {
+            matches!(
+                carrier.geometry,
+                crate::legacy_geometry::LegacySurfaceGeometry::Torus { .. }
+                    | crate::legacy_geometry::LegacySurfaceGeometry::Sphere { .. }
+            )
+        })
+        .count();
     let paired_envelope_sphere_count = transfer_paired_envelope_spheres(scan, ir, annotations);
     let positional_torus_count = transfer_positional_tori(scan, ir, annotations);
     let positional_line_extrusion_plane_count =
@@ -323,6 +335,12 @@ pub(super) fn transfer_and_record_scanned_geometry(
                     .0
                     .to_string(),
                 legacy_ascii_surface_carrier_count,
+            );
+        }
+        if legacy_torus_sphere_carrier_count != 0 {
+            coverage.insert(
+                "decoded_legacy_torus_or_sphere_carrier_count".to_string(),
+                legacy_torus_sphere_carrier_count,
             );
         }
         coverage.insert(

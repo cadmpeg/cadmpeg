@@ -196,6 +196,18 @@ frame; the source `u` parameter is unchanged. A missing, repeated,
 incomplete, non-finite, zero, out-of-range, or conflicting field leaves the
 bounded row and prototype native.
 
+A legacy ASCII torus-or-sphere row has one direct `srf_prim_ptr(torus)` child.
+Its complete `local_sys` type-2 array has dimensions `[4][3]` and twelve
+row-major scalar slots. Columns zero, one, and two are the reference direction,
+transverse support direction, and axis; slots nine through eleven are the
+model-space center. The three directions form a right-handed orthonormal
+frame. Its `radius1` and `radius2` fields are finite, with `radius1 >= 0` and
+`radius2 > 0`. A positive `radius1` defines a torus with major radius
+`radius1` and minor radius `radius2`; exact `radius1 = 0` defines a sphere of
+radius `radius2` at the stored center. A missing, repeated, incomplete,
+non-finite, negative `radius1`, non-positive `radius2`, or conflicting field
+leaves the row and prototype native.
+
 A body-section header is `#<name>\n`. The first header follows the TOC's
 newline. Later headers follow either the text delimiter `#\n` or the PSB
 compound-close byte `f1`. An `f1 #<name>\n` boundary is a section boundary only

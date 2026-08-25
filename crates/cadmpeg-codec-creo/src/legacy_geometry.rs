@@ -43,6 +43,30 @@ pub(crate) enum LegacySurfaceGeometry {
         /// Sign that maps the source `v` parameter to this positive-angle frame.
         parameter_v_sign: f64,
     },
+    /// A torus from a complete legacy local system and two radii.
+    Torus {
+        /// Torus center in the stored model coordinate system.
+        center: [f64; 3],
+        /// Unit torus axis from local-system column two.
+        axis: [f64; 3],
+        /// Unit parameter-space reference direction.
+        ref_direction: [f64; 3],
+        /// Torus major radius.
+        major_radius: f64,
+        /// Torus minor radius.
+        minor_radius: f64,
+    },
+    /// A sphere represented by the torus family with a zero major radius.
+    Sphere {
+        /// Sphere center in the stored model coordinate system.
+        center: [f64; 3],
+        /// Stored local-system axis retained for parameter provenance.
+        axis: [f64; 3],
+        /// Stored local-system reference direction retained for provenance.
+        ref_direction: [f64; 3],
+        /// Sphere radius.
+        radius: f64,
+    },
     /// A complete bicubic interpolation surface carrier.
     Spline {
         /// Interpolation points in source order.
@@ -457,6 +481,7 @@ fn surface_carrier(
         SurfaceKind::Plane => "srf_prim_ptr(plane)",
         SurfaceKind::Cylinder => "srf_prim_ptr(cylinder)",
         SurfaceKind::Cone => "srf_prim_ptr(cone)",
+        SurfaceKind::TorusOrSphere => "srf_prim_ptr(torus)",
         SurfaceKind::Spline => "srf_prim_ptr(splsrf)",
         _ => return None,
     };
@@ -532,6 +557,28 @@ fn surface_carrier(
                 ref_direction: first,
                 half_angle: signed_half_angle.abs(),
                 parameter_v_sign: signed_half_angle.signum(),
+            }
+        }
+        SurfaceKind::TorusOrSphere => {
+            let major_radius = real_scalar(reals, &primitive.id, "radius1")
+                .filter(|radius| radius.is_finite() && *radius >= 0.0)?;
+            let minor_radius = real_scalar(reals, &primitive.id, "radius2")
+                .filter(|radius| radius.is_finite() && *radius > 0.0)?;
+            if major_radius == 0.0 {
+                LegacySurfaceGeometry::Sphere {
+                    center: origin,
+                    axis: third,
+                    ref_direction: first,
+                    radius: minor_radius,
+                }
+            } else {
+                LegacySurfaceGeometry::Torus {
+                    center: origin,
+                    axis: third,
+                    ref_direction: first,
+                    major_radius,
+                    minor_radius,
+                }
             }
         }
         _ => unreachable!("surface carrier family was filtered above"),
@@ -792,7 +839,7 @@ mod tests {
     };
     use crate::legacy::{
         IntegerPayload, IntegerRun, ObjectPayload, ObjectRecord, Persistence, Real, RealPayload,
-        RealRun, ValueRecord,
+        RealRecord, RealRun, ValueRecord,
     };
 
     fn real(value: f64) -> String {
@@ -1031,6 +1078,85 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         }
     }
 
+    fn real_scalar(parent: &str, name: &str, value: f64, offset: usize) -> RealRecord {
+        ValueRecord {
+            id: format!("{parent}:{name}"),
+            name: name.to_string(),
+            attribute_id: 0,
+            scope_offset: 0,
+            parent: Some(parent.to_string()),
+            depth: 0,
+            payload: RealPayload::Scalar {
+                value: Real::from_bits(value.to_bits()),
+            },
+            offset,
+        }
+    }
+
+    fn torus_persistence(major_radius: f64, minor_radius: f64) -> Persistence {
+        let root = "torus_root";
+        let branch = "torus_branch";
+        let array = "torus_array";
+        let row = "torus_row";
+        let primitive = "torus_primitive";
+        let objects = vec![
+            object(root, "Sld_VisGeom", None, ObjectPayload::Arrow),
+            object(branch, "active_geom", Some(root), ObjectPayload::Arrow),
+            object(
+                array,
+                "srf_array",
+                Some(branch),
+                ObjectPayload::Array {
+                    dimensions: vec![1],
+                    elements: vec![row.to_string()],
+                    complete: true,
+                },
+            ),
+            object(row, "srf_array", Some(array), ObjectPayload::Arrow),
+            object(
+                primitive,
+                "srf_prim_ptr(torus)",
+                Some(row),
+                ObjectPayload::Arrow,
+            ),
+        ];
+        let integer_values = vec![
+            integer(row, "geom_type", IntegerPayload::Scalar { value: 38 }, 10),
+            integer(row, "geom_id", IntegerPayload::Scalar { value: 42 }, 11),
+            integer(row, "feat_id", IntegerPayload::Scalar { value: 7 }, 12),
+            integer(
+                row,
+                "boundary_type",
+                IntegerPayload::Scalar { value: 0 },
+                13,
+            ),
+            integer(
+                row,
+                "next_geom_ptr",
+                IntegerPayload::Scalar { value: 0 },
+                14,
+            ),
+            integer(row, "orient", IntegerPayload::Scalar { value: 1 }, 15),
+        ];
+        let real_values = vec![
+            spline_real_array(
+                primitive,
+                "local_sys",
+                vec![4, 3],
+                [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 2.0, 3.0],
+                20,
+            ),
+            real_scalar(primitive, "radius1", major_radius, 21),
+            real_scalar(primitive, "radius2", minor_radius, 22),
+        ];
+        Persistence {
+            real_values,
+            integer_values,
+            objects,
+            ..Persistence::default()
+        }
+    }
+
     #[test]
     fn extracts_row_major_cylinder_carrier_from_active_namespace() {
         let data = fixture(2.0, false);
@@ -1178,6 +1304,36 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
         assert_eq!(result.rows.len(), 1);
         assert!(result.carriers.is_empty());
+    }
+
+    #[test]
+    fn extracts_legacy_torus_and_zero_major_radius_sphere_carriers() {
+        let torus = scan(&torus_persistence(4.0, 0.5));
+        assert_eq!(torus.rows.len(), 1);
+        assert_eq!(torus.carriers.len(), 1);
+        assert_eq!(
+            torus.carriers[0].geometry,
+            LegacySurfaceGeometry::Torus {
+                center: [1.0, 2.0, 3.0],
+                axis: [1.0, 0.0, 0.0],
+                ref_direction: [0.0, 1.0, 0.0],
+                major_radius: 4.0,
+                minor_radius: 0.5,
+            }
+        );
+
+        let sphere = scan(&torus_persistence(0.0, 2.0));
+        assert_eq!(sphere.rows.len(), 1);
+        assert_eq!(sphere.carriers.len(), 1);
+        assert_eq!(
+            sphere.carriers[0].geometry,
+            LegacySurfaceGeometry::Sphere {
+                center: [1.0, 2.0, 3.0],
+                axis: [1.0, 0.0, 0.0],
+                ref_direction: [0.0, 1.0, 0.0],
+                radius: 2.0,
+            }
+        );
     }
 
     #[test]
