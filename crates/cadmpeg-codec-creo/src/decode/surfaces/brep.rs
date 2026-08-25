@@ -527,6 +527,18 @@ fn admitted_face_components(
         .collect()
 }
 
+fn merge_body_components(
+    components: Vec<(Vec<u32>, BTreeSet<u32>)>,
+) -> Vec<(Vec<u32>, BTreeSet<u32>)> {
+    let mut faces = Vec::new();
+    let mut curves = BTreeSet::new();
+    for (component_faces, component_curves) in components {
+        faces.extend(component_faces);
+        curves.extend(component_curves);
+    }
+    vec![(faces, curves)]
+}
+
 fn legacy_body_ownership_is_unambiguous(scan: &ContainerScan, component_count: usize) -> bool {
     scan.framing.layout != crate::container::Layout::LegacyAscii
         || scan.framing.declared_body_count.is_some()
@@ -1274,6 +1286,18 @@ pub(in super::super) fn transfer_native_brep(
         scan.framing.first_quilt_ptr,
         admitted_components.len(),
     );
+    let empty_component_count = body_components
+        .iter()
+        .filter(|(faces, curves)| faces.is_empty() && curves.is_empty())
+        .count();
+    let explicit_single_body =
+        scan.framing.declared_body_count == Some(1) || scan.framing.first_quilt_ptr == Some(0);
+    let body_components =
+        if explicit_single_body && empty_component_count == 0 && !body_components.is_empty() {
+            merge_body_components(body_components)
+        } else {
+            body_components
+        };
     let solved_point_count = solved_vertices.len();
     for (vertex_id, position) in solved_vertices {
         let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
@@ -1302,13 +1326,11 @@ pub(in super::super) fn transfer_native_brep(
             }),
         });
     }
-    diagnostics.body_count_mismatch = selected_body_count != Some(body_components.len());
+    diagnostics.body_count_mismatch =
+        !body_components.is_empty() && selected_body_count != Some(body_components.len());
     diagnostics.legacy_body_ownership_ambiguous =
         !legacy_body_ownership_is_unambiguous(scan, admitted_components.len());
-    diagnostics.empty_component_count = body_components
-        .iter()
-        .filter(|(faces, curves)| faces.is_empty() && curves.is_empty())
-        .count();
+    diagnostics.empty_component_count = empty_component_count;
     diagnostics.admitted_component_count = admitted_components.len();
     diagnostics.selected_body_count = selected_body_count;
     if diagnostics.body_count_mismatch

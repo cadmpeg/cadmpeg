@@ -337,6 +337,9 @@ pub(crate) fn selected_body_count(
     if first_quilt_ptr == Some(0) {
         return Some(1);
     }
+    if face_component_count <= 1 {
+        return Some(face_component_count);
+    }
     (declared_body_count.is_none() && first_quilt_ptr.is_none()).then_some(face_component_count)
 }
 

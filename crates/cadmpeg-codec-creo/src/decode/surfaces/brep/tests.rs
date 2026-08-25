@@ -11,7 +11,7 @@ use cadmpeg_ir::AnnotationBuilder;
 
 use super::{
     admitted_face_components, component_is_closed, legacy_body_ownership_is_unambiguous,
-    native_parameter_loop_polygon, ordered_native_parameter_face_loops,
+    merge_body_components, native_parameter_loop_polygon, ordered_native_parameter_face_loops,
     split_neutral_component_shells, transfer_native_brep, BrepTransferDiagnostics,
     FaceAdmissionDetail, FaceAdmissionRejection, NativeCurveEvidence, NeutralShellSpec,
 };
@@ -76,6 +76,16 @@ fn brep_diagnostics_report_component_gate_inputs() {
     assert_eq!(coverage["brep_admitted_component_count"], 3);
     assert_eq!(coverage["brep_selected_body_count"], 0);
     assert_eq!(coverage["brep_selected_body_count_unresolved"], 1);
+}
+
+#[test]
+fn explicit_single_body_merges_disconnected_components() {
+    let merged = merge_body_components(vec![
+        (vec![1, 2], BTreeSet::from([10])),
+        (vec![3], BTreeSet::from([11, 12])),
+    ]);
+
+    assert_eq!(merged, vec![(vec![1, 2, 3], BTreeSet::from([10, 11, 12]))]);
 }
 
 #[test]

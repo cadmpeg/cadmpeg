@@ -270,6 +270,8 @@ fn selects_body_count_in_metadata_precedence_order() {
     assert_eq!(selected_body_count(None, Some(0), 7), Some(1));
     assert_eq!(selected_body_count(None, None, 7), Some(7));
     assert_eq!(selected_body_count(None, Some(9), 7), None);
+    assert_eq!(selected_body_count(None, Some(9), 1), Some(1));
+    assert_eq!(selected_body_count(None, Some(0), 0), Some(1));
     assert_eq!(selected_body_count(Some(0), None, 7), None);
 }
 

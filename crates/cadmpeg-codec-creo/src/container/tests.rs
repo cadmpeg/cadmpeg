@@ -325,6 +325,65 @@ fn scan_reads_geomlists_first_quilt_discriminator() {
 }
 
 #[test]
+fn scan_reads_legacy_geom_depend_first_quilt_discriminator() {
+    let data = b"#UGC:2 PART c\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+@Sld_GeomDepend 1 0\n0 1 ->\n\
+@first_quilt_ptr 4 1\n1 4 0\n\
+#END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n"
+        .to_vec();
+
+    let scan = container::scan_bytes(data);
+
+    assert_eq!(scan.framing.layout, Layout::LegacyAscii);
+    assert_eq!(scan.framing.first_quilt_ptr, Some(0));
+}
+
+#[test]
+fn legacy_geom_depend_discriminator_withholds_distinct_values() {
+    let root = crate::legacy::ObjectRecord {
+        id: "root".to_string(),
+        name: "Sld_GeomDepend".to_string(),
+        attribute_id: 1,
+        scope_offset: 0,
+        parent: None,
+        depth: 0,
+        payload: crate::legacy::ObjectPayload::Arrow,
+        offset: 0,
+    };
+    let persistence = crate::legacy::Persistence {
+        objects: vec![root],
+        integer_values: vec![
+            crate::legacy::IntegerRecord {
+                id: "first".to_string(),
+                name: "first_quilt_ptr".to_string(),
+                attribute_id: 4,
+                scope_offset: 0,
+                parent: Some("root".to_string()),
+                depth: 1,
+                payload: crate::legacy::NumericPayload::Scalar { value: 0 },
+                offset: 1,
+            },
+            crate::legacy::IntegerRecord {
+                id: "second".to_string(),
+                name: "first_quilt_ptr".to_string(),
+                attribute_id: 4,
+                scope_offset: 0,
+                parent: Some("root".to_string()),
+                depth: 1,
+                payload: crate::legacy::NumericPayload::Scalar { value: 7 },
+                offset: 2,
+            },
+        ],
+        ..Default::default()
+    };
+
+    assert_eq!(
+        super::legacy_geom_depend_value(&persistence, "first_quilt_ptr"),
+        None
+    );
+}
+
+#[test]
 fn nd_decoration_selects_nd_layout() {
     let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(3, 4))]);
     let scan = container::scan_bytes(data);

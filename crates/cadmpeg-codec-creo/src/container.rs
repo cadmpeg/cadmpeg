@@ -2201,6 +2201,32 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     (after > value_offset).then_some(count)
 }
 
+/// Read one scalar integer owned by the unique legacy `Sld_GeomDepend` root.
+///
+/// Legacy ASCII stores this metadata in the persistence object tree rather
+/// than in a binary `Geomlists` section. Distinct complete values remain
+/// unresolved; equal duplicate records are one value witness.
+fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str) -> Option<u32> {
+    let mut values = persistence
+        .integer_values
+        .iter()
+        .filter(|record| record.name == field_name)
+        .filter_map(|record| {
+            let parent_id = record.parent.as_deref()?;
+            let parent = persistence
+                .objects
+                .iter()
+                .find(|object| object.id == parent_id)?;
+            (parent.name == "Sld_GeomDepend").then_some(())?;
+            let legacy::NumericPayload::Scalar { value } = &record.payload else {
+                return None;
+            };
+            u32::try_from(*value).ok()
+        });
+    let value = values.next()?;
+    values.all(|other| other == value).then_some(value)
+}
+
 /// Parse a whole `.prt` byte image.
 pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
@@ -2609,7 +2635,11 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     );
     let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);
     let declared_body_count = geomlists_value(&data, &sections, b"n_bodies\0");
-    let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0");
+    let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0").or_else(|| {
+        legacy_ascii
+            .as_ref()
+            .and_then(|framing| legacy_geom_depend_value(&framing.persistence, "first_quilt_ptr"))
+    });
 
     ContainerScan {
         framing: FramingScan {

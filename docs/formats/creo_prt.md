@@ -262,6 +262,7 @@ layout. Section cardinality is descriptive and does not select a layout.
 | `AllFeatur`                      | Feature rows, generated-entity tables, affected-geometry identifiers, feature references, and DEPDB section recipes. |
 | `FeatDefs`                       | Feature definitions, section recipes, placement records, outlines, dimensions, and saved section entities.           |
 | `Geomlists`                      | Body-count and quilt-discriminator fields.                                                                           |
+| Legacy ASCII `Sld_GeomDepend`    | The `first_quilt_ptr` quilt-discriminator field in the persistence object tree.                                      |
 | `ActDatums`                      | Active datum-plane and datum-cylinder geometry under `act_datum_geoms → srf_array`.                                  |
 | `DEPDB_DATA`                     | Persistence data used by DEPDB-layout parts, including embedded geometry namespaces and feature-definition records.  |
 | `FamilyInf`                      | Family-table driver pointer for configurations.                                                                      |
@@ -2260,20 +2261,24 @@ Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop fac
 Use the following order to select a body count:
 
 1. A positive `Geomlists.n_bodies` value.
-2. `Geomlists.first_quilt_ptr == 0` as a single-body discriminator.
+2. `Geomlists.first_quilt_ptr == 0`, or legacy ASCII
+   `Sld_GeomDepend.first_quilt_ptr == 0`, as a single-body discriminator.
 3. Face-reference adjacency component count when it is the only byte-backed source.
 
-Emit neutral body and region ownership only when the selected
-count equals the number of native components and every component has an
-admitted face or a solved edge. In legacy ASCII, a component with no eligible
-face is not admitted even when it has solved edges. When a legacy ASCII part has no body count
-or single-quilt discriminator, a multi-component admitted set has unresolved
-body ownership and remains native. Group admitted faces into shells by shared
-edges or vertices. A solved edge not used by an admitted face loop is a shell
-wire edge; a component containing wire edges is a `General` body. An admitted
-face group with no shared topology uses its own shell in the same region. A
-component with no admitted face or solved edge, or a body-count mismatch,
-leaves native topology records available without neutral body assignment.
+Emit neutral body and region ownership only when the selected count matches the
+body grouping derived from the metadata and every grouped component has an
+admitted face or a solved edge. An explicit single-body discriminator joins all
+non-empty admitted components into one body; their disconnected face groups
+remain separate shells. In legacy ASCII, a component with no eligible face is
+not admitted even when it has solved edges. When a legacy ASCII part has no
+body count or single-quilt discriminator, a multi-component admitted set has
+unresolved body ownership and remains native. Group admitted faces into shells
+by shared edges or vertices. A solved edge not used by an admitted face loop is
+a shell wire edge; a component containing wire edges is a `General` body. An
+admitted face group with no shared topology uses its own shell in the same
+region. A component with no admitted face or solved edge, or a body-count
+mismatch, leaves native topology records available without neutral body
+assignment.
 
 ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, joined by `ext_id`.
 
