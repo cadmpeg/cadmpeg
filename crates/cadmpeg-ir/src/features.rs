@@ -1592,6 +1592,8 @@ pub enum FeatureDefinition {
         #[serde(default)]
         copies: u32,
     },
+    /// Body-affecting object-motion family whose selected objects and motion law remain unresolved.
+    MoveObjectUnresolved,
     /// Dome grown from selected planar faces.
     Dome {
         /// Faces that bound the dome base.
@@ -1716,6 +1718,7 @@ impl FeatureDefinition {
             Self::ExtractFaceUnresolved => Some("extract face"),
             Self::FillHoleUnresolved => Some("fill hole"),
             Self::MoveFaceUnresolved => Some("move face"),
+            Self::MoveObjectUnresolved => Some("move object"),
             Self::CylinderUnresolved => Some("cylinder"),
             Self::TrimSurface { .. } => Some("trim surface"),
             Self::ExtendSurface { .. } => Some("extend surface"),

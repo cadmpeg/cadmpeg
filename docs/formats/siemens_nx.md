@@ -2159,6 +2159,11 @@ The `MOVE_FACE` operation label identifies a body-affecting direct face-motion
 construction. Its selected faces and motion law remain unresolved until the
 serialized construction roles establish a complete operation.
 
+The `MOVE_OBJECT` operation label identifies a body-affecting object-motion
+construction. Its selected objects, translation, rotation, and copy count remain
+unresolved until the serialized construction roles establish a complete
+operation.
+
 The `CYLINDER` operation label identifies a body-affecting cylinder primitive.
 Its radius, height, placement, angular bounds, and Boolean mode remain
 unresolved until the serialized construction roles establish a complete

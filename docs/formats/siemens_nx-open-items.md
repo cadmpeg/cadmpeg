@@ -715,6 +715,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label and body-write relation identify the primitive family, but the object-index slots and bounded payload do not assign a unique dimension, placement, angular-bound, or Boolean-mode role.
 
+### OM-48. `MOVE_OBJECT` construction roles
+
+**Question.** Which serialized fields define the selected objects, translation, rotation, and copy count of a `MOVE_OBJECT` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `MOVE_OBJECT` operation label identifies" defines the body-affecting object-motion construction. A body-write frame identifies a body-affecting result. All observed records retain null operation object-index slots, and no admitted field assigns a motion role.
+
+**Need.** We must identify the selected object set, translation vector, rotation axis and angle, and copy count to construct a complete neutral object-motion operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the null object-index slots and bounded payload do not assign a unique object selection or motion law.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
