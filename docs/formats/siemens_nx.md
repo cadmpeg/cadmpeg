@@ -1900,6 +1900,11 @@ The `Container` label identifies an object-model grouping record, not a modeling
 
 The `MASTER SNAPSHOT BODY` label identifies a captured-result base feature.
 
+The `BREP` label identifies direct stored boundary-representation geometry. It
+projects to `StoredGeometry` when its result-body list is nonempty and contains
+each body identity once. A BREP record without a resolved result-body relation
+remains a native operation.
+
 The `DATUM_PLANE` and `EXTRACT_DATUM_PLANE` operation labels identify datum-plane
 history operations. Their model-space frame remains unresolved until the
 operation's scalar-pair roles and coordinate space are established.

@@ -3453,6 +3453,11 @@ fn attach_feature_operations(
                 .or_else(|| thicken_projection.map(|(definition, _)| definition))
                 .or_else(|| offset_projection.map(|(definition, _)| definition))
                 .or(sphere_definition)
+                .or_else(|| {
+                    (label.value == "BREP")
+                        .then(|| brep_feature_definition(&outputs))
+                        .flatten()
+                })
                 .unwrap_or_else(|| {
                     if let Some(sketch) = sketch {
                         return FeatureDefinition::Sketch {
@@ -6196,6 +6201,15 @@ fn non_boolean_feature_definition_with_parameters(
             properties: BTreeMap::new(),
         },
     }
+}
+
+/// Project a BREP operation as direct stored geometry when its result bodies
+/// are resolved. A BREP record carries boundary representation rather than a
+/// replayable parametric construction; without a closed result-body relation,
+/// retaining the native definition preserves the unresolved history edge.
+fn brep_feature_definition(outputs: &[BodyId]) -> Option<FeatureDefinition> {
+    (!outputs.is_empty() && outputs.iter().collect::<BTreeSet<_>>().len() == outputs.len())
+        .then_some(FeatureDefinition::StoredGeometry)
 }
 
 fn native_feature_parameters(
