@@ -91,6 +91,8 @@ pub enum IgesLossCode {
     GlobalMetadataFieldUnusable,
     /// A Global comparison context came from this codec's specification.
     GlobalSemanticContextSubstituted,
+    /// A Global real used a recoverable noncanonical numeric spelling.
+    GlobalNumericSyntaxRecovered,
     /// The Global fields 13, 14, and 15 produced no millimetre length factor.
     GlobalLengthUnitUnresolved,
     /// Global framing is recoverable but noncanonical for the declared profile.
@@ -133,6 +135,7 @@ impl IgesLossCode {
         Self::CompositeCarrierDegraded,
         Self::GlobalMetadataFieldUnusable,
         Self::GlobalSemanticContextSubstituted,
+        Self::GlobalNumericSyntaxRecovered,
         Self::GlobalLengthUnitUnresolved,
         Self::GlobalNoncanonicalFraming,
         Self::SourceDialectUnverified,
@@ -172,6 +175,7 @@ impl IgesLossCode {
             Self::CompositeCarrierDegraded => "curve.composite-carrier-degraded",
             Self::GlobalMetadataFieldUnusable => "global.metadata-field-unusable",
             Self::GlobalSemanticContextSubstituted => "global.semantic-context-substituted",
+            Self::GlobalNumericSyntaxRecovered => "global.numeric-syntax-recovered",
             Self::GlobalLengthUnitUnresolved => "global.length-unit-unresolved",
             Self::GlobalNoncanonicalFraming => "global.noncanonical-framing",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -212,6 +216,7 @@ impl IgesLossCode {
             | Self::CompositeCarrierDegraded
             | Self::GlobalMetadataFieldUnusable
             | Self::GlobalSemanticContextSubstituted
+            | Self::GlobalNumericSyntaxRecovered
             | Self::GlobalNoncanonicalFraming
             | Self::SourceDialectUnverified
             | Self::PassthroughRecordOmitted
@@ -243,6 +248,7 @@ impl IgesLossCode {
                 LossTaxonomy::GeometryNotTransferred
             }
             Self::GlobalSemanticContextSubstituted
+            | Self::GlobalNumericSyntaxRecovered
             | Self::GlobalNoncanonicalFraming
             | Self::ParameterCountOverdeclared
             | Self::DirectoryRecordQuarantined
@@ -307,6 +313,7 @@ mod tests {
                 "curve.composite-carrier-degraded",
                 "global.metadata-field-unusable",
                 "global.semantic-context-substituted",
+                "global.numeric-syntax-recovered",
                 "global.length-unit-unresolved",
                 "global.noncanonical-framing",
                 "source.dialect-unverified",

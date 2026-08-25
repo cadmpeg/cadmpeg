@@ -334,6 +334,38 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
 }
 
 #[test]
+fn decode_uses_recovered_global_resolution_for_line_revolution_admission() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,2e-06.,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(line_surface_of_revolution_file_with_global(global)),
+            &DecodeOptions::default(),
+        )
+        .expect("line revolution with recoverable Global syntax decodes");
+
+    assert_eq!(result.ir().tolerances.linear, 2e-6);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::GlobalNumericSyntaxRecovered.kind())
+            .count(),
+        1
+    );
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+        "{:#?}",
+        result.report().losses
+    );
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+}
+
+#[test]
 fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
     const EPS_REVOLUTION_POINT: f64 = 1.0e-12;
 

@@ -1091,6 +1091,10 @@ pub(crate) fn line_surface_of_revolution_file() -> Vec<u8> {
     owned_test_file(&line_surface_of_revolution_entities())
 }
 
+pub(crate) fn line_surface_of_revolution_file_with_global(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global(&line_surface_of_revolution_entities(), global)
+}
+
 fn line_surface_of_revolution_entities() -> Vec<OwnedTestEntity> {
     vec![
         OwnedTestEntity {

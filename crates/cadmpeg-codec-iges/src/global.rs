@@ -36,6 +36,13 @@ enum Supplied<T> {
     Malformed,
 }
 
+enum SuppliedReal {
+    Absent,
+    Value(f64),
+    Recovered(f64),
+    Malformed,
+}
+
 /// Global field boundaries recovered from the card stream, with no values resolved.
 #[derive(Debug)]
 pub(crate) struct RawGlobal {
@@ -279,6 +286,8 @@ const SIGNIFICANCE_CONSEQUENCE: &str =
     "the decoder substituted 17 significant decimal digits from its own specification";
 const RESOLUTION_CONSEQUENCE: &str =
     "the decoder substituted 0.0 millimetres as the minimum user-intended resolution";
+const REAL_SYNTAX_RECOVERY_CONSEQUENCE: &str =
+    "the decoder recovered the finite numeric value and retained the source spelling";
 const LENGTH_CONSEQUENCE: &str =
     "the decoder resolved no millimetre length factor, suppressed every geometry projection, and retained the native records";
 const LINE_WEIGHT_CONSEQUENCE: &str =
@@ -295,6 +304,14 @@ fn global_loss_note(
         index + 1,
         field_name(index),
         defect.as_str()
+    ))
+}
+
+fn recovered_real_loss_note(index: usize, source: &str, value: f64) -> LossNote {
+    IgesLossCode::GlobalNumericSyntaxRecovered.note(format!(
+        "IGES Global field {} ({}) uses noncanonical real syntax {source:?}; the decoder recovered finite value {value}; {REAL_SYNTAX_RECOVERY_CONSEQUENCE}",
+        index + 1,
+        field_name(index),
     ))
 }
 
@@ -778,6 +795,24 @@ fn numeric_text(bytes: &[u8]) -> Option<&str> {
         .flatten()
 }
 
+fn parse_real_text(text: &str) -> Option<f64> {
+    text.replace(['D', 'd'], "E")
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())
+}
+
+fn recovered_real_text(text: &str) -> Option<f64> {
+    let prefix = text.strip_suffix('.')?;
+    if !prefix
+        .bytes()
+        .any(|byte| matches!(byte, b'E' | b'e' | b'D' | b'd'))
+    {
+        return None;
+    }
+    parse_real_text(prefix)
+}
+
 impl Resolution {
     fn apply_string_policy(&mut self, dialect: Dialect) {
         for value in &mut self.values {
@@ -849,15 +884,27 @@ impl Resolution {
         }
     }
 
-    fn supplied_real(&self, index: usize) -> Supplied<f64> {
+    fn supplied_real(&self, index: usize) -> SuppliedReal {
         match self.value(index) {
-            Value::Omitted => Supplied::Absent,
-            Value::Atom(bytes) => numeric_text(bytes)
-                .and_then(|text| text.replace(['D', 'd'], "E").parse::<f64>().ok())
-                .filter(|value| value.is_finite())
-                .map_or(Supplied::Malformed, Supplied::Value),
-            Value::String(_) | Value::Malformed(_) | Value::ForbiddenString => Supplied::Malformed,
+            Value::Omitted => SuppliedReal::Absent,
+            Value::Atom(bytes) => match numeric_text(bytes).and_then(|text| {
+                parse_real_text(text)
+                    .map(SuppliedReal::Value)
+                    .or_else(|| recovered_real_text(text).map(SuppliedReal::Recovered))
+            }) {
+                Some(value) => value,
+                None => SuppliedReal::Malformed,
+            },
+            Value::String(_) | Value::Malformed(_) | Value::ForbiddenString => {
+                SuppliedReal::Malformed
+            }
         }
+    }
+
+    fn charge_recovered_real(&mut self, index: usize, value: f64) {
+        let source = self.declaration_text(index);
+        self.losses
+            .push(recovered_real_loss_note(index, &source, value));
     }
 
     fn metadata_string(&mut self, index: usize, dialect: Dialect) -> Option<String> {
@@ -941,8 +988,8 @@ impl Resolution {
 
     fn maximum_coordinate(&mut self, dialect: Dialect) -> Option<f64> {
         match self.supplied_real(FIELD_MAXIMUM_COORDINATE) {
-            Supplied::Absent if dialect == Dialect::V5_0 => None,
-            Supplied::Absent if dialect == Dialect::V4_0 => {
+            SuppliedReal::Absent if dialect == Dialect::V5_0 => None,
+            SuppliedReal::Absent if dialect == Dialect::V4_0 => {
                 self.charge(
                     IgesLossCode::GlobalMetadataFieldUnusable,
                     FIELD_MAXIMUM_COORDINATE,
@@ -951,9 +998,13 @@ impl Resolution {
                 );
                 None
             }
-            Supplied::Absent => Some(0.0),
-            Supplied::Value(value) if value >= 0.0 => Some(value),
-            Supplied::Value(_) | Supplied::Malformed => {
+            SuppliedReal::Absent => Some(0.0),
+            SuppliedReal::Value(value) if value >= 0.0 => Some(value),
+            SuppliedReal::Recovered(value) if value >= 0.0 => {
+                self.charge_recovered_real(FIELD_MAXIMUM_COORDINATE, value);
+                Some(value)
+            }
+            SuppliedReal::Value(_) | SuppliedReal::Recovered(_) | SuppliedReal::Malformed => {
                 self.charge(
                     IgesLossCode::GlobalMetadataFieldUnusable,
                     FIELD_MAXIMUM_COORDINATE,
@@ -985,7 +1036,7 @@ impl Resolution {
 
     fn minimum_resolution(&mut self, dialect: Dialect) -> f64 {
         match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
-            Supplied::Absent if dialect.field_requires_value(FIELD_MINIMUM_RESOLUTION) => {
+            SuppliedReal::Absent if dialect.field_requires_value(FIELD_MINIMUM_RESOLUTION) => {
                 self.charge(
                     IgesLossCode::GlobalSemanticContextSubstituted,
                     FIELD_MINIMUM_RESOLUTION,
@@ -994,9 +1045,13 @@ impl Resolution {
                 );
                 FALLBACK_MINIMUM_RESOLUTION
             }
-            Supplied::Absent => FALLBACK_MINIMUM_RESOLUTION,
-            Supplied::Value(value) if value >= 0.0 => value,
-            Supplied::Value(_) | Supplied::Malformed => {
+            SuppliedReal::Absent => FALLBACK_MINIMUM_RESOLUTION,
+            SuppliedReal::Value(value) if value >= 0.0 => value,
+            SuppliedReal::Recovered(value) if value >= 0.0 => {
+                self.charge_recovered_real(FIELD_MINIMUM_RESOLUTION, value);
+                value
+            }
+            SuppliedReal::Value(_) | SuppliedReal::Recovered(_) | SuppliedReal::Malformed => {
                 self.charge(
                     IgesLossCode::GlobalSemanticContextSubstituted,
                     FIELD_MINIMUM_RESOLUTION,
@@ -1022,20 +1077,35 @@ impl Resolution {
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
         };
         let (mode, width_defect) = match self.supplied_real(FIELD_MAXIMUM_LINE_WIDTH) {
-            Supplied::Absent if dialect == Dialect::V5_0 && !gradations_was_supplied => {
+            SuppliedReal::Absent if dialect == Dialect::V5_0 && !gradations_was_supplied => {
                 (None, None)
             }
-            Supplied::Value(0.0) if dialect == Dialect::V5_0 => {
+            SuppliedReal::Value(0.0) if dialect == Dialect::V5_0 => {
                 (Some(LineWeightMode::Relative), None)
             }
-            Supplied::Value(value) if value > 0.0 => (
+            SuppliedReal::Recovered(0.0) if dialect == Dialect::V5_0 => {
+                self.charge_recovered_real(FIELD_MAXIMUM_LINE_WIDTH, 0.0);
+                (Some(LineWeightMode::Relative), None)
+            }
+            SuppliedReal::Value(value) if value > 0.0 => (
                 Some(LineWeightMode::Absolute {
                     maximum_width: value,
                 }),
                 None,
             ),
-            Supplied::Absent => (None, Some(Defect::Absent)),
-            Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
+            SuppliedReal::Recovered(value) if value > 0.0 => {
+                self.charge_recovered_real(FIELD_MAXIMUM_LINE_WIDTH, value);
+                (
+                    Some(LineWeightMode::Absolute {
+                        maximum_width: value,
+                    }),
+                    None,
+                )
+            }
+            SuppliedReal::Absent => (None, Some(Defect::Absent)),
+            SuppliedReal::Value(_) | SuppliedReal::Recovered(_) | SuppliedReal::Malformed => {
+                (None, Some(Defect::Malformed))
+            }
         };
         if let Some((index, defect)) = [
             (FIELD_LINE_WEIGHT_GRADATIONS, gradations_defect),
@@ -1059,9 +1129,15 @@ impl Resolution {
 
     fn length_unit(&mut self, dialect: Dialect) -> (Option<i64>, Option<String>, Option<f64>) {
         let (scale, scale_defect) = match self.supplied_real(FIELD_MODEL_SCALE) {
-            Supplied::Absent => (dialect.default_model_scale(), None),
-            Supplied::Value(value) if value > 0.0 => (Some(value), None),
-            Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
+            SuppliedReal::Absent => (dialect.default_model_scale(), None),
+            SuppliedReal::Value(value) if value > 0.0 => (Some(value), None),
+            SuppliedReal::Recovered(value) if value > 0.0 => {
+                self.charge_recovered_real(FIELD_MODEL_SCALE, value);
+                (Some(value), None)
+            }
+            SuppliedReal::Value(_) | SuppliedReal::Recovered(_) | SuppliedReal::Malformed => {
+                (None, Some(Defect::Malformed))
+            }
         };
         let (units_flag, flag_defect) = match self.supplied_integer(FIELD_UNITS_FLAG) {
             Supplied::Absent => (dialect.default_units_flag(), None),

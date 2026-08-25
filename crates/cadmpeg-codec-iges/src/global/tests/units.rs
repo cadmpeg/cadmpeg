@@ -145,6 +145,71 @@ fn minimum_resolution_falls_back_to_zero_when_absent_or_negative() {
 }
 
 #[test]
+fn trailing_exponent_decimal_recovers_global_real_without_substitution() {
+    let mut fields = valid_global_fields();
+    fields[18] = "2e-06.".into();
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(
+        parsed.length_context().unwrap().minimum_resolution_mm(),
+        2e-6
+    );
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalNumericSyntaxRecovered),
+        1
+    );
+    assert!(losses[0].message.contains("2e-06."));
+    assert!(losses[0].message.contains("recovered finite value"));
+}
+
+#[test]
+fn trailing_decimal_recovery_requires_an_exponent_prefix() {
+    let mut fields = valid_global_fields();
+    fields[18] = "2e-06..".into();
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(
+        parsed.length_context().unwrap().minimum_resolution_mm(),
+        0.0
+    );
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
+        1
+    );
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalNumericSyntaxRecovered),
+        0
+    );
+}
+
+#[test]
+fn recovered_global_real_is_strictly_reported_as_noncanonical() {
+    let bytes = point_file_with_field(18, "2e-06.");
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::GlobalNumericSyntaxRecovered),
+        1
+    );
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .unwrap_err();
+    match error {
+        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+            loss_code,
+            IgesLossCode::GlobalNumericSyntaxRecovered.kind().as_str()
+        ),
+        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
 fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_loss() {
     let bytes = point_file_with_global(
         b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,3,7Hfurlong,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
