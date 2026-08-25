@@ -829,20 +829,7 @@ fn decode_admits_v4_region_fill_property() {
     assert_eq!(property.fields()["property_kind"], "region_fill");
     assert_eq!(property.fields()["fill_code"], 1);
     assert_eq!(property.fields()["obsolete_pointer"], 0);
-    assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind())
-            .count(),
-        1
-    );
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind()));
+    assert!(result.report().losses.is_empty(), "{:#?}", result.report());
 }
 
 #[test]
@@ -1689,20 +1676,7 @@ fn decode_preserves_v4_legacy_signal_text_and_connect_associativities() {
             "missing V4 associativity kind {kind}"
         );
     }
-    assert_eq!(
-        result
-            .report()
-            .losses
-            .iter()
-            .filter(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind())
-            .count(),
-        1
-    );
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind()));
+    assert!(result.report().losses.is_empty(), "{:#?}", result.report());
 }
 
 mod legacy_and_network;

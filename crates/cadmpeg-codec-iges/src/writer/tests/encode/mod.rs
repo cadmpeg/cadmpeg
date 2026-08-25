@@ -149,15 +149,10 @@ fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
             name
         );
         assert_eq!(decoded.ir().model.points.len(), 1);
-        assert_eq!(
-            decoded.report().losses.len(),
-            1,
+        assert!(
+            decoded.report().losses.is_empty(),
             "{name}: {:#?}",
             decoded.report()
-        );
-        assert_eq!(
-            decoded.report().losses[0].code,
-            IgesLossCode::SourceDialectUnverified.kind()
         );
     }
 }

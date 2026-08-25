@@ -67,14 +67,12 @@ fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
                 "{version} {family}: {:#?}",
                 result.report().losses
             );
-            assert_eq!(
+            assert!(
                 result
                     .report()
                     .losses
                     .iter()
-                    .filter(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind())
-                    .count(),
-                1,
+                    .all(|loss| loss.code != IgesLossCode::SourceDialectUnverified.kind()),
                 "{version} {family}: {:#?}",
                 result.report().losses
             );

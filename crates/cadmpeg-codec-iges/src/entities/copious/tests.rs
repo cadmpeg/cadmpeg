@@ -133,11 +133,15 @@ fn v4_one_tuple_linear_path_is_projected_as_its_authored_point() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::SourceDialectUnverified.kind()));
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::SourceDialectUnverified.kind()),
+        "{:#?}",
+        result.report()
+    );
 }
 
 #[test]

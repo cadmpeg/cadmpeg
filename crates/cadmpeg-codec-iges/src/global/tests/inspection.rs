@@ -26,9 +26,10 @@ fn inspect_reports_the_resolution_losses_it_charges_as_census_notes() {
         .unwrap();
 
     assert!(summary.notes.contains(&"iges_version=4.0".into()));
-    assert!(summary
+    assert!(!summary
         .notes
-        .contains(&"loss.iges/source.dialect-unverified=1".into()));
+        .iter()
+        .any(|note| note == "loss.iges/source.dialect-unverified=1"));
     assert!(summary
         .notes
         .contains(&"loss.iges/presentation.line-weight-scale-unavailable=1".into()));

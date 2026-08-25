@@ -67,8 +67,14 @@ fn every_version_flag_class_maps_to_its_specification_version() {
 }
 
 #[test]
-fn fixed_ascii_5_1_and_5_2_decode_under_the_supported_profile() {
-    for (encoded_version, version_name) in [("09", "5.1"), ("10", "5.2")] {
+fn fixed_ascii_verified_versions_decode_under_their_versioned_profiles() {
+    for (encoded_version, version_name) in [
+        ("6", "4.0"),
+        ("8", "5.0"),
+        ("9", "5.1"),
+        ("10", "5.2"),
+        ("11", "5.3"),
+    ] {
         let bytes = point_file_with_version_flag(encoded_version);
 
         let summary = IgesCodec
@@ -105,7 +111,6 @@ fn declared_versions_outside_the_verified_set_decode_with_a_dialect_loss() {
         ("3", "2.0"),
         ("4", "3.0"),
         ("5", "ASME-ANSI-Y14.26M-1987"),
-        ("6", "4.0"),
         ("7", "ASME-Y14.26M-1989"),
     ] {
         let bytes = point_file_with_version_flag(flag);
@@ -167,7 +172,7 @@ fn a_verified_declared_version_charges_no_dialect_loss() {
 }
 
 #[test]
-fn a_container_only_decode_reports_the_dialect_loss_and_strict_admits_it() {
+fn a_container_only_decode_preserves_verified_v4_and_strict_admits_it() {
     let bytes = point_file_with_version_flag("6");
     let options = DecodeOptions {
         container_only: true,
@@ -177,16 +182,16 @@ fn a_container_only_decode_reports_the_dialect_loss_and_strict_admits_it() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes.clone()), &options)
         .unwrap();
-    assert_eq!(dialect_losses(result.report()), 1);
+    assert_eq!(dialect_losses(result.report()), 0);
 
     let strict = IgesCodec
         .decode(&mut Cursor::new(bytes), &strict_options(true))
         .unwrap();
-    assert_eq!(dialect_losses(strict.report()), 1);
+    assert_eq!(dialect_losses(strict.report()), 0);
 }
 
 #[test]
-fn a_legacy_version_with_no_maximum_line_width_decodes_and_strict_names_the_dialect() {
+fn a_verified_v4_version_with_no_maximum_line_width_names_the_line_weight_loss() {
     let mut fields = valid_global_fields();
     fields[11] = "7Hproduct".into();
     fields[17] = "13H260714.000000".into();
@@ -201,23 +206,21 @@ fn a_legacy_version_with_no_maximum_line_width_decodes_and_strict_names_the_dial
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.report().losses.len(), 2, "{:#?}", result.report());
-    assert_eq!(dialect_losses(result.report()), 1);
+    assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
+    assert_eq!(dialect_losses(result.report()), 0);
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::LineWeightScaleUnavailable),
         1
     );
 
-    let error = IgesCodec
+    let strict = IgesCodec
         .decode(&mut Cursor::new(bytes), &strict_options(false))
-        .unwrap_err();
-    match error {
-        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
-            loss_code,
-            IgesLossCode::SourceDialectUnverified.kind().as_str()
-        ),
-        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
-    }
+        .unwrap();
+    assert_eq!(dialect_losses(strict.report()), 0);
+    assert_eq!(
+        report_code_count(strict.report(), IgesLossCode::LineWeightScaleUnavailable),
+        1
+    );
 }
 
 #[test]
@@ -280,7 +283,7 @@ fn the_4_0_string_contract_allows_ascii_control_bytes() {
         "\u{1}roduct"
     );
     assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(dialect_losses(result.report()), 1);
+    assert_eq!(dialect_losses(result.report()), 0);
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
         0
@@ -457,7 +460,7 @@ fn the_5_0_double_precision_fields_are_conditional_on_parameter_syntax() {
         ),
         0
     );
-    assert_eq!(dialect_losses(result.report()), 1);
+    assert_eq!(dialect_losses(result.report()), 0);
 
     let mut double_bytes = point_file_with_global(global.as_bytes());
     let old = b"116,1.0,2.0,3.0;";
@@ -484,7 +487,7 @@ fn the_5_0_double_precision_fields_are_conditional_on_parameter_syntax() {
         ),
         1
     );
-    assert_eq!(dialect_losses(result.report()), 1);
+    assert_eq!(dialect_losses(result.report()), 0);
 }
 
 #[test]

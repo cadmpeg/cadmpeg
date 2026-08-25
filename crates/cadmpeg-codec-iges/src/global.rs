@@ -279,7 +279,7 @@ const FIELD_NAMES: [&str; TABLE_1_FIELD_COUNT] = [
 
 const FALLBACK_SIGNIFICANCE: u32 = 17;
 const FALLBACK_MINIMUM_RESOLUTION: f64 = 0.0;
-const VERIFIED_VERSIONS: [&str; 3] = ["5.1", "5.2", "5.3"];
+const VERIFIED_VERSIONS: [&str; 5] = ["4.0", "5.0", "5.1", "5.2", "5.3"];
 
 const METADATA_CONSEQUENCE: &str = "its value was not transferred";
 const SIGNIFICANCE_CONSEQUENCE: &str =
