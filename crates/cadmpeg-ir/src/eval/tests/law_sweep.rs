@@ -63,3 +63,120 @@ fn cacheless_law_differential_rejects_undefined_domains() {
     };
     assert!(scalar_sweep_law_differential(&inverse, 1.0).is_none());
 }
+
+#[test]
+fn cacheless_law_sweep_applies_profile_frame_and_rail_basis() {
+    let profile_id = CurveId("profile-frame-profile".into());
+    let spine_id = CurveId("profile-frame-spine".into());
+    let surface_id = SurfaceId("profile-frame-sweep".into());
+    let construction_id = ProceduralSurfaceId("profile-frame-construction".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves = vec![
+        Curve {
+            id: profile_id.clone(),
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                weights: None,
+                periodic: false,
+            }),
+            source_object: None,
+        },
+        Curve {
+            id: spine_id.clone(),
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point3::new(4.0, 5.0, 6.0), Point3::new(4.0, 5.0, 7.0)],
+                weights: None,
+                periodic: false,
+            }),
+            source_object: None,
+        },
+    ];
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction_id.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction_id,
+        surface: surface_id.clone(),
+        definition: ProceduralSurfaceDefinition::Sweep {
+            profile: profile_id,
+            spine: spine_id,
+            native: Some(Box::new(SweepSurfaceConstruction {
+                primary_kind: 0,
+                revision_form: Some(SweepRevisionForm {
+                    revision: 22601,
+                    primary_flag: true,
+                    profile_endpoints: [None, None],
+                    path_endpoints: [None, None],
+                    tail_enum: 2,
+                    tail_parameterization: Some(RevisionSurfaceParameterization::default()),
+                }),
+                layout: SweepSurfaceLayout::LawDriven {
+                    mode: -2,
+                    profile_range: [-1.0, 0.0],
+                    profile_frame: Some((Point3::new(2.0, 0.0, 0.0), Vector3::new(0.0, 0.0, -1.0))),
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    directions: [
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                    ],
+                    first_law: Box::new(LawExpression::Text {
+                        value: "2.0*X".into(),
+                    }),
+                    first_mode: 0,
+                    first_range: [0.0, 1.0],
+                    law_direction: Vector3::new(0.0, 0.0, 1.0),
+                    path_mode: 1,
+                    path_flag: true,
+                    path_range: [0.0, 1.0],
+                    path_parameter: 0.0,
+                    second_law_flag: true,
+                    second_law: Box::new(LawExpression::Text {
+                        value: "VEC(1,1,1)".into(),
+                    }),
+                    formula_mode: 0,
+                    formula: LawFormula {
+                        name: "ROTATE(DOMAIN(VEC(1,0,0),0,1),TRANS1)".into(),
+                        variables: vec![LawExpression::TransformVec {
+                            vectors: [
+                                Vector3::new(0.0, 1.0, 0.0),
+                                Vector3::new(-1.0, 0.0, 0.0),
+                                Vector3::new(0.0, 0.0, 1.0),
+                                Vector3::new(0.0, 0.0, 0.0),
+                            ],
+                            scale: 1.0,
+                            flags: [true, false, false],
+                        }],
+                    },
+                    trailing_flag: false,
+                },
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+                discontinuity_flag: false,
+            })),
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let expected = Point3::new(-0.5, 1.25, 0.25);
+    let point = model_surface_point_by_id(&index, &surface_id, -0.25, 0.25)
+        .expect("profile-frame sweep point");
+    assert!((point.x - expected.x).abs() <= f64::EPSILON * 64.0);
+    assert!((point.y - expected.y).abs() <= f64::EPSILON * 64.0);
+    assert!((point.z - expected.z).abs() <= f64::EPSILON * 64.0);
+
+    let partials = model_surface_partials_by_id(&index, &surface_id, -0.25, 0.25)
+        .expect("profile-frame sweep partials");
+    assert_eq!(partials.point, point);
+    assert_eq!(partials.du, Vector3::new(0.0, -1.0, 0.0));
+    assert_eq!(partials.dv, Vector3::new(-2.0, 0.0, 1.0));
+}

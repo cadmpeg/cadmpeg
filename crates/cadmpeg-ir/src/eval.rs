@@ -33,6 +33,7 @@ const EPS_EVAL_CLAMPED_NURBS_PCURVE_ENDPOINT_FRAMES_E12: f64 = 1e-12;
 const EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E12: f64 = 1e-12;
 const EPS_EVAL_FITTED_NURBS_OFFSET_CANDIDATE_E9: f64 = 1e-9;
 const EPS_EVAL_MODEL_CURVE_PARAMETER_NEAR_POINT_WITH_TOLERANCE_E12: f64 = 1e-12;
+const EPS_EVAL_SWEEP_PROFILE_FRAME_ALIGNMENT_E9: f64 = 1e-9;
 
 /// Test whether two model-space points are reflections across a line carrier.
 ///
@@ -4214,17 +4215,49 @@ fn unit_sweep_scale(expression: &LawExpression) -> bool {
     }
 }
 
-fn identity_sweep_rail(formula: &LawFormula) -> bool {
-    if formula.name == "null_law" {
-        return formula.variables.is_empty();
+fn unit_domain_sweep_formula(name: &str) -> bool {
+    let Some(bounds) = name
+        .strip_prefix("DOMAIN(VEC(1,0,0),")
+        .and_then(|name| name.strip_suffix(')'))
+    else {
+        return false;
+    };
+    let mut bounds = bounds.split(',');
+    let Some(lower) = bounds.next().and_then(|value| value.parse::<f64>().ok()) else {
+        return false;
+    };
+    let Some(upper) = bounds.next().and_then(|value| value.parse::<f64>().ok()) else {
+        return false;
+    };
+    bounds.next().is_none() && lower.is_finite() && upper.is_finite() && lower < upper
+}
+
+fn sweep_rail_basis(formula: &LawFormula) -> Option<[Vector3; 3]> {
+    if formula.variables.is_empty() {
+        let name = formula
+            .name
+            .chars()
+            .filter(|character| !character.is_whitespace())
+            .collect::<String>();
+        if name == "null_law" || unit_domain_sweep_formula(&name) {
+            return Some([
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 1.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            ]);
+        }
+        return None;
     }
     let name = formula
         .name
         .chars()
         .filter(|character| !character.is_whitespace())
         .collect::<String>();
-    if !name.starts_with("ROTATE(DOMAIN(") || !name.ends_with("),TRANS1)") {
-        return false;
+    let inner = name
+        .strip_prefix("ROTATE(")
+        .and_then(|name| name.strip_suffix(",TRANS1)"))?;
+    if !unit_domain_sweep_formula(inner) {
+        return None;
     }
     let [LawExpression::TransformVec {
         vectors,
@@ -4232,25 +4265,54 @@ fn identity_sweep_rail(formula: &LawFormula) -> bool {
         flags,
     }] = formula.variables.as_slice()
     else {
-        return false;
+        return None;
     };
-    *scale == 1.0
-        && flags.iter().all(|flag| !flag)
-        && *vectors
-            == [
-                Vector3::new(1.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(0.0, 0.0, 0.0),
-            ]
+    if *scale != 1.0 || *flags != [true, false, false] || vectors[3] != Vector3::new(0.0, 0.0, 0.0)
+    {
+        return None;
+    }
+    let transform = Transform {
+        rows: [
+            [vectors[0].x, vectors[1].x, vectors[2].x, 0.0],
+            [vectors[0].y, vectors[1].y, vectors[2].y, 0.0],
+            [vectors[0].z, vectors[1].z, vectors[2].z, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    };
+    transform
+        .is_proper_rigid()
+        .then_some([vectors[0], vectors[1], vectors[2]])
+}
+
+fn linear_sweep_rail_point(basis: [Vector3; 3], point: Point3) -> Point3 {
+    Point3::new(
+        point.x * basis[0].x + point.y * basis[1].x + point.z * basis[2].x,
+        point.x * basis[0].y + point.y * basis[1].y + point.z * basis[2].y,
+        point.x * basis[0].z + point.y * basis[1].z + point.z * basis[2].z,
+    )
+}
+
+fn linear_sweep_rail_vector(basis: [Vector3; 3], vector: Vector3) -> Vector3 {
+    Vector3::new(
+        vector.x * basis[0].x + vector.y * basis[1].x + vector.z * basis[2].x,
+        vector.x * basis[0].y + vector.y * basis[1].y + vector.z * basis[2].y,
+        vector.x * basis[0].z + vector.y * basis[1].z + vector.z * basis[2].z,
+    )
 }
 
 fn straight_sweep_path_origin(
     index: &crate::index::ModelIndex<'_>,
     spine: &crate::ids::CurveId,
 ) -> Option<Point3> {
-    match &index.curves(&spine.0)?.geometry {
+    let curve = index.curves(&spine.0)?;
+    match &curve.geometry {
         CurveGeometry::Line { origin, .. } => Some(*origin),
+        CurveGeometry::Nurbs(nurbs)
+            if nurbs.degree == 1 && nurbs.control_points.len() == 2 && !nurbs.periodic =>
+        {
+            let [start, _] = nurbs_curve_parameter_domain(nurbs)?;
+            curve_point(&curve.geometry, start)
+        }
         _ => None,
     }
 }
@@ -4282,6 +4344,55 @@ fn unit_vector_with_derivative(vector: Vector3, derivative: Vector3) -> Option<(
     .then_some((unit, unit_derivative))
 }
 
+fn sweep_profile_reversed(
+    profile_frame: Option<(Point3, Vector3)>,
+    spine_tangent: Vector3,
+) -> Option<bool> {
+    let Some((_, frame_vector)) = profile_frame else {
+        return Some(false);
+    };
+    let frame_vector = unit_axis(frame_vector)?;
+    let spine_tangent = unit_axis(spine_tangent)?;
+    let alignment = frame_vector.dot(spine_tangent);
+    ((alignment.abs() - 1.0).abs() <= EPS_EVAL_SWEEP_PROFILE_FRAME_ALIGNMENT_E9)
+        .then_some(alignment < 0.0)
+}
+
+fn sweep_profile_differential(
+    index: &crate::index::ModelIndex<'_>,
+    profile: &crate::ids::CurveId,
+    profile_range: [f64; 2],
+    reversed: bool,
+    parameter: f64,
+) -> Option<ModelCurveDifferential> {
+    if !sweep_tail_interval_contains([Some(profile_range[0]), Some(profile_range[1])], parameter) {
+        return None;
+    }
+    let profile_span = profile_range[1] - profile_range[0];
+    if !profile_span.is_finite() || profile_span <= 0.0 {
+        return None;
+    }
+    let curve = index.curves(&profile.0)?;
+    let (native_parameter, parameter_scale) = match &curve.geometry {
+        CurveGeometry::Nurbs(nurbs) => {
+            let [native_start, native_end] = nurbs_curve_parameter_domain(nurbs)?;
+            let native_span = native_end - native_start;
+            let fraction = (parameter - profile_range[0]) / profile_span;
+            let fraction = if reversed { 1.0 - fraction } else { fraction };
+            let native_parameter = native_start + fraction * native_span;
+            let parameter_scale = native_span / profile_span * if reversed { -1.0 } else { 1.0 };
+            (native_parameter, parameter_scale)
+        }
+        _ if !reversed => (parameter, 1.0),
+        _ => return None,
+    };
+    let mut differential = model_curve_differential_by_id(index, profile, native_parameter)?;
+    differential.tangent = scale_vector(differential.tangent, parameter_scale);
+    differential.acceleration =
+        scale_vector(differential.acceleration, parameter_scale * parameter_scale);
+    Some(differential)
+}
+
 fn cacheless_law_sweep_differentials(
     index: &crate::index::ModelIndex<'_>,
     profile: &crate::ids::CurveId,
@@ -4301,11 +4412,11 @@ fn cacheless_law_sweep_differentials(
     }
     let path_origin = straight_sweep_path_origin(index, spine)?;
     let SweepSurfaceLayout::LawDriven {
+        profile_range,
         profile_frame,
         first_law,
+        first_range,
         path_mode,
-        path_flag,
-        second_law_flag,
         second_law,
         formula,
         formula_mode,
@@ -4316,21 +4427,23 @@ fn cacheless_law_sweep_differentials(
         return None;
     };
     let parameterization = form.tail_parameterization.as_ref()?;
-    if profile_frame.is_some()
-        || *path_mode != 1
-        || *path_flag
-        || *second_law_flag
+    let rail_basis = sweep_rail_basis(formula)?;
+    if *path_mode != 1
         || *formula_mode != 0
         || *trailing_flag
         || !sweep_tail_interval_contains(parameterization.u_interval, u)
         || !sweep_tail_interval_contains(parameterization.v_interval, v)
+        || !sweep_tail_interval_contains([Some(first_range[0]), Some(first_range[1])], v)
         || !unit_sweep_scale(second_law)
-        || !identity_sweep_rail(formula)
     {
         return None;
     }
-    let profile = model_curve_differential_by_id(index, profile, u)?;
     let spine = model_curve_differential_by_id(index, spine, v)?;
+    let reversed = sweep_profile_reversed(*profile_frame, spine.tangent)?;
+    let mut profile = sweep_profile_differential(index, profile, *profile_range, reversed, u)?;
+    profile.point = linear_sweep_rail_point(rail_basis, profile.point);
+    profile.tangent = linear_sweep_rail_vector(rail_basis, profile.tangent);
+    profile.acceleration = linear_sweep_rail_vector(rail_basis, profile.acceleration);
     let law = scalar_sweep_law_differential(first_law, v)?;
     Some((profile, spine, law, path_origin))
 }
