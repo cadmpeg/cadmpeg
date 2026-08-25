@@ -766,6 +766,7 @@
       "brep_rejected_face_loop_ordering_count": 0,
       "brep_rejected_face_missing_loops_count": 0,
       "brep_rejected_face_missing_orientation_count": 0,
+      "brep_rejected_face_missing_surface_carrier_count": 0,
       "brep_rejected_face_two_edge_parameter_proof_count": 0,
       "brep_rejected_face_unresolved_boundary_vertices_count": 0,
       "brep_vertex_analytic_domain_count": 0,

@@ -49,6 +49,8 @@ const FACE_REJECTION_OPERAND_SAMPLE_LIMIT: usize = 8;
 /// one bucket, so corpus totals can be compared without double-counting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(in super::super) enum FaceAdmissionRejection {
+    /// The topology face has no unique transferred neutral surface carrier.
+    MissingSurfaceCarrier,
     /// No unique native orientation exists for the candidate face.
     MissingOrientation,
     /// More than one typed model surface claims the candidate face identity.
@@ -66,7 +68,8 @@ pub(in super::super) enum FaceAdmissionRejection {
 }
 
 impl FaceAdmissionRejection {
-    pub(in super::super) const ALL: [Self; 7] = [
+    pub(in super::super) const ALL: [Self; 8] = [
+        Self::MissingSurfaceCarrier,
         Self::MissingOrientation,
         Self::AmbiguousSurfaceCarrier,
         Self::MissingLoops,
@@ -78,6 +81,7 @@ impl FaceAdmissionRejection {
 
     pub(in super::super) const fn key(self) -> &'static str {
         match self {
+            Self::MissingSurfaceCarrier => "missing_surface_carrier",
             Self::MissingOrientation => "missing_orientation",
             Self::AmbiguousSurfaceCarrier => "ambiguous_surface_carrier",
             Self::MissingLoops => "missing_loops",
@@ -90,6 +94,7 @@ impl FaceAdmissionRejection {
 
     pub(in super::super) const fn label(self) -> &'static str {
         match self {
+            Self::MissingSurfaceCarrier => "missing surface carrier",
             Self::MissingOrientation => "missing orientation",
             Self::AmbiguousSurfaceCarrier => "ambiguous surface carrier",
             Self::MissingLoops => "missing loops",
@@ -1072,6 +1077,10 @@ pub(in super::super) fn transfer_native_brep(
         .count();
     let mut eligible_faces = BTreeMap::new();
     for face_id in candidate_face_ids {
+        if model_surface_counts[&face_id] == 0 {
+            diagnostics.reject_face(FaceAdmissionRejection::MissingSurfaceCarrier, face_id);
+            continue;
+        }
         if !face_orientations.contains_key(&face_id) {
             diagnostics.reject_face(FaceAdmissionRejection::MissingOrientation, face_id);
             continue;

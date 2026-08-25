@@ -48,21 +48,71 @@ use super::native::annotate;
 
 /// Resolve the IR surface identity for a native topology surface identifier.
 ///
-/// Visible geometry rows and active-datum rows share the compact native
-/// identifier space used by topology links. Keep their source namespaces
-/// distinct when only one namespace owns the identifier; visible geometry
-/// remains the default for the existing and rowless feature-carrier paths.
+/// Visible geometry, non-visible geometry, and active-datum rows share the
+/// compact native identifier space used by topology links. Keep their source
+/// namespaces distinct when only one namespace owns the identifier; visible
+/// geometry remains the default for the existing and rowless feature-carrier
+/// paths.
 pub(super) fn native_surface_id(scan: &ContainerScan, surface_id: u32) -> SurfaceId {
     let visible_present = scan.surfaces.rows.iter().any(|row| row.id == surface_id);
+    let nonvisible_present = scan
+        .surfaces
+        .nonvisible_rows
+        .iter()
+        .any(|row| row.id == surface_id);
     let active_datum_present = scan
         .planes
         .datum_cylinders
         .iter()
         .any(|cylinder| cylinder.id == surface_id);
-    if active_datum_present && !visible_present {
+    if visible_present {
+        SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))
+    } else if nonvisible_present {
+        SurfaceId(format!("creo:novisgeom:surface#{surface_id}"))
+    } else if active_datum_present {
         SurfaceId(format!("creo:actdatums:surface#{surface_id}"))
     } else {
         SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))
+    }
+}
+
+/// Return a native surface row only when its compact identifier is unique
+/// across visible and non-visible geometry namespaces.
+pub(super) fn unique_native_surface_row<'a>(
+    scan: &'a ContainerScan<'_>,
+    surface_id: u32,
+) -> Option<&'a crate::surface::SurfaceRow> {
+    let mut rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .chain(&scan.surfaces.nonvisible_rows)
+        .filter(|row| row.id == surface_id);
+    let row = rows.next()?;
+    rows.next().is_none().then_some(row)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::native_surface_id;
+    use crate::container::scan_bytes;
+    use crate::surface::{SurfaceKind, SurfaceRow};
+
+    #[test]
+    fn native_surface_id_preserves_nonvisible_namespace() {
+        let mut scan = scan_bytes(Vec::new());
+        scan.surfaces.nonvisible_rows.push(SurfaceRow {
+            id: 17,
+            type_byte: SurfaceKind::Plane.canonical_type_byte(),
+            kind: SurfaceKind::Plane,
+            feature_id: 1,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 0,
+        });
+
+        assert_eq!(native_surface_id(&scan, 17).0, "creo:novisgeom:surface#17");
     }
 }
 

@@ -700,11 +700,12 @@ pub fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u3
         .surfaces
         .rows
         .iter()
+        .chain(&scan.surfaces.nonvisible_rows)
         .map(|row| row.id)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter_map(|id| {
-            crate::surface::unique_surface_row(&scan.surfaces.rows, id)
+            crate::decode::surfaces::unique_native_surface_row(scan, id)
                 .map(|row| (id, row.reversed))
         })
         .collect::<BTreeMap<_, _>>();
@@ -741,4 +742,32 @@ pub fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u3
         &available_surfaces,
     ));
     orientations
+}
+
+#[cfg(test)]
+mod namespace_tests {
+    use super::native_face_orientations;
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::units::Units;
+
+    #[test]
+    fn native_face_orientations_reads_nonvisible_rows() {
+        let mut scan = crate::container::scan_bytes(Vec::new());
+        scan.surfaces
+            .nonvisible_rows
+            .push(crate::surface::SurfaceRow {
+                id: 17,
+                type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+                kind: crate::surface::SurfaceKind::Plane,
+                feature_id: 1,
+                reversed: true,
+                boundary_type: 0,
+                next_surface: 0,
+                offset: 0,
+            });
+
+        let orientations = native_face_orientations(&scan, &CadIr::empty(Units::default()));
+
+        assert_eq!(orientations.get(&17), Some(&true));
+    }
 }

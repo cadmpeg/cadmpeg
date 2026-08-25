@@ -47,6 +47,23 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
 }
 
 #[test]
+fn face_admission_diagnostics_report_missing_surface_carrier() {
+    let mut diagnostics = BrepTransferDiagnostics::default();
+    diagnostics.reject_face(FaceAdmissionRejection::MissingSurfaceCarrier, 42);
+
+    let evidence = &diagnostics.rejected_faces[&FaceAdmissionRejection::MissingSurfaceCarrier];
+    assert_eq!(evidence.count, 1);
+    assert_eq!(evidence.sample_ids, vec![42]);
+    let mut coverage = BTreeMap::new();
+    diagnostics.record_coverage(&mut coverage);
+    assert_eq!(coverage["brep_rejected_face_count"], 1);
+    assert_eq!(
+        coverage["brep_rejected_face_missing_surface_carrier_count"],
+        1
+    );
+}
+
+#[test]
 fn face_admission_diagnostics_record_unresolved_boundary_operands() {
     let resolved = crate::topology::HalfEdgeId {
         curve_id: 10,
