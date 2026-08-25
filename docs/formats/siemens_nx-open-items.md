@@ -645,6 +645,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label and body-write output identify the surface-enlarge family and result body, but the current object-index and payload lanes do not assign the pre-operation face set or the extension and copy controls. Result topology does not identify those authored roles.
 
+### OM-41. `EXTRACT_FACE` construction roles
+
+**Question.** Which serialized faces and associativity, copy, and sew controls define an `EXTRACT_FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `EXTRACT_FACE` operation label identifies a face-extraction construction." defines the family and retains its dedicated unresolved neutral definition. A resolved body-write relation retains a sheet result body.
+
+**Need.** We must identify the complete source-face and result-control relation to construct an extract-face operation.
+
+**Conflict.** The operation label and resolved sheet result identify the family, but the operation object-index lanes and body-write relation do not assign source faces or associativity, copy, or sew controls. Result sheet ownership does not identify the authored source selection.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

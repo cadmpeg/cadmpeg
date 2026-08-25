@@ -1421,6 +1421,8 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         merge_result: Option<bool>,
     },
+    /// Surface body extracted from selected faces whose source roles remain unresolved.
+    ExtractFaceUnresolved,
     /// Boundary-surface operation whose curve networks remain unresolved.
     BoundarySurfaceUnresolved,
     /// Restricts selected surface faces to one side of a trimming path.
@@ -1701,6 +1703,7 @@ impl FeatureDefinition {
             Self::Sphere { .. } => Some("sphere"),
             Self::ExtractBody { .. } => Some("extract body"),
             Self::Loft { .. } => Some("loft"),
+            Self::ExtractFaceUnresolved => Some("extract face"),
             Self::TrimSurface { .. } => Some("trim surface"),
             Self::ExtendSurface { .. } => Some("extend surface"),
             Self::RuledSurface { .. } => Some("ruled surface"),
