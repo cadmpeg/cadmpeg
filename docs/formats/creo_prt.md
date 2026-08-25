@@ -170,7 +170,8 @@ linear-extrusion families, respectively; `0x2a` and `0x2c` select the same
 linear-extrusion family. A row is complete only when `boundary_type` is a
 defined surface-boundary value and `orient` is `1` or `-1`.
 
-A visible plane or cylinder row has one direct `srf_prim_ptr(plane)` or
+A plane or cylinder row in either surface namespace has one direct
+`srf_prim_ptr(plane)` or
 `srf_prim_ptr(cylinder)` child of the matching family. Its complete `local_sys`
 type-2 array has dimensions `[4][3]` and twelve scalar slots in row-major
 order. Columns zero, one, and two are the first radial direction, second
@@ -180,7 +181,8 @@ cylinder also has one positive finite scalar `radius`. A missing, repeated,
 incomplete, non-finite, non-positive, or conflicting field leaves the bounded
 row and prototype native.
 
-A visible legacy ASCII cone row has one direct `srf_prim_ptr(cone)` child. Its
+A legacy ASCII cone row in either surface namespace has one direct
+`srf_prim_ptr(cone)` child. Its
 complete `local_sys` type-2 array has dimensions `[4][3]` and twelve scalar
 slots in row-major order. Columns zero, one, and two are the reference
 direction, transverse support direction, and signed axis direction; slots nine

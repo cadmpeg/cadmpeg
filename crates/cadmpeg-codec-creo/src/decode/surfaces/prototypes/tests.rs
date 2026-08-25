@@ -289,6 +289,9 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 #Pro/ENGINEER  TM  Version H-01-21
 "
     .to_owned();
+    let nonvisible_data = data
+        .replace("Sld_VisGeom", "Sld_NonVisGeom")
+        .replace("active_geom", "inactive_geom");
     let result = CreoCodec
         .decode(
             &mut Cursor::new(data.into_bytes()),
@@ -322,6 +325,31 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     assert_eq!(
         result.report().coverage["untransferred_visible_surface_row_count"],
         0
+    );
+
+    let nonvisible_result = CreoCodec
+        .decode(
+            &mut Cursor::new(nonvisible_data.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("non-visible legacy analytic surface decode");
+    let nonvisible_surface = nonvisible_result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:novisgeom:surface#42")
+        .expect("non-visible legacy cylinder surface");
+    assert!(matches!(
+        nonvisible_surface.geometry,
+        SurfaceGeometry::Cylinder { radius, .. } if radius == 50.8
+    ));
+    assert_eq!(
+        nonvisible_surface
+            .source_object
+            .as_ref()
+            .and_then(|source| source.visible),
+        Some(false)
     );
 }
 

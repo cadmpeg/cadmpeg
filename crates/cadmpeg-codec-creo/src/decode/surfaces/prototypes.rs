@@ -10,6 +10,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
+use crate::legacy_geometry::LegacySurfaceNamespace;
 
 use super::super::analytic::{cross, dot};
 use super::super::native::annotate;
@@ -496,8 +497,11 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
         if carrier_counts.get(&carrier.surface_id) != Some(&1) {
             continue;
         }
-        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, carrier.surface_id)
-        else {
+        let rows = match carrier.namespace {
+            LegacySurfaceNamespace::Visible => &scan.surfaces.rows,
+            LegacySurfaceNamespace::NonVisible => &scan.surfaces.nonvisible_rows,
+        };
+        let Some(row) = crate::surface::unique_surface_row(rows, carrier.surface_id) else {
             continue;
         };
         let geometry = match &carrier.geometry {
@@ -557,7 +561,11 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             }
             _ => continue,
         };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", carrier.surface_id));
+        let id = SurfaceId(format!(
+            "{}{}",
+            carrier.namespace.ir_prefix(),
+            carrier.surface_id
+        ));
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
             continue;
         }
@@ -574,10 +582,14 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
-                object_id: format!("VisibGeom:{}", carrier.surface_id),
+                object_id: format!(
+                    "{}{}",
+                    carrier.namespace.source_prefix(),
+                    carrier.surface_id
+                ),
                 name: None,
                 color: None,
-                visible: Some(true),
+                visible: Some(carrier.namespace.is_visible()),
                 layer: None,
                 instance_path: Vec::new(),
             }),

@@ -60,10 +60,41 @@ pub(crate) enum LegacySurfaceGeometry {
     },
 }
 
-/// One complete legacy surface carrier associated with a visible surface row.
+/// The legacy namespace that owns one analytic surface carrier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LegacySurfaceNamespace {
+    /// The active model geometry namespace.
+    Visible,
+    /// The inactive or construction geometry namespace.
+    NonVisible,
+}
+
+impl LegacySurfaceNamespace {
+    pub(crate) const fn ir_prefix(self) -> &'static str {
+        match self {
+            Self::Visible => "creo:visibgeom:surface#",
+            Self::NonVisible => "creo:novisgeom:surface#",
+        }
+    }
+
+    pub(crate) const fn source_prefix(self) -> &'static str {
+        match self {
+            Self::Visible => "VisibGeom:",
+            Self::NonVisible => "NovisGeom:",
+        }
+    }
+
+    pub(crate) const fn is_visible(self) -> bool {
+        matches!(self, Self::Visible)
+    }
+}
+
+/// One complete legacy surface carrier associated with a namespace surface row.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LegacySurfaceCarrier {
-    /// Visible `srf_array` surface identifier.
+    /// The namespace that owns the `srf_array` surface identifier.
+    pub(crate) namespace: LegacySurfaceNamespace,
+    /// Native `srf_array` surface identifier.
     pub(crate) surface_id: u32,
     /// Complete surface geometry or interpolation data.
     pub(crate) geometry: LegacySurfaceGeometry,
@@ -78,7 +109,7 @@ pub(crate) struct LegacyGeometryScan {
     pub(crate) rows: Vec<SurfaceRow>,
     /// Rows under `Sld_NonVisGeom.inactive_geom.srf_array`.
     pub(crate) nonvisible_rows: Vec<SurfaceRow>,
-    /// Complete surface carriers from visible rows.
+    /// Complete surface carriers from both surface namespaces.
     pub(crate) carriers: Vec<LegacySurfaceCarrier>,
     /// Complete visible curve topology rows from the legacy `crv_array`
     /// namespace.
@@ -98,7 +129,7 @@ pub(crate) fn scan(persistence: &Persistence) -> LegacyGeometryScan {
     let children = child_index(&persistence.objects);
     let integer_fields = integer_field_index(&persistence.integer_values);
     let real_fields = real_field_index(&persistence.real_values);
-    let (rows, carriers) = namespace(
+    let (rows, mut carriers) = namespace(
         &persistence.objects,
         &object_ids,
         &children,
@@ -106,8 +137,9 @@ pub(crate) fn scan(persistence: &Persistence) -> LegacyGeometryScan {
         &real_fields,
         "Sld_VisGeom",
         "active_geom",
+        LegacySurfaceNamespace::Visible,
     );
-    let (nonvisible_rows, _) = namespace(
+    let (nonvisible_rows, mut nonvisible_carriers) = namespace(
         &persistence.objects,
         &object_ids,
         &children,
@@ -115,7 +147,10 @@ pub(crate) fn scan(persistence: &Persistence) -> LegacyGeometryScan {
         &real_fields,
         "Sld_NonVisGeom",
         "inactive_geom",
+        LegacySurfaceNamespace::NonVisible,
     );
+    carriers.append(&mut nonvisible_carriers);
+    carriers.sort_by_key(|carrier| carrier.offset);
     let (topology_rows, pcurves) = curve_namespace(
         &persistence.objects,
         &object_ids,
@@ -303,6 +338,7 @@ fn legacy_direction(value: i32) -> Option<u8> {
     }
 }
 
+#[expect(clippy::too_many_arguments)]
 fn namespace(
     objects: &[ObjectRecord],
     object_ids: &ObjectIdIndex<'_>,
@@ -311,6 +347,7 @@ fn namespace(
     real_fields: &RealFieldIndex<'_>,
     root_name: &str,
     branch_name: &str,
+    namespace: LegacySurfaceNamespace,
 ) -> (Vec<SurfaceRow>, Vec<LegacySurfaceCarrier>) {
     let Some(elements) = surface_array_elements(objects, object_ids, root_name, branch_name) else {
         return (Vec::new(), Vec::new());
@@ -322,7 +359,7 @@ fn namespace(
         let Some(row) = surface_row(row_object, integer_fields) else {
             continue;
         };
-        if let Some(carrier) = surface_carrier(row_object, &row, children, real_fields) {
+        if let Some(carrier) = surface_carrier(row_object, &row, children, real_fields, namespace) {
             carriers.push(carrier);
         }
         rows.push(row);
@@ -407,6 +444,7 @@ fn surface_carrier(
     row: &SurfaceRow,
     children: &ChildIndex<'_>,
     reals: &RealFieldIndex<'_>,
+    namespace: LegacySurfaceNamespace,
 ) -> Option<LegacySurfaceCarrier> {
     let mut primitives = children
         .get(row_object.id.as_str())?
@@ -440,6 +478,7 @@ fn surface_carrier(
             &mixed_derivatives,
         )?;
         return Some(LegacySurfaceCarrier {
+            namespace,
             surface_id: row.id,
             geometry: LegacySurfaceGeometry::Spline {
                 points,
@@ -498,6 +537,7 @@ fn surface_carrier(
         _ => unreachable!("surface carrier family was filtered above"),
     };
     Some(LegacySurfaceCarrier {
+        namespace,
         surface_id: row.id,
         geometry,
         offset: primitive.offset,
@@ -748,7 +788,7 @@ fn local_system_slots(record: &RealRecord) -> Option<[f64; 12]> {
 mod tests {
     use super::{
         canonicalize_legacy_cone_pcurve_endpoints, scan, LegacySurfaceCarrier,
-        LegacySurfaceGeometry,
+        LegacySurfaceGeometry, LegacySurfaceNamespace,
     };
     use crate::legacy::{
         IntegerPayload, IntegerRun, ObjectPayload, ObjectRecord, Persistence, Real, RealPayload,
@@ -999,6 +1039,10 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
         assert_eq!(result.rows.len(), 1);
         assert_eq!(result.carriers.len(), 1);
+        assert_eq!(
+            result.carriers[0].namespace,
+            LegacySurfaceNamespace::Visible
+        );
         assert_eq!(result.rows[0].id, 42);
         assert_eq!(
             result.carriers[0].geometry,
@@ -1019,6 +1063,26 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
 
         assert_eq!(result.rows.len(), 1);
         assert!(result.carriers.is_empty());
+    }
+
+    #[test]
+    fn extracts_complete_legacy_carrier_from_nonvisible_namespace() {
+        let data = String::from_utf8(fixture(2.0, false))
+            .expect("ASCII fixture")
+            .replace("Sld_VisGeom", "Sld_NonVisGeom")
+            .replace("active_geom", "inactive_geom")
+            .into_bytes();
+        let persistence = crate::legacy::scan(&data, std::iter::once(0..data.len()));
+        let result = scan(&persistence);
+
+        assert!(result.rows.is_empty());
+        assert_eq!(result.nonvisible_rows.len(), 1);
+        assert_eq!(result.carriers.len(), 1);
+        assert_eq!(
+            result.carriers[0].namespace,
+            LegacySurfaceNamespace::NonVisible
+        );
+        assert_eq!(result.carriers[0].surface_id, 42);
     }
 
     #[test]
@@ -1119,6 +1183,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
     #[test]
     fn canonicalizes_negative_legacy_cone_v_parameters() {
         let carriers = [LegacySurfaceCarrier {
+            namespace: LegacySurfaceNamespace::Visible,
             surface_id: 42,
             geometry: LegacySurfaceGeometry::Cone {
                 apex: [0.0, 0.0, 0.0],

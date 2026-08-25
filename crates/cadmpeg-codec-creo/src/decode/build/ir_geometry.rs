@@ -11,7 +11,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use crate::container::ContainerScan;
 
 use super::super::analytic::{
-    reconcile_support_apex_cone_parameter_branches, retain_unresolved_visible_carriers,
+    reconcile_support_apex_cone_parameter_branches, retain_unresolved_surface_carriers,
     transfer_analytic_pcurve_carriers, transfer_topology_bound_planes,
 };
 use super::super::coverage::{
@@ -129,7 +129,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
     let feature_circular_extrusion_brep_count =
         transfer_resolved_circular_extrusion_breps(scan, ir, annotations);
     let feature_extrusion_brep_count = transfer_resolved_extrusion_breps(scan, ir, annotations);
-    retain_unresolved_visible_carriers(scan, ir, annotations);
+    retain_unresolved_surface_carriers(scan, ir, annotations);
     let transferred_part_product = transfer_part_product(scan, ir, annotations);
     let decoded_feature_skamp_count = scan
         .features

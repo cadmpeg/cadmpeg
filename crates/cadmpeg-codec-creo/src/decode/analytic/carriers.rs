@@ -10,6 +10,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::{role, ContainerScan};
+use crate::legacy_geometry::LegacySurfaceNamespace;
 use crate::topology::HalfEdgeId;
 
 use super::super::native::annotate;
@@ -177,39 +178,59 @@ pub fn transfer_topology_bound_planes(
     transferred
 }
 
-pub fn retain_unresolved_visible_carriers(
+pub fn retain_unresolved_surface_carriers(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) {
-    for row in crate::surface::uniquely_identified_rows(&scan.surfaces.rows) {
-        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
-            continue;
+    for (rows, namespace) in [
+        (&scan.surfaces.rows, LegacySurfaceNamespace::Visible),
+        (
+            &scan.surfaces.nonvisible_rows,
+            LegacySurfaceNamespace::NonVisible,
+        ),
+    ] {
+        for row in crate::surface::uniquely_identified_rows(rows) {
+            let id = SurfaceId(format!("{}{}", namespace.ir_prefix(), row.id));
+            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+                continue;
+            }
+            annotate(
+                annotations,
+                &id,
+                if namespace.is_visible() {
+                    "VisibGeom"
+                } else {
+                    "NovisGeom"
+                },
+                row.offset as u64,
+                if namespace.is_visible() {
+                    "unresolved_visible_surface_carrier"
+                } else {
+                    "unresolved_nonvisible_surface_carrier"
+                },
+                Exactness::Unknown,
+            );
+            ir.model.surfaces.push(Surface {
+                id,
+                geometry: SurfaceGeometry::Unknown {
+                    record: geometry_section_record(scan, row.offset),
+                },
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("{}{}", namespace.source_prefix(), row.id),
+                    name: None,
+                    color: None,
+                    visible: if namespace.is_visible() {
+                        None
+                    } else {
+                        Some(false)
+                    },
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
         }
-        annotate(
-            annotations,
-            &id,
-            "VisibGeom",
-            row.offset as u64,
-            "unresolved_visible_surface_carrier",
-            Exactness::Unknown,
-        );
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: SurfaceGeometry::Unknown {
-                record: geometry_section_record(scan, row.offset),
-            },
-            source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
-                object_id: format!("VisibGeom:{}", row.id),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
     }
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
         let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
@@ -247,49 +268,65 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
         .into_iter()
         .map(|(id, plane)| (id, CarrierEquation::Plane(plane)))
         .collect::<BTreeMap<_, _>>();
-    let row_ids = scan
+    let rows = scan
         .surfaces
         .rows
         .iter()
-        .map(|row| row.id)
-        .collect::<BTreeSet<_>>();
-    for row in crate::surface::uniquely_identified_rows(&scan.surfaces.rows) {
-        if let Some(carrier) = positional_cylinder_carrier(scan, row) {
-            carriers.insert(row.id, carrier);
-            continue;
-        }
-        let id = native_surface_id(scan, row.id);
-        let model_surfaces = ir
-            .model
-            .surfaces
+        .chain(&scan.surfaces.nonvisible_rows)
+        .collect::<Vec<_>>();
+    let row_ids = rows.iter().map(|row| row.id).collect::<BTreeSet<_>>();
+    let mut row_counts = BTreeMap::<u32, usize>::new();
+    for row in &rows {
+        *row_counts.entry(row.id).or_default() += 1;
+    }
+    for (namespace_rows, parameters) in [
+        (&scan.surfaces.rows, &scan.surfaces.parameters),
+        (
+            &scan.surfaces.nonvisible_rows,
+            &scan.surfaces.nonvisible_parameters,
+        ),
+    ] {
+        for row in namespace_rows
             .iter()
-            .filter(|surface| surface.id == id)
-            .collect::<Vec<_>>();
-        let surface = match model_surfaces.as_slice() {
-            [] => continue,
-            [surface] => surface,
-            _ => {
-                carriers.remove(&row.id);
+            .filter(|row| row_counts.get(&row.id) == Some(&1))
+        {
+            if let Some(carrier) = positional_cylinder_carrier(scan, row, parameters) {
+                carriers.insert(row.id, carrier);
                 continue;
             }
-        };
-        if let SurfaceGeometry::Plane { origin, normal, .. } = &surface.geometry {
-            let plane = PlaneEquation {
-                origin: [origin.x, origin.y, origin.z],
-                normal: [normal.x, normal.y, normal.z],
+            let id = native_surface_id(scan, row.id);
+            let model_surfaces = ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.id == id)
+                .collect::<Vec<_>>();
+            let surface = match model_surfaces.as_slice() {
+                [] => continue,
+                [surface] => surface,
+                _ => {
+                    carriers.remove(&row.id);
+                    continue;
+                }
             };
-            let agreed = match carriers.get(&row.id) {
-                Some(CarrierEquation::Plane(existing)) => agreed_plane(&[*existing, plane]),
-                Some(_) => None,
-                None => Some(plane),
-            };
-            if let Some(plane) = agreed {
-                carriers.insert(row.id, CarrierEquation::Plane(plane));
-            } else {
-                carriers.remove(&row.id);
+            if let SurfaceGeometry::Plane { origin, normal, .. } = &surface.geometry {
+                let plane = PlaneEquation {
+                    origin: [origin.x, origin.y, origin.z],
+                    normal: [normal.x, normal.y, normal.z],
+                };
+                let agreed = match carriers.get(&row.id) {
+                    Some(CarrierEquation::Plane(existing)) => agreed_plane(&[*existing, plane]),
+                    Some(_) => None,
+                    None => Some(plane),
+                };
+                if let Some(plane) = agreed {
+                    carriers.insert(row.id, CarrierEquation::Plane(plane));
+                } else {
+                    carriers.remove(&row.id);
+                }
+            } else if let Some(carrier) = surface_carrier(&surface.geometry) {
+                carriers.insert(row.id, carrier);
             }
-        } else if let Some(carrier) = surface_carrier(&surface.geometry) {
-            carriers.insert(row.id, carrier);
         }
     }
     for datum in &scan.planes.datum_cylinders {
@@ -316,6 +353,7 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
             .id
             .0
             .strip_prefix("creo:visibgeom:surface#")
+            .or_else(|| surface.id.0.strip_prefix("creo:novisgeom:surface#"))
             .and_then(|id| id.parse().ok())
         else {
             continue;
@@ -340,9 +378,10 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
 fn positional_cylinder_carrier(
     scan: &ContainerScan,
     row: &crate::surface::SurfaceRow,
+    parameters: &[crate::surface::SurfaceParameterRecord],
 ) -> Option<CarrierEquation> {
     (row.kind == crate::surface::SurfaceKind::Cylinder).then_some(())?;
-    let record = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?;
+    let record = crate::surface::unique_surface_parameter(parameters, row.id)?;
     let inline = record.has_inline_non_plane_envelope()
         || record.has_inline_non_plane_local_system_suffix(row.type_byte)
         || record
