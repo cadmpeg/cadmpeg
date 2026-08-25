@@ -634,6 +634,90 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
 }
 
 #[test]
+fn dynamic_point_relation_accepts_model_coordinate_quantization() {
+    let sketch = SketchId("sketch".into());
+    let first = SketchEntity {
+        id: SketchEntityId("first-point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some("first-marker".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 0.0),
+        },
+    };
+    let second = SketchEntity {
+        id: SketchEntityId("second-point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some("second-marker".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(1.202_017_17, 0.0),
+        },
+    };
+    let markers = [
+        marker("first-marker", 0, 10, SketchInputKind::Point, None),
+        marker("second-marker", 1, 20, SketchInputKind::Point, None),
+    ];
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let mut relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [0, 1]);
+    relation.operands[0].entity_ref = Some("first-marker".into());
+    relation.operands[1].entity_ref = Some("second-marker".into());
+    let parameter = length_parameter(1.202_017_165);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[first.clone(), second.clone()],
+            &markers_by_id,
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Entity(first.id.clone()),
+            second: SketchLocus::Entity(second.id.clone()),
+            parameter: parameter.id.clone(),
+        })
+    );
+
+    let rejected_parameter = length_parameter(1.202_017_195);
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&rejected_parameter),
+            &sketch,
+            &[first.clone(), second.clone()],
+            &markers_by_id,
+            &HashMap::new(),
+        ),
+        None
+    );
+
+    let definition = SketchConstraintDefinition::DistanceLoci {
+        first: SketchLocus::Entity(SketchEntityId("first-point".into())),
+        second: SketchLocus::Entity(SketchEntityId("second-point".into())),
+        parameter: parameter.id.clone(),
+    };
+    assert!(!relation_constraint_is_inactive(
+        Some(&parameter),
+        &definition,
+        &[first.clone(), second.clone()],
+    ));
+    assert!(relation_constraint_is_inactive(
+        Some(&rejected_parameter),
+        &definition,
+        &[first, second],
+    ));
+}
+
+#[test]
 fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     let sketch = SketchId("sketch".into());
     let mut first_marker = marker("first-marker", 0, 10, SketchInputKind::Point, None);

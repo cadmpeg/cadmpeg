@@ -25,6 +25,20 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
+// Relation geometry is projected after feature coordinates are rounded to the
+// model-space quantum. Keep the ordinary identity comparison strict, but allow
+// the bounded error that two independently rounded operand points can add to a
+// stored dimensional value.
+const RELATION_DIMENSION_RELATIVE_TOLERANCE: f64 = 1.0e-9;
+const RELATION_GEOMETRY_QUANTUM_MM: f64 = 1.0e-8;
+const RELATION_GEOMETRY_ABSOLUTE_TOLERANCE_MM: f64 = 2.0 * RELATION_GEOMETRY_QUANTUM_MM;
+
+fn same_relation_dimension_length(left: f64, right: f64) -> bool {
+    (left - right).abs()
+        <= RELATION_GEOMETRY_ABSOLUTE_TOLERANCE_MM
+            .max(RELATION_DIMENSION_RELATIVE_TOLERANCE * left.abs().max(right.abs()).max(1.0))
+}
+
 pub(super) fn linked_single_arc_entity(
     marker: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
@@ -178,7 +192,7 @@ pub(super) fn relation_constraint_is_inactive(
                 };
                 point_line(first, second).or_else(|| point_line(second, first))
             };
-            measured.is_some_and(|measured| !same_dimension_length(measured, expected.0))
+            measured.is_some_and(|measured| !same_relation_dimension_length(measured, expected.0))
         }
         SketchConstraintDefinition::HorizontalDistance { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
@@ -192,7 +206,7 @@ pub(super) fn relation_constraint_is_inactive(
             ) else {
                 return false;
             };
-            !same_dimension_length((second.u - first.u).abs(), expected.0)
+            !same_relation_dimension_length((second.u - first.u).abs(), expected.0)
         }
         SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
@@ -206,7 +220,7 @@ pub(super) fn relation_constraint_is_inactive(
             ) else {
                 return false;
             };
-            !same_dimension_length((second.v - first.v).abs(), expected.0)
+            !same_relation_dimension_length((second.v - first.v).abs(), expected.0)
         }
         SketchConstraintDefinition::Distance { entities, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
@@ -227,7 +241,7 @@ pub(super) fn relation_constraint_is_inactive(
                     None => return false,
                 },
             )
-            .is_some_and(|measured| !same_dimension_length(measured, expected.0))
+            .is_some_and(|measured| !same_relation_dimension_length(measured, expected.0))
         }
         SketchConstraintDefinition::Angle { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Angle(expected)) =
@@ -593,7 +607,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 };
                 let first_point = profile_locus_point(&first, sketch_entities)?;
                 let second_point = profile_locus_point(&second, sketch_entities)?;
-                if !same_dimension_length(
+                if !same_relation_dimension_length(
                     (second_point.u - first_point.u).hypot(second_point.v - first_point.v),
                     expected.0,
                 ) {
@@ -698,7 +712,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 } else {
                     (second_point.v - first_point.v).abs()
                 };
-                if !same_dimension_length(measured, expected.0) {
+                if !same_relation_dimension_length(measured, expected.0) {
                     if dynamic {
                         return None;
                     }
@@ -762,7 +776,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let point_position = profile_locus_point(&point, sketch_entities)?;
             let line_entity = sketch_entities.iter().find(|entity| entity.id == line)?;
             if !point_line_distance_value(point_position, line_entity)
-                .is_some_and(|measured| same_dimension_length(measured, expected.0))
+                .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
             {
                 if dynamic {
                     return None;
@@ -889,7 +903,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let first_line = sketch_entities.iter().find(|entity| entity.id == first)?;
             let second_line = sketch_entities.iter().find(|entity| entity.id == second)?;
             if !line_line_distance(first_line, second_line)
-                .is_some_and(|measured| same_dimension_length(measured, expected.0))
+                .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
             {
                 if dynamic {
                     return None;
@@ -1706,7 +1720,9 @@ fn unique_dynamic_marker_point_pair(
         })
     };
     if let (Some(first), Some(second)) = (&known_first, &known_second) {
-        if measure(first, second).is_some_and(|value| same_dimension_length(value, expected.0)) {
+        if measure(first, second)
+            .is_some_and(|value| same_relation_dimension_length(value, expected.0))
+        {
             return Some((first.clone(), second.clone()));
         }
     }
@@ -1736,7 +1752,8 @@ fn unique_dynamic_marker_point_pair(
             if first == second {
                 continue;
             }
-            if measure(first, second).is_some_and(|value| same_dimension_length(value, expected.0))
+            if measure(first, second)
+                .is_some_and(|value| same_relation_dimension_length(value, expected.0))
             {
                 let mut pair = [first.clone(), second.clone()];
                 pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
@@ -1874,7 +1891,7 @@ fn unique_dynamic_marker_point_line_pair(
         for line in &line_candidates {
             let line_entity = sketch_entities.iter().find(|entity| entity.id == *line)?;
             if point_line_distance_value(point_position, line_entity)
-                .is_some_and(|measured| same_dimension_length(measured, expected.0))
+                .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
             {
                 pairs.push((point.clone(), line.clone()));
             }
@@ -1933,7 +1950,7 @@ fn unique_dynamic_marker_line_distance_pair(
             }
             let second_entity = sketch_entities.iter().find(|entity| entity.id == *second)?;
             if line_line_distance(first_entity, second_entity)
-                .is_some_and(|measured| same_dimension_length(measured, expected.0))
+                .is_some_and(|measured| same_relation_dimension_length(measured, expected.0))
             {
                 let mut pair = [first.clone(), second.clone()];
                 pair.sort();
