@@ -942,9 +942,9 @@ impl<'a> Cursor<'a> {
         let bytes: [u8; 16] = self.take(16, field)?.try_into().expect("16-byte read");
         Ok(format!(
             "{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{}",
-            u32::from_le_bytes(bytes[0..4].try_into().expect("four-byte group")),
-            u16::from_le_bytes(bytes[4..6].try_into().expect("two-byte group")),
-            u16::from_le_bytes(bytes[6..8].try_into().expect("two-byte group")),
+            View::u32_le_at(&bytes, 0).expect("four-byte group"),
+            View::u16_le_at(&bytes, 4).expect("two-byte group"),
+            View::u16_le_at(&bytes, 6).expect("two-byte group"),
             bytes[8],
             bytes[9],
             hex(&bytes[10..])

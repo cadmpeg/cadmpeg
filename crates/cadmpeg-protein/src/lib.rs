@@ -573,16 +573,28 @@ fn read_texture_uri(bytes: &[u8], at: &mut usize, id: &str) -> Result<PropertyVa
 }
 
 fn read_count(bytes: &[u8], at: &mut usize, id: &str) -> Result<usize, CodecError> {
-    let raw = take(bytes, at)
-        .ok_or_else(|| CodecError::malformed(format_args!("Protein property {id} is truncated")))?;
-    let count = usize::try_from(u32::from_le_bytes(raw))
-        .map_err(|_| CodecError::Malformed("Protein value count exceeds usize".into()))?;
+    let count = usize::try_from(read_u32_le(bytes, at).ok_or_else(|| {
+        CodecError::malformed(format_args!("Protein property {id} is truncated"))
+    })?)
+    .map_err(|_| CodecError::Malformed("Protein value count exceeds usize".into()))?;
     if count > 1_024 {
         return Err(CodecError::malformed(format_args!(
             "Protein property {id} has implausible value count {count}"
         )));
     }
     Ok(count)
+}
+
+fn read_u32_le(bytes: &[u8], at: &mut usize) -> Option<u32> {
+    let value = View::u32_le_at(bytes, *at)?;
+    *at = (*at).checked_add(4)?;
+    Some(value)
+}
+
+fn read_f64_le(bytes: &[u8], at: &mut usize) -> Option<f64> {
+    let value = View::f64_le_at(bytes, *at)?;
+    *at = (*at).checked_add(8)?;
+    Some(value)
 }
 
 fn read_value(
@@ -597,25 +609,22 @@ fn read_value(
             PropertyValue::Boolean(take::<1>(bytes, at).ok_or_else(malformed)?[0] != 0)
         }
         Carrier::Integer | Carrier::Choice => {
-            PropertyValue::Integer(u32::from_le_bytes(take(bytes, at).ok_or_else(malformed)?))
+            PropertyValue::Integer(read_u32_le(bytes, at).ok_or_else(malformed)?)
         }
         Carrier::Float => PropertyValue::Float(finite_value(
-            f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
+            read_f64_le(bytes, at).ok_or_else(malformed)?,
             id,
         )?),
         Carrier::UnitFloat => {
             take::<4>(bytes, at).ok_or_else(malformed)?;
             PropertyValue::Float(finite_value(
-                f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
+                read_f64_le(bytes, at).ok_or_else(malformed)?,
                 id,
             )?)
         }
         Carrier::Distance => PropertyValue::Distance {
-            unit: u32::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
-            value: finite_value(
-                f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
-                id,
-            )?,
+            unit: read_u32_le(bytes, at).ok_or_else(malformed)?,
+            value: finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?,
         },
         Carrier::String | Carrier::Uuid | Carrier::Url => {
             PropertyValue::String(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(malformed)?)
@@ -623,10 +632,7 @@ fn read_value(
         Carrier::Color => {
             let mut rgba = [0.0; 4];
             for value in &mut rgba {
-                *value = finite_value(
-                    f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
-                    id,
-                )?;
+                *value = finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?;
             }
             PropertyValue::Color(rgba)
         }

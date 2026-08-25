@@ -27,6 +27,7 @@ use super::selections::{
 use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_endpoint_markers};
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FeatureDefinition, Length, PathRef, PatternKind, PatternSeed};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -133,8 +134,7 @@ pub(crate) fn bind_pattern_inputs(
                     .filter_map(|offset| mirror_pattern_component_path_at(object, offset))
                     .filter_map(|components| {
                         for component in components.iter().rev() {
-                            let source =
-                                u32::from_le_bytes(component.type_signature[4..8].try_into().ok()?);
+                            let source = View::u32_le_at(&component.type_signature, 4)?;
                             let mut matches = history_features.iter().filter(|candidate| {
                                 candidate
                                     .source_id
@@ -205,20 +205,13 @@ pub(crate) fn bind_pattern_inputs(
                     })
                     .filter(|identity| {
                         identity.components.first().is_some_and(|component| {
-                            u32::from_le_bytes(
-                                component.type_signature[4..8]
-                                    .try_into()
-                                    .expect("four-byte pattern source"),
-                            ) == pattern_source
+                            View::u32_le_at(&component.type_signature, 4) == Some(pattern_source)
                         })
                     })
                     .filter(|identity| {
                         identity.components.last().is_some_and(|component| {
-                            u32::from_le_bytes(
-                                component.type_signature[4..8]
-                                    .try_into()
-                                    .expect("four-byte seed source"),
-                            ) == identity.feature_source_id
+                            View::u32_le_at(&component.type_signature, 4)
+                                == Some(identity.feature_source_id)
                                 && component.local_id == Some(identity.local_identity)
                         })
                     })
@@ -638,11 +631,8 @@ pub(crate) fn bind_mirror_surface_planes(
             let Some(component) = selection.components.last() else {
                 continue;
             };
-            let source = u32::from_le_bytes(
-                component.type_signature[4..8]
-                    .try_into()
-                    .expect("four-byte feature source ID slice"),
-            );
+            let source = View::u32_le_at(&component.type_signature, 4)
+                .expect("four-byte feature source ID slice");
             let Some(local) = component.local_id else {
                 continue;
             };
