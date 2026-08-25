@@ -298,6 +298,25 @@ pub(super) fn push_brep_transfer_note(
             String::new()
         }
     };
+    let two_chart_mapping_evidence = {
+        let pcurve = &diagnostics.vertex_solve.pcurve;
+        if pcurve.two_chart_records > 0 {
+            format!(
+                " Two-chart mapping: {} record(s), {} mapped ({} complete, {} partial), {} unmapped; {} missing surface path(s), {} unevaluable path(s), {} surface disagreement(s), {} empty sample record(s).",
+                pcurve.two_chart_records,
+                pcurve.two_chart_mapped_records,
+                pcurve.two_chart_complete_records,
+                pcurve.two_chart_partial_records,
+                pcurve.two_chart_unmapped_records,
+                pcurve.two_chart_missing_surface_paths,
+                pcurve.two_chart_unevaluable_paths,
+                pcurve.two_chart_surface_mismatch_records,
+                pcurve.two_chart_no_sample_records,
+            )
+        } else {
+            String::new()
+        }
+    };
     let carrier_rejection_samples = diagnostics
         .vertex_solve
         .carrier_rejection_samples
@@ -348,7 +367,7 @@ pub(super) fn push_brep_transfer_note(
          a unique surface, {} unevaluable path(s), {} mapped path(s), {} unmapped record(s), {} \
          inconsistent record(s), {} accepted record(s) ({} complete), {} conflicting curve(s), {} \
          pcurve endpoint evidence ({} complete), {} pcurve constraint(s), {} analytic domain(s), \
-         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.{}{}{}{}",
+         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.{}{}{}{}{}",
         diagnostics.boundary_curve_count,
         diagnostics.boundary_curve_missing_incidence_count,
         diagnostics.boundary_curve_unsolved_vertex_count,
@@ -383,6 +402,7 @@ pub(super) fn push_brep_transfer_note(
         pcurve_activity_evidence,
         pcurve_carrier_evidence,
         carrier_rejection_evidence,
+        two_chart_mapping_evidence,
     );
 
     losses.push(CreoLossCode::BrepTransferIncomplete.note(format!(

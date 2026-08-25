@@ -404,6 +404,44 @@ impl BrepTransferDiagnostics {
             "brep_pcurve_complete_record_count".to_string(),
             self.vertex_solve.pcurve.complete_records,
         );
+        if self.vertex_solve.pcurve.two_chart_records > 0 {
+            coverage.insert(
+                "brep_pcurve_two_chart_record_count".to_string(),
+                self.vertex_solve.pcurve.two_chart_records,
+            );
+            coverage.insert(
+                "brep_pcurve_two_chart_mapped_record_count".to_string(),
+                self.vertex_solve.pcurve.two_chart_mapped_records,
+            );
+            coverage.insert(
+                "brep_pcurve_two_chart_complete_record_count".to_string(),
+                self.vertex_solve.pcurve.two_chart_complete_records,
+            );
+            coverage.insert(
+                "brep_pcurve_two_chart_partial_record_count".to_string(),
+                self.vertex_solve.pcurve.two_chart_partial_records,
+            );
+            coverage.insert(
+                "brep_pcurve_two_chart_missing_surface_path_count".to_string(),
+                self.vertex_solve.pcurve.two_chart_missing_surface_paths,
+            );
+            coverage.insert(
+                "brep_pcurve_two_chart_unevaluable_path_count".to_string(),
+                self.vertex_solve.pcurve.two_chart_unevaluable_paths,
+            );
+            coverage.insert(
+                "brep_pcurve_two_chart_surface_mismatch_record_count".to_string(),
+                self.vertex_solve.pcurve.two_chart_surface_mismatch_records,
+            );
+            coverage.insert(
+                "brep_pcurve_two_chart_no_sample_record_count".to_string(),
+                self.vertex_solve.pcurve.two_chart_no_sample_records,
+            );
+            coverage.insert(
+                "brep_pcurve_two_chart_unmapped_record_count".to_string(),
+                self.vertex_solve.pcurve.two_chart_unmapped_records,
+            );
+        }
         coverage.insert(
             "brep_pcurve_conflicting_curve_count".to_string(),
             self.vertex_solve.pcurve.conflicting_curves,

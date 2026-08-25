@@ -88,17 +88,43 @@ pub(crate) struct TwoChartEndpointSets {
     pub complete: bool,
 }
 
-pub(crate) fn mapped_two_chart_endpoint_sets(
+#[derive(Debug, Default)]
+struct TwoChartMappingOutcome {
+    endpoint_sets: Option<TwoChartEndpointSets>,
+    missing_surface_paths: usize,
+    unevaluable_paths: usize,
+    surface_mismatch: bool,
+    no_samples: bool,
+}
+
+fn map_two_chart_endpoint_sets(
     scan: &ContainerScan,
     ir: &CadIr,
     pcurve: &crate::curve::TwoChartPcurveSamples,
-) -> Option<TwoChartEndpointSets> {
+) -> TwoChartMappingOutcome {
+    let Some(first) = pcurve.samples.first() else {
+        return TwoChartMappingOutcome {
+            no_samples: true,
+            ..TwoChartMappingOutcome::default()
+        };
+    };
+    let Some(last) = pcurve.samples.last() else {
+        return TwoChartMappingOutcome {
+            no_samples: true,
+            ..TwoChartMappingOutcome::default()
+        };
+    };
     let surfaces = pcurve
         .faces
         .map(|face_id| unique_model_surface(&ir.model.surfaces, face_id));
+    let mut missing_surface_paths = 0;
+    let mut unevaluable_paths = 0;
     let mapped_samples: [Option<Vec<[f64; 3]>>; 2] = std::array::from_fn(|face_index| {
-        let surface = surfaces[face_index]?;
-        pcurve
+        let Some(surface) = surfaces[face_index] else {
+            missing_surface_paths += 1;
+            return None;
+        };
+        let Some(points) = pcurve
             .samples
             .iter()
             .map(|sample| {
@@ -110,15 +136,29 @@ pub(crate) fn mapped_two_chart_endpoint_sets(
                 Some([point.x, point.y, point.z])
             })
             .collect::<Option<Vec<_>>>()
+        else {
+            unevaluable_paths += 1;
+            return None;
+        };
+        Some(points)
     });
-    if let (Some(first), Some(second)) = (&mapped_samples[0], &mapped_samples[1]) {
-        first
-            .iter()
-            .zip(second)
-            .all(|(first, second)| model_points_agree(*first, *second))
-            .then_some(())?;
+    let surface_mismatch =
+        if let (Some(first_path), Some(second_path)) = (&mapped_samples[0], &mapped_samples[1]) {
+            !first_path
+                .iter()
+                .zip(second_path)
+                .all(|(first, second)| model_points_agree(*first, *second))
+        } else {
+            false
+        };
+    if surface_mismatch {
+        return TwoChartMappingOutcome {
+            missing_surface_paths,
+            unevaluable_paths,
+            surface_mismatch: true,
+            ..TwoChartMappingOutcome::default()
+        };
     }
-    let [first, last] = [pcurve.samples.first()?, pcurve.samples.last()?];
     let canonical = canonicalized_pcurve_endpoints(
         scan,
         pcurve.faces,
@@ -128,13 +168,27 @@ pub(crate) fn mapped_two_chart_endpoint_sets(
     let endpoint_sets =
         std::array::from_fn(|index| mapped_samples[index].as_ref().map(|_| canonical[index]));
     let complete = endpoint_sets.iter().all(Option::is_some);
-    endpoint_sets
+    let endpoint_sets = endpoint_sets
         .iter()
         .any(Option::is_some)
         .then_some(TwoChartEndpointSets {
             paths: endpoint_sets,
             complete,
-        })
+        });
+    TwoChartMappingOutcome {
+        endpoint_sets,
+        missing_surface_paths,
+        unevaluable_paths,
+        ..TwoChartMappingOutcome::default()
+    }
+}
+
+pub(crate) fn mapped_two_chart_endpoint_sets(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    pcurve: &crate::curve::TwoChartPcurveSamples,
+) -> Option<TwoChartEndpointSets> {
+    map_two_chart_endpoint_sets(scan, ir, pcurve).endpoint_sets
 }
 
 #[allow(dead_code)] // Kept as a focused endpoint-mapping test helper.
@@ -181,6 +235,15 @@ pub struct PcurveEndpointDiagnostics {
     pub conflicting_curves: usize,
     pub evidence: usize,
     pub complete_evidence: usize,
+    pub two_chart_records: usize,
+    pub two_chart_mapped_records: usize,
+    pub two_chart_complete_records: usize,
+    pub two_chart_partial_records: usize,
+    pub two_chart_missing_surface_paths: usize,
+    pub two_chart_unevaluable_paths: usize,
+    pub two_chart_surface_mismatch_records: usize,
+    pub two_chart_no_sample_records: usize,
+    pub two_chart_unmapped_records: usize,
     pub carrier_validated_paths: usize,
     pub carrier_rejected_paths: usize,
     pub carrier_unknown_paths: usize,
@@ -601,10 +664,23 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     }
     for pcurve in &scan.curves.two_chart_pcurves {
         diagnostics.records += 1;
-        let Some(endpoint_sets) = mapped_two_chart_endpoint_sets(scan, ir, pcurve) else {
+        diagnostics.two_chart_records += 1;
+        let mapping = map_two_chart_endpoint_sets(scan, ir, pcurve);
+        diagnostics.two_chart_missing_surface_paths += mapping.missing_surface_paths;
+        diagnostics.two_chart_unevaluable_paths += mapping.unevaluable_paths;
+        diagnostics.two_chart_surface_mismatch_records += usize::from(mapping.surface_mismatch);
+        diagnostics.two_chart_no_sample_records += usize::from(mapping.no_samples);
+        let Some(endpoint_sets) = mapping.endpoint_sets else {
+            diagnostics.two_chart_unmapped_records += 1;
             process_paths(pcurve.curve_id, pcurve.faces, Vec::new(), true);
             continue;
         };
+        diagnostics.two_chart_mapped_records += 1;
+        if endpoint_sets.complete {
+            diagnostics.two_chart_complete_records += 1;
+        } else {
+            diagnostics.two_chart_partial_records += 1;
+        }
         if let Some(active) = path_activity.selected_paths(pcurve.curve_id, pcurve.faces, false) {
             let active_count = active.into_iter().filter(|is_active| *is_active).count();
             diagnostics.inactive_paths += 2 - active_count;
