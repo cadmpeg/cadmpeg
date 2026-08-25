@@ -20,6 +20,8 @@ use crate::transform::{Transform, Transform2};
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
+mod law_sweep;
+
 fn bilinear_surface() -> NurbsSurface {
     NurbsSurface {
         u_degree: 1,
@@ -819,20 +821,6 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     assert_eq!(partials.point, expected);
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, -2.0, 1.0));
-}
-
-#[test]
-fn cacheless_law_differential_applies_algebraic_product_rule() {
-    let law = LawExpression::Algebraic {
-        operator: "MUL".into(),
-        operands: vec![
-            LawExpression::Double { value: 2.0 },
-            LawExpression::Text { value: "X".into() },
-        ],
-    };
-    let differential = scalar_sweep_law_differential(&law, 3.0).expect("law differential");
-    assert_eq!(differential.value, 6.0);
-    assert_eq!(differential.derivative, 2.0);
 }
 
 fn variable_blend_eval_fixture(
