@@ -1,6 +1,7 @@
 # CATIA semantic control cross-walks
 
 Date: 2026-08-21
+Update: 2026-08-25
 
 This report records six sanitized control documents as `C06` through `C10` and
 `CH`. It uses the companion PDF text, rendered 3D pages, and the feature-list
@@ -27,10 +28,10 @@ source bytes.
 | control | inner offset | B-rep bytes | FBB face rows | vertex records | model faces / edges | model features | model parameters | model PMI | result |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | C06 | 2290936 | 79405 | 187 | 311 | 187 / 476 | 32 unresolved extrusions | 0 | 0 | geometry and topology transferred; one unresolved curve carrier |
-| C07 | 1137656 | 93699 | 304 | 582 | 0 / 0 | 0 | 0 | 0 | topology not emitted; 20 unresolved face-local carriers |
-| C08 | 1699598 | 78473 | 270 | 443 | 0 / 0 | 2 unresolved datum planes | 0 | 0 | topology search exhausted its budget |
+| C07 | 1137656 | 93699 | 304 | 582 | 304 / 865 | 0 | 0 | 0 | geometry and topology transferred; 20 unresolved face-local carriers |
+| C08 | 1699598 | 78473 | 270 | 443 | 270 / 705 | 2 unresolved datum planes | 0 | 0 | geometry and topology transferred; two unresolved datum planes |
 | C09 | 1533146 | 52377 | 158 | 300 | 158 / 454 | 0 | 31 `Length` values | 0 | geometry and topology transferred |
-| C10 | 1410531 | 89049 | 264 | 560 | 0 / 0 | 0 | 8 `TolNumValue` values | 0 | topology search exhausted; one unresolved surface carrier |
+| C10 | 1410531 | 89049 | 264 | 560 | 264 / 799 | 0 | 8 `TolNumValue` values | 0 | geometry and topology transferred; one unresolved surface and four curve carriers |
 | CH | 1360565 | 47056 | 159 | 272 | 159 / 409 | 18 unresolved datum planes | 0 | 0 | geometry and topology transferred |
 
 All six report `variant=standard_nested`. The zero PMI and configuration
@@ -59,8 +60,8 @@ entity.
 | --- | --- | --- |
 | Saved views `MBD_A`, `MBD_B`, `MBD_C`, `MBD_D` | Native view and dimension classes are retained. `model.configurations=0`. | partial — `DimInst` begins at field offsets 1318578, 1318611, 1318640, and 1318667; the view/configuration owner is not transferred. |
 | Direct/basic dimensions and datum frames visible in the pages | `DimInst`, `DimLine`, `DimValCompDual`, `DimValStyle`, `RepresentedTTRS`, and `ReferencePlaneTTRS` are retained. `model.pmi=0`. | partial — field offsets 1318578, 1319845, and 405430 retain typed native evidence, but no neutral PMI or datum relation is emitted. |
-| Notes, surface requirements, and feature-control frames visible in the pages | Native note and tolerance-related records remain in design-object fields; topology is not emitted. | open: exact annotation ownership cannot be assigned while the 304-row boundary graph has no complete solution at inner offset 1137656. |
-| Operation-level feature list | The companion text does not state one. No neutral feature is emitted. | missing — native records retain 84 design objects, but no admitted feature instance reaches `model.features`. |
+| Notes, surface requirements, and feature-control frames visible in the pages | Native note and tolerance-related records remain in design-object fields; the 304-face topology is emitted. | open: exact annotation ownership cannot be assigned; 20 face-local free-form carriers remain unresolved at inner offset 1137656. |
+| Operation-level feature list | The companion text does not state one. No neutral feature is emitted. | missing — native records retain 84 design objects, but no admitted feature instance reaches `model.features`; topology is no longer the blocking stage. |
 
 ### C08
 
@@ -69,7 +70,7 @@ entity.
 | Saved views `MBD_A`, `MBD_B`, `MBD_C`, `MBD_D` | Native view/presentation records are retained. `model.configurations=0`. | partial — view-related value records occur in the 85 design objects; no configuration owner is transferred. |
 | Dimensions, datum identifiers, and feature-control frames visible in the pages | Native classes include `GSMPlaneOffset`, `CstAttr_Side`, and `Range`; `model.pmi=0`. | partial — field offsets 769194, 769912, 770733, and 822528 retain the relevant class evidence; no neutral PMI is emitted. |
 | Hole, pattern, fillet, and limiting-element intent visible in the model and pages | Native classes include `RectPattern_Nb2`, `RectPattern_DesignIntent`, `Hole_SensThread`, `Hole_Pas`, `HoleType`, `FilletLimitingElementList`, and `EdgeFillet`; neutral output is two unresolved datum planes. | partial — field offsets 769912, 770084, 770733, and 773884 retain operation vocabulary without operation instances. |
-| Operation-level feature list | The companion text does not state one. | open: operation-to-output binding is not assigned; the 270-row boundary graph at inner offset 1699598 exhausted the bounded search. |
+| Operation-level feature list | The companion text does not state one. | open: operation-to-output binding is not assigned; the 270-face topology transfers, but two unresolved datum-plane features remain. |
 
 ### C09
 
@@ -87,7 +88,7 @@ entity.
 | Saved views `MBD_A`, `MBD_B`, `MBD_C`, `MBD_D`, `MBD_E` | Native `BuildConfiguration` and `View` evidence is retained. `model.configurations=0`. | partial — field offset 1638628 carries the configuration/view class; no neutral configuration is emitted. |
 | Direct/basic dimensions, datum identifiers, parallelism and feature-control frames visible in the pages | Native `CstAttr_Parallelism`, `CstAttr_Side`, `DatumTheoExactBloc`, `CATTPSDatum`, and drawing-text classes are retained. `model.pmi=0`. | partial — field offsets 592106, 592146, 1638479, and 1639814 retain annotation classes without neutral PMI. |
 | Tolerance values | Eight neutral `TolNumValue` parameters are emitted. They have no typed PMI owner or quantity. | partial — native tolerance/configuration fields occur at offsets 592815 and 1638479; no neutral dimension or tolerance annotation is emitted. |
-| Operation-level feature list | The companion text does not state one. No neutral feature is emitted. | open: the 264-row boundary graph at inner offset 1410531 exhausted the bounded topology search, so operation-to-face ownership cannot be checked. |
+| Operation-level feature list | The companion text does not state one. No neutral feature is emitted. | open: operation-to-face ownership is not assigned; the 264-face topology transfers, while one surface and four curve carriers remain unresolved. |
 
 ## CH operation cross-walk
 
@@ -143,12 +144,15 @@ verdicts are appended to the corresponding open items.
 - **DI-22:** remains open — C07 retains `DimInst`/`DimLine` at field offsets 1318578/1319845 and C09 retains `CATTPSDimensionData` at 725993/726759, but both emit `model.sketch_constraints=0`.
 - **DI-23:** remains open — C06 and CH retain operation class vocabulary at field offsets 1201859/1204203 and 580441/584416, but the neutral operation output is unresolved datum/extrusion evidence rather than typed operation instances.
 - **DI-24:** remains open — C09 emits 31 untyped `Length` parameters and C10 emits 8 untyped `TolNumValue` parameters while both have `model.pmi=0`; native dimensional/tolerance classes occur at C09 offsets 725993/730648 and C10 offsets 592815/1638479.
-- **SN-37:** remains open — C07, C08, and C10 expose 304, 270, and 264 FBB face rows at inner offsets 1137656, 1699598, and 1410531, but their joint topology phases have no complete solution or exhaust the bounded search; C06, C09, and CH emit topology without establishing the source rule for alternate face slots.
+- **SN-37:** remains open — the current release route transfers the 304-, 270-, and 264-face topologies at inner offsets 1137656, 1699598, and 1410531. C07 and C08 retain no open alternate second-face domains; C10 retains 52 repeated rows, but each allowed second-face domain is singleton before the joint solver. The sibling-neutral models have different face/edge cardinalities (306/871, 271/709, and 256/551), so they confirm split-policy differences but do not supply the allocation-scoped identity bridge required by SN-37.
 
 ## Next discriminating work
 
-The highest-value next check is a paired neutral-topology comparison for C07,
-C08, or C10. It can test the alternate second-face domains in SN-37 without
-using operation or annotation intent. Feature-history and saved-view ownership
-remain separate DI-13/DI-23/DI-28 work; the AP203 topology witness cannot settle
-those design-intent questions.
+The face-domain comparison is complete. It confirms that `allowed_faces` must
+reach the joint solver when repeated rows remain, and that the current C10
+assignment closes to singleton domains. It does not identify the source rule
+for the fixed-nine owner boundary cycle in SN-37. The next SN-37 check must
+therefore use a source-closed allocation bridge or retain the cycle without a
+standard-face join. Feature-history and saved-view ownership remain separate
+DI-13/DI-23/DI-28 work; the neutral topology witness cannot settle those
+design-intent questions.
