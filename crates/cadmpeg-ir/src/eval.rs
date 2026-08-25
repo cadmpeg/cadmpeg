@@ -4545,7 +4545,27 @@ fn cacheless_variable_blend_domain_contains(
 fn variable_blend_has_current_cache(
     construction: &crate::geometry::VariableBlendConstruction,
 ) -> bool {
-    construction.shape_prefix > 0 && construction.tail_enum == 0
+    construction.shape_prefix > 0 && revision_surface_tail_has_current_cache(construction.tail_enum)
+}
+
+fn sweep_has_current_cache(construction: &crate::geometry::SweepSurfaceConstruction) -> bool {
+    construction
+        .revision_form
+        .as_ref()
+        .is_some_and(|form| revision_surface_tail_has_current_cache(form.tail_enum))
+}
+
+fn revision_surface_tail_has_current_cache(tail_enum: i64) -> bool {
+    tail_enum == 0
+}
+
+fn surface_cache_evaluation(
+    geometry: &crate::geometry::SurfaceGeometry,
+    u: f64,
+    v: f64,
+) -> Option<(Point3, Option<Vector3>)> {
+    let partials = surface_partials(geometry, u, v)?;
+    Some((partials.point, partials.du.cross(partials.dv).unit()))
 }
 
 fn variable_blend_is_zero_radius(value: &crate::geometry::VariableBlendValue) -> bool {
@@ -5024,24 +5044,38 @@ pub fn model_surface_point_by_id(
                 profile,
                 spine,
                 native: Some(construction),
-            }) => {
-                cacheless_law_sweep_point(index, profile, spine, construction, u, v).map(|point| {
-                    SurfaceEvaluation {
-                        point,
-                        oriented_normal: None,
-                    }
+            }) => cacheless_law_sweep_point(index, profile, spine, construction, u, v)
+                .map(|point| SurfaceEvaluation {
+                    point,
+                    oriented_normal: None,
                 })
-            }
+                .or_else(|| {
+                    if !sweep_has_current_cache(construction) {
+                        return None;
+                    }
+                    let (point, oriented_normal) =
+                        surface_cache_evaluation(&surface.geometry, u, v)?;
+                    Some(SurfaceEvaluation {
+                        point,
+                        oriented_normal,
+                    })
+                }),
             Some(ProceduralSurfaceDefinition::VariableBlend { construction }) => {
                 cacheless_variable_blend_point(index, construction, u, v)
-                    .or_else(|| {
-                        variable_blend_has_current_cache(construction)
-                            .then(|| surface_point(&surface.geometry, u, v))
-                            .flatten()
-                    })
                     .map(|point| SurfaceEvaluation {
                         point,
                         oriented_normal: None,
+                    })
+                    .or_else(|| {
+                        if !variable_blend_has_current_cache(construction) {
+                            return None;
+                        }
+                        let (point, oriented_normal) =
+                            surface_cache_evaluation(&surface.geometry, u, v)?;
+                        Some(SurfaceEvaluation {
+                            point,
+                            oriented_normal,
+                        })
                     })
             }
             Some(ProceduralSurfaceDefinition::Blend {
@@ -5051,7 +5085,7 @@ pub fn model_surface_point_by_id(
                 native: Some(native),
                 ..
             }) => {
-                let point = cacheless_constant_rolling_ball_point(
+                if let Some(point) = cacheless_constant_rolling_ball_point(
                     index,
                     supports,
                     radius,
@@ -5059,31 +5093,31 @@ pub fn model_surface_point_by_id(
                     native,
                     u,
                     v,
-                )?;
-                let oriented_normal = cacheless_constant_rolling_ball_partials(
-                    index,
-                    supports,
-                    radius,
-                    cross_section,
-                    native,
-                    u,
-                    v,
-                )
-                .and_then(|partials| {
-                    let normal = partials.du.cross(partials.dv);
-                    let magnitude = normal.norm();
-                    (magnitude.is_finite() && magnitude > 0.0).then(|| {
-                        Vector3::new(
-                            normal.x / magnitude,
-                            normal.y / magnitude,
-                            normal.z / magnitude,
-                        )
+                ) {
+                    let oriented_normal = cacheless_constant_rolling_ball_partials(
+                        index,
+                        supports,
+                        radius,
+                        cross_section,
+                        native,
+                        u,
+                        v,
+                    )
+                    .and_then(|partials| partials.du.cross(partials.dv).unit());
+                    Some(SurfaceEvaluation {
+                        point,
+                        oriented_normal,
                     })
-                });
-                Some(SurfaceEvaluation {
-                    point,
-                    oriented_normal,
-                })
+                } else if revision_surface_tail_has_current_cache(native.tail_enum) {
+                    let (point, oriented_normal) =
+                        surface_cache_evaluation(&surface.geometry, u, v)?;
+                    Some(SurfaceEvaluation {
+                        point,
+                        oriented_normal,
+                    })
+                } else {
+                    None
+                }
             }
             Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
                 let mut evaluation = evaluate(index, source, u, v, visiting)?;
@@ -5195,7 +5229,7 @@ pub fn model_surface_partials_by_id(
         .procedural_surface_for_surface(&surface.0)
         .map(|procedural| &procedural.definition)
     {
-        return cacheless_constant_rolling_ball_partials(
+        if let Some(partials) = cacheless_constant_rolling_ball_partials(
             index,
             supports,
             radius,
@@ -5203,7 +5237,12 @@ pub fn model_surface_partials_by_id(
             native,
             u,
             v,
-        );
+        ) {
+            return Some(partials);
+        }
+        if !revision_surface_tail_has_current_cache(native.tail_enum) {
+            return None;
+        }
     }
     if let Some(ProceduralSurfaceDefinition::VariableBlend { construction }) = index
         .procedural_surface_for_surface(&surface.0)
@@ -5224,7 +5263,14 @@ pub fn model_surface_partials_by_id(
         .procedural_surface_for_surface(&surface.0)
         .map(|procedural| &procedural.definition)
     {
-        return cacheless_law_sweep_partials(index, profile, spine, construction, u, v);
+        if let Some(partials) =
+            cacheless_law_sweep_partials(index, profile, spine, construction, u, v)
+        {
+            return Some(partials);
+        }
+        if !sweep_has_current_cache(construction) {
+            return None;
+        }
     }
     model_surface_second_partials_by_id(index, surface, u, v).map(|partials| SurfacePartials {
         point: partials.point,

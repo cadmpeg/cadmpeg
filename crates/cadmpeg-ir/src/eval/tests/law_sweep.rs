@@ -65,7 +65,7 @@ fn cacheless_law_differential_rejects_undefined_domains() {
 }
 
 #[test]
-fn cacheless_law_sweep_applies_profile_frame_and_rail_basis() {
+fn law_sweep_evaluation_selects_cacheless_or_current_cache() {
     let profile_id = CurveId("profile-frame-profile".into());
     let spine_id = CurveId("profile-frame-spine".into());
     let surface_id = SurfaceId("profile-frame-sweep".into());
@@ -179,4 +179,52 @@ fn cacheless_law_sweep_applies_profile_frame_and_rail_basis() {
     assert_eq!(partials.point, point);
     assert_eq!(partials.du, Vector3::new(0.0, -1.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(-2.0, 0.0, 1.0));
+
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(bilinear_surface());
+    {
+        let ProceduralSurfaceDefinition::Sweep {
+            native: Some(native),
+            ..
+        } = &mut ir.model.procedural_surfaces[0].definition
+        else {
+            unreachable!()
+        };
+        let form = native.revision_form.as_mut().expect("revision sweep form");
+        form.tail_enum = 0;
+        form.tail_parameterization = None;
+    }
+
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &surface_id, 0.25, 0.5),
+        Some(Point3::new(0.25, 0.5, 0.0))
+    );
+    let cached_partials = model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5)
+        .expect("current sweep cache partials");
+    assert_eq!(cached_partials.point, Point3::new(0.25, 0.5, 0.0));
+    assert_eq!(cached_partials.du, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(cached_partials.dv, Vector3::new(0.0, 1.0, 0.0));
+
+    {
+        let ProceduralSurfaceDefinition::Sweep {
+            native: Some(native),
+            ..
+        } = &mut ir.model.procedural_surfaces[0].definition
+        else {
+            unreachable!()
+        };
+        let form = native.revision_form.as_mut().expect("revision sweep form");
+        form.tail_enum = 2;
+        form.tail_parameterization = Some(RevisionSurfaceParameterization::default());
+        if let SweepSurfaceLayout::LawDriven { first_law, .. } = &mut native.layout {
+            **first_law = LawExpression::Text {
+                value: "unsupported-law".into(),
+            };
+        } else {
+            unreachable!()
+        }
+    }
+    let index = crate::index::ModelIndex::new(&ir);
+    assert!(model_surface_point_by_id(&index, &surface_id, 0.25, 0.5).is_none());
+    assert!(model_surface_partials_by_id(&index, &surface_id, 0.25, 0.5).is_none());
 }

@@ -430,6 +430,46 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5),
         None
     );
+
+    ir.model.surfaces[2].geometry = SurfaceGeometry::Nurbs(bilinear_surface());
+    {
+        let ProceduralSurfaceDefinition::Blend {
+            native: Some(native),
+            ..
+        } = &mut ir.model.procedural_surfaces[0].definition
+        else {
+            unreachable!()
+        };
+        native.offsets = [3.0, 3.0];
+        native.tail_enum = 0;
+        native.tail_parameterization = None;
+    }
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
+        Some(Point3::new(0.25, 0.5, 0.0))
+    );
+    let cached_partials = model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5)
+        .expect("current rolling-ball cache partials");
+    assert_eq!(cached_partials.point, Point3::new(0.25, 0.5, 0.0));
+    assert_eq!(cached_partials.du, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(cached_partials.dv, Vector3::new(0.0, 1.0, 0.0));
+
+    {
+        let ProceduralSurfaceDefinition::Blend {
+            native: Some(native),
+            ..
+        } = &mut ir.model.procedural_surfaces[0].definition
+        else {
+            unreachable!()
+        };
+        native.offsets = [4.0, 4.0];
+        native.tail_enum = 2;
+        native.tail_parameterization = Some(RevisionSurfaceParameterization::default());
+    }
+    let index = crate::index::ModelIndex::new(&ir);
+    assert!(model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5).is_none());
+    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5).is_none());
 }
 
 #[test]
