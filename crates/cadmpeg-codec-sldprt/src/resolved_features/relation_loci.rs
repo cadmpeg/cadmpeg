@@ -517,6 +517,47 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             markers_by_id,
             loci_by_marker,
         )
+        .or_else(|| {
+            let first = curve(0);
+            let second = curve(1);
+            match (first, second) {
+                (Some(first), None) => Some((
+                    first.clone(),
+                    unique_dynamic_profile_line_angle_entity(
+                        sketch,
+                        &first,
+                        parameter,
+                        sketch_entities,
+                    )?,
+                )),
+                (None, Some(second)) => Some((
+                    unique_dynamic_profile_line_angle_entity(
+                        sketch,
+                        &second,
+                        parameter,
+                        sketch_entities,
+                    )?,
+                    second.clone(),
+                )),
+                _ => None,
+            }
+        })
+    } else {
+        None
+    };
+    // A family-scoped angular relation may carry only an unresolved relation
+    // handle or an address that does not materialize a line entity. In that
+    // case the complete owning sketch is the semantic scope; accept the pair
+    // only when exactly one unordered line pair has the stored unoriented
+    // angle. A resolved line remains authoritative and does not enter this
+    // unrelated-pair fallback.
+    let dynamic_roster_angle_pair = if dynamic
+        && relation.family == Angle
+        && dynamic_angle_pair.is_none()
+        && curve(0).is_none()
+        && curve(1).is_none()
+    {
+        unique_dynamic_roster_line_angle_pair(sketch, parameter, sketch_entities)
     } else {
         None
     };
@@ -535,7 +576,11 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     || dynamic_roster_line_distance_pair.is_some()
                     || (curve(0).is_some() && curve(1).is_some())
             }
-            Angle => dynamic_angle_pair.is_some() || (curve(0).is_some() && curve(1).is_some()),
+            Angle => {
+                dynamic_angle_pair.is_some()
+                    || dynamic_roster_angle_pair.is_some()
+                    || (curve(0).is_some() && curve(1).is_some())
+            }
             CircleDiameter => true,
         };
         if !witnessed {
@@ -927,7 +972,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let first = curve(0);
             let second = curve(1);
             let authoritative = first.is_some() && second.is_some();
-            let (mut first, mut second) = match dynamic_angle_pair {
+            let (mut first, mut second) = match dynamic_angle_pair.or(dynamic_roster_angle_pair) {
                 Some(pair) => pair,
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
@@ -1692,6 +1737,35 @@ fn unique_dynamic_marker_line_angle_pair(
         }
     }
     sole_sorted(pairs)
+}
+
+fn unique_dynamic_profile_line_angle_entity(
+    sketch: &SketchId,
+    known: &SketchEntityId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchEntityId> {
+    let cadmpeg_ir::features::ParameterValue::Angle(expected) = parameter.value.as_ref()? else {
+        return None;
+    };
+    unique_profile_matched_entity(sketch, known, sketch_entities, |known, candidate| {
+        unoriented_line_line_angle(known, candidate)
+            .is_some_and(|measured| same_dimension_angle(measured, expected.0))
+    })
+}
+
+fn unique_dynamic_roster_line_angle_pair(
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchEntityId, SketchEntityId)> {
+    let cadmpeg_ir::features::ParameterValue::Angle(expected) = parameter.value.as_ref()? else {
+        return None;
+    };
+    unique_profile_matched_line_pair(sketch, sketch_entities, |first, second| {
+        unoriented_line_line_angle(first, second)
+            .is_some_and(|measured| same_dimension_angle(measured, expected.0))
+    })
 }
 
 #[allow(clippy::too_many_arguments)] // Keeps the two operand loci explicit beside the shared marker indexes.

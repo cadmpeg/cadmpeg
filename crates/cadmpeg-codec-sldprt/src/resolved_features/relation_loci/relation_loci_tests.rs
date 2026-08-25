@@ -1676,6 +1676,117 @@ fn dynamic_angle_uses_the_unoriented_solver_line_witness() {
 }
 
 #[test]
+fn dynamic_angle_uses_unique_complete_roster_when_no_line_resolves() {
+    let sketch = SketchId("sketch".into());
+    let first = line_entity(
+        "first-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    let second = line_entity(
+        "second-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 10.0),
+    );
+    let relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
+    let parameter = DesignParameter {
+        id: ParameterId("parameter".into()),
+        owner: None,
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "45deg".into(),
+        display: None,
+        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    };
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[first.clone(), second.clone()],
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::Angle {
+            first: first.id,
+            second: second.id,
+            parameter: parameter.id,
+        })
+    );
+}
+
+#[test]
+fn dynamic_angle_repairs_one_resolved_line_from_the_profile_roster() {
+    let sketch = SketchId("sketch".into());
+    let known = line_entity(
+        "known-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    let partner = line_entity(
+        "partner-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 10.0),
+    );
+    let unrelated = line_entity(
+        "unrelated-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(0.0, 10.0),
+    );
+    let known_marker = marker("known-marker", 0, 10, SketchInputKind::LineOrCircle, None);
+    let markers = [known_marker];
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let loci_by_marker = HashMap::from([(
+        "known-marker".into(),
+        vec![SketchLocus::Entity(known.id.clone())],
+    )]);
+    let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
+    relation.operands[0].entity_ref = Some("known-marker".into());
+    let parameter = DesignParameter {
+        id: ParameterId("parameter".into()),
+        owner: None,
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "45deg".into(),
+        display: None,
+        value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_4))),
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    };
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&parameter),
+            &sketch,
+            &[known.clone(), partner.clone(), unrelated],
+            &markers_by_id,
+            &loci_by_marker,
+        ),
+        Some(SketchConstraintDefinition::Angle {
+            first: known.id,
+            second: partner.id,
+            parameter: parameter.id,
+        })
+    );
+}
+
+#[test]
 fn dynamic_angle_uses_solver_lines_for_indirect_operand_references() {
     let sketch = SketchId("sketch".into());
     let mut first = line_entity(
