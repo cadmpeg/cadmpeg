@@ -804,7 +804,7 @@ fn validate_consolidated_cones(
                 .chain(&cone.axis)
                 .chain(&[
                     cone.half_angle,
-                    cone.pre_angular_range_scalar,
+                    cone.reference_radius,
                     cone.angular_range[0],
                     cone.angular_range[1],
                     cone.slant_range[0],

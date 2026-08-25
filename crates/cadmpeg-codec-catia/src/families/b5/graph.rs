@@ -280,8 +280,8 @@ pub enum B5Surface {
         axis: [f64; 3],
         /// Cone half-angle in radians.
         half_angle: f64,
-        /// Scalar immediately preceding the active angular interval.
-        pre_angular_range_scalar: f64,
+        /// Reference radius of the conical surface, independent of the active chart ranges.
+        reference_radius: f64,
         /// Active azimuth interval.
         angular_range: [f64; 2],
         /// Native slant-coordinate range.
@@ -2699,7 +2699,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let frame_cross = cross(direction_x, direction_y);
             let opposite_axis = [-axis[0], -axis[1], -axis[2]];
             let half_angle = scalar(&record.payload, 97)?;
-            let pre_angular_range_scalar = scalar(&record.payload, 105)?;
+            let reference_radius = scalar(&record.payload, 105)?;
             let angular_range = [scalar(&record.payload, 113)?, scalar(&record.payload, 121)?];
             let mut slant_range = [scalar(&record.payload, 129)?, scalar(&record.payload, 137)?];
             if slant_range[0].abs() <= 1e-12 {
@@ -2724,7 +2724,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                     direction_y,
                     axis,
                     half_angle,
-                    pre_angular_range_scalar,
+                    reference_radius,
                     angular_range,
                     slant_range,
                     angular_scale,

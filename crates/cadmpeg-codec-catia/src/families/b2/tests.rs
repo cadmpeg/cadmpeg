@@ -1632,7 +1632,7 @@ fn b2_cone_parser_reads_orthonormal_slant_chart() {
     assert_eq!(cones[0].apex, [1.0, 2.0, 3.0]);
     assert_eq!(cones[0].axis, [0.0, 0.0, 1.0]);
     assert_eq!(cones[0].half_angle, 0.25);
-    assert_eq!(cones[0].pre_angular_range_scalar, 4.0);
+    assert_eq!(cones[0].reference_radius, 4.0);
     assert_eq!(cones[0].angular_range, [0.5, 0.5 + std::f64::consts::PI]);
     assert_eq!(cones[0].slant_range, [2.0, 8.0]);
     assert_eq!(cones[0].angular_scale, 3.0);

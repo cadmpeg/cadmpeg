@@ -1994,8 +1994,8 @@ pub struct B2Cone {
     pub axis: [f64; 3],
     /// Cone half-angle in radians.
     pub half_angle: f64,
-    /// Scalar immediately preceding the active angular interval.
-    pub pre_angular_range_scalar: f64,
+    /// Reference radius of the conical surface, independent of the active chart ranges.
+    pub reference_radius: f64,
     /// Active azimuth interval.
     pub angular_range: [f64; 2],
     /// Native slant-coordinate range.
@@ -2306,7 +2306,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
             .expect("three second-direction values");
         let axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
         let half_angle = values[12];
-        let pre_angular_range_scalar = values[13];
+        let reference_radius = values[13];
         let angular_range = [values[14], values[15]];
         let mut slant_range = [values[16], values[17]];
         let angular_scale = values[18];
@@ -2344,7 +2344,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
                 t2,
                 axis,
                 half_angle,
-                pre_angular_range_scalar,
+                reference_radius,
                 angular_range,
                 slant_range,
                 angular_scale,

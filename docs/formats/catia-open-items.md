@@ -376,14 +376,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The all-compact model-space box can nominate one geometric face, but this geometric witness does not define the source identity join. A count-framed `03 62` packet has a variable allocation-reference lane and an opaque nonempty tail; it is not a fixed-nine packet with the admitted numeric rectangle and model-space bounds. Its adjacent `03 5f` successor relation names the counted owner packet only. It does not join a standalone `a5 03 34` frame or assign a standard face ordinal. Control-net containment and boundary coincidence remain geometric candidates, not allocation identity.
 
-### SN-19. Cone `pre_range_scalar`
-
-**Question.** What does `pre_range_scalar` control in a `b2 03 29` or `b5 03 29` cone record?
-
-**Known.** `catia.md` §5.12 "The 184-byte payload is" defines the active angular range that follows this scalar.
-
-**Need.** We must know its role to preserve the cone chart semantics.
-
 ### SN-20. Class-`0x18` parameter-point selectors
 
 **Question.** What does each of the four prefix selectors in a `b2`, `b3`, or `b4 03 18` parameter-point record select?

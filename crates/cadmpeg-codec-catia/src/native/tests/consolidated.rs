@@ -418,7 +418,7 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
     assert_eq!(cone.direction_y, [0.0, 1.0, 0.0]);
     assert_eq!(cone.axis, [0.0, 0.0, 1.0]);
     assert_eq!(cone.half_angle, 0.25);
-    assert_eq!(cone.pre_angular_range_scalar, 4.0);
+    assert_eq!(cone.reference_radius, 4.0);
     assert_eq!(cone.angular_range, [0.5, 0.5 + std::f64::consts::PI]);
     assert_eq!(cone.slant_range, [2.0, 8.0]);
     assert_eq!(cone.angular_scale, 3.0);

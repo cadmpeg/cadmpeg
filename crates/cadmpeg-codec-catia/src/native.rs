@@ -459,8 +459,8 @@ pub struct CatiaConsolidatedCone {
     pub axis: [f64; 3],
     /// Cone half-angle in radians.
     pub half_angle: f64,
-    /// Scalar immediately preceding the active angular interval.
-    pub pre_angular_range_scalar: f64,
+    /// Reference radius of the conical surface, independent of the active chart ranges.
+    pub reference_radius: f64,
     /// Active azimuth interval.
     pub angular_range: [f64; 2],
     /// Native slant-coordinate interval, including zero at the apex.
@@ -6106,7 +6106,7 @@ fn consolidated_cones(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<Catia
             direction_y: cone.t2,
             axis: cone.axis,
             half_angle: cone.half_angle,
-            pre_angular_range_scalar: cone.pre_angular_range_scalar,
+            reference_radius: cone.reference_radius,
             angular_range: cone.angular_range,
             slant_range: cone.slant_range,
             angular_scale: cone.angular_scale,
