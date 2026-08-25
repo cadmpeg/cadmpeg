@@ -4122,6 +4122,16 @@ pub fn model_surface_point(
             axis_origin,
             axis_direction,
         } => model_axis_revolution_point(&index, directrix, *axis_origin, *axis_direction, u, v),
+        ProceduralSurfaceDefinition::Ruled { first, second } => {
+            model_ruled_surface_partials(&index, first, second, u, v).map(|partials| partials.point)
+        }
+        ProceduralSurfaceDefinition::Sum {
+            first,
+            second,
+            basepoint,
+            ..
+        } => model_sum_surface_partials(&index, first, second, *basepoint, u, v)
+            .map(|partials| partials.point),
         ProceduralSurfaceDefinition::Sweep {
             profile,
             spine,
@@ -5114,6 +5124,81 @@ fn cacheless_variable_blend_point(
         .or_else(|| cacheless_circular_variable_blend_point(index, construction, u, v))
 }
 
+fn model_ruled_surface_partials(
+    index: &crate::index::ModelIndex<'_>,
+    first: &crate::ids::CurveId,
+    second: &crate::ids::CurveId,
+    u: f64,
+    v: f64,
+) -> Option<SurfaceSecondPartials> {
+    if !v.is_finite() {
+        return None;
+    }
+    let first = model_curve_differential_by_id(index, first, u)?;
+    let second = model_curve_differential_by_id(index, second, u)?;
+    let point = offset(
+        first.point,
+        &[(v, point_displacement(second.point, first.point))],
+    );
+    let blend = |first: Vector3, second: Vector3| vector_sum(&[(1.0 - v, first), (v, second)]);
+    let partials = SurfaceSecondPartials {
+        point,
+        du: blend(first.tangent, second.tangent),
+        dv: point_displacement(second.point, first.point),
+        duu: blend(first.acceleration, second.acceleration),
+        duv: vector_sum(&[(-1.0, first.tangent), (1.0, second.tangent)]),
+        dvv: Vector3::new(0.0, 0.0, 0.0),
+    };
+    surface_second_partials_are_finite(partials).then_some(partials)
+}
+
+fn model_sum_surface_partials(
+    index: &crate::index::ModelIndex<'_>,
+    first: &crate::ids::CurveId,
+    second: &crate::ids::CurveId,
+    basepoint: Vector3,
+    u: f64,
+    v: f64,
+) -> Option<SurfaceSecondPartials> {
+    if ![basepoint.x, basepoint.y, basepoint.z]
+        .into_iter()
+        .all(f64::is_finite)
+    {
+        return None;
+    }
+    let first = model_curve_differential_by_id(index, first, u)?;
+    let second = model_curve_differential_by_id(index, second, v)?;
+    let point = Point3::new(
+        first.point.x + second.point.x - basepoint.x,
+        first.point.y + second.point.y - basepoint.y,
+        first.point.z + second.point.z - basepoint.z,
+    );
+    let partials = SurfaceSecondPartials {
+        point,
+        du: first.tangent,
+        dv: second.tangent,
+        duu: first.acceleration,
+        duv: Vector3::new(0.0, 0.0, 0.0),
+        dvv: second.acceleration,
+    };
+    surface_second_partials_are_finite(partials).then_some(partials)
+}
+
+fn surface_second_partials_are_finite(partials: SurfaceSecondPartials) -> bool {
+    let finite_point = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
+    let finite_vector = |vector: Vector3| {
+        [vector.x, vector.y, vector.z]
+            .into_iter()
+            .all(f64::is_finite)
+    };
+    finite_point(partials.point)
+        && finite_vector(partials.du)
+        && finite_vector(partials.dv)
+        && finite_vector(partials.duu)
+        && finite_vector(partials.duv)
+        && finite_vector(partials.dvv)
+}
+
 /// Evaluate a surface carrier selected by arena id.
 pub fn model_surface_point_by_id(
     index: &crate::index::ModelIndex<'_>,
@@ -5202,6 +5287,27 @@ pub fn model_surface_point_by_id(
                 point: partials.point,
                 oriented_normal: None,
             }),
+            Some(ProceduralSurfaceDefinition::Ruled { first, second }) => {
+                model_ruled_surface_partials(index, first, second, u, v).map(|partials| {
+                    SurfaceEvaluation {
+                        point: partials.point,
+                        oriented_normal: None,
+                    }
+                })
+            }
+            Some(ProceduralSurfaceDefinition::Sum {
+                first,
+                second,
+                basepoint,
+                ..
+            }) => {
+                model_sum_surface_partials(index, first, second, *basepoint, u, v).map(|partials| {
+                    SurfaceEvaluation {
+                        point: partials.point,
+                        oriented_normal: None,
+                    }
+                })
+            }
             Some(ProceduralSurfaceDefinition::Sweep {
                 profile,
                 spine,
@@ -5570,6 +5676,25 @@ fn model_surface_mapping(
                 u,
                 v,
             )?,
+            offset_distance: 0.0,
+            u_scale: 1.0,
+            v_scale: 1.0,
+            orientation: 1.0,
+        }),
+        Some(ProceduralSurfaceDefinition::Ruled { first, second }) => Some(SurfaceMapping {
+            base: model_ruled_surface_partials(index, first, second, u, v)?,
+            offset_distance: 0.0,
+            u_scale: 1.0,
+            v_scale: 1.0,
+            orientation: 1.0,
+        }),
+        Some(ProceduralSurfaceDefinition::Sum {
+            first,
+            second,
+            basepoint,
+            ..
+        }) => Some(SurfaceMapping {
+            base: model_sum_surface_partials(index, first, second, *basepoint, u, v)?,
             offset_distance: 0.0,
             u_scale: 1.0,
             v_scale: 1.0,

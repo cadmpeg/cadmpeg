@@ -22,6 +22,7 @@ use crate::CadIr;
 
 mod helix;
 mod law_sweep;
+mod ruled_sum;
 mod variable_blend;
 
 fn bilinear_surface() -> NurbsSurface {
