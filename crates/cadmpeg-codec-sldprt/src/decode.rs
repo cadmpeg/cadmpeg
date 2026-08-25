@@ -1603,6 +1603,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::ExtractFaceUnresolved
+            | FeatureDefinition::CopyFaceUnresolved
             | FeatureDefinition::FillHoleUnresolved
             | FeatureDefinition::MoveFaceUnresolved
             | FeatureDefinition::MoveObjectUnresolved

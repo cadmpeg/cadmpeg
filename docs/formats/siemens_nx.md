@@ -2007,6 +2007,11 @@ When its body-write relation resolves, the result body is a sheet body. The
 selected source faces and associativity, copy, and sew controls remain
 unresolved. Result body ownership does not identify the source face selection.
 
+The `COPY_FACE` operation label identifies a body-affecting face-copy
+construction. Its source faces, target body, associativity, and sew controls
+remain unresolved until the serialized construction roles establish a complete
+operation.
+
 The `SYMBOLIC_THREAD` operation label identifies a non-geometric cosmetic-thread
 annotation. Its cylindrical face, nominal diameter, and axial extent remain
 unresolved in the neutral definition. The type-`03` profile, designation, and

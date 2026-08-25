@@ -416,6 +416,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::LoftUnresolved => "loft",
             FeatureDefinition::FreeformSurfaceUnresolved => "freeform surface",
             FeatureDefinition::ExtractFaceUnresolved => "extract face",
+            FeatureDefinition::CopyFaceUnresolved => "copy face",
             FeatureDefinition::FillHoleUnresolved => "fill hole",
             FeatureDefinition::MoveFaceUnresolved => "move face",
             FeatureDefinition::MoveObjectUnresolved => "move object",

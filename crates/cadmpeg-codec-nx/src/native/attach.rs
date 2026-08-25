@@ -5971,6 +5971,7 @@ fn non_boolean_feature_definition_with_parameters(
             keep: TrimRegion::Unresolved,
         },
         "EXTRACT_FACE" => FeatureDefinition::ExtractFaceUnresolved,
+        "COPY_FACE" => FeatureDefinition::CopyFaceUnresolved,
         "FILL_HOLE" => FeatureDefinition::FillHoleUnresolved,
         "MOVE_FACE" => FeatureDefinition::MoveFaceUnresolved,
         "MOVE_OBJECT" => FeatureDefinition::MoveObjectUnresolved,

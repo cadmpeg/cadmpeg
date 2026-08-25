@@ -725,6 +725,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label and body-write relation identify the family, but the null object-index slots and bounded payload do not assign a unique object selection or motion law.
 
+### OM-49. `COPY_FACE` construction roles
+
+**Question.** Which serialized fields define the source faces, target body, associativity, and sew controls of a `COPY_FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `COPY_FACE` operation label identifies" defines the body-affecting face-copy construction. Every record carries two input blocks and a body-write frame, but no neutral output or admitted field assigns the source-face or target-body roles.
+
+**Need.** We must identify the source face selection, target body, associativity mode, and sew policy to construct a complete neutral face-copy operation and bind its result body.
+
+**Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique source-face, target-body, associativity, or sew roles.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
