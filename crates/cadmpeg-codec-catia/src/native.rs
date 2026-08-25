@@ -221,8 +221,8 @@ pub enum CatiaFaceNodeTargetEncoding {
     TaggedU16Strong,
 }
 
-/// Derived class-`0x5f` face-node relation immediately preceding a
-/// consolidated class-`0x62` packet.
+/// Derived class-`0x5f` face-node relation associated with a consolidated
+/// class-`0x62` packet within one bounded record source.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaFaceNodeRelation {
@@ -234,7 +234,7 @@ pub struct CatiaFaceNodeRelation {
     pub header_token: u32,
     /// Target encoding selected after the `0x82` lead.
     pub target_encoding: CatiaFaceNodeTargetEncoding,
-    /// Class-`0x5f` target whose checked successor reaches the packet.
+    /// Class-`0x5f` target retained by the enclosing source-scoped relation.
     pub target: u32,
     /// Two terminal bytes of the face-node payload.
     pub terminal: [u8; 2],
@@ -403,6 +403,10 @@ pub struct CatiaOwnerBoundaryEdge {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaOwnerBoundaryCycle {
+    /// Source-scoped class-`0x5f` face node that precedes this boundary
+    /// allocation and closes its checked identity, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face_node: Option<CatiaFaceNodeRelation>,
     /// Four edge targets in fixed-nine slot order.
     pub edges: [CatiaOwnerBoundaryEdge; 4],
 }
@@ -425,8 +429,7 @@ pub struct CatiaConsolidatedOwnerPacket {
     /// class-`0x5d`/`0x5e` allocation sequence.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub identity_targets: Vec<CatiaOwnerIdentityTarget>,
-    /// Structurally adjacent class-`0x5f` face node, when the narrow relation
-    /// predicate succeeds.
+    /// Source-scoped class-`0x5f` face node, when the packet relation closes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face_node: Option<CatiaFaceNodeRelation>,
     /// Complete carrier/reference/side chart that this packet terminates.
@@ -6745,6 +6748,21 @@ fn consolidated_owner_packets(
             (
                 (cycle.source_index, cycle.owner_pos),
                 CatiaOwnerBoundaryCycle {
+                    face_node: cycle.face_node.map(|face_node| CatiaFaceNodeRelation {
+                        byte_offset: face_node.pos as u64,
+                        byte_len: (cycle.owner_pos - face_node.pos) as u64,
+                        header_token: face_node.header_token,
+                        target_encoding: match face_node.target_encoding {
+                            crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
+                                CatiaFaceNodeTargetEncoding::Compact
+                            }
+                            crate::families::b2::records::B2FaceNode5fTargetEncoding::TaggedU16Strong => {
+                                CatiaFaceNodeTargetEncoding::TaggedU16Strong
+                            }
+                        },
+                        target: face_node.target,
+                        terminal: face_node.terminal,
+                    }),
                     edges: cycle.edges.map(|edge| CatiaOwnerBoundaryEdge {
                         slot: edge.slot,
                         byte_offset: edge.target_pos as u64,

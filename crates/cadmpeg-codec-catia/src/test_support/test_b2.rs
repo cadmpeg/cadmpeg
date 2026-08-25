@@ -194,6 +194,22 @@ pub(crate) fn b2_fixed_owner_boundary_cycle_stream() -> (Vec<u8>, [usize; 4], us
     )
 }
 
+pub(crate) fn b2_fixed_owner_boundary_face_node_cycle_stream(
+) -> (Vec<u8>, [usize; 4], usize, [[usize; 2]; 4], usize) {
+    let (mut bytes, mut edge_positions, mut owner_pos, endpoint_records) =
+        b2_fixed_owner_boundary_cycle_stream();
+    let node_pos = edge_positions[0];
+    let node = [
+        0xb4, 0x03, 0x5f, 0x06, 0x08, 0x2e, 0x0a, 0x82, 0x0a, 0xf6, 0x03, 0x27, 0x05,
+    ];
+    bytes.splice(node_pos..node_pos, node);
+    for edge in &mut edge_positions {
+        *edge += node.len();
+    }
+    owner_pos += node.len();
+    (bytes, edge_positions, owner_pos, endpoint_records, node_pos)
+}
+
 pub(crate) fn b2_all_compact_owner_packet_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
     for value in [278, 324, 276, 268, 277, 374, 199, 195, 279] {

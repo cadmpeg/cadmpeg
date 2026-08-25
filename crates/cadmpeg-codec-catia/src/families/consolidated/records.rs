@@ -22,12 +22,12 @@ use crate::families::b2::records::{
     b2_class25_descriptors_from_records, b2_closed_owner_boundary_edges, b2_cone_point,
     b2_cones_from_records, b2_cylinder_point, b2_cylinders_from_records,
     b2_edge_nodes_from_records, b2_edge_parameters_from_records,
-    b2_embedded_cylinders_from_records, b2_owner_identity_targets_from_records,
-    b2_owner_packets_from_records, b2_pcurves_from_records, b2_plane_carriers_from_records,
-    b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records, b2_tori_from_records,
-    b2_torus_geometry, b2_use_metadata_from_records, point_distance, B2Circle, B2Class25Descriptor,
-    B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder, B2PlaneCarrier, B2Sphere,
-    B2Torus, B2UseMetadata,
+    b2_embedded_cylinders_from_records, b2_face_nodes_5f_from_records,
+    b2_owner_identity_targets_from_records, b2_owner_packets_from_records, b2_pcurves_from_records,
+    b2_plane_carriers_from_records, b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records,
+    b2_tori_from_records, b2_torus_geometry, b2_use_metadata_from_records, point_distance,
+    B2Circle, B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters,
+    B2EmbeddedCylinder, B2FaceNode5f, B2PlaneCarrier, B2Sphere, B2Torus, B2UseMetadata,
 };
 use crate::wire::bytes::{
     allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
@@ -148,6 +148,9 @@ pub(crate) struct ConsolidatedOwnerBoundaryCycle {
     pub source_index: usize,
     /// Class-`0x62` owner-record offset.
     pub owner_pos: usize,
+    /// Source-scoped class-`0x5f` face node associated with this boundary
+    /// allocation, when the cycle prelude closes its checked identity.
+    pub face_node: Option<B2FaceNode5f>,
     /// Four edge targets in fixed-nine slot order.
     pub edges: [crate::families::b2::records::B2OwnerBoundaryEdge; 4],
 }
@@ -984,6 +987,15 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
         .into_iter()
         .map(|binding| (binding.node.pos, binding.endpoint_records))
         .collect::<HashMap<_, _>>();
+    let face_nodes = b2_face_nodes_5f_from_records(data, records)
+        .into_iter()
+        .map(|node| (node.pos, node))
+        .collect::<BTreeMap<_, _>>();
+    let record_indices = records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| (record.range.start, index))
+        .collect::<BTreeMap<_, _>>();
     let record_sources = records
         .iter()
         .map(|record| (record.range.start, record.source_index))
@@ -1000,6 +1012,38 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
         .filter_map(|packet| {
             let targets = targets_by_owner.get(&(packet.source_index, packet.pos))?;
             let edges = b2_closed_owner_boundary_edges(targets, &endpoint_records)?;
+            let face_node = (|| {
+                let first_edge_pos = edges.iter().map(|edge| edge.target_pos).min()?;
+                let &first_edge_index = record_indices.get(&first_edge_pos)?;
+                let node_index = first_edge_index.checked_sub(1)?;
+                let node_record = records.get(node_index)?;
+                let face_node = face_nodes.get(&node_record.range.start)?;
+                if !matches!(face_node.terminal, [0x27, 0x03 | 0x05]) {
+                    return None;
+                }
+                let &owner_index = record_indices.get(&packet.pos)?;
+                if owner_index <= first_edge_index
+                    || !records_are_contiguous(&records[node_index..=owner_index])
+                {
+                    return None;
+                }
+                let span = &records[first_edge_index..owner_index];
+                if span.iter().any(|record| {
+                    record.family != ConsolidatedFamily::B || !matches!(record.class, 0x5d | 0x5e)
+                }) || span.iter().filter(|record| record.class == 0x5e).count() != 4
+                {
+                    return None;
+                }
+                if edges.iter().any(|edge| {
+                    !span
+                        .iter()
+                        .any(|record| record.range.start == edge.target_pos)
+                }) {
+                    return None;
+                }
+                (packet.references[8].checked_add(10) == Some(face_node.target))
+                    .then_some(*face_node)
+            })();
             edges
                 .iter()
                 .all(|edge| {
@@ -1011,6 +1055,7 @@ pub(crate) fn consolidated_owner_boundary_cycles_from_records(
                 .then_some(ConsolidatedOwnerBoundaryCycle {
                     source_index: packet.source_index,
                     owner_pos: packet.pos,
+                    face_node,
                     edges,
                 })
         })

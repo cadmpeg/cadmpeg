@@ -852,6 +852,7 @@ fn native_namespace_retains_closed_fixed_owner_boundary_cycle() {
         .boundary_cycle
         .as_ref()
         .expect("closed fixed-owner boundary cycle");
+    assert!(cycle.face_node.is_none());
     assert_eq!(
         cycle.edges.map(|edge| edge.byte_offset),
         edge_positions.map(|position| position as u64)
@@ -860,6 +861,62 @@ fn native_namespace_retains_closed_fixed_owner_boundary_cycle() {
         cycle.edges.map(|edge| edge.endpoint_records),
         endpoint_records.map(|pair| pair.map(|position| position as u64))
     );
+}
+
+#[test]
+fn native_namespace_retains_boundary_face_node_for_checked_cycle_prelude() {
+    let (bytes, edge_positions, owner_pos, endpoint_records, face_node_pos) =
+        b2_fixed_owner_boundary_face_node_cycle_stream();
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+    let cycle = packet
+        .boundary_cycle
+        .as_ref()
+        .expect("closed fixed-owner boundary cycle");
+    let face_node = cycle
+        .face_node
+        .as_ref()
+        .expect("source-scoped boundary face node");
+    assert_eq!(face_node.byte_offset, face_node_pos as u64);
+    assert_eq!(face_node.byte_len, (owner_pos - face_node_pos) as u64);
+    assert_eq!(face_node.target, 1014);
+    assert_eq!(face_node.terminal, [0x27, 0x05]);
+    assert_eq!(
+        cycle.edges.map(|edge| edge.byte_offset),
+        edge_positions.map(|position| position as u64)
+    );
+    assert_eq!(
+        cycle.edges.map(|edge| edge.endpoint_records),
+        endpoint_records.map(|pair| pair.map(|position| position as u64))
+    );
+
+    let mut wrong_terminal = bytes.clone();
+    wrong_terminal[face_node_pos + 12] = 0x04;
+    let native = crate::native::CatiaNative::decode(&wrong_terminal);
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+    assert!(packet
+        .boundary_cycle
+        .as_ref()
+        .expect("cycle survives terminal change")
+        .face_node
+        .is_none());
+
+    let mut wrong_identity = bytes;
+    wrong_identity[face_node_pos + 9] = 0xe1;
+    let native = crate::native::CatiaNative::decode(&wrong_identity);
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+    assert!(packet
+        .boundary_cycle
+        .as_ref()
+        .expect("cycle survives identity change")
+        .face_node
+        .is_none());
 }
 
 #[test]
