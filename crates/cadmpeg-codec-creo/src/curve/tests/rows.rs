@@ -111,6 +111,17 @@ fn two_chart_sample_rows_require_exact_counted_consumption() {
 }
 
 #[test]
+fn two_chart_sample_rows_do_not_claim_fc05_circle_bodies() {
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 5]);
+    payload.extend(std::iter::repeat_n(0x18, 20));
+    payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+
+    let face_ids = BTreeSet::from([10, 11]);
+    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
+}
+
+#[test]
 fn two_chart_replay_consumes_curve_local_scalar_forms() {
     let first = [0x32, 0, 0, 0, 0, 0, 0, 0];
     let second = [0x56, 0, 0, 0, 0, 0, 0];

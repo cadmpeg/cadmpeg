@@ -6128,7 +6128,7 @@ pub fn two_chart_pcurve_samples(
             continue;
         };
         let body = &bytes[prefix.end..row.suffix_start];
-        if body.first() != Some(&0xfc) {
+        if body.first() != Some(&0xfc) || body.get(1) == Some(&0x05) {
             continue;
         }
         let (count, start) = compact_int(body, 1);
@@ -6151,6 +6151,9 @@ pub fn two_chart_pcurve_samples(
         };
         let body = &bytes[prefix.end..row.suffix_start];
         let samples = if body.first() == Some(&0xfc) {
+            if body.get(1) == Some(&0x05) {
+                continue;
+            }
             let (count, start) = compact_int(body, 1);
             (start > 1)
                 .then(|| complete_two_chart_samples(body, start, count, &cache))

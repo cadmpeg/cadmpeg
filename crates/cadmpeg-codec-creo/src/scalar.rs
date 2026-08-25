@@ -418,9 +418,10 @@ pub fn decode_tabulated_cylinder_second_coordinate(
 
 /// Decode the first coordinate of one chart in a bounded two-chart curve body.
 ///
-/// This curve lane adds an eight-byte positive sub-unit `0x32` form. The same
-/// prefix opens a model reference in positional surface-row bodies; the
-/// enclosing two-chart sample grammar distinguishes the two uses.
+/// Two-chart samples use the pcurve/model-coordinate lane. This curve lane
+/// adds an eight-byte positive sub-unit `0x32` form. The same prefix opens a
+/// model reference in positional surface-row bodies; the enclosing two-chart
+/// sample grammar distinguishes the two uses.
 pub fn decode_two_chart_first_coordinate(
     data: &[u8],
     offset: usize,
@@ -429,7 +430,7 @@ pub fn decode_two_chart_first_coordinate(
     if data.get(offset) == Some(&0x32) {
         return ieee8(data, offset, 0x3f);
     }
-    decode_tabulated_cylinder_first_coordinate(data, offset, cache)
+    decode_in_pcurve_lane(data, offset, cache)
 }
 
 /// Decode the second coordinate of one chart in a bounded two-chart curve body.
@@ -1793,6 +1794,24 @@ mod tests {
             (second_value - f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0])).abs()
                 <= f64::EPSILON
         );
+    }
+
+    #[test]
+    fn two_chart_first_coordinate_uses_the_pcurve_model_lane() {
+        let cache = ScalarCache::default();
+        let positive = [0x46, 0x28, 0x9c, 0x2c, 0x6a, 0x48, 0x72, 0xb4];
+        let negative = [0x2d, 0x28, 0x9c, 0xc2, 0x75, 0x62, 0x07, 0x2d];
+
+        for encoded in [positive, negative] {
+            assert_eq!(
+                decode_two_chart_first_coordinate(&encoded, 0, &cache),
+                decode_in_pcurve_lane(&encoded, 0, &cache)
+            );
+            assert_ne!(
+                decode_two_chart_first_coordinate(&encoded, 0, &cache),
+                decode_tabulated_cylinder_first_coordinate(&encoded, 0, &cache)
+            );
+        }
     }
 
     #[test]
