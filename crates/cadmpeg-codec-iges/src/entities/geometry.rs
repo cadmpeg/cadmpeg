@@ -10,14 +10,17 @@ use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
+use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
+const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
 pub(crate) fn point_display_symbol_type_allowed(entity_type: i64, dialect: Dialect) -> bool {
     match dialect {
@@ -775,6 +778,113 @@ fn admit_projected_entities(
     ctx.map_or(Ok(()), |ctx| {
         ctx.admit_entities(ir.model.entity_count() as u64, admitted, operation)
     })
+}
+
+fn point_on_plane(point: Point3, plane: (Point3, Vector3), resolution: f64) -> bool {
+    let distance = point.vector_from(plane.0).dot(plane.1).abs();
+    distance.is_finite() && distance <= resolution
+}
+
+fn normal_matches_plane(normal: Vector3, plane_normal: Vector3) -> bool {
+    let norm = normal.norm();
+    norm.is_finite()
+        && norm > 0.0
+        && normal.scale(1.0 / norm).cross(plane_normal).norm() <= CURVE_PLANE_NORMAL_EPSILON
+}
+
+fn direction_in_plane(direction: Vector3, plane_normal: Vector3) -> bool {
+    let direction_norm = direction.norm();
+    let plane_norm = plane_normal.norm();
+    direction_norm.is_finite()
+        && direction_norm > 0.0
+        && plane_norm.is_finite()
+        && plane_norm > 0.0
+        && direction
+            .scale(1.0 / direction_norm)
+            .dot(plane_normal.scale(1.0 / plane_norm))
+            .abs()
+            <= CURVE_PLANE_NORMAL_EPSILON
+}
+
+pub(super) fn curve_geometry_coplanar(
+    geometry: &CurveGeometry,
+    index: &ModelIndex<'_>,
+    transform: Transform,
+    plane: (Point3, Vector3),
+    resolution: f64,
+    active: &mut BTreeSet<CurveId>,
+) -> bool {
+    let point_valid =
+        |point: Point3| point_on_plane(transform.apply_point(point), plane, resolution);
+    let normal_valid = |normal: Vector3| {
+        transform
+            .apply_normal(normal)
+            .is_some_and(|normal| normal_matches_plane(normal, plane.1))
+    };
+    let direction_valid =
+        |direction: Vector3| direction_in_plane(transform.apply_vector(direction), plane.1);
+    match geometry {
+        CurveGeometry::Line { origin, direction } => {
+            point_valid(*origin) && direction_valid(*direction)
+        }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            ..
+        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*ref_direction),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            ..
+        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            ..
+        } => point_valid(*vertex) && normal_valid(*axis) && direction_valid(*major_direction),
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            ..
+        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
+        CurveGeometry::Degenerate { point } => point_valid(*point),
+        CurveGeometry::Nurbs(curve) => curve.control_points.iter().copied().all(point_valid),
+        CurveGeometry::Polyline { points, .. } => points.iter().copied().all(point_valid),
+        CurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
+            let Some(curve) = index.curves(&segment.curve.0) else {
+                return false;
+            };
+            if !active.insert(segment.curve.clone()) {
+                return false;
+            }
+            let valid = curve_geometry_coplanar(
+                &curve.geometry,
+                index,
+                transform,
+                plane,
+                resolution,
+                active,
+            );
+            active.remove(&segment.curve);
+            valid
+        }),
+        CurveGeometry::Transformed {
+            basis,
+            transform: map,
+        } => curve_geometry_coplanar(
+            basis,
+            index,
+            transform.compose(*map),
+            plane,
+            resolution,
+            active,
+        ),
+        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
+    }
 }
 
 pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {

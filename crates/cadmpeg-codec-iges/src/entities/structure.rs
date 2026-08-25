@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product definitions, occurrences, and ordered assembly relationships.
 
-use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
+use super::geometry::{curve_geometry_coplanar, entity_loss, resolve_transform, ProjectionOutcome};
 use crate::directory::DirectoryEntry;
 use crate::global::{Dialect, ProjectedGlobal};
 use crate::parameter::{
@@ -10,15 +10,16 @@ use crate::parameter::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell,
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell,
 };
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1362,6 +1363,220 @@ fn planes_are_coplanar(
             <= resolution
 }
 
+fn bounded_plane_curve_is_simple(
+    geometry: &CurveGeometry,
+    index: &ModelIndex<'_>,
+    source_is_certified_simple: bool,
+    active: &mut BTreeSet<CurveId>,
+) -> bool {
+    match geometry {
+        CurveGeometry::Degenerate { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Unknown { .. } => false,
+        CurveGeometry::Composite {
+            segments,
+            self_intersect,
+        } => {
+            self_intersect == &Some(false)
+                && !segments.is_empty()
+                && segments.iter().all(|segment| {
+                    let Some(curve) = index.curves(&segment.curve.0) else {
+                        return false;
+                    };
+                    if !active.insert(segment.curve.clone()) {
+                        return false;
+                    }
+                    let valid =
+                        bounded_plane_curve_is_simple(&curve.geometry, index, false, active);
+                    active.remove(&segment.curve);
+                    valid
+                })
+        }
+        CurveGeometry::Transformed { basis, .. } => {
+            bounded_plane_curve_is_simple(basis, index, source_is_certified_simple, active)
+        }
+        CurveGeometry::Line { .. }
+        | CurveGeometry::Circle { .. }
+        | CurveGeometry::Ellipse { .. }
+        | CurveGeometry::Parabola { .. }
+        | CurveGeometry::Hyperbola { .. } => true,
+        CurveGeometry::Nurbs(_) => source_is_certified_simple,
+        CurveGeometry::Polyline { .. } => false,
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PlaneBoundaryError {
+    MissingEdge,
+    MissingCurve,
+    MissingCurveCarrier,
+    NotSimple,
+    NotCoplanar,
+    MissingStart,
+    MissingEnd,
+    NotClosed,
+}
+
+impl PlaneBoundaryError {
+    fn message(self) -> &'static str {
+        match self {
+            Self::MissingEdge => "plane boundary curve was not projected as a bounded edge",
+            Self::MissingCurve => "plane boundary edge has no curve carrier",
+            Self::MissingCurveCarrier => "plane boundary edge curve carrier is missing",
+            Self::NotSimple => {
+                "plane boundary curve is not proven simple, degenerate, cyclic, or self-intersecting"
+            }
+            Self::NotCoplanar => "plane boundary curve does not lie in the plane",
+            Self::MissingStart => "plane boundary start vertex is missing",
+            Self::MissingEnd => "plane boundary end vertex is missing",
+            Self::NotClosed => "plane boundary curve is not closed",
+        }
+    }
+
+    fn legacy_message(self) -> &'static str {
+        match self {
+            Self::MissingEdge => "legacy single-parent plane boundary was not projected",
+            Self::MissingCurve | Self::MissingCurveCarrier => {
+                "legacy single-parent plane boundary carrier is invalid"
+            }
+            Self::NotSimple => {
+                "legacy single-parent plane boundary is not proven simple, degenerate, cyclic, or self-intersecting"
+            }
+            Self::NotCoplanar => "legacy single-parent plane boundary does not lie in the plane",
+            Self::MissingStart => "legacy single-parent boundary start vertex is missing",
+            Self::MissingEnd => "legacy single-parent boundary end vertex is missing",
+            Self::NotClosed => "legacy single-parent plane boundary is not closed",
+        }
+    }
+}
+
+fn plane_boundary_edge(
+    index: &ModelIndex<'_>,
+    plane: (Point3, Vector3),
+    boundary_sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    resolution: f64,
+) -> Result<Edge, PlaneBoundaryError> {
+    let source_edge = index
+        .edges(&format!("iges:model:edge#D{boundary_sequence}"))
+        .ok_or(PlaneBoundaryError::MissingEdge)?;
+    let curve_id = source_edge
+        .curve
+        .as_ref()
+        .ok_or(PlaneBoundaryError::MissingCurve)?;
+    let curve = index
+        .curves(&curve_id.0)
+        .ok_or(PlaneBoundaryError::MissingCurveCarrier)?;
+    let source_is_certified_simple = entries
+        .get(&boundary_sequence)
+        .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
+    let mut active = BTreeSet::new();
+    if !active.insert(curve_id.clone())
+        || !bounded_plane_curve_is_simple(
+            &curve.geometry,
+            index,
+            source_is_certified_simple,
+            &mut active,
+        )
+    {
+        return Err(PlaneBoundaryError::NotSimple);
+    }
+    if !curve_geometry_coplanar(
+        &curve.geometry,
+        index,
+        Transform::identity(),
+        plane,
+        resolution,
+        &mut BTreeSet::new(),
+    ) {
+        return Err(PlaneBoundaryError::NotCoplanar);
+    }
+    let start =
+        vertex_position(index, &source_edge.start).ok_or(PlaneBoundaryError::MissingStart)?;
+    let end = vertex_position(index, &source_edge.end).ok_or(PlaneBoundaryError::MissingEnd)?;
+    if start.distance(end) > resolution {
+        return Err(PlaneBoundaryError::NotClosed);
+    }
+    Ok(source_edge.clone())
+}
+
+fn plane_face_draft(
+    surface_sequence: u32,
+    stem: &str,
+    boundary_edges: Vec<Edge>,
+    resolution: f64,
+) -> ModelDraft {
+    let body_id = BodyId(format!("iges:model:body#{stem}"));
+    let region_id = RegionId(format!("iges:model:region#{stem}"));
+    let shell_id = ShellId(format!("iges:model:shell#{stem}"));
+    let face_id = FaceId(format!("iges:model:face#{stem}"));
+    let mut candidate = ModelDraft::new();
+    let mut loop_ids = Vec::with_capacity(boundary_edges.len());
+    for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
+        let edge_id = edge.id.clone();
+        candidate.model_mut().edges.push(edge);
+        let loop_id = LoopId(format!("iges:model:loop#{stem}:{boundary_index}"));
+        let coedge_id = CoedgeId(format!("iges:model:coedge#{stem}:{boundary_index}"));
+        candidate.model_mut().coedges.push(Coedge {
+            id: coedge_id.clone(),
+            owner_loop: loop_id.clone(),
+            edge: edge_id,
+            next: coedge_id.clone(),
+            previous: coedge_id.clone(),
+            radial_next: coedge_id.clone(),
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+            use_curve_parameter_range: None,
+        });
+        candidate.model_mut().loops.push(Loop {
+            id: loop_id.clone(),
+            face: face_id.clone(),
+            boundary_role: if boundary_index == 0 {
+                LoopBoundaryRole::Outer
+            } else {
+                LoopBoundaryRole::Inner
+            },
+            coedges: vec![coedge_id],
+            vertex_uses: Vec::new(),
+        });
+        loop_ids.push(loop_id);
+    }
+    candidate.model_mut().faces.push(Face {
+        id: face_id.clone(),
+        shell: shell_id.clone(),
+        surface: SurfaceId(format!("iges:model:surface#D{surface_sequence}")),
+        sense: Sense::Forward,
+        loops: loop_ids,
+        name: None,
+        color: None,
+        tolerance: (resolution > 0.0).then_some(resolution),
+    });
+    candidate.model_mut().shells.push(Shell {
+        id: shell_id.clone(),
+        region: region_id.clone(),
+        faces: vec![face_id],
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
+    candidate.model_mut().regions.push(Region {
+        id: region_id.clone(),
+        body: body_id.clone(),
+        shells: vec![shell_id],
+    });
+    candidate.model_mut().bodies.push(Body {
+        id: body_id,
+        kind: BodyKind::Sheet,
+        regions: vec![region_id],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    candidate.model_mut().finalize();
+    candidate
+}
+
 fn legacy_single_parent_face(
     ir: &CadIr,
     entry: &DirectoryEntry,
@@ -1369,7 +1584,7 @@ fn legacy_single_parent_face(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     global: &ProjectedGlobal,
-) -> Result<Option<ModelDraft>, &'static str> {
+) -> Result<Option<(ModelDraft, Vec<u32>)>, &'static str> {
     let Some(parent_sequence) = existing_pointer(record, 3, entries) else {
         return Ok(None);
     };
@@ -1429,102 +1644,21 @@ fn legacy_single_parent_face(
         if !planes_are_coplanar(parent_plane, plane, resolution) {
             return Err("legacy single-parent plane boundaries are not coplanar");
         }
-        let source_edge = index
-            .edges(&format!("iges:model:edge#D{boundary_sequence}"))
-            .ok_or("legacy single-parent plane boundary was not projected")?;
-        let start = vertex_position(&index, &source_edge.start)
-            .ok_or("legacy single-parent boundary start vertex is missing")?;
-        let end = vertex_position(&index, &source_edge.end)
-            .ok_or("legacy single-parent boundary end vertex is missing")?;
-        if start.distance(end) > resolution {
-            return Err("legacy single-parent plane boundary is not closed");
-        }
+        let mut edge = plane_boundary_edge(&index, plane, boundary_sequence, entries, resolution)
+            .map_err(PlaneBoundaryError::legacy_message)?;
         let edge_id = EdgeId(format!(
             "iges:model:edge#legacy-single-parent-D{}-{boundary_index}",
             entry.sequence
         ));
-        let mut edge = source_edge.clone();
         edge.id = edge_id.clone();
         edge.end = edge.start.clone();
-        boundary_edges.push((edge_id, edge));
+        boundary_edges.push(edge);
     }
-    let stem = format!("D{}", entry.sequence);
-    let body_id = BodyId(format!("iges:model:body#legacy-single-parent-{stem}"));
-    let region_id = RegionId(format!("iges:model:region#legacy-single-parent-{stem}"));
-    let shell_id = ShellId(format!("iges:model:shell#legacy-single-parent-{stem}"));
-    let face_id = FaceId(format!("iges:model:face#legacy-single-parent-{stem}"));
-    let mut candidate = ModelDraft::new();
-    let mut loop_ids = Vec::with_capacity(boundary_edges.len());
-    for (boundary_index, (edge_id, edge)) in boundary_edges.into_iter().enumerate() {
-        candidate.model_mut().edges.push(edge);
-        let loop_id = LoopId(format!(
-            "iges:model:loop#legacy-single-parent-{stem}:{boundary_index}"
-        ));
-        let coedge_id = CoedgeId(format!(
-            "iges:model:coedge#legacy-single-parent-{stem}:{boundary_index}"
-        ));
-        candidate.model_mut().coedges.push(Coedge {
-            id: coedge_id.clone(),
-            owner_loop: loop_id.clone(),
-            edge: edge_id,
-            next: coedge_id.clone(),
-            previous: coedge_id.clone(),
-            radial_next: coedge_id.clone(),
-            sense: Sense::Forward,
-            pcurves: Vec::new(),
-            use_curve: None,
-            use_curve_parameter_range: None,
-        });
-        candidate.model_mut().loops.push(Loop {
-            id: loop_id.clone(),
-            face: face_id.clone(),
-            boundary_role: if boundary_index == 0 {
-                LoopBoundaryRole::Outer
-            } else {
-                LoopBoundaryRole::Inner
-            },
-            coedges: vec![coedge_id],
-            vertex_uses: Vec::new(),
-        });
-        loop_ids.push(loop_id);
-    }
-    candidate.model_mut().faces.push(Face {
-        id: face_id.clone(),
-        shell: shell_id.clone(),
-        surface: SurfaceId(format!("iges:model:surface#D{parent_sequence}")),
-        sense: Sense::Forward,
-        loops: loop_ids,
-        name: None,
-        color: None,
-        tolerance: (resolution > 0.0).then_some(resolution),
-    });
-    candidate.model_mut().shells.push(Shell {
-        id: shell_id,
-        region: region_id.clone(),
-        faces: vec![face_id],
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
-    candidate.model_mut().regions.push(Region {
-        id: region_id,
-        body: body_id.clone(),
-        shells: vec![ShellId(format!(
-            "iges:model:shell#legacy-single-parent-{stem}"
-        ))],
-    });
-    candidate.model_mut().bodies.push(Body {
-        id: body_id,
-        kind: BodyKind::Sheet,
-        regions: vec![RegionId(format!(
-            "iges:model:region#legacy-single-parent-{stem}"
-        ))],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    candidate.model_mut().finalize();
-    Ok(Some(candidate))
+    let stem = format!("legacy-single-parent-D{}", entry.sequence);
+    Ok(Some((
+        plane_face_draft(parent_sequence, &stem, boundary_edges, resolution),
+        std::iter::once(parent_sequence).chain(children).collect(),
+    )))
 }
 
 fn flow_associativity(
@@ -1664,6 +1798,7 @@ pub(super) fn project(
     let mut assemblies = BTreeMap::new();
     let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
     let mut legacy_face_candidates = Vec::<(u32, ModelDraft)>::new();
+    let mut legacy_plane_sequences = BTreeSet::new();
     let flows = directory
         .iter()
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
@@ -2165,7 +2300,10 @@ pub(super) fn project(
             decoded.insert(entry.sequence);
             if entry.form == 9 {
                 match legacy_single_parent_face(ir, entry, record, &entries, &records, global) {
-                    Ok(Some(candidate)) => legacy_face_candidates.push((entry.sequence, candidate)),
+                    Ok(Some((candidate, plane_sequences))) => {
+                        legacy_plane_sequences.extend(plane_sequences);
+                        legacy_face_candidates.push((entry.sequence, candidate));
+                    }
                     Ok(None) => {}
                     Err(reason) => losses.push(entity_loss(entry, reason)),
                 }
@@ -2175,6 +2313,62 @@ pub(super) fn project(
                 entry,
                 "predefined associativity counts, class layout, links, back pointers, or structure are invalid",
             ));
+        }
+    }
+
+    let index = ModelIndex::new(ir);
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1 | 1))
+    {
+        if legacy_plane_sequences.contains(&entry.sequence) {
+            continue;
+        }
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            continue;
+        };
+        let Some(plane) = plane_carrier(&index, entry.sequence) else {
+            continue;
+        };
+        let Some(boundary_sequence) = existing_pointer(record, 5, &entries) else {
+            continue;
+        };
+        match entry.form {
+            1 => match plane_boundary_edge(
+                &index,
+                plane,
+                boundary_sequence,
+                &entries,
+                global.minimum_resolution_mm(),
+            ) {
+                Ok(mut edge) => {
+                    edge.id = EdgeId(format!("iges:model:edge#bounded-plane-D{}", entry.sequence));
+                    edge.end = edge.start.clone();
+                    let stem = format!("bounded-plane-D{}", entry.sequence);
+                    let candidate = plane_face_draft(
+                        entry.sequence,
+                        &stem,
+                        vec![edge],
+                        global.minimum_resolution_mm(),
+                    );
+                    legacy_face_candidates.push((entry.sequence, candidate));
+                }
+                Err(reason) => losses.push(entity_loss(entry, reason.message())),
+            },
+            -1 => match plane_boundary_edge(
+                &index,
+                plane,
+                boundary_sequence,
+                &entries,
+                global.minimum_resolution_mm(),
+            ) {
+                Ok(_) => losses.push(entity_loss(
+                    entry,
+                    "negative bounded plane requires an enclosing positive plane face",
+                )),
+                Err(reason) => losses.push(entity_loss(entry, reason.message())),
+            },
+            _ => {}
         }
     }
 

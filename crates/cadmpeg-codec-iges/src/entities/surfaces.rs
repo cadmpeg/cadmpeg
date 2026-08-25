@@ -528,12 +528,14 @@ pub(super) fn project(
             ));
             continue;
         };
-        if (entry.form == 0 && boundary != 0)
-            || (entry.form != 0 && (boundary <= 0 || boundary % 2 == 0))
-        {
+        let boundary_sequence = u32::try_from(boundary)
+            .ok()
+            .filter(|sequence| sequence % 2 == 1)
+            .filter(|sequence| entries.contains_key(sequence));
+        if (entry.form == 0 && boundary != 0) || (entry.form != 0 && boundary_sequence.is_none()) {
             losses.push(entity_loss(
                 entry,
-                "plane form and boundary pointer are inconsistent",
+                "plane form and boundary pointer are inconsistent or the boundary target is missing",
             ));
             continue;
         }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text annotation entities.
 
-use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
+use super::geometry::{curve_geometry_coplanar, entity_loss, resolve_transform, ProjectionOutcome};
 use super::presentation::{
     general_note_font_valid_for_dialect, new_general_note_charset_valid,
     new_general_note_font_valid,
@@ -10,7 +10,6 @@ use crate::directory::DirectoryEntry;
 use crate::global::{Dialect, ProjectedGlobal};
 use crate::parameter::{DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -42,8 +41,6 @@ pub(crate) enum AnnotationKind {
     SectionedArea,
 }
 
-const SECTION_COPLANAR_NORMAL_EPSILON: f64 = 1.0e-10;
-
 fn finite_point(point: Point3) -> bool {
     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
 }
@@ -55,105 +52,6 @@ fn finite_vector(vector: Vector3) -> bool {
 fn normalized(vector: Vector3) -> Option<Vector3> {
     let norm = vector.norm();
     (finite_vector(vector) && norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
-}
-
-fn point_on_plane(point: Point3, plane: (Point3, Vector3), resolution: f64) -> bool {
-    let distance = point.vector_from(plane.0).dot(plane.1).abs();
-    distance.is_finite() && distance <= resolution
-}
-
-fn normal_matches_plane(normal: Vector3, plane_normal: Vector3) -> bool {
-    normalized(normal)
-        .is_some_and(|normal| normal.cross(plane_normal).norm() <= SECTION_COPLANAR_NORMAL_EPSILON)
-}
-
-fn direction_in_plane(direction: Vector3, plane_normal: Vector3) -> bool {
-    normalized(direction)
-        .zip(normalized(plane_normal))
-        .is_some_and(|(direction, plane_normal)| {
-            direction.dot(plane_normal).abs() <= SECTION_COPLANAR_NORMAL_EPSILON
-        })
-}
-
-fn curve_geometry_coplanar(
-    geometry: &CurveGeometry,
-    index: &ModelIndex<'_>,
-    transform: Transform,
-    plane: (Point3, Vector3),
-    resolution: f64,
-    active: &mut BTreeSet<CurveId>,
-) -> bool {
-    let point_valid =
-        |point: Point3| point_on_plane(transform.apply_point(point), plane, resolution);
-    let normal_valid = |normal: Vector3| {
-        transform
-            .apply_normal(normal)
-            .is_some_and(|normal| normal_matches_plane(normal, plane.1))
-    };
-    let direction_valid =
-        |direction: Vector3| direction_in_plane(transform.apply_vector(direction), plane.1);
-    match geometry {
-        CurveGeometry::Line { origin, direction } => {
-            point_valid(*origin) && direction_valid(*direction)
-        }
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            ..
-        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*ref_direction),
-        CurveGeometry::Ellipse {
-            center,
-            axis,
-            major_direction,
-            ..
-        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
-        CurveGeometry::Parabola {
-            vertex,
-            axis,
-            major_direction,
-            ..
-        } => point_valid(*vertex) && normal_valid(*axis) && direction_valid(*major_direction),
-        CurveGeometry::Hyperbola {
-            center,
-            axis,
-            major_direction,
-            ..
-        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
-        CurveGeometry::Degenerate { point } => point_valid(*point),
-        CurveGeometry::Nurbs(curve) => curve.control_points.iter().copied().all(point_valid),
-        CurveGeometry::Polyline { points, .. } => points.iter().copied().all(point_valid),
-        CurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
-            let Some(curve) = index.curves(&segment.curve.0) else {
-                return false;
-            };
-            if !active.insert(segment.curve.clone()) {
-                return false;
-            }
-            let valid = curve_geometry_coplanar(
-                &curve.geometry,
-                index,
-                transform,
-                plane,
-                resolution,
-                active,
-            );
-            active.remove(&segment.curve);
-            valid
-        }),
-        CurveGeometry::Transformed {
-            basis,
-            transform: map,
-        } => curve_geometry_coplanar(
-            basis,
-            index,
-            transform.compose(*map),
-            plane,
-            resolution,
-            active,
-        ),
-        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
-    }
 }
 
 fn sectioned_area_pattern_plane(

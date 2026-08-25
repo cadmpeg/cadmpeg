@@ -19,6 +19,7 @@ use crate::global::Dialect;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
+mod bounded_planes;
 mod definitions;
 mod dialect;
 mod network;
@@ -1390,7 +1391,7 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
 }
 
 #[test]
-fn decode_keeps_nonplane_single_parent_relations_native_in_v4_and_v5_profiles() {
+fn decode_keeps_nonplane_single_parent_relations_native_and_transfers_the_bounded_parent() {
     let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
     let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
     for (version, global) in [("4.0", &global_v4[..]), ("5.0", &global_v5[..])] {
@@ -1400,7 +1401,12 @@ fn decode_keeps_nonplane_single_parent_relations_native_in_v4_and_v5_profiles() 
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert!(result.ir().model.faces.is_empty(), "IGES {version}");
+        assert_eq!(result.ir().model.faces.len(), 1, "IGES {version}");
+        assert_eq!(
+            result.ir().model.faces[0].surface,
+            "iges:model:surface#D1".into(),
+            "IGES {version}"
+        );
         assert!(result.report().losses.iter().all(|loss| {
             loss.code != IgesLossCode::EntityNotProjected.kind()
                 || !loss.message.contains("IGES entity type 402 form 9")

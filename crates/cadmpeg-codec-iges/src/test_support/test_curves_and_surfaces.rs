@@ -1216,6 +1216,33 @@ pub(crate) fn plane_file() -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn bounded_plane_entity_file(
+    global: &[u8],
+    boundary_type: i64,
+    boundary_parameters: &str,
+) -> Vec<u8> {
+    owned_test_file_with_global_and_line_fonts(
+        &[
+            OwnedTestEntity {
+                entity_type: 108,
+                form: 1,
+                label: "PLANE".into(),
+                status: "00010000",
+                parameters: "108,0,0,1,0,3,0,0,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: boundary_type,
+                form: 0,
+                label: "BOUNDARY".into(),
+                status: "00010000",
+                parameters: boundary_parameters.into(),
+            },
+        ],
+        global,
+        &[(1, 1), (3, 1)],
+    )
+}
+
 pub(crate) fn offset_plane_file(indicator_z: f64, distance: f64) -> Vec<u8> {
     offset_plane_file_with_indicator("0", "0", &indicator_z.to_string(), distance)
 }
