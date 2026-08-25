@@ -499,7 +499,14 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             loci_by_marker,
         )
         .or_else(|| {
-            unique_dynamic_roster_point_line_pair(relation, sketch, parameter, sketch_entities)
+            unique_dynamic_roster_point_line_pair(
+                relation,
+                sketch,
+                parameter,
+                point(0),
+                curve(1),
+                sketch_entities,
+            )
         })
     } else {
         None
@@ -1998,19 +2005,89 @@ fn unique_dynamic_roster_point_line_pair(
     relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
+    known_point: Option<SketchLocus>,
+    known_line: Option<SketchEntityId>,
     sketch_entities: &[SketchEntity],
 ) -> Option<(SketchLocus, SketchEntityId)> {
-    // A family-local tag without an explicit reference is not an identity;
-    // let the complete geometry roster arbitrate it instead of trusting a
-    // provisional ordinal or a colliding solver-line alias.
-    if relation
+    let explicit_point = relation
         .operands
-        .iter()
-        .any(|operand| operand.entity_ref.is_some())
-    {
+        .first()
+        .is_some_and(|operand| operand.entity_ref.is_some());
+    let explicit_line = relation
+        .operands
+        .get(1)
+        .is_some_and(|operand| operand.entity_ref.is_some());
+    if (explicit_point && known_point.is_none()) || (explicit_line && known_line.is_none()) {
         return None;
     }
-    unique_roster_point_line_pair(sketch, parameter, sketch_entities)
+    let known_point = explicit_point.then_some(known_point).flatten();
+    let known_line = explicit_line.then_some(known_line).flatten();
+    // A family-local tag without an explicit reference is not an identity;
+    // let the complete geometry roster arbitrate it instead of trusting a
+    // provisional ordinal or a colliding solver-line alias. A single
+    // explicitly referenced operand narrows that roster to the other operand.
+    if known_point.is_none() && known_line.is_none() {
+        if explicit_point || explicit_line {
+            return None;
+        }
+        return unique_roster_point_line_pair(sketch, parameter, sketch_entities);
+    }
+    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let lines = sketch_entities
+        .iter()
+        .filter(|entity| {
+            entity.sketch == *sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
+        })
+        .collect::<Vec<_>>();
+    let mut points = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .flat_map(sketch_entity_loci)
+        .map(|(_, locus)| locus)
+        .collect::<Vec<_>>();
+    deduplicate_physical_loci(&mut points, sketch_entities);
+    let mut candidates = Vec::new();
+    match (known_point, known_line) {
+        (Some(point), None) => {
+            let position = profile_locus_point(&point, sketch_entities)?;
+            candidates.extend(lines.iter().filter_map(|line| {
+                point_line_distance_value(position, line)
+                    .filter(|measured| same_dimension_length(*measured, distance.0))
+                    .map(|_| (point.clone(), line.id.clone()))
+            }));
+        }
+        (None, Some(line)) => {
+            let line_entity = sketch_entities.iter().find(|entity| entity.id == line)?;
+            candidates.extend(points.into_iter().filter_map(|point| {
+                let position = profile_locus_point(&point, sketch_entities)?;
+                point_line_distance_value(position, line_entity)
+                    .filter(|measured| same_dimension_length(*measured, distance.0))
+                    .map(|_| (point, line.clone()))
+            }));
+        }
+        (Some(point), Some(line)) => {
+            let line_entity = sketch_entities.iter().find(|entity| entity.id == line)?;
+            let position = profile_locus_point(&point, sketch_entities)?;
+            if point_line_distance_value(position, line_entity)
+                .is_some_and(|measured| same_dimension_length(measured, distance.0))
+            {
+                candidates.push((point, line));
+            }
+        }
+        (None, None) => unreachable!("the complete roster path returned above"),
+    }
+    candidates.sort_by(|(left_point, left_line), (right_point, right_line)| {
+        locus_key(left_point)
+            .cmp(&locus_key(right_point))
+            .then_with(|| left_line.cmp(right_line))
+    });
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn unique_roster_point_line_pair(
