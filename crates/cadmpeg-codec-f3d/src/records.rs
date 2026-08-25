@@ -3053,6 +3053,78 @@ pub struct DesignSurfaceOffsetOperation {
     pub support: DesignSurfaceOffsetSupport,
 }
 
+/// One indexed record in the auxiliary chain preceding a `SurfaceTrim` cell table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSurfaceTrimChainRecord {
+    /// Indexed record identity.
+    pub record_index: u32,
+    /// Primary indexed-header byte offset.
+    pub byte_offset: u64,
+    /// Source per-file dynamic class tag.
+    pub class_tag: String,
+    /// Bytes from the primary header to the following indexed header.
+    pub frame_length: u64,
+}
+
+/// One source `BRep` cell entry in a `SurfaceTrim` cell table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSurfaceTrimCellEntry {
+    /// Indexed cell-record identity.
+    pub record_index: u32,
+    /// Byte offset of the marked cell-record reference.
+    pub record_reference_offset: u64,
+    /// Serialized entry ordinal. Its retained-side meaning is unresolved.
+    pub ordinal: u64,
+    /// Byte offset of the serialized entry ordinal.
+    pub ordinal_offset: u64,
+}
+
+/// Exact auxiliary carrier of a `SurfaceTrim` operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSurfaceTrimOperation {
+    /// Globally unique deterministic identifier for this native carrier.
+    pub id: String,
+    /// Owning `SurfaceTrim` parameter-scope record index.
+    pub scope_record_index: u32,
+    /// Indexed entity-selection record that starts the trimming tool chain.
+    pub selection_record_index: u32,
+    /// Byte offset of the entity-selection record.
+    pub selection_byte_offset: u64,
+    /// Indexed record immediately following the entity-selection frame.
+    pub selection_next_record_index: u32,
+    /// Byte offset of the record immediately following the entity-selection frame.
+    pub selection_next_byte_offset: u64,
+    /// Two indexed records between the entity selection and the cell table.
+    pub chain_records: Vec<DesignSurfaceTrimChainRecord>,
+    /// Indexed record carrying the counted BRep-cell table.
+    pub cell_table_record_index: u32,
+    /// Byte offset of the cell-table primary header.
+    pub cell_table_byte_offset: u64,
+    /// Dynamic class tag of the cell-table primary frame.
+    pub cell_table_class_tag: String,
+    /// Bytes from the cell-table primary header to its paired header.
+    pub cell_table_frame_length: u64,
+    /// Dynamic class tag of the cell-table paired frame.
+    pub cell_table_paired_class_tag: String,
+    /// Byte offset of the cell-table paired header.
+    pub cell_table_paired_byte_offset: u64,
+    /// Count of entries in the cell table.
+    pub cell_count: u32,
+    /// Byte offset of the cell-table count.
+    pub cell_count_offset: u64,
+    /// Ordered cell-table entries.
+    pub cell_entries: Vec<DesignSurfaceTrimCellEntry>,
+    /// Serialized value after the counted cell-entry run. Its meaning is unresolved.
+    pub trailing_value: u32,
+    /// Byte offset of `trailing_value`.
+    pub trailing_value_offset: u64,
+    /// Byte offset of the zero value after `trailing_value`.
+    pub trailing_zero_offset: u64,
+}
+
 /// Direction law encoded by a `SurfaceRuled` operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

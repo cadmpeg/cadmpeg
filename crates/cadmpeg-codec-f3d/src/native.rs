@@ -44,9 +44,9 @@ use crate::records::{
     DesignFaceOperand, DesignFaceSourceGroup, DesignFeatureTimeline, DesignFilletRadiusGroup,
     DesignLoftLegacyBodyCarrier, DesignMaterialAssignment, DesignMeshFeature, DesignParameter,
     DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    DesignSketchPlacement, LostEdgeReference, PersistentDesignLink, PersistentReference,
-    PersistentSubentityTag, SegmentType, SketchCurveIdentity, SketchCurveLink, SketchPoint,
-    SketchRelation, SketchSurface, SketchText, XrefDesign, XrefReference,
+    DesignSketchPlacement, DesignSurfaceTrimOperation, LostEdgeReference, PersistentDesignLink,
+    PersistentReference, PersistentSubentityTag, SegmentType, SketchCurveIdentity, SketchCurveLink,
+    SketchPoint, SketchRelation, SketchSurface, SketchText, XrefDesign, XrefReference,
 };
 use cadmpeg_asm::brep::records::{
     BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceNativeKey, FaceSidedness,
@@ -133,6 +133,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_parameters",
     "design_record_headers",
     "design_sketch_placements",
+    "design_surface_trim_operations",
     "design_types",
     "edge_continuities",
     "edge_ownerships",
@@ -746,6 +747,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "design_surface_trim_operations",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_surface_trim_operations)
+        },
+        len: |model| model.design_surface_trim_operations.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "design_parameters",
         tag: None,
         exactness: (),
@@ -1300,6 +1313,9 @@ pub struct F3dNative {
     /// Sketch and construction-operation records that scope parameters.
     #[serde(default)]
     pub design_parameter_scopes: Vec<DesignParameterScope>,
+    /// Exact BRep-cell carriers owned by `SurfaceTrim` operations.
+    #[serde(default)]
+    pub design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
     /// Indexed Design parameter and expression records.
     #[serde(default)]
     pub design_parameters: Vec<DesignParameter>,
@@ -1449,6 +1465,7 @@ impl Default for F3dNative {
             design_parameter_companions: Vec::new(),
             design_parameter_owners: Vec::new(),
             design_parameter_scopes: Vec::new(),
+            design_surface_trim_operations: Vec::new(),
             design_parameters: Vec::new(),
             design_sketch_placements: Vec::new(),
             design_entity_headers: Vec::new(),
@@ -1543,6 +1560,7 @@ impl F3dNative {
             design_parameter_companions: namespace.arena_as("design_parameter_companions")?,
             design_parameter_owners: namespace.arena_as("design_parameter_owners")?,
             design_parameter_scopes: namespace.arena_as("design_parameter_scopes")?,
+            design_surface_trim_operations: namespace.arena_as("design_surface_trim_operations")?,
             design_parameters: namespace.arena_as("design_parameters")?,
             design_entity_headers: namespace.arena_as("design_entity_headers")?,
             design_record_headers: namespace.arena_as("design_record_headers")?,

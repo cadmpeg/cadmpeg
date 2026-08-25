@@ -741,6 +741,7 @@
               ]
             }
           ],
+          "design_surface_trim_operations": [],
           "design_types": [
             {
               "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1089",

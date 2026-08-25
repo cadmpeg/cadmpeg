@@ -606,6 +606,7 @@
           "design_parameters": [],
           "design_record_headers": [],
           "design_sketch_placements": [],
+          "design_surface_trim_operations": [],
           "design_types": [],
           "edge_continuities": [
             {

@@ -4085,6 +4085,11 @@ fn extend_related_design_records(
         &native.design_component_occurrences,
         &native.construction_recipes,
     )?;
+    native.design_surface_trim_operations =
+        crate::design::decode::surface_trim::decode_surface_trim_operations(
+            scan,
+            &native.design_parameter_scopes,
+        )?;
     crate::design::decode::scopes::admit_history_bound_scope_variants(
         &mut native.design_parameter_scopes,
         &native.asm_histories,

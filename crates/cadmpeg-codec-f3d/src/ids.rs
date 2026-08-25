@@ -660,6 +660,11 @@ native_record_id!(
     "design-parameter-scope"
 );
 native_record_id!(
+    /// The native `SurfaceTrim` BRep-cell carrier record key.
+    native_design_surface_trim_operation_id,
+    "design-surface-trim-operation"
+);
+native_record_id!(
     /// The native ordered Design feature-timeline record key.
     native_design_feature_timeline_id,
     "design-feature-timeline"

@@ -16,4 +16,5 @@ pub mod patch;
 pub mod presentation;
 pub mod scopes;
 pub mod sketch;
+pub(crate) mod surface_trim;
 pub mod units;

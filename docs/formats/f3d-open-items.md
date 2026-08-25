@@ -259,14 +259,15 @@ without assigning a semantic role to that record.
 `TrimRegion::Inside` or `TrimRegion::Outside`?
 
 **Known.** `f3d.md` §3.1 "A `SurfaceTrim` scope has four ordered references"
-defines the target body-recipe group and the trimming entity-selection group.
-The operation also carries a class-keyed BRep-cell table reached from the
-trimming selection's auxiliary record chain. The table has a counted run of
-marked cell records, one ordinal value per entry, and a trailing value. The
-cell records retain the source cell topology and their body-recipe context.
-The target faces and trimming curves can be projected without assigning a
-retained-side value. No field in the typed target-and-tool groups is the
-retained-side selector.
+defines the target body-recipe group, the trimming entity-selection group, the
+two-record chain, and the class-`287`/`325` BRep-cell table. The table has a
+counted run of marked cell records, one u64 ordinal per entry, a trailing u32,
+and a zero u32 before its paired header. The decoder retains the exact chain,
+table frame, cell references, ordinals, and tail values. The cell records
+retain the source cell topology and their body-recipe context. The target
+faces and trimming curves can be projected without assigning a retained-side
+value. No field in the typed target-and-tool groups is the retained-side
+selector.
 
 **Need.** A neutral `TrimSurface` must select the same result side and a
 source-less writer must emit the cell table and its selected-cell state. The
