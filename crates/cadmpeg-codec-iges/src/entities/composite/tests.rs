@@ -25,6 +25,9 @@ use super::*;
 fn composite_child_types_follow_the_declared_dialect() {
     assert!(composite_child_type_allowed(116, 0, Dialect::V4_0));
     assert!(composite_child_type_allowed(132, 0, Dialect::V4_0));
+    assert!(composite_child_type_allowed(112, 0, Dialect::V4_0));
+    assert!(!composite_child_type_allowed(112, 1, Dialect::V4_0));
+    assert!(!composite_child_type_allowed(112, 3, Dialect::V5_0));
     assert!(!composite_child_type_allowed(106, 1, Dialect::V4_0));
     assert!(!composite_child_type_allowed(130, 0, Dialect::V4_0));
     assert!(composite_child_type_allowed(106, 1, Dialect::V5_0));

@@ -26,12 +26,12 @@ fn tabulated_directrix_type_allowed(entity_type: i64, form: i64, dialect: Dialec
     if matches!(dialect, Dialect::V4_0) {
         return matches!(
             (entity_type, form),
-            (100 | 102 | 110, 0) | (104 | 112, 0..=3) | (126, 0..=5)
+            (100 | 102 | 110 | 112, 0) | (104, 0..=3) | (126, 0..=5)
         );
     }
     matches!(
         (entity_type, form),
-        (100 | 102 | 110 | 130 | 142, 0) | (104 | 112, 0..=3) | (126, 0..=5)
+        (100 | 102 | 110 | 112 | 130 | 142, 0) | (104, 0..=3) | (126, 0..=5)
     )
 }
 

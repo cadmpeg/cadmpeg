@@ -37,12 +37,12 @@ fn composite_child_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -
     if matches!(dialect, Dialect::V4_0) {
         return matches!(
             (entity_type, form),
-            (100 | 110 | 116 | 132, 0) | (104 | 112, 0..=3) | (126, 0..=5)
+            (100 | 110 | 112 | 116 | 132, 0) | (104, 0..=3) | (126, 0..=5)
         );
     }
     matches!(
         (entity_type, form),
-        (100 | 110 | 116 | 130 | 132 | 142, 0) | (104 | 112, 0..=3) | (106, _) | (126, 0..=5)
+        (100 | 110 | 112 | 116 | 130 | 132 | 142, 0) | (104, 0..=3) | (106, _) | (126, 0..=5)
     )
 }
 
