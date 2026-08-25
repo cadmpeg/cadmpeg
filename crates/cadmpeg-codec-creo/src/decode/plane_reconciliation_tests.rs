@@ -626,7 +626,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
             cap_ordinates_row_frame: vec![0.0, 38.0],
             offset: 40,
         });
-    let origin_z = 17.0 / 8.0;
+    let origin_z = -(17.0 / 8.0);
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 5,
         body: Vec::new(),
@@ -658,6 +658,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
     };
     assert!((candidate.equation.normal[0] - 0.6).abs() < EPS_BRANCH_TEST);
     assert!((candidate.equation.normal[2] + 0.8).abs() < EPS_BRANCH_TEST);
+    assert!((candidate.equation.origin[2] + origin_z).abs() < EPS_BRANCH_TEST);
     assert!((candidate.chart.expect("stored chart").u_axis[2] - 0.6).abs() < EPS_BRANCH_TEST);
 }
 
@@ -738,6 +739,14 @@ fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
         candidate.equation.normal == [0.8, 0.0, -0.6]
             && candidate.chart.expect("chart").u_axis == [0.6, 0.0, 0.8]
     }));
+
+    let mut nonzero_origin = frame.clone();
+    nonzero_origin.slots[11] = Some(2.0);
+    let candidates = stored_parameter_normal_candidates(&nonzero_origin).expect("ambiguous frame");
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates
+        .iter()
+        .all(|candidate| candidate.equation.origin[2] == 2.0));
 
     let mut invalid = frame.clone();
     invalid.slots[4] = Some(1.0);

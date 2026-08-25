@@ -461,6 +461,7 @@ pub fn agreed_plane_surface(
 fn stored_parameter_normal_candidate(
     frame: &crate::surface::PlaneLocalSystem,
     mirror_z: bool,
+    mirror_origin_z: bool,
 ) -> Option<PlaneCandidate> {
     let slots: [f64; 12] = frame
         .slots
@@ -472,12 +473,15 @@ fn stored_parameter_normal_candidate(
     if slots[3..6].iter().any(|value| *value != 0.0) {
         return None;
     }
-    let origin = slots[9..12].try_into().ok()?;
+    let mut origin: [f64; 3] = slots[9..12].try_into().ok()?;
     let mut u_axis: [f64; 3] = slots[0..3].try_into().ok()?;
     let mut normal: [f64; 3] = slots[6..9].try_into().ok()?;
     if mirror_z {
         u_axis[2] = -u_axis[2];
         normal[2] = -normal[2];
+    }
+    if mirror_origin_z {
+        origin[2] = -origin[2];
     }
     let u_magnitude = dot(u_axis, u_axis).sqrt();
     let normal_magnitude = dot(normal, normal).sqrt();
@@ -504,8 +508,9 @@ fn stored_parameter_normal_candidate(
     })
 }
 
-pub(crate) fn stored_parameter_normal_candidates(
+fn stored_parameter_normal_candidates_with_origin_branches(
     frame: &crate::surface::PlaneLocalSystem,
+    include_origin_z_branches: bool,
 ) -> Option<Vec<PlaneCandidate>> {
     if frame.classification == crate::surface::LocalSystemClassification::Simple {
         return None;
@@ -521,16 +526,29 @@ pub(crate) fn stored_parameter_normal_candidates(
         return None;
     }
     let mut candidates = Vec::new();
+    let origin_branches: &[bool] = if include_origin_z_branches {
+        &[false, true]
+    } else {
+        &[false]
+    };
     for mirror_z in [false, true] {
-        let candidate = stored_parameter_normal_candidate(frame, mirror_z)?;
-        if !candidates
-            .iter()
-            .any(|known| plane_candidates_equivalent(*known, candidate))
-        {
-            candidates.push(candidate);
+        for mirror_origin_z in origin_branches {
+            let candidate = stored_parameter_normal_candidate(frame, mirror_z, *mirror_origin_z)?;
+            if !candidates
+                .iter()
+                .any(|known| plane_candidates_equivalent(*known, candidate))
+            {
+                candidates.push(candidate);
+            }
         }
     }
     (candidates.len() > 1).then_some(candidates)
+}
+
+pub(crate) fn stored_parameter_normal_candidates(
+    frame: &crate::surface::PlaneLocalSystem,
+) -> Option<Vec<PlaneCandidate>> {
+    stored_parameter_normal_candidates_with_origin_branches(frame, false)
 }
 
 fn coordinate_vectors_agree(first: [f64; 3], second: [f64; 3]) -> bool {
@@ -935,11 +953,28 @@ fn select_stored_frame_branches(
     scan: &ContainerScan,
     candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
 ) {
+    let cylinder_witnesses = fc05_cylinder_branch_witnesses(scan);
     let mut variable_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
+    let mut origin_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     for frame in &scan.planes.local_systems {
         let Some(options) = stored_parameter_normal_candidates(frame) else {
             continue;
         };
+        if cylinder_witnesses.contains_key(&frame.surface_id) {
+            if let Some(origin_options) =
+                stored_parameter_normal_candidates_with_origin_branches(frame, true)
+            {
+                let known = origin_domains.entry(frame.surface_id).or_default();
+                for option in origin_options {
+                    if !known
+                        .iter()
+                        .any(|candidate| plane_candidates_equivalent(*candidate, option))
+                    {
+                        known.push(option);
+                    }
+                }
+            }
+        }
         let known = variable_domains.entry(frame.surface_id).or_default();
         for option in options {
             if !known
@@ -950,13 +985,29 @@ fn select_stored_frame_branches(
             }
         }
     }
+    for (surface_id, options) in origin_domains {
+        let Some(witnesses) = cylinder_witnesses.get(&surface_id) else {
+            continue;
+        };
+        let retained = options
+            .into_iter()
+            .filter(|candidate| {
+                witnesses
+                    .iter()
+                    .copied()
+                    .any(|cylinder| plane_candidate_is_fc05_tangent(*candidate, cylinder))
+            })
+            .collect::<Vec<_>>();
+        if retained.len() == 1 {
+            variable_domains.insert(surface_id, retained);
+        }
+    }
     if variable_domains.is_empty() {
         return;
     }
 
     let mut domains = variable_domains.clone();
     select_stored_frame_carrier_pcurve_branches(scan, &variable_domains, &mut domains);
-    let cylinder_witnesses = fc05_cylinder_branch_witnesses(scan);
     for (surface_id, options) in &variable_domains {
         let Some(witnesses) = cylinder_witnesses.get(surface_id) else {
             continue;

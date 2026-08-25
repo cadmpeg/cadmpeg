@@ -1766,6 +1766,14 @@ endpoint pairs are equivalent branch witnesses. Admit the unique branch whose
 chart endpoints lie on the adjacent face carrier. No compatible or multiple
 compatible branches leave the stored frame unresolved.
 
+An `fc 05` cylinder cap-pair is an independent placement witness for a stored
+frame. When its adjacent plane has no unique branch under the normal rule,
+construct the additional candidate obtained by negating only the stored
+origin's z component. Retain that candidate only when its plane is tangent to
+the witnessed cylinder and exactly one stored-frame candidate satisfies that
+tangency. Without this cylinder witness, the stored origin is unchanged; a
+direction/normal mirror does not imply an origin mirror.
+
 In a support-triple body, the slots are:
 
 ```text
