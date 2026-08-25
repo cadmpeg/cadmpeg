@@ -5,9 +5,10 @@ use cadmpeg_core::decode::View;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use crate::layout::outer_alias_row as alias_row;
-use crate::{catalog, value_block};
+use crate::{catalog, entity_table, value_block};
 
 /// One decoded outer object graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -380,6 +381,116 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
             })
         })
         .collect()
+}
+
+/// Resolve the outer persistent-surface alias closure for geometry routes.
+///
+/// The returned map contains only alias cores outside complete object graphs,
+/// value blocks, and catalogs. A `None` value means that the raw tag exists but
+/// its canonical target is not unique.
+#[must_use]
+pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
+    let entity_runs = entity_table::parse_runs(data);
+    let paired_object_graph_roots = entity_runs
+        .iter()
+        .filter_map(|run| {
+            let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+            (data.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut object_graphs = parse_all_with_paired_roots(data, &paired_object_graph_roots);
+    let mut value_blocks = value_block::parse(data);
+    value_blocks.retain(|block| {
+        !object_graphs
+            .iter()
+            .any(|graph| extent_contains(graph.pos, graph.total_len, block.pos, block.total_len))
+    });
+    object_graphs.retain(|graph| {
+        !value_blocks
+            .iter()
+            .any(|block| extent_contains(block.pos, block.total_len, graph.pos, graph.total_len))
+    });
+    let catalogs = catalog::parse(data)
+        .into_iter()
+        .filter(|catalog| {
+            !object_graphs.iter().any(|graph| {
+                extent_contains(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
+            }) && !value_blocks.iter().any(|block| {
+                extent_contains(block.pos, block.total_len, catalog.pos, catalog.total_len)
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let mut rows = surface_aliases(data);
+    rows.retain(|row| {
+        let row_start = row.pos.saturating_sub(4);
+        !object_graphs
+            .iter()
+            .any(|graph| extents_overlap(row_start, 24, graph.pos, graph.total_len))
+            && !value_blocks
+                .iter()
+                .any(|block| extents_overlap(row_start, 24, block.pos, block.total_len))
+            && !catalogs
+                .iter()
+                .any(|catalog| extents_overlap(row_start, 24, catalog.pos, catalog.total_len))
+    });
+
+    let mut stored_by_group = HashMap::<(u32, u32), Option<u32>>::new();
+    for row in &rows {
+        let Some(group) = row.group.as_ref() else {
+            continue;
+        };
+        if row.lead != AliasLead::SurfaceSupportStorage {
+            continue;
+        }
+        stored_by_group
+            .entry((group.prototype, group.group_id))
+            .and_modify(|stored| *stored = None)
+            .or_insert(Some(row.tag));
+    }
+
+    let mut tags = HashMap::<u32, Option<u32>>::new();
+    for row in rows {
+        let canonical = match row.lead {
+            AliasLead::SurfaceSupportStorage => Some(row.tag),
+            AliasLead::NonSurfaceAlias => row.group.as_ref().and_then(|group| {
+                stored_by_group
+                    .get(&(group.prototype, group.group_id))
+                    .copied()
+                    .flatten()
+            }),
+            _ => None,
+        };
+        tags.entry(row.tag)
+            .and_modify(|stored| *stored = None)
+            .or_insert(canonical);
+    }
+    tags
+}
+
+fn extent_contains(
+    owner_start: usize,
+    owner_len: usize,
+    candidate_start: usize,
+    candidate_len: usize,
+) -> bool {
+    owner_start < candidate_start
+        && owner_start
+            .checked_add(owner_len)
+            .zip(candidate_start.checked_add(candidate_len))
+            .is_some_and(|(owner_end, candidate_end)| candidate_end <= owner_end)
+}
+
+fn extents_overlap(
+    first_start: usize,
+    first_len: usize,
+    second_start: usize,
+    second_len: usize,
+) -> bool {
+    first_start
+        .checked_add(first_len)
+        .zip(second_start.checked_add(second_len))
+        .is_some_and(|(first_end, second_end)| first_start < second_end && second_start < first_end)
 }
 
 fn alias_group_membership(data: &[u8], marker: usize) -> Option<AliasGroupMembership> {

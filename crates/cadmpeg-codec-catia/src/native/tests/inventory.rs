@@ -631,6 +631,22 @@ fn grouped_non_surface_alias_rejects_ambiguous_surface_storage() {
 }
 
 #[test]
+fn pre_route_surface_alias_map_closes_only_unique_group_targets() {
+    let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
+    bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
+
+    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
+    assert_eq!(tags.get(&0x1234), Some(&Some(0x5678)));
+    assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
+
+    bytes.extend(grouped_surface_alias_stream(1, 0x9abc, 0x148));
+    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
+    assert_eq!(tags.get(&0x1234), Some(&None));
+    assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
+    assert_eq!(tags.get(&0x9abc), Some(&Some(0x9abc)));
+}
+
+#[test]
 fn native_namespace_retains_surface_alias_core() {
     let native = crate::native::CatiaNative::decode(&surface_alias_stream());
     let [row] = native.alias_rows.as_slice() else {

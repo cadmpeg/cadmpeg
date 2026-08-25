@@ -454,6 +454,7 @@ fn container_summary_exposes_extent_flags_in_logical_order() {
         external_references: Vec::new(),
         finjpl_segments: Vec::new(),
         outer_container_declarations: Vec::new(),
+        surface_alias_tags: std::collections::HashMap::new(),
         census: Census::default(),
         variant: Variant::Unknown,
     };
@@ -564,6 +565,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
         external_references: Vec::new(),
         finjpl_segments: Vec::new(),
         outer_container_declarations: declarations,
+        surface_alias_tags: std::collections::HashMap::new(),
         census: Census::default(),
         variant: Variant::Unknown,
     };

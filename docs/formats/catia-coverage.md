@@ -485,6 +485,12 @@ current levels require those matrices and representative fixtures.
   endpoint lifts must select the same serialized edge endpoints before the
   edge or face-side binding is admitted; duplicate tags, unknown carriers,
   and failed lifts remain unbound.
+  An explicit support identity may first pass through the unique outer alias
+  closure: a direct alias preserves its tag, and a grouped alias selects the
+  unique direct target in the same group. Duplicate raw alias tags, missing or
+  multiply targeted groups, and failed canonicalization do not fall back to
+  the raw identity. This closure does not rewrite B5 object-stream or
+  allocation namespaces.
   Opposite edge or coedge traversal reverses the corresponding pcurve
   parameterization. A missing or multiply matching edge, support carrier, face
   carrier, or coedge remains unbound.

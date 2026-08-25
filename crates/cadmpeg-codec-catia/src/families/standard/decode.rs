@@ -2016,8 +2016,13 @@ fn try_decode_standard_population(
             &mut annotations,
             &consolidated_revolutions,
         );
-    let mut consolidated_curve_bindings =
-        append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data, &consolidated_records);
+    let mut consolidated_curve_bindings = append_freeform_surface_pools(
+        &mut ir,
+        &mut annotations,
+        &scan.data,
+        &consolidated_records,
+        &scan.surface_alias_tags,
+    );
     let owner_binding_budget =
         ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     consolidated_curve_bindings.standard_face_surfaces += bind_standard_a5_owner_surfaces(

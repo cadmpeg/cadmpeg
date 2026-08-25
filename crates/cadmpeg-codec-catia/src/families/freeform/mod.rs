@@ -1085,6 +1085,7 @@ pub(crate) fn append_freeform_surface_pools(
     annotations: &mut AnnotationBuilder,
     data: &[u8],
     records: &[crate::wire::records::ConsolidatedRecord],
+    surface_alias_tags: &HashMap<u32, Option<u32>>,
 ) -> ConsolidatedCurveBindingCounts {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data);
     surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
@@ -1309,6 +1310,7 @@ pub(crate) fn append_freeform_surface_pools(
         records,
         &surfaces,
         &carrier_ids,
+        surface_alias_tags,
     )
 }
 
@@ -1425,6 +1427,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     records: &[crate::wire::records::ConsolidatedRecord],
     freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
     freeform_surface_ids: &[SurfaceId],
+    surface_alias_tags: &HashMap<u32, Option<u32>>,
 ) -> ConsolidatedCurveBindingCounts {
     let standalone = crate::families::b2::records::b2_cylinders_from_records(data, records)
         .into_iter()
@@ -1598,7 +1601,13 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         let mut standard_endpoint_loci = None;
         for (side, binding) in resolved.supports.iter().enumerate() {
             let pcurve = &resolved.block.pcurves[side];
-            if let Some(surface_id) = standard_carrier_surfaces.get(&pcurve.support_id) {
+            let support_tag = match surface_alias_tags.get(&pcurve.support_id) {
+                Some(canonical) => canonical.as_ref().copied(),
+                None => Some(pcurve.support_id),
+            };
+            if let Some(surface_id) =
+                support_tag.and_then(|tag| standard_carrier_surfaces.get(&tag))
+            {
                 let Some(surface_id) = surface_id else {
                     continue;
                 };
@@ -2801,6 +2810,7 @@ mod tests {
             &mut AnnotationBuilder::new(),
             &bytes,
             &crate::wire::records::consolidated_records(&bytes),
+            &HashMap::new(),
         );
 
         assert!(matches!(
@@ -3068,6 +3078,7 @@ mod tests {
             &crate::wire::records::consolidated_records(&bytes),
             &[],
             &[],
+            &HashMap::new(),
         );
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(attached.partner_face_pcurve_pairs, 0);
@@ -3121,6 +3132,7 @@ mod tests {
             &crate::wire::records::consolidated_records(&bytes),
             &[],
             &[],
+            &HashMap::new(),
         );
 
         assert_eq!(counts.standard_edges, 0);
@@ -3143,6 +3155,48 @@ mod tests {
         )
         .expect("standard pcurve start");
         assert_eq!(start, Point2::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn consolidated_pcurve_uses_unique_canonical_surface_alias_tag() {
+        let bytes =
+            crate::test_support::a5_native_edge_run_stream_with_support(6, 139, 142, 0x5678);
+        let mut ir = CadIr::empty(Units::default());
+        let surface_id = SurfaceId("standard-carrier".to_string());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
+        });
+
+        let counts = append_resolved_consolidated_surface_curves(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
+            &[],
+            &[],
+            &HashMap::from([(0x5678, Some(0x1234))]),
+        );
+
+        assert_eq!(counts.standard_edges, 0);
+        let [ProceduralCurve {
+            definition:
+                ProceduralCurveDefinition::Intersection { context, .. }
+                | ProceduralCurveDefinition::SurfaceCurve { context, .. },
+            ..
+        }] = ir.model.procedural_curves.as_slice()
+        else {
+            panic!("one consolidated surface curve");
+        };
+        assert!(context
+            .sides
+            .iter()
+            .all(|side| { side.surface.as_ref() == Some(&surface_id) && side.pcurve.is_some() }));
     }
 
     #[test]
@@ -3259,6 +3313,7 @@ mod tests {
             &crate::wire::records::consolidated_records(&bytes),
             &[],
             &[],
+            &HashMap::new(),
         );
         assert_eq!(attached.standard_edges, 1);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));

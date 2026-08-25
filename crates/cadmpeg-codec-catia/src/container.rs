@@ -13,7 +13,7 @@
 //! container view returned by codec inspection.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::bytes::{find, find_from};
@@ -676,6 +676,8 @@ pub struct ContainerScan<'a> {
     pub finjpl_segments: Vec<FinjplSegment>,
     /// Exact model-container declarations from the outer `Data` stream.
     pub outer_container_declarations: Vec<OuterContainerDeclaration>,
+    /// Canonical outer persistent-surface aliases available to geometry routes.
+    pub(crate) surface_alias_tags: HashMap<u32, Option<u32>>,
     /// Record-family census.
     pub census: Census,
     /// Identified storage variant.
@@ -1344,6 +1346,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             e5_record_stream_in_segments(&data, body, &finjpl_segments).is_some()
         }),
     );
+    let surface_alias_tags = matches!(variant, Variant::StandardNested)
+        .then(|| crate::object_graph::surface_alias_tag_map(&data))
+        .unwrap_or_default();
 
     ContainerScan {
         data,
@@ -1358,6 +1363,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         external_references,
         finjpl_segments,
         outer_container_declarations,
+        surface_alias_tags,
         census,
         variant,
     }
