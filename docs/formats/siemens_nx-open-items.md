@@ -705,6 +705,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label and body-write relation identify the family, but the object-index slots and bounded payload do not assign a unique face selection or motion law.
 
+### OM-47. `CYLINDER` construction roles
+
+**Question.** Which serialized fields define the radius, height, placement, angular bounds, and Boolean mode of a `CYLINDER` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `CYLINDER` operation label identifies" defines the body-affecting cylinder primitive. A resolved body-write frame identifies a body-affecting result. The operation can retain object-index values, but the neutral dimensions, placement, angular bounds, and Boolean mode remain unresolved.
+
+**Need.** We must identify the primitive dimensions, local frame, angular interval, and material-combination mode to construct a complete neutral cylinder and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the primitive family, but the object-index slots and bounded payload do not assign a unique dimension, placement, angular-bound, or Boolean-mode role.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

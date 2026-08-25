@@ -39,6 +39,7 @@ mod body_writes;
 mod brep;
 mod bridge_curve;
 mod configuration;
+mod cylinder;
 mod enlarge;
 mod extract_datum_axis;
 mod extract_face;

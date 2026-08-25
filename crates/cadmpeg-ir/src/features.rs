@@ -1071,6 +1071,8 @@ pub enum FeatureDefinition {
         /// Boolean combination with an existing `PartDesign` body.
         op: BooleanOp,
     },
+    /// Body-affecting cylinder primitive whose dimensions and placement remain unresolved.
+    CylinderUnresolved,
     /// Linear extrusion of a profile.
     Extrude {
         /// Profile swept along `direction`.
@@ -1714,6 +1716,7 @@ impl FeatureDefinition {
             Self::ExtractFaceUnresolved => Some("extract face"),
             Self::FillHoleUnresolved => Some("fill hole"),
             Self::MoveFaceUnresolved => Some("move face"),
+            Self::CylinderUnresolved => Some("cylinder"),
             Self::TrimSurface { .. } => Some("trim surface"),
             Self::ExtendSurface { .. } => Some("extend surface"),
             Self::RuledSurface { .. } => Some("ruled surface"),

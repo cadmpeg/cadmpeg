@@ -418,6 +418,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::ExtractFaceUnresolved => "extract face",
             FeatureDefinition::FillHoleUnresolved => "fill hole",
             FeatureDefinition::MoveFaceUnresolved => "move face",
+            FeatureDefinition::CylinderUnresolved => "cylinder",
             FeatureDefinition::DraftUnresolved => "draft",
             _ => continue,
         };
