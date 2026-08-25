@@ -7120,6 +7120,11 @@ fn surface_body_compound_close(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<usize> {
+    if kind == SurfaceKind::Plane {
+        if let Some(close) = plane_envelope_compound_close(body, cache) {
+            return Some(close);
+        }
+    }
     if kind == SurfaceKind::Cone {
         if let Some(layout) = cone_half_angle_before_close(body) {
             return Some(layout.end);
@@ -7549,6 +7554,84 @@ fn complete_plane_envelope_slots(
             .all(|(value, token)| value.is_some() && !token.is_empty())
         && slots.iter().map(|(_, token)| token.len()).sum::<usize>() == consumed)
         .then_some(slots)
+}
+
+fn complete_plane_envelope_slots_with_final_positive_dict(
+    body: &[u8],
+    preceding_count: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<ScalarTokenSlot>> {
+    let positive_start = body.len().checked_sub(7)?;
+    let (value, end) = scalar::decode_positive_dict(body, positive_start)?;
+    (end == body.len()).then_some(())?;
+    let mut slots = complete_plane_envelope_slots(&body[..positive_start], preceding_count, cache)?;
+    slots.push((Some(value), body[positive_start..end].to_vec()));
+    Some(slots)
+}
+
+fn plane_envelope_compound_close(body: &[u8], cache: &scalar::ScalarCache) -> Option<usize> {
+    body.iter()
+        .enumerate()
+        .filter_map(|(offset, byte)| (*byte == psb::token::COMPOUND_CLOSE).then_some(offset))
+        .find(|offset| {
+            let Some(positive_start) = offset.checked_sub(7) else {
+                return false;
+            };
+            let Some((positive_value, positive_end)) =
+                scalar::decode_positive_dict(body, positive_start)
+            else {
+                return false;
+            };
+            if positive_end != *offset {
+                return false;
+            }
+            let prefix = &body[..positive_start];
+            let (mut slots, pairs) = if prefix.first() == Some(&0x0e) {
+                let Some(slots) = complete_plane_envelope_slots(&prefix[1..], 8, cache) else {
+                    return false;
+                };
+                (slots, [[3, 6], [4, 7], [5, 8]])
+            } else if let Some(slots) = complete_plane_envelope_slots(prefix, 9, cache) {
+                (slots, [[4, 7], [5, 8], [6, 9]])
+            } else {
+                return false;
+            };
+            slots.push((
+                Some(positive_value),
+                body[positive_start..positive_end].to_vec(),
+            ));
+            let axis_aligned = plane_envelope_has_one_held_coordinate(&slots, pairs);
+            axis_aligned || plane_envelope_boundary_has_local_system(body, *offset, cache)
+        })
+}
+
+fn plane_envelope_has_one_held_coordinate(
+    slots: &[ScalarTokenSlot],
+    pairs: [[usize; 2]; 3],
+) -> bool {
+    pairs
+        .into_iter()
+        .filter(|[first, second]| slots[*first].1 == slots[*second].1)
+        .count()
+        == 1
+}
+
+fn plane_envelope_boundary_has_local_system(
+    body: &[u8],
+    envelope_close: usize,
+    cache: &scalar::ScalarCache,
+) -> bool {
+    let Some(local_system_start) = envelope_close.checked_add(1) else {
+        return false;
+    };
+    if local_system_start == body.len() {
+        return false;
+    }
+    let Some(local_system_close) = first_compound_close(body, local_system_start, body.len())
+    else {
+        return false;
+    };
+    complete_plane_local_system(&body[local_system_start..local_system_close], cache).is_some()
 }
 
 fn slot_equality(first: &(Option<f64>, Vec<u8>), second: &(Option<f64>, Vec<u8>)) -> Option<bool> {
@@ -8005,7 +8088,9 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
         let body = payload[body_start..body_end].to_vec();
         let scalar_tokens;
         let (envelope, corner_coordinate_equal) = if body.first() == Some(&0x0e) {
-            let Some(slots) = complete_plane_envelope_slots(&body[1..], 9, &cache) else {
+            let Some(slots) = complete_plane_envelope_slots(&body[1..], 9, &cache).or_else(|| {
+                complete_plane_envelope_slots_with_final_positive_dict(&body[1..], 8, &cache)
+            }) else {
                 continue;
             };
             let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
@@ -8042,7 +8127,9 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
                 ],
             )
         } else {
-            let Some(slots) = complete_plane_envelope_slots(&body, 10, &cache) else {
+            let Some(slots) = complete_plane_envelope_slots(&body, 10, &cache).or_else(|| {
+                complete_plane_envelope_slots_with_final_positive_dict(&body, 9, &cache)
+            }) else {
                 continue;
             };
             let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
