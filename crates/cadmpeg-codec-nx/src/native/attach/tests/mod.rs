@@ -35,6 +35,7 @@ pub(crate) fn simple_hole_diameters(
     hole_diameters_for_operations(ir, &operations, outputs)
 }
 
+mod blend;
 mod body_writes;
 mod brep;
 mod bridge_curve;

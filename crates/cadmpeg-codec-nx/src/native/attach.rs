@@ -5828,6 +5828,18 @@ fn body_writing_unresolved_feature_definition(
     match kind {
         "CONE" => Some(FeatureDefinition::ConeUnresolved),
         "SPHERE" => Some(FeatureDefinition::SphereUnresolved),
+        "BLEND" => Some(FeatureDefinition::Fillet {
+            groups: vec![cadmpeg_ir::features::FilletGroup {
+                edges: EdgeSelection::Unresolved,
+                radius: RadiusSpec::Unresolved { form: None },
+                tangency_weight: None,
+            }],
+        }),
+        "FACE_BLEND" => Some(FeatureDefinition::FaceBlend {
+            first_faces: FaceSelection::Unresolved,
+            second_faces: FaceSelection::Unresolved,
+            radius: RadiusSpec::Unresolved { form: None },
+        }),
         "THREADS" => Some(FeatureDefinition::ThreadUnresolved),
         "DETAILED_THREAD" => Some(FeatureDefinition::DetailedThreadUnresolved),
         _ => None,
