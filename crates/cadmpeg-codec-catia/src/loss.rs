@@ -53,7 +53,7 @@ pub enum CatiaLossCode {
     TopologyGraphNotBuilt,
     /// E5 reference graph is closed; orientation uses an incidence-derived gauge.
     TopologyE5GaugeSubstituted,
-    /// E5 analytic carriers decoded, but the reference graph did not close.
+    /// E5 carriers decoded, but the reference graph did not close.
     TopologyE5GraphUnclosed,
     /// B5 reference graph is closed; face sense and body kind use a topology gauge.
     TopologyB5GaugeSubstituted,

@@ -567,7 +567,7 @@
           "kind": "topology_not_transferred",
           "namespace": "catia"
         },
-        "message": "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
+        "message": "E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
         "severity": "blocking"
       }
     ],

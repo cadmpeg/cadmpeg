@@ -410,6 +410,41 @@ fn decode_e5_stream_transfers_circle_carrier() {
 }
 
 #[test]
+fn decode_e5_stream_transfers_standalone_d8_carrier() {
+    let mut stream = e5_d8_rolling_ball_stream();
+    for id in 100..109 {
+        append_e5_record(&mut stream, 0xfe, id, &[]);
+    }
+    let file = object_main_catpart(&stream);
+    let mut cur = Cursor::new(file);
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .expect("E5 D8 decode");
+
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    let [procedural] = result.ir().model.procedural_surfaces.as_slice() else {
+        panic!("one standalone rolling-ball construction");
+    };
+    assert_eq!(procedural.surface, result.ir().model.surfaces[0].id);
+    assert!(matches!(
+        procedural.definition,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
+            degree: 5,
+            ref knots,
+            ref multiplicities,
+            ref sites,
+        } if knots == &[2.0, 5.0] && multiplicities == &[6, 6] && sites.len() == 2
+    ));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code.category() == cadmpeg_ir::report::LossCategory::Topology
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+    }));
+
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
 fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     let stream = e5_torus_topology_stream();
     crate::families::e5::graph::parse_topology(&stream).expect("generated E5 topology");

@@ -4,12 +4,12 @@
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
-    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceCurveFamily,
-    SurfaceGeometry,
+    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, Surface,
+    SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
-    RegionId, ShellId, SurfaceId, VertexId,
+    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::DecodeReport;
@@ -70,6 +70,7 @@ pub(crate) fn try_decode_e5(
     let stream = &scan.data[stream_range];
     let circles = crate::families::e5::records::e5_circles(stream);
     let mut surfaces = crate::families::e5::records::e5_surfaces(stream);
+    let rolling_ball_jets = crate::families::e5::records::e5_rolling_ball_jets(stream);
     let topology = crate::families::e5::graph::parse_topology(stream);
     let vertex_count = topology.as_ref().map_or_else(
         || {
@@ -95,7 +96,11 @@ pub(crate) fn try_decode_e5(
     if let Some(topology) = &topology {
         append_e5_planes(stream, topology, &points, &mut surfaces);
     }
-    if circles.is_empty() && surfaces.is_empty() && points.is_empty() {
+    if circles.is_empty()
+        && surfaces.is_empty()
+        && rolling_ball_jets.is_empty()
+        && points.is_empty()
+    {
         return None;
     }
     let mut ir = CadIr::empty(Units::default());
@@ -175,6 +180,44 @@ pub(crate) fn try_decode_e5(
             source_object: None,
         });
     }
+    for (index, jet) in rolling_ball_jets.iter().enumerate() {
+        let surface_index = surfaces.len() + index;
+        let surface_id = SurfaceId(format!("catia:e5:surf#{surface_index}"));
+        annotate(
+            &mut annotations,
+            &surface_id,
+            "e5_0d_03",
+            jet.pos as u64,
+            "rolling_ball_jet_carrier",
+            Exactness::ByteExact,
+        );
+        annotations.derived(&surface_id, "geometry");
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        let procedural_id =
+            ProceduralSurfaceId(format!("catia:e5:procedural-surf#{surface_index}"));
+        annotate(
+            &mut annotations,
+            &procedural_id,
+            "e5_0d_03",
+            jet.pos as u64,
+            "rolling_ball_jet_definition",
+            Exactness::ByteExact,
+        );
+        annotations
+            .derived(&procedural_id, "surface")
+            .derived(&procedural_id, "definition");
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: procedural_id,
+            surface: surface_id,
+            definition: jet.definition(),
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+    }
     let mut topology_ir = ir.clone();
     let mut topology_annotations = annotations.clone();
     let topology_transferred = topology.as_ref().is_some_and(|topology| {
@@ -203,7 +246,7 @@ pub(crate) fn try_decode_e5(
         vec![CatiaLossCode::TopologyE5GaugeSubstituted.note(message)]
     } else {
         vec![CatiaLossCode::TopologyE5GraphUnclosed.note(
-            "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
+            "E5 carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding.",
         )]
     };
     insert_unresolved_carrier_loss(&ir, &mut losses);
