@@ -1531,8 +1531,8 @@ fn dynamic_line_distance_does_not_bypass_explicit_operands() {
     let second = line_entity(
         "second-line",
         &sketch,
-        Point2::new(0.0, 2.0),
-        Point2::new(10.0, 2.0),
+        Point2::new(0.0, 2.000_000_01),
+        Point2::new(10.0, 2.000_000_01),
     );
     let mut relation = dynamic_relation(FeatureInputRelationFamily::LineLineDistance, [1, 11]);
     relation.operands[0].entity_ref = Some("explicit-line".into());
@@ -1542,12 +1542,32 @@ fn dynamic_line_distance_does_not_bypass_explicit_operands() {
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
-            &[first, second],
+            &[first.clone(), second.clone()],
             &HashMap::new(),
             &HashMap::new(),
         ),
         None
     );
+
+    let known_marker = marker("known-marker", 0, 10, SketchInputKind::LineOrCircle, None);
+    let markers_by_id = HashMap::from([(known_marker.id.as_str(), &known_marker)]);
+    let loci_by_marker = HashMap::from([(
+        known_marker.id.clone(),
+        vec![SketchLocus::Entity(first.id.clone())],
+    )]);
+    relation.operands[0].entity_ref = Some(known_marker.id.clone());
+    assert!(matches!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(2.0)),
+            &sketch,
+            &[first, second],
+            &markers_by_id,
+            &loci_by_marker,
+        ),
+        Some(SketchConstraintDefinition::Distance { entities, .. })
+            if entities == vec![SketchEntityId("first-line".into()), SketchEntityId("second-line".into())]
+    ));
 }
 
 #[test]
@@ -2029,7 +2049,6 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
         })
     );
 }
-
 #[test]
 fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
     let sketch = SketchId("sketch".into());
@@ -2063,7 +2082,6 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         entities: entities.iter().map(|entity| entity.id.clone()).collect(),
         parameter: parameter.id.clone(),
     };
-
     assert!(!relation_constraint_is_inactive(
         Some(&parameter),
         &definition,

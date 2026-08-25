@@ -494,6 +494,27 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             markers_by_id,
             loci_by_marker,
         )
+        .or_else(|| {
+            let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
+                parameter.value.as_ref()
+            else {
+                return None;
+            };
+            let unique_partner = |known: &SketchEntityId| {
+                unique_profile_matched_entity(sketch, known, sketch_entities, |known, candidate| {
+                    line_line_distance(known, candidate).is_some_and(|measured| {
+                        same_relation_dimension_length(measured, expected.0)
+                    })
+                })
+            };
+            let first = curve(0);
+            let second = curve(1);
+            match (first, second) {
+                (Some(first), None) => Some((first.clone(), unique_partner(&first)?)),
+                (None, Some(second)) => Some((unique_partner(&second)?, second.clone())),
+                _ => None,
+            }
+        })
     } else {
         None
     };
