@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "cb576b39476822112b1bd0f3b262395c539ebb75"
+measured_at = "febe231c142c226fcc82162062154a81fbe4a825"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; lexically mask Rust comments and literals, then strip cfg(test)-attributed items with blank-preserving elision. bare tolerance literals count at use sites; named const/static numeric initializers are declarations and are excluded. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -26,11 +26,8 @@ path_test_includes = 0
 test_line_debt = 0
 production_line_debt = 0
 
-[reasons]
-from_endian_bytes = "The 70 remaining calls are principled exceptions: View's 16 typed-reader implementations; CATIA's seven padded or partial-width handle/tag lanes; Creo's 36 compact-token IEEE reconstructions; F3D's two output color packings; NX's six reconstructed color, checksum, and footer-fingerprint lanes; SLDPRT's one output color packing; the inspect scalar's one normalized local lane; and the fuzz generator's one RGB packing. None is a standard-width read from a bounded decode window."
-
 [ceilings]
-from_endian_bytes = 70
+from_endian_bytes = 0
 codec_error_malformed_format = 0
 loss_note_struct_literals = 0
 bare_tolerance_literals = 0
