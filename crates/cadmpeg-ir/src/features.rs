@@ -1577,6 +1577,8 @@ pub enum FeatureDefinition {
         /// Whether adjacent faces extend to heal the resulting boundary.
         heal: bool,
     },
+    /// Body-affecting face deletion whose selected faces and healing policy remain unresolved.
+    DeleteFaceUnresolved,
     /// Replaces selected faces with another face set.
     ReplaceFace {
         /// Faces removed from the target body.
@@ -1762,6 +1764,7 @@ impl FeatureDefinition {
             Self::Pattern { .. } => Some("pattern"),
             Self::Combine { .. } => Some("body combine"),
             Self::ReplaceFace { .. } => Some("replace face"),
+            Self::DeleteFace { .. } | Self::DeleteFaceUnresolved => Some("delete face"),
             _ => None,
         }
     }

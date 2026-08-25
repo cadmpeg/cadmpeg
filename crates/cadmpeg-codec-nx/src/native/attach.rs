@@ -5840,6 +5840,7 @@ fn body_writing_unresolved_feature_definition(
             second_faces: FaceSelection::Unresolved,
             radius: RadiusSpec::Unresolved { form: None },
         }),
+        "DELETE FACE" => Some(FeatureDefinition::DeleteFaceUnresolved),
         "THREADS" => Some(FeatureDefinition::ThreadUnresolved),
         "DETAILED_THREAD" => Some(FeatureDefinition::DetailedThreadUnresolved),
         _ => None,

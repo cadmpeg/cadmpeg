@@ -43,6 +43,7 @@ mod cone;
 mod configuration;
 mod copy_face;
 mod cylinder;
+mod delete_face;
 mod enlarge;
 mod extract_datum_axis;
 mod extract_face;

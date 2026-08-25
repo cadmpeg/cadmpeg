@@ -2473,7 +2473,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             | FeatureDefinition::LinkedFaceUnresolved
             | FeatureDefinition::FillHoleUnresolved
             | FeatureDefinition::MoveObjectUnresolved
-            | FeatureDefinition::BoundarySurfaceUnresolved => {}
+            | FeatureDefinition::BoundarySurfaceUnresolved
+            | FeatureDefinition::DeleteFaceUnresolved => {}
             FeatureDefinition::ReferenceImage {
                 asset,
                 origin,

@@ -1615,7 +1615,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::ThreadUnresolved
             | FeatureDefinition::DetailedThreadUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved
-            | FeatureDefinition::DraftUnresolved => true,
+            | FeatureDefinition::DraftUnresolved
+            | FeatureDefinition::DeleteFaceUnresolved => true,
             }
         })
         .count();

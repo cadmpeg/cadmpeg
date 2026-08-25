@@ -793,6 +793,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label and body-write relation identify a body-affecting sphere family, but the bounded payload and object-index lanes do not assign unique center, radius, placement, angular-extent, or result-mode roles.
 
+### OM-55. `DELETE FACE` construction roles
+
+**Question.** Which serialized fields define the selected faces and healing policy of a body-writing `DELETE FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 defines a `DELETE FACE` record with a body-write frame as a body-affecting face-deletion construction. The label and body-write frame establish the family, but the operation's face selection and healing policy remain unresolved.
+
+**Need.** We must identify the selected faces and healing policy to construct a complete neutral delete-face operation.
+
+**Conflict.** The label and body-write relation identify the family, but the admitted object-index and payload lanes do not assign a unique face selection or healing-policy value. Encoding a default healing value would invent operation state.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

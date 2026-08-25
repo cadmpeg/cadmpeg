@@ -2216,6 +2216,12 @@ remain unresolved until the serialized construction roles establish a complete
 face-blend operation. A record without the body-write frame remains native
 because the label alone does not assign a body result.
 
+A `DELETE FACE` operation with a body-write frame identifies a body-affecting
+face-deletion construction. Its selected faces and healing policy remain
+unresolved until the serialized construction roles establish a complete
+delete-face operation. A record without the body-write frame remains native
+because the label alone does not assign a body result.
+
 The `FILL_HOLE` operation label identifies a body-affecting hole-fill
 construction. Its source-hole, fill, continuity, and healing roles remain
 unresolved until the serialized construction roles establish a complete
