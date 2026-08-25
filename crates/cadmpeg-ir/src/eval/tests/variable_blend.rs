@@ -149,18 +149,58 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
     assert_eq!(partials.du, Vector3::new(8.0, 3.5, 8.5));
     assert_eq!(partials.dv, Vector3::new(1.5, 3.75, 1.75));
 
-    let ProceduralSurfaceDefinition::VariableBlend { construction } =
-        &mut ir.model.procedural_surfaces[0].definition
-    else {
-        unreachable!()
-    };
-    construction.radius_kind = VariableBlendRadiusKind::TwoRadii;
-    construction.second_value = Some(construction.first_value.clone());
+    {
+        let ProceduralSurfaceDefinition::VariableBlend { construction } =
+            &mut ir.model.procedural_surfaces[0].definition
+        else {
+            unreachable!()
+        };
+        construction.radius_kind = VariableBlendRadiusKind::TwoRadii;
+        construction.second_value = Some(construction.first_value.clone());
+    }
     let index = crate::index::ModelIndex::new(&ir);
     assert_eq!(
         model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
         Some(Point3::new(4.0, 4.375, 2.125))
     );
+
+    let zero_radius = VariableBlendValue {
+        name: "two_ends".into(),
+        modern_flag: false,
+        discriminator: 0,
+        calibrated: 0,
+        payload: VariableBlendValuePayload::TwoEnds {
+            parameters: [0.0, 1.0],
+            radii: [0.0, 0.0],
+        },
+    };
+    if let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &mut ir.model.procedural_surfaces[0].definition
+    {
+        construction.cross_section = Some(VariableBlendCrossSection::RoundedChamfer {
+            radius: Some(Box::new(zero_radius.clone())),
+        });
+    } else {
+        unreachable!()
+    }
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
+        Some(Point3::new(4.0, 4.375, 2.125))
+    );
+    assert!(variable_blend_is_zero_radius(&VariableBlendValue {
+        name: "constant".into(),
+        modern_flag: false,
+        discriminator: 0,
+        calibrated: 0,
+        payload: VariableBlendValuePayload::Constant {
+            parameters: [0.0, 0.0],
+            radius: 0.0,
+            variable_chamfer: 0,
+            chamfer_type: 0,
+            nested: Box::new(zero_radius),
+        },
+    }));
 }
 
 #[test]

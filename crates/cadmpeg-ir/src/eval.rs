@@ -4542,17 +4542,40 @@ fn cacheless_variable_blend_domain_contains(
             })
 }
 
+fn variable_blend_is_zero_radius(value: &crate::geometry::VariableBlendValue) -> bool {
+    match &value.payload {
+        crate::geometry::VariableBlendValuePayload::TwoEnds {
+            parameters: [first_parameter, second_parameter],
+            radii: [first_radius, second_radius],
+        } => {
+            first_parameter.is_finite()
+                && second_parameter.is_finite()
+                && first_parameter != second_parameter
+                && *first_radius == 0.0
+                && *second_radius == 0.0
+        }
+        crate::geometry::VariableBlendValuePayload::Constant { radius, nested, .. } => {
+            *radius == 0.0 && variable_blend_is_zero_radius(nested)
+        }
+        _ => false,
+    }
+}
+
 fn cacheless_ruled_variable_blend_partials(
     index: &crate::index::ModelIndex<'_>,
     construction: &crate::geometry::VariableBlendConstruction,
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
+    let Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius }) =
+        construction.cross_section.as_ref()
+    else {
+        return None;
+    };
     if !cacheless_variable_blend_domain_contains(construction, u, v)
-        || !matches!(
-            construction.cross_section,
-            Some(crate::geometry::VariableBlendCrossSection::RoundedChamfer { radius: None })
-        )
+        || radius
+            .as_deref()
+            .is_some_and(|radius| !variable_blend_is_zero_radius(radius))
     {
         return None;
     }
