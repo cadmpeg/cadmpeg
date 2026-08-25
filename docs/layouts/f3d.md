@@ -2044,7 +2044,7 @@ The member repeats within each selected region. Region and member counts and the
 
 Spec §3.1 · layout: byte offsets · size: 363 B
 
-Offsets are relative to the class-377 primary indexed header; the generic scope suffix and paired header remain part of the fixed frame.
+Offsets are relative to the primary indexed header for either admitted class pair; the generic scope suffix and paired header remain part of the fixed frame.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

@@ -2639,7 +2639,7 @@ pub(crate) mod sketch_profile_region_member {
 /// Spec §3.1. Record length 363 B.
 ///
 /// ```text
-/// Offsets are relative to the class-377 primary indexed header; the generic scope suffix and paired header remain part of the fixed frame.
+/// Offsets are relative to the primary indexed header for either admitted class pair; the generic scope suffix and paired header remain part of the fixed frame.
 /// ```
 pub(crate) mod base_feature_class_377_prefix {
     /// Record length in bytes. Spec §3.1.

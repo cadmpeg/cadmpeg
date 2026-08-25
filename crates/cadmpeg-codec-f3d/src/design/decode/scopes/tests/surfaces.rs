@@ -844,7 +844,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
 }
 
 #[test]
-fn base_feature_scope_decodes_class_377_body_based_on_faces_envelope() {
+fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     use crate::layout::base_feature_class_377_prefix as class_377;
 
     let mut bytes = vec![0u8; class_377::LEN];
@@ -966,6 +966,14 @@ fn base_feature_scope_decodes_class_377_body_based_on_faces_envelope() {
         *tag_body_based_on_faces_offset,
         class_377::TAG_BODY_BASED_ON_FACES_VALUE as u64
     );
+
+    let mut class_365_scope = scope.clone();
+    class_365_scope.class_tag = "365".into();
+    class_365_scope.paired_class_tag = "262".into();
+    let class_365_construction = exact_base_feature_construction(&bytes, &class_365_scope)
+        .expect("class-365/class-262 Base Feature frame is canonical");
+    assert_eq!(class_365_construction, construction);
+
     let serialized = serde_json::to_value(&construction).expect("serialize body-reference form");
     assert_eq!(
         serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)

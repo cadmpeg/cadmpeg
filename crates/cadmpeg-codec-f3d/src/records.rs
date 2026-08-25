@@ -3714,7 +3714,8 @@ pub enum DesignBaseFeatureConstruction {
         /// Six-byte source fields parallel to `result_records`.
         result_fields: Vec<[u8; 6]>,
     },
-    /// Direct-modeling body-reference envelope used by the class-377/class-259 form.
+    /// Direct-modeling body-reference envelope used by the class-365/class-262 and
+    /// class-377/class-259 forms.
     BodyBasedOnFaces {
         /// The Design body entity suffix exposed by the envelope.
         body_entity_suffixes: Vec<u64>,

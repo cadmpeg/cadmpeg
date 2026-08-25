@@ -6296,9 +6296,9 @@ anchor = "two zero u32 values"
 name = "base_feature_class_377_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "The class-377 primary paired with class-259 uses a direct body-reference envelope."
+anchor = "The class-365 primary paired with class-262 and the class-377 primary paired with class-259 use the same direct body-reference envelope."
 size = 363
-note = "Offsets are relative to the class-377 primary indexed header; the generic scope suffix and paired header remain part of the fixed frame."
+note = "Offsets are relative to the primary indexed header for either admitted class pair; the generic scope suffix and paired header remain part of the fixed frame."
 
 [[record.gap]]
 offset = 0
