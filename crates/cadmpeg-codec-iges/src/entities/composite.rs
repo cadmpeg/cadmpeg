@@ -692,6 +692,37 @@ fn concatenate_nurbs(
     })
 }
 
+fn bounded_edge_for_curve(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    tolerance: f64,
+    index: Option<&CompositeIndex>,
+) -> Option<CompositeEdge> {
+    let curve = match index {
+        Some(index) => index
+            .curve_positions
+            .get(curve_id)
+            .and_then(|position| ir.model.curves.get(*position))?,
+        None => ir.model.curves.iter().find(|curve| curve.id == *curve_id)?,
+    };
+    let edge_candidates: Cow<'_, [CompositeEdge]> = match index {
+        Some(index) => Cow::Borrowed(index.edges.get(curve_id).map_or(&[][..], Vec::as_slice)),
+        None => Cow::Owned(
+            ir.model
+                .edges
+                .iter()
+                .filter(|edge| edge.curve.as_ref() == Some(curve_id))
+                .map(|edge| CompositeEdge {
+                    start: edge.start.clone(),
+                    end: edge.end.clone(),
+                    param_range: edge.param_range,
+                })
+                .collect(),
+        ),
+    };
+    select_composite_edge(ir, index, &curve.geometry, &edge_candidates, tolerance)
+}
+
 fn bounded_nurbs_for_id(
     ir: &CadIr,
     curve_id: &CurveId,
@@ -750,28 +781,7 @@ fn bounded_nurbs_for_id(
         let range = [0.0, *concatenated.boundaries.last()?];
         return Some((concatenated.nurbs, range));
     }
-    let edge_candidates: Cow<'_, [CompositeEdge]> = match index {
-        Some(index) => Cow::Borrowed(index.edges.get(curve_id).map_or(&[][..], Vec::as_slice)),
-        None => Cow::Owned(
-            ir.model
-                .edges
-                .iter()
-                .filter(|edge| edge.curve.as_ref() == Some(curve_id))
-                .map(|edge| CompositeEdge {
-                    start: edge.start.clone(),
-                    end: edge.end.clone(),
-                    param_range: edge.param_range,
-                })
-                .collect(),
-        ),
-    };
-    let edge = select_composite_edge(
-        ir,
-        index,
-        &curve.geometry,
-        &edge_candidates,
-        join_tolerance.unwrap_or(0.0),
-    )?;
+    let edge = bounded_edge_for_curve(ir, curve_id, join_tolerance.unwrap_or(0.0), index)?;
     let interval = edge.param_range?;
     match &curve.geometry {
         CurveGeometry::Nurbs(nurbs) => Some((nurbs.clone(), interval)),
@@ -845,6 +855,14 @@ pub(super) fn bounded_nurbs_for_curve(
     index: Option<&CompositeIndex>,
 ) -> Option<(NurbsCurve, [f64; 2])> {
     bounded_nurbs_for_id(ir, curve_id, 0, None, ctx, index)
+}
+
+pub(super) fn bounded_parameter_range_for_curve(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    index: Option<&CompositeIndex>,
+) -> Option<[f64; 2]> {
+    bounded_edge_for_curve(ir, curve_id, 0.0, index)?.param_range
 }
 
 pub(super) fn bounded_nurbs_for_curve_with_tolerance(

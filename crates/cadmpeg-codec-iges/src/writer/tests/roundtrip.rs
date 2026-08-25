@@ -11,7 +11,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_test_support::golden::Harness;
 
-use crate::{IgesCodec, IgesEncoder};
+use crate::test_support::hyperbola_surface_of_revolution_file;
+use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 /// Extension of the committed fixture inputs (matches `golden_tests`).
 const FIXTURE_EXTENSION: &str = "igs";
@@ -73,5 +74,155 @@ fn lossless_exports_round_trip_to_identical_ir() {
     assert!(
         written_any,
         "no fixture took the lossless write path — test is vacuous"
+    );
+}
+
+#[test]
+fn semantic_writer_emits_type120_for_cacheless_hyperbola_revolution() {
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
+        assert_type120_round_trip(version);
+    }
+}
+
+fn assert_type120_round_trip(version: IgesVersion) {
+    const EPS_REVOLUTION_ROUND_TRIP: f64 = 1.0e-10;
+
+    let original = IgesCodec
+        .decode(
+            &mut Cursor::new(hyperbola_surface_of_revolution_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("hyperbola revolution fixture decodes");
+    let plan = Encoder::plan(
+        &IgesEncoder::new(IgesWriteOptions { version }),
+        EncodeInput {
+            ir: original.ir(),
+            fidelity: None,
+        },
+    )
+    .expect("cache-less revolution has an exact Type 120 writer path");
+    let mut produced = Vec::new();
+    let report = plan
+        .write_to(&mut produced)
+        .expect("Type 120 output writes");
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| loss.code != crate::loss::IgesLossCode::ProceduralReduced.kind()),
+        "{version:?}: {:#?}",
+        report.losses
+    );
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(produced), &DecodeOptions::default())
+        .expect("Type 120 output decodes");
+    assert_eq!(
+        round_trip
+            .ir()
+            .source
+            .as_ref()
+            .expect("Type 120 output has source metadata")
+            .attributes["iges_version"],
+        version.name()
+    );
+    let source_surface = original
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| {
+            original
+                .ir()
+                .model
+                .procedural_surfaces
+                .iter()
+                .any(|procedural| {
+                    procedural.surface == surface.id
+                        && matches!(
+                            &procedural.definition,
+                            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
+                        )
+                })
+        })
+        .expect("source revolution surface");
+    let Some(round_surface) = round_trip.ir().model.surfaces.iter().find(|surface| {
+        round_trip
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .any(|procedural| {
+                procedural.surface == surface.id
+                    && matches!(
+                        &procedural.definition,
+                        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution { .. }
+                    )
+            })
+    }) else {
+        panic!(
+            "{version:?}: round-trip revolution surface missing; losses={:#?}",
+            round_trip.report().losses
+        );
+    };
+    let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
+    let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+    let source_range = original
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == source_surface.id)
+        .and_then(|procedural| match &procedural.definition {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+                parameter_interval: Some(range),
+                ..
+            } => Some(*range),
+            _ => None,
+        })
+        .expect("source revolution interval");
+    let round_range = round_trip
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == round_surface.id)
+        .and_then(|procedural| match &procedural.definition {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+                parameter_interval: Some(range),
+                ..
+            } => Some(*range),
+            _ => None,
+        })
+        .expect("round-trip revolution interval");
+    for (fraction, angle) in [(0.25, 0.0), (0.75, 0.7)] {
+        let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
+        let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
+        let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            &source_index,
+            &source_surface.id,
+            source_parameter,
+            angle,
+        )
+        .expect("source revolution evaluates");
+        let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+            &round_index,
+            &round_surface.id,
+            round_parameter,
+            angle,
+        )
+        .expect("round-trip revolution evaluates");
+        assert!(
+            source_point.distance(round_point) < EPS_REVOLUTION_ROUND_TRIP,
+            "source={source_point:?} round_trip={round_point:?}"
+        );
+    }
+    assert!(
+        round_trip
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != crate::loss::IgesLossCode::EntityNotProjected.kind()),
+        "{:#?}",
+        round_trip.report().losses
     );
 }

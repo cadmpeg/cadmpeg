@@ -274,6 +274,100 @@ fn decode_solves_a_surface_of_revolution_from_an_ellipse_carrier() {
 }
 
 #[test]
+fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
+    const EPS_REVOLUTION_POINT: f64 = 1.0e-12;
+
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let fixtures = [
+        ("5.3", hyperbola_surface_of_revolution_file()),
+        (
+            "4.0",
+            hyperbola_surface_of_revolution_file_with_global(global_v4),
+        ),
+        (
+            "5.0",
+            hyperbola_surface_of_revolution_file_with_global(global_v5),
+        ),
+    ];
+    for (version, bytes) in fixtures {
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            result.ir().source.as_ref().unwrap().attributes["iges_version"],
+            version
+        );
+
+        let surface = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.0 == "iges:model:surface#D5")
+            .expect("hyperbola revolution surface");
+        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction } = &surface.geometry
+        else {
+            panic!("expected a construction-backed revolution surface");
+        };
+        let procedural = result
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.id == *construction)
+            .expect("hyperbola revolution construction");
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+            directrix,
+            parameter_interval: Some(parameter_interval),
+            angular_interval,
+            ..
+        } = &procedural.definition
+        else {
+            panic!("expected an exact revolution definition");
+        };
+        assert_eq!(directrix.0, "iges:model:curve#D3");
+        assert_eq!(*angular_interval, [0.0, std::f64::consts::FRAC_PI_2]);
+        let directrix_geometry = &result
+            .ir()
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *directrix)
+            .expect("hyperbola directrix")
+            .geometry;
+        assert!(matches!(
+            directrix_geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Hyperbola { .. }
+        ));
+        let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
+        let source_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
+            .expect("hyperbola directrix evaluates");
+        let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
+        let quarter_turn = cadmpeg_ir::eval::model_surface_point_by_id(
+            &index,
+            &surface.id,
+            parameter,
+            std::f64::consts::FRAC_PI_2,
+        )
+        .expect("hyperbola revolution evaluates");
+        let expected = Point3::new(-source_point.y, source_point.x, source_point.z);
+        assert!(quarter_turn.distance(expected) < EPS_REVOLUTION_POINT);
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+            "{:#?}",
+            result.report().losses
+        );
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
     let result = IgesCodec
         .decode(

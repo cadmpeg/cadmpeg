@@ -74,8 +74,8 @@ const WRITER_AUTHOR_NAME: &str = "author";
 const WRITER_AUTHOR_ORGANIZATION: &str = "cadmpeg";
 const WRITER_DRAFTING_STANDARD_FLAG: i64 = 0;
 const WRITER_ENTITY_TYPES: &[u32] = &[
-    100, 102, 104, 110, 116, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192, 194, 196, 198,
-    502, 504, 508, 510, 514,
+    100, 102, 104, 110, 116, 120, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192, 194, 196,
+    198, 502, 504, 508, 510, 514,
 ];
 
 /// Plan an IGES export, selecting replay only after checking the document
@@ -240,7 +240,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
         surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for surface in surfaces {
-            append_surface_entities(&mut entities, &surface.geometry)?;
+            append_surface_entities(&mut entities, ir, &surface.geometry)?;
         }
         let mut edges = ir.model.edges.iter().collect::<Vec<_>>();
         edges.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
@@ -347,20 +347,19 @@ impl TargetProfile {
         match self.version {
             crate::IgesVersion::V4_0 => matches!(
                 (entity.type_code, entity.form),
-                (100 | 102 | 110 | 116 | 124 | 126 | 128 | 142 | 144, 0) | (104, 0 | 2 | 3)
+                (100 | 102 | 110 | 116 | 120 | 124 | 126 | 128 | 142 | 144, 0) | (104, 0 | 2 | 3)
             ),
             crate::IgesVersion::V5_0 => matches!(
                 (entity.type_code, entity.form),
                 (
-                    100 | 102 | 110 | 116 | 124 | 126 | 128 | 141 | 142 | 143 | 144,
+                    100 | 102 | 110 | 116 | 120 | 124 | 126 | 128 | 141 | 142 | 143 | 144,
                     0
                 ) | (104, 2 | 3)
             ),
             crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
                 match entity.type_code {
-                    100 | 102 | 110 | 116 | 123 | 124 | 126 | 128 | 141 | 142 | 143 | 144 | 186 => {
-                        entity.form == 0
-                    }
+                    100 | 102 | 110 | 116 | 120 | 123 | 124 | 126 | 128 | 141 | 142 | 143 | 144
+                    | 186 => entity.form == 0,
                     104 => matches!(entity.form, 0 | 2 | 3),
                     190 | 192 | 194 | 196 | 198 => entity.form == 1,
                     502 | 504 | 508 | 510 => entity.form == 1,
@@ -488,6 +487,9 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                     procedural.id, procedural.surface
                 ))
             })?;
+        if is_native_type120_surface(&surface.geometry, &procedural.id, &procedural.definition) {
+            continue;
+        }
         if !matches!(
             &surface.geometry,
             SurfaceGeometry::Plane { .. }
@@ -532,7 +534,28 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             )));
         }
     }
-    let surface_count = ir.model.procedural_surfaces.len();
+    let surface_count = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .filter(|procedural| {
+            if matches!(
+                &procedural.definition,
+                ProceduralSurfaceDefinition::CurveBounded { .. }
+            ) {
+                return false;
+            }
+            let Some(surface) = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == procedural.surface)
+            else {
+                return true;
+            };
+            !is_native_type120_surface(&surface.geometry, &procedural.id, &procedural.definition)
+        })
+        .count();
     let curve_count = ir.model.procedural_curves.len();
     if surface_count == 0 && curve_count == 0 {
         return Ok(Vec::new());
@@ -540,6 +563,28 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
     Ok(vec![IgesLossCode::ProceduralReduced.note(format!(
         "{surface_count} procedural surface definition(s) and {curve_count} procedural curve definition(s) were reduced to writable solved carriers"
     ))])
+}
+
+fn is_native_type120_surface(
+    geometry: &SurfaceGeometry,
+    construction: &cadmpeg_ir::ids::ProceduralSurfaceId,
+    definition: &ProceduralSurfaceDefinition,
+) -> bool {
+    matches!(
+        (geometry, definition),
+        (
+            SurfaceGeometry::Procedural {
+                construction: owner
+            },
+            ProceduralSurfaceDefinition::Revolution {
+                angular_parameter_interval: None,
+                parameter_interval: Some(_),
+                transposed: false,
+                revision_form: None,
+                ..
+            }
+        ) if owner == construction
+    )
 }
 
 fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
@@ -701,7 +746,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             face.id, face.surface
                         ))
                     })?;
-                surface_entities(&surface.geometry, 0)?;
+                surface_entities_for_ir(ir, &surface.geometry, 0)?;
                 if matches!(surface.geometry, SurfaceGeometry::Cylinder { .. })
                     && face.loops.iter().any(|loop_id| {
                         let Some(loop_) = ir.model.loops.iter().find(|loop_| loop_.id == *loop_id)
@@ -1077,7 +1122,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
-        let index = append_surface_entities(&mut entities, &surface.geometry)?;
+        let index = append_surface_entities(&mut entities, ir, &surface.geometry)?;
         surface_indices.insert(surface.id.as_str().to_owned(), index);
     }
 
@@ -1849,7 +1894,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
-        let index = append_surface_entities(&mut entities, &surface.geometry)?;
+        let index = append_surface_entities(&mut entities, ir, &surface.geometry)?;
         surface_indices.insert(surface.id.as_str().to_owned(), index);
     }
 
@@ -2217,7 +2262,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     face.id, face.surface
                 ))
             })?;
-        surface_entities(&surface.geometry, 0)?;
+        surface_entities_for_ir(ir, &surface.geometry, 0)?;
         let loops = face_loop_order(ir, face)?;
         if loops.is_empty() {
             return Err(CodecError::NotImplemented(format!(
@@ -3921,10 +3966,11 @@ fn analytic_surface_family(geometry: &SurfaceGeometry) -> Option<AnalyticSurface
 
 fn append_surface_entities(
     entities: &mut Vec<Entity>,
+    ir: &CadIr,
     geometry: &SurfaceGeometry,
 ) -> Result<usize, CodecError> {
     let base_index = entities.len();
-    let additions = surface_entities(geometry, base_index)?;
+    let additions = surface_entities_for_ir(ir, geometry, base_index)?;
     let surface_offset = additions
         .len()
         .checked_sub(1)
@@ -3934,6 +3980,139 @@ fn append_surface_entities(
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     entities.extend(additions);
     Ok(surface_index)
+}
+
+fn surface_entities_for_ir(
+    ir: &CadIr,
+    geometry: &SurfaceGeometry,
+    base_index: usize,
+) -> Result<Vec<Entity>, CodecError> {
+    match geometry {
+        SurfaceGeometry::Procedural { construction } => {
+            revolution_surface_entities(ir, construction, base_index)
+        }
+        _ => surface_entities(geometry, base_index),
+    }
+}
+
+fn revolution_surface_entities(
+    ir: &CadIr,
+    construction: &cadmpeg_ir::ids::ProceduralSurfaceId,
+    base_index: usize,
+) -> Result<Vec<Entity>, CodecError> {
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|candidate| candidate.id == *construction)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "IGES procedural surface construction {construction} is missing"
+            ))
+        })?;
+    let ProceduralSurfaceDefinition::Revolution {
+        directrix,
+        axis_origin,
+        axis_direction,
+        angular_interval,
+        angular_parameter_interval,
+        parameter_interval,
+        transposed,
+        revision_form,
+    } = &procedural.definition
+    else {
+        return Err(CodecError::NotImplemented(
+            "IGES semantic writer only encodes procedural Revolution surfaces as Type 120".into(),
+        ));
+    };
+    if angular_parameter_interval.is_some() || *transposed || revision_form.is_some() {
+        return Err(CodecError::NotImplemented(
+            "IGES Type 120 output requires the default revolution parameterization".into(),
+        ));
+    }
+    let [start_angle, terminate_angle] = *angular_interval;
+    let sweep = terminate_angle - start_angle;
+    if !start_angle.is_finite()
+        || !terminate_angle.is_finite()
+        || !sweep.is_finite()
+        || sweep <= 0.0
+        || sweep > TAU + ANGULAR_TOLERANCE
+    {
+        return Err(CodecError::Malformed(
+            "IGES Type 120 angular interval is outside (0, 2*pi]".into(),
+        ));
+    }
+    let terminate_angle = start_angle + sweep.min(TAU);
+    let [start_parameter, terminate_parameter] = parameter_interval.ok_or_else(|| {
+        CodecError::NotImplemented(
+            "IGES Type 120 output requires a bounded generatrix parameter interval".into(),
+        )
+    })?;
+    if !start_parameter.is_finite()
+        || !terminate_parameter.is_finite()
+        || start_parameter >= terminate_parameter
+    {
+        return Err(CodecError::Malformed(
+            "IGES Type 120 generatrix parameter interval is invalid".into(),
+        ));
+    }
+    let source_curve = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *directrix)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "IGES Type 120 generatrix {directrix} is missing"
+            ))
+        })?;
+    let geometry = flatten_curve(&source_curve.geometry)?;
+    let start = curve_point(&geometry, start_parameter).ok_or_else(|| {
+        CodecError::Malformed("IGES Type 120 generatrix start cannot be evaluated".into())
+    })?;
+    let end = curve_point(&geometry, terminate_parameter).ok_or_else(|| {
+        CodecError::Malformed("IGES Type 120 generatrix terminate cannot be evaluated".into())
+    })?;
+    ensure_finite_point(start, "Type 120 generatrix start")?;
+    ensure_finite_point(end, "Type 120 generatrix terminate")?;
+    let axis_direction = unit(*axis_direction, "Type 120 axis direction")?;
+    let axis_end = axis_origin.translated(axis_direction, 1.0);
+    let axis_geometry = CurveGeometry::Line {
+        origin: *axis_origin,
+        direction: axis_direction,
+    };
+    let axis_span = CurveSpan {
+        range: [0.0, 1.0],
+        start: *axis_origin,
+        end: axis_end,
+    };
+    let generatrix_span = CurveSpan {
+        range: [start_parameter, terminate_parameter],
+        start,
+        end,
+    };
+    let directrix_index = base_index
+        .checked_add(1)
+        .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
+    Ok(vec![
+        curve_entity(&axis_geometry, Some(&axis_span))?,
+        curve_entity(&geometry, Some(&generatrix_span))?,
+        Entity {
+            type_code: 120,
+            form: 0,
+            label: "REVOLVE",
+            status: "00000000",
+            parameters: format!(
+                "120,{},{},{},{};",
+                reference_marker(base_index),
+                reference_marker(directrix_index),
+                number(start_angle),
+                number(terminate_angle)
+            )
+            .into_bytes(),
+            transform: None,
+        },
+    ])
 }
 
 fn surface_entities(
@@ -5155,7 +5334,7 @@ fn encode_file(
                 entity.type_code.to_string(),
                 parameter_sequence.to_string(),
                 "0".into(),
-                "0".into(),
+                generated_line_font(version, entity.type_code, entity.form).to_string(),
                 "0".into(),
                 "0".into(),
                 transform_sequence.to_string(),
@@ -5217,6 +5396,19 @@ fn encode_file(
     );
     bytes.extend(card(terminate.as_bytes(), b'T', 1)?);
     Ok(bytes)
+}
+
+fn generated_line_font(version: crate::IgesVersion, entity_type: u32, form: i64) -> i64 {
+    if version != crate::IgesVersion::V4_0 {
+        return 0;
+    }
+    match entity_type {
+        106 => i64::from(!matches!(form, 1..=3)),
+        116 | 124 => 0,
+        100 | 102 | 104 | 108 | 110 | 112 | 114 | 118 | 120 | 122 | 126 | 128 | 130 | 140 | 142
+        | 144 => 1,
+        _ => 0,
+    }
 }
 
 fn global_hollerith(value: &str) -> String {

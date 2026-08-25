@@ -1087,6 +1087,46 @@ pub(crate) fn ellipse_surface_of_revolution_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn hyperbola_surface_of_revolution_file() -> Vec<u8> {
+    owned_test_file(&hyperbola_surface_of_revolution_entities())
+}
+
+pub(crate) fn hyperbola_surface_of_revolution_file_with_global(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global_and_line_fonts(
+        &hyperbola_surface_of_revolution_entities(),
+        global,
+        &[(1, 1), (3, 1), (5, 1)],
+    )
+}
+
+fn hyperbola_surface_of_revolution_entities() -> Vec<OwnedTestEntity> {
+    vec![
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "AXIS".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 104,
+            form: 2,
+            label: "HYPERBOL".into(),
+            status: "00010000",
+            parameters:
+                "104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;"
+                    .into(),
+        },
+        OwnedTestEntity {
+            entity_type: 120,
+            form: 0,
+            label: "REVOLVE".into(),
+            status: "00000000",
+            parameters: "120,1,3,0,1.5707963267948966;".into(),
+        },
+    ]
+}
+
 pub(crate) fn trimmed_surface_of_revolution_file() -> Vec<u8> {
     let angle = 0.3_f64;
     let pcurve = format!(

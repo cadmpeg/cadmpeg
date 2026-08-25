@@ -77,6 +77,29 @@ fn bounded_nurbs(
     super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx, None)
 }
 
+fn bounded_evaluable_curve(ir: &CadIr, sequence: u32) -> Option<(CurveGeometry, [f64; 2])> {
+    let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
+    let parameter_interval =
+        super::composite::bounded_parameter_range_for_curve(ir, &curve_id, None)?;
+    if !parameter_interval[0].is_finite()
+        || !parameter_interval[1].is_finite()
+        || parameter_interval[0] >= parameter_interval[1]
+    {
+        return None;
+    }
+    let geometry = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == curve_id)?
+        .geometry
+        .clone();
+    parameter_interval
+        .into_iter()
+        .all(|parameter| cadmpeg_ir::eval::curve_point(&geometry, parameter).is_some())
+        .then_some((geometry, parameter_interval))
+}
+
 #[derive(Clone)]
 struct HomogeneousBezierSpan {
     domain: [f64; 2],
@@ -925,10 +948,81 @@ pub(super) fn project(
         };
         let Some((generatrix, parameter_interval)) = bounded_nurbs(ir, generatrix_sequence, ctx)
         else {
-            losses.push(entity_loss(
-                entry,
-                "generatrix has no bounded polynomial or NURBS carrier",
-            ));
+            let Some((directrix_geometry, parameter_interval)) =
+                bounded_evaluable_curve(ir, generatrix_sequence)
+            else {
+                losses.push(entity_loss(
+                    entry,
+                    "generatrix has no bounded polynomial, NURBS, or exact evaluable carrier",
+                ));
+                continue;
+            };
+            let mut procedural_directrix =
+                CurveId(format!("iges:model:curve#D{generatrix_sequence}"));
+            let mut procedural_axis_origin = axis_origin;
+            let mut procedural_axis_direction = axis_direction;
+            if entry.transform != 0 {
+                let Some(orientation) = similarity_orientation(transform) else {
+                    losses.push(entity_loss(
+                        entry,
+                        "placement cannot preserve the exact revolution parameterization",
+                    ));
+                    continue;
+                };
+                procedural_directrix = CurveId(format!(
+                    "iges:model:curve#D{}-placed-generatrix",
+                    entry.sequence
+                ));
+                ir.model.curves.push(Curve {
+                    id: procedural_directrix.clone(),
+                    geometry: CurveGeometry::Transformed {
+                        basis: Box::new(directrix_geometry),
+                        transform: transform.body_transform(),
+                    },
+                    source_object: Some(source_object(entry)),
+                });
+                procedural_axis_origin = transform.point(axis_origin);
+                let Some(direction) = unit_vector(transform.vector(axis_direction)) else {
+                    losses.push(entity_loss(
+                        entry,
+                        "placement collapses the revolution axis",
+                    ));
+                    continue;
+                };
+                procedural_axis_direction = direction.scale(orientation);
+            }
+            let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+            let procedural_id =
+                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence));
+            ir.model.surfaces.push(Surface {
+                id: surface_id.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: procedural_id.clone(),
+                },
+                source_object: Some(source_object(entry)),
+            });
+            ir.model.procedural_surfaces.push(ProceduralSurface {
+                id: procedural_id,
+                surface: surface_id,
+                definition: ProceduralSurfaceDefinition::Revolution {
+                    directrix: procedural_directrix,
+                    axis_origin: procedural_axis_origin,
+                    axis_direction: procedural_axis_direction,
+                    angular_interval: [start_angle, end_angle],
+                    angular_parameter_interval: None,
+                    parameter_interval: Some(parameter_interval),
+                    transposed: false,
+                    revision_form: None,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: Some([
+                    Some(parameter_interval[0]),
+                    Some(parameter_interval[1]),
+                    None,
+                    None,
+                ]),
+            });
+            decoded.insert(entry.sequence);
             continue;
         };
         let Ok(u_count) = u32::try_from(generatrix.control_points.len()) else {

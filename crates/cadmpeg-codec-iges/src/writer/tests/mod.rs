@@ -403,6 +403,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         (104, 2),
         (104, 3),
         (110, 0),
+        (120, 0),
         (116, 0),
         (123, 0),
         (124, 0),
@@ -462,9 +463,10 @@ fn target_profiles_cover_every_emitted_entity_form() {
             Err(CodecError::NotImplemented(_))
         ));
     }
-    for supported in [(141, 0), (143, 0)] {
+    for supported in [(120, 0), (141, 0), (143, 0)] {
         assert!(ensure_version_support(&[entity(supported)], IgesVersion::V5_0).is_ok());
     }
+    assert!(ensure_version_support(&[entity((120, 0))], IgesVersion::V4_0).is_ok());
     for unsupported in [(104, 0), (123, 0), (186, 0), (190, 1)] {
         assert!(matches!(
             ensure_version_support(&[entity(unsupported)], IgesVersion::V5_0),
