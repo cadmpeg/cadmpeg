@@ -212,12 +212,19 @@ pub(super) fn push_brep_transfer_note(
             diagnostics.empty_component_count
         ));
     }
-    let component_gate = component_gate_reasons.join(", ");
-    let component_gate = if component_gate.is_empty() {
+    let component_gate_status = component_gate_reasons.join(", ");
+    let component_gate_status = if component_gate_status.is_empty() {
         "passed".to_string()
     } else {
-        component_gate
+        component_gate_status
     };
+    let selected_body_count = diagnostics
+        .selected_body_count
+        .map_or_else(|| "unresolved".to_string(), |count| count.to_string());
+    let component_gate = format!(
+        "{} admitted component(s), selected body count {selected_body_count}; {component_gate_status}",
+        diagnostics.admitted_component_count,
+    );
     let pcurve_mismatch_samples = diagnostics
         .vertex_solve
         .pcurve

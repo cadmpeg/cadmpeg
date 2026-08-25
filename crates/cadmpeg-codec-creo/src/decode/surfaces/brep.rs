@@ -182,6 +182,8 @@ pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) body_count_mismatch: bool,
     pub(in super::super) legacy_body_ownership_ambiguous: bool,
     pub(in super::super) empty_component_count: usize,
+    pub(in super::super) admitted_component_count: usize,
+    pub(in super::super) selected_body_count: Option<usize>,
 }
 
 impl BrepTransferDiagnostics {
@@ -476,6 +478,18 @@ impl BrepTransferDiagnostics {
         coverage.insert(
             "brep_empty_component_count".to_string(),
             self.empty_component_count,
+        );
+        coverage.insert(
+            "brep_admitted_component_count".to_string(),
+            self.admitted_component_count,
+        );
+        coverage.insert(
+            "brep_selected_body_count".to_string(),
+            self.selected_body_count.unwrap_or_default(),
+        );
+        coverage.insert(
+            "brep_selected_body_count_unresolved".to_string(),
+            usize::from(self.selected_body_count.is_none()),
         );
     }
 }
@@ -1295,6 +1309,8 @@ pub(in super::super) fn transfer_native_brep(
         .iter()
         .filter(|(faces, curves)| faces.is_empty() && curves.is_empty())
         .count();
+    diagnostics.admitted_component_count = admitted_components.len();
+    diagnostics.selected_body_count = selected_body_count;
     if diagnostics.body_count_mismatch
         || diagnostics.legacy_body_ownership_ambiguous
         || diagnostics.empty_component_count != 0

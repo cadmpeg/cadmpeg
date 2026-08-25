@@ -64,6 +64,21 @@ fn face_admission_diagnostics_report_missing_surface_carrier() {
 }
 
 #[test]
+fn brep_diagnostics_report_component_gate_inputs() {
+    let diagnostics = BrepTransferDiagnostics {
+        admitted_component_count: 3,
+        selected_body_count: None,
+        ..BrepTransferDiagnostics::default()
+    };
+    let mut coverage = BTreeMap::new();
+    diagnostics.record_coverage(&mut coverage);
+
+    assert_eq!(coverage["brep_admitted_component_count"], 3);
+    assert_eq!(coverage["brep_selected_body_count"], 0);
+    assert_eq!(coverage["brep_selected_body_count_unresolved"], 1);
+}
+
+#[test]
 fn face_admission_diagnostics_record_unresolved_boundary_operands() {
     let resolved = crate::topology::HalfEdgeId {
         curve_id: 10,

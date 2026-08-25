@@ -385,6 +385,7 @@
       "ambiguous_visible_surface_row_count": 0,
       "axial_interval_corner_envelope_count": 0,
       "axial_interval_corner_solved_carrier_count": 0,
+      "brep_admitted_component_count": 0,
       "brep_admitted_face_count": 0,
       "brep_body_count_mismatch_count": 0,
       "brep_boundary_curve_count": 0,
@@ -413,6 +414,8 @@
       "brep_rejected_face_missing_surface_carrier_count": 0,
       "brep_rejected_face_two_edge_parameter_proof_count": 0,
       "brep_rejected_face_unresolved_boundary_vertices_count": 0,
+      "brep_selected_body_count": 0,
+      "brep_selected_body_count_unresolved": 0,
       "brep_vertex_analytic_domain_count": 0,
       "brep_vertex_carrier_ambiguous_candidate_count": 0,
       "brep_vertex_carrier_incident_count": 0,
@@ -751,7 +754,7 @@
           "kind": "geometry_not_transferred",
           "namespace": "creo"
         },
-        "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop face additionally requires strict parameter-space containment or a complete common-center, distinct-radius circular-loop proof on a plane. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). Face admission considered 0 candidate(s): 0 passed, 0 emitted, and 0 were rejected. First-failure rejection counts are: none. Component admission gate: passed. Boundary evidence: 0 curve(s), 0 without a unique incidence pair, 0 with an unsolved endpoint vertex. Vertex solver: 0 topological, 0 carrier intersections, 0 carrier-bearing vertices, 0 pair-intersection candidate(s), 0 triple-intersection candidate(s), 0 validated carrier candidate(s), 0 carrier vertices with no candidate, 0 ambiguous carrier vertices, 0 pcurve record(s), 0 pcurve path(s), 0 path(s) without a unique surface, 0 unevaluable path(s), 0 mapped path(s), 0 unmapped record(s), 0 inconsistent record(s), 0 accepted record(s) (0 complete), 0 conflicting curve(s), 0 pcurve endpoint evidence (0 complete), 0 pcurve constraint(s), 0 analytic domain(s), 0 NURBS endpoint constraint(s), 0 directed endpoint conflict(s), 0 solved. 1 PSB geometry section(s) were preserved verbatim as unknown records.",
+        "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop face additionally requires strict parameter-space containment or a complete common-center, distinct-radius circular-loop proof on a plane. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). Face admission considered 0 candidate(s): 0 passed, 0 emitted, and 0 were rejected. First-failure rejection counts are: none. Component admission gate: 0 admitted component(s), selected body count 0; passed. Boundary evidence: 0 curve(s), 0 without a unique incidence pair, 0 with an unsolved endpoint vertex. Vertex solver: 0 topological, 0 carrier intersections, 0 carrier-bearing vertices, 0 pair-intersection candidate(s), 0 triple-intersection candidate(s), 0 validated carrier candidate(s), 0 carrier vertices with no candidate, 0 ambiguous carrier vertices, 0 pcurve record(s), 0 pcurve path(s), 0 path(s) without a unique surface, 0 unevaluable path(s), 0 mapped path(s), 0 unmapped record(s), 0 inconsistent record(s), 0 accepted record(s) (0 complete), 0 conflicting curve(s), 0 pcurve endpoint evidence (0 complete), 0 pcurve constraint(s), 0 analytic domain(s), 0 NURBS endpoint constraint(s), 0 directed endpoint conflict(s), 0 solved. 1 PSB geometry section(s) were preserved verbatim as unknown records.",
         "severity": "blocking"
       },
       {
