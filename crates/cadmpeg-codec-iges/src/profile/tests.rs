@@ -169,6 +169,10 @@ fn v4_admission_matches_its_entity_and_form_table() {
         (148, 0, true),
         (148, 34, true),
         (148, 35, false),
+        (180, 0, true),
+        (180, 1, false),
+        (184, 0, true),
+        (184, 1, false),
         (418, 0, true),
         (418, 1, false),
         (402, 5, true),
@@ -298,6 +302,8 @@ fn v5_0_admission_is_the_4_0_table_plus_v5_0_ecos() {
         (204, 0, true),
         (213, 0, true),
         (316, 0, true),
+        (180, 0, true),
+        (184, 0, true),
         // V5.0 ECO-created form additions.
         (214, 12, true),
         (216, 1, true),
@@ -320,6 +326,8 @@ fn v5_0_admission_is_the_4_0_table_plus_v5_0_ecos() {
         (198, 1, false),
         (502, 1, false),
         (514, 1, false),
+        (180, 1, false),
+        (184, 1, false),
         // Later gray-page and post-5.0 forms remain outside the profile.
         (402, 6, false),
         (402, 8, false),
