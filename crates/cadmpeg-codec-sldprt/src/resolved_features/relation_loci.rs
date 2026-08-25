@@ -425,6 +425,24 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     } else {
         None
     };
+    let dynamic_direct_point_pair = if dynamic
+        && matches!(
+            relation.family,
+            PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance
+        )
+        && dynamic_point_pair.is_none()
+    {
+        unique_dynamic_direct_point_roster_pair(
+            relation,
+            sketch,
+            parameter,
+            sketch_entities,
+            markers_by_id,
+            profile_axis,
+        )
+    } else {
+        None
+    };
     // A family-scoped native tag is not a locus identity. If marker lookup
     // finds no resolved center carrier, the complete profile roster is the
     // defined witness; an ambiguous arc-center carrier must remain unresolved
@@ -435,6 +453,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance
         )
         && dynamic_point_pair.is_none()
+        && dynamic_direct_point_pair.is_none()
         && relation
             .operands
             .iter()
@@ -586,6 +605,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
         let witnessed = match relation.family {
             PointPointDistance | PointPointHorizontalDistance | PointPointVerticalDistance => {
                 dynamic_point_pair.is_some()
+                    || dynamic_direct_point_pair.is_some()
                     || dynamic_roster_point_pair.is_some()
                     || (point(0).is_some() && point(1).is_some())
             }
@@ -613,7 +633,10 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let first = point(0);
             let second = point(1);
             let authoritative = first.is_some() && second.is_some();
-            let (mut first, mut second) = match dynamic_point_pair.or(dynamic_roster_point_pair) {
+            let (mut first, mut second) = match dynamic_point_pair
+                .or(dynamic_direct_point_pair)
+                .or(dynamic_roster_point_pair)
+            {
                 Some(pair) => pair,
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
@@ -730,7 +753,10 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let first = point(0);
             let second = point(1);
             let authoritative = first.is_some() && second.is_some();
-            let (mut first, mut second) = match dynamic_point_pair.or(dynamic_roster_point_pair) {
+            let (mut first, mut second) = match dynamic_point_pair
+                .or(dynamic_direct_point_pair)
+                .or(dynamic_roster_point_pair)
+            {
                 Some(pair) => pair,
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
@@ -1867,6 +1893,91 @@ fn unique_dynamic_marker_point_pair(
                 let mut pair = [first.clone(), second.clone()];
                 pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
                 pairs.push((pair[0].clone(), pair[1].clone()));
+            }
+        }
+    }
+    sole_locus_pair(pairs)
+}
+
+fn unique_dynamic_direct_point_roster_pair(
+    relation: &FeatureInputRelationInstance,
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    profile_axis: Option<ProfileAxis>,
+) -> Option<(SketchLocus, SketchLocus)> {
+    if relation
+        .operands
+        .iter()
+        .any(|operand| operand.entity_ref.is_some())
+    {
+        return None;
+    }
+    let is_direct_point = |marker: &SketchInputEntity| {
+        marker.feature_ref.as_deref() == Some(relation.feature_ref.as_str())
+            && marker.coordinates_m.is_some()
+            && marker.links.is_empty()
+            && matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+    };
+    if (0..2).any(|index| {
+        relation_operand_marker(relation, index, sketch, markers_by_id)
+            .and_then(|marker| markers_by_id.get(marker))
+            .is_none_or(|marker| !is_direct_point(marker))
+    }) {
+        return None;
+    }
+    let direct_marker_ids = markers_by_id
+        .values()
+        .filter(|marker| is_direct_point(marker))
+        .map(|marker| marker.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut loci = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .filter(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
+        .filter(|entity| {
+            entity
+                .native_ref
+                .as_deref()
+                .is_some_and(|marker| direct_marker_ids.contains(marker))
+        })
+        .map(|entity| SketchLocus::Entity(entity.id.clone()))
+        .collect::<Vec<_>>();
+    loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    loci.dedup();
+    deduplicate_physical_loci(&mut loci, sketch_entities);
+    let cadmpeg_ir::features::ParameterValue::Length(expected) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let measure = |first: &SketchLocus, second: &SketchLocus| {
+        let first = profile_locus_point(first, sketch_entities)?;
+        let second = profile_locus_point(second, sketch_entities)?;
+        Some(match relation.family {
+            FeatureInputRelationFamily::PointPointDistance => {
+                (second.u - first.u).hypot(second.v - first.v)
+            }
+            FeatureInputRelationFamily::PointPointHorizontalDistance
+            | FeatureInputRelationFamily::PointPointVerticalDistance => {
+                if profile_axis == Some(ProfileAxis::U) {
+                    (second.u - first.u).abs()
+                } else {
+                    (second.v - first.v).abs()
+                }
+            }
+            _ => return None,
+        })
+    };
+    let mut pairs = Vec::new();
+    for (first_index, first) in loci.iter().enumerate() {
+        for second in &loci[first_index + 1..] {
+            if measure(first, second)
+                .is_some_and(|value| same_relation_dimension_length(value, expected.0))
+            {
+                pairs.push((first.clone(), second.clone()));
             }
         }
     }

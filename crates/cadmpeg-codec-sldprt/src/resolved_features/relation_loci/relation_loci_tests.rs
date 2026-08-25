@@ -18,6 +18,7 @@ use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
 };
 use std::collections::{BTreeMap, HashMap};
+mod direct_points;
 
 fn marker(
     id: &str,
@@ -110,7 +111,6 @@ fn point_operand_requires_one_profile_locus() {
         None
     );
 }
-
 #[test]
 fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     let sketch = SketchId("sketch".into());
