@@ -473,6 +473,22 @@ fn target_profiles_cover_every_emitted_entity_form() {
             Err(CodecError::NotImplemented(_))
         ));
     }
+    let single_constituent = Entity {
+        type_code: 102,
+        form: 0,
+        label: "TEST",
+        status: "00000000",
+        parameters: b"102,1,@R0@;".to_vec(),
+        transform: None,
+    };
+    assert!(matches!(
+        ensure_version_support(std::slice::from_ref(&single_constituent), IgesVersion::V4_0),
+        Err(CodecError::NotImplemented(_))
+    ));
+    assert!(
+        ensure_version_support(std::slice::from_ref(&single_constituent), IgesVersion::V5_0)
+            .is_ok()
+    );
 }
 
 #[test]

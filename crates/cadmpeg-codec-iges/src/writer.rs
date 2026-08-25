@@ -16,14 +16,14 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
-use cadmpeg_ir::ids::{PointId, ShellId, VertexId};
+use cadmpeg_ir::ids::{CurveId, PointId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{
     CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossNote, WritePath,
 };
 use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Region, Sense};
 use cadmpeg_ir::{CadIr, SourceFidelity};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::TAU;
 use std::fmt::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -236,7 +236,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     } else {
         let mut entities = Vec::new();
         let mut consumed_points = std::collections::BTreeSet::new();
-        let mut consumed_curves = std::collections::BTreeSet::new();
+        let mut consumed_curves = BTreeSet::<String>::new();
         let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
         surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for surface in surfaces {
@@ -264,8 +264,16 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
                 })?;
             let geometry = flatten_curve(&curve.geometry)?;
             let span = edge_span(ir, edge, &geometry)?;
-            entities.push(curve_entity(&geometry, Some(&span))?);
-            consumed_curves.insert(curve_id.clone());
+            append_curve_entity(
+                &mut entities,
+                ir,
+                curve_id,
+                &geometry,
+                Some(&span),
+                Sense::Forward,
+                "00000000",
+            )?;
+            mark_curve_descendants(ir, curve_id, &mut consumed_curves, &mut BTreeSet::new())?;
             consumed_points.insert(vertex_point_id(ir, &edge.start)?);
             consumed_points.insert(vertex_point_id(ir, &edge.end)?);
         }
@@ -273,11 +281,20 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
         curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for curve in curves {
-            if consumed_curves.contains(&curve.id) {
+            if consumed_curves.contains(curve.id.as_str()) {
                 continue;
             }
             let geometry = flatten_curve(&curve.geometry)?;
-            entities.push(curve_entity(&geometry, None)?);
+            append_curve_entity(
+                &mut entities,
+                ir,
+                &curve.id,
+                &geometry,
+                None,
+                Sense::Forward,
+                "00000000",
+            )?;
+            mark_curve_descendants(ir, &curve.id, &mut consumed_curves, &mut BTreeSet::new())?;
         }
 
         let mut points = ir.model.points.iter().collect::<Vec<_>>();
@@ -386,6 +403,15 @@ fn ensure_version_support(
             entity.type_code,
             entity.form
         )));
+    }
+    if version == crate::IgesVersion::V4_0 {
+        for entity in entities.iter().filter(|entity| entity.type_code == 102) {
+            if composite_entity_references(entity)?.len() < 2 {
+                return Err(CodecError::NotImplemented(
+                    "IGES 4.0 Type 102 requires at least two constituent entities".into(),
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -1126,6 +1152,13 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
         surface_indices.insert(surface.id.as_str().to_owned(), index);
     }
 
+    let mut consumed_curve_ids = ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| ir.model.coedges.iter().any(|coedge| coedge.edge == edge.id))
+        .filter_map(|edge| edge.curve.as_ref().map(|curve| curve.as_str().to_owned()))
+        .collect::<BTreeSet<_>>();
     let mut topology_edge_ids = std::collections::BTreeSet::new();
     for coedge in &ir.model.coedges {
         topology_edge_ids.insert(coedge.edge.as_str().to_owned());
@@ -1163,18 +1196,19 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             })?;
         let geometry = flatten_curve(&curve.geometry)?;
         let span = edge_span(ir, edge, &geometry)?;
-        let index = entities.len();
-        entities.push(curve_entity(&geometry, Some(&span))?);
+        let index = append_curve_entity(
+            &mut entities,
+            ir,
+            curve_id,
+            &geometry,
+            Some(&span),
+            Sense::Forward,
+            "00000000",
+        )?;
         edge_curve_indices.insert(edge.id.as_str().to_owned(), index);
+        mark_curve_descendants(ir, curve_id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
     }
 
-    let consumed_curve_ids = ir
-        .model
-        .edges
-        .iter()
-        .filter(|edge| topology_edge_ids.contains(edge.id.as_str()))
-        .filter_map(|edge| edge.curve.as_ref().map(|curve| curve.as_str().to_owned()))
-        .collect::<std::collections::BTreeSet<_>>();
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for curve in curves {
@@ -1184,7 +1218,16 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             continue;
         }
         let geometry = flatten_curve(&curve.geometry)?;
-        entities.push(curve_entity(&geometry, None)?);
+        append_curve_entity(
+            &mut entities,
+            ir,
+            &curve.id,
+            &geometry,
+            None,
+            Sense::Forward,
+            "00000000",
+        )?;
+        mark_curve_descendants(ir, &curve.id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
     }
 
     let used_pcurve_ids = used_brep_pcurve_ids(ir);
@@ -1926,12 +1969,17 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             })?;
         let geometry = flatten_curve(&curve.geometry)?;
         let span = edge_span(ir, edge, &geometry)?;
-        let index = entities.len();
-        let mut entity = curve_entity(&geometry, Some(&span))?;
-        entity.status = PHYSICALLY_DEPENDENT_STATUS;
-        entities.push(entity);
+        let index = append_curve_entity(
+            &mut entities,
+            ir,
+            curve_id,
+            &geometry,
+            Some(&span),
+            Sense::Forward,
+            PHYSICALLY_DEPENDENT_STATUS,
+        )?;
         edge_indices.insert(edge.id.as_str().to_owned(), index);
-        consumed_curves.insert(curve_id.as_str().to_owned());
+        mark_curve_descendants(ir, curve_id, &mut consumed_curves, &mut BTreeSet::new())?;
         consumed_points.insert(vertex_point_id(ir, &edge.start)?.as_str().to_owned());
         consumed_points.insert(vertex_point_id(ir, &edge.end)?.as_str().to_owned());
     }
@@ -1945,7 +1993,16 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             continue;
         }
         let geometry = flatten_curve(&curve.geometry)?;
-        entities.push(curve_entity(&geometry, None)?);
+        append_curve_entity(
+            &mut entities,
+            ir,
+            &curve.id,
+            &geometry,
+            None,
+            Sense::Forward,
+            "00000000",
+        )?;
+        mark_curve_descendants(ir, &curve.id, &mut consumed_curves, &mut BTreeSet::new())?;
     }
 
     let mut pcurve_ids = std::collections::BTreeSet::new();
@@ -2740,9 +2797,15 @@ fn curve_on_surface_entity(
                 ))
             })?
         } else {
-            let index = entities.len();
-            entities.push(oriented_curve_entity(&geometry, &span, coedge.sense)?);
-            index
+            append_curve_entity(
+                entities,
+                ir,
+                curve_id,
+                &geometry,
+                Some(&span),
+                coedge.sense,
+                PHYSICALLY_DEPENDENT_STATUS,
+            )?
         };
         model_children.push(model_index);
         pcurve_children.extend(
@@ -2803,6 +2866,7 @@ fn push_composite_entity(
     label: &'static str,
     status: &'static str,
 ) -> Result<usize, CodecError> {
+    let children = flatten_composite_children(entities, children)?;
     if children.is_empty() {
         return Err(CodecError::Malformed(
             "IGES composite curve has no children".into(),
@@ -2811,7 +2875,7 @@ fn push_composite_entity(
     let mut parameters = format!("102,{}", children.len());
     for child in children {
         parameters.push(',');
-        parameters.push_str(&reference_marker(*child));
+        parameters.push_str(&reference_marker(child));
     }
     parameters.push(';');
     let index = entities.len();
@@ -2824,6 +2888,96 @@ fn push_composite_entity(
         transform: None,
     });
     Ok(index)
+}
+
+fn flatten_composite_children(
+    entities: &[Entity],
+    children: &[usize],
+) -> Result<Vec<usize>, CodecError> {
+    let mut flattened = Vec::new();
+    let mut active = BTreeSet::new();
+    for child in children {
+        flatten_composite_child(entities, *child, &mut active, &mut flattened)?;
+    }
+    Ok(flattened)
+}
+
+fn flatten_composite_child(
+    entities: &[Entity],
+    index: usize,
+    active: &mut BTreeSet<usize>,
+    flattened: &mut Vec<usize>,
+) -> Result<(), CodecError> {
+    let entity = entities.get(index).ok_or_else(|| {
+        CodecError::Malformed("IGES composite curve child index is out of range".into())
+    })?;
+    if entity.type_code != 102 {
+        flattened.push(index);
+        return Ok(());
+    }
+    if !active.insert(index) {
+        return Err(CodecError::Malformed(
+            "IGES emitted composite curve graph contains a cycle".into(),
+        ));
+    }
+    let references = composite_entity_references(entity)?;
+    for child in references {
+        flatten_composite_child(entities, child, active, flattened)?;
+    }
+    active.remove(&index);
+    Ok(())
+}
+
+fn composite_entity_references(entity: &Entity) -> Result<Vec<usize>, CodecError> {
+    if entity.type_code != 102 {
+        return Err(CodecError::Malformed(
+            "IGES composite reference extraction received a non-composite entity".into(),
+        ));
+    }
+    let text = std::str::from_utf8(&entity.parameters).map_err(|_| {
+        CodecError::Malformed("IGES emitted composite curve parameters are not UTF-8".into())
+    })?;
+    let mut fields = text.trim_end_matches(';').split(',');
+    if fields.next() != Some("102") {
+        return Err(CodecError::Malformed(
+            "IGES emitted composite curve has an invalid type field".into(),
+        ));
+    }
+    let count = fields
+        .next()
+        .ok_or_else(|| {
+            CodecError::Malformed("IGES emitted composite curve has no constituent count".into())
+        })?
+        .parse::<usize>()
+        .map_err(|_| {
+            CodecError::Malformed(
+                "IGES emitted composite curve has an invalid constituent count".into(),
+            )
+        })?;
+    let references = fields
+        .map(|field| {
+            field
+                .strip_prefix("@R")
+                .and_then(|field| field.strip_suffix('@'))
+                .ok_or_else(|| {
+                    CodecError::Malformed(
+                        "IGES emitted composite curve has a non-pointer constituent".into(),
+                    )
+                })?
+                .parse::<usize>()
+                .map_err(|_| {
+                    CodecError::Malformed(
+                        "IGES emitted composite curve has an invalid constituent pointer".into(),
+                    )
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if references.len() != count {
+        return Err(CodecError::Malformed(
+            "IGES emitted composite curve constituent count disagrees with its list".into(),
+        ));
+    }
+    Ok(references)
 }
 
 fn oriented_curve_entity(
@@ -4499,7 +4653,369 @@ fn vertex_position(ir: &CadIr, vertex_id: &VertexId) -> Option<Point3> {
         .map(|point| point.position)
 }
 
+fn append_curve_entity(
+    entities: &mut Vec<Entity>,
+    ir: &CadIr,
+    curve_id: &CurveId,
+    geometry: &CurveGeometry,
+    span: Option<&CurveSpan>,
+    sense: Sense,
+    status: &'static str,
+) -> Result<usize, CodecError> {
+    let mut emitter = CurveEntityEmitter {
+        entities,
+        ir,
+        active: BTreeSet::new(),
+    };
+    emitter.append(curve_id, geometry, span, sense, status)
+}
+
+struct CurveEntityEmitter<'a> {
+    entities: &'a mut Vec<Entity>,
+    ir: &'a CadIr,
+    active: BTreeSet<CurveId>,
+}
+
+impl CurveEntityEmitter<'_> {
+    fn append(
+        &mut self,
+        curve_id: &CurveId,
+        geometry: &CurveGeometry,
+        span: Option<&CurveSpan>,
+        sense: Sense,
+        status: &'static str,
+    ) -> Result<usize, CodecError> {
+        if !self.active.insert(curve_id.clone()) {
+            return Err(CodecError::malformed(format_args!(
+                "IGES composite curve graph contains a cycle at {curve_id}"
+            )));
+        }
+        let result = match geometry {
+            CurveGeometry::Composite { segments, .. } => {
+                if segments.is_empty() {
+                    Err(CodecError::malformed(format_args!(
+                        "IGES composite curve {curve_id} has no segments"
+                    )))
+                } else {
+                    let children = self.append_composite_constituents(segments, sense)?;
+                    push_composite_entity(self.entities, &children, "COMPOSIT", status)
+                }
+            }
+            _ => {
+                let mut entity = match sense {
+                    Sense::Forward => curve_entity(geometry, span)?,
+                    Sense::Reversed => {
+                        let span = span.ok_or_else(|| {
+                            CodecError::NotImplemented(format!(
+                                "IGES reversed curve {curve_id} requires a parameter range"
+                            ))
+                        })?;
+                        oriented_curve_entity(geometry, span, Sense::Reversed)?
+                    }
+                };
+                entity.status = status;
+                let index = self.entities.len();
+                self.entities.push(entity);
+                Ok(index)
+            }
+        };
+        self.active.remove(curve_id);
+        result
+    }
+
+    fn append_composite_constituents(
+        &mut self,
+        segments: &[cadmpeg_ir::geometry::CompositeCurveSegment],
+        sense: Sense,
+    ) -> Result<Vec<usize>, CodecError> {
+        let ordered = if sense == Sense::Forward {
+            segments.iter().collect::<Vec<_>>()
+        } else {
+            segments.iter().rev().collect::<Vec<_>>()
+        };
+        let mut children = Vec::new();
+        for segment in ordered {
+            let child = self
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == segment.curve)
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "IGES composite curve references missing child {}",
+                        segment.curve
+                    ))
+                })?;
+            let child_geometry = flatten_curve(&child.geometry)?;
+            let child_sense = match (sense, segment.same_sense) {
+                (Sense::Forward, true) | (Sense::Reversed, false) => Sense::Forward,
+                (Sense::Forward, false) | (Sense::Reversed, true) => Sense::Reversed,
+            };
+            if let CurveGeometry::Composite {
+                segments: nested, ..
+            } = &child_geometry
+            {
+                if !self.active.insert(segment.curve.clone()) {
+                    return Err(CodecError::malformed(format_args!(
+                        "IGES composite curve graph contains a cycle at {}",
+                        segment.curve
+                    )));
+                }
+                let nested_children = self.append_composite_constituents(nested, child_sense);
+                self.active.remove(&segment.curve);
+                children.extend(nested_children?);
+            } else {
+                let child_span = curve_reference_span_inner(
+                    self.ir,
+                    &segment.curve,
+                    &child_geometry,
+                    &mut self.active,
+                )?;
+                children.push(self.append(
+                    &segment.curve,
+                    &child_geometry,
+                    Some(&child_span),
+                    child_sense,
+                    PHYSICALLY_DEPENDENT_STATUS,
+                )?);
+            }
+        }
+        if children.is_empty() {
+            return Err(CodecError::NotImplemented(
+                "IGES Type 102 composite has no writable curve constituents".into(),
+            ));
+        }
+        Ok(children)
+    }
+}
+
+fn curve_reference_span(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    geometry: &CurveGeometry,
+) -> Result<CurveSpan, CodecError> {
+    curve_reference_span_inner(ir, curve_id, geometry, &mut BTreeSet::new())
+}
+
+fn curve_reference_span_inner(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    geometry: &CurveGeometry,
+    active: &mut BTreeSet<CurveId>,
+) -> Result<CurveSpan, CodecError> {
+    if !active.insert(curve_id.clone()) {
+        return Err(CodecError::malformed(format_args!(
+            "IGES composite curve graph contains a cycle at {curve_id}"
+        )));
+    }
+    let result = match geometry {
+        CurveGeometry::Composite { segments, .. } => {
+            if segments.is_empty() {
+                Err(CodecError::malformed(format_args!(
+                    "IGES composite curve {curve_id} has no segments"
+                )))
+            } else {
+                let mut child_spans = Vec::with_capacity(segments.len());
+                let mut total = 0.0;
+                for segment in segments {
+                    let child = ir
+                        .model
+                        .curves
+                        .iter()
+                        .find(|curve| curve.id == segment.curve)
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "IGES composite curve {curve_id} references missing child {}",
+                                segment.curve
+                            ))
+                        })?;
+                    let child_geometry = flatten_curve(&child.geometry)?;
+                    let child_span =
+                        curve_reference_span_inner(ir, &segment.curve, &child_geometry, active)?;
+                    let width = child_span.range[1] - child_span.range[0];
+                    if !width.is_finite() || width <= 0.0 {
+                        return Err(CodecError::malformed(format_args!(
+                            "IGES composite curve {curve_id} has a child with an invalid parameter span"
+                        )));
+                    }
+                    total += width;
+                    if !total.is_finite() {
+                        return Err(CodecError::malformed(format_args!(
+                            "IGES composite curve {curve_id} parameter span overflows"
+                        )));
+                    }
+                    child_spans.push(child_span);
+                }
+                let first = &child_spans[0];
+                let last = &child_spans[child_spans.len() - 1];
+                let derived_start = if segments[0].same_sense {
+                    first.start
+                } else {
+                    first.end
+                };
+                let derived_end = if segments[segments.len() - 1].same_sense {
+                    last.end
+                } else {
+                    last.start
+                };
+                let derived_range = [0.0, total];
+                let matching_edges = ir
+                    .model
+                    .edges
+                    .iter()
+                    .filter(|edge| edge.curve.as_ref() == Some(curve_id))
+                    .collect::<Vec<_>>();
+                if matching_edges.is_empty() {
+                    Ok(CurveSpan {
+                        range: derived_range,
+                        start: derived_start,
+                        end: derived_end,
+                    })
+                } else {
+                    let mut selected = None;
+                    let mut tolerance: f64 = 0.0;
+                    for edge in matching_edges {
+                        if let Some(range) = edge.param_range {
+                            if !same_range(range, derived_range) {
+                                return Err(CodecError::NotImplemented(format!(
+                                    "IGES composite curve {curve_id} has an edge parameter range that cannot be represented by Type 102"
+                                )));
+                            }
+                        }
+                        let start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?;
+                        let end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?;
+                        let edge_tolerance = edge_topology_tolerance(ir, edge)?;
+                        tolerance = tolerance.max(edge_tolerance);
+                        if !close_point_with_tolerance(start, derived_start, edge_tolerance)
+                            || !close_point_with_tolerance(end, derived_end, edge_tolerance)
+                        {
+                            return Err(CodecError::malformed(format_args!(
+                                "IGES composite curve {curve_id} endpoints disagree with its child sequence"
+                            )));
+                        }
+                        if let Some((selected_start, selected_end)) = selected {
+                            if !close_point_with_tolerance(start, selected_start, tolerance)
+                                || !close_point_with_tolerance(end, selected_end, tolerance)
+                            {
+                                return Err(CodecError::NotImplemented(format!(
+                                    "IGES composite curve {curve_id} has ambiguous edge endpoints"
+                                )));
+                            }
+                        } else {
+                            selected = Some((start, end));
+                        }
+                    }
+                    let (start, end) = selected.expect("matching composite edge is nonempty");
+                    Ok(CurveSpan {
+                        range: derived_range,
+                        start,
+                        end,
+                    })
+                }
+            }
+        }
+        _ => {
+            let matching_edges = ir
+                .model
+                .edges
+                .iter()
+                .filter(|edge| edge.curve.as_ref() == Some(curve_id))
+                .collect::<Vec<_>>();
+            if matching_edges.is_empty() {
+                let range = default_range(geometry)?;
+                let start = curve_point(geometry, range[0]).ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "IGES composite child curve {curve_id} has no evaluable start"
+                    ))
+                })?;
+                let end = curve_point(geometry, range[1]).ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "IGES composite child curve {curve_id} has no evaluable end"
+                    ))
+                })?;
+                Ok(CurveSpan { range, start, end })
+            } else if matching_edges.iter().any(|edge| edge.param_range.is_none()) {
+                Err(CodecError::NotImplemented(format!(
+                    "IGES composite child curve {curve_id} requires a parameter range"
+                )))
+            } else {
+                let spans = matching_edges
+                    .iter()
+                    .map(|edge| edge_span(ir, edge, geometry))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let first = spans.first().expect("matching edge is nonempty");
+                let tolerance = matching_edges
+                    .iter()
+                    .map(|edge| edge_topology_tolerance(ir, edge))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .fold(0.0, f64::max);
+                if spans.iter().skip(1).any(|span| {
+                    !same_range(span.range, first.range)
+                        || !close_point_with_tolerance(span.start, first.start, tolerance)
+                        || !close_point_with_tolerance(span.end, first.end, tolerance)
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "IGES composite child curve {curve_id} has ambiguous edge parameter ranges"
+                    )));
+                }
+                Ok(CurveSpan {
+                    range: first.range,
+                    start: first.start,
+                    end: first.end,
+                })
+            }
+        }
+    };
+    active.remove(curve_id);
+    result
+}
+
+fn mark_curve_descendants(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    consumed: &mut BTreeSet<String>,
+    active: &mut BTreeSet<CurveId>,
+) -> Result<(), CodecError> {
+    if !active.insert(curve_id.clone()) {
+        return Err(CodecError::malformed(format_args!(
+            "IGES composite curve graph contains a cycle at {curve_id}"
+        )));
+    }
+    if !consumed.insert(curve_id.as_str().to_owned()) {
+        active.remove(curve_id);
+        return Ok(());
+    }
+    let curve = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *curve_id)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "IGES curve reference points to missing curve {curve_id}"
+            ))
+        })?;
+    if let CurveGeometry::Composite { segments, .. } = &curve.geometry {
+        for segment in segments {
+            mark_curve_descendants(ir, &segment.curve, consumed, active)?;
+        }
+    }
+    active.remove(curve_id);
+    Ok(())
+}
+
 fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveSpan, CodecError> {
+    if matches!(geometry, CurveGeometry::Composite { .. }) {
+        let curve_id = edge.curve.as_ref().ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "IGES composite edge {} has no curve reference",
+                edge.id
+            ))
+        })?;
+        return curve_reference_span(ir, curve_id, geometry);
+    }
     let range = edge.param_range.ok_or_else(|| {
         CodecError::NotImplemented(format!(
             "IGES semantic writer requires a parameter range for edge {}",

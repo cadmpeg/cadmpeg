@@ -23,7 +23,130 @@ use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
+use crate::writer::same_float;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+
+#[test]
+fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
+        let decoded = IgesCodec
+            .decode(
+                &mut Cursor::new(composite_curve_with_join_gap(0.001_001)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let plan = IgesEncoder::new(IgesWriteOptions { version }).plan(EncodeInput {
+            ir: decoded.ir(),
+            fidelity: None,
+        });
+        let plan = plan
+            .unwrap_or_else(|error| panic!("{version:?} Type 102 semantic plan refused: {error}"));
+        let mut written = Vec::new();
+        let report = plan.write_to(&mut written).unwrap();
+        let round_trip = IgesCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap();
+        assert!(!report.losses.iter().any(|loss| {
+            loss.code.taxonomy() == cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+        }));
+        assert!(
+            round_trip
+                .ir()
+                .native
+                .namespace("iges")
+                .and_then(|namespace| namespace.arenas.get("entities"))
+                .is_some_and(|entities| {
+                    entities.iter().any(|record| {
+                        record.field("entity_type").and_then(|value| value.as_i64()) == Some(102)
+                    })
+                }),
+            "{version:?} output has no Type 102 entity"
+        );
+        assert!(round_trip.ir().model.curves.iter().any(|curve| {
+            curve
+                .source_object
+                .as_ref()
+                .and_then(|source| source.name.as_deref())
+                == Some("COMPOSIT")
+        }));
+        let validation =
+            cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone());
+        assert!(
+            validation.is_ok(),
+            "{version:?}: {:#?}",
+            validation.findings
+        );
+    }
+}
+
+#[test]
+fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
+    let mut decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_curve_with_join_gap(0.001_001)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let second_start = decoded
+        .ir()
+        .model
+        .edges
+        .iter()
+        .find(|edge| {
+            edge.curve
+                .as_ref()
+                .is_some_and(|curve| curve.as_str() == "iges:model:curve#D3")
+        })
+        .expect("second Type 102 child edge")
+        .start
+        .clone();
+    {
+        let mut ir = decoded.ir_mut();
+        let composite = ir
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
+            .expect("Type 102 composite curve");
+        let CurveGeometry::Composite { segments, .. } = &mut composite.geometry else {
+            panic!("expected retained Type 102 composite geometry");
+        };
+        segments[1].same_sense = false;
+        ir.model
+            .edges
+            .iter_mut()
+            .find(|edge| {
+                edge.curve
+                    .as_ref()
+                    .is_some_and(|curve| curve.as_str() == "iges:model:curve#D5")
+            })
+            .expect("Type 102 composite edge")
+            .end = second_start;
+    }
+    let plan = IgesEncoder::new(IgesWriteOptions {
+        version: IgesVersion::V5_0,
+    })
+    .plan(EncodeInput {
+        ir: decoded.ir(),
+        fidelity: None,
+    })
+    .expect("reversed Type 102 child is writable");
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert!(round_trip.ir().model.curves.iter().any(|curve| {
+        matches!(
+            curve.geometry,
+            CurveGeometry::Line { origin, direction }
+                if same_float(origin.x, 2.0) && same_float(direction.x, -1.0)
+        )
+    }));
+    let validation =
+        cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
 
 #[test]
 fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
