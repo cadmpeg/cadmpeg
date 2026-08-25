@@ -359,6 +359,16 @@ The global trim-handle namespace supplies positive second-face incidence for a r
 
 Apply handle-derived candidates only while the current incidence still contains a repeated face slot. Once exact trim occurrences or native ownership supply two distinct faces, the repeated slot is consumed and later candidate sources cannot reopen it.
 
+Before joint enumeration, a retained face domain with complete trimmed-face
+bounds may be narrowed by the carrier relation. For a circular support, an
+alternate whose face carrier differs from the serialized face carrier ranks
+above a same-carrier alternate. The next rank is the number of world axes on
+which the two trimmed-face AABBs overlap by more than `2e-3` mm. For other
+curve kinds, only the AABB-overlap rank applies. Retain one alternate only when
+the lexicographically highest rank is unique and has a positive overlap
+dimension. A tie, missing carrier geometry, or missing bounds remains a face
+domain and proceeds to the joint assignment.
+
 For a retained face domain, the serialized one-face incidence and each member of the non-empty alternate set are the row's choices. Enumerate those choices as one joint assignment. When every row has one stored endpoint pair, first solve the bounded global endpoint-degree relation: every used coordinate row has degree two on each face, and selecting a distinct alternate adds that row's endpoints to the alternate face. A unique degree-closed assignment fixes the face slots before trim placement. Otherwise, use each concrete assignment for trim coverage, endpoint closure, port propagation, and incidence reconstruction. An alternate face is not a required trim edge before its assignment is selected. Exactly one complete assignment is admissible; zero assignments reject the incidence graph and multiple non-equivalent assignments remain ambiguous.
 
 A concrete face assignment survives when at least one complete endpoint topology satisfies those constraints. Multiple endpoint topologies under the same concrete face assignment are endpoint ambiguity, not face-slot ambiguity. They block topology emission, but the repeated face slot is fixed when every other concrete face assignment rejects.

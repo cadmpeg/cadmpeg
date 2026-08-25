@@ -3898,6 +3898,16 @@ fn attach_standard_topology(
                     .collect()
             })
             .collect::<Vec<_>>();
+        let face_geometries = (0..face_count)
+            .map(|face| {
+                face_surface(ir, bindings, &surface_indices, face)
+                    .map(|surface| surface.geometry.clone())
+            })
+            .collect::<Option<Vec<_>>>();
+        let edge_geometries = supports
+            .iter()
+            .map(|support| support.geometry.clone())
+            .collect::<Vec<_>>();
         if let Some(handle_face_candidates) = handle_face_candidates {
             missing_edge::refine_repeated_edge_face_candidates(
                 &edge_faces,
@@ -3906,6 +3916,13 @@ fn attach_standard_topology(
             )
             .ok_or(StandardTopologyFailure::EdgeFaceAssignment)?;
         }
+        refine_repeated_face_domains_by_geometry_and_bounds(
+            &edge_faces,
+            &mut allowed_faces,
+            face_bounds,
+            face_geometries.as_deref(),
+            &edge_geometries,
+        );
         let has_alternates = allowed_faces.iter().any(|faces| !faces.is_empty());
         let endpoint_closures = has_alternates
             .then(|| {
@@ -5927,6 +5944,110 @@ fn point_inside_standard_face_bounds(
         .map(|(axis, coordinate)| (*coordinate - bounds.sphere_center[axis]).powi(2))
         .sum::<f64>();
     inside_aabb && distance_squared.sqrt() <= bounds.sphere_radius + STANDARD_FACE_BOUNDS_TOLERANCE
+}
+
+/// Narrow a repeated-face domain only when one alternate has a strictly larger
+/// circular-carrier or positive-dimensional AABB relation with the serialized
+/// face.
+///
+/// A real shared surface boundary must have a positive overlap along at least
+/// one world axis. The overlap dimension is deliberately used as a partial
+/// order after the distinct-carrier rank for circular supports: ties remain
+/// domains, so this helper cannot choose between symmetric or insufficiently
+/// bounded incidences.
+pub(crate) fn refine_repeated_face_domains_by_geometry_and_bounds(
+    edge_faces: &[[usize; 2]],
+    allowed_faces: &mut [Vec<usize>],
+    face_bounds: Option<&[Option<crate::families::standard::records::StandardFaceBounds>]>,
+    face_geometries: Option<&[SurfaceGeometry]>,
+    edge_geometries: &[crate::families::standard::records::StandardCurveGeometry],
+) {
+    let Some(face_bounds) = face_bounds else {
+        return;
+    };
+    for (edge, alternatives) in allowed_faces.iter_mut().enumerate() {
+        if alternatives.is_empty() {
+            continue;
+        }
+        let Some([serialized_face, repeated_face]) = edge_faces.get(edge).copied() else {
+            continue;
+        };
+        if serialized_face != repeated_face {
+            continue;
+        }
+        let Some(serialized_bounds) = face_bounds.get(serialized_face).copied().flatten() else {
+            continue;
+        };
+        if alternatives
+            .iter()
+            .any(|face| face_bounds.get(*face).copied().flatten().is_none())
+        {
+            continue;
+        }
+        let circular_support = matches!(
+            edge_geometries.get(edge),
+            Some(crate::families::standard::records::StandardCurveGeometry::Circle { .. })
+        );
+        if circular_support
+            && face_geometries.is_none_or(|geometries| {
+                std::iter::once(serialized_face)
+                    .chain(alternatives.iter().copied())
+                    .any(|face| {
+                        matches!(geometries.get(face), Some(SurfaceGeometry::Unknown { .. }))
+                    })
+            })
+        {
+            continue;
+        }
+        let scores = alternatives
+            .iter()
+            .copied()
+            .map(|face| {
+                let distinct_circle_carrier = circular_support
+                    && face_geometries.is_some_and(|geometries| {
+                        geometries
+                            .get(serialized_face)
+                            .zip(geometries.get(face))
+                            .is_some_and(|(left, right)| left != right)
+                    });
+                let overlap_dimension =
+                    face_bounds
+                        .get(face)
+                        .copied()
+                        .flatten()
+                        .map_or(0, |candidate| {
+                            (0..3)
+                                .filter(|axis| {
+                                    let left = serialized_bounds.aabb_center[*axis]
+                                        - serialized_bounds.aabb_half_extents[*axis];
+                                    let right = serialized_bounds.aabb_center[*axis]
+                                        + serialized_bounds.aabb_half_extents[*axis];
+                                    let candidate_left = candidate.aabb_center[*axis]
+                                        - candidate.aabb_half_extents[*axis];
+                                    let candidate_right = candidate.aabb_center[*axis]
+                                        + candidate.aabb_half_extents[*axis];
+                                    right.min(candidate_right) - left.max(candidate_left)
+                                        > STANDARD_FACE_BOUNDS_TOLERANCE
+                                })
+                                .count() as u8
+                        });
+                (face, (distinct_circle_carrier as u8, overlap_dimension))
+            })
+            .collect::<Vec<_>>();
+        let best = scores
+            .iter()
+            .map(|(_, score)| *score)
+            .max()
+            .unwrap_or((0, 0));
+        if best == (0, 0) || scores.iter().filter(|(_, score)| *score == best).count() != 1 {
+            continue;
+        }
+        alternatives.retain(|face| {
+            scores
+                .iter()
+                .any(|(candidate, score)| candidate == face && *score == best)
+        });
+    }
 }
 
 fn standard_nurbs_line_pair_on_face(

@@ -1,6 +1,102 @@
 use super::*;
 
 #[test]
+fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
+    let bounds = |center: [f64; 3], half_extents: [f64; 3]| StandardFaceBounds {
+        aabb_center: center,
+        aabb_half_extents: half_extents,
+        sphere_center: center,
+        sphere_radius: 10.0,
+    };
+    let edge_faces = [[0, 0]];
+    let face_bounds = [
+        Some(bounds([0.0, 0.0, 0.0], [4.0, 4.0, 4.0])),
+        Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
+        Some(bounds([0.0, 5.0, 0.0], [1.0, 1.0, 1.0])),
+    ];
+    let mut allowed_faces = vec![vec![1, 2]];
+
+    refine_repeated_face_domains_by_geometry_and_bounds(
+        &edge_faces,
+        &mut allowed_faces,
+        Some(&face_bounds),
+        None,
+        &[],
+    );
+    assert_eq!(allowed_faces, vec![vec![1]]);
+
+    let face_bounds = [
+        Some(bounds([0.0, 0.0, 0.0], [4.0, 4.0, 4.0])),
+        Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
+        Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
+    ];
+    let mut tied = vec![vec![1, 2]];
+    refine_repeated_face_domains_by_geometry_and_bounds(
+        &edge_faces,
+        &mut tied,
+        Some(&face_bounds),
+        None,
+        &[],
+    );
+    assert_eq!(tied, vec![vec![1, 2]]);
+
+    let face_bounds = [
+        Some(bounds([0.0, 0.0, 0.0], [4.0, 4.0, 4.0])),
+        Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
+        None,
+    ];
+    let mut incomplete = vec![vec![1, 2]];
+    refine_repeated_face_domains_by_geometry_and_bounds(
+        &edge_faces,
+        &mut incomplete,
+        Some(&face_bounds),
+        None,
+        &[],
+    );
+    assert_eq!(incomplete, vec![vec![1, 2]]);
+}
+
+#[test]
+fn repeated_circle_face_domain_prefers_a_distinct_carrier_before_bounds() {
+    let bounds = |center: [f64; 3], half_extents: [f64; 3]| StandardFaceBounds {
+        aabb_center: center,
+        aabb_half_extents: half_extents,
+        sphere_center: center,
+        sphere_radius: 10.0,
+    };
+    let plane = |origin: Point3| SurfaceGeometry::Plane {
+        origin,
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let edge_faces = [[0, 0]];
+    let face_bounds = [
+        Some(bounds([0.0, 0.0, 0.0], [4.0, 4.0, 4.0])),
+        Some(bounds([0.0, 5.0, 0.0], [1.0, 1.0, 1.0])),
+        Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
+    ];
+    let face_geometries = [
+        plane(Point3::new(0.0, 0.0, 0.0)),
+        plane(Point3::new(0.0, 1.0, 0.0)),
+        plane(Point3::new(0.0, 0.0, 0.0)),
+    ];
+    let edge_geometries = [StandardCurveGeometry::Circle {
+        center: Point3::new(0.0, 0.0, 0.0),
+        radius: 1.0,
+    }];
+    let mut allowed_faces = vec![vec![1, 2]];
+
+    refine_repeated_face_domains_by_geometry_and_bounds(
+        &edge_faces,
+        &mut allowed_faces,
+        Some(&face_bounds),
+        Some(&face_geometries),
+        &edge_geometries,
+    );
+    assert_eq!(allowed_faces, vec![vec![1]]);
+}
+
+#[test]
 fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     let append = |bytes: &mut Vec<u8>, class, object_id: u32, payload: &[u8]| {
         bytes.extend_from_slice(&[
