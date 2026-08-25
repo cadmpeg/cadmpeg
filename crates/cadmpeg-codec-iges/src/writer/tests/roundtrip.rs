@@ -13,7 +13,7 @@ use cadmpeg_test_support::golden::Harness;
 
 use crate::test_support::{
     hyperbola_surface_of_revolution_file, placed_tabulated_hyperbola_file,
-    placed_tabulated_line_file, tabulated_hyperbola_file,
+    placed_tabulated_line_file, polynomial_nurbs_curve_file, tabulated_hyperbola_file,
 };
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -84,6 +84,72 @@ fn lossless_exports_round_trip_to_identical_ir() {
 fn semantic_writer_emits_type120_for_cacheless_hyperbola_revolution() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
         assert_type120_round_trip(version);
+    }
+}
+
+#[test]
+fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
+    let original = IgesCodec
+        .decode(
+            &mut Cursor::new(polynomial_nurbs_curve_file(
+                b"126,0,0,0,1,1,0,0,1,1,1,2,3,0,1;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("degree-zero B-spline fixture decodes");
+
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
+        let plan = Encoder::plan(
+            &IgesEncoder::new(IgesWriteOptions { version }),
+            EncodeInput {
+                ir: original.ir(),
+                fidelity: None,
+            },
+        )
+        .expect("degree-zero B-spline is writable");
+        let mut produced = Vec::new();
+        let report = plan
+            .write_to(&mut produced)
+            .expect("degree-zero output writes");
+        assert!(
+            report.losses.iter().all(
+                |loss| loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+            ),
+            "{version:?}: {:#?}",
+            report.losses
+        );
+
+        let round_trip = IgesCodec
+            .decode(&mut Cursor::new(produced), &DecodeOptions::default())
+            .expect("degree-zero output decodes");
+        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) =
+            &round_trip.ir().model.curves[0].geometry
+        else {
+            panic!("{version:?}: expected a NURBS carrier");
+        };
+        assert_eq!(nurbs.degree, 0, "{version:?}");
+        assert_eq!(nurbs.control_points.len(), 1, "{version:?}");
+        assert_eq!(
+            round_trip.ir().model.curves[0].geometry,
+            original.ir().model.curves[0].geometry,
+            "{version:?}"
+        );
+        assert_eq!(round_trip.ir().model.edges[0].param_range, Some([0.0, 1.0]));
+        assert!(
+            round_trip
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != crate::loss::IgesLossCode::EntityNotProjected.kind()),
+            "{version:?}: {:#?}",
+            round_trip.report().losses
+        );
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        assert!(
+            validation.is_ok(),
+            "{version:?}: {:#?}",
+            validation.findings
+        );
     }
 }
 

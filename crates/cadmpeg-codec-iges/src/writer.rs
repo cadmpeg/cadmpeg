@@ -5571,7 +5571,6 @@ fn encode_nurbs(
     let degree = usize::try_from(nurbs.degree)
         .map_err(|_| CodecError::Malformed("IGES NURBS degree overflows usize".into()))?;
     if control_count == 0
-        || degree == 0
         || degree >= control_count
         || nurbs.knots.len() != control_count + degree + 1
         || range[0] > range[1]

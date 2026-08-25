@@ -1625,7 +1625,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let degree_usize = usize::try_from(degree).unwrap_or(usize::MAX);
-        if degree == 0 || k < degree_usize {
+        if k < degree_usize {
             losses.push(entity_loss(
                 entry,
                 "control-point count is smaller than degree plus one",

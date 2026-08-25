@@ -797,6 +797,40 @@ fn decode_projects_a_bounded_polynomial_bspline_curve() {
 }
 
 #[test]
+fn decode_projects_a_degree_zero_polynomial_bspline_curve() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(polynomial_nurbs_curve_file(
+                b"126,0,0,0,1,1,0,0,1,1,1,2,3,0,1;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let CurveGeometry::Nurbs(nurbs) = &result.ir().model.curves[0].geometry else {
+        panic!("expected a NURBS carrier");
+    };
+    assert_eq!(nurbs.degree, 0);
+    assert_eq!(nurbs.knots, vec![0.0, 1.0]);
+    assert_eq!(nurbs.control_points.len(), 1);
+    assert_eq!(nurbs.weights, None);
+    assert_eq!(
+        cadmpeg_ir::eval::nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            nurbs.weights.as_deref(),
+            0.5,
+        ),
+        Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+    );
+    assert_eq!(result.ir().model.edges[0].param_range, Some([0.0, 1.0]));
+    assert!(result.report().losses.is_empty());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_applies_declared_real_significance_to_polynomial_weights() {
     for (weights, decoded) in [
         ("1.,0.9999999", true),
