@@ -169,3 +169,63 @@ fn replace_face_projects_role_order_and_historical_inputs() {
     )
     .is_none());
 }
+
+#[test]
+fn surface_trim_projects_body_target_and_curve_tool() {
+    let mut scope =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#1200", "SurfaceTrim", 1200);
+    scope.reference_members = vec![1201, 1202, 1203, 1204];
+    let target_group = group(1200, 0, 1201, 1202, 0x0000_0004_0000_0000);
+    let tool_group = group(1200, 2, 1203, 1204, 0x0000_0021_0000_0000);
+    let body = DesignBodyRecipeOperand {
+        id: "f3d:Design/BulkStream.dat:body-recipe#1202".into(),
+        scope_record_index: 1200,
+        owner: DesignBodyRecipeOperandOwner::Group {
+            group_record_index: 1201,
+            group_member_ordinal: 0,
+        },
+        record_index: 1202,
+        byte_offset: 0,
+        class_tag: "316".into(),
+        asset_id: "asset".into(),
+        asset_id_offset: 0,
+        context_id: "context".into(),
+        context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
+        references: vec![DesignBodyRecipeReference {
+            design_reference: 326,
+            design_reference_offset: 0,
+            form: 33,
+            form_offset: 0,
+            candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            preceding_body_slots: Vec::new(),
+        }],
+        nested_record_index: 1205,
+        nested_record_index_offset: 0,
+        recipe_id: "f3d:Design/BulkStream.dat:recipe#1206".into(),
+        resolved_face_slot: Some(20),
+        resolved_body_state_id: Some(254),
+        resolved_body_slot: Some(3),
+        resolved_body_face_slots: vec![20],
+        next_record_index: 1207,
+        next_byte_offset: 0,
+    };
+    let definition = super::project_surface_trim(
+        &scope,
+        &[target_group.clone(), tool_group.clone()],
+        std::slice::from_ref(&body),
+    )
+    .expect("typed SurfaceTrim");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::TrimSurface {
+            faces: FaceSelection::Historical { ref faces, ref native, .. },
+            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
+            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+        } if faces.len() == 1
+            && native == &target_group.id
+            && tool == &tool_group.id
+    ));
+}

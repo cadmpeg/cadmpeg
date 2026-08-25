@@ -1344,6 +1344,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Draft)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::ReplaceFace)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfaceOffset)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfaceTrim)
             || scope.kind == "SplitFace"
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Scale)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::CircularPattern)

@@ -320,6 +320,38 @@ pub(crate) fn bind_split_face_sketch_selections(
     }
 }
 
+/// Resolve `SurfaceTrim` curve-tool groups to ordered curves in one sketch.
+pub(crate) fn bind_surface_trim_sketch_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    resolution: &SketchCurveSelectionResolution<'_>,
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, PathRef};
+
+    let path_resolution = resolution.path_resolution();
+    for feature in features {
+        let FeatureDefinition::TrimSurface { tool, .. } = &mut feature.definition else {
+            continue;
+        };
+        let PathRef::Native(group_id) = tool else {
+            continue;
+        };
+        let mut matching_groups = resolution.groups.iter().filter(|group| {
+            group.id == *group_id
+                && group.role == 0x0000_0021_0000_0000
+                && !group.members.is_empty()
+        });
+        let Some(group) = matching_groups.next() else {
+            continue;
+        };
+        if matching_groups.next().is_some() {
+            continue;
+        }
+        if let Some(path) = resolve_entity_selection_path(group, &path_resolution) {
+            *tool = path;
+        }
+    }
+}
+
 pub(crate) fn bind_extrude_profile_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],

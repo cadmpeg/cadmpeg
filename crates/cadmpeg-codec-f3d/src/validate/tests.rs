@@ -417,7 +417,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
 }
 
 #[test]
-fn validation_accepts_hole_construction_group_roles() {
+fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
     use crate::records::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignParameterScope,
         DesignRecordHeader,
@@ -506,6 +506,20 @@ fn validation_accepts_hole_construction_group_roles() {
     let invalid_frame = |finding: &cadmpeg_ir::Finding| {
         finding.message == "Fusion Design construction operand group has an invalid frame"
     };
+    assert!(!crate::validate::validate_native(&ir)
+        .iter()
+        .any(invalid_frame));
+
+    f3d_native_mut(&mut ir).design_construction_operand_groups[1].role = 0x0000_0008_0000_0000;
+    assert!(crate::validate::validate_native(&ir)
+        .iter()
+        .any(invalid_frame));
+
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native.design_parameter_scopes[0].kind = "SurfaceTrim".into();
+        native.design_construction_operand_groups[1].role = 0x0000_0021_0000_0000;
+    }
     assert!(!crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_frame));

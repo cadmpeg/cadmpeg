@@ -528,6 +528,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         | FeatureDefinition::DatumPrincipalPlane { .. } => false,
         FeatureDefinition::MeshImport { tessellations } => tessellations.is_empty(),
         FeatureDefinition::Decal { faces, .. } => !face_selection_is_resolved(faces),
+        FeatureDefinition::TrimSurface { faces, tool, keep } => {
+            !face_selection_is_resolved(faces)
+                || !loft_path_is_resolved(tool)
+                || matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved)
+        }
         FeatureDefinition::CosmeticThread {
             face,
             diameter,
@@ -2547,6 +2552,20 @@ impl<'a> F3dDecodeSession<'a> {
             },
         );
         crate::design::profile_select::bind_split_face_sketch_selections(
+            &mut self.ir.model.features,
+            &crate::design::profile_select::SketchCurveSelectionResolution {
+                scopes: &self.native.design_parameter_scopes,
+                groups: &self.native.design_construction_operand_groups,
+                operands: &self.native.design_entity_selection_operands,
+                placements: &self.native.design_sketch_placements,
+                curve_identities: &self.native.sketch_curve_identities,
+                sketches: &self.ir.model.sketches,
+                sketch_entities: &self.ir.model.sketch_entities,
+                spatial_sketches: &self.ir.model.spatial_sketches,
+                spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
+            },
+        );
+        crate::design::profile_select::bind_surface_trim_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
                 scopes: &self.native.design_parameter_scopes,

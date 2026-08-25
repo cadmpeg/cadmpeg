@@ -899,6 +899,14 @@ pub fn project_parameter_design_with_edge_identities(
                         .collect(),
                     properties: native_scope_properties(scope, native_scope),
                 }),
+                Some(DesignFeatureFamily::SurfaceTrim) => {
+                    project_surface_trim(scope, construction_groups, body_recipe_operands)
+                        .unwrap_or_else(|| FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: BTreeMap::new(),
+                            properties: native_scope_properties(scope, native_scope),
+                        })
+                }
                 Some(DesignFeatureFamily::BoundaryFill) => {
                     project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Native {
@@ -7235,6 +7243,54 @@ fn project_replace_face(
     Some(FeatureDefinition::ReplaceFace {
         targets,
         replacements,
+    })
+}
+
+/// Project the source selections of a `SurfaceTrim` scope.
+///
+/// Fusion stores the surface target as a role-`0x04` body-recipe group and
+/// the trimming path as a role-`0x21` entity-selection group. The cell table
+/// that determines the retained side is decoded separately; until its source
+/// cells are mapped to a neutral region, retain the typed operation with an
+/// explicit unresolved region rather than falling back to an opaque feature.
+pub(crate) fn project_surface_trim(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    body_recipe_operands: &[DesignBodyRecipeOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FeatureDefinition, PathRef, TrimRegion};
+
+    if scope.kind != "SurfaceTrim" || scope.reference_members.len() != 4 {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let references = scope.reference_members.as_slice();
+    let mut groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+    let [target_group, tool_group] = groups.as_slice() else {
+        return None;
+    };
+    if target_group.scope_reference_ordinal != 0
+        || target_group.record_index != references[0]
+        || target_group.role != ROLE_0X4
+        || target_group.members.as_slice() != &references[1..2]
+        || tool_group.scope_reference_ordinal != 2
+        || tool_group.record_index != references[2]
+        || tool_group.role != ROLE_0X21
+        || tool_group.members.as_slice() != &references[3..4]
+    {
+        return None;
+    }
+    Some(FeatureDefinition::TrimSurface {
+        faces: resolved_body_recipe_selection(scope, target_group, body_recipe_operands)?,
+        tool: PathRef::Native(tool_group.id.clone()),
+        keep: TrimRegion::Unresolved,
     })
 }
 
