@@ -325,7 +325,6 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
 
 pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
     let payload = section.payload();
-    let classes = class_intervals(payload);
     let markers = payload
         .windows(FACE_TESSELLATION_CLASS.len())
         .enumerate()
@@ -340,18 +339,14 @@ pub(crate) fn section_display_faces(section: Section<'_>) -> Vec<DisplayFace> {
         ) else {
             continue;
         };
-        let limit = classes
-            .iter()
-            .find(|class| class.name == "uoTempFaceTessData_c" && class.class_offset + 6 == marker)
-            .map_or_else(
-                || {
-                    markers
-                        .get(marker_index + 1)
-                        .copied()
-                        .unwrap_or(payload.len())
-                },
-                |class| class.content.end,
-            );
+        // `uoBodyPropInfo_c` declarations separate body-property groups, but
+        // face descriptor tables continue after them without repeating the
+        // `uoTempFaceTessData_c` declaration. Only another face declaration
+        // starts a new sequence.
+        let limit = markers
+            .get(marker_index + 1)
+            .copied()
+            .unwrap_or(payload.len());
         let start = header + descriptor_table_offset(payload, header);
         let Some(tables) = parse_table_sequence(payload, start, limit) else {
             continue;

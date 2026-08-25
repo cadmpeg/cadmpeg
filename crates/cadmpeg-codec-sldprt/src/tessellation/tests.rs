@@ -116,6 +116,48 @@ fn extended_face_tessellation_header_places_table_at_plus_40() {
 }
 
 #[test]
+fn body_property_class_does_not_end_face_table_sequence() {
+    let mut payload = Vec::new();
+    class(&mut payload, "uoTempFaceTessData_c", &[]);
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(table());
+
+    class(&mut payload, "uoBodyPropInfo_c", &[]);
+    payload.extend([0x37, 0x80]);
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(1_u32.to_le_bytes());
+    payload.extend(table());
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir().model.tessellations.len(), 2);
+}
+
+#[test]
+fn next_face_class_ends_face_table_sequence() {
+    let mut payload = Vec::new();
+    for _ in 0..2 {
+        class(&mut payload, "uoTempFaceTessData_c", &[]);
+        payload.extend(1_u32.to_le_bytes());
+        payload.extend(1_u32.to_le_bytes());
+        payload.extend(table());
+    }
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir().model.tessellations.len(), 2);
+}
+
+#[test]
 fn incomplete_extended_header_does_not_shift_the_table() {
     let mut payload = Vec::new();
     for word in [1_u32, 1, 1, 0, 0, 0, 0, 0, 0, 0] {
