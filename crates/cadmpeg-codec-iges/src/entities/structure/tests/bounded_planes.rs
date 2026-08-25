@@ -6,7 +6,9 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{bounded_plane_entity_file, OwnedTestEntity};
+use crate::test_support::{
+    bounded_plane_entity_file, owned_test_file_with_global_and_line_fonts, OwnedTestEntity,
+};
 use crate::IgesCodec;
 
 const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
@@ -102,6 +104,123 @@ fn bounded_plane_requires_the_boundary_curve_to_lie_in_the_plane() {
 
     assert!(result.ir().model.faces.is_empty());
     assert!(has_entity_projection_loss(&result));
+}
+
+#[test]
+fn bounded_plane_accepts_a_simple_piecewise_linear_nurbs_boundary() {
+    let result = decode(bounded_plane_entity_file(
+        GLOBAL_V5_0,
+        126,
+        "126,4,1,1,1,1,0,0,0,1,2,3,4,4,1,1,1,1,1,0,0,0,1,0,0,1,1,0,0,1,0,0,0,0,0,4,0,0,1;",
+    ));
+
+    let face = result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#bounded-plane-D1")
+        .expect("piecewise-linear NURBS boundary face");
+    assert_eq!(face.loops.len(), 1);
+    assert!(
+        !has_entity_projection_loss(&result),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn bounded_plane_rejects_a_self_intersecting_piecewise_linear_nurbs_boundary() {
+    let result = decode(bounded_plane_entity_file(
+        GLOBAL_V5_0,
+        126,
+        "126,4,1,1,1,1,0,0,0,1,2,3,4,4,1,1,1,1,1,0,0,0,1,1,0,0,1,0,1,0,0,0,0,0,0,4,0,0,1;",
+    ));
+
+    assert!(result.ir().model.faces.is_empty());
+    assert!(has_entity_projection_loss(&result));
+}
+
+#[test]
+fn bounded_plane_rejects_a_discontinuous_piecewise_linear_nurbs_boundary() {
+    let result = decode(bounded_plane_entity_file(
+        GLOBAL_V5_0,
+        126,
+        "126,4,1,1,1,1,0,0,0,1,1,1,2,2,1,1,1,1,1,0,0,0,1,0,0,1,1,0,0,1,0,0,0,0,0,2,0,0,1;",
+    ));
+
+    assert!(result.ir().model.faces.is_empty());
+    assert!(has_entity_projection_loss(&result));
+}
+
+#[test]
+fn bounded_plane_accepts_a_simple_composite_line_boundary() {
+    let result = decode(owned_test_file_with_global_and_line_fonts(
+        &[
+            OwnedTestEntity {
+                entity_type: 108,
+                form: 1,
+                label: "PLANE".into(),
+                status: "00010000",
+                parameters: "108,0,0,1,0,3,0,0,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 102,
+                form: 0,
+                label: "BOUNDARY".into(),
+                status: "00010000",
+                parameters: "102,4,5,7,9,11;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 110,
+                form: 0,
+                label: "EDGE0".into(),
+                status: "00010000",
+                parameters: "110,0,0,0,1,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 110,
+                form: 0,
+                label: "EDGE1".into(),
+                status: "00010000",
+                parameters: "110,1,0,0,1,1,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 110,
+                form: 0,
+                label: "EDGE2".into(),
+                status: "00010000",
+                parameters: "110,1,1,0,0,1,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 110,
+                form: 0,
+                label: "EDGE3".into(),
+                status: "00010000",
+                parameters: "110,0,1,0,0,0,0;".into(),
+            },
+        ],
+        GLOBAL_V5_0,
+        &[(1, 1), (3, 1), (5, 1), (7, 1), (9, 1), (11, 1)],
+    ));
+
+    let face = result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#bounded-plane-D1")
+        .expect("composite line boundary face");
+    assert_eq!(face.loops.len(), 1);
+    assert!(
+        !has_entity_projection_loss(&result),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]

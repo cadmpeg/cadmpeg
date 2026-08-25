@@ -22,6 +22,80 @@ const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
 const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
 
+pub(super) fn planar_polyline_has_self_intersection(points: &[[f64; 2]]) -> bool {
+    if points.len() < 3 {
+        return false;
+    }
+    let mut points = points.to_vec();
+    let last = points.len() - 1;
+    points[last] = points[0];
+    for first_index in 0..last {
+        for second_index in first_index + 1..last {
+            let allowed_endpoint = if second_index == first_index + 1 {
+                Some(points[second_index])
+            } else if first_index == 0 && second_index + 1 == last {
+                Some(points[0])
+            } else {
+                None
+            };
+            if planar_segments_intersect_beyond_endpoint(
+                [points[first_index], points[first_index + 1]],
+                [points[second_index], points[second_index + 1]],
+                allowed_endpoint,
+            ) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn planar_cross(left: [f64; 2], right: [f64; 2], point: [f64; 2]) -> f64 {
+    (right[0] - left[0]) * (point[1] - left[1]) - (right[1] - left[1]) * (point[0] - left[0])
+}
+
+fn planar_point_on_segment(point: [f64; 2], start: [f64; 2], end: [f64; 2]) -> bool {
+    planar_cross(start, end, point) == 0.0
+        && point[0] >= start[0].min(end[0])
+        && point[0] <= start[0].max(end[0])
+        && point[1] >= start[1].min(end[1])
+        && point[1] <= start[1].max(end[1])
+}
+
+fn planar_segments_intersect_beyond_endpoint(
+    first: [[f64; 2]; 2],
+    second: [[f64; 2]; 2],
+    allowed_endpoint: Option<[f64; 2]>,
+) -> bool {
+    let [a, b] = first;
+    let [c, d] = second;
+    let orientations = [
+        planar_cross(a, b, c),
+        planar_cross(a, b, d),
+        planar_cross(c, d, a),
+        planar_cross(c, d, b),
+    ];
+    let opposite =
+        |left: f64, right: f64| (left > 0.0 && right < 0.0) || (left < 0.0 && right > 0.0);
+    if opposite(orientations[0], orientations[1]) && opposite(orientations[2], orientations[3]) {
+        return true;
+    }
+
+    let mut contacts = [(c, orientations[0]), (d, orientations[1])]
+        .into_iter()
+        .filter_map(|(point, orientation)| {
+            (orientation == 0.0 && planar_point_on_segment(point, a, b)).then_some(point)
+        })
+        .chain(
+            [(a, orientations[2]), (b, orientations[3])]
+                .into_iter()
+                .filter_map(|(point, orientation)| {
+                    (orientation == 0.0 && planar_point_on_segment(point, c, d)).then_some(point)
+                }),
+        );
+    contacts.any(|point| Some(point) != allowed_endpoint)
+}
+
 pub(crate) fn point_display_symbol_type_allowed(entity_type: i64, dialect: Dialect) -> bool {
     match dialect {
         Dialect::Legacy => matches!(entity_type, 308 | 408),

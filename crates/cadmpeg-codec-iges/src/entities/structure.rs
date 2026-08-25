@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product definitions, occurrences, and ordered assembly relationships.
 
-use super::geometry::{curve_geometry_coplanar, entity_loss, resolve_transform, ProjectionOutcome};
+use super::curve_conversion::angularly_equal;
+use super::geometry::{
+    curve_geometry_coplanar, entity_loss, planar_polyline_has_self_intersection, resolve_transform,
+    ProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::{Dialect, ProjectedGlobal};
 use crate::parameter::{
@@ -10,7 +14,7 @@ use crate::parameter::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
 };
@@ -1363,14 +1367,185 @@ fn planes_are_coplanar(
             <= resolution
 }
 
+fn plane_coordinates(points: &[Point3], plane: (Point3, Vector3)) -> Option<Vec<[f64; 2]>> {
+    let normal = plane.1.unit()?;
+    let reference = if normal.x.abs() <= normal.y.abs() && normal.x.abs() <= normal.z.abs() {
+        Vector3::new(1.0, 0.0, 0.0)
+    } else if normal.y.abs() <= normal.z.abs() {
+        Vector3::new(0.0, 1.0, 0.0)
+    } else {
+        Vector3::new(0.0, 0.0, 1.0)
+    };
+    let u_axis = normal.cross(reference).unit()?;
+    let v_axis = normal.cross(u_axis).unit()?;
+    let coordinates = points
+        .iter()
+        .map(|point| {
+            let displacement = point.vector_from(plane.0);
+            [displacement.dot(u_axis), displacement.dot(v_axis)]
+        })
+        .collect::<Vec<_>>();
+    coordinates
+        .iter()
+        .flatten()
+        .all(|coordinate| coordinate.is_finite())
+        .then_some(coordinates)
+}
+
+fn points_coincident(left: Point3, right: Point3, resolution: f64) -> bool {
+    let distance = left.distance(right);
+    distance == 0.0 || (resolution > 0.0 && distance < resolution)
+}
+
+fn polyline_has_forbidden_duplicate(points: &[Point3], resolution: f64) -> bool {
+    let Some(last) = points.len().checked_sub(1) else {
+        return true;
+    };
+    if last < 2 {
+        return true;
+    }
+    for first in 0..=last {
+        for second in first + 1..=last {
+            if first == 0 && second == last {
+                continue;
+            }
+            if points_coincident(points[first], points[second], resolution) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn linear_nurbs_boundary_points(
+    nurbs: &NurbsCurve,
+    parameter_range: [f64; 2],
+) -> Option<Vec<Point3>> {
+    if nurbs.periodic
+        || nurbs.degree != 1
+        || !parameter_range[0].is_finite()
+        || !parameter_range[1].is_finite()
+        || parameter_range[0] >= parameter_range[1]
+        || !knots_nondecreasing(&nurbs.knots)
+        || nurbs
+            .control_points
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+        || nurbs.knots.iter().any(|knot| !knot.is_finite())
+        || nurbs.weights.as_ref().is_some_and(|weights| {
+            weights.len() != nurbs.control_points.len()
+                || weights
+                    .iter()
+                    .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        })
+    {
+        return None;
+    }
+    let domain = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
+    if parameter_range[0] < domain[0] || parameter_range[1] > domain[1] {
+        return None;
+    }
+    if nurbs.knots.windows(2).any(|pair| {
+        pair[0] == pair[1] && parameter_range[0] < pair[0] && pair[0] < parameter_range[1]
+    }) {
+        return None;
+    }
+    let mut parameters = vec![parameter_range[0]];
+    for knot in nurbs.knots.iter().copied() {
+        if knot > parameter_range[0]
+            && knot < parameter_range[1]
+            && parameters.last().is_none_or(|last| *last != knot)
+        {
+            parameters.push(knot);
+        }
+    }
+    parameters.push(parameter_range[1]);
+    parameters
+        .into_iter()
+        .map(|parameter| {
+            cadmpeg_ir::eval::nurbs_curve_point(
+                nurbs.degree,
+                &nurbs.knots,
+                &nurbs.control_points,
+                nurbs.weights.as_deref(),
+                parameter,
+            )
+            .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+        })
+        .collect()
+}
+
+fn linear_nurbs_is_simple_closed(
+    nurbs: &NurbsCurve,
+    parameter_range: [f64; 2],
+    plane: (Point3, Vector3),
+    resolution: f64,
+    transform: Transform,
+) -> bool {
+    let Some(points) = linear_nurbs_boundary_points(nurbs, parameter_range).map(|points| {
+        points
+            .into_iter()
+            .map(|point| transform.apply_point(point))
+            .collect::<Vec<_>>()
+    }) else {
+        return false;
+    };
+    if points.len() < 3
+        || points
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+        || !points_coincident(points[0], *points.last().unwrap_or(&points[0]), resolution)
+        || polyline_has_forbidden_duplicate(&points, resolution)
+    {
+        return false;
+    }
+    let Some(projected) = plane_coordinates(&points, plane) else {
+        return false;
+    };
+    !planar_polyline_has_self_intersection(&projected)
+}
+
+fn analytic_curve_is_simple_closed(geometry: &CurveGeometry, parameter_range: [f64; 2]) -> bool {
+    let period = parameter_range[1] - parameter_range[0];
+    if !period.is_finite() || period <= 0.0 || !angularly_equal(period, std::f64::consts::TAU) {
+        return false;
+    }
+    match geometry {
+        CurveGeometry::Circle { radius, .. } => radius.is_finite() && *radius > 0.0,
+        CurveGeometry::Ellipse {
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            major_radius.is_finite()
+                && *major_radius > 0.0
+                && minor_radius.is_finite()
+                && *minor_radius > 0.0
+        }
+        _ => false,
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PlaneBoundarySimplicity<'a> {
+    index: &'a ModelIndex<'a>,
+    plane: (Point3, Vector3),
+    resolution: f64,
+    transform: Transform,
+}
+
 fn bounded_plane_curve_is_simple(
     geometry: &CurveGeometry,
-    index: &ModelIndex<'_>,
+    context: PlaneBoundarySimplicity<'_>,
     source_is_certified_simple: bool,
+    parameter_range: Option<[f64; 2]>,
     active: &mut BTreeSet<CurveId>,
 ) -> bool {
     match geometry {
         CurveGeometry::Degenerate { .. }
+        | CurveGeometry::Line { .. }
+        | CurveGeometry::Parabola { .. }
+        | CurveGeometry::Hyperbola { .. }
         | CurveGeometry::Procedural { .. }
         | CurveGeometry::Unknown { .. } => false,
         CurveGeometry::Composite {
@@ -1380,28 +1555,76 @@ fn bounded_plane_curve_is_simple(
             self_intersect == &Some(false)
                 && !segments.is_empty()
                 && segments.iter().all(|segment| {
-                    let Some(curve) = index.curves(&segment.curve.0) else {
+                    let Some(curve) = context.index.curves(&segment.curve.0) else {
                         return false;
                     };
                     if !active.insert(segment.curve.clone()) {
                         return false;
                     }
-                    let valid =
-                        bounded_plane_curve_is_simple(&curve.geometry, index, false, active);
+                    let valid = bounded_plane_curve_is_simple(
+                        &curve.geometry,
+                        context,
+                        false,
+                        None,
+                        active,
+                    );
                     active.remove(&segment.curve);
                     valid
                 })
         }
-        CurveGeometry::Transformed { basis, .. } => {
-            bounded_plane_curve_is_simple(basis, index, source_is_certified_simple, active)
+        CurveGeometry::Transformed {
+            basis,
+            transform: map,
+        } => bounded_plane_curve_is_simple(
+            basis,
+            PlaneBoundarySimplicity {
+                transform: context.transform.compose(*map),
+                ..context
+            },
+            source_is_certified_simple,
+            parameter_range,
+            active,
+        ),
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            parameter_range.is_some_and(|range| analytic_curve_is_simple_closed(geometry, range))
         }
-        CurveGeometry::Line { .. }
-        | CurveGeometry::Circle { .. }
-        | CurveGeometry::Ellipse { .. }
-        | CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. } => true,
-        CurveGeometry::Nurbs(_) => source_is_certified_simple,
-        CurveGeometry::Polyline { .. } => false,
+        CurveGeometry::Nurbs(nurbs) => {
+            source_is_certified_simple
+                || parameter_range.is_some_and(|range| {
+                    linear_nurbs_is_simple_closed(
+                        nurbs,
+                        range,
+                        context.plane,
+                        context.resolution,
+                        context.transform,
+                    )
+                })
+        }
+        CurveGeometry::Polyline {
+            points, parameters, ..
+        } => {
+            let active_range_matches = parameter_range.is_none_or(|range| {
+                parameters.as_ref().is_some_and(|parameters| {
+                    parameters.first().copied() == Some(range[0])
+                        && parameters.last().copied() == Some(range[1])
+                })
+            });
+            let points = points
+                .iter()
+                .copied()
+                .map(|point| context.transform.apply_point(point))
+                .collect::<Vec<_>>();
+            active_range_matches
+                && points.len() >= 3
+                && points_coincident(
+                    points[0],
+                    *points.last().unwrap_or(&points[0]),
+                    context.resolution,
+                )
+                && !polyline_has_forbidden_duplicate(&points, context.resolution)
+                && plane_coordinates(&points, context.plane)
+                    .is_some_and(|projected| !planar_polyline_has_self_intersection(&projected))
+        }
     }
 }
 
@@ -1474,8 +1697,14 @@ fn plane_boundary_edge(
     if !active.insert(curve_id.clone())
         || !bounded_plane_curve_is_simple(
             &curve.geometry,
-            index,
+            PlaneBoundarySimplicity {
+                index,
+                plane,
+                resolution,
+                transform: Transform::identity(),
+            },
             source_is_certified_simple,
+            source_edge.param_range,
             &mut active,
         )
     {
