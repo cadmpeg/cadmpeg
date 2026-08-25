@@ -119,10 +119,10 @@ impl Dialect {
 
     /// Whether an empty field has no specification default in this dialect.
     ///
-    /// The later profiles apply the data-type implicit defaults to their
-    /// required-no-default fields. V4.0 predates that rule and names only
-    /// fields 1, 2, and 23 as defaulted. V5.0's Recommended Practices Guide
-    /// instead marks its unconditional required fields explicitly; conditional
+    /// A required-no-default field must contain a supplied value. Its data
+    /// type's implicit default does not override that category. V4.0 names
+    /// only fields 1, 2, and 23 as defaulted. V5.0's Recommended Practices
+    /// Guide marks its unconditional required fields explicitly; conditional
     /// requirements remain with the consumer that can observe the condition.
     const fn field_requires_value(self, index: usize) -> bool {
         match self {
@@ -141,7 +141,12 @@ impl Dialect {
                     | FIELD_GENERATION_DATE
                     | FIELD_MINIMUM_RESOLUTION
             ),
-            Self::Legacy | Self::V5_1 | Self::V5_2 | Self::V5_3 => false,
+            Self::Legacy => false,
+            Self::V5_1 | Self::V5_2 | Self::V5_3 => matches!(
+                index,
+                FIELD_SENDER_PRODUCT..=FIELD_DOUBLE_SIGNIFICANCE
+                    | FIELD_MAXIMUM_LINE_WIDTH..=FIELD_MINIMUM_RESOLUTION
+            ),
         }
     }
 }
@@ -980,7 +985,7 @@ impl Resolution {
 
     fn minimum_resolution(&mut self, dialect: Dialect) -> f64 {
         match self.supplied_real(FIELD_MINIMUM_RESOLUTION) {
-            Supplied::Absent if matches!(dialect, Dialect::V4_0 | Dialect::V5_0) => {
+            Supplied::Absent if dialect.field_requires_value(FIELD_MINIMUM_RESOLUTION) => {
                 self.charge(
                     IgesLossCode::GlobalSemanticContextSubstituted,
                     FIELD_MINIMUM_RESOLUTION,
