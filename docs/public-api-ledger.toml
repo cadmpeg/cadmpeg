@@ -460,3 +460,10 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::SweepRevisionForm::tail_parameterization"
 reason = "preserve shared revision-gated form-2 U/V parameterization when a sweep has no solved cache"
+
+[[change]]
+commit = "cca2bd127dbe5dd394abf15b8fa59105854c3fa4"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::{FeatureDefinition::TrimSurface::cell_selection,TrimCellSelection}"
+reason = "preserve arbitrary SurfaceTrim removal-cell partitions instead of collapsing them to an incorrect inside/outside side"
