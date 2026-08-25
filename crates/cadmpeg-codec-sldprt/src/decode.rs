@@ -1601,6 +1601,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::DatumCoordinateSystemUnresolved
             | FeatureDefinition::BridgeCurveUnresolved
             | FeatureDefinition::LoftUnresolved
+            | FeatureDefinition::ThroughCurveMeshUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::ExtractFaceUnresolved
             | FeatureDefinition::CopyFaceUnresolved

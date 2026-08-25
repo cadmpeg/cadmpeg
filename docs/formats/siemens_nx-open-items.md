@@ -745,6 +745,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique source-face, target-body, associativity, or link-update roles.
 
+### OM-51. `THRU_CURVE_MESH` construction roles
+
+**Question.** Which serialized fields define the curve networks, mesh directions, continuity, and result mode of a `THRU_CURVE_MESH` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `THRU_CURVE_MESH` operation label identifies" defines the through-curve mesh surface construction. Every record carries two input blocks and a body-write frame, but no neutral output or admitted field assigns the curve-network or surface-construction roles.
+
+**Need.** We must identify the ordered curve networks, mesh directions, continuity conditions, and result mode to construct a complete neutral through-curve mesh surface and bind its result body.
+
+**Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique curve-network, mesh-direction, continuity, or result-mode roles.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

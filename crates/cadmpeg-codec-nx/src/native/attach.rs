@@ -5940,6 +5940,7 @@ fn non_boolean_feature_definition_with_parameters(
             bodies: BodySelection::Unresolved,
         },
         "SKIN" | "THRU_CURVE" => FeatureDefinition::LoftUnresolved,
+        "THRU_CURVE_MESH" => FeatureDefinition::ThroughCurveMeshUnresolved,
         "Studio Surface" => FeatureDefinition::FreeformSurfaceUnresolved,
         "SWP104" => FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Unresolved(None),

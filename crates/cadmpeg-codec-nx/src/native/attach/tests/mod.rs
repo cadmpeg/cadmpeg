@@ -54,4 +54,5 @@ mod operations_and_holes;
 mod shell;
 mod sketches;
 mod symbolic_thread;
+mod through_curve_mesh;
 mod trim_body;

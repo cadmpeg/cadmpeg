@@ -414,6 +414,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::DatumCoordinateSystemUnresolved => "datum coordinate system",
             FeatureDefinition::BridgeCurveUnresolved => "bridge curve",
             FeatureDefinition::LoftUnresolved => "loft",
+            FeatureDefinition::ThroughCurveMeshUnresolved => "through curve mesh",
             FeatureDefinition::FreeformSurfaceUnresolved => "freeform surface",
             FeatureDefinition::ExtractFaceUnresolved => "extract face",
             FeatureDefinition::CopyFaceUnresolved => "copy face",

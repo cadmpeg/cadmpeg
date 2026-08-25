@@ -1175,6 +1175,8 @@ pub enum FeatureDefinition {
     },
     /// Loft-family skin whose section semantics remain unresolved.
     LoftUnresolved,
+    /// Through-curve mesh surface whose curve networks and construction remain unresolved.
+    ThroughCurveMeshUnresolved,
     /// Freeform surface whose control geometry remains unresolved.
     FreeformSurfaceUnresolved,
     /// Loft through an ordered sequence of profile or point sections.
@@ -1719,6 +1721,7 @@ impl FeatureDefinition {
             Self::Sphere { .. } => Some("sphere"),
             Self::ExtractBody { .. } => Some("extract body"),
             Self::Loft { .. } => Some("loft"),
+            Self::ThroughCurveMeshUnresolved => Some("through curve mesh"),
             Self::ExtractFaceUnresolved => Some("extract face"),
             Self::CopyFaceUnresolved => Some("copy face"),
             Self::LinkedFaceUnresolved => Some("linked face"),

@@ -2466,6 +2466,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             | FeatureDefinition::DatumCoordinateSystemUnresolved
             | FeatureDefinition::BridgeCurveUnresolved
             | FeatureDefinition::LoftUnresolved
+            | FeatureDefinition::ThroughCurveMeshUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::ExtractFaceUnresolved
             | FeatureDefinition::CopyFaceUnresolved

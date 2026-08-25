@@ -2160,6 +2160,11 @@ The `BRIDGE_CURVE` operation label identifies a bridge-curve history operation.
 Its source curves, end conditions, and continuity remain unresolved until the
 serialized construction roles establish a complete curve.
 
+The `THRU_CURVE_MESH` operation label identifies a through-curve mesh surface
+construction. Its curve networks, mesh directions, continuity, and result mode
+remain unresolved until the serialized construction roles establish a complete
+surface.
+
 The `FILL_HOLE` operation label identifies a body-affecting hole-fill
 construction. Its source-hole, fill, continuity, and healing roles remain
 unresolved until the serialized construction roles establish a complete
