@@ -50,6 +50,97 @@ pub(super) fn planar_polyline_has_self_intersection(points: &[[f64; 2]]) -> bool
     false
 }
 
+pub(super) fn planar_polylines_intersect(first: &[[f64; 2]], second: &[[f64; 2]]) -> bool {
+    first
+        .windows(2)
+        .flat_map(|first_segment| {
+            second
+                .windows(2)
+                .map(move |second_segment| [first_segment, second_segment])
+        })
+        .any(|segments| {
+            planar_segments_intersect_beyond_endpoint(
+                [segments[0][0], segments[0][1]],
+                [segments[1][0], segments[1][1]],
+                None,
+            )
+        })
+}
+
+pub(super) fn planar_segments_contain_point(point: [f64; 2], segment: [[f64; 2]; 2]) -> bool {
+    planar_point_on_segment(point, segment[0], segment[1])
+}
+
+pub(super) fn plane_coordinates(
+    points: &[Point3],
+    plane: (Point3, Vector3),
+) -> Option<Vec<[f64; 2]>> {
+    let normal = plane.1.unit()?;
+    let reference = if normal.x.abs() <= normal.y.abs() && normal.x.abs() <= normal.z.abs() {
+        Vector3::new(1.0, 0.0, 0.0)
+    } else if normal.y.abs() <= normal.z.abs() {
+        Vector3::new(0.0, 1.0, 0.0)
+    } else {
+        Vector3::new(0.0, 0.0, 1.0)
+    };
+    let u_axis = normal.cross(reference).unit()?;
+    let v_axis = normal.cross(u_axis).unit()?;
+    let coordinates = points
+        .iter()
+        .map(|point| {
+            let displacement = point.vector_from(plane.0);
+            [displacement.dot(u_axis), displacement.dot(v_axis)]
+        })
+        .collect::<Vec<_>>();
+    coordinates
+        .iter()
+        .flatten()
+        .all(|coordinate| coordinate.is_finite())
+        .then_some(coordinates)
+}
+
+pub(super) fn linear_nurbs_parameters(
+    degree: u32,
+    knots: &[f64],
+    control_count: usize,
+    periodic: bool,
+    range: [f64; 2],
+) -> Option<Vec<f64>> {
+    let degree = usize::try_from(degree).ok()?;
+    let expected_knot_count = control_count.checked_add(degree)?.checked_add(1)?;
+    if periodic
+        || degree != 1
+        || control_count < 2
+        || knots.len() != expected_knot_count
+        || !knots.windows(2).all(|pair| pair[0] <= pair[1])
+        || knots.iter().any(|knot| !knot.is_finite())
+        || !range[0].is_finite()
+        || !range[1].is_finite()
+        || range[0] >= range[1]
+    {
+        return None;
+    }
+    let domain = [knots[degree], knots[control_count]];
+    if range[0] < domain[0] || range[1] > domain[1] {
+        return None;
+    }
+    if knots
+        .windows(2)
+        .any(|pair| pair[0] == pair[1] && range[0] < pair[0] && pair[0] < range[1])
+    {
+        return None;
+    }
+    let mut parameters = vec![range[0]];
+    for knot in knots.iter().copied() {
+        if knot > range[0] && knot < range[1] && parameters.last().is_none_or(|last| *last != knot)
+        {
+            parameters.push(knot);
+        }
+    }
+    parameters.push(range[1]);
+    Some(parameters)
+}
+
 fn planar_cross(left: [f64; 2], right: [f64; 2], point: [f64; 2]) -> f64 {
     (right[0] - left[0]) * (point[1] - left[1]) - (right[1] - left[1]) * (point[0] - left[0])
 }

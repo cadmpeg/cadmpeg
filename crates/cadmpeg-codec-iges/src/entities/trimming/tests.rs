@@ -16,8 +16,8 @@ use cadmpeg_ir::CadIr;
 
 use super::{
     cluster_boundary_positions, coordinate_quantum, create_boundary_vertices,
-    pcurve_within_declared_bounds, BoundaryEndpoint, BoundaryVertexClusterError,
-    BoundaryVertexSourceEndpoint, FaceTolerancePolicy,
+    linear_boundary_relationship_is_valid, pcurve_within_declared_bounds, BoundaryEndpoint,
+    BoundaryVertexClusterError, BoundaryVertexSourceEndpoint, FaceTolerancePolicy,
 };
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
@@ -587,6 +587,54 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         }
         definition => panic!("unexpected implicit-domain definition: {definition:?}"),
     }
+}
+
+#[test]
+fn type_144_rejects_a_self_intersecting_linear_outer_boundary() {
+    let rings = vec![vec![
+        [0.0, 0.0],
+        [1.0, 1.0],
+        [0.0, 1.0],
+        [1.0, 0.0],
+        [0.0, 0.0],
+    ]];
+    let plane = SurfaceGeometry::Plane {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+
+    assert_eq!(
+        linear_boundary_relationship_is_valid(&rings, true, true, &plane, None, [false, false]),
+        Some(false)
+    );
+}
+
+#[test]
+fn decode_rejects_a_linear_type_144_inner_boundary_outside_the_outer() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_with_boundaries_and_inner(
+                "106,1,5,0,0,0,1,0,1,1,0,1,0,0;",
+                "106,1,5,0,0.75,0.25,1.25,0.25,1.25,0.75,0.75,0.75,0.75,0.25;",
+                "144,1,1,1,7,13;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .any(|face| face.id.0 == "iges:model:face#D15"));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .message
+                .contains("trimmed-surface boundary loops are not simple")
+    }));
 }
 
 #[test]

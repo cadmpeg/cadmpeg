@@ -1724,8 +1724,19 @@ pub(crate) fn trimmed_plane_with_boundaries(
     outer_pcurve: &str,
     trimmed_parameters: &str,
 ) -> Vec<u8> {
+    trimmed_plane_with_boundaries_and_inner(
+        outer_pcurve,
+        "106,1,5,0,0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75,0.25,0.25;",
+        trimmed_parameters,
+    )
+}
+
+pub(crate) fn trimmed_plane_with_boundaries_and_inner(
+    outer_pcurve: &str,
+    inner: &str,
+    trimmed_parameters: &str,
+) -> Vec<u8> {
     let outer = "106,1,5,0,0,0,1,0,1,1,0,1,0,0;";
-    let inner = "106,1,5,0,0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75,0.25,0.25;";
     owned_test_file(&[
         OwnedTestEntity {
             entity_type: 108,

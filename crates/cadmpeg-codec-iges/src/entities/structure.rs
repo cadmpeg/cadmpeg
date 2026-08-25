@@ -3,8 +3,8 @@
 
 use super::curve_conversion::angularly_equal;
 use super::geometry::{
-    curve_geometry_coplanar, entity_loss, planar_polyline_has_self_intersection, resolve_transform,
-    ProjectionOutcome,
+    curve_geometry_coplanar, entity_loss, linear_nurbs_parameters,
+    planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
 use crate::global::{Dialect, ProjectedGlobal};
@@ -14,7 +14,7 @@ use crate::parameter::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
 };
@@ -1367,31 +1367,6 @@ fn planes_are_coplanar(
             <= resolution
 }
 
-fn plane_coordinates(points: &[Point3], plane: (Point3, Vector3)) -> Option<Vec<[f64; 2]>> {
-    let normal = plane.1.unit()?;
-    let reference = if normal.x.abs() <= normal.y.abs() && normal.x.abs() <= normal.z.abs() {
-        Vector3::new(1.0, 0.0, 0.0)
-    } else if normal.y.abs() <= normal.z.abs() {
-        Vector3::new(0.0, 1.0, 0.0)
-    } else {
-        Vector3::new(0.0, 0.0, 1.0)
-    };
-    let u_axis = normal.cross(reference).unit()?;
-    let v_axis = normal.cross(u_axis).unit()?;
-    let coordinates = points
-        .iter()
-        .map(|point| {
-            let displacement = point.vector_from(plane.0);
-            [displacement.dot(u_axis), displacement.dot(v_axis)]
-        })
-        .collect::<Vec<_>>();
-    coordinates
-        .iter()
-        .flatten()
-        .all(|coordinate| coordinate.is_finite())
-        .then_some(coordinates)
-}
-
 fn points_coincident(left: Point3, right: Point3, resolution: f64) -> bool {
     let distance = left.distance(right);
     distance == 0.0 || (resolution > 0.0 && distance < resolution)
@@ -1421,16 +1396,10 @@ fn linear_nurbs_boundary_points(
     nurbs: &NurbsCurve,
     parameter_range: [f64; 2],
 ) -> Option<Vec<Point3>> {
-    if nurbs.periodic
-        || nurbs.degree != 1
-        || !parameter_range[0].is_finite()
-        || !parameter_range[1].is_finite()
-        || parameter_range[0] >= parameter_range[1]
-        || !knots_nondecreasing(&nurbs.knots)
-        || nurbs
-            .control_points
-            .iter()
-            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+    if nurbs
+        .control_points
+        .iter()
+        .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
         || nurbs.knots.iter().any(|knot| !knot.is_finite())
         || nurbs.weights.as_ref().is_some_and(|weights| {
             weights.len() != nurbs.control_points.len()
@@ -1441,38 +1410,25 @@ fn linear_nurbs_boundary_points(
     {
         return None;
     }
-    let domain = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
-    if parameter_range[0] < domain[0] || parameter_range[1] > domain[1] {
-        return None;
-    }
-    if nurbs.knots.windows(2).any(|pair| {
-        pair[0] == pair[1] && parameter_range[0] < pair[0] && pair[0] < parameter_range[1]
-    }) {
-        return None;
-    }
-    let mut parameters = vec![parameter_range[0]];
-    for knot in nurbs.knots.iter().copied() {
-        if knot > parameter_range[0]
-            && knot < parameter_range[1]
-            && parameters.last().is_none_or(|last| *last != knot)
-        {
-            parameters.push(knot);
-        }
-    }
-    parameters.push(parameter_range[1]);
-    parameters
-        .into_iter()
-        .map(|parameter| {
-            cadmpeg_ir::eval::nurbs_curve_point(
-                nurbs.degree,
-                &nurbs.knots,
-                &nurbs.control_points,
-                nurbs.weights.as_deref(),
-                parameter,
-            )
-            .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
-        })
-        .collect()
+    linear_nurbs_parameters(
+        nurbs.degree,
+        &nurbs.knots,
+        nurbs.control_points.len(),
+        nurbs.periodic,
+        parameter_range,
+    )?
+    .into_iter()
+    .map(|parameter| {
+        cadmpeg_ir::eval::nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            nurbs.weights.as_deref(),
+            parameter,
+        )
+        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+    })
+    .collect()
 }
 
 fn linear_nurbs_is_simple_closed(

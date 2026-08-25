@@ -4,8 +4,9 @@
 use super::composite::{bounded_nurbs_for_curve_with_tolerance, CompositeIndex};
 use super::evaluation;
 use super::geometry::{
-    entity_loss, source_object, BoundaryEndpoint, BoundaryVertexDerivation,
-    BoundaryVertexSourceEndpoint, ProjectionOutcome,
+    entity_loss, linear_nurbs_parameters, planar_polyline_has_self_intersection,
+    planar_polylines_intersect, plane_coordinates, source_object, BoundaryEndpoint,
+    BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -14,8 +15,8 @@ use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
 use cadmpeg_ir::geometry::{
-    Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
@@ -286,6 +287,330 @@ pub(super) fn pcurve_geometry(
         },
         range,
     ))
+}
+
+fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<Point3>> {
+    if nurbs.weights.as_ref().is_some_and(|weights| {
+        weights.len() != nurbs.control_points.len() || weights.iter().any(|weight| *weight != 1.0)
+    }) {
+        return None;
+    }
+    linear_nurbs_parameters(
+        nurbs.degree,
+        &nurbs.knots,
+        nurbs.control_points.len(),
+        nurbs.periodic,
+        range,
+    )?
+    .into_iter()
+    .map(|parameter| {
+        cadmpeg_ir::eval::nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            None,
+            parameter,
+        )
+        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+    })
+    .collect()
+}
+
+fn linear_pcurve_points(geometry: &PcurveGeometry, range: [f64; 2]) -> Option<Vec<[f64; 2]>> {
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    } = geometry
+    else {
+        return None;
+    };
+    if weights.as_ref().is_some_and(|weights| {
+        weights.len() != control_points.len() || weights.iter().any(|weight| *weight != 1.0)
+    }) {
+        return None;
+    }
+    linear_nurbs_parameters(*degree, knots, control_points.len(), *periodic, range)?
+        .into_iter()
+        .map(|parameter| {
+            evaluation::pcurve(geometry, parameter)
+                .map(|point| [point.u, point.v])
+                .filter(|point| point.iter().all(|coordinate| coordinate.is_finite()))
+        })
+        .collect()
+}
+
+fn append_path<T: Copy + PartialEq>(target: &mut Vec<T>, path: Vec<T>) -> Option<()> {
+    let first = path.first().copied()?;
+    if target.last().is_some_and(|last| *last != first) {
+        return None;
+    }
+    if target.is_empty() {
+        target.extend(path);
+    } else {
+        target.extend(path.into_iter().skip(1));
+    }
+    Some(())
+}
+
+fn normalize_model_ring_endpoints(points: &mut [Point3], tolerance: f64) {
+    if let (Some(first), Some(last)) = (points.first().copied(), points.last_mut()) {
+        if close(first, *last, tolerance) {
+            *last = first;
+        }
+    }
+}
+
+fn normalize_parameter_ring_endpoints(points: &mut [[f64; 2]], tolerance: f64) {
+    if let (Some(first), Some(last)) = (points.first().copied(), points.last_mut()) {
+        let distance = (first[0] - last[0]).hypot(first[1] - last[1]);
+        if distance.is_finite() && distance <= tolerance {
+            *last = first;
+        }
+    }
+}
+
+fn linear_boundary_model_points(
+    items: &[BoundaryItem],
+    index: &ModelIndex<'_>,
+    closure_tolerance: f64,
+) -> Option<Vec<Point3>> {
+    let mut points = Vec::new();
+    for item in items {
+        let curve = index.curves(&item.model_curve.0)?;
+        let mut curve_points = match &curve.geometry {
+            CurveGeometry::Line { .. } => vec![item.start, item.end],
+            CurveGeometry::Nurbs(nurbs) => {
+                linear_model_nurbs_points(nurbs, item.source_edge.param_range?)?
+            }
+            _ => return None,
+        };
+        if curve_points.first().copied() != Some(item.start)
+            || curve_points.last().copied() != Some(item.end)
+        {
+            return None;
+        }
+        if item.segment.sense == Sense::Reversed {
+            curve_points.reverse();
+        }
+        append_path(&mut points, curve_points)?;
+    }
+    normalize_model_ring_endpoints(&mut points, closure_tolerance);
+    Some(points)
+}
+
+#[derive(Clone)]
+enum LinearBoundaryGeometry {
+    Parameter(Vec<[f64; 2]>),
+    Model(Vec<[f64; 2]>),
+}
+
+fn linear_boundary_geometry(
+    items: &[BoundaryItem],
+    index: &ModelIndex<'_>,
+    support: &SurfaceGeometry,
+    resolution: f64,
+    closure_tolerance: f64,
+    use_parameter_curves: bool,
+) -> Option<LinearBoundaryGeometry> {
+    let SurfaceGeometry::Plane { origin, normal, .. } = support else {
+        return None;
+    };
+    let model_points = linear_boundary_model_points(items, index, closure_tolerance)?;
+    let model_plane = (*origin, *normal);
+    if items.iter().any(|item| {
+        let Some(curve) = index.curves(&item.model_curve.0) else {
+            return true;
+        };
+        !super::geometry::curve_geometry_coplanar(
+            &curve.geometry,
+            index,
+            cadmpeg_ir::transform::Transform::identity(),
+            model_plane,
+            resolution,
+            &mut BTreeSet::new(),
+        )
+    }) {
+        return None;
+    }
+    let model_coordinates = plane_coordinates(&model_points, model_plane)?;
+    if use_parameter_curves
+        && items
+            .iter()
+            .any(|item| item.segment.parameter_curves_authoritative)
+    {
+        if !items
+            .iter()
+            .all(|item| item.segment.parameter_curves_authoritative)
+        {
+            return None;
+        }
+        let mut parameter_points = Vec::new();
+        for item in items {
+            if item.pcurves.is_empty() {
+                return None;
+            }
+            for (geometry, range) in &item.pcurves {
+                append_path(
+                    &mut parameter_points,
+                    linear_pcurve_points(geometry, *range)?,
+                )?;
+            }
+        }
+        normalize_parameter_ring_endpoints(&mut parameter_points, closure_tolerance);
+        Some(LinearBoundaryGeometry::Parameter(parameter_points))
+    } else {
+        Some(LinearBoundaryGeometry::Model(model_coordinates))
+    }
+}
+
+fn linear_ring_is_simple(points: &[[f64; 2]]) -> bool {
+    let Some(last) = points.len().checked_sub(1) else {
+        return false;
+    };
+    if points.len() < 4
+        || points.first() != points.last()
+        || points
+            .iter()
+            .flatten()
+            .any(|coordinate| !coordinate.is_finite())
+    {
+        return false;
+    }
+    if points.windows(2).any(|segment| segment[0] == segment[1]) {
+        return false;
+    }
+    for first in 0..last {
+        for second in first + 1..last {
+            if points[first] == points[second] {
+                return false;
+            }
+        }
+    }
+    !planar_polyline_has_self_intersection(points)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PlanarPointLocation {
+    Inside,
+    Boundary,
+    Outside,
+}
+
+fn planar_point_location(point: [f64; 2], ring: &[[f64; 2]]) -> PlanarPointLocation {
+    if ring.windows(2).any(|segment| {
+        super::geometry::planar_segments_contain_point(point, [segment[0], segment[1]])
+    }) {
+        return PlanarPointLocation::Boundary;
+    }
+    let mut inside = false;
+    for segment in ring.windows(2) {
+        let [left, right] = [segment[0], segment[1]];
+        if (left[1] > point[1]) != (right[1] > point[1]) {
+            let crossing =
+                left[0] + (right[0] - left[0]) * (point[1] - left[1]) / (right[1] - left[1]);
+            if point[0] < crossing {
+                inside = !inside;
+            }
+        }
+    }
+    if inside {
+        PlanarPointLocation::Inside
+    } else {
+        PlanarPointLocation::Outside
+    }
+}
+
+fn linear_boundary_rings(
+    candidates: &[Option<LinearBoundaryGeometry>],
+    parameter: bool,
+) -> Option<Vec<Vec<[f64; 2]>>> {
+    if candidates.is_empty() {
+        return None;
+    }
+    candidates
+        .iter()
+        .map(|candidate| match (parameter, candidate.as_ref()) {
+            (true, Some(LinearBoundaryGeometry::Parameter(points)))
+            | (false, Some(LinearBoundaryGeometry::Model(points))) => Some(points.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn inner_boundaries_are_disjoint_and_inside(outer: &[[f64; 2]], inners: &[Vec<[f64; 2]>]) -> bool {
+    for inner in inners {
+        if planar_polylines_intersect(outer, inner)
+            || inner[..inner.len() - 1]
+                .iter()
+                .any(|point| planar_point_location(*point, outer) != PlanarPointLocation::Inside)
+        {
+            return false;
+        }
+    }
+    inners.iter().enumerate().all(|(left_index, left)| {
+        inners.iter().skip(left_index + 1).all(|right| {
+            !planar_polylines_intersect(left, right)
+                && planar_point_location(left[0], right) != PlanarPointLocation::Inside
+                && planar_point_location(right[0], left) != PlanarPointLocation::Inside
+        })
+    })
+}
+
+fn linear_boundary_relationship_is_valid(
+    rings: &[Vec<[f64; 2]>],
+    trimmed_surface: bool,
+    has_explicit_outer: bool,
+    support: &SurfaceGeometry,
+    support_bounds: Option<[Option<f64>; 4]>,
+    periodic_parameters: [bool; 2],
+) -> Option<bool> {
+    if !rings.iter().all(|ring| linear_ring_is_simple(ring)) {
+        return Some(false);
+    }
+    if !trimmed_surface {
+        return Some(true);
+    }
+    if has_explicit_outer {
+        let (outer, inners) = rings.split_first()?;
+        return Some(inner_boundaries_are_disjoint_and_inside(outer, inners));
+    }
+    if periodic_parameters.iter().any(|periodic| *periodic) {
+        return None;
+    }
+    match support_bounds {
+        Some([Some(u_lower), Some(u_upper), Some(v_lower), Some(v_upper)])
+            if u_lower.is_finite()
+                && u_upper.is_finite()
+                && v_lower.is_finite()
+                && v_upper.is_finite()
+                && u_lower < u_upper
+                && v_lower < v_upper =>
+        {
+            if rings.iter().any(|ring| {
+                ring[..ring.len() - 1].iter().any(|point| {
+                    point[0] <= u_lower
+                        || point[0] >= u_upper
+                        || point[1] <= v_lower
+                        || point[1] >= v_upper
+                })
+            }) {
+                return Some(false);
+            }
+        }
+        Some(_) => return None,
+        None if !matches!(support, SurfaceGeometry::Plane { .. }) => return None,
+        None => {}
+    }
+    Some(rings.iter().enumerate().all(|(left_index, left)| {
+        rings.iter().skip(left_index + 1).all(|right| {
+            !planar_polylines_intersect(left, right)
+                && planar_point_location(left[0], right) != PlanarPointLocation::Inside
+                && planar_point_location(right[0], left) != PlanarPointLocation::Inside
+        })
+    }))
 }
 
 #[derive(Clone)]
@@ -1124,6 +1449,7 @@ pub(super) fn project(
         let mut implicit_boundary_curves = Vec::new();
         let mut implicit_boundary_pcurves = Vec::new();
         let mut loop_ids = Vec::new();
+        let mut linear_boundary_candidates = Vec::with_capacity(boundary_sequences.len());
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence).cloned() else {
@@ -1290,6 +1616,14 @@ pub(super) fn project(
                 valid = false;
                 break;
             }
+            linear_boundary_candidates.push(linear_boundary_geometry(
+                &items,
+                &carrier_index,
+                &support_geometry,
+                carrier_agreement_tolerance,
+                sewing_tolerance,
+                trimmed_surface,
+            ));
             let loop_id = LoopId(format!("iges:model:loop#{stem}:{boundary_index}"));
             let coedge_ids = (0..items.len())
                 .map(|index| CoedgeId(format!("iges:model:coedge#{stem}:{boundary_index}:{index}")))
@@ -1409,6 +1743,29 @@ pub(super) fn project(
         }
         if !valid {
             continue;
+        }
+        let linear_rings = linear_boundary_rings(&linear_boundary_candidates, true)
+            .or_else(|| linear_boundary_rings(&linear_boundary_candidates, false));
+        if let Some(rings) = linear_rings {
+            if linear_boundary_relationship_is_valid(
+                &rings,
+                trimmed_surface,
+                has_explicit_outer,
+                &support_geometry,
+                support_parameter_bounds,
+                periodic_parameters,
+            ) == Some(false)
+            {
+                losses.push(entity_loss(
+                    entry,
+                    if trimmed_surface {
+                        "trimmed-surface boundary loops are not simple, disjoint, and correctly nested"
+                    } else {
+                        "boundary loop is not a simple closed carrier"
+                    },
+                ));
+                continue;
+            }
         }
         let face_surface_id = if implicit_outer_domain {
             let derived_surface_id = SurfaceId(format!(
