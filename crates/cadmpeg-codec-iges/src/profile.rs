@@ -100,7 +100,7 @@ fn envelope_a_v5_0_admits(entity_type: i64, form: i64) -> bool {
         218 => form == 1,
         228 => implementor_defined_form(form),
         230 => form == 1,
-        402 => matches!(form, 19..=21),
+        402 => form == 19,
         404 => form == 1,
         406 => matches!(form, 19..=26),
         410 => form == 1,
