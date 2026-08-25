@@ -61,8 +61,8 @@ pub(crate) const fn macro_instance_type(entity_type: i64) -> bool {
 
 fn envelope_a_v4_admits(entity_type: i64, form: i64) -> bool {
     match entity_type {
-        123 | 141 | 143 | 182 | 186 | 190 | 192 | 194 | 196 | 198 | 204 | 213 | 316 | 502 | 504
-        | 508 | 510 | 514 => false,
+        123 | 141 | 143 | 182 | 186 | 190 | 192 | 194 | 196 | 198 | 204 | 213 | 316 | 322 | 422
+        | 502 | 504 | 508 | 510 | 514 => false,
         180 | 184 => form == 0,
         228 => matches!(form, 0..=3),
         230 => form == 0,
@@ -105,6 +105,8 @@ fn envelope_a_v5_0_admits(entity_type: i64, form: i64) -> bool {
         406 => matches!(form, 19..=26),
         410 => form == 1,
         416 => form == 3,
+        322 => matches!(form, 0..=2),
+        422 => matches!(form, 0..=1),
         _ => false,
     }
 }
