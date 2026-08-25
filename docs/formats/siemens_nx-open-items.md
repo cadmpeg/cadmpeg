@@ -575,16 +575,19 @@ construction ownership only.
 
 **Question.** Which ordered `SKIN` and `THRU_CURVE` references and branch groups select sections, guides, continuity, and terminal controls?
 
-**Known.** `siemens_nx.md` §7.1 "The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions.", §7.1 "A `THRU_CURVE` payload begins with the exact construction-reference envelope", §7.1 "The envelope is followed by one counted branch group.", and §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." define the loft family, both exact construction envelopes, counted branch groups, ordered references, and the fourteen-block logical payload.
+**Known.** `siemens_nx.md` §7.1 "The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions.", §7.1 "A `THRU_CURVE` payload begins with the exact construction-reference envelope", §7.1 "The envelope is followed by one counted branch group.", and §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." define the loft family, both exact construction envelopes, counted branch groups, ordered references, and the fourteen-block logical payload. A complete `THRU_CURVE` allocation places its nine envelope-reference blocks before its branch member and terminal blocks. A complete `SKIN` or `Studio Surface` allocation places its first eleven envelope-reference blocks before the branch allocation and its final three envelope references after it; an internal storage gap may occur. Branch declared counts include their terminal references, while the `THRU_CURVE` group count includes an implicit owner slot. These positional rules establish storage ownership and order only.
 
 **Need.** We must know the roles to construct the neutral loft surface or body.
 
 **Conflict.** The `SKIN` envelope preserves fourteen references in order, the
 `THRU_CURVE` envelope preserves nine references in order, and both operations'
 branch groups preserve modes, state lanes, members, and terminal references.
-These fields use shared reference grammars and provide no relation assigning
-sections, guides, continuity, or terminal controls. Scalar pairs and strings
-are payload-owned and do not add those roles.
+The positional allocation and branch ordinal provide storage order but no
+relation assigning sections, guides, continuity, or terminal controls. The
+envelope-reference slots are not all one consecutive reference-only run.
+Scalar pairs and strings are payload-owned and do not add those roles. The
+operation-owned data blocks may still contain selections of existing curve
+objects, so allocation ownership does not establish neutral curve identity.
 
 ### OM-27. `Studio Surface` construction roles
 

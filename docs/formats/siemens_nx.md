@@ -2044,9 +2044,25 @@ A `THRU_CURVE` payload begins with the exact construction-reference envelope `di
 
 The envelope is followed by one counted branch group. Its first byte is a count that includes one implicit owner slot, so it serializes `count - 1` branches and is at least two. A branch is `mode, 01, branch-count, member-reference[branch-count - 1], 01, branch-count, state-lane, ff 01 02, terminal-reference, 00 81, suffix-code`. The mode is nonzero, `branch-count >= 2`, and `suffix-code` is `48` or `58`. A standard state lane contains `branch-count + 3` zero bytes. An extended state lane is permitted only when `branch-count = 5` and is `00 00 00 00, 01 05, controls-a[4], 01 05, controls-b[4], 00 00`; both control arrays remain byte-exact. All member and terminal references use the canonical object-index encoding and the unique-store resolution rule. The group ends with `00 00 00 00 00 00 ff 00 ff 01` or `00 00 00 00 00 00 ff ff 01`. The group retains its declared count, branch order, modes, counts, exact state lanes, ordered references, suffixes, terminator, and source offsets. A zero mode, invalid count, malformed repeated count, invalid state lane, null or noncanonical reference, invalid suffix, missing branch, or missing terminator rejects the group atomically without rejecting the envelope or bounded operation record. Bytes after the terminator are not part of the group.
 
+The complete `THRU_CURVE` construction allocation is positional. The nine
+envelope-reference blocks precede the branch member and terminal blocks in
+branch order. The branch terminal is a separate block and is not one of the
+nine envelope references. This allocation order establishes storage ownership
+and branch order only; it does not assign a branch to a neutral section, guide,
+continuity mode, or result role.
+
 `SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope. Its header is `discriminator, 00 00 01 00, reference[0..2], 01 09, header[8], 01 09, reference[3..10]`; `SKIN` discriminators are `3e` and `3f`, while the `Studio Surface` discriminator is `14`. The same bounded payload contains exactly one trailing lane framed as `03 03 2f a4 7a e1 47 ae 14 7b, reference[11..13], 01 01 ff ff ff ff ff ff ff ff ff 00 00 00 00 01 02`. All references use the canonical object-index encoding and unique-store resolution rule and retain their exact tokens and offsets. An invalid discriminator, malformed header, absent or repeated trailing lane, null or noncanonical reference, or incomplete suffix rejects the common envelope atomically without rejecting the bounded operation record.
 
 When all fourteen common-envelope references resolve to one offset store, bytewise concatenation of their blocks in reference order is the logical surface construction payload. Physical block boundaries do not delimit its fields. The payload retains its exact length and hash, ordered construction references and block identities, payload-relative block starts, exact block lengths, and absolute source offsets. An incomplete, out-of-order, unresolved, or cross-store graph remains unreconstructed. The nine-reference `THRU_CURVE` envelope does not use this fourteen-block reconstruction rule.
+
+The complete `SKIN` or `Studio Surface` construction allocation is also
+positional. The first eleven envelope-reference blocks are followed by the
+counted branch member and terminal blocks, and the final three envelope
+references follow that branch allocation. A storage gap may occur inside the
+branch interval. The fourteen envelope-reference slots are therefore ordered
+slots around the branch allocation, not one consecutive reference-only run.
+The allocation order and the storage role do not assign section, guide,
+continuity, terminal, or control semantics.
 
 The logical surface construction payload uses the common object-payload scalar-pair frame `08 02 03 01, branch, c0 45 04 00 80 86 02 00 03, shifted-f64, 00, shifted-f64`, where `branch` is `03 01` or `81 02 01`. Each complete occurrence is retained in payload order. Both values are finite. The typed frame preserves its owning logical payload, exact discriminator including the branch, both exact scalar encodings, payload-relative discriminator and scalar offsets, and their exact absolute source offsets across source-block boundaries. An incomplete or non-finite frame is rejected atomically.
 
