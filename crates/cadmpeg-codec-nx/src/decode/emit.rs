@@ -13,6 +13,7 @@ use super::pcurves::{
 use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{Graph, Node};
+use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::curve_point;
 use cadmpeg_ir::geometry::{
@@ -975,10 +976,7 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
     );
     attributes.insert(
         "footer_fingerprint".to_string(),
-        format!(
-            "{:08x}",
-            u32::from_be_bytes(scan.container.footer_fingerprint)
-        ),
+        format!("{:08x}", assemble_u32_be(scan.container.footer_fingerprint)),
     );
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
     if control_count != 0 {

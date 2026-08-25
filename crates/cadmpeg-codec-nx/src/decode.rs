@@ -10,6 +10,7 @@
 //!
 //! [`DecodeReport`]: cadmpeg_ir::report::DecodeReport
 
+use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
@@ -439,7 +440,7 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
         c.footer_offset,
         c.header_entry_count,
         c.footer_entry_count,
-        u32::from_be_bytes(c.footer_fingerprint),
+        assemble_u32_be(c.footer_fingerprint),
     )];
     notes.push(format!(
         "embedded streams: {} partition, {} deltas, {} plain (cached body), {} preview/non-Parasolid",

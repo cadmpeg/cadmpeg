@@ -212,7 +212,7 @@ mod sldprt {
     pub fn sldprt_with_body_and_material(body: &[u8], name: &str, rgb: [u8; 3]) -> Vec<u8> {
         let mut f = sldprt_with_body(body);
         let mut material = b"moVisualProperties_c".to_vec();
-        material.extend_from_slice(&u32::from_le_bytes([rgb[0], rgb[1], rgb[2], 0]).to_le_bytes());
+        material.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 0]);
         material.extend_from_slice(&0u32.to_le_bytes());
         material.extend_from_slice(&0x00c0c0c0u32.to_le_bytes());
         material.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);

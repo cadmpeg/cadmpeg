@@ -2324,15 +2324,12 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     }
     let mut out = b"moVisualProperties_c".to_vec();
     let component = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
-    out.extend_from_slice(
-        &u32::from_le_bytes([
-            component(color.r),
-            component(color.g),
-            component(color.b),
-            0,
-        ])
-        .to_le_bytes(),
-    );
+    out.extend_from_slice(&[
+        component(color.r),
+        component(color.g),
+        component(color.b),
+        0,
+    ]);
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&0x00c0_c0c0u32.to_le_bytes());
     out.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);

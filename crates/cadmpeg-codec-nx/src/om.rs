@@ -372,7 +372,7 @@ fn color_component(bytes: &[u8]) -> Option<(f32, Vec<u8>, usize)> {
             let raw: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
             let mut decoded = raw;
             decoded[0] = decoded[0].checked_sub(0x10)?;
-            let value = f32::from_be_bytes(decoded) / 4.0;
+            let value = View::f32_be_at(&decoded, 0)? / 4.0;
             (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
                 debug_assert_eq!(raw[0], marker);
                 (value, raw.to_vec(), 4)
@@ -3697,7 +3697,7 @@ fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
     let encoded: [u8; 8] = bytes.try_into().ok()?;
     let mut raw = encoded;
     raw[0] = raw[0].checked_add(0x10)?;
-    let value = f64::from_be_bytes(raw);
+    let value = View::f64_be_at(&raw, 0)?;
     value.is_finite().then_some(value)
 }
 
@@ -4882,7 +4882,7 @@ fn payload_scalar(bytes: &[u8]) -> Option<(f64, PayloadScalarEncoding, usize)> {
             let encoded: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
             let mut raw = encoded;
             raw[0] = raw[0].checked_sub(0x10)?;
-            let value = f32::from_be_bytes(raw);
+            let value = View::f32_be_at(&raw, 0)?;
             value
                 .is_finite()
                 .then_some((f64::from(value), PayloadScalarEncoding::Binary32, 4))
