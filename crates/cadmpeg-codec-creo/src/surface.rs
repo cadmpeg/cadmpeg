@@ -1433,7 +1433,7 @@ impl SurfaceParameterRecord {
         let start = type24_round_edge_shell_end(&self.body, &cache)?;
         let (first_parameter, mut cursor) =
             scalar::decode_round_edge_coordinate(&self.body, start, &cache)?;
-        cursor = type24_round_edge_separator_end(&self.body, cursor)?;
+        cursor = type24_round_edge_separator_end(&self.body, cursor, &cache)?;
         let (second_parameter, next) =
             scalar::decode_round_edge_coordinate(&self.body, cursor, &cache)?;
         cursor = next;
@@ -2110,6 +2110,7 @@ fn type24_round_edge_shell_end(body: &[u8], cache: &scalar::ScalarCache) -> Opti
     match body {
         [0x1b | 0x34, _, 0x00, ..] => Some(3),
         [0x5a, 0xb2, ..] => Some(2),
+        [0x39, 0x19 | 0x29, 0x00, ..] => Some(3),
         [0x18, ..] => Some(1),
         [0xeb..=0xed, 0xba, _, _, _, ..] => Some(5),
         [0x32, _, _, _, _, _, _, _, ..] => Some(8),
@@ -2118,7 +2119,15 @@ fn type24_round_edge_shell_end(body: &[u8], cache: &scalar::ScalarCache) -> Opti
     }
 }
 
-fn type24_round_edge_separator_end(body: &[u8], offset: usize) -> Option<usize> {
+fn type24_round_edge_separator_end(
+    body: &[u8],
+    offset: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<usize> {
+    if matches!(body.get(offset), Some(0x90 | 0x91)) {
+        let (_, end) = scalar::decode_round_edge_coordinate(body, offset, cache)?;
+        return (end == offset + 7 && body.get(end) == Some(&0x2d)).then_some(end);
+    }
     if matches!(body.get(offset), Some(0x11..=0x14)) {
         return Some(offset + 1);
     }
@@ -5192,7 +5201,7 @@ fn decode_type24_axial_interval_corner_candidates(
 ) -> Option<Vec<PositionalCylinderFrame>> {
     let start = type24_round_edge_shell_end(body, cache)?;
     let (first_parameter, mut cursor) = scalar::decode_round_edge_coordinate(body, start, cache)?;
-    cursor = type24_round_edge_separator_end(body, cursor)?;
+    cursor = type24_round_edge_separator_end(body, cursor, cache)?;
     let (second_parameter, next) = scalar::decode_round_edge_coordinate(body, cursor, cache)?;
     cursor = next;
 

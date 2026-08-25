@@ -21,6 +21,49 @@ fn round_edge_endpoint_coordinate_is_not_a_terminal_radius() {
 }
 
 #[test]
+fn decodes_extended_type24_round_edge_separator_and_shells() {
+    let record = |shell: &[u8], delimiter: u8| {
+        let mut body = shell.to_vec();
+        for value in [2.0_f64, 3.0] {
+            let raw = value.to_be_bytes();
+            body.push(0x2d);
+            body.extend_from_slice(&raw[1..]);
+            if value == 2.0 {
+                body.extend_from_slice(&[delimiter, 0, 0, 0, 0, 0, 0]);
+            }
+        }
+        body.extend_from_slice(&[0x0f; 6]);
+        SurfaceParameterRecord {
+            surface_id: 7,
+            body,
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: None,
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            positional_torus_frame: None,
+            boundary: SurfaceBodyBoundary::CompoundClose,
+            offset: 0,
+            body_offset: 0,
+        }
+    };
+
+    for delimiter in [0x90, 0x91] {
+        for shell in [[0x18].as_slice(), &[0x39, 0x19, 0x00], &[0x39, 0x29, 0x00]] {
+            let envelope = record(shell, delimiter)
+                .type24_round_edge_envelope(0x24)
+                .expect("extended round-edge envelope");
+            assert_eq!(envelope.parameter_interval, [2.0, 3.0]);
+            assert_eq!(envelope.vertices, [[0.0; 3], [0.0; 3]]);
+        }
+    }
+}
+
+#[test]
 fn perpendicular_round_edge_uses_equal_endpoint_deltas_as_radius() {
     let mut body = vec![0x34, 0xe0, 0x00];
     body.extend_from_slice(&[0x56, 0, 0, 0, 0, 0, 0]);
