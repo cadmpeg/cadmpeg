@@ -20,6 +20,7 @@ use crate::transform::{Transform, Transform2};
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
+mod helix;
 mod law_sweep;
 mod variable_blend;
 

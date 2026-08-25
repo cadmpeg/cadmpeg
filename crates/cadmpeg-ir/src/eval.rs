@@ -1343,7 +1343,7 @@ pub fn nurbs_pcurve_parameter_domain(
 }
 
 const NURBS_SEARCH_MAX_INTERVALS: usize = 512;
-const NURBS_SEARCH_MAX_NEWTON_ITERATIONS: usize = 12;
+const MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS: usize = 12;
 
 #[derive(Clone, Copy)]
 struct NurbsSearchWindow<'a> {
@@ -1451,7 +1451,7 @@ fn nurbs_curve_parameter_near_point_newton(
     let [lower, upper] =
         parameter_interval_containing(search.boundaries, seed).unwrap_or(search.domain);
     let mut parameter = seed.clamp(lower, upper);
-    for _ in 0..NURBS_SEARCH_MAX_NEWTON_ITERATIONS {
+    for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
         let position = nurbs_curve_point(
             curve.degree,
             &curve.knots,
@@ -2701,6 +2701,86 @@ struct ModelCurveDifferential {
     acceleration: Vector3,
 }
 
+/// Evaluate the native helix path and its exact angle derivatives.
+///
+/// The stored angular interval is the domain of the path parameter. The
+/// pitch and apex terms advance by the fraction of one full revolution from
+/// the interval's lower bound, while the major and minor vectors define the
+/// radial frame at the stored angle.
+fn helix_differential(
+    definition: &ProceduralCurveDefinition,
+    parameter: f64,
+) -> Option<ModelCurveDifferential> {
+    let ProceduralCurveDefinition::Helix {
+        angle_range,
+        center,
+        major,
+        minor,
+        pitch,
+        apex_factor,
+        axis,
+    } = definition
+    else {
+        return None;
+    };
+    let angle_range = *angle_range;
+    let center = *center;
+    let major = *major;
+    let minor = *minor;
+    let pitch = *pitch;
+    let apex_factor = *apex_factor;
+    let axis = *axis;
+    let [start, end] = angle_range;
+    if ![start, end, apex_factor, parameter]
+        .into_iter()
+        .all(f64::is_finite)
+        || start > end
+        || parameter < start
+        || parameter > end
+        || ![
+            center.x, center.y, center.z, major.x, major.y, major.z, minor.x, minor.y, minor.z,
+            pitch.x, pitch.y, pitch.z,
+        ]
+        .into_iter()
+        .all(f64::is_finite)
+        || unit_axis(axis).is_none()
+    {
+        return None;
+    }
+
+    let inverse_revolution = 1.0 / std::f64::consts::TAU;
+    let revolution_fraction = (parameter - start) * inverse_revolution;
+    let radial_scale = 1.0 + apex_factor * revolution_fraction;
+    let radial = vector_sum(&[(parameter.cos(), major), (parameter.sin(), minor)]);
+    let radial_first = vector_sum(&[(-parameter.sin(), major), (parameter.cos(), minor)]);
+    let point = offset(
+        center,
+        &[(radial_scale, radial), (revolution_fraction, pitch)],
+    );
+    let scale_first = apex_factor * inverse_revolution;
+    let tangent = vector_sum(&[
+        (radial_scale, radial_first),
+        (scale_first, radial),
+        (inverse_revolution, pitch),
+    ]);
+    let acceleration = vector_sum(&[(-radial_scale, radial), (2.0 * scale_first, radial_first)]);
+    let finite_vector = |vector: Vector3| {
+        [vector.x, vector.y, vector.z]
+            .into_iter()
+            .all(f64::is_finite)
+    };
+    (point.x.is_finite()
+        && point.y.is_finite()
+        && point.z.is_finite()
+        && finite_vector(tangent)
+        && finite_vector(acceleration))
+    .then_some(ModelCurveDifferential {
+        point,
+        tangent,
+        acceleration,
+    })
+}
+
 fn model_curve_differential_by_id(
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
@@ -2762,6 +2842,9 @@ fn model_curve_differential_by_id_inner(
                     tangent: scale_vector(differential.tangent, parameter_scale),
                     acceleration: differential.acceleration,
                 });
+            }
+            ProceduralCurveDefinition::Helix { .. } => {
+                return helix_differential(&procedural.definition, parameter);
             }
             _ => {}
         }
@@ -3069,6 +3152,10 @@ fn model_curve_point_by_id_inner(
             };
             model_curve_point_by_id_inner(index, source, source_parameter, depth + 1)
         }
+        ProceduralCurveDefinition::Helix { .. } => {
+            helix_differential(&procedural.definition, parameter)
+                .map(|differential| differential.point)
+        }
         ProceduralCurveDefinition::TolerantIntersection {
             supports,
             tolerance,
@@ -3214,6 +3301,16 @@ fn model_curve_parameter_near_point_with_tolerance(
                         .is_some_and(|evaluated| evaluated.distance(point) <= tolerance))
                 .then_some(parameter);
             }
+            ProceduralCurveDefinition::Helix { .. } => {
+                return helix_parameter_near_point(
+                    index,
+                    curve_id,
+                    point,
+                    seed,
+                    tolerance,
+                    &procedural.definition,
+                );
+            }
             _ => {}
         }
     }
@@ -3338,6 +3435,71 @@ fn model_curve_parameter_near_point_with_tolerance(
     candidates
         .into_iter()
         .min_by(|first, second| (first - seed).abs().total_cmp(&(second - seed).abs()))
+}
+
+/// Find a helix parameter near a caller-selected seed by bounded Newton
+/// refinement of the squared model-space distance.
+fn helix_parameter_near_point(
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    target: Point3,
+    seed: f64,
+    tolerance: f64,
+    definition: &ProceduralCurveDefinition,
+) -> Option<f64> {
+    let ProceduralCurveDefinition::Helix { angle_range, .. } = definition else {
+        return None;
+    };
+    let [start, end] = *angle_range;
+    if ![start, end, seed, tolerance]
+        .into_iter()
+        .all(f64::is_finite)
+        || start > end
+        || seed < start
+        || seed > end
+        || tolerance < 0.0
+        || ![target.x, target.y, target.z]
+            .into_iter()
+            .all(f64::is_finite)
+    {
+        return None;
+    }
+
+    let mut parameter = seed;
+    for _ in 0..MODEL_CURVE_PARAMETER_SEARCH_MAX_NEWTON_ITERATIONS {
+        let differential = model_curve_differential_by_id(index, curve_id, parameter)?;
+        let residual = Vector3::new(
+            differential.point.x - target.x,
+            differential.point.y - target.y,
+            differential.point.z - target.z,
+        );
+        let distance = residual.norm();
+        if distance.is_finite() && distance <= tolerance {
+            return Some(parameter);
+        }
+        let denominator = differential.tangent.dot(differential.tangent);
+        if !denominator.is_finite() || denominator <= 0.0 {
+            break;
+        }
+        let next = parameter - residual.dot(differential.tangent) / denominator;
+        if !next.is_finite() {
+            break;
+        }
+        let next = next.clamp(start, end);
+        if next == parameter {
+            break;
+        }
+        parameter = next;
+    }
+
+    let differential = model_curve_differential_by_id(index, curve_id, parameter)?;
+    let distance = Vector3::new(
+        differential.point.x - target.x,
+        differential.point.y - target.y,
+        differential.point.z - target.z,
+    )
+    .norm();
+    (distance.is_finite() && distance <= tolerance).then_some(parameter)
 }
 
 /// Invert a direct curve carrier near a caller-selected parameter seed.
