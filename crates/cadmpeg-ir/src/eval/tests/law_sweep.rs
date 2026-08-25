@@ -65,7 +65,7 @@ fn cacheless_law_differential_rejects_undefined_domains() {
 }
 
 #[test]
-fn law_sweep_evaluation_selects_cacheless_or_current_cache() {
+fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     let profile_id = CurveId("profile-frame-profile".into());
     let spine_id = CurveId("profile-frame-spine".into());
     let surface_id = SurfaceId("profile-frame-sweep".into());
@@ -140,7 +140,7 @@ fn law_sweep_evaluation_selects_cacheless_or_current_cache() {
                     path_parameter: 0.0,
                     second_law_flag: true,
                     second_law: Box::new(LawExpression::Text {
-                        value: "VEC(1,1,1)".into(),
+                        value: "VEC(2,1,1)".into(),
                     }),
                     formula_mode: 0,
                     formula: LawFormula {
@@ -167,7 +167,7 @@ fn law_sweep_evaluation_selects_cacheless_or_current_cache() {
     });
 
     let index = crate::index::ModelIndex::new(&ir);
-    let expected = Point3::new(-0.5, 1.25, 0.25);
+    let expected = Point3::new(-0.5, 0.5, 0.25);
     let point = model_surface_point_by_id(&index, &surface_id, -0.25, 0.25)
         .expect("profile-frame sweep point");
     assert!((point.x - expected.x).abs() <= f64::EPSILON * 64.0);
@@ -177,7 +177,7 @@ fn law_sweep_evaluation_selects_cacheless_or_current_cache() {
     let partials = model_surface_partials_by_id(&index, &surface_id, -0.25, 0.25)
         .expect("profile-frame sweep partials");
     assert_eq!(partials.point, point);
-    assert_eq!(partials.du, Vector3::new(0.0, -1.0, 0.0));
+    assert_eq!(partials.du, Vector3::new(0.0, -2.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(-2.0, 0.0, 1.0));
 
     ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(bilinear_surface());

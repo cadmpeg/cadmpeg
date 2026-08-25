@@ -4372,19 +4372,72 @@ fn scalar_unary_sweep_law_differential(
     )
 }
 
-fn unit_sweep_scale(expression: &LawExpression) -> bool {
+fn sweep_scale(expression: &LawExpression) -> Option<Vector3> {
     match expression {
-        LawExpression::Null => true,
+        LawExpression::Null => Some(Vector3::new(1.0, 1.0, 1.0)),
         LawExpression::Text { value } => {
-            value
+            let value = value
                 .chars()
                 .filter(|character| !character.is_whitespace())
-                .collect::<String>()
-                == "VEC(1,1,1)"
+                .collect::<String>();
+            let values = value
+                .strip_prefix("VEC(")
+                .and_then(|value| value.strip_suffix(')'))?
+                .split(',')
+                .map(str::parse::<f64>)
+                .collect::<Result<Vec<_>, _>>()
+                .ok()?;
+            let [x, y, z] = values.as_slice() else {
+                return None;
+            };
+            Some(Vector3::new(*x, *y, *z))
         }
-        LawExpression::Vector { value } => *value == Vector3::new(1.0, 1.0, 1.0),
-        _ => false,
+        LawExpression::Vector { value } => Some(*value),
+        _ => None,
     }
+}
+
+fn scale_sweep_profile(
+    profile: ModelCurveDifferential,
+    frame_point: Point3,
+    scale: Vector3,
+) -> Option<ModelCurveDifferential> {
+    let displacement = point_displacement(profile.point, frame_point);
+    let point = offset(
+        frame_point,
+        &[(
+            1.0,
+            Vector3::new(
+                displacement.x * scale.x,
+                displacement.y * scale.y,
+                displacement.z * scale.z,
+            ),
+        )],
+    );
+    let tangent = Vector3::new(
+        profile.tangent.x * scale.x,
+        profile.tangent.y * scale.y,
+        profile.tangent.z * scale.z,
+    );
+    let acceleration = Vector3::new(
+        profile.acceleration.x * scale.x,
+        profile.acceleration.y * scale.y,
+        profile.acceleration.z * scale.z,
+    );
+    (point.x.is_finite()
+        && point.y.is_finite()
+        && point.z.is_finite()
+        && tangent.x.is_finite()
+        && tangent.y.is_finite()
+        && tangent.z.is_finite()
+        && acceleration.x.is_finite()
+        && acceleration.y.is_finite()
+        && acceleration.z.is_finite())
+    .then_some(ModelCurveDifferential {
+        point,
+        tangent,
+        acceleration,
+    })
 }
 
 fn unit_domain_sweep_formula(name: &str) -> bool {
@@ -4586,6 +4639,7 @@ fn cacheless_law_sweep_differentials(
     let SweepSurfaceLayout::LawDriven {
         profile_range,
         profile_frame,
+        origin,
         first_law,
         first_range,
         path_mode,
@@ -4600,19 +4654,21 @@ fn cacheless_law_sweep_differentials(
     };
     let parameterization = form.tail_parameterization.as_ref()?;
     let rail_basis = sweep_rail_basis(formula)?;
+    let scale = sweep_scale(second_law)?;
     if *path_mode != 1
         || *formula_mode != 0
         || *trailing_flag
         || !sweep_tail_interval_contains(parameterization.u_interval, u)
         || !sweep_tail_interval_contains(parameterization.v_interval, v)
         || !sweep_tail_interval_contains([Some(first_range[0]), Some(first_range[1])], v)
-        || !unit_sweep_scale(second_law)
     {
         return None;
     }
     let spine = model_curve_differential_by_id(index, spine, v)?;
     let reversed = sweep_profile_reversed(*profile_frame, spine.tangent)?;
-    let mut profile = sweep_profile_differential(index, profile, *profile_range, reversed, u)?;
+    let profile = sweep_profile_differential(index, profile, *profile_range, reversed, u)?;
+    let frame_point = profile_frame.map_or(*origin, |(point, _)| point);
+    let mut profile = scale_sweep_profile(profile, frame_point, scale)?;
     profile.point = linear_sweep_rail_point(rail_basis, profile.point);
     profile.tangent = linear_sweep_rail_vector(rail_basis, profile.tangent);
     profile.acceleration = linear_sweep_rail_vector(rail_basis, profile.acceleration);
