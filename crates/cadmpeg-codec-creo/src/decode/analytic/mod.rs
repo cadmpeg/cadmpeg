@@ -75,8 +75,7 @@ pub(super) use planes::{
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(super) use planes::{
-    feature_placed_stored_parameter_normal_candidates, plane_candidate_pcurve_lies_on_carrier,
-    stored_parameter_normal_candidates,
+    plane_candidate_pcurve_lies_on_carrier, stored_parameter_normal_candidates,
 };
 #[allow(unused_imports)]
 pub(super) use vertices::{

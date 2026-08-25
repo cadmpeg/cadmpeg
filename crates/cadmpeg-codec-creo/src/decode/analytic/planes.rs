@@ -533,47 +533,6 @@ pub(crate) fn stored_parameter_normal_candidates(
     (candidates.len() > 1).then_some(candidates)
 }
 
-pub(crate) fn feature_placed_stored_parameter_normal_candidates(
-    frame: &crate::surface::PlaneLocalSystem,
-    transform: &crate::placement::FeatureSectionTransform,
-) -> Option<Vec<PlaneCandidate>> {
-    let map_direction = |direction: [f64; 3]| {
-        std::array::from_fn(|axis| {
-            direction[0] * transform.u_axis[axis]
-                + direction[1] * transform.v_axis[axis]
-                + direction[2] * transform.normal[axis]
-        })
-    };
-    let mut candidates = Vec::new();
-    for candidate in stored_parameter_normal_candidates(frame)? {
-        let chart = candidate.chart?;
-        let normal = normalized(map_direction(chart.normal))?;
-        let u_axis = normalized(map_direction(chart.u_axis))?;
-        if dot(normal, u_axis).abs() > EPS_STORED_FRAME_RELATIVE {
-            return None;
-        }
-        let placed = PlaneCandidate {
-            equation: PlaneEquation {
-                origin: candidate.equation.origin,
-                normal,
-            },
-            chart: Some(PlaneChart {
-                origin: chart.origin,
-                normal,
-                u_axis,
-            }),
-            offset: candidate.offset,
-        };
-        if !candidates
-            .iter()
-            .any(|known| plane_candidates_equivalent(*known, placed))
-        {
-            candidates.push(placed);
-        }
-    }
-    (!candidates.is_empty()).then_some(candidates)
-}
-
 fn coordinate_vectors_agree(first: [f64; 3], second: [f64; 3]) -> bool {
     first.into_iter().zip(second).all(|(first, second)| {
         (first - second).abs() <= EPS_AGREE * first.abs().max(second.abs()).max(1.0)
@@ -982,22 +941,7 @@ fn select_stored_frame_branches(
             continue;
         };
         let known = variable_domains.entry(frame.surface_id).or_default();
-        let row = crate::surface::unique_surface_row(&scan.surfaces.rows, frame.surface_id);
-        let transform = row.and_then(|row| {
-            crate::decode::uniqueness::exactly_one(
-                scan.features
-                    .section_transforms
-                    .iter()
-                    .filter(|transform| transform.feature_id == Some(row.feature_id)),
-            )
-        });
-        let placed = transform
-            .and_then(|transform| {
-                feature_placed_stored_parameter_normal_candidates(frame, transform)
-            })
-            .into_iter()
-            .flatten();
-        for option in options.into_iter().chain(placed) {
+        for option in options {
             if !known
                 .iter()
                 .any(|candidate| plane_candidates_equivalent(*candidate, option))

@@ -1248,14 +1248,12 @@ support direction, projected perpendicular to the witnessed axis, is the
 parameter-space reference direction. The witness must agree with every
 complete inline interpretation of the bounded body.
 
-When a surface row has one owning feature-section transform, a stored plane
-frame can express its direction triples in that section basis. A stored
-direction `(d0, d1, d2)` maps to
-`d0 * section_u + d1 * section_v + d2 * section_normal`. The stored origin
-remains in model coordinates. The direct and Z-reflected frame images remain
-candidate branches; a complete pcurve whose mapped endpoints lie on the
-incident analytic carrier selects a branch only when exactly one candidate
-satisfies both endpoints.
+The direction triples and origin in a VisibGeom plane local-system row are
+model-space values. A feature-definition section transform does not remap this
+row: it places section-owned construction geometry and has a separate scope.
+The direct and Z-reflected frame images remain candidate branches; a complete
+pcurve whose mapped endpoints lie on the incident analytic carrier selects a
+branch only when exactly one candidate satisfies both endpoints.
 
 Family-26 and family-29 rows may omit the inline envelope and local-system
 body. When the header is followed immediately by a contour chain, their
