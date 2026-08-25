@@ -224,8 +224,7 @@ fn insert_homogeneous_curve_knot(
 fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierSpan>> {
     let degree = usize::try_from(curve.degree).ok()?;
     let count = curve.control_points.len();
-    if degree == 0
-        || count <= degree
+    if count <= degree
         || curve.knots.len() != count.checked_add(degree)?.checked_add(1)?
         || !knots_nondecreasing(&curve.knots)
     {
@@ -255,6 +254,19 @@ fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierS
         .collect::<Vec<_>>();
     if controls.iter().flatten().any(|value| !value.is_finite()) {
         return None;
+    }
+
+    if degree == 0 {
+        let mut spans = Vec::new();
+        for (index, window) in curve.knots.windows(2).enumerate() {
+            if window[0] < window[1] {
+                spans.push(HomogeneousBezierSpan {
+                    domain: [window[0], window[1]],
+                    controls: vec![*controls.get(index)?],
+                });
+            }
+        }
+        return (!spans.is_empty()).then_some(spans);
     }
 
     let mut knots = curve.knots.clone();
@@ -1697,7 +1709,7 @@ pub(super) fn project(
             continue;
         };
         let [u_degree_usize, v_degree_usize] = [u_degree, v_degree].map(|degree| degree as usize);
-        if u_degree == 0 || v_degree == 0 || k1 < u_degree_usize || k2 < v_degree_usize {
+        if k1 < u_degree_usize || k2 < v_degree_usize {
             losses.push(entity_loss(
                 entry,
                 "surface pole counts are smaller than their degrees plus one",

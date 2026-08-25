@@ -867,9 +867,21 @@ pub(crate) fn equal_weight_rational_nurbs_curve_file() -> Vec<u8> {
 }
 
 pub(crate) fn nurbs_surface_file() -> Vec<u8> {
+    nurbs_surface_file_with_parameters(
+        b"128,1,1,1,1,0,0,1,0,0,0,0,1,1,0,0,1,1,1,1,1,1,0,0,0,1,0,0,0,1,0,1,1,0,0,1,0,1;",
+    )
+}
+
+pub(crate) fn degree_zero_nurbs_surface_file() -> Vec<u8> {
+    nurbs_surface_file_with_parameters(b"128,0,0,0,0,1,1,1,0,0,0,1,0,1,1,1,2,3,0,1,0,1;")
+}
+
+pub(crate) fn multispan_degree_zero_nurbs_surface_file() -> Vec<u8> {
+    nurbs_surface_file_with_parameters(b"128,1,0,0,0,0,1,1,0,0,0,1,2,0,1,1,1,1,2,3,4,5,6,0,2,0,1;")
+}
+
+pub(crate) fn nurbs_surface_file_with_parameters(parameters: &[u8]) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
-    let parameters =
-        b"128,1,1,1,1,0,0,1,0,0,0,0,1,1,0,0,1,1,1,1,1,1,0,0,0,1,0,0,0,1,0,1,1,0,0,1,0,1;";
     let parameter_count = parameter_fragment_count(parameters);
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);

@@ -12,7 +12,8 @@ use cadmpeg_ir::SourceFidelity;
 use cadmpeg_test_support::golden::Harness;
 
 use crate::test_support::{
-    hyperbola_surface_of_revolution_file, placed_tabulated_hyperbola_file,
+    degree_zero_nurbs_surface_file, hyperbola_surface_of_revolution_file,
+    multispan_degree_zero_nurbs_surface_file, placed_tabulated_hyperbola_file,
     placed_tabulated_line_file, polynomial_nurbs_curve_file, tabulated_hyperbola_file,
 };
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
@@ -151,6 +152,79 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             validation.findings
         );
     }
+}
+
+fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (u32, u32)) {
+    let original = IgesCodec
+        .decode(&mut Cursor::new(input), &DecodeOptions::default())
+        .expect("degree-zero B-spline surface fixture decodes");
+
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
+        let plan = Encoder::plan(
+            &IgesEncoder::new(IgesWriteOptions { version }),
+            EncodeInput {
+                ir: original.ir(),
+                fidelity: None,
+            },
+        )
+        .expect("degree-zero B-spline surface is writable");
+        let mut produced = Vec::new();
+        let report = plan
+            .write_to(&mut produced)
+            .expect("degree-zero surface output writes");
+        assert!(
+            report.losses.iter().all(
+                |loss| loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+            ),
+            "{version:?}: {:#?}",
+            report.losses
+        );
+
+        let round_trip = IgesCodec
+            .decode(&mut Cursor::new(produced), &DecodeOptions::default())
+            .expect("degree-zero surface output decodes");
+        let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
+            &round_trip.ir().model.surfaces[0].geometry
+        else {
+            panic!("{version:?}: expected a NURBS surface carrier");
+        };
+        assert_eq!((surface.u_degree, surface.v_degree), (0, 0), "{version:?}");
+        assert_eq!(
+            (surface.u_count, surface.v_count),
+            expected_counts,
+            "{version:?}"
+        );
+        assert_eq!(
+            round_trip.ir().model.surfaces[0].geometry,
+            original.ir().model.surfaces[0].geometry,
+            "{version:?}"
+        );
+        assert!(
+            round_trip
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != crate::loss::IgesLossCode::EntityNotProjected.kind()),
+            "{version:?}: {:#?}",
+            round_trip.report().losses
+        );
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        assert!(
+            validation.is_ok(),
+            "{version:?}: {:#?}",
+            validation.findings
+        );
+    }
+}
+
+#[test]
+fn semantic_writer_round_trips_a_degree_zero_bspline_surface() {
+    assert_degree_zero_surface_round_trip(degree_zero_nurbs_surface_file(), (1, 1));
+}
+
+#[test]
+fn semantic_writer_round_trips_a_multispan_degree_zero_bspline_surface() {
+    assert_degree_zero_surface_round_trip(multispan_degree_zero_nurbs_surface_file(), (2, 1));
 }
 
 #[test]

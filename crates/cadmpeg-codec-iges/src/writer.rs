@@ -4682,8 +4682,6 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
         .ok_or_else(|| CodecError::Malformed("IGES surface v knot count overflows".into()))?;
     if u_count == 0
         || v_count == 0
-        || u_degree == 0
-        || v_degree == 0
         || u_degree >= u_count
         || v_degree >= v_count
         || nurbs.control_points.len() != pole_count

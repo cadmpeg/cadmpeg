@@ -14,6 +14,8 @@ use crate::transform::{Transform, Transform2};
 use crate::validate::validate_neutral;
 use crate::CadIr;
 
+const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
+
 fn bilinear_surface() -> NurbsSurface {
     NurbsSurface {
         u_degree: 1,
@@ -102,6 +104,57 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
             .hypot(point.y - target.y)
             .hypot(point.z - target.z);
         assert!(distance <= bound);
+    }
+}
+
+#[test]
+fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
+    let surface = NurbsSurface {
+        u_degree: 0,
+        v_degree: 0,
+        u_knots: vec![0.0, 1.0],
+        v_knots: vec![0.0, 1.0],
+        u_count: 1,
+        v_count: 1,
+        control_points: vec![Point3::new(1.0, 2.0, 3.0)],
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let point = Point3::new(1.0, 2.0, 3.0);
+    assert_eq!(nurbs_surface_point(&surface, 0.25, 0.75), Some(point));
+    let bound = nurbs_surface_parameter_segment_chord_bound(
+        &surface,
+        [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+        [point, point],
+    )
+    .expect("degree-zero surface bound");
+    assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
+}
+
+#[test]
+fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
+    let surface = NurbsSurface {
+        u_degree: 0,
+        v_degree: 0,
+        u_knots: vec![0.0, 1.0, 2.0],
+        v_knots: vec![0.0, 1.0],
+        u_count: 2,
+        v_count: 1,
+        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let poles = [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
+    for (range, pole) in [([0.0, 1.0], poles[0]), ([1.0, 2.0], poles[1])] {
+        let bound = nurbs_surface_parameter_segment_chord_bound(
+            &surface,
+            [Point2::new(range[0], 0.0), Point2::new(range[1], 1.0)],
+            [pole, pole],
+        )
+        .expect("degree-zero patch span bound");
+        assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
     }
 }
 

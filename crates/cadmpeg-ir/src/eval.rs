@@ -240,6 +240,19 @@ fn homogeneous_bezier_spans(
     knots: &[f64],
     mut controls: Vec<[f64; 4]>,
 ) -> Option<Vec<HomogeneousBezierSpan>> {
+    if degree == 0 {
+        let mut spans = Vec::new();
+        for (index, window) in knots.windows(2).enumerate() {
+            if window[0] < window[1] {
+                spans.push(HomogeneousBezierSpan {
+                    domain: [window[0], window[1]],
+                    controls: vec![*controls.get(index)?],
+                });
+            }
+        }
+        return (!spans.is_empty()).then_some(spans);
+    }
+
     let mut knots = knots.to_vec();
     let domain = [*knots.get(degree)?, *knots.get(controls.len())?];
     let mut internal = knots[degree + 1..controls.len()]
@@ -279,9 +292,7 @@ fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezier
     let u_count = usize::try_from(surface.u_count).ok()?;
     let v_count = usize::try_from(surface.v_count).ok()?;
     let control_count = u_count.checked_mul(v_count)?;
-    if u_degree == 0
-        || v_degree == 0
-        || u_degree >= u_count
+    if u_degree >= u_count
         || v_degree >= v_count
         || surface.control_points.len() != control_count
         || surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?

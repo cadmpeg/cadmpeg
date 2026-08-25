@@ -7,7 +7,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::NurbsCurve;
+use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
 
 use crate::loss::IgesLossCode;
@@ -1236,6 +1236,58 @@ fn decode_projects_a_bspline_surface_with_u_major_control_order() {
     assert_eq!(
         cadmpeg_ir::eval::nurbs_surface_point(nurbs, 0.25, 0.75),
         Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
+    );
+    assert!(result.report().losses.is_empty());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_projects_a_degree_zero_bspline_surface() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(degree_zero_nurbs_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+        panic!("expected a NURBS surface carrier");
+    };
+    assert_eq!((surface.u_degree, surface.v_degree), (0, 0));
+    assert_eq!((surface.u_count, surface.v_count), (1, 1));
+    assert_eq!(surface.u_knots, vec![0.0, 1.0]);
+    assert_eq!(surface.v_knots, vec![0.0, 1.0]);
+    assert_eq!(
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
+        Some(Point3::new(1.0, 2.0, 3.0))
+    );
+    assert!(result.report().losses.is_empty());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_projects_multispan_degree_zero_bspline_surface() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(multispan_degree_zero_nurbs_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let SurfaceGeometry::Nurbs(surface) = &result.ir().model.surfaces[0].geometry else {
+        panic!("expected a NURBS surface carrier");
+    };
+    assert_eq!((surface.u_degree, surface.v_degree), (0, 0));
+    assert_eq!((surface.u_count, surface.v_count), (2, 1));
+    assert_eq!(
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5),
+        Some(Point3::new(1.0, 2.0, 3.0))
+    );
+    assert_eq!(
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 1.5, 0.5),
+        Some(Point3::new(4.0, 5.0, 6.0))
     );
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
