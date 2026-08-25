@@ -9,9 +9,9 @@ pub(super) use std::{
 pub(super) use cadmpeg_ir::topology::BodyKind;
 
 pub(super) use crate::families::standard::fbb::{
-    parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables,
-    parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, parse_trim_record_layout,
-    parse_vertex_table, prune_edge_candidates_by_port_domains,
+    fbb_population_layouts, parse_edge_tables_at, parse_edge_tables_scoped_at,
+    parse_fbb_edge_tables, parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record,
+    parse_trim_record_layout, parse_vertex_table, prune_edge_candidates_by_port_domains,
     prune_edge_candidates_by_port_domains_with_deferred, standard_edge_count, standard_face_count,
     standard_fbb_groups, EDGE_DELIMITER,
 };

@@ -33,7 +33,18 @@ const FRAME_VECTOR_NORM2_TOLERANCE: f64 = 1e-6;
 /// unresolved.
 #[must_use]
 pub fn standard_face_count(bytes: &[u8]) -> Option<usize> {
-    selected_standard_run(bytes).map(|(_, count, _)| count)
+    let selected = selected_standard_run(bytes)?;
+    let layouts = fbb_population_layouts(bytes);
+    if layouts.is_empty()
+        || layouts.iter().any(|layout| {
+            (layout.face_start, layout.face_count, layout.after_faces)
+                == (selected.0, selected.1, selected.2)
+        })
+    {
+        Some(selected.1)
+    } else {
+        None
+    }
 }
 
 /// Number of physical edge rows in the admitted standard edge-table form.
@@ -553,6 +564,68 @@ pub(crate) fn parse_fbb_edge_tables_width(
     (table_count == 2).then_some((rows, scopes, position, handle_width))
 }
 
+/// Recover the row layout used by an FBB-only table from its trim boundaries.
+///
+/// Complete rows remain complete whenever their stored sequence occurs on a
+/// recovered cycle. Some mixed FBB tables store flanking corner handles around
+/// an interior sample sequence instead; that form is admitted only when the
+/// complete sequence has no occurrence and the interior sequence has at most
+/// one occurrence per cycle. Rows with no boundary match remain complete so
+/// their fixed unmatched span is preserved for the later placement solver.
+pub(crate) fn classify_fbb_edge_layouts(rows: &mut [EdgeRow], trims: &[TrimRecord]) -> Option<()> {
+    let cycles = trims
+        .iter()
+        .map(|trim| boundary_cycles(&trim.triangles))
+        .collect::<Option<Vec<_>>>()?;
+    for row in rows {
+        let complete_matches = cycles
+            .iter()
+            .flat_map(|face| face.iter())
+            .map(|cycle| pattern_match_count(cycle, &row.handles))
+            .sum::<usize>();
+        if complete_matches != 0 {
+            continue;
+        }
+        let Some(interior) = row.handles.get(1..row.handles.len().checked_sub(1)?) else {
+            continue;
+        };
+        if interior.is_empty() {
+            continue;
+        }
+        let interior_counts = cycles
+            .iter()
+            .flat_map(|face| face.iter())
+            .map(|cycle| pattern_match_count(cycle, interior))
+            .collect::<Vec<_>>();
+        if interior_counts.iter().sum::<usize>() != 0
+            && interior_counts.iter().all(|count| *count <= 1)
+        {
+            row.boundary_layout = EdgeBoundaryLayout::InteriorWithFlankingCorners;
+        }
+    }
+    Some(())
+}
+
+fn pattern_match_count(cycle: &[u32], pattern: &[u32]) -> usize {
+    if pattern.is_empty() || pattern.len() > cycle.len() {
+        return 0;
+    }
+    (0..cycle.len())
+        .filter(|start| {
+            let forward = pattern
+                .iter()
+                .enumerate()
+                .all(|(offset, handle)| cycle[(*start + offset) % cycle.len()] == *handle);
+            let reversed = pattern
+                .iter()
+                .rev()
+                .enumerate()
+                .all(|(offset, handle)| cycle[(*start + offset) % cycle.len()] == *handle);
+            forward || reversed
+        })
+        .count()
+}
+
 /// One independently source-closed standard FBB population.
 ///
 /// A marker run becomes a population only when its fixed-width edge tables,
@@ -576,6 +649,48 @@ pub(crate) fn standard_fbb_groups(bytes: &[u8]) -> Vec<StandardFbbGroup> {
     crate::container::fbb_run_ranges(bytes)
         .into_iter()
         .filter_map(|range| parse_standard_group(bytes, range.start, range.len() / fbb_row::LEN))
+        .collect()
+}
+
+/// A source-closed FBB layout whose topology may still require the global
+/// endpoint solver. The edge and vertex counts are structural population
+/// keys; they are not body selection by themselves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FbbPopulationLayout {
+    pub(crate) face_start: usize,
+    pub(crate) face_count: usize,
+    pub(crate) after_faces: usize,
+    pub(crate) edge_count: usize,
+    pub(crate) vertex_count: usize,
+}
+
+/// Find every FBB face run with a complete local trim, edge-table, and vertex
+/// walk, without requiring endpoint incidence to be solved.
+#[must_use]
+pub(crate) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
+    crate::container::fbb_run_ranges(bytes)
+        .into_iter()
+        .filter_map(|range| {
+            let face_count = range.len() / fbb_row::LEN;
+            let after_faces = range.end;
+            let (edge_rows, vertex_header, handle_width) =
+                parse_standard_edge_tables_with_width(bytes, after_faces).or_else(|| {
+                    parse_fbb_edge_tables(bytes, after_faces).map(
+                        |(rows, _, vertex_header, handle_width)| {
+                            (rows, vertex_header, handle_width)
+                        },
+                    )
+                })?;
+            let vertex_count = parse_vertex_table(bytes, vertex_header)?.len();
+            parse_trim_chain(bytes, range.start, face_count, handle_width)?;
+            Some(FbbPopulationLayout {
+                face_start: range.start,
+                face_count,
+                after_faces,
+                edge_count: edge_rows.len(),
+                vertex_count,
+            })
+        })
         .collect()
 }
 

@@ -334,14 +334,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `catia.md` §5.1 "trim_record[i] -> face_outer_bound_row[i] -> face i" defines topology reconstruction for one positional spine and its FBB incidences.
 
-**Need.** We must know cross-group membership to build all bodies and shells.
+`standard_surface_populations` now retains every contiguous surface-record chain ending at a `0x60` support table and keeps each support table's face references in its population-local namespace. The FBB walk also retains every population with a complete trim, edge-table, and counted-vertex layout, including its face, edge, and vertex counts. A unique `(face_count, edge_count, vertex_count)` key can select one cross-lane population; a repeated key does not select one secondary population.
+
+**Need.** We must identify the outer/container membership relation that joins each FBB layout to its surface/support population and then emits every joined body and shell. The face, edge, and vertex counts are only structural keys; repeated keys still require an independent relation.
 
 **Conflict.** `selected_standard_run` in
-`src/families/standard/fbb.rs` falls back to `largest_fbb_run` when no
-source-closed FBB group is reconstructed. The fallback selects a unique largest
-marker run by row count alone. Neither row count nor uniqueness by size binds
-that run as the governing topology spine, so a larger secondary or unrelated
-population can displace the required face population.
+`src/families/standard/fbb.rs` still falls back to `largest_fbb_run` when no
+source-closed topology group is reconstructed. The surface/support bridge now
+rejects ambiguous local populations, but the topology path does not yet carry
+the selected population object through vertex, trim, and edge reconstruction.
+Neither row count nor uniqueness by size binds a repeated secondary population.
 
 ### SN-15. Standard arc branch selection
 

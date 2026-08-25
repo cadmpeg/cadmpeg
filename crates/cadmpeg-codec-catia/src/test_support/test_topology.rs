@@ -99,6 +99,34 @@ pub(crate) fn fbb_only_quad_topology_stream() -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn fbb_mixed_boundary_topology_stream() -> Vec<u8> {
+    let complete = fbb_only_quad_topology_stream();
+    let table_start = complete
+        .windows(5)
+        .position(|window| window == [0x01, 0x01, 0x02, 0x02, 0x03])
+        .expect("first FBB edge table");
+    let vertex_start = complete
+        .windows(3)
+        .position(|marker| marker == [0x01, 0x06, 0x04])
+        .expect("FBB vertex table");
+    let mut bytes = complete[..table_start].to_vec();
+    let delimiter = [0x10, 0xf4, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+    bytes.extend_from_slice(&[0x01, 0x01, 0x01, 0x02, 0x05]);
+    for handle in [99u16, 11, 12, 13, 98] {
+        bytes.extend_from_slice(&[handle.to_be_bytes()[0], handle.to_be_bytes()[1]]);
+    }
+    bytes.extend_from_slice(&delimiter);
+    bytes.extend_from_slice(&[0x01, 0x02, 0x04]);
+    for [start, end] in [[14u16, 15], [15, 16], [16, 17], [17, 10]] {
+        bytes.extend_from_slice(&[0x02, 0x02]);
+        bytes.extend_from_slice(&start.to_be_bytes());
+        bytes.extend_from_slice(&end.to_be_bytes());
+    }
+    bytes.extend_from_slice(&delimiter);
+    bytes.extend_from_slice(&complete[vertex_start..]);
+    bytes
+}
+
 pub(crate) fn fbb_only_quad_unmatched_edge_topology_stream() -> Vec<u8> {
     let mut bytes = fbb_only_quad_topology_stream();
     let row_header = bytes

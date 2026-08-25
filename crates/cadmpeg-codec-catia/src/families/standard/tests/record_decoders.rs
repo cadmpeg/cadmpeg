@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use crate::families::standard::records::{StandardFaceBounds, StandardSurfaceRecord};
 use crate::test_support::{
     a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
-    compact_standard_triangle_topology_stream, fbb_only_quad_topology_stream, le_f32, le_f64,
-    standard_quad_topology_stream,
+    compact_standard_triangle_topology_stream, fbb_mixed_boundary_topology_stream,
+    fbb_only_quad_topology_stream, le_f32, le_f64, standard_quad_topology_stream,
 };
 
 #[test]
@@ -385,6 +385,23 @@ fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
 }
 
 #[test]
+fn fbb_topology_recovers_unique_flanking_rows_without_reclassifying_complete_rows() {
+    let bytes = fbb_mixed_boundary_topology_stream();
+    let topology = crate::families::standard::topology::parse_fbb(&bytes)
+        .expect("mixed FBB boundary topology");
+    assert_eq!(topology.face_count(), 1);
+    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 5);
+    assert_eq!(
+        topology.edge_rows()[0].boundary_layout,
+        crate::families::standard::topology::EdgeBoundaryLayout::InteriorWithFlankingCorners
+    );
+    assert!(topology.edge_rows()[1..].iter().all(|row| {
+        row.boundary_layout
+            == crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
+    }));
+}
+
+#[test]
 fn fbb_topology_reads_u16_mesh_and_edge_handles() {
     let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 6, 0, 0, 0, 6];
     for handle in [1u16, 0x1010, 0x1011, 0x1012, 0x1013, 0x1010] {
@@ -744,7 +761,7 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
     bytes.extend_from_slice(&[0x78, 0x56, 0, 0, 0x1a, 0, 0x33, 0x33]);
     bytes.resize(analytic + 72, 0);
     bytes.push(0xff);
-    bytes.push(0x60);
+    bytes.extend_from_slice(&[0x60, 1, 0, 0, 0x00, 0x02, 0x00, 0x33, 0x36, 0, 1]);
 
     let records = crate::families::standard::records::standard_surface_records(&bytes, 2)
         .expect("surface roster");
@@ -769,6 +786,15 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
         StandardSurfaceRecord::Analytic(prefix)
             if prefix.pos == analytic + 5 && prefix.target == 0x5678 && prefix.kind == 0x33
     ));
+    assert_eq!(
+        crate::families::standard::records::standard_surface_record_groups(&bytes).len(),
+        1
+    );
+    let populations = crate::families::standard::records::standard_surface_populations(&bytes);
+    assert_eq!(populations.len(), 1);
+    assert_eq!(populations[0].records.len(), 2);
+    assert_eq!(populations[0].supports.len(), 1);
+    assert_eq!(populations[0].supports[0].faces, [0, 1]);
 }
 
 #[test]
