@@ -4028,6 +4028,18 @@ fn scalar_sweep_law_differential(
             None
         }
         LawExpression::Algebraic { operator, operands } => {
+            if let [operand] = operands.as_slice() {
+                let operand = scalar_sweep_law_differential(operand, parameter)?;
+                return scalar_unary_sweep_law_differential(operator, operand);
+            }
+            if operator == "O" {
+                let [outer, inner] = operands.as_slice() else {
+                    return None;
+                };
+                let inner = scalar_sweep_law_differential(inner, parameter)?;
+                let outer = scalar_sweep_law_differential(outer, inner.value)?;
+                return finite_sweep_differential(outer.value, outer.derivative * inner.derivative);
+            }
             let [left, right] = operands.as_slice() else {
                 return None;
             };
@@ -4064,6 +4076,127 @@ fn scalar_sweep_law_differential(
         | LawExpression::Edge { .. }
         | LawExpression::Spline { .. } => None,
     }
+}
+
+fn scalar_unary_sweep_law_differential(
+    operator: &str,
+    operand: ScalarSweepDifferential,
+) -> Option<ScalarSweepDifferential> {
+    let x = operand.value;
+    let derivative = match operator {
+        "SIN" => x.cos(),
+        "COS" => -x.sin(),
+        "TAN" => {
+            let cosine = x.cos();
+            (cosine != 0.0).then_some(1.0 / (cosine * cosine))?
+        }
+        "COT" => {
+            let sine = x.sin();
+            (sine != 0.0).then_some(-1.0 / (sine * sine))?
+        }
+        "SEC" => {
+            let cosine = x.cos();
+            (cosine != 0.0).then_some(1.0 / cosine * x.tan())?
+        }
+        "CSC" => {
+            let sine = x.sin();
+            (sine != 0.0).then_some(-(1.0 / sine) * (x.cos() / sine))?
+        }
+        "COSH" => x.sinh(),
+        "SINH" => x.cosh(),
+        "TANH" => 1.0 - x.tanh() * x.tanh(),
+        "COTH" => {
+            let sinh = x.sinh();
+            (sinh != 0.0).then_some(-1.0 / (sinh * sinh))?
+        }
+        "SECH" => {
+            let value = 1.0 / x.cosh();
+            -value * x.tanh()
+        }
+        "CSCH" => {
+            let sinh = x.sinh();
+            (sinh != 0.0).then_some(-(1.0 / sinh) * (x.cosh() / sinh))?
+        }
+        "ARCCOS" => {
+            let denominator = (1.0 - x * x).sqrt();
+            (denominator > 0.0).then_some(-1.0 / denominator)?
+        }
+        "ARCSIN" => {
+            let denominator = (1.0 - x * x).sqrt();
+            (denominator > 0.0).then_some(1.0 / denominator)?
+        }
+        "ARCTAN" => 1.0 / (1.0 + x * x),
+        "ARCOT" => -1.0 / (1.0 + x * x),
+        "ARCSEC" => {
+            let denominator = (x * x - 1.0).sqrt();
+            (x.abs() > 1.0 && denominator > 0.0).then_some(1.0 / (x.abs() * denominator))?
+        }
+        "ARCCSC" => {
+            let denominator = (x * x - 1.0).sqrt();
+            (x.abs() > 1.0 && denominator > 0.0).then_some(-1.0 / (x.abs() * denominator))?
+        }
+        "ARCCOSH" => {
+            let denominator = (x * x - 1.0).sqrt();
+            (x > 1.0 && denominator > 0.0).then_some(1.0 / denominator)?
+        }
+        "ARCSINH" => 1.0 / (1.0 + x * x).sqrt(),
+        "ARCTANH" => (x.abs() < 1.0).then_some(1.0 / (1.0 - x * x))?,
+        "ARCOTH" => (x.abs() > 1.0).then_some(1.0 / (1.0 - x * x))?,
+        "ARCSECH" => {
+            let denominator = (1.0 - x * x).sqrt();
+            (x > 0.0 && x < 1.0 && denominator > 0.0).then_some(-1.0 / (x * denominator))?
+        }
+        "ARCCSCH" => (x != 0.0).then_some(-1.0 / (x.abs() * (1.0 + x * x).sqrt()))?,
+        "ABS" => {
+            if x > 0.0 {
+                1.0
+            } else if x < 0.0 {
+                -1.0
+            } else {
+                return None;
+            }
+        }
+        "EXP" => x.exp(),
+        "LN" => (x > 0.0).then_some(1.0 / x)?,
+        "SIGN" => (x != 0.0).then_some(0.0)?,
+        "SQRT" => (x > 0.0).then_some(0.5 / x.sqrt())?,
+        _ => return None,
+    };
+    finite_sweep_differential(
+        match operator {
+            "SIN" => x.sin(),
+            "COS" => x.cos(),
+            "TAN" => x.tan(),
+            "COT" => 1.0 / x.tan(),
+            "SEC" => 1.0 / x.cos(),
+            "CSC" => 1.0 / x.sin(),
+            "COSH" => x.cosh(),
+            "SINH" => x.sinh(),
+            "TANH" => x.tanh(),
+            "COTH" => 1.0 / x.tanh(),
+            "SECH" => 1.0 / x.cosh(),
+            "CSCH" => 1.0 / x.sinh(),
+            "ARCCOS" => x.acos(),
+            "ARCSIN" => x.asin(),
+            "ARCTAN" => x.atan(),
+            "ARCOT" => std::f64::consts::FRAC_PI_2 - x.atan(),
+            "ARCSEC" => (1.0 / x).acos(),
+            "ARCCSC" => (1.0 / x).asin(),
+            "ARCCOSH" => x.acosh(),
+            "ARCSINH" => x.asinh(),
+            "ARCTANH" => x.atanh(),
+            "ARCOTH" => 0.5 * ((x + 1.0) / (x - 1.0)).ln(),
+            "ARCSECH" => (1.0 / x).acosh(),
+            "ARCCSCH" => (1.0 / x).asinh(),
+            "ABS" => x.abs(),
+            "EXP" => x.exp(),
+            "LN" => x.ln(),
+            "SIGN" => x.signum(),
+            "SQRT" => x.sqrt(),
+            _ => return None,
+        },
+        derivative * operand.derivative,
+    )
 }
 
 fn unit_sweep_scale(expression: &LawExpression) -> bool {
