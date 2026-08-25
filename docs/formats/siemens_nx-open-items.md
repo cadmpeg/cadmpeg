@@ -665,15 +665,15 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The label and text frames identify the cosmetic-thread family, but the current object-index lanes and text values do not assign a unique cylindrical face, nominal diameter, or axial extent.
 
-### OM-43. `EXTRACT_DATUM_AXIS` construction roles
+### OM-43. `DATUM_AXIS` construction roles
 
-**Question.** Which serialized source and reference fields define the model-space origin and direction of an `EXTRACT_DATUM_AXIS` operation?
+**Question.** Which serialized source and reference fields define the model-space origin and direction of a `DATUM_AXIS` or `EXTRACT_DATUM_AXIS` operation?
 
-**Known.** `siemens_nx.md` §7.1 "The `EXTRACT_DATUM_AXIS` operation label identifies" defines the datum-axis family. The operation has no body output, and its complete neutral axis line is not present in the admitted operation record fields.
+**Known.** `siemens_nx.md` §7.1 "The `DATUM_AXIS` and `EXTRACT_DATUM_AXIS` operation labels identify" defines the datum-axis family. The operations have no body output, and their complete neutral axis lines are not present in the admitted operation record fields.
 
-**Need.** We must identify the source geometry, model-space origin, direction, and any orientation controls that define the extracted datum axis.
+**Need.** We must identify the source geometry, model-space origin, direction, and any orientation controls that define each datum axis.
 
-**Conflict.** The operation label identifies a datum-axis family, but the four operation-header object-index slots and bounded payload do not assign a unique source/reference relation or finite origin and direction.
+**Conflict.** The operation labels identify a datum-axis family, but the four operation-header object-index slots, input-block identity, and bounded payload do not assign a unique source/reference relation or finite origin and direction.
 
 ## 3. Assembly and material data
 

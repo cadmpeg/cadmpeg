@@ -2142,9 +2142,9 @@ A datum-plane descriptor block is exactly 40 bytes: `lowercase_hex_identity, 3f 
 
 The `DATUM_PLANE` operation label establishes a reference-plane feature family. Its neutral construction remains unresolved until the payload fields establish a complete model-space plane frame.
 
-The `EXTRACT_DATUM_AXIS` operation label identifies a datum-axis history
-operation. Its model-space origin and direction remain unresolved until the
-serialized source and reference roles establish a complete axis line.
+The `DATUM_AXIS` and `EXTRACT_DATUM_AXIS` operation labels identify datum-axis
+history operations. Their model-space origin and direction remain unresolved
+until the serialized source and reference roles establish a complete axis line.
 
 **Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). Equal handle values group their ordered distinct bounded OM records, offset-store control blocks, and indexed EXTREFSTREAM records under one native handle identity. A second family is a four-byte big-endian word whose high nibble is `0xC` and low 28 bits are the reference value. In an externally bounded object record, that second token is a typed reference only when it immediately follows one complete `e0 + handle:u32 BE` token; an unpaired high-nibble-`c` word remains field data. Both tokens remain within the same record and form one `(e0-handle, c-ref)` pair.
 
