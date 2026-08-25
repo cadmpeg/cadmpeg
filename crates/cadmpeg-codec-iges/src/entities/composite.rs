@@ -860,9 +860,10 @@ pub(super) fn bounded_nurbs_for_curve(
 pub(super) fn bounded_parameter_range_for_curve(
     ir: &CadIr,
     curve_id: &CurveId,
+    tolerance: f64,
     index: Option<&CompositeIndex>,
 ) -> Option<[f64; 2]> {
-    bounded_edge_for_curve(ir, curve_id, 0.0, index)?.param_range
+    bounded_edge_for_curve(ir, curve_id, tolerance, index)?.param_range
 }
 
 pub(super) fn bounded_nurbs_for_curve_with_tolerance(

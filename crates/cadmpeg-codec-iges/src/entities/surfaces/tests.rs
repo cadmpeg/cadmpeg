@@ -274,6 +274,66 @@ fn decode_solves_a_surface_of_revolution_from_an_ellipse_carrier() {
 }
 
 #[test]
+fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(line_surface_of_revolution_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("line revolution fixture decodes");
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "iges:model:surface#D5")
+        .expect("line revolution surface");
+    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction } = &surface.geometry
+    else {
+        panic!("expected an exact construction-backed revolution");
+    };
+    let procedural = result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.id == *construction)
+        .expect("line revolution construction");
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+        directrix,
+        parameter_interval: Some(parameter_interval),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected an exact revolution definition");
+    };
+    assert_eq!(directrix.0, "iges:model:curve#D3");
+    assert!(matches!(
+        result
+            .ir()
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *directrix)
+            .expect("line generatrix")
+            .geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Line { .. }
+    ));
+    assert_eq!(*parameter_interval, [0.0, 6.606_051_667_958_6]);
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
     const EPS_REVOLUTION_POINT: f64 = 1.0e-12;
 

@@ -77,10 +77,14 @@ fn bounded_nurbs(
     super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx, None)
 }
 
-fn bounded_evaluable_curve(ir: &CadIr, sequence: u32) -> Option<(CurveGeometry, [f64; 2])> {
+fn bounded_evaluable_curve(
+    ir: &CadIr,
+    sequence: u32,
+    tolerance: f64,
+) -> Option<(CurveGeometry, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
     let parameter_interval =
-        super::composite::bounded_parameter_range_for_curve(ir, &curve_id, None)?;
+        super::composite::bounded_parameter_range_for_curve(ir, &curve_id, tolerance, None)?;
     if !parameter_interval[0].is_finite()
         || !parameter_interval[1].is_finite()
         || parameter_interval[0] >= parameter_interval[1]
@@ -949,7 +953,7 @@ pub(super) fn project(
         let Some((generatrix, parameter_interval)) = bounded_nurbs(ir, generatrix_sequence, ctx)
         else {
             let Some((directrix_geometry, parameter_interval)) =
-                bounded_evaluable_curve(ir, generatrix_sequence)
+                bounded_evaluable_curve(ir, generatrix_sequence, global.minimum_resolution_mm())
             else {
                 losses.push(entity_loss(
                     entry,

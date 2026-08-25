@@ -1087,6 +1087,38 @@ pub(crate) fn ellipse_surface_of_revolution_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn line_surface_of_revolution_file() -> Vec<u8> {
+    owned_test_file(&line_surface_of_revolution_entities())
+}
+
+fn line_surface_of_revolution_entities() -> Vec<OwnedTestEntity> {
+    vec![
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "AXIS".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "PROFILE".into(),
+            status: "00010000",
+            parameters:
+                "110,-108.9812949,6.814348186,-2.592356749,-108.9812949,11.76210922,-6.969522429;"
+                    .into(),
+        },
+        OwnedTestEntity {
+            entity_type: 120,
+            form: 0,
+            label: "REVOLVE".into(),
+            status: "00000000",
+            parameters: "120,1,3,0,1.5707963267948966;".into(),
+        },
+    ]
+}
+
 pub(crate) fn hyperbola_surface_of_revolution_file() -> Vec<u8> {
     owned_test_file(&hyperbola_surface_of_revolution_entities())
 }
