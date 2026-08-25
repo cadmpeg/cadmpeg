@@ -2,7 +2,11 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
-use crate::families::standard::records::{StandardFaceBounds, StandardSurfaceRecord};
+use crate::families::standard::fbb::FbbPopulationLayout;
+use crate::families::standard::records::{
+    StandardCurveGeometry, StandardCurveSupport, StandardFaceBounds, StandardSurfacePopulation,
+    StandardSurfaceRecord, SurfacePrefix,
+};
 use crate::test_support::{
     a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
     compact_standard_triangle_topology_stream, fbb_mixed_boundary_topology_stream,
@@ -795,6 +799,67 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
     assert_eq!(populations[0].records.len(), 2);
     assert_eq!(populations[0].supports.len(), 1);
     assert_eq!(populations[0].supports[0].faces, [0, 1]);
+}
+
+#[test]
+fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities() {
+    let population = |faces: usize, edges: usize, seed: usize| StandardSurfacePopulation {
+        records: (0..faces)
+            .map(|offset| {
+                StandardSurfaceRecord::Analytic(SurfacePrefix {
+                    pos: seed + offset,
+                    target: u32::try_from(seed + offset).expect("small test target"),
+                    kind: 0x33,
+                })
+            })
+            .collect(),
+        supports: (0..edges)
+            .map(|offset| StandardCurveSupport {
+                pos: seed + offset,
+                tag: u32::try_from(seed + offset).expect("small test tag"),
+                faces: [0, faces.saturating_sub(1)],
+                geometry: StandardCurveGeometry::Line,
+            })
+            .collect(),
+    };
+    let layout = |face_count: usize, edge_count: usize, vertex_count: usize, start: usize| {
+        FbbPopulationLayout {
+            face_start: start,
+            face_count,
+            after_faces: start + face_count * 8,
+            edge_count,
+            vertex_count,
+            fbb_edge_table: true,
+        }
+    };
+    let layouts = vec![layout(2, 3, 4, 10), layout(2, 3, 4, 20)];
+    let populations = vec![population(2, 3, 100), population(2, 3, 200)];
+
+    let pairs =
+        crate::families::standard::records::pair_standard_populations(&layouts, &populations)
+            .expect("source-ordered population relation");
+    assert_eq!(pairs.len(), 2);
+    assert_eq!(pairs[0].0.face_start, 10);
+    assert!(matches!(
+        &pairs[0].1.records[0],
+        StandardSurfaceRecord::Analytic(prefix) if prefix.pos == 100
+    ));
+    assert_eq!(pairs[1].0.face_start, 20);
+    assert!(matches!(
+        &pairs[1].1.records[0],
+        StandardSurfaceRecord::Analytic(prefix) if prefix.pos == 200
+    ));
+
+    let mut mismatched = populations.clone();
+    mismatched[1] = population(2, 2, 200);
+    assert!(
+        crate::families::standard::records::pair_standard_populations(&layouts, &mismatched,)
+            .is_none()
+    );
+    assert!(
+        crate::families::standard::records::pair_standard_populations(&layouts[..1], &populations,)
+            .is_none()
+    );
 }
 
 #[test]

@@ -2,7 +2,7 @@
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
-use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
     Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -13,13 +13,16 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell,
     Vertex, VertexUse,
 };
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
+use cadmpeg_ir::{AnnotationBuilder, Annotations};
+use serde::{de::DeserializeOwned, Serialize};
+use serde_value::{Value, ValueDeserializer};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -36,6 +39,7 @@ use crate::families::freeform::{
 };
 use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
+use crate::loss::CatiaLossCode;
 use crate::solve::matching::{
     distinct_domain_matching_with_budget, retain_distinct_matching_supports,
 };
@@ -1102,14 +1106,331 @@ pub(crate) fn associate_standard_freeform_e5_rolling_ball_jets(
         .collect()
 }
 
+#[derive(Debug, Clone)]
+struct StandardPopulationSelection {
+    spine: Vec<u8>,
+    records: Vec<crate::families::standard::records::StandardSurfaceRecord>,
+    supports: Vec<crate::families::standard::records::StandardCurveSupport>,
+    fbb_edge_table: bool,
+    vertex_roster_compatible: bool,
+}
+
+fn standard_population_selections(
+    scan: &ContainerScan<'_>,
+) -> Option<Vec<StandardPopulationSelection>> {
+    let brep = scan.brep.as_ref()?;
+    let standard_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
+    let layouts = fbb::fbb_population_layouts(standard_spine);
+    let populations = crate::families::standard::records::standard_surface_populations(brep);
+    let pairs =
+        crate::families::standard::records::pair_standard_populations(&layouts, &populations)?;
+    pairs
+        .into_iter()
+        .map(|(layout, population)| {
+            Some(StandardPopulationSelection {
+                spine: fbb::population_spine(standard_spine, &layout)?.to_vec(),
+                records: population.records,
+                supports: population.supports,
+                fbb_edge_table: layout.fbb_edge_table,
+                vertex_roster_compatible:
+                    crate::families::standard::records::standard_vertex_roster(
+                        &scan.data,
+                        layout.vertex_count,
+                    )
+                    .is_some(),
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn try_decode_standard(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
+    let Some(selections) = standard_population_selections(scan) else {
+        return try_decode_standard_population(ctx, scan, None);
+    };
+    if selections.len() == 1 {
+        return try_decode_standard_population(ctx, scan, selections.first());
+    }
+    try_decode_standard_populations(ctx, scan, &selections)
+}
+
+fn retain_standard_population_model(model: &mut Model) {
+    macro_rules! retain_standard {
+        ($($field:ident),+ $(,)?) => {
+            $(model.$field.retain(|entity| {
+                entity.identity().starts_with("catia:standard:")
+            });)+
+        };
+    }
+    retain_standard!(
+        bodies,
+        regions,
+        shells,
+        faces,
+        loops,
+        coedges,
+        edges,
+        vertices,
+        points,
+        surfaces,
+        curves,
+        subds,
+        pcurves,
+        procedural_surfaces,
+        procedural_curves,
+        assets,
+        features,
+        feature_input_topologies,
+        feature_result_topologies,
+        configurations,
+        parameters,
+        sketches,
+        sketch_entities,
+        sketch_constraints,
+        spatial_sketches,
+        spatial_sketch_entities,
+        spatial_sketch_constraints,
+        spreadsheets,
+        product_definitions,
+        occurrences,
+        assembly_joints,
+        drawings,
+        semantic_annotations,
+        presentation_documents,
+        view_presentations,
+        tessellations,
+        appearances,
+        appearance_bindings,
+        attributes,
+        pmi,
+        presentation_layers,
+    );
+}
+
+fn rescope_standard_id(text: &str, scope: &str) -> String {
+    text.strip_prefix("catia:standard:").map_or_else(
+        || text.to_owned(),
+        |rest| format!("catia:standard:{scope}/{rest}"),
+    )
+}
+
+fn rescope_standard_value(value: &mut Value, scope: &str) {
+    match value {
+        Value::String(text) => *text = rescope_standard_id(text, scope),
+        Value::Seq(items) => items
+            .iter_mut()
+            .for_each(|item| rescope_standard_value(item, scope)),
+        Value::Map(fields) => {
+            let entries = std::mem::take(fields);
+            for (mut key, mut item) in entries {
+                rescope_standard_value(&mut key, scope);
+                rescope_standard_value(&mut item, scope);
+                fields.insert(key, item);
+            }
+        }
+        Value::Option(Some(item)) | Value::Newtype(item) => rescope_standard_value(item, scope),
+        _ => {}
+    }
+}
+
+struct StandardPopulationScope<'a> {
+    scope: &'a str,
+}
+
+impl EntityRewrite for StandardPopulationScope<'_> {
+    type Error = String;
+
+    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error> {
+        let mut value = serde_value::to_value(entity)
+            .map_err(|error| format!("standard population entity serialization failed: {error}"))?;
+        rescope_standard_value(&mut value, self.scope);
+        T::deserialize(ValueDeserializer::<serde_value::DeserializerError>::new(
+            value,
+        ))
+        .map_err(|error| format!("standard population entity rewrite failed: {error}"))
+    }
+}
+
+fn merge_standard_population_annotations(
+    target: &mut Annotations,
+    source: Annotations,
+    scope: &str,
+) -> Option<()> {
+    let mut stream_map = Vec::with_capacity(source.streams.len());
+    for stream in source.streams {
+        let index = target
+            .streams
+            .iter()
+            .position(|candidate| candidate == &stream)
+            .unwrap_or_else(|| {
+                target.streams.push(stream);
+                target.streams.len() - 1
+            });
+        stream_map.push(u32::try_from(index).ok()?);
+    }
+    for (id, mut provenance) in source.provenance {
+        let stream = *stream_map.get(usize::try_from(provenance.stream).ok()?)?;
+        provenance.stream = stream;
+        target
+            .provenance
+            .insert(rescope_standard_id(&id, scope), provenance);
+    }
+    target.exactness.extend(
+        source
+            .exactness
+            .into_iter()
+            .map(|(id, note)| (rescope_standard_id(&id, scope), note)),
+    );
+    Some(())
+}
+
+fn try_decode_standard_populations(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    selections: &[StandardPopulationSelection],
+) -> Option<FamilyOutput> {
+    let mut outputs = selections
+        .iter()
+        .map(|selection| try_decode_standard_population(ctx, scan, Some(selection)))
+        .collect::<Option<Vec<_>>>()?;
+    let attached_topology_count = outputs
+        .iter()
+        .map(|output| {
+            output
+                .report
+                .coverage
+                .get("attached_standard_topology_count")
+                .copied()
+                .unwrap_or_default()
+        })
+        .sum::<usize>();
+    let population_coverage = [
+        "attempted_standard_topology_count",
+        "standard_topology_curve_support_count",
+        "standard_topology_native_endpoint_pair_count",
+        "standard_topology_empty_endpoint_domain_count",
+        "standard_topology_singleton_endpoint_domain_count",
+        "standard_topology_multiple_endpoint_domain_count",
+        "standard_topology_endpoint_domain_choice_count",
+    ]
+    .into_iter()
+    .map(|key| {
+        (
+            key,
+            outputs
+                .iter()
+                .map(|output| output.report.coverage.get(key).copied().unwrap_or_default())
+                .sum::<usize>(),
+        )
+    })
+    .collect::<Vec<_>>();
+    let admitted_face_rows = selections
+        .iter()
+        .map(|selection| selection.records.len())
+        .sum::<usize>();
+    let all_fbb_rows_admitted =
+        selections.len() == scan.census.fbb_runs && admitted_face_rows == scan.census.fbb_face_rows;
+    let all_topologies_attached = attached_topology_count == selections.len();
+
+    let mut merged = outputs.remove(0);
+    for (index, (_population, output)) in selections.iter().skip(1).zip(outputs).enumerate() {
+        let scope = format!("population-{}", index + 1);
+        let mut model = output.ir.model;
+        retain_standard_population_model(&mut model);
+        let mut rewriter = StandardPopulationScope { scope: &scope };
+        merged
+            .ir
+            .model
+            .extend_rewritten(model, &mut rewriter)
+            .ok()?;
+        merge_standard_population_annotations(&mut merged.annotations, output.annotations, &scope)?;
+        merged.report.geometry_transferred |= output.report.geometry_transferred;
+    }
+
+    for (key, value) in population_coverage {
+        merged.report.coverage.insert(key.to_string(), value);
+    }
+    merged
+        .report
+        .coverage
+        .insert("standard_fbb_run_count".to_string(), scan.census.fbb_runs);
+    merged.report.coverage.insert(
+        "standard_fbb_candidate_face_row_count".to_string(),
+        scan.census.fbb_face_rows,
+    );
+    merged.report.coverage.insert(
+        "standard_fbb_admitted_face_row_count".to_string(),
+        admitted_face_rows,
+    );
+    merged.report.coverage.insert(
+        "standard_fbb_withheld_face_row_count".to_string(),
+        scan.census.fbb_face_rows.saturating_sub(admitted_face_rows),
+    );
+    merged.report.coverage.insert(
+        "attached_standard_topology_count".to_string(),
+        attached_topology_count,
+    );
+
+    merged.report.losses.retain(|loss| {
+        !matches!(
+            loss.code.local_code(),
+            "topology.fbb-rows-withheld"
+                | "geometry.carrier-summary"
+                | "geometry.unresolved-carriers"
+        )
+    });
+    if !all_fbb_rows_admitted {
+        merged.report.losses.push(CatiaLossCode::TopologyFbbRowsWithheld.note(
+            format!(
+                "{} candidate FBB face row(s) in {} marker group(s) were not admitted to the standard topology population; only {} row(s) have source-closed population bindings.",
+                scan.census.fbb_face_rows.saturating_sub(admitted_face_rows),
+                scan.census.fbb_runs,
+                admitted_face_rows,
+            ),
+        ));
+    }
+    if !all_topologies_attached {
+        merged
+            .report
+            .losses
+            .push(CatiaLossCode::TopologyBoundaryGraphNotEmitted.note(format!(
+            "The B-rep boundary graph was emitted for {} of {} source-closed standard populations.",
+            attached_topology_count,
+            selections.len(),
+        )));
+    }
+    let mut typed = TypedCounts::default();
+    for surface in &merged.ir.model.surfaces {
+        typed.record(&surface.geometry);
+    }
+    merged.report.losses.push(CatiaLossCode::GeometryCarrierSummary.note(format!(
+        "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and {} analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: {} plane, {} cylinder, {} cone, {} sphere, {} torus.",
+        merged.ir.model.vertices.len(),
+        typed.total(),
+        typed.plane,
+        typed.cylinder,
+        typed.cone,
+        typed.sphere,
+        typed.torus,
+    )));
+    crate::assemble::insert_unresolved_carrier_loss(&merged.ir, &mut merged.report.losses);
+    Some(merged)
+}
+
+fn try_decode_standard_population(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    selection: Option<&StandardPopulationSelection>,
+) -> Option<FamilyOutput> {
     let work_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     let brep = scan.brep.as_ref()?;
-    let standard_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
-    let fbb_only = scan.variant == Variant::FbbOnly;
+    let default_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
+    let standard_spine = selection.map_or(default_spine, |selection| selection.spine.as_slice());
+    let fbb_only = selection.map_or(scan.variant == Variant::FbbOnly, |selection| {
+        selection.fbb_edge_table
+    });
     if !work_budget.charge() {
         return None;
     }
@@ -1126,16 +1447,28 @@ pub(crate) fn try_decode_standard(
     .into_iter()
     .map(|[x, y, z]| Point3::new(x, y, z))
     .collect::<Vec<_>>();
-    let vertex_roster =
-        crate::families::standard::records::standard_vertex_roster(&scan.data, points.len());
-    let face_count = fbb::standard_face_count(standard_spine).unwrap_or_default();
-    let records = crate::families::standard::records::standard_surface_records(brep, face_count)
-        .unwrap_or_else(|| {
-            crate::families::standard::records::surface_prefixes(brep)
-                .into_iter()
-                .map(crate::families::standard::records::StandardSurfaceRecord::Analytic)
-                .collect()
-        });
+    let vertex_roster = selection
+        .is_none_or(|selection| selection.vertex_roster_compatible)
+        .then(|| {
+            crate::families::standard::records::standard_vertex_roster(&scan.data, points.len())
+        })
+        .flatten();
+    let face_count = selection.map_or_else(
+        || fbb::standard_face_count(standard_spine).unwrap_or_default(),
+        |selection| selection.records.len(),
+    );
+    let records = selection.map_or_else(
+        || {
+            crate::families::standard::records::standard_surface_records(brep, face_count)
+                .unwrap_or_else(|| {
+                    crate::families::standard::records::surface_prefixes(brep)
+                        .into_iter()
+                        .map(crate::families::standard::records::StandardSurfaceRecord::Analytic)
+                        .collect()
+                })
+        },
+        |selection| selection.records.clone(),
+    );
     let analytic_record_count = records
         .iter()
         .filter(|record| {
@@ -1154,16 +1487,26 @@ pub(crate) fn try_decode_standard(
             crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
         })
         .collect::<HashSet<_>>();
-    let standard_edge_count = (if fbb_only {
-        fbb::fbb_only_edge_count(standard_spine)
-    } else {
-        fbb::standard_edge_count(standard_spine)
-    })
-    .filter(|count| *count > 0);
-    let curve_supports = crate::families::standard::records::standard_curve_supports(
-        brep,
-        face_count,
-        standard_edge_count,
+    let standard_edge_count = selection.map_or_else(
+        || {
+            (if fbb_only {
+                fbb::fbb_only_edge_count(standard_spine)
+            } else {
+                fbb::standard_edge_count(standard_spine)
+            })
+            .filter(|count| *count > 0)
+        },
+        |selection| (!selection.supports.is_empty()).then_some(selection.supports.len()),
+    );
+    let curve_supports = selection.map_or_else(
+        || {
+            crate::families::standard::records::standard_curve_supports(
+                brep,
+                face_count,
+                standard_edge_count,
+            )
+        },
+        |selection| selection.supports.clone(),
     );
     let edge_tags = curve_supports
         .iter()
@@ -1623,7 +1966,9 @@ pub(crate) fn try_decode_standard(
         standard_spine,
         fbb_only,
         brep,
+        selection.map(|selection| selection.supports.as_slice()),
         &scan.data,
+        selection.is_none_or(|selection| selection.vertex_roster_compatible),
         &object_evidence.edge_owner_faces,
         &object_evidence.edge_supports,
         &object_evidence.limit_curves,
@@ -3162,7 +3507,9 @@ fn attach_standard_topology(
     spine: &[u8],
     fbb_only: bool,
     brep: &[u8],
+    support_override: Option<&[crate::families::standard::records::StandardCurveSupport]>,
     source: &[u8],
+    use_vertex_roster: bool,
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
     native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
     limit_curves: &[NurbsCurve],
@@ -3179,10 +3526,15 @@ fn attach_standard_topology(
     .filter(|count| *count > 0) else {
         return Err(StandardTopologyFailure::NoCurveSupports);
     };
-    let mut supports = crate::families::standard::records::standard_curve_supports(
-        brep,
-        face_count,
-        Some(edge_count),
+    let mut supports = support_override.map_or_else(
+        || {
+            crate::families::standard::records::standard_curve_supports(
+                brep,
+                face_count,
+                Some(edge_count),
+            )
+        },
+        ToOwned::to_owned,
     );
     if supports.is_empty() {
         return Err(StandardTopologyFailure::NoCurveSupports);
@@ -3347,8 +3699,14 @@ fn attach_standard_topology(
         .iter()
         .copied()
         .collect::<Option<Vec<_>>>();
-    let vertex_roster =
-        crate::families::standard::records::standard_vertex_roster(source, ir.model.points.len());
+    let vertex_roster = use_vertex_roster
+        .then(|| {
+            crate::families::standard::records::standard_vertex_roster(
+                source,
+                ir.model.points.len(),
+            )
+        })
+        .flatten();
     let allocation_endpoint_points = vertex_roster
         .as_ref()
         .map(|roster| standard_successor_endpoint_points(&supports, roster));
@@ -4017,14 +4375,14 @@ fn attach_standard_topology(
             .iter()
             .enumerate()
             .map(|(edge, _)| {
-                ordered_endpoint_pairs[edge].is_some()
-                    || native_endpoint_evidence
+                standard_edge_identity_is_admitted(
+                    ordered_endpoint_pairs[edge],
+                    native_endpoint_evidence
                         .as_ref()
-                        .and_then(|pairs| pairs.get(edge))
-                        .is_some_and(Option::is_some)
-                    || native_port_options[edge].is_some()
-                    || native_supports_by_row[edge].is_some()
-                    || !limit_curve_bindings[edge].is_empty()
+                        .and_then(|pairs| pairs.get(edge).copied().flatten()),
+                    native_supports_by_row[edge].is_some(),
+                    !limit_curve_bindings[edge].is_empty(),
+                )
             })
             .collect::<Vec<_>>();
         let edge_direction_evidence = native_endpoint_evidence.as_ref().map_or_else(
@@ -5157,6 +5515,23 @@ pub(crate) fn standard_native_support_edge_ids(
             .then_some(support.tag)
         })
         .collect()
+}
+
+/// Return whether a standard edge has an admitted identity binding.
+///
+/// Native port pairs remain useful for endpoint propagation and candidate
+/// pruning, but an allocation-only port pair does not bind its row to decoded
+/// coordinates and therefore must not freeze an evidence-preserving gauge.
+pub(crate) fn standard_edge_identity_is_admitted(
+    ordered_endpoint_pair: Option<[usize; 2]>,
+    native_endpoint_pair: Option<[usize; 2]>,
+    has_native_support: bool,
+    has_limit_curve_binding: bool,
+) -> bool {
+    ordered_endpoint_pair.is_some()
+        || native_endpoint_pair.is_some()
+        || has_native_support
+        || has_limit_curve_binding
 }
 
 pub(crate) fn include_native_endpoint_pairs(

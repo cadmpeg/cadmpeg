@@ -534,6 +534,25 @@ fn fbb_population_layout_keeps_counts_before_endpoint_solving() {
 }
 
 #[test]
+fn fbb_population_spine_retains_the_preceding_trim_chain() {
+    let bytes = crate::test_support::fbb_only_quad_topology_stream();
+    let layouts = fbb_population_layouts(&bytes);
+    let [layout] = layouts.as_slice() else {
+        panic!("one source-closed FBB population");
+    };
+
+    let spine = population_spine(&bytes, layout).expect("isolated FBB spine");
+    let isolated_layouts = fbb_population_layouts(spine);
+    let [isolated] = isolated_layouts.as_slice() else {
+        panic!("isolated spine remains source-closed");
+    };
+    assert_eq!(isolated.face_count, layout.face_count);
+    assert_eq!(isolated.edge_count, layout.edge_count);
+    assert_eq!(isolated.vertex_count, layout.vertex_count);
+    assert_eq!(isolated.fbb_edge_table, layout.fbb_edge_table);
+}
+
+#[test]
 fn standard_helpers_share_the_source_closed_face_population() {
     let mut bytes = crate::test_support::standard_quad_topology_stream();
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xaa, 0xbb, 0xcc, 0xdd]);

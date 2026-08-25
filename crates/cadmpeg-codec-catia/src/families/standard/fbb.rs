@@ -662,6 +662,38 @@ pub(crate) struct FbbPopulationLayout {
     pub(crate) after_faces: usize,
     pub(crate) edge_count: usize,
     pub(crate) vertex_count: usize,
+    pub(crate) fbb_edge_table: bool,
+}
+
+fn vertex_table_end(bytes: &[u8], position: usize) -> Option<usize> {
+    if bytes.get(position..position + 2) != Some(&[0x01, 0x06]) {
+        return None;
+    }
+    let mut cursor = position + 2;
+    let count = parse_count(bytes, &mut cursor)?;
+    let end = cursor.checked_add(count.checked_mul(VERTEX_RECORD_BYTES)?)?;
+    (parse_vertex_table(bytes, position).is_some()).then_some(end)
+}
+
+/// Return one source-closed FBB population as a self-contained topology
+/// spine. The slice starts at its complete trim chain and ends after its
+/// counted vertex table, so the existing single-population parsers can be
+/// reused without seeing neighboring populations.
+#[must_use]
+pub(crate) fn population_spine<'a>(
+    bytes: &'a [u8],
+    layout: &FbbPopulationLayout,
+) -> Option<&'a [u8]> {
+    let (_, vertex_header, handle_width) =
+        parse_standard_edge_tables_with_width(bytes, layout.after_faces).or_else(|| {
+            parse_fbb_edge_tables(bytes, layout.after_faces).map(
+                |(_, _, vertex_header, handle_width)| (Vec::new(), vertex_header, handle_width),
+            )
+        })?;
+    let trim_start =
+        parse_trim_chain_start(bytes, layout.face_start, layout.face_count, handle_width)?.0;
+    let end = vertex_table_end(bytes, vertex_header)?;
+    bytes.get(trim_start..end)
 }
 
 /// Find every FBB face run with a complete local trim, edge-table, and vertex
@@ -673,14 +705,18 @@ pub(crate) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
         .filter_map(|range| {
             let face_count = range.len() / fbb_row::LEN;
             let after_faces = range.end;
-            let (edge_rows, vertex_header, handle_width) =
-                parse_standard_edge_tables_with_width(bytes, after_faces).or_else(|| {
-                    parse_fbb_edge_tables(bytes, after_faces).map(
-                        |(rows, _, vertex_header, handle_width)| {
-                            (rows, vertex_header, handle_width)
-                        },
-                    )
-                })?;
+            let (edge_rows, vertex_header, handle_width, fbb_edge_table) =
+                parse_standard_edge_tables_with_width(bytes, after_faces)
+                    .map(|(rows, vertex_header, handle_width)| {
+                        (rows, vertex_header, handle_width, false)
+                    })
+                    .or_else(|| {
+                        parse_fbb_edge_tables(bytes, after_faces).map(
+                            |(rows, _, vertex_header, handle_width)| {
+                                (rows, vertex_header, handle_width, true)
+                            },
+                        )
+                    })?;
             let vertex_count = parse_vertex_table(bytes, vertex_header)?.len();
             parse_trim_chain(bytes, range.start, face_count, handle_width)?;
             Some(FbbPopulationLayout {
@@ -689,6 +725,7 @@ pub(crate) fn fbb_population_layouts(bytes: &[u8]) -> Vec<FbbPopulationLayout> {
                 after_faces,
                 edge_count: edge_rows.len(),
                 vertex_count,
+                fbb_edge_table,
             })
         })
         .collect()
@@ -980,11 +1017,24 @@ pub(crate) fn parse_trim_chain(
     record_count: usize,
     width: usize,
 ) -> Option<Vec<TrimRecord>> {
+    parse_trim_chain_start(bytes, end, record_count, width).map(|(_, records)| records)
+}
+
+fn parse_trim_chain_start(
+    bytes: &[u8],
+    end: usize,
+    record_count: usize,
+    width: usize,
+) -> Option<(usize, Vec<TrimRecord>)> {
     let compact = parse_trim_chain_with_length_encoding(bytes, end, record_count, width, false);
     let wide_u16be = (width == 2)
         .then(|| parse_trim_chain_with_length_encoding(bytes, end, record_count, width, true));
     match (compact, wide_u16be.flatten()) {
-        (Some(compact), Some(wide)) if compact == wide => Some(compact),
+        (Some((compact_start, compact)), Some((wide_start, wide)))
+            if compact_start == wide_start && compact == wide =>
+        {
+            Some((compact_start, compact))
+        }
         (Some(records), None) | (None, Some(records)) => Some(records),
         (None, None) | (Some(_), Some(_)) => None,
     }
@@ -996,7 +1046,7 @@ fn parse_trim_chain_with_length_encoding(
     record_count: usize,
     width: usize,
     wide_u16be: bool,
-) -> Option<Vec<TrimRecord>> {
+) -> Option<(usize, Vec<TrimRecord>)> {
     struct Frame {
         end: usize,
         remaining: usize,
@@ -1034,9 +1084,10 @@ fn parse_trim_chain_with_length_encoding(
     while !frames.is_empty() && solutions.len() <= 1 {
         let frame = frames.len() - 1;
         if frames[frame].remaining == 0 {
+            let chain_start = frames[frame].end;
             let mut records = reversed.clone();
             records.reverse();
-            solutions.push(records);
+            solutions.push((chain_start, records));
             backtrack(&mut frames, &mut reversed);
             continue;
         }
@@ -1061,9 +1112,9 @@ fn parse_trim_chain_with_length_encoding(
             next_predecessor: 0,
         });
     }
-    <[Vec<TrimRecord>; 1]>::try_from(solutions)
+    <[(usize, Vec<TrimRecord>); 1]>::try_from(solutions)
         .ok()
-        .map(|[records]| records)
+        .map(|[solution]| solution)
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -10,6 +10,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::assemble::unit_vector;
+use crate::families::standard::fbb::FbbPopulationLayout;
 use crate::layout::analytic_surface_cone as analytic_cone;
 use crate::layout::analytic_surface_cylinder as analytic_cylinder;
 use crate::layout::analytic_surface_plane as analytic_plane;
@@ -324,6 +325,31 @@ pub fn standard_surface_populations(brep: &[u8]) -> Vec<StandardSurfacePopulatio
             let support_start = records.last()?.end();
             let supports = standard_curve_supports_at(brep, records.len(), support_start)?;
             Some(StandardSurfacePopulation { records, supports })
+        })
+        .collect()
+}
+
+/// Pair source-ordered, source-closed FBB layouts with source-ordered,
+/// source-closed surface/support populations. The relation is admitted only
+/// when both lanes have the same population count and every local face and
+/// edge cardinality agrees. Allocation order and a repeated count key never
+/// select a population.
+#[must_use]
+pub(crate) fn pair_standard_populations(
+    layouts: &[FbbPopulationLayout],
+    populations: &[StandardSurfacePopulation],
+) -> Option<Vec<(FbbPopulationLayout, StandardSurfacePopulation)>> {
+    if layouts.is_empty() || layouts.len() != populations.len() {
+        return None;
+    }
+    layouts
+        .iter()
+        .copied()
+        .zip(populations.iter().cloned())
+        .map(|(layout, population)| {
+            (layout.face_count == population.records.len()
+                && layout.edge_count == population.supports.len())
+            .then_some((layout, population))
         })
         .collect()
 }

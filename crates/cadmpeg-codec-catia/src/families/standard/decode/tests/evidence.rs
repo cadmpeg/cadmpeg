@@ -393,6 +393,27 @@ fn standard_line_interval_constraint_rejects_partial_collinear_overlap() {
 }
 
 #[test]
+fn standard_edge_identity_requires_coordinate_bound_evidence() {
+    assert!(!standard_edge_identity_is_admitted(
+        None, None, false, false
+    ));
+    assert!(standard_edge_identity_is_admitted(
+        Some([0, 1]),
+        None,
+        false,
+        false,
+    ));
+    assert!(standard_edge_identity_is_admitted(
+        None,
+        Some([0, 1]),
+        false,
+        false,
+    ));
+    assert!(standard_edge_identity_is_admitted(None, None, true, false,));
+    assert!(standard_edge_identity_is_admitted(None, None, false, true,));
+}
+
+#[test]
 fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
     let surface = |reverse_shared_boundary: bool, offset: f64| {
         let shared = if reverse_shared_boundary {

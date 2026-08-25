@@ -328,22 +328,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must resolve the namespace to bind other consolidated curve and support records.
 
-### SN-14. Multiple FBB face groups
+### SN-14. Incomplete multiple-FBB population membership
 
-**Question.** Which fields assign standard-path faces and edges to topology components when the file has multiple separate FBB face groups?
+**Question.** Which serialized relation assigns an FBB layout to a surface/support population when the source-closed FBB and surface/support lanes do not have equal population counts or local cardinalities?
 
-**Known.** `catia.md` §5.1 "trim_record[i] -> face_outer_bound_row[i] -> face i" defines topology reconstruction for one positional spine and its FBB incidences.
+**Known.** `catia.md` §5.1 "trim_record[i] -> face_outer_bound_row[i] -> face i" defines topology reconstruction for one positional spine. A source-closed FBB layout and a source-closed surface/support population form an admitted positional membership pair when the two lanes have equal population counts and each paired position has equal face and edge cardinalities. The decoder preserves each pair's local namespaces and emits every admitted body and shell. Repeated face/edge/vertex keys do not create ambiguity when this lane relation closes.
 
-`standard_surface_populations` now retains every contiguous surface-record chain ending at a `0x60` support table and keeps each support table's face references in its population-local namespace. The FBB walk also retains every population with a complete trim, edge-table, and counted-vertex layout, including its face, edge, and vertex counts. A unique `(face_count, edge_count, vertex_count)` key can select one cross-lane population; a repeated key does not select one secondary population.
+`standard_surface_populations` retains every contiguous surface-record chain ending at a `0x60` support table, and the FBB walk retains every population with a complete trim, edge-table, and counted-vertex layout. The source-closed lanes are paired in source order only after their lane count and every local face and edge cardinality agree. A repeated structural key does not select by itself and does not prevent a closed lane relation.
 
-**Need.** We must identify the outer/container membership relation that joins each FBB layout to its surface/support population and then emits every joined body and shell. The face, edge, and vertex counts are only structural keys; repeated keys still require an independent relation.
+**Need.** We must identify the independent membership relation for an unmatched source-closed layout or surface/support population so its topology can be emitted without assigning a carrier or support table from another population.
 
-**Conflict.** `selected_standard_run` in
-`src/families/standard/fbb.rs` still falls back to `largest_fbb_run` when no
-source-closed topology group is reconstructed. The surface/support bridge now
-rejects ambiguous local populations, but the topology path does not yet carry
-the selected population object through vertex, trim, and edge reconstruction.
-Neither row count nor uniqueness by size binds a repeated secondary population.
+**Conflict.** A positional pair is not sound when one lane is incomplete or a paired position has different local face or edge cardinality. Counts from a single lane and allocation order do not provide that missing membership witness.
+
+**Note.** The admitted positional relation is source order within the two complete source-closed lanes. It is not a persistent allocation-order join and does not select an entry from a partial lane.
 
 ### SN-15. Standard arc branch selection
 
