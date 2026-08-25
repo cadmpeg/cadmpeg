@@ -6901,6 +6901,9 @@ pub(crate) fn standard_pcurve_geometry(
     witness: Option<Point3>,
     edge_curve: Option<&CurveGeometry>,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
+    if matches!(edge_curve, Some(CurveGeometry::Unknown { .. })) {
+        return None;
+    }
     if !point_on_surface(start, surface) || !point_on_surface(end, surface) {
         return None;
     }
@@ -7800,78 +7803,98 @@ pub(crate) fn build_standard_edge_curve(
             if axes.is_empty() {
                 axes.extend(circle_axis_from_endpoints(*center, *radius, start, end));
             }
-            let Some(axis) = axes.first().copied() else {
-                return (None, None);
-            };
-            if axes
-                .iter()
-                .skip(1)
-                .any(|other| axis.dot(*other).abs() < 0.9999)
-            {
-                return (None, None);
-            }
-            let (axis, ref_direction, param_range) = if points[0] == points[1] {
-                let Some((axis, ref_direction)) = full_circle_frame(*center, *radius, axis, start)
-                else {
-                    return (None, None);
-                };
-                (axis, ref_direction, Some([0.0, std::f64::consts::TAU]))
-            } else {
-                let candidates = [axis, axis.scale(-1.0)]
-                    .into_iter()
-                    .filter_map(|axis| {
-                        let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
-                        let range = standard_circle_param_range(
-                            ir,
-                            bindings,
-                            surface_indices,
-                            brep,
-                            support,
-                            *center,
-                            *radius,
-                            axis,
-                            ref_direction,
-                            start,
-                            end,
-                        )
-                        .or_else(|| {
-                            native_support.and_then(|native| {
-                                native_support_circle_param_range(
-                                    native,
-                                    *center,
-                                    *radius,
-                                    axis,
-                                    ref_direction,
-                                    start,
-                                    end,
-                                )
-                            })
-                        })?;
-                        Some((
-                            axis,
-                            ref_direction,
-                            crate::nurbs::canonical_periodic_range(range)?,
-                        ))
-                    })
-                    .collect::<Vec<_>>();
-                match candidates.as_slice() {
-                    [(axis, reference, range)] => (*axis, *reference, Some(*range)),
-                    _ => (
-                        axis,
-                        cadmpeg_ir::geometry::derive_reference_direction(axis),
-                        None,
-                    ),
+            let axis = axes.first().copied();
+            let conflicting_axes = axis.is_some_and(|axis| {
+                axes.iter()
+                    .skip(1)
+                    .any(|other| axis.dot(*other).abs() < 0.9999)
+            });
+            match axis.filter(|_| !conflicting_axes) {
+                Some(axis) if points[0] == points[1] => {
+                    match full_circle_frame(*center, *radius, axis, start) {
+                        Some((axis, ref_direction)) => (
+                            CurveGeometry::Circle {
+                                center: *center,
+                                axis,
+                                ref_direction,
+                                radius: *radius,
+                            },
+                            Some([0.0, std::f64::consts::TAU]),
+                        ),
+                        None => (
+                            CurveGeometry::Unknown {
+                                record: Some(UnknownId(
+                                    "catia:payload:unknown#brep-stream".to_string(),
+                                )),
+                            },
+                            None,
+                        ),
+                    }
                 }
-            };
-            (
-                CurveGeometry::Circle {
-                    center: *center,
-                    axis,
-                    ref_direction,
-                    radius: *radius,
-                },
-                param_range,
-            )
+                Some(axis) => {
+                    let candidates = [axis, axis.scale(-1.0)]
+                        .into_iter()
+                        .filter_map(|axis| {
+                            let ref_direction =
+                                cadmpeg_ir::geometry::derive_reference_direction(axis);
+                            let range = standard_circle_param_range(
+                                ir,
+                                bindings,
+                                surface_indices,
+                                brep,
+                                support,
+                                *center,
+                                *radius,
+                                axis,
+                                ref_direction,
+                                start,
+                                end,
+                            )
+                            .or_else(|| {
+                                native_support.and_then(|native| {
+                                    native_support_circle_param_range(
+                                        native,
+                                        *center,
+                                        *radius,
+                                        axis,
+                                        ref_direction,
+                                        start,
+                                        end,
+                                    )
+                                })
+                            })?;
+                            Some((
+                                axis,
+                                ref_direction,
+                                crate::nurbs::canonical_periodic_range(range)?,
+                            ))
+                        })
+                        .collect::<Vec<_>>();
+                    let (axis, ref_direction, param_range) = match candidates.as_slice() {
+                        [(axis, reference, range)] => (*axis, *reference, Some(*range)),
+                        _ => (
+                            axis,
+                            cadmpeg_ir::geometry::derive_reference_direction(axis),
+                            None,
+                        ),
+                    };
+                    (
+                        CurveGeometry::Circle {
+                            center: *center,
+                            axis,
+                            ref_direction,
+                            radius: *radius,
+                        },
+                        param_range,
+                    )
+                }
+                None => (
+                    CurveGeometry::Unknown {
+                        record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
+                    },
+                    None,
+                ),
+            }
         }
         crate::families::standard::records::StandardCurveGeometry::Bspline => {
             if let Some((limit_curve, parameter_range)) = limit_curve {
@@ -7998,8 +8021,11 @@ pub(crate) fn build_standard_edge_curve(
             .derived(&id, "geometry.major_radius")
             .derived(&id, "geometry.minor_radius");
     } else if matches!(
-        &support.geometry,
-        crate::families::standard::records::StandardCurveGeometry::Circle { .. }
+        (&support.geometry, &geometry),
+        (
+            crate::families::standard::records::StandardCurveGeometry::Circle { .. },
+            CurveGeometry::Circle { .. }
+        )
     ) {
         annotations.derived(&id, "geometry.axis");
     }

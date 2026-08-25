@@ -60,5 +60,6 @@ pub(super) use std::collections::BTreeMap;
 pub(super) use std::collections::{HashMap, HashSet};
 
 mod binding;
+mod circle;
 mod evidence;
 mod transfer;
