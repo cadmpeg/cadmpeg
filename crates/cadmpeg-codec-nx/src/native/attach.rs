@@ -16,8 +16,8 @@ use cadmpeg_ir::features::{
     ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition, FeatureId,
     FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
     HolePlacement, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
-    RadiusForm, RadiusSpec, RibConstruction, RibDraft, SketchSpace, SweepMode, Termination,
-    ThickenSide, TrimRegion,
+    RadiusForm, RadiusSpec, RibConstruction, RibDraft, SketchSpace, SurfaceExtension, SweepMode,
+    Termination, ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -6144,6 +6144,7 @@ fn non_boolean_feature_definition_with_parameters(
             op: BooleanOp::Unresolved,
         },
         "SHELL" => shell_feature_definition(),
+        "ENLARGE" => enlarge_feature_definition(),
         "CHAMFER" => FeatureDefinition::Chamfer {
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: EdgeSelection::Unresolved,
@@ -6226,6 +6227,16 @@ fn shell_feature_definition() -> FeatureDefinition {
         join: None,
         resolve_intersections: None,
         allow_self_intersections: None,
+    }
+}
+
+/// Preserve an ENLARGE operation as a typed surface-extension family while its selected faces,
+/// extension law, and extent remain unresolved.
+fn enlarge_feature_definition() -> FeatureDefinition {
+    FeatureDefinition::ExtendSurface {
+        faces: FaceSelection::Unresolved,
+        distance: None,
+        method: SurfaceExtension::Unresolved,
     }
 }
 

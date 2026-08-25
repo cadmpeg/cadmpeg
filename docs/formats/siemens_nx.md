@@ -1997,6 +1997,11 @@ The `EXTEND_SHEET` operation label identifies a surface-extension construction.
 Its selected input faces, distance, and continuation law remain unresolved.
 Output face ownership does not identify the pre-operation face selection.
 
+The `ENLARGE` operation label identifies a surface-enlarge construction. Its
+selected input faces, extension law, extent, and copy or associativity controls
+remain unresolved. Output face ownership does not identify the pre-operation
+face selection.
+
 The `EXTRACT_BODY` operation label identifies a body-extraction construction. Its
 source is the operation's unique primary-body field `01 02 10 reference_index
 ff`. A source field in the segment-object namespace uses the body-image alias

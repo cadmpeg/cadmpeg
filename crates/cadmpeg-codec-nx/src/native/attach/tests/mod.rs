@@ -38,6 +38,7 @@ pub(crate) fn simple_hole_diameters(
 mod body_writes;
 mod brep;
 mod configuration;
+mod enlarge;
 mod holes_offsets_and_attributes;
 mod operation_sources;
 mod operations_and_holes;

@@ -635,6 +635,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label identifies the shell family but does not assign roles to its object-index fields, body-write output, or result topology. Output body ownership does not identify the pre-operation bodies or opening faces, and the current scalar and reference lanes do not provide a unique thickness, side, mode, join, or intersection-policy witness.
 
+### OM-40. `ENLARGE` construction roles
+
+**Question.** Which serialized input faces, extension law, extent, and copy or associativity controls define an `ENLARGE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `ENLARGE` operation label identifies a surface-enlarge construction." defines the feature family and retains the unresolved surface-extension definition. The operation has a body-write relation in the admitted feature-history grammar.
+
+**Need.** We must identify the complete construction-role relation to populate the selected faces, extension law, extent, and copy or associativity controls.
+
+**Conflict.** The operation label and body-write output identify the surface-enlarge family and result body, but the current object-index and payload lanes do not assign the pre-operation face set or the extension and copy controls. Result topology does not identify those authored roles.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
