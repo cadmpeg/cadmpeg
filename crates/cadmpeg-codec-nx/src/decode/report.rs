@@ -424,6 +424,8 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::MoveObjectUnresolved => "move object",
             FeatureDefinition::CylinderUnresolved => "cylinder",
             FeatureDefinition::ConeUnresolved => "cone",
+            FeatureDefinition::ThreadUnresolved => "thread",
+            FeatureDefinition::DetailedThreadUnresolved => "detailed thread",
             FeatureDefinition::DraftUnresolved => "draft",
             _ => continue,
         };

@@ -2169,6 +2169,13 @@ The `CONE` operation label identifies a body-affecting conical primitive. Its
 dimensions, placement, angular extent, and Boolean result mode remain unresolved
 until the serialized construction roles establish a complete primitive.
 
+An operation labeled `THREADS` or `DETAILED_THREAD` with a body-write frame
+identifies a body-affecting thread construction. Its selected faces, thread
+standard, pitch, handedness, axial extent, and physical or cosmetic result mode
+remain unresolved until the serialized construction roles establish a complete
+thread operation. A record without the body-write frame remains native because
+the label alone does not assign a body result.
+
 The `FILL_HOLE` operation label identifies a body-affecting hole-fill
 construction. Its source-hole, fill, continuity, and healing roles remain
 unresolved until the serialized construction roles establish a complete

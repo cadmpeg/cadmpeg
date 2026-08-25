@@ -765,6 +765,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique dimensions, placement, angular-extent, or result-mode roles.
 
+### OM-53. Body-writing thread construction roles
+
+**Question.** Which serialized fields define the selected faces, thread standard, pitch, handedness, axial extent, and physical or cosmetic result mode of `THREADS` and `DETAILED_THREAD` operations?
+
+**Known.** `siemens_nx.md` §7.1 defines a `THREADS` or `DETAILED_THREAD` record with a body-write frame as a body-affecting thread construction. The operation carries input blocks and a body-write frame, but no neutral output or admitted field assigns the thread construction roles. A record without the body-write frame remains native because its label does not assign a body result.
+
+**Need.** We must identify the selected cylindrical faces, thread designation, pitch, handedness, axial extent, and physical or cosmetic result mode to construct a complete neutral thread operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify a body-affecting thread family, but the bounded payload and object-index lanes do not assign unique face-selection, thread-law, or result-mode roles.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

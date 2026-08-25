@@ -3479,6 +3479,11 @@ fn attach_feature_operations(
                         &source_properties,
                     )
                     .unwrap_or_else(|| {
+                        if let Some(definition) =
+                            body_writing_thread_definition(&label.value, &source_properties)
+                        {
+                            return definition;
+                        }
                         non_boolean_feature_definition_with_parameters(
                             &label.value,
                             &operation_payload_strings,
@@ -5806,6 +5811,23 @@ fn new_body_boolean_op(evidence: &NewBodyEvidence<'_>) -> BooleanOp {
         BooleanOp::NewBody
     } else {
         BooleanOp::Unresolved
+    }
+}
+
+fn body_writing_thread_definition(
+    kind: &str,
+    source_properties: &BTreeMap<String, String>,
+) -> Option<FeatureDefinition> {
+    if !source_properties
+        .keys()
+        .any(|key| key.starts_with("body_write."))
+    {
+        return None;
+    }
+    match kind {
+        "THREADS" => Some(FeatureDefinition::ThreadUnresolved),
+        "DETAILED_THREAD" => Some(FeatureDefinition::DetailedThreadUnresolved),
+        _ => None,
     }
 }
 

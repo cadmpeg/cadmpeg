@@ -1075,6 +1075,10 @@ pub enum FeatureDefinition {
     CylinderUnresolved,
     /// Body-affecting cone primitive whose dimensions and placement remain unresolved.
     ConeUnresolved,
+    /// Body-affecting thread construction whose selected faces and thread law remain unresolved.
+    ThreadUnresolved,
+    /// Body-affecting detailed thread construction whose selected faces and thread law remain unresolved.
+    DetailedThreadUnresolved,
     /// Linear extrusion of a profile.
     Extrude {
         /// Profile swept along `direction`.
@@ -1732,6 +1736,8 @@ impl FeatureDefinition {
             Self::MoveObjectUnresolved => Some("move object"),
             Self::CylinderUnresolved => Some("cylinder"),
             Self::ConeUnresolved => Some("cone"),
+            Self::ThreadUnresolved => Some("thread"),
+            Self::DetailedThreadUnresolved => Some("detailed thread"),
             Self::TrimSurface { .. } => Some("trim surface"),
             Self::ExtendSurface { .. } => Some("extend surface"),
             Self::RuledSurface { .. } => Some("ruled surface"),

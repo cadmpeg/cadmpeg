@@ -4453,6 +4453,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             | FeatureDefinition::MoveFaceUnresolved
             | FeatureDefinition::CylinderUnresolved
             | FeatureDefinition::ConeUnresolved
+            | FeatureDefinition::ThreadUnresolved
+            | FeatureDefinition::DetailedThreadUnresolved
             | FeatureDefinition::SketchBlockDefinition { .. }
             | FeatureDefinition::StoredGeometry
             | FeatureDefinition::Native { .. } => {}
