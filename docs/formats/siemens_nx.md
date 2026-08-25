@@ -2007,6 +2007,12 @@ When its body-write relation resolves, the result body is a sheet body. The
 selected source faces and associativity, copy, and sew controls remain
 unresolved. Result body ownership does not identify the source face selection.
 
+The `SYMBOLIC_THREAD` operation label identifies a non-geometric cosmetic-thread
+annotation. Its cylindrical face, nominal diameter, and axial extent remain
+unresolved in the neutral definition. The type-`03` profile, designation, and
+mode text frames remain in the native feature arena and do not assign those
+construction roles.
+
 The `EXTRACT_BODY` operation label identifies a body-extraction construction. Its
 source is the operation's unique primary-body field `01 02 10 reference_index
 ff`. A source field in the segment-object namespace uses the body-image alias

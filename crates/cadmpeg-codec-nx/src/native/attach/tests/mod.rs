@@ -45,4 +45,5 @@ mod operation_sources;
 mod operations_and_holes;
 mod shell;
 mod sketches;
+mod symbolic_thread;
 mod trim_body;

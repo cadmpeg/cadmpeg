@@ -5969,6 +5969,7 @@ fn non_boolean_feature_definition_with_parameters(
             keep: TrimRegion::Unresolved,
         },
         "EXTRACT_FACE" => FeatureDefinition::ExtractFaceUnresolved,
+        "SYMBOLIC_THREAD" => symbolic_thread_feature_definition(),
         "EXTEND_SHEET" => FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Unresolved,
             distance: None,
@@ -6238,6 +6239,16 @@ fn enlarge_feature_definition() -> FeatureDefinition {
         faces: FaceSelection::Unresolved,
         distance: None,
         method: SurfaceExtension::Unresolved,
+    }
+}
+
+/// Preserve a `SYMBOLIC_THREAD` operation as a cosmetic-thread family while its cylindrical face,
+/// nominal diameter, and axial extent remain unresolved.
+fn symbolic_thread_feature_definition() -> FeatureDefinition {
+    FeatureDefinition::CosmeticThread {
+        face: FaceSelection::Unresolved,
+        diameter: None,
+        extent: None,
     }
 }
 

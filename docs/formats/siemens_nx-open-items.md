@@ -655,6 +655,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label and resolved sheet result identify the family, but the operation object-index lanes and body-write relation do not assign source faces or associativity, copy, or sew controls. Result sheet ownership does not identify the authored source selection.
 
+### OM-42. `SYMBOLIC_THREAD` construction roles
+
+**Question.** Which serialized face, diameter, and axial extent fields define a `SYMBOLIC_THREAD` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `SYMBOLIC_THREAD` operation label identifies" defines the family. Complete type-`03` profile, designation, and mode text frames remain in the native feature arena; the operation has no body output relation.
+
+**Need.** We must identify the cylindrical-face relation and dimensional fields to populate the neutral cosmetic-thread definition.
+
+**Conflict.** The label and text frames identify the cosmetic-thread family, but the current object-index lanes and text values do not assign a unique cylindrical face, nominal diameter, or axial extent.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
