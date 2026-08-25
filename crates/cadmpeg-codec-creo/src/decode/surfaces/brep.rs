@@ -179,6 +179,7 @@ pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) vertex_solve: TopologicalVertexSolveDiagnostics,
     pub(in super::super) rejected_faces: BTreeMap<FaceAdmissionRejection, FaceAdmissionEvidence>,
     pub(in super::super) face_rejection_diagnostics: Vec<FaceAdmissionDiagnostic>,
+    pub(in super::super) legacy_nonvisible_face_reference_count: usize,
     pub(in super::super) body_count_mismatch: bool,
     pub(in super::super) legacy_body_ownership_ambiguous: bool,
     pub(in super::super) empty_component_count: usize,
@@ -259,6 +260,12 @@ impl BrepTransferDiagnostics {
             "brep_boundary_curve_unsolved_vertex_count".to_string(),
             self.boundary_curve_unsolved_vertex_count,
         );
+        if self.legacy_nonvisible_face_reference_count > 0 {
+            coverage.insert(
+                "brep_legacy_nonvisible_face_reference_count".to_string(),
+                self.legacy_nonvisible_face_reference_count,
+            );
+        }
         coverage.insert(
             "brep_vertex_topological_count".to_string(),
             self.vertex_solve.topological_vertices,
@@ -563,6 +570,19 @@ fn admitted_face_components(
         })
         .cloned()
         .collect()
+}
+
+/// Return whether a topology face reference belongs to the model-face
+/// namespace used by legacy neutral B-rep admission.
+///
+/// Legacy `NovisGeom` rows can participate in the shared topology reference
+/// space. They describe inactive or construction surfaces, not faces of the
+/// model body. Their analytic carriers remain available as native geometry,
+/// but admitting their references here would manufacture disconnected body
+/// components and make body ownership appear ambiguous.
+fn is_neutral_face_reference(scan: &ContainerScan, face_id: u32) -> bool {
+    scan.framing.layout != crate::container::Layout::LegacyAscii
+        || scan.surfaces.rows.iter().any(|row| row.id == face_id)
 }
 
 fn merge_body_components(
@@ -1093,12 +1113,25 @@ pub(in super::super) fn transfer_native_brep(
             loops_by_face.entry(lp.face_id).or_default().push(lp);
         }
     }
+    let topology_face_reference_ids = scan
+        .topology
+        .face_components
+        .iter()
+        .flat_map(|component| component.face_ids.iter().copied())
+        .chain(loops_by_face.keys().copied())
+        .collect::<BTreeSet<_>>();
+    let legacy_nonvisible_face_reference_count = topology_face_reference_ids
+        .iter()
+        .filter(|face_id| !is_neutral_face_reference(scan, **face_id))
+        .count();
+    loops_by_face.retain(|face_id, _| is_neutral_face_reference(scan, *face_id));
     let candidate_face_ids = scan
         .topology
         .face_components
         .iter()
         .flat_map(|component| component.face_ids.iter().copied())
         .chain(loops_by_face.keys().copied())
+        .filter(|face_id| is_neutral_face_reference(scan, *face_id))
         .collect::<BTreeSet<_>>();
     let model_surface_counts = candidate_face_ids
         .iter()
@@ -1116,6 +1149,7 @@ pub(in super::super) fn transfer_native_brep(
     let typed_nonlinear_curve_ids = model_typed_nonlinear_curve_ids(ir);
     let mut diagnostics = BrepTransferDiagnostics {
         candidate_face_count: candidate_face_ids.len(),
+        legacy_nonvisible_face_reference_count,
         vertex_solve: solved_vertex_result.diagnostics,
         ..BrepTransferDiagnostics::default()
     };

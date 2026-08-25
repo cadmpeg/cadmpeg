@@ -10,10 +10,11 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 
 use super::{
-    admitted_face_components, component_is_closed, legacy_body_ownership_is_unambiguous,
-    merge_body_components, native_parameter_loop_polygon, ordered_native_parameter_face_loops,
-    split_neutral_component_shells, transfer_native_brep, BrepTransferDiagnostics,
-    FaceAdmissionDetail, FaceAdmissionRejection, NativeCurveEvidence, NeutralShellSpec,
+    admitted_face_components, component_is_closed, is_neutral_face_reference,
+    legacy_body_ownership_is_unambiguous, merge_body_components, native_parameter_loop_polygon,
+    ordered_native_parameter_face_loops, split_neutral_component_shells, transfer_native_brep,
+    BrepTransferDiagnostics, FaceAdmissionDetail, FaceAdmissionRejection, NativeCurveEvidence,
+    NeutralShellSpec,
 };
 
 #[test]
@@ -195,6 +196,40 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
     assert!(legacy_body_ownership_is_unambiguous(&scan, 1));
     scan.framing.declared_body_count = Some(2);
     assert!(legacy_body_ownership_is_unambiguous(&scan, 2));
+}
+
+#[test]
+fn legacy_brep_admission_excludes_nonvisible_face_references() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.framing.layout = crate::container::Layout::LegacyAscii;
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 5,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 0,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    });
+    scan.surfaces
+        .nonvisible_rows
+        .push(crate::surface::SurfaceRow {
+            id: 7,
+            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 0,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 0,
+        });
+
+    assert!(is_neutral_face_reference(&scan, 5));
+    assert!(!is_neutral_face_reference(&scan, 7));
+
+    scan.framing.layout = crate::container::Layout::Nd;
+    assert!(is_neutral_face_reference(&scan, 7));
 }
 
 #[test]
