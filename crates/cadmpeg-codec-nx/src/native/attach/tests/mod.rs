@@ -38,6 +38,7 @@ pub(crate) fn simple_hole_diameters(
 mod body_writes;
 mod brep;
 mod bridge_curve;
+mod cone;
 mod configuration;
 mod copy_face;
 mod cylinder;

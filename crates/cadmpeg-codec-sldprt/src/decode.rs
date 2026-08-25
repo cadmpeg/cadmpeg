@@ -1610,6 +1610,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::MoveFaceUnresolved
             | FeatureDefinition::MoveObjectUnresolved
             | FeatureDefinition::CylinderUnresolved
+            | FeatureDefinition::ConeUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved
             | FeatureDefinition::DraftUnresolved => true,
             }

@@ -5978,6 +5978,7 @@ fn non_boolean_feature_definition_with_parameters(
         "MOVE_FACE" => FeatureDefinition::MoveFaceUnresolved,
         "MOVE_OBJECT" => FeatureDefinition::MoveObjectUnresolved,
         "CYLINDER" => FeatureDefinition::CylinderUnresolved,
+        "CONE" => FeatureDefinition::ConeUnresolved,
         "SYMBOLIC_THREAD" => symbolic_thread_feature_definition(),
         "EXTEND_SHEET" => FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Unresolved,

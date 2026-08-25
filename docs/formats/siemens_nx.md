@@ -2165,6 +2165,10 @@ construction. Its curve networks, mesh directions, continuity, and result mode
 remain unresolved until the serialized construction roles establish a complete
 surface.
 
+The `CONE` operation label identifies a body-affecting conical primitive. Its
+dimensions, placement, angular extent, and Boolean result mode remain unresolved
+until the serialized construction roles establish a complete primitive.
+
 The `FILL_HOLE` operation label identifies a body-affecting hole-fill
 construction. Its source-hole, fill, continuity, and healing roles remain
 unresolved until the serialized construction roles establish a complete

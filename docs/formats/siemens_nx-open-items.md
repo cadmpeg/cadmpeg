@@ -755,6 +755,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique curve-network, mesh-direction, continuity, or result-mode roles.
 
+### OM-52. `CONE` construction roles
+
+**Question.** Which serialized fields define the dimensions, placement, angular extent, and Boolean result mode of a `CONE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `CONE` operation label identifies" defines the body-affecting conical primitive. The record carries a body-write frame and object-index values, but no neutral output or admitted field assigns the primitive construction roles.
+
+**Need.** We must identify the conical dimensions, placement frame, angular extent, and result mode to construct a complete neutral cone primitive and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique dimensions, placement, angular-extent, or result-mode roles.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
