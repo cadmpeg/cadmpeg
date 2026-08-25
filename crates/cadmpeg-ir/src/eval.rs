@@ -4733,6 +4733,7 @@ struct ContactTrackDifferential {
     point: Point3,
     tangent: Vector3,
     normal: Vector3,
+    normal_derivative: Option<Vector3>,
 }
 
 fn variable_blend_contact_track_differential(
@@ -4745,10 +4746,19 @@ fn variable_blend_contact_track_differential(
     let uv = pcurve_uv(pcurve, parameter)?;
     let uv_tangent = pcurve_tangent(pcurve, parameter)?;
     let support = model_surface_partials_by_id(index, surface, uv.u, uv.v)?;
+    let normal_derivative = model_surface_second_partials_by_id(index, surface, uv.u, uv.v)
+        .and_then(|support| {
+            let du = vector_sum(&[(uv_tangent.u, support.duu), (uv_tangent.v, support.duv)]);
+            let dv = vector_sum(&[(uv_tangent.u, support.duv), (uv_tangent.v, support.dvv)]);
+            let normal = support.du.cross(support.dv);
+            let normal_derivative = du.cross(support.dv) + support.du.cross(dv);
+            unit_vector_with_derivative(normal, normal_derivative).map(|(_, derivative)| derivative)
+        });
     Some(ContactTrackDifferential {
         point: support.point,
         tangent: vector_sum(&[(uv_tangent.u, support.du), (uv_tangent.v, support.dv)]),
         normal: support.du.cross(support.dv).unit()?,
+        normal_derivative,
     })
 }
 
@@ -4876,6 +4886,38 @@ fn variable_blend_radius(
     }
 }
 
+fn variable_blend_radius_differential(
+    value: &crate::geometry::VariableBlendValue,
+    parameter: f64,
+) -> Option<ScalarSweepDifferential> {
+    match &value.payload {
+        crate::geometry::VariableBlendValuePayload::TwoEnds {
+            parameters: [first_parameter, second_parameter],
+            radii: [first_radius, second_radius],
+        } => {
+            let width = second_parameter - first_parameter;
+            if width == 0.0 {
+                return None;
+            }
+            let fraction = (parameter - first_parameter) / width;
+            finite_sweep_differential(
+                first_radius + fraction * (second_radius - first_radius),
+                (second_radius - first_radius) / width,
+            )
+        }
+        crate::geometry::VariableBlendValuePayload::Constant { nested, .. } => {
+            variable_blend_radius_differential(nested, parameter)
+        }
+        crate::geometry::VariableBlendValuePayload::Functional { function, .. }
+        | crate::geometry::VariableBlendValuePayload::Interpolated { function, .. } => {
+            let radius = pcurve_uv(function, parameter)?.u;
+            let derivative = pcurve_tangent(function, parameter)?.u;
+            finite_sweep_differential(radius, derivative)
+        }
+        _ => None,
+    }
+}
+
 fn minor_circular_arc_point(
     center: Point3,
     first: Point3,
@@ -4922,10 +4964,6 @@ fn cacheless_circular_variable_blend_point(
     {
         return None;
     }
-    let radius = variable_blend_radius(&construction.first_value, v)?.abs();
-    if !radius.is_finite() || radius <= f64::EPSILON {
-        return None;
-    }
     let first = variable_blend_contact_track_differential(index, &construction.sides[0], v)?;
     let second = variable_blend_contact_track_differential(index, &construction.sides[1], v)?;
     if u == 0.0 {
@@ -4934,36 +4972,51 @@ fn cacheless_circular_variable_blend_point(
     if u == 1.0 {
         return Some(second.point);
     }
-    let mut best = None;
-    let mut second_best_residual = f64::INFINITY;
-    for first_sign in [-1.0, 1.0] {
-        for second_sign in [-1.0, 1.0] {
-            let first_center = offset(first.point, &[(first_sign * radius, first.normal)]);
-            let second_center = offset(second.point, &[(second_sign * radius, second.normal)]);
-            let separation = Vector3::new(
-                second_center.x - first_center.x,
-                second_center.y - first_center.y,
-                second_center.z - first_center.z,
-            );
-            let residual = separation.norm();
-            if best.is_none_or(|(_, best_residual)| residual < best_residual) {
-                if let Some((_, best_residual)) = best {
-                    second_best_residual = best_residual;
-                }
-                best = Some((
-                    Point3::new(
-                        (first_center.x + second_center.x) * 0.5,
-                        (first_center.y + second_center.y) * 0.5,
-                        (first_center.z + second_center.z) * 0.5,
-                    ),
-                    residual,
-                ));
-            } else if residual < second_best_residual {
-                second_best_residual = residual;
-            }
-        }
+    let section = cacheless_circular_variable_blend_section(index, construction, u, v)?;
+    minor_circular_arc_point(
+        section.center,
+        section.first.point,
+        section.second.point,
+        section.radius,
+        u,
+    )
+}
+
+struct CircularVariableBlendSection {
+    center: Point3,
+    signs: [f64; 2],
+    first: ContactTrackDifferential,
+    second: ContactTrackDifferential,
+    radius: f64,
+    radius_derivative: Option<f64>,
+    tolerance: f64,
+}
+
+fn cacheless_circular_variable_blend_section(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::VariableBlendConstruction,
+    u: f64,
+    v: f64,
+) -> Option<CircularVariableBlendSection> {
+    if !cacheless_variable_blend_domain_contains(construction, u, v)
+        || construction.radius_kind != crate::geometry::VariableBlendRadiusKind::SingleRadius
+        || !matches!(
+            construction.cross_section,
+            None | Some(crate::geometry::VariableBlendCrossSection::Circular)
+        )
+    {
+        return None;
     }
-    let (center, residual) = best?;
+    let signed_radius = variable_blend_radius(&construction.first_value, v)?;
+    let radius = signed_radius.abs();
+    if !radius.is_finite() || radius <= f64::EPSILON {
+        return None;
+    }
+    let radius_derivative = variable_blend_radius_differential(&construction.first_value, v)
+        .filter(|differential| differential.value.signum() == signed_radius.signum())
+        .map(|differential| differential.derivative * signed_radius.signum());
+    let first = variable_blend_contact_track_differential(index, &construction.sides[0], v)?;
+    let second = variable_blend_contact_track_differential(index, &construction.sides[1], v)?;
     let scale = radius
         .max(first.point.x.abs())
         .max(first.point.y.abs())
@@ -4976,10 +5029,48 @@ fn cacheless_circular_variable_blend_point(
         .tolerances
         .linear
         .max(256.0 * f64::EPSILON * scale.max(1.0));
+
+    let mut best = None;
+    let mut second_best_residual = f64::INFINITY;
+    for first_sign in [-1.0, 1.0] {
+        for second_sign in [-1.0, 1.0] {
+            let first_center = offset(first.point, &[(first_sign * radius, first.normal)]);
+            let second_center = offset(second.point, &[(second_sign * radius, second.normal)]);
+            let residual = point_displacement(second_center, first_center).norm();
+            if best
+                .as_ref()
+                .is_none_or(|(_, _, best_residual)| residual < *best_residual)
+            {
+                if let Some((_, _, best_residual)) = best {
+                    second_best_residual = best_residual;
+                }
+                best = Some((
+                    Point3::new(
+                        (first_center.x + second_center.x) * 0.5,
+                        (first_center.y + second_center.y) * 0.5,
+                        (first_center.z + second_center.z) * 0.5,
+                    ),
+                    [first_sign, second_sign],
+                    residual,
+                ));
+            } else if residual < second_best_residual {
+                second_best_residual = residual;
+            }
+        }
+    }
+    let (center, signs, residual) = best?;
     if residual > tolerance || second_best_residual <= tolerance {
         return None;
     }
-    minor_circular_arc_point(center, first.point, second.point, radius, u)
+    Some(CircularVariableBlendSection {
+        center,
+        signs,
+        first,
+        second,
+        radius,
+        radius_derivative,
+        tolerance,
+    })
 }
 
 fn cacheless_constant_rolling_ball_point(
@@ -5095,6 +5186,46 @@ fn cacheless_constant_rolling_ball_section(
     })
 }
 
+fn cacheless_circular_variable_blend_partials(
+    index: &crate::index::ModelIndex<'_>,
+    construction: &crate::geometry::VariableBlendConstruction,
+    u: f64,
+    v: f64,
+) -> Option<SurfacePartials> {
+    let section = cacheless_circular_variable_blend_section(index, construction, u, v)?;
+    let radius_derivative = section.radius_derivative?;
+    let first_normal_derivative = section.first.normal_derivative?;
+    let second_normal_derivative = section.second.normal_derivative?;
+    let first_center_tangent = vector_sum(&[
+        (1.0, section.first.tangent),
+        (section.signs[0] * radius_derivative, section.first.normal),
+        (section.signs[0] * section.radius, first_normal_derivative),
+    ]);
+    let second_center_tangent = vector_sum(&[
+        (1.0, section.second.tangent),
+        (section.signs[1] * radius_derivative, section.second.normal),
+        (section.signs[1] * section.radius, second_normal_derivative),
+    ]);
+    if vector_sum(&[(1.0, second_center_tangent), (-1.0, first_center_tangent)]).norm()
+        > section.tolerance
+    {
+        return None;
+    }
+    let center_tangent = scale_vector(
+        vector_sum(&[(1.0, first_center_tangent), (1.0, second_center_tangent)]),
+        0.5,
+    );
+    circular_arc_partials(
+        section.center,
+        center_tangent,
+        &section.first,
+        &section.second,
+        section.radius,
+        radius_derivative,
+        u,
+    )
+}
+
 fn cacheless_constant_rolling_ball_partials(
     index: &crate::index::ModelIndex<'_>,
     supports: &[Option<crate::geometry::BlendSupport>; 2],
@@ -5121,10 +5252,30 @@ fn constant_rolling_ball_partials(
     u: f64,
 ) -> Option<SurfacePartials> {
     let center_tangent = section.center_tangent?;
-    let first_delta = point_displacement(section.first.point, section.center);
-    let second_delta = point_displacement(section.second.point, section.center);
-    let first_delta_v = vector_sum(&[(1.0, section.first.tangent), (-1.0, center_tangent)]);
-    let second_delta_v = vector_sum(&[(1.0, section.second.tangent), (-1.0, center_tangent)]);
+    circular_arc_partials(
+        section.center,
+        center_tangent,
+        &section.first,
+        &section.second,
+        section.radius,
+        0.0,
+        u,
+    )
+}
+
+fn circular_arc_partials(
+    center: Point3,
+    center_tangent: Vector3,
+    first: &ContactTrackDifferential,
+    second: &ContactTrackDifferential,
+    radius: f64,
+    radius_derivative: f64,
+    u: f64,
+) -> Option<SurfacePartials> {
+    let first_delta = point_displacement(first.point, center);
+    let second_delta = point_displacement(second.point, center);
+    let first_delta_v = vector_sum(&[(1.0, first.tangent), (-1.0, center_tangent)]);
+    let second_delta_v = vector_sum(&[(1.0, second.tangent), (-1.0, center_tangent)]);
     let (first_radius, first_radius_v) = unit_vector_with_derivative(first_delta, first_delta_v)?;
     let (second_radius, second_radius_v) =
         unit_vector_with_derivative(second_delta, second_delta_v)?;
@@ -5163,9 +5314,13 @@ fn constant_rolling_ball_partials(
         ),
     ]);
     Some(SurfacePartials {
-        point: offset(section.center, &[(section.radius, radial)]),
-        du: scale_vector(radial_u, section.radius),
-        dv: vector_sum(&[(1.0, center_tangent), (section.radius, radial_v)]),
+        point: offset(center, &[(radius, radial)]),
+        du: scale_vector(radial_u, radius),
+        dv: vector_sum(&[
+            (1.0, center_tangent),
+            (radius_derivative, radial),
+            (radius, radial_v),
+        ]),
     })
 }
 
@@ -5573,6 +5728,11 @@ pub fn model_surface_partials_by_id(
         .map(|procedural| &procedural.definition)
     {
         if let Some(partials) = cacheless_ruled_variable_blend_partials(index, construction, u, v) {
+            return Some(partials);
+        }
+        if let Some(partials) =
+            cacheless_circular_variable_blend_partials(index, construction, u, v)
+        {
             return Some(partials);
         }
         if !variable_blend_has_current_cache(construction) {

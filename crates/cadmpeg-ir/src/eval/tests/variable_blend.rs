@@ -281,6 +281,57 @@ fn cacheless_circular_variable_blend_uses_the_common_contact_center() {
     assert!((point.x - expected).abs() <= tolerance);
     assert!((point.y - 0.5).abs() <= tolerance);
     assert!((point.z - expected).abs() <= tolerance);
+
+    let partials = model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5)
+        .expect("cacheless circular variable-blend partials");
+    let derivative = 3.0 * std::f64::consts::FRAC_PI_2 / 2.0_f64.sqrt();
+    let derivative_tolerance = 128.0 * f64::EPSILON;
+    assert!((partials.point.x - expected).abs() <= derivative_tolerance);
+    assert!((partials.point.y - 0.5).abs() <= derivative_tolerance);
+    assert!((partials.point.z - expected).abs() <= derivative_tolerance);
+    assert!((partials.du.x + derivative).abs() <= derivative_tolerance);
+    assert!(partials.du.y.abs() <= derivative_tolerance);
+    assert!((partials.du.z - derivative).abs() <= derivative_tolerance);
+    let transverse = 2.0_f64.sqrt();
+    assert!((partials.dv.x - (2.0 - transverse)).abs() <= derivative_tolerance);
+    assert!((partials.dv.y - 1.0).abs() <= derivative_tolerance);
+    assert!((partials.dv.z - (2.0 - transverse)).abs() <= derivative_tolerance);
+}
+
+#[test]
+fn cacheless_circular_variable_blend_rejects_an_undetermined_center_tangent() {
+    let (mut ir, blend_surface) = variable_blend_eval_fixture(
+        Point3::new(0.0, 0.0, 0.0),
+        [
+            (Point2::new(2.0, 0.0), Point2::new(2.0, 1.0)),
+            (Point2::new(0.0, 2.0), Point2::new(1.0, 2.0)),
+        ],
+        [2.0, 4.0],
+        Some(VariableBlendCrossSection::Circular),
+    );
+    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &mut ir.model.procedural_surfaces[0].definition
+    else {
+        unreachable!()
+    };
+    construction.sides[0].pcurve = Some(crate::geometry::PcurveGeometry::Line {
+        origin: Point2::new(3.0, 0.0),
+        direction: Point2::new(0.0, 1.0),
+    });
+    construction.sides[1].pcurve = Some(crate::geometry::PcurveGeometry::Line {
+        origin: Point2::new(0.5, 2.0),
+        direction: Point2::new(0.0, 2.0),
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let point = model_surface_point_by_id(&index, &blend_surface, 0.5, 0.5)
+        .expect("contact centers still coincide at the sample");
+    let expected = 3.0 - 3.0 / 2.0_f64.sqrt();
+    let tolerance = 64.0 * f64::EPSILON;
+    assert!((point.x - expected).abs() <= tolerance);
+    assert!((point.y - 0.5).abs() <= tolerance);
+    assert!((point.z - expected).abs() <= tolerance);
+    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.5, 0.5).is_none());
 }
 
 #[test]
@@ -484,6 +535,7 @@ fn rolling_ball_partials_follow_a_changing_section_angle() {
             point: Point3::new(radius, 0.0, 0.0),
             tangent: zero,
             normal: zero,
+            normal_derivative: None,
         },
         second: ContactTrackDifferential {
             point: Point3::new(
@@ -497,6 +549,7 @@ fn rolling_ball_partials_follow_a_changing_section_angle() {
                 radius * section_angle.cos(),
             ),
             normal: zero,
+            normal_derivative: None,
         },
         radius,
     };
