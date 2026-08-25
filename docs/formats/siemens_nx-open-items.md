@@ -685,6 +685,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The label identifies a bridge-curve family, but the operation-header slots are null and the bounded payload does not assign a unique source-curve or continuity relation.
 
+### OM-45. `FILL_HOLE` construction roles
+
+**Question.** Which serialized input references, fill geometry, continuity, and healing controls define a `FILL_HOLE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `FILL_HOLE` operation label identifies" defines the body-affecting hole-fill family. A decoded operation retains two input-block references and a body-write relation, while its neutral output and construction-role assignment remain unresolved.
+
+**Need.** We must identify the source-hole boundary, fill geometry, continuity law, and healing controls to construct a complete neutral operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family and a body-affecting result, but the two input-block references and bounded payload do not assign the source-hole, fill, continuity, or healing roles.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

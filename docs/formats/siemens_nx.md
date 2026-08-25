@@ -2150,6 +2150,11 @@ The `BRIDGE_CURVE` operation label identifies a bridge-curve history operation.
 Its source curves, end conditions, and continuity remain unresolved until the
 serialized construction roles establish a complete curve.
 
+The `FILL_HOLE` operation label identifies a body-affecting hole-fill
+construction. Its source-hole, fill, continuity, and healing roles remain
+unresolved until the serialized construction roles establish a complete
+operation.
+
 **Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). Equal handle values group their ordered distinct bounded OM records, offset-store control blocks, and indexed EXTREFSTREAM records under one native handle identity. A second family is a four-byte big-endian word whose high nibble is `0xC` and low 28 bits are the reference value. In an externally bounded object record, that second token is a typed reference only when it immediately follows one complete `e0 + handle:u32 BE` token; an unpaired high-nibble-`c` word remains field data. Both tokens remain within the same record and form one `(e0-handle, c-ref)` pair.
 
 Each persistent-handle identity separately counts serialized occurrences in OM/control storage and EXTREFSTREAM storage. The external count includes every normalized handle-set prefix occurrence, its omitted closing duplicate when present, and every exact tail-pair occurrence.

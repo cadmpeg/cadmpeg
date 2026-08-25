@@ -5971,6 +5971,7 @@ fn non_boolean_feature_definition_with_parameters(
             keep: TrimRegion::Unresolved,
         },
         "EXTRACT_FACE" => FeatureDefinition::ExtractFaceUnresolved,
+        "FILL_HOLE" => FeatureDefinition::FillHoleUnresolved,
         "SYMBOLIC_THREAD" => symbolic_thread_feature_definition(),
         "EXTEND_SHEET" => FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Unresolved,

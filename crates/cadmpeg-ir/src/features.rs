@@ -1427,6 +1427,8 @@ pub enum FeatureDefinition {
     },
     /// Surface body extracted from selected faces whose source roles remain unresolved.
     ExtractFaceUnresolved,
+    /// Body-affecting hole-fill operation whose construction roles remain unresolved.
+    FillHoleUnresolved,
     /// Boundary-surface operation whose curve networks remain unresolved.
     BoundarySurfaceUnresolved,
     /// Restricts selected surface faces to one side of a trimming path.
@@ -1708,6 +1710,7 @@ impl FeatureDefinition {
             Self::ExtractBody { .. } => Some("extract body"),
             Self::Loft { .. } => Some("loft"),
             Self::ExtractFaceUnresolved => Some("extract face"),
+            Self::FillHoleUnresolved => Some("fill hole"),
             Self::TrimSurface { .. } => Some("trim surface"),
             Self::ExtendSurface { .. } => Some("extend surface"),
             Self::RuledSurface { .. } => Some("ruled surface"),

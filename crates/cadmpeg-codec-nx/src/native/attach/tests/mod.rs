@@ -42,6 +42,7 @@ mod configuration;
 mod enlarge;
 mod extract_datum_axis;
 mod extract_face;
+mod fill_hole;
 mod holes_offsets_and_attributes;
 mod operation_sources;
 mod operations_and_holes;

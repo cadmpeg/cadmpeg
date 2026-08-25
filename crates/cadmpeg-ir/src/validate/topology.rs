@@ -2468,6 +2468,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::ExtractFaceUnresolved
+            | FeatureDefinition::FillHoleUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved => {}
             FeatureDefinition::ReferenceImage {
                 asset,
