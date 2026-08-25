@@ -695,6 +695,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label and body-write relation identify the family and a body-affecting result, but the two input-block references and bounded payload do not assign the source-hole, fill, continuity, or healing roles.
 
+### OM-46. `MOVE_FACE` construction roles
+
+**Question.** Which serialized face selection and motion fields define a `MOVE_FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `MOVE_FACE` operation label identifies" defines the body-affecting direct face-motion family. A resolved body-write frame identifies a body-affecting result. The four operation-header object-index slots can be null, and the neutral face selection and motion law remain unresolved.
+
+**Need.** We must identify the selected faces, offset or translation law, rotation axis, and motion magnitude to construct a complete neutral operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the object-index slots and bounded payload do not assign a unique face selection or motion law.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

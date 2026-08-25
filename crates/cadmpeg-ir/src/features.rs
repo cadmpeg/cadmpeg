@@ -1575,6 +1575,8 @@ pub enum FeatureDefinition {
         /// Motion applied to the selected faces.
         motion: FaceMotion,
     },
+    /// Body-affecting face-motion family whose selected faces and motion law remain unresolved.
+    MoveFaceUnresolved,
     /// Rigid translation or rotation of selected bodies, optionally creating copies.
     MoveBody {
         /// Bodies transformed by the operation.
@@ -1711,6 +1713,7 @@ impl FeatureDefinition {
             Self::Loft { .. } => Some("loft"),
             Self::ExtractFaceUnresolved => Some("extract face"),
             Self::FillHoleUnresolved => Some("fill hole"),
+            Self::MoveFaceUnresolved => Some("move face"),
             Self::TrimSurface { .. } => Some("trim surface"),
             Self::ExtendSurface { .. } => Some("extend surface"),
             Self::RuledSurface { .. } => Some("ruled surface"),
