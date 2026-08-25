@@ -422,7 +422,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         .map(|parameter| &parameter.id),
         None
     );
-    let mut synthesized_parameters = vec![mismatched_parameter];
+    let mut synthesized_parameters = vec![mismatched_parameter.clone()];
     crate::resolved_features::projections::synthesize_display_relation_parameters(
         &mut synthesized_parameters,
         std::slice::from_ref(&feature),
@@ -439,6 +439,29 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         .expect("display-only relation parameter");
     assert_eq!(synthetic.value, Some(ParameterValue::Length(Length(12.0))));
     assert!(synthetic.native_ref.is_none());
+    let nested_relation = FeatureInputRelationInstance {
+        id: "sldprt:feature-input:relation-instance#lane:10".into(),
+        ..relation.clone()
+    };
+    let mut nested_parameters = vec![mismatched_parameter];
+    crate::resolved_features::projections::synthesize_display_relation_parameters(
+        &mut nested_parameters,
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&FeatureInputLane {
+            relation_instances: vec![nested_relation],
+            ..lane.clone()
+        }),
+    );
+    let nested = nested_parameters
+        .iter()
+        .find(|parameter| {
+            parameter.properties.get("sldprt_relation_parameter_role") == Some(&"reference".into())
+        })
+        .expect("nested display-only relation parameter");
+    assert_eq!(
+        nested.id,
+        ParameterId("sldprt:model:parameter#reference:lane:10".into())
+    );
     assert_eq!(
         owned_relation_parameters(
             std::slice::from_ref(&feature),

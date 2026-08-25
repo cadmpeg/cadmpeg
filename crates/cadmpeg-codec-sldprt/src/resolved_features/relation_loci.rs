@@ -1127,8 +1127,21 @@ fn repeated_dimensioned_circular_entities(
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
 ) -> Option<Vec<SketchEntityId>> {
-    let parameter_native_ref = parameter.native_ref.as_deref()?;
-    if relation.parameter_scalar_ref.as_deref() != Some(parameter_native_ref) {
+    // A reference parameter with a contiguous display-only scalar run carries
+    // one diameter value for several circular entities. Its scalar operands
+    // identify native indices, but the decoded profile is the authoritative
+    // neutral roster, so resolve the run by its unique radius population.
+    let repeated_display = relation.parameter_scalar_ref.is_none()
+        && relation.scalar_refs.len() >= 2
+        && relation.operands.len() == 1
+        && parameter.native_ref.is_none()
+        && super::relation_geometry::is_reference_relation_parameter(parameter)
+        && parameter
+            .properties
+            .get(super::relation_geometry::RELATION_PARAMETER_ID_PROPERTY)
+            == Some(&relation.id);
+    let parameter_native_ref = parameter.native_ref.as_deref();
+    if !repeated_display && relation.parameter_scalar_ref.as_deref() != parameter_native_ref {
         return None;
     }
     let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
@@ -1145,7 +1158,8 @@ fn repeated_dimensioned_circular_entities(
     let entities = sketch_entities
         .iter()
         .filter(|entity| {
-            entity.sketch == *sketch && entity.geometry_ref.as_deref() == Some(parameter_native_ref)
+            entity.sketch == *sketch
+                && (repeated_display || entity.geometry_ref.as_deref() == parameter_native_ref)
         })
         .filter_map(|entity| {
             let radius = match entity.geometry {
@@ -1157,7 +1171,7 @@ fn repeated_dimensioned_circular_entities(
             same_dimension_length(radius, expected_radius).then(|| entity.id.clone())
         })
         .collect::<Vec<_>>();
-    (entities.len() >= 2).then_some(entities)
+    (entities.len() >= 2 && entities.len() <= relation.scalar_refs.len()).then_some(entities)
 }
 
 // Reduce a set of candidate locus pairs to the sole survivor: order the pairs

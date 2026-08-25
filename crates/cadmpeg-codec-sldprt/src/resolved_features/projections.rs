@@ -9,9 +9,9 @@ use super::holes::feature_object_byte_ranges;
 use super::is_class_token;
 use super::parameters::value_only_scalar_offset;
 use super::relation_geometry::{
-    owned_relation_parameters, relation_display_scalar, RELATION_DISPLAY_SCALAR_ID_PROPERTY,
-    RELATION_PARAMETER_ID_PROPERTY, RELATION_PARAMETER_ROLE_PROPERTY,
-    RELATION_PARAMETER_ROLE_REFERENCE,
+    owned_relation_parameters, relation_display_scalar_for_parameter,
+    RELATION_DISPLAY_SCALAR_ID_PROPERTY, RELATION_PARAMETER_ID_PROPERTY,
+    RELATION_PARAMETER_ROLE_PROPERTY, RELATION_PARAMETER_ROLE_REFERENCE,
 };
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
@@ -359,7 +359,7 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             {
                 continue;
             }
-            let Some(scalar) = relation_display_scalar(relation, lane) else {
+            let Some(scalar) = relation_display_scalar_for_parameter(relation, lane) else {
                 continue;
             };
             if !scalar.value.is_finite() {
@@ -396,7 +396,11 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                     name = format!("{base_name}:{}:{suffix}", relation.offset);
                 }
             }
-            let id = ParameterId(format!("sldprt:model:parameter#reference:{}", relation.id));
+            let relation_key = relation
+                .id
+                .rsplit_once('#')
+                .map_or(relation.id.as_str(), |(_, key)| key);
+            let id = ParameterId(format!("sldprt:model:parameter#reference:{relation_key}"));
             if !parameter_ids.insert(id.clone()) {
                 continue;
             }
