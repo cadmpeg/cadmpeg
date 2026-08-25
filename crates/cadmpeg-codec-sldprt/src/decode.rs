@@ -1595,7 +1595,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             }
             FeatureDefinition::Native { .. } | FeatureDefinition::PostProcess { .. } => false,
             // Unresolved construction retained as native.
-            FeatureDefinition::DatumPlaneUnresolved
+            FeatureDefinition::DatumAxisUnresolved
+            | FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystemUnresolved
             | FeatureDefinition::LoftUnresolved

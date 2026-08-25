@@ -2461,7 +2461,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             definition => definition,
         };
         match definition {
-            FeatureDefinition::DatumPointUnresolved
+            FeatureDefinition::DatumAxisUnresolved
+            | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystemUnresolved
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved

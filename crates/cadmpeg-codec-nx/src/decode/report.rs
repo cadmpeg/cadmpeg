@@ -409,6 +409,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         }
         let family = match feature.definition {
             FeatureDefinition::DatumPlaneUnresolved => "datum plane",
+            FeatureDefinition::DatumAxisUnresolved => "datum axis",
             FeatureDefinition::DatumPointUnresolved => "datum point",
             FeatureDefinition::DatumCoordinateSystemUnresolved => "datum coordinate system",
             FeatureDefinition::LoftUnresolved => "loft",

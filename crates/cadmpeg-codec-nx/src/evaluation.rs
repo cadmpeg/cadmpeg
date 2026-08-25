@@ -254,6 +254,7 @@ fn rederived_body_census(
             | FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumOffsetPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
+            | FeatureDefinition::DatumAxisUnresolved
             | FeatureDefinition::DatumPoint { .. }
             | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystem { .. }
@@ -552,6 +553,7 @@ fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
                 | FeatureDefinition::DatumPlaneUnresolved
                 | FeatureDefinition::DatumOffsetPlane { .. }
                 | FeatureDefinition::DatumAxis { .. }
+                | FeatureDefinition::DatumAxisUnresolved
                 | FeatureDefinition::DatumPoint { .. }
                 | FeatureDefinition::DatumPointUnresolved
                 | FeatureDefinition::DatumCoordinateSystem { .. }

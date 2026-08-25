@@ -39,6 +39,7 @@ mod body_writes;
 mod brep;
 mod configuration;
 mod enlarge;
+mod extract_datum_axis;
 mod extract_face;
 mod holes_offsets_and_attributes;
 mod operation_sources;

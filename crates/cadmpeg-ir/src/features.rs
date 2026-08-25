@@ -767,6 +767,8 @@ pub enum FeatureDefinition {
         /// Axis direction.
         direction: Vector3,
     },
+    /// Constructed reference-axis family whose model-space line is unresolved.
+    DatumAxisUnresolved,
     /// Constructed reference point.
     DatumPoint {
         /// Point position in model space.
