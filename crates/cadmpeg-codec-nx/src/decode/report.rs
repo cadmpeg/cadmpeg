@@ -16,9 +16,10 @@ use super::feature_completeness::{
     positive_feature_length, projected_curve_direction_is_incomplete,
     replace_face_definition_is_incomplete, revolve_definition_is_incomplete,
     rib_definition_is_incomplete, sew_bodies_definition_is_incomplete,
-    sphere_definition_is_incomplete, sweep_definition_is_incomplete,
-    thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
-    trim_surface_definition_is_incomplete, valid_feature_direction,
+    shell_definition_is_incomplete, sphere_definition_is_incomplete,
+    sweep_definition_is_incomplete, thicken_definition_is_incomplete,
+    trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
+    valid_feature_direction,
 };
 use super::geometry_work::{
     MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
@@ -590,6 +591,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
             FeatureDefinition::FaceBlend { .. } if face_blend_definition_is_incomplete(feature) => {
                 "face blend"
+            }
+            FeatureDefinition::Shell { .. }
+                if shell_definition_is_incomplete(&feature.definition) =>
+            {
+                "shell"
             }
             FeatureDefinition::SewBodies { .. } if sew_bodies_definition_is_incomplete(feature) => {
                 "sew bodies"

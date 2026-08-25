@@ -1710,6 +1710,7 @@ impl FeatureDefinition {
             Self::Fillet { .. } => Some("fillet"),
             Self::FullRoundFillet { .. } => Some("fillet"),
             Self::FaceBlend { .. } => Some("face blend"),
+            Self::Shell { .. } => Some("shell"),
             Self::SewBodies { .. } => Some("sew bodies"),
             Self::TrimBodies { .. } => Some("trim bodies"),
             Self::Extrude { .. } => Some("extrude"),

@@ -6143,6 +6143,7 @@ fn non_boolean_feature_definition_with_parameters(
             },
             op: BooleanOp::Unresolved,
         },
+        "SHELL" => shell_feature_definition(),
         "CHAMFER" => FeatureDefinition::Chamfer {
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: EdgeSelection::Unresolved,
@@ -6210,6 +6211,22 @@ fn non_boolean_feature_definition_with_parameters(
 fn brep_feature_definition(outputs: &[BodyId]) -> Option<FeatureDefinition> {
     (!outputs.is_empty() && outputs.iter().collect::<BTreeSet<_>>().len() == outputs.len())
         .then_some(FeatureDefinition::StoredGeometry)
+}
+
+/// Preserve a SHELL operation as a typed neutral family while its construction roles remain
+/// unresolved. The operation label identifies the family, but does not assign bodies, opening
+/// faces, thickness, side, offset mode, corner join, or intersection policy.
+fn shell_feature_definition() -> FeatureDefinition {
+    FeatureDefinition::Shell {
+        bodies: None,
+        removed_faces: FaceSelection::Unresolved,
+        thickness: None,
+        outward: None,
+        mode: None,
+        join: None,
+        resolve_intersections: None,
+        allow_self_intersections: None,
+    }
 }
 
 fn native_feature_parameters(

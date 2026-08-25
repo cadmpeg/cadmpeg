@@ -41,5 +41,6 @@ mod configuration;
 mod holes_offsets_and_attributes;
 mod operation_sources;
 mod operations_and_holes;
+mod shell;
 mod sketches;
 mod trim_body;

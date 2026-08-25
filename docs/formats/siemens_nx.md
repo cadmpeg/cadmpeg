@@ -1923,6 +1923,8 @@ A `SIMPLE HOLE` operation can also carry exactly one of `Hole_ThreadedHole_M Pro
 
 The operation labels `HOLE PACKAGE`, `RIB`, `CHAMFER`, and `THICKEN_SHEET` identify their corresponding construction families. Neutral projection preserves the family as a hole, rib, edge chamfer, or face-thickening operation. Undeclared operands, sidedness, draft, Boolean state, and dimensions outside the rules below remain unresolved.
 
+The `SHELL` operation label identifies a thin-wall shell construction. Its input bodies, removed faces, wall thickness, outward side, offset mode, corner join, and intersection policies remain unresolved until their serialized construction roles are assigned.
+
 The operation labels `ASSOCIATIVE_INTERSECTION` and `Intersection Curve`
 identify section constructions producing intersection curves from two source
 shapes. Neutral projection retains unresolved source selections and unresolved

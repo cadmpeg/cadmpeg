@@ -481,6 +481,30 @@ pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
         || radius_spec_is_incomplete(radius)
 }
 
+pub(crate) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> bool {
+    let FeatureDefinition::Shell {
+        bodies,
+        removed_faces,
+        thickness,
+        outward,
+        mode,
+        join,
+        resolve_intersections,
+        allow_self_intersections,
+    } = definition
+    else {
+        return true;
+    };
+    bodies.as_ref().is_some_and(body_selection_is_incomplete)
+        || face_selection_is_incomplete(removed_faces)
+        || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
+        || outward.is_none()
+        || mode.is_none()
+        || join.is_none()
+        || resolve_intersections.is_none()
+        || allow_self_intersections.is_none()
+}
+
 pub(crate) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::OffsetSurface { faces, distance } = &feature.definition else {
         return true;

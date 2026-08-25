@@ -625,6 +625,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** Serialized order, count relations, and offset-store identities do not assign semantic roles to the retained values or references.
 
+### OM-39. `SHELL` construction roles
+
+**Question.** Which serialized bodies, opening faces, thickness, side, offset mode, corner join, and intersection policies define a `SHELL` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `SHELL` operation label identifies a thin-wall shell construction." defines the feature family and retains the neutral shell definition with unresolved construction fields. The operation record, body-history relations, and topology graph remain independently available.
+
+**Need.** We must identify the complete construction-role relation to populate the shell input bodies, removed faces, wall thickness, outward side, offset mode, corner join, and intersection policies.
+
+**Conflict.** The operation label identifies the shell family but does not assign roles to its object-index fields, body-write output, or result topology. Output body ownership does not identify the pre-operation bodies or opening faces, and the current scalar and reference lanes do not provide a unique thickness, side, mode, join, or intersection-policy witness.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
