@@ -183,6 +183,73 @@ pub(crate) fn uniform_offset_circle_file_with_parameters(offset: &[u8]) -> Vec<u
     bytes
 }
 
+pub(crate) fn placed_uniform_offset_circle_file(form: i64, matrix: &[u8]) -> Vec<u8> {
+    placed_uniform_offset_file(
+        "100",
+        b"100,0,0,0,2,0,0,2;",
+        b"130,1,1,0,,,0.5,,,,0,0,1,0,1.5707963267948966;",
+        form,
+        matrix,
+    )
+}
+
+pub(crate) fn placed_uniform_offset_line_file(form: i64, matrix: &[u8]) -> Vec<u8> {
+    placed_uniform_offset_file(
+        "110",
+        b"110,0,0,0,2,0,0;",
+        b"130,1,1,0,,,0.5,,,,0,0,1,0,1;",
+        form,
+        matrix,
+    )
+}
+
+fn placed_uniform_offset_file(
+    source_type: &str,
+    source_parameters: &[u8],
+    offset_parameters: &[u8],
+    form: i64,
+    matrix: &[u8],
+) -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let form = form.to_string();
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        [source_type, "1", "0", "0", "0", "0", "0", "0", "00010000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        [source_type, "0", "0", "1", "0", "", "", "SOURCE", "0"],
+        2,
+    ));
+    bytes.extend(directory_card(
+        ["130", "2", "0", "0", "0", "0", "5", "0", "00000000"],
+        3,
+    ));
+    bytes.extend(directory_card(
+        ["130", "0", "0", "1", "0", "", "", "OFFSET", "0"],
+        4,
+    ));
+    bytes.extend(directory_card(
+        ["124", "3", "0", "0", "0", "0", "0", "0", "00000000"],
+        5,
+    ));
+    bytes.extend(directory_card(
+        ["124", "0", "0", "1", &form, "", "", "FRAME", "0"],
+        6,
+    ));
+    bytes.extend(parameter_card(source_parameters, 1, 1));
+    bytes.extend(parameter_card(offset_parameters, 3, 2));
+    bytes.extend(parameter_card(matrix, 5, 3));
+    let global_cards = global_card_count(global);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
 pub(crate) fn offset_quarter_circle_with_absolute_native_parameters() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {

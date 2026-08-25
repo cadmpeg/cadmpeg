@@ -18,6 +18,13 @@ use crate::{directory::DirectoryEntry, directory::Status, parameter::ParameterRe
 
 const EPS_OFFSET_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
+const EPS_PLACED_OFFSET: f64 = 1.0e-12;
+
+fn vector_distance(left: Vector3, right: Vector3) -> f64 {
+    (left.x - right.x)
+        .hypot(left.y - right.y)
+        .hypot(left.z - right.z)
+}
 
 fn source_entry(entity_type: i64, form: i64) -> DirectoryEntry {
     DirectoryEntry {
@@ -266,6 +273,135 @@ fn decode_defaults_unused_uniform_offset_scalars_to_zero() {
         .unwrap();
     assert_eq!(edge.param_range, Some([0.0, std::f64::consts::FRAC_PI_2]));
     assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    assert!(result.report().losses.is_empty());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_places_uniform_offset_circle_with_a_proper_transform() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(placed_uniform_offset_circle_file(
+                0,
+                b"124,0,-1,0,5,1,0,0,0,0,0,1,0;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let offset = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .expect("placed offset carrier");
+    let cadmpeg_ir::geometry::CurveGeometry::Circle {
+        center,
+        axis,
+        ref_direction,
+        radius,
+    } = offset.geometry
+    else {
+        panic!("expected an exact placed circular offset carrier");
+    };
+    assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!(vector_distance(axis, Vector3::new(0.0, 0.0, 1.0)) < EPS_PLACED_OFFSET);
+    assert!(vector_distance(ref_direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!((radius - 1.5).abs() < EPS_PLACED_OFFSET);
+    let procedural = &result.ir().model.procedural_curves[0];
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { source, normal, .. } =
+        &procedural.definition
+    else {
+        panic!("expected an offset construction");
+    };
+    assert_eq!(source.0, "iges:model:curve#D3-placed-source");
+    assert!(
+        vector_distance(
+            normal.expect("placed offset normal"),
+            Vector3::new(0.0, 0.0, 1.0)
+        ) < EPS_PLACED_OFFSET
+    );
+    assert!(result.report().losses.is_empty());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_places_uniform_offset_line_with_a_proper_transform() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(placed_uniform_offset_line_file(
+                0,
+                b"124,0,-1,0,5,1,0,0,0,0,0,1,0;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let offset = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .expect("placed line offset carrier");
+    let cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } = offset.geometry else {
+        panic!("expected an exact placed line offset carrier");
+    };
+    assert!(origin.distance(Point3::new(4.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!(vector_distance(direction, Vector3::new(0.0, 1.0, 0.0)) < EPS_PLACED_OFFSET);
+    let end = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.0 == "iges:model:point#D3:end")
+        .expect("placed line offset end point");
+    assert!(end.position.distance(Point3::new(4.5, 2.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!(result.report().losses.is_empty());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_corrects_offset_normal_handedness_for_a_reflection() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(placed_uniform_offset_circle_file(
+                1,
+                b"124,-1,0,0,5,0,1,0,0,0,0,1,0;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let offset = result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .expect("reflected offset carrier");
+    let cadmpeg_ir::geometry::CurveGeometry::Circle {
+        center,
+        axis,
+        ref_direction,
+        radius,
+    } = offset.geometry
+    else {
+        panic!("expected an exact reflected circular offset carrier");
+    };
+    assert!(center.distance(Point3::new(5.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!(vector_distance(axis, Vector3::new(0.0, 0.0, -1.0)) < EPS_PLACED_OFFSET);
+    assert!(vector_distance(ref_direction, Vector3::new(-1.0, 0.0, 0.0)) < EPS_PLACED_OFFSET);
+    assert!((radius - 1.5).abs() < EPS_PLACED_OFFSET);
+    let start = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.0 == "iges:model:point#D3:start")
+        .expect("reflected offset start point");
+    assert!(start.position.distance(Point3::new(3.5, 0.0, 0.0)) < EPS_PLACED_OFFSET);
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
