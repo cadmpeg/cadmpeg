@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed geometry arrays from expanded `SolidPrimdata` sections.
 
-use crate::psb;
+use crate::{psb, scalar};
 
 /// One bounded, named scalar array in a primitive record.
 #[derive(Debug, Clone, PartialEq)]
@@ -264,7 +264,7 @@ fn primitive_scalar(data: &[u8], offset: usize) -> Option<(f64, usize)> {
             };
             // Compact exponent byte is remapped into the IEEE high byte; the
             // four-byte argument is assembled, not a contiguous in-order window.
-            let value = f32::from_be_bytes([ieee_high, *b1, *b2, *b3]) as f64;
+            let value = scalar::be_f32([ieee_high, *b1, *b2, *b3]) as f64;
             Some((value, offset + 4))
         }
         _ => None,

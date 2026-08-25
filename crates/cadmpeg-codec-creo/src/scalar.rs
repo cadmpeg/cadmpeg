@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use cadmpeg_core::bytes::find_from;
+use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, assemble_u64_be, find_from};
 use cadmpeg_core::decode::View;
 
 use crate::psb::{compact_int, short_form_float};
@@ -13,6 +13,18 @@ const EPS_SCALAR_DECODE_PREFIXED_ORTHOGONAL_PLANE_SUPPORT_E9: f64 = 1e-9;
 const EPS_SCALAR_DECODE_TRAILING_RANK_ORTHOGONAL_PLANE_SUPPORT_E9: f64 = 1e-9;
 const EPS_SCALAR_DECODE_REFLECTED_COMPONENT_PLANE_SUPPORT_E9: f64 = 1e-9;
 const EPS_SCALAR_DECODE_TRAILING_RANK_REFLECTED_PLANE_SUPPORT_E9: f64 = 1e-9;
+
+pub(crate) const fn be_f64(bytes: [u8; 8]) -> f64 {
+    assemble_f64_be(bytes)
+}
+
+pub(crate) const fn be_i64(bytes: [u8; 8]) -> i64 {
+    assemble_u64_be(bytes) as i64
+}
+
+pub(crate) const fn be_f32(bytes: [u8; 4]) -> f32 {
+    assemble_f32_be(bytes)
+}
 
 /// Counted `double_xar` dictionary stored in a model-level scalar section.
 #[derive(Debug, Clone, PartialEq)]
@@ -150,7 +162,7 @@ impl ScalarCache {
                 }
             }
             entries.push(CacheEntry {
-                value: f64::from_be_bytes(ieee),
+                value: be_f64(ieee),
             });
         }
         Self {
@@ -202,7 +214,7 @@ pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option
             raw[0] = if data[offset] == 0x9e { 0x40 } else { 0xc0 };
             raw[1] = byte_1;
             raw[2..].copy_from_slice(tail);
-            Some((f64::from_be_bytes(raw), offset + 7))
+            Some((be_f64(raw), offset + 7))
         }
         0x76 | 0xb3 => {
             let tail = data.get(offset + 1..offset + 7)?;
@@ -213,7 +225,7 @@ pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option
                 &[0xbf, 0xe0]
             });
             raw[2..].copy_from_slice(tail);
-            Some((f64::from_be_bytes(raw), offset + 7))
+            Some((be_f64(raw), offset + 7))
         }
         0xe8 if data.get(offset + 1) == Some(&0) => Some((1.0, offset + 2)),
         _ => decode(data, offset),
@@ -254,11 +266,11 @@ pub fn decode_in_surface_row_lane(
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&[0xc0, 0x15]);
         raw[2..].copy_from_slice(tail);
-        return Some((f64::from_be_bytes(raw), offset + 7));
+        return Some((be_f64(raw), offset + 7));
     }
     if matches!(data.get(offset), Some(0x92 | 0xda)) {
         let payload: [u8; 6] = data.get(offset + 1..offset + 7)?.try_into().ok()?;
-        let signed = i64::from_be_bytes([
+        let signed = be_i64([
             if payload[0] & 0x80 == 0 { 0 } else { 0xff },
             if payload[0] & 0x80 == 0 { 0 } else { 0xff },
             payload[0],
@@ -312,7 +324,7 @@ pub fn decode_in_torus_row_lane(
         let mut raw = [0; 8];
         raw[0] = 0xc0;
         raw[1..7].copy_from_slice(tail);
-        return Some((f64::from_be_bytes(raw), offset + 7));
+        return Some((be_f64(raw), offset + 7));
     }
     decode_in_surface_row_lane(data, offset, cache)
 }
@@ -1190,7 +1202,7 @@ pub fn decode_positive_dict(data: &[u8], offset: usize) -> Option<(f64, usize)> 
     raw[0] = byte_0;
     raw[1] = byte_1;
     raw[2..].copy_from_slice(tail);
-    Some((f64::from_be_bytes(raw), offset + 7))
+    Some((be_f64(raw), offset + 7))
 }
 
 /// Decode one scalar with a defined byte-to-IEEE mapping.
@@ -1222,14 +1234,14 @@ fn ieee8(data: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
     let mut raw = [0; 8];
     raw[0] = first;
     raw[1..].copy_from_slice(tail);
-    Some((f64::from_be_bytes(raw), offset + 8))
+    Some((be_f64(raw), offset + 8))
 }
 fn ieee7(data: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
     let tail = data.get(offset + 1..offset + 7)?;
     let mut raw = [0; 8];
     raw[0] = first;
     raw[1..7].copy_from_slice(tail);
-    Some((f64::from_be_bytes(raw), offset + 7))
+    Some((be_f64(raw), offset + 7))
 }
 
 fn ieee7_with_prefix(data: &[u8], offset: usize, first: u8, second: u8) -> Option<(f64, usize)> {
@@ -1238,7 +1250,7 @@ fn ieee7_with_prefix(data: &[u8], offset: usize, first: u8, second: u8) -> Optio
     raw[0] = first;
     raw[1] = second;
     raw[2..].copy_from_slice(tail);
-    Some((f64::from_be_bytes(raw), offset + 7))
+    Some((be_f64(raw), offset + 7))
 }
 
 fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
@@ -1246,7 +1258,7 @@ fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
     let mut raw = [0; 8];
     raw[..2].copy_from_slice(&high.to_be_bytes());
     raw[2..].copy_from_slice(tail);
-    Some((f64::from_be_bytes(raw), offset + 7))
+    Some((be_f64(raw), offset + 7))
 }
 
 #[cfg(test)]
