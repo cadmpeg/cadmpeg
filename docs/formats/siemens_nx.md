@@ -2012,6 +2012,11 @@ construction. Its source faces, target body, associativity, and sew controls
 remain unresolved until the serialized construction roles establish a complete
 operation.
 
+The `LINKED_FACE` operation label identifies a body-affecting linked-face
+construction. Its source face, target body, associativity, and link-update
+controls remain unresolved until the serialized construction roles establish a
+complete operation.
+
 The `SYMBOLIC_THREAD` operation label identifies a non-geometric cosmetic-thread
 annotation. Its cylindrical face, nominal diameter, and axial extent remain
 unresolved in the neutral definition. The type-`03` profile, designation, and

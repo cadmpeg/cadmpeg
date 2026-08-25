@@ -1431,6 +1431,8 @@ pub enum FeatureDefinition {
     ExtractFaceUnresolved,
     /// Body-affecting face-copy family whose source and target roles remain unresolved.
     CopyFaceUnresolved,
+    /// Body-affecting linked-face family whose source and associativity roles remain unresolved.
+    LinkedFaceUnresolved,
     /// Body-affecting hole-fill operation whose construction roles remain unresolved.
     FillHoleUnresolved,
     /// Boundary-surface operation whose curve networks remain unresolved.
@@ -1719,6 +1721,7 @@ impl FeatureDefinition {
             Self::Loft { .. } => Some("loft"),
             Self::ExtractFaceUnresolved => Some("extract face"),
             Self::CopyFaceUnresolved => Some("copy face"),
+            Self::LinkedFaceUnresolved => Some("linked face"),
             Self::FillHoleUnresolved => Some("fill hole"),
             Self::MoveFaceUnresolved => Some("move face"),
             Self::MoveObjectUnresolved => Some("move object"),

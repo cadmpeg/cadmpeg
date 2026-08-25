@@ -5972,6 +5972,7 @@ fn non_boolean_feature_definition_with_parameters(
         },
         "EXTRACT_FACE" => FeatureDefinition::ExtractFaceUnresolved,
         "COPY_FACE" => FeatureDefinition::CopyFaceUnresolved,
+        "LINKED_FACE" => FeatureDefinition::LinkedFaceUnresolved,
         "FILL_HOLE" => FeatureDefinition::FillHoleUnresolved,
         "MOVE_FACE" => FeatureDefinition::MoveFaceUnresolved,
         "MOVE_OBJECT" => FeatureDefinition::MoveObjectUnresolved,

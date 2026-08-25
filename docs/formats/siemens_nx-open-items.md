@@ -735,6 +735,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique source-face, target-body, associativity, or sew roles.
 
+### OM-50. `LINKED_FACE` construction roles
+
+**Question.** Which serialized fields define the source face, target body, associativity, and link-update controls of a `LINKED_FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `LINKED_FACE` operation label identifies" defines the body-affecting linked-face construction. Every record carries a body-write frame, but no neutral output or admitted field assigns the source-face, target-body, or associativity roles.
+
+**Need.** We must identify the source face, target body, link-update mode, and associativity policy to construct a complete neutral linked-face operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique source-face, target-body, associativity, or link-update roles.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
