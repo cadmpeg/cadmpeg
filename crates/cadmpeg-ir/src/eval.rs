@@ -4542,6 +4542,12 @@ fn cacheless_variable_blend_domain_contains(
             })
 }
 
+fn variable_blend_has_current_cache(
+    construction: &crate::geometry::VariableBlendConstruction,
+) -> bool {
+    construction.shape_prefix > 0 && construction.tail_enum == 0
+}
+
 fn variable_blend_is_zero_radius(value: &crate::geometry::VariableBlendValue) -> bool {
     match &value.payload {
         crate::geometry::VariableBlendValuePayload::TwoEnds {
@@ -5027,12 +5033,16 @@ pub fn model_surface_point_by_id(
                 })
             }
             Some(ProceduralSurfaceDefinition::VariableBlend { construction }) => {
-                cacheless_variable_blend_point(index, construction, u, v).map(|point| {
-                    SurfaceEvaluation {
+                cacheless_variable_blend_point(index, construction, u, v)
+                    .or_else(|| {
+                        variable_blend_has_current_cache(construction)
+                            .then(|| surface_point(&surface.geometry, u, v))
+                            .flatten()
+                    })
+                    .map(|point| SurfaceEvaluation {
                         point,
                         oriented_normal: None,
-                    }
-                })
+                    })
             }
             Some(ProceduralSurfaceDefinition::Blend {
                 supports,
@@ -5199,7 +5209,12 @@ pub fn model_surface_partials_by_id(
         .procedural_surface_for_surface(&surface.0)
         .map(|procedural| &procedural.definition)
     {
-        return cacheless_ruled_variable_blend_partials(index, construction, u, v);
+        if let Some(partials) = cacheless_ruled_variable_blend_partials(index, construction, u, v) {
+            return Some(partials);
+        }
+        if !variable_blend_has_current_cache(construction) {
+            return None;
+        }
     }
     if let Some(ProceduralSurfaceDefinition::Sweep {
         profile,

@@ -204,6 +204,57 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
 }
 
 #[test]
+fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
+    let (mut ir, blend_surface) = variable_blend_eval_fixture(
+        Point3::new(10.0, 0.0, 0.0),
+        [
+            (Point2::new(1.0, 2.0), Point2::new(2.0, 3.0)),
+            (Point2::new(4.0, 5.0), Point2::new(6.0, 7.0)),
+        ],
+        [2.0, 2.0],
+        Some(VariableBlendCrossSection::G2Round {
+            parameters: [1.0, 1.0],
+        }),
+    );
+    ir.model.surfaces[2].geometry = SurfaceGeometry::Nurbs(bilinear_surface());
+    {
+        let ProceduralSurfaceDefinition::VariableBlend { construction } =
+            &mut ir.model.procedural_surfaces[0].definition
+        else {
+            unreachable!()
+        };
+        construction.shape_prefix = 1;
+        construction.tail_enum = 0;
+        construction.tail_parameterization = None;
+    }
+
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
+        Some(Point3::new(0.25, 0.5, 0.0))
+    );
+    let partials = model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5)
+        .expect("current variable blend cache partials");
+    assert_eq!(partials.point, Point3::new(0.25, 0.5, 0.0));
+    assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
+
+    if let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &mut ir.model.procedural_surfaces[0].definition
+    {
+        construction.shape_prefix = 0;
+    } else {
+        unreachable!()
+    }
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &blend_surface, 0.25, 0.5),
+        None
+    );
+    assert!(model_surface_partials_by_id(&index, &blend_surface, 0.25, 0.5).is_none());
+}
+
+#[test]
 fn cacheless_circular_variable_blend_uses_the_common_contact_center() {
     let (ir, blend_surface) = variable_blend_eval_fixture(
         Point3::new(0.0, 0.0, 0.0),
