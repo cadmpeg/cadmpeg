@@ -1047,6 +1047,8 @@ pub enum FeatureDefinition {
     ///
     /// The feature's `outputs` identify the retained bodies when geometry is present.
     StoredGeometry,
+    /// Body-affecting direct BREP whose result-body relation remains unresolved.
+    BrepUnresolved,
     /// Body geometry copied from existing bodies.
     ExtractBody {
         /// Bodies supplying the copied geometry.
@@ -1727,6 +1729,7 @@ impl FeatureDefinition {
     pub fn body_output_family(&self) -> Option<&'static str> {
         match self {
             Self::BaseFeature { .. } => Some("base feature"),
+            Self::BrepUnresolved => Some("brep"),
             Self::Block { .. } => Some("block"),
             Self::Sphere { .. } => Some("sphere"),
             Self::ExtractBody { .. } => Some("extract body"),

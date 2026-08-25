@@ -1902,8 +1902,11 @@ The `MASTER SNAPSHOT BODY` label identifies a captured-result base feature.
 
 The `BREP` label identifies direct stored boundary-representation geometry. It
 projects to `StoredGeometry` when its result-body list is nonempty and contains
-each body identity once. A BREP record without a resolved result-body relation
-remains a native operation.
+each body identity once. A body-writing `BREP` record without a resolved
+result-body relation identifies a body-affecting direct BREP whose result-body
+relation remains unresolved. It retains the `BrepUnresolved` family and its
+feature-result topology; a BREP record without the body-write frame remains
+native.
 
 The `DATUM_PLANE` and `EXTRACT_DATUM_PLANE` operation labels identify datum-plane
 history operations. Their model-space frame remains unresolved until the

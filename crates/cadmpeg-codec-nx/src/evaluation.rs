@@ -328,6 +328,13 @@ fn rederived_body_census(
             }
             FeatureDefinition::LoftUnresolved | FeatureDefinition::FreeformSurfaceUnresolved
                 if feature.outputs.is_empty() => {}
+            FeatureDefinition::BrepUnresolved if feature.outputs.is_empty() => {}
+            FeatureDefinition::BrepUnresolved => {
+                return Err((
+                    feature.id.clone(),
+                    UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                ));
+            }
             FeatureDefinition::DeleteFaceUnresolved if feature.outputs.is_empty() => {}
             FeatureDefinition::DeleteFaceUnresolved => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
@@ -638,6 +645,8 @@ fn suppression_is_body_census_invariant(
     let output_free_local_in_place = output_free_local_body_construction(feature)
         && matches!(&feature.definition, FeatureDefinition::DraftUnresolved);
     let output_free_snapshot = output_free_native_snapshot(feature);
+    let output_free_brep = feature.outputs.is_empty()
+        && matches!(feature.definition, FeatureDefinition::BrepUnresolved);
     deletes_only_local_bodies
         || extracts_only_local_bodies
         || sews_only_local_bodies
@@ -649,6 +658,7 @@ fn suppression_is_body_census_invariant(
         || in_place_unresolved_extrude
         || output_free_local_in_place
         || output_free_snapshot
+        || output_free_brep
         || ((feature.outputs.is_empty()
             || (feature.outputs.len() == 1 && bodies.contains(&feature.outputs[0])))
             && matches!(

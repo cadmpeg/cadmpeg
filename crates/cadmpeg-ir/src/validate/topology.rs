@@ -4451,6 +4451,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
             FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlaneUnresolved
+            | FeatureDefinition::BrepUnresolved
             | FeatureDefinition::MoveFaceUnresolved
             | FeatureDefinition::CylinderUnresolved
             | FeatureDefinition::ConeUnresolved

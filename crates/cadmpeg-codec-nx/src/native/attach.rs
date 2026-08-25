@@ -5826,6 +5826,7 @@ fn body_writing_unresolved_feature_definition(
         return None;
     }
     match kind {
+        "BREP" => Some(FeatureDefinition::BrepUnresolved),
         "CONE" => Some(FeatureDefinition::ConeUnresolved),
         "SPHERE" => Some(FeatureDefinition::SphereUnresolved),
         "BLEND" => Some(FeatureDefinition::Fillet {

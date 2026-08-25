@@ -803,6 +803,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The label and body-write relation identify the family, but the admitted object-index and payload lanes do not assign a unique face selection or healing-policy value. Encoding a default healing value would invent operation state.
 
+### OM-56. Body-writing `BREP` result-body relation
+
+**Question.** Which serialized relation binds a body-writing `BREP` result topology to the model body output required by `StoredGeometry`?
+
+**Known.** `siemens_nx.md` §7.1 defines `BREP` as direct stored boundary-representation geometry. A body-write frame and feature-result topology establish the body-affecting family and retain the result topology, but the result topology's body identity does not uniquely resolve to a model-body output in the admitted segment-body namespace.
+
+**Need.** We must bind the BREP result to its model body before projecting `StoredGeometry`.
+
+**Conflict.** The body-write body identity and result-topology identity are present, but no unique model-body relation is admitted. Treating the identity as a current body would assign an output without a body record.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
