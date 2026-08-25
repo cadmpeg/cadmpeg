@@ -3479,9 +3479,10 @@ fn attach_feature_operations(
                         &source_properties,
                     )
                     .unwrap_or_else(|| {
-                        if let Some(definition) =
-                            body_writing_thread_definition(&label.value, &source_properties)
-                        {
+                        if let Some(definition) = body_writing_unresolved_feature_definition(
+                            &label.value,
+                            &source_properties,
+                        ) {
                             return definition;
                         }
                         non_boolean_feature_definition_with_parameters(
@@ -5814,7 +5815,7 @@ fn new_body_boolean_op(evidence: &NewBodyEvidence<'_>) -> BooleanOp {
     }
 }
 
-fn body_writing_thread_definition(
+fn body_writing_unresolved_feature_definition(
     kind: &str,
     source_properties: &BTreeMap<String, String>,
 ) -> Option<FeatureDefinition> {
@@ -5825,6 +5826,8 @@ fn body_writing_thread_definition(
         return None;
     }
     match kind {
+        "CONE" => Some(FeatureDefinition::ConeUnresolved),
+        "SPHERE" => Some(FeatureDefinition::SphereUnresolved),
         "THREADS" => Some(FeatureDefinition::ThreadUnresolved),
         "DETAILED_THREAD" => Some(FeatureDefinition::DetailedThreadUnresolved),
         _ => None,
@@ -6000,7 +6003,6 @@ fn non_boolean_feature_definition_with_parameters(
         "MOVE_FACE" => FeatureDefinition::MoveFaceUnresolved,
         "MOVE_OBJECT" => FeatureDefinition::MoveObjectUnresolved,
         "CYLINDER" => FeatureDefinition::CylinderUnresolved,
-        "CONE" => FeatureDefinition::ConeUnresolved,
         "SYMBOLIC_THREAD" => symbolic_thread_feature_definition(),
         "EXTEND_SHEET" => FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Unresolved,

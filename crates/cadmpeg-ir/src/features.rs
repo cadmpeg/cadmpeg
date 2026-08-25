@@ -1075,6 +1075,8 @@ pub enum FeatureDefinition {
     CylinderUnresolved,
     /// Body-affecting cone primitive whose dimensions and placement remain unresolved.
     ConeUnresolved,
+    /// Body-affecting sphere primitive whose dimensions and placement remain unresolved.
+    SphereUnresolved,
     /// Body-affecting thread construction whose selected faces and thread law remain unresolved.
     ThreadUnresolved,
     /// Body-affecting detailed thread construction whose selected faces and thread law remain unresolved.
@@ -1736,6 +1738,7 @@ impl FeatureDefinition {
             Self::MoveObjectUnresolved => Some("move object"),
             Self::CylinderUnresolved => Some("cylinder"),
             Self::ConeUnresolved => Some("cone"),
+            Self::SphereUnresolved => Some("sphere"),
             Self::ThreadUnresolved => Some("thread"),
             Self::DetailedThreadUnresolved => Some("detailed thread"),
             Self::TrimSurface { .. } => Some("trim surface"),

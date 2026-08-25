@@ -1,13 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
+
 use cadmpeg_ir::features::FeatureDefinition;
 
 use super::*;
 
 #[test]
 fn nx_cone_retains_body_family_without_dimensions() {
-    let definition = super::non_boolean_feature_definition("CONE", &[], None, None, None);
+    let mut source_properties = BTreeMap::new();
+    source_properties.insert("body_write.0".to_string(), "witness".to_string());
 
-    assert_eq!(definition, FeatureDefinition::ConeUnresolved);
-    assert_eq!(definition.body_output_family(), Some("cone"));
+    let definition = super::body_writing_unresolved_feature_definition("CONE", &source_properties);
+
+    assert_eq!(definition, Some(FeatureDefinition::ConeUnresolved));
+    assert_eq!(definition.unwrap().body_output_family(), Some("cone"));
+}
+
+#[test]
+fn nx_non_body_writing_cone_remains_native_for_semantic_review() {
+    let source_properties = BTreeMap::new();
+
+    assert_eq!(
+        super::body_writing_unresolved_feature_definition("CONE", &source_properties),
+        None
+    );
 }

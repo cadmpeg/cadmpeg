@@ -54,6 +54,7 @@ mod operation_sources;
 mod operations_and_holes;
 mod shell;
 mod sketches;
+mod sphere;
 mod symbolic_thread;
 mod thread;
 mod through_curve_mesh;

@@ -759,7 +759,7 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Question.** Which serialized fields define the dimensions, placement, angular extent, and Boolean result mode of a `CONE` operation?
 
-**Known.** `siemens_nx.md` §7.1 "The `CONE` operation label identifies" defines the body-affecting conical primitive. The record carries a body-write frame and object-index values, but no neutral output or admitted field assigns the primitive construction roles.
+**Known.** `siemens_nx.md` §7.1 "A body-writing `CONE` operation identifies" defines the body-affecting conical primitive. The record carries a body-write frame and object-index values, but no neutral output or admitted field assigns the primitive construction roles. A record without the body-write frame remains native because its label does not assign a body result.
 
 **Need.** We must identify the conical dimensions, placement frame, angular extent, and result mode to construct a complete neutral cone primitive and bind its result body.
 
@@ -774,6 +774,16 @@ assigns control geometry, continuity, or terminal semantics.
 **Need.** We must identify the selected cylindrical faces, thread designation, pitch, handedness, axial extent, and physical or cosmetic result mode to construct a complete neutral thread operation and bind its result body.
 
 **Conflict.** The operation label and body-write relation identify a body-affecting thread family, but the bounded payload and object-index lanes do not assign unique face-selection, thread-law, or result-mode roles.
+
+### OM-54. Body-writing `SPHERE` construction roles
+
+**Question.** Which serialized fields define the center, radius, placement, angular extent, and Boolean result mode of a body-writing `SPHERE` operation?
+
+**Known.** `siemens_nx.md` §7.1 defines a body-writing `SPHERE` record as a body-affecting spherical primitive. The record carries a body-write frame and object-index values, but no neutral output or admitted field assigns the primitive construction roles. A record without the body-write frame remains native because its label does not assign a body result.
+
+**Need.** We must identify the spherical dimensions, placement frame, angular extent, and result mode to construct a complete neutral sphere primitive and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify a body-affecting sphere family, but the bounded payload and object-index lanes do not assign unique center, radius, placement, angular-extent, or result-mode roles.
 
 ## 3. Assembly and material data
 

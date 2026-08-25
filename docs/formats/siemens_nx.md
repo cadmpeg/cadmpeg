@@ -2165,9 +2165,17 @@ construction. Its curve networks, mesh directions, continuity, and result mode
 remain unresolved until the serialized construction roles establish a complete
 surface.
 
-The `CONE` operation label identifies a body-affecting conical primitive. Its
-dimensions, placement, angular extent, and Boolean result mode remain unresolved
-until the serialized construction roles establish a complete primitive.
+A body-writing `CONE` operation identifies a body-affecting conical primitive.
+Its dimensions, placement, angular extent, and Boolean result mode remain
+unresolved until the serialized construction roles establish a complete
+primitive. A record without the body-write frame remains native because the
+label alone does not assign a body result.
+
+A body-writing `SPHERE` operation identifies a body-affecting spherical
+primitive. Its center, radius, placement, angular extent, and Boolean result
+mode remain unresolved until the serialized construction roles establish a
+complete primitive. A record without the body-write frame remains native
+because the label alone does not assign a body result.
 
 An operation labeled `THREADS` or `DETAILED_THREAD` with a body-write frame
 identifies a body-affecting thread construction. Its selected faces, thread
