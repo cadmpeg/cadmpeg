@@ -37,6 +37,7 @@ pub(crate) fn simple_hole_diameters(
 
 mod body_writes;
 mod brep;
+mod bridge_curve;
 mod configuration;
 mod enlarge;
 mod extract_datum_axis;

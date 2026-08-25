@@ -259,6 +259,7 @@ fn rederived_body_census(
             | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystem { .. }
             | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::BridgeCurveUnresolved
             | FeatureDefinition::Sketch { .. }
             | FeatureDefinition::ProjectedCurve { .. }
             | FeatureDefinition::SectionShape { .. } => {
@@ -558,6 +559,7 @@ fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
                 | FeatureDefinition::DatumPointUnresolved
                 | FeatureDefinition::DatumCoordinateSystem { .. }
                 | FeatureDefinition::DatumCoordinateSystemUnresolved
+                | FeatureDefinition::BridgeCurveUnresolved
                 | FeatureDefinition::Sketch { .. }
                 | FeatureDefinition::ProjectedCurve { .. }
                 | FeatureDefinition::SectionShape { .. }

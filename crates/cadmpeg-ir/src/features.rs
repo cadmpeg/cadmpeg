@@ -922,6 +922,8 @@ pub enum FeatureDefinition {
         #[serde(default)]
         closed: bool,
     },
+    /// Bridge curve construction whose source curves and continuity remain unresolved.
+    BridgeCurveUnresolved,
     /// Circular helix or planar spiral constructed around an axis.
     Helix {
         /// Point on the construction axis at the curve start.

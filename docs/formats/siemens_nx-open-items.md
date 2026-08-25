@@ -675,6 +675,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation labels identify a datum-axis family, but the four operation-header object-index slots, input-block identity, and bounded payload do not assign a unique source/reference relation or finite origin and direction.
 
+### OM-44. `BRIDGE_CURVE` construction roles
+
+**Question.** Which serialized source curves, end conditions, and continuity fields define a `BRIDGE_CURVE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `BRIDGE_CURVE` operation label identifies" defines the bridge-curve family. The operation has no body output, and its complete curve construction is not present in the admitted operation record fields.
+
+**Need.** We must identify the ordered source curves, end-condition modes, continuity constraints, and any fit or tolerance controls.
+
+**Conflict.** The label identifies a bridge-curve family, but the operation-header slots are null and the bounded payload does not assign a unique source-curve or continuity relation.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

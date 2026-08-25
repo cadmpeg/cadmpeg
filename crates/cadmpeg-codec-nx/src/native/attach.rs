@@ -5921,6 +5921,7 @@ fn non_boolean_feature_definition_with_parameters(
     match kind {
         "DATUM_PLANE" | "EXTRACT_DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
         "DATUM_AXIS" | "EXTRACT_DATUM_AXIS" => FeatureDefinition::DatumAxisUnresolved,
+        "BRIDGE_CURVE" => FeatureDefinition::BridgeCurveUnresolved,
         "POINT" => FeatureDefinition::DatumPointUnresolved,
         "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
         "BLOCK" => FeatureDefinition::Block {
