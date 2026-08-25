@@ -1288,6 +1288,80 @@ pub(crate) fn resolve_stable_bounded_face_history_set(
     stable_face_support_set(&active_faces, &operand.historical_support_contexts)
 }
 
+/// Resolve the selected input faces of an unhealed `SurfaceDeleteFace`.
+///
+/// This operation changes the selected faces in place rather than preserving
+/// a stable support set. The bounded recipe is still admissible only when its
+/// complete historical lane proves one preceding face per active candidate,
+/// every such face is changed by the operation, and each context has a
+/// complete boundary. A changed-face count alone is not sufficient: unrelated
+/// topology changes must not become a face selection.
+pub(crate) fn resolve_surface_delete_face_history_set(
+    operand: &DesignFaceOperand,
+) -> Option<Vec<i64>> {
+    counted_face_recipe_frame(operand)?;
+    let active_faces = unique_stable_face_slots(&operand.preceding_candidate_faces)?;
+    let changed_faces = unique_stable_face_slots(&operand.changed_candidate_faces)?;
+    if active_faces.is_empty() || changed_faces != active_faces {
+        return None;
+    }
+    if operand.historical_support_contexts.len() != active_faces.len() {
+        return None;
+    }
+    let mut covered = HashSet::with_capacity(active_faces.len());
+    for context in &operand.historical_support_contexts {
+        if !active_faces.contains(&context.active_face_slot)
+            || !covered.insert(context.active_face_slot)
+            || context.preceding_face_slots != [context.active_face_slot]
+            || context.changed_preceding_face_slots != [context.active_face_slot]
+        {
+            return None;
+        }
+        let boundaries = valid_preceding_face_boundaries(context)?;
+        let [boundary] = boundaries.as_slice() else {
+            return None;
+        };
+        if boundary.face_slot != context.active_face_slot {
+            return None;
+        }
+    }
+    (covered.len() == active_faces.len()).then_some(active_faces)
+}
+
+fn unique_stable_face_slots(faces: &[cadmpeg_ir::ids::FaceId]) -> Option<Vec<i64>> {
+    let mut slots = faces
+        .iter()
+        .map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .collect::<Option<Vec<_>>>()?;
+    if slots.iter().any(|slot| *slot < 0) {
+        return None;
+    }
+    slots.sort_unstable();
+    let unique = slots.windows(2).all(|pair| pair[0] != pair[1]);
+    unique.then_some(slots)
+}
+
+fn counted_face_recipe_frame(operand: &DesignFaceOperand) -> Option<usize> {
+    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace {
+        return None;
+    }
+    let Some(crate::design::decode::operands::FaceRecipeProgramKind::Counted { header_value }) =
+        crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)
+    else {
+        return None;
+    };
+    if operand.recipe_nodes.len() != header_value
+        || operand.recipe_nodes.is_empty()
+        || operand
+            .recipe_nodes
+            .iter()
+            .any(|node| !matches!(node.program.as_slice(), [-1, -1, 2, ..]))
+    {
+        return None;
+    }
+    Some(header_value)
+}
+
 fn stable_face_support_set(
     active_faces: &[i64],
     contexts: &[crate::records::DesignHistoricalFaceSupportContext],
@@ -2061,7 +2135,7 @@ mod tests {
     use super::*;
     use crate::records::{
         DesignConstructionOperandGroup, DesignEdgeOperand, DesignEdgeRecipeReferenceContext,
-        DesignEdgeRecipeStructure, DesignHistoricalFaceBoundaryContext,
+        DesignEdgeRecipeStructure, DesignFaceRecipeNode, DesignHistoricalFaceBoundaryContext,
         DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext, DesignParameterScope,
         DesignRecipeReference,
     };
@@ -2666,6 +2740,75 @@ mod tests {
         );
         contexts[1].preceding_face_slots = vec![12];
         assert_eq!(stable_face_support_set(&active_faces, &contexts), None);
+    }
+
+    #[test]
+    fn surface_delete_face_history_set_requires_complete_changed_one_to_one_support() {
+        let node = DesignFaceRecipeNode {
+            byte_offset: 0,
+            end_byte_offset: 12,
+            program: vec![-1, -1, 2],
+            recipe_structure: None,
+        };
+        let mut operand: DesignFaceOperand = serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:surface-delete-face-operand#1",
+            "scope_record_index": 10,
+            "scope_reference_ordinal": 1,
+            "group_record_index": 20,
+            "group_member_ordinal": 0,
+            "record_index": 21,
+            "byte_offset": 0,
+            "class_tag": "282",
+            "paired_byte_offset": 12,
+            "paired_class_tag": "259",
+            "recipe_record_index": 22,
+            "recipe_record_byte_offset": 24,
+            "recipe_id": "f3d:test:recipe#22",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "bounded_face",
+            "recipe_program_offset": 0,
+            "recipe_program": [0, -1, 1],
+            "recipe_node_offsets": [0],
+            "recipe_nodes": [],
+            "next_record_index": 23,
+            "next_byte_offset": 36,
+            "candidate_faces": [
+                "f3d:brep:entity#10",
+                "f3d:brep:entity#11",
+                "f3d:brep:entity#12"
+            ],
+            "preceding_candidate_faces": [
+                "f3d:brep:entity#10",
+                "f3d:brep:entity#11"
+            ],
+            "changed_candidate_faces": [
+                "f3d:brep:entity#10",
+                "f3d:brep:entity#11"
+            ]
+        }))
+        .expect("surface-delete-face operand");
+        operand.recipe_nodes = vec![node];
+        operand.historical_support_contexts =
+            vec![support(10, &[(10, 4)]), support(11, &[(11, 4)])];
+        for context in &mut operand.historical_support_contexts {
+            context.changed_preceding_face_slots = vec![context.active_face_slot];
+        }
+
+        assert_eq!(
+            resolve_surface_delete_face_history_set(&operand),
+            Some(vec![10, 11])
+        );
+
+        operand.historical_support_contexts[1]
+            .changed_preceding_face_slots
+            .clear();
+        assert_eq!(resolve_surface_delete_face_history_set(&operand), None);
+
+        operand.historical_support_contexts[1].changed_preceding_face_slots = vec![11];
+        operand.historical_support_contexts[1].preceding_face_slots = vec![10, 11];
+        assert_eq!(resolve_surface_delete_face_history_set(&operand), None);
     }
 
     #[test]
