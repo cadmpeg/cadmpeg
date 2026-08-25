@@ -77,6 +77,74 @@ fn bounded_nurbs(
     super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx, None)
 }
 
+fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
+    match geometry {
+        CurveGeometry::Line { .. } => true,
+        CurveGeometry::Circle { radius, .. } => radius.is_finite() && *radius > 0.0,
+        CurveGeometry::Ellipse {
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            major_radius.is_finite()
+                && minor_radius.is_finite()
+                && *major_radius > 0.0
+                && *minor_radius > 0.0
+                && major_radius == minor_radius
+        }
+        CurveGeometry::Nurbs(curve) => {
+            curve.degree == 1
+                && curve.weights.is_none()
+                && curve.control_points.len() == 2
+                && curve
+                    .control_points
+                    .iter()
+                    .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
+                && curve.control_points[0]
+                    .distance(curve.control_points[1])
+                    .is_finite()
+                && curve.control_points[0].distance(curve.control_points[1]) > 0.0
+                && curve.knots.len() == 4
+                && curve.knots[0] == curve.knots[1]
+                && curve.knots[2] == curve.knots[3]
+                && curve.knots[1].is_finite()
+                && curve.knots[1] < curve.knots[2]
+                && curve.knots[2].is_finite()
+        }
+        _ => false,
+    }
+}
+
+fn equal_arc_length_parameterization(
+    ir: &CadIr,
+    first_sequence: u32,
+    second_sequence: u32,
+    first_interval: [f64; 2],
+    second_interval: [f64; 2],
+) -> bool {
+    // A normalized parameter is an arc-length parameter only for a constant-
+    // speed carrier. The test is deliberately structural; numerical sampling
+    // cannot prove the Form 0 correspondence.
+    let curve_geometry = |sequence| {
+        ir.model
+            .curves
+            .iter()
+            .find(|curve| curve.id == CurveId(format!("iges:model:curve#D{sequence}")))
+            .map(|curve| &curve.geometry)
+    };
+    let Some((first, second)) = curve_geometry(first_sequence).zip(curve_geometry(second_sequence))
+    else {
+        return false;
+    };
+    let valid_interval = |interval: [f64; 2]| {
+        interval[0].is_finite() && interval[1].is_finite() && interval[0] < interval[1]
+    };
+    if !valid_interval(first_interval) || !valid_interval(second_interval) {
+        return false;
+    }
+    constant_speed_curve(first) && constant_speed_curve(second)
+}
+
 fn bounded_evaluable_curve(
     ir: &CadIr,
     sequence: u32,
@@ -214,6 +282,361 @@ fn homogeneous_bezier_spans(curve: &NurbsCurve) -> Option<Vec<HomogeneousBezierS
         })
         .collect::<Vec<_>>();
     (!spans.is_empty()).then_some(spans)
+}
+
+fn bernstein_binomial(n: usize, k: usize) -> Option<f64> {
+    if k > n {
+        return None;
+    }
+    let k = k.min(n - k);
+    let value = (1..=k).try_fold(1.0, |value, factor| {
+        let value = value * (n - k + factor) as f64 / factor as f64;
+        value.is_finite().then_some(value)
+    })?;
+    Some(value)
+}
+
+fn homogeneous_product_with_scalar(
+    vector_controls: &[[f64; 4]],
+    scalar_controls: &[[f64; 4]],
+) -> Option<Vec<[f64; 4]>> {
+    // For homogeneous rails C1=A/a and C2=B/b, the ruled blend is
+    // ((1-v)A*b + v*B*a)/(a*b). Multiplying Bernstein polynomials gives the
+    // exact u-direction poles without fitting the Euclidean curve.
+    let vector_degree = vector_controls.len().checked_sub(1)?;
+    let scalar_degree = scalar_controls.len().checked_sub(1)?;
+    let degree = vector_degree.checked_add(scalar_degree)?;
+    let mut product = Vec::with_capacity(degree.checked_add(1)?);
+    for index in 0..=degree {
+        let denominator = bernstein_binomial(degree, index)?;
+        let lower = index.saturating_sub(scalar_degree);
+        let upper = index.min(vector_degree);
+        let mut control = [0.0; 4];
+        for (offset, vector_control) in vector_controls[lower..=upper].iter().enumerate() {
+            let vector_index = lower + offset;
+            let scalar_index = index - vector_index;
+            let coefficient = bernstein_binomial(vector_degree, vector_index)?
+                * bernstein_binomial(scalar_degree, scalar_index)?
+                / denominator;
+            let scalar = scalar_controls[scalar_index][3];
+            for axis in 0..4 {
+                control[axis] += coefficient * vector_control[axis] * scalar;
+            }
+        }
+        if control.iter().any(|value| !value.is_finite()) {
+            return None;
+        }
+        product.push(control);
+    }
+    Some(product)
+}
+
+fn split_homogeneous_bezier_span(
+    span: &HomogeneousBezierSpan,
+    cut: f64,
+) -> Option<(HomogeneousBezierSpan, HomogeneousBezierSpan)> {
+    if !cut.is_finite() || cut <= span.domain[0] || cut >= span.domain[1] {
+        return None;
+    }
+    let width = span.domain[1] - span.domain[0];
+    if !width.is_finite() || width <= 0.0 {
+        return None;
+    }
+    let parameter = (cut - span.domain[0]) / width;
+    if !parameter.is_finite() || parameter <= 0.0 || parameter >= 1.0 {
+        return None;
+    }
+    let degree = span.controls.len().checked_sub(1)?;
+    let mut levels = vec![span.controls.clone()];
+    for _ in 1..=degree {
+        let previous = levels.last()?;
+        let current = previous
+            .windows(2)
+            .map(|pair| {
+                std::array::from_fn(|axis| {
+                    (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
+                })
+            })
+            .collect::<Vec<_>>();
+        if current.iter().flatten().any(|value| !value.is_finite()) {
+            return None;
+        }
+        levels.push(current);
+    }
+    let left = (0..=degree)
+        .map(|level| levels[level][0])
+        .collect::<Vec<_>>();
+    let right = (0..=degree)
+        .map(|index| levels[degree - index][index])
+        .collect::<Vec<_>>();
+    Some((
+        HomogeneousBezierSpan {
+            domain: [span.domain[0], cut],
+            controls: left,
+        },
+        HomogeneousBezierSpan {
+            domain: [cut, span.domain[1]],
+            controls: right,
+        },
+    ))
+}
+
+fn homogeneous_span_domain(spans: &[HomogeneousBezierSpan]) -> Option<[f64; 2]> {
+    Some([spans.first()?.domain[0], spans.last()?.domain[1]])
+        .filter(|domain| domain[0].is_finite() && domain[1].is_finite() && domain[0] < domain[1])
+}
+
+fn normalized_span_boundaries(
+    spans: &[HomogeneousBezierSpan],
+    domain: [f64; 2],
+) -> Option<Vec<f64>> {
+    let width = domain[1] - domain[0];
+    if !width.is_finite() || width <= 0.0 {
+        return None;
+    }
+    let mut boundaries = Vec::with_capacity(spans.len().checked_add(1)?);
+    for span in spans {
+        for value in span.domain {
+            let normalized = (value - domain[0]) / width;
+            if !normalized.is_finite() || !(0.0..=1.0).contains(&normalized) {
+                return None;
+            }
+            boundaries.push(normalized);
+        }
+    }
+    boundaries.sort_by(f64::total_cmp);
+    boundaries.dedup();
+    (boundaries.first() == Some(&0.0) && boundaries.last() == Some(&1.0)).then_some(boundaries)
+}
+
+fn partition_homogeneous_spans(
+    spans: &[HomogeneousBezierSpan],
+    domain: [f64; 2],
+    boundaries: &[f64],
+) -> Option<Vec<HomogeneousBezierSpan>> {
+    let width = domain[1] - domain[0];
+    if !width.is_finite() || width <= 0.0 {
+        return None;
+    }
+    let mut partitioned = Vec::new();
+    for span in spans {
+        let start = (span.domain[0] - domain[0]) / width;
+        let end = (span.domain[1] - domain[0]) / width;
+        if !start.is_finite() || !end.is_finite() || start >= end {
+            return None;
+        }
+        let cuts = boundaries
+            .iter()
+            .copied()
+            .filter(|boundary| start < *boundary && *boundary < end)
+            .map(|boundary| domain[0] + boundary * width)
+            .collect::<Vec<_>>();
+        let mut current = span.clone();
+        for cut in cuts {
+            let (left, right) = split_homogeneous_bezier_span(&current, cut)?;
+            partitioned.push(left);
+            current = right;
+        }
+        partitioned.push(current);
+    }
+    Some(partitioned)
+}
+
+fn aligned_homogeneous_spans(
+    first: &NurbsCurve,
+    second: &NurbsCurve,
+) -> Option<Vec<(HomogeneousBezierSpan, HomogeneousBezierSpan)>> {
+    let first_spans = homogeneous_bezier_spans(first)?;
+    let second_spans = homogeneous_bezier_spans(second)?;
+    let first_domain = homogeneous_span_domain(&first_spans)?;
+    let second_domain = homogeneous_span_domain(&second_spans)?;
+    let mut boundaries = normalized_span_boundaries(&first_spans, first_domain)?;
+    boundaries.extend(normalized_span_boundaries(&second_spans, second_domain)?);
+    boundaries.sort_by(f64::total_cmp);
+    boundaries.dedup();
+    let first_spans = partition_homogeneous_spans(&first_spans, first_domain, &boundaries)?;
+    let second_spans = partition_homogeneous_spans(&second_spans, second_domain, &boundaries)?;
+    (first_spans.len() == second_spans.len())
+        .then(|| first_spans.into_iter().zip(second_spans).collect())
+}
+
+fn curve_weights(curve: &NurbsCurve) -> Option<Vec<f64>> {
+    let count = curve.control_points.len();
+    let weights = curve.weights.as_deref().map_or_else(
+        || std::iter::repeat_n(1.0, count).collect(),
+        <[f64]>::to_vec,
+    );
+    (weights.len() == count
+        && weights
+            .iter()
+            .all(|weight| weight.is_finite() && *weight > 0.0))
+    .then_some(weights)
+}
+
+fn projectively_shared_weights(first: &NurbsCurve, second: &NurbsCurve) -> Option<Vec<f64>> {
+    let first_weights = curve_weights(first)?;
+    let second_weights = curve_weights(second)?;
+    if first_weights.len() != second_weights.len() {
+        return None;
+    }
+    let scale = *second_weights.first()? / *first_weights.first()?;
+    if !scale.is_finite()
+        || scale <= 0.0
+        || first_weights
+            .iter()
+            .zip(&second_weights)
+            .any(|(first, second)| *first * scale != *second)
+    {
+        return None;
+    }
+    Some(first_weights)
+}
+
+fn same_basis_ruled_surface(
+    first: &NurbsCurve,
+    second: &NurbsCurve,
+    weights: &[f64],
+) -> Option<NurbsSurface> {
+    let u_count = u32::try_from(first.control_points.len()).ok()?;
+    let surface_weights = weights
+        .iter()
+        .copied()
+        .flat_map(|weight| [weight, weight])
+        .collect::<Vec<_>>();
+    let weights = if surface_weights.iter().all(|weight| *weight == 1.0) {
+        None
+    } else {
+        Some(surface_weights)
+    };
+    Some(NurbsSurface {
+        u_degree: first.degree,
+        v_degree: 1,
+        u_knots: first.knots.clone(),
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count,
+        v_count: 2,
+        control_points: first
+            .control_points
+            .iter()
+            .copied()
+            .zip(second.control_points.iter().copied())
+            .flat_map(|(first, second)| [first, second])
+            .collect(),
+        weights,
+        u_periodic: first.periodic && second.periodic,
+        v_periodic: false,
+    })
+}
+
+fn admit_surface_pole_count(ctx: Option<&DecodeContext<'_>>, pole_count: usize) -> Option<()> {
+    if pole_count > MAX_SURFACE_POLES {
+        if let Some(ctx) = ctx {
+            let _ = ctx.refuse_codec_limit(
+                "iges_surface_poles",
+                MAX_SURFACE_POLES as u64,
+                pole_count as u64,
+                None,
+            );
+        }
+        return None;
+    }
+    Some(())
+}
+
+fn ruled_surface_carrier(
+    first: &NurbsCurve,
+    second: &NurbsCurve,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Option<NurbsSurface> {
+    if first.degree == second.degree
+        && first.knots == second.knots
+        && first.control_points.len() == second.control_points.len()
+    {
+        if let Some(weights) = projectively_shared_weights(first, second) {
+            admit_surface_pole_count(ctx, first.control_points.len().checked_mul(2)?)?;
+            return same_basis_ruled_surface(first, second, &weights);
+        }
+    }
+
+    let degree = usize::try_from(first.degree)
+        .ok()?
+        .checked_add(usize::try_from(second.degree).ok()?)?;
+    if degree == 0 {
+        return None;
+    }
+    let spans = aligned_homogeneous_spans(first, second)?;
+    let u_count = spans.len().checked_mul(degree)?.checked_add(1)?;
+    let pole_count = u_count.checked_mul(2)?;
+    admit_surface_pole_count(ctx, pole_count)?;
+    let mut homogeneous = Vec::with_capacity(pole_count);
+    let mut u_knots = Vec::with_capacity(u_count.checked_add(degree)?.checked_add(1)?);
+    for (span_index, (first_span, second_span)) in spans.iter().enumerate() {
+        if first_span.controls.len() != usize::try_from(first.degree).ok()?.checked_add(1)?
+            || second_span.controls.len() != usize::try_from(second.degree).ok()?.checked_add(1)?
+        {
+            return None;
+        }
+        let first_times_second =
+            homogeneous_product_with_scalar(&first_span.controls, &second_span.controls)?;
+        let second_times_first =
+            homogeneous_product_with_scalar(&second_span.controls, &first_span.controls)?;
+        if first_times_second.len() != degree + 1 || second_times_first.len() != degree + 1 {
+            return None;
+        }
+        if span_index == 0 {
+            u_knots.extend(std::iter::repeat_n(first_span.domain[0], degree + 1));
+        } else {
+            u_knots.extend(std::iter::repeat_n(first_span.domain[0], degree));
+        }
+        let start = usize::from(span_index > 0);
+        for index in start..=degree {
+            homogeneous.extend([first_times_second[index], second_times_first[index]]);
+        }
+        if span_index + 1 == spans.len() {
+            u_knots.extend(std::iter::repeat_n(first_span.domain[1], degree + 1));
+        }
+    }
+    if homogeneous.len() != pole_count || u_knots.len() != u_count + degree + 1 {
+        return None;
+    }
+    let mut control_points = Vec::with_capacity(pole_count);
+    let mut weights = Vec::with_capacity(pole_count);
+    for control in homogeneous {
+        let weight = control[3];
+        if !weight.is_finite() || weight <= 0.0 {
+            return None;
+        }
+        let point = Point3::new(
+            control[0] / weight,
+            control[1] / weight,
+            control[2] / weight,
+        );
+        if [point.x, point.y, point.z]
+            .into_iter()
+            .any(|value| !value.is_finite())
+        {
+            return None;
+        }
+        control_points.push(point);
+        weights.push(weight);
+    }
+    let weights = if weights.iter().all(|weight| *weight == 1.0) {
+        None
+    } else {
+        Some(weights)
+    };
+    Some(NurbsSurface {
+        u_degree: u32::try_from(degree).ok()?,
+        v_degree: 1,
+        u_knots,
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: u32::try_from(u_count).ok()?,
+        v_count: 2,
+        control_points,
+        weights,
+        u_periodic: first.periodic && second.periodic,
+        v_periodic: false,
+    })
 }
 
 fn homogeneous_curve_boundary_matches(
@@ -676,22 +1099,18 @@ pub(super) fn project(
             ));
             continue;
         };
-        if first.weights.is_some() || second.weights.is_some() {
-            losses.push(entity_loss(
-                entry,
-                "rational ruled rails require homogeneous denominator reconciliation",
-            ));
-            continue;
-        }
         if entry.form == 0
-            && (first.degree != 1
-                || second.degree != 1
-                || first.control_points.len() != 2
-                || second.control_points.len() != 2)
+            && !equal_arc_length_parameterization(
+                ir,
+                first_sequence,
+                second_sequence,
+                first_interval,
+                second_interval,
+            )
         {
             losses.push(entity_loss(
                 entry,
-                "equal-arc-length ruled projection is implemented only for linear rails",
+                "equal-arc-length ruled projection has no exact normalized arc-length carrier",
             ));
             continue;
         }
@@ -702,43 +1121,21 @@ pub(super) fn project(
                 continue;
             };
             second.knots = knots;
+            if let Some(weights) = &mut second.weights {
+                weights.reverse();
+            }
         }
-        if first.degree != second.degree
-            || first.knots != second.knots
-            || first.control_points.len() != second.control_points.len()
-        {
+        let Some(surface) = ruled_surface_carrier(&first, &second, ctx) else {
             losses.push(entity_loss(
                 entry,
-                "ruled rails do not share one exact polynomial basis",
+                "ruled rails do not have a finite exact NURBS carrier",
             ));
             continue;
-        }
-        let Ok(u_count) = u32::try_from(first.control_points.len()) else {
-            losses.push(entity_loss(entry, "ruled rail pole count exceeds u32"));
-            continue;
         };
-        let control_points = first
-            .control_points
-            .iter()
-            .copied()
-            .zip(second.control_points.iter().copied())
-            .flat_map(|(first, second)| [first, second])
-            .collect::<Vec<_>>();
         let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
-            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: first.degree,
-                v_degree: 1,
-                u_knots: first.knots,
-                v_knots: vec![0.0, 0.0, 1.0, 1.0],
-                u_count,
-                v_count: 2,
-                control_points,
-                weights: None,
-                u_periodic: first.periodic && second.periodic,
-                v_periodic: false,
-            }),
+            geometry: SurfaceGeometry::Nurbs(surface),
             source_object: Some(source_object(entry)),
         });
         ir.model.procedural_surfaces.push(ProceduralSurface {

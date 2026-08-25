@@ -16,6 +16,8 @@ use crate::IgesCodec;
 
 use crate::global::Dialect;
 
+const EPS_RATIONAL_RULED: f64 = 1.0e-10;
+
 use super::{
     angular_basis, homogeneous_curve_boundary_matches, offset_indicator_parameters,
     tabulated_directrix_type_allowed,
@@ -154,6 +156,182 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(rational_ruled_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
+        &result.ir().model.surfaces[0].geometry
+    else {
+        panic!("expected an exact rational ruled cache");
+    };
+    assert_eq!((surface.u_degree, surface.v_degree), (4, 1));
+    assert!(surface.weights.is_some());
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss.message.contains("entity type 118")
+    }));
+    let curve_point = |sequence: u32, parameter: f64| {
+        let curve = result
+            .ir()
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.0 == format!("iges:model:curve#D{sequence}"))
+            .expect("rail curve");
+        cadmpeg_ir::eval::curve_point(&curve.geometry, parameter).expect("rail point")
+    };
+    for (u, v) in [(0.2, 0.25), (0.5, 0.5), (0.8, 0.75)] {
+        let first = curve_point(1, u);
+        let second = curve_point(3, u);
+        let expected = Point3::new(
+            (1.0 - v) * first.x + v * second.x,
+            (1.0 - v) * first.y + v * second.y,
+            (1.0 - v) * first.z + v * second.z,
+        );
+        let actual = cadmpeg_ir::eval::nurbs_surface_point(surface, u, v).expect("surface point");
+        assert!(
+            actual.distance(expected) <= EPS_RATIONAL_RULED,
+            "{actual:?} vs {expected:?}"
+        );
+    }
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok());
+}
+
+#[test]
+fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
+    let first = NurbsCurve {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        weights: None,
+        periodic: false,
+    };
+    let second = NurbsCurve {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 2.0, 2.0, 2.0],
+        control_points: vec![
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 2.0, 0.0),
+            Point3::new(2.0, 1.0, 0.0),
+        ],
+        weights: Some(vec![1.0, 0.5, 1.0]),
+        periodic: false,
+    };
+    let surface = super::ruled_surface_carrier(&first, &second, None)
+        .expect("relative-parameter rational ruled carrier");
+    assert_eq!((surface.u_degree, surface.v_degree), (3, 1));
+    assert_eq!((surface.u_count, surface.v_count), (4, 2));
+    for (u, v) in [(0.2, 0.25), (0.6, 0.75), (0.9, 0.5)] {
+        let first_point = cadmpeg_ir::eval::nurbs_curve_point(
+            first.degree,
+            &first.knots,
+            &first.control_points,
+            first.weights.as_deref(),
+            u,
+        )
+        .expect("first rail point");
+        let second_point = cadmpeg_ir::eval::nurbs_curve_point(
+            second.degree,
+            &second.knots,
+            &second.control_points,
+            second.weights.as_deref(),
+            2.0 * u,
+        )
+        .expect("second rail point");
+        let expected = Point3::new(
+            (1.0 - v) * first_point.x + v * second_point.x,
+            (1.0 - v) * first_point.y + v * second_point.y,
+            (1.0 - v) * first_point.z + v * second_point.z,
+        );
+        let actual =
+            cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
+        assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
+    }
+}
+
+#[test]
+fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
+    let first = NurbsCurve {
+        degree: 1,
+        knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.5, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+    let second = NurbsCurve {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point3::new(0.0, 1.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+        weights: Some(vec![1.0, 0.5]),
+        periodic: false,
+    };
+    let surface = super::ruled_surface_carrier(&first, &second, None)
+        .expect("partition-aligned rational ruled carrier");
+    assert_eq!((surface.u_degree, surface.v_degree), (2, 1));
+    assert_eq!((surface.u_count, surface.v_count), (5, 2));
+    assert_eq!(
+        surface.u_knots,
+        vec![0.0, 0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.0]
+    );
+    for (u, v) in [(0.25, 0.4), (0.75, 0.6)] {
+        let first_point = cadmpeg_ir::eval::nurbs_curve_point(
+            first.degree,
+            &first.knots,
+            &first.control_points,
+            first.weights.as_deref(),
+            u,
+        )
+        .expect("first rail point");
+        let second_point = cadmpeg_ir::eval::nurbs_curve_point(
+            second.degree,
+            &second.knots,
+            &second.control_points,
+            second.weights.as_deref(),
+            u,
+        )
+        .expect("second rail point");
+        let expected = Point3::new(
+            (1.0 - v) * first_point.x + v * second_point.x,
+            (1.0 - v) * first_point.y + v * second_point.y,
+            (1.0 - v) * first_point.z + v * second_point.z,
+        );
+        let actual =
+            cadmpeg_ir::eval::nurbs_surface_point(&surface, u, v).expect("ruled surface point");
+        assert!(actual.distance(expected) <= EPS_RATIONAL_RULED);
+    }
+}
+
+#[test]
+fn decode_projects_rational_circular_arc_length_ruled_surface() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(circular_ruled_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
+        &result.ir().model.surfaces[0].geometry
+    else {
+        panic!("expected an exact circular ruled cache");
+    };
+    assert_eq!((surface.u_degree, surface.v_degree), (2, 1));
+    assert!(surface.weights.is_some());
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss.message.contains("entity type 118")
+    }));
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]

@@ -896,6 +896,58 @@ pub(crate) fn ruled_surface_file_with_developable_flag(developable_flag: i64) ->
     bytes
 }
 
+pub(crate) fn rational_ruled_surface_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 0,
+            label: "RAT1".into(),
+            status: "00000000",
+            parameters: "126,2,2,1,0,0,0,0,0,0,1,1,1,1,0.5,1,0,0,0,1,1,0,2,0,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 0,
+            label: "RAT2".into(),
+            status: "00000000",
+            parameters: "126,2,2,1,0,0,0,0,0,0,1,1,1,1,0.25,1,0,0,1,1,1,1,2,0,1,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 118,
+            form: 1,
+            label: "RRULED".into(),
+            status: "00000000",
+            parameters: "118,1,3,0,1;".into(),
+        },
+    ])
+}
+
+pub(crate) fn circular_ruled_surface_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "CIRC1".into(),
+            status: "00000000",
+            parameters: "100,0,0,0,1,0,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "CIRC2".into(),
+            status: "00000000",
+            parameters: "100,0,0,2,1,2,1,2;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 118,
+            form: 0,
+            label: "CRULED".into(),
+            status: "00000000",
+            parameters: "118,1,3,0,1;".into(),
+        },
+    ])
+}
+
 pub(crate) fn composite_ruled_surface_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
