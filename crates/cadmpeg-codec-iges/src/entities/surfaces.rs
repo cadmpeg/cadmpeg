@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic and free-form surface projection.
 
+use super::composite::CompositeIndex;
 use super::geometry::{
     declared_unit_vector, entity_loss, resolve_transform, source_object, ProjectionOutcome,
 };
@@ -72,9 +73,10 @@ fn bounded_nurbs(
     ir: &CadIr,
     sequence: u32,
     ctx: Option<&DecodeContext<'_>>,
+    index: &CompositeIndex,
 ) -> Option<(NurbsCurve, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx, None)
+    super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx, Some(index))
 }
 
 fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
@@ -149,23 +151,27 @@ fn bounded_evaluable_curve(
     ir: &CadIr,
     sequence: u32,
     tolerance: f64,
+    index: &CompositeIndex,
 ) -> Option<(CurveGeometry, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
+    let curve = index.curve_by_id(ir, &curve_id)?;
+    if matches!(
+        &curve.geometry,
+        CurveGeometry::Composite { .. }
+            | CurveGeometry::Procedural { .. }
+            | CurveGeometry::Unknown { .. }
+    ) {
+        return None;
+    }
     let parameter_interval =
-        super::composite::bounded_parameter_range_for_curve(ir, &curve_id, tolerance, None)?;
+        super::composite::bounded_parameter_range_for_curve(ir, &curve_id, tolerance, Some(index))?;
     if !parameter_interval[0].is_finite()
         || !parameter_interval[1].is_finite()
         || parameter_interval[0] >= parameter_interval[1]
     {
         return None;
     }
-    let geometry = ir
-        .model
-        .curves
-        .iter()
-        .find(|curve| curve.id == curve_id)?
-        .geometry
-        .clone();
+    let geometry = curve.geometry.clone();
     parameter_interval
         .into_iter()
         .all(|parameter| cadmpeg_ir::eval::curve_point(&geometry, parameter).is_some())
@@ -941,6 +947,7 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
+    let composite_index = CompositeIndex::from_ir(ir);
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -1090,8 +1097,8 @@ pub(super) fn project(
             continue;
         }
         let (Some((first, first_interval)), Some((mut second, second_interval))) = (
-            bounded_nurbs(ir, first_sequence, ctx),
-            bounded_nurbs(ir, second_sequence, ctx),
+            bounded_nurbs(ir, first_sequence, ctx, &composite_index),
+            bounded_nurbs(ir, second_sequence, ctx, &composite_index),
         ) else {
             losses.push(entity_loss(
                 entry,
@@ -1204,11 +1211,59 @@ pub(super) fn project(
             ));
             continue;
         }
-        let Some((directrix, interval)) = bounded_nurbs(ir, directrix_sequence, ctx) else {
-            losses.push(entity_loss(
-                entry,
-                "directrix has no bounded polynomial or NURBS carrier",
-            ));
+        let Some((directrix, interval)) =
+            bounded_nurbs(ir, directrix_sequence, ctx, &composite_index)
+        else {
+            let Some((directrix_geometry, interval)) = bounded_evaluable_curve(
+                ir,
+                directrix_sequence,
+                global.minimum_resolution_mm(),
+                &composite_index,
+            ) else {
+                losses.push(entity_loss(
+                    entry,
+                    "directrix has no bounded polynomial, NURBS, or exact evaluable carrier",
+                ));
+                continue;
+            };
+            let Some(start) = cadmpeg_ir::eval::curve_point(&directrix_geometry, interval[0])
+            else {
+                losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
+                continue;
+            };
+            let target = Point3::new(x * factor, y * factor, z * factor);
+            let direction = target.vector_from(start);
+            if !direction.norm().is_finite() || direction.norm() <= 0.0 {
+                losses.push(entity_loss(
+                    entry,
+                    "tabulated direction is zero or non-finite",
+                ));
+                continue;
+            }
+            let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+            let procedural_id =
+                ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence));
+            ir.model.surfaces.push(Surface {
+                id: surface_id.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: procedural_id.clone(),
+                },
+                source_object: Some(source_object(entry)),
+            });
+            ir.model.procedural_surfaces.push(ProceduralSurface {
+                id: procedural_id,
+                surface: surface_id,
+                definition: ProceduralSurfaceDefinition::Extrusion {
+                    directrix: CurveId(format!("iges:model:curve#D{directrix_sequence}")),
+                    parameter_interval: Some(interval),
+                    direction,
+                    native_position: Some(target),
+                    revision_form: None,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: Some([Some(interval[0]), Some(interval[1]), None, None]),
+            });
+            decoded.insert(entry.sequence);
             continue;
         };
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
@@ -1224,7 +1279,10 @@ pub(super) fn project(
         let target = Point3::new(x * factor, y * factor, z * factor);
         let direction = target.vector_from(start);
         if !direction.norm().is_finite() || direction.norm() <= 0.0 {
-            losses.push(entity_loss(entry, "generatrix is zero or non-finite"));
+            losses.push(entity_loss(
+                entry,
+                "tabulated direction is zero or non-finite",
+            ));
             continue;
         }
         let control_points = directrix
@@ -1347,11 +1405,15 @@ pub(super) fn project(
             ));
             continue;
         };
-        let Some((generatrix, parameter_interval)) = bounded_nurbs(ir, generatrix_sequence, ctx)
+        let Some((generatrix, parameter_interval)) =
+            bounded_nurbs(ir, generatrix_sequence, ctx, &composite_index)
         else {
-            let Some((directrix_geometry, parameter_interval)) =
-                bounded_evaluable_curve(ir, generatrix_sequence, global.minimum_resolution_mm())
-            else {
+            let Some((directrix_geometry, parameter_interval)) = bounded_evaluable_curve(
+                ir,
+                generatrix_sequence,
+                global.minimum_resolution_mm(),
+                &composite_index,
+            ) else {
                 losses.push(entity_loss(
                     entry,
                     "generatrix has no bounded polynomial, NURBS, or exact evaluable carrier",

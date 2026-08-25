@@ -235,6 +235,12 @@ impl CompositeIndex {
         }
     }
 
+    pub(super) fn curve_by_id<'a>(&self, ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a Curve> {
+        self.curve_positions
+            .get(curve_id)
+            .and_then(|position| ir.model.curves.get(*position))
+    }
+
     fn add_model_entity(
         &mut self,
         curve_id: CurveId,

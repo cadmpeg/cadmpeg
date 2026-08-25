@@ -74,8 +74,8 @@ const WRITER_AUTHOR_NAME: &str = "author";
 const WRITER_AUTHOR_ORGANIZATION: &str = "cadmpeg";
 const WRITER_DRAFTING_STANDARD_FLAG: i64 = 0;
 const WRITER_ENTITY_TYPES: &[u32] = &[
-    100, 102, 104, 110, 116, 120, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192, 194, 196,
-    198, 502, 504, 508, 510, 514,
+    100, 102, 104, 110, 116, 120, 122, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192, 194,
+    196, 198, 502, 504, 508, 510, 514,
 ];
 
 /// Plan an IGES export, selecting replay only after checking the document
@@ -364,19 +364,22 @@ impl TargetProfile {
         match self.version {
             crate::IgesVersion::V4_0 => matches!(
                 (entity.type_code, entity.form),
-                (100 | 102 | 110 | 116 | 120 | 124 | 126 | 128 | 142 | 144, 0) | (104, 0 | 2 | 3)
+                (
+                    100 | 102 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 142 | 144,
+                    0
+                ) | (104, 0 | 2 | 3)
             ),
             crate::IgesVersion::V5_0 => matches!(
                 (entity.type_code, entity.form),
                 (
-                    100 | 102 | 110 | 116 | 120 | 124 | 126 | 128 | 141 | 142 | 143 | 144,
+                    100 | 102 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 141 | 142 | 143 | 144,
                     0
                 ) | (104, 2 | 3)
             ),
             crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
                 match entity.type_code {
-                    100 | 102 | 110 | 116 | 120 | 123 | 124 | 126 | 128 | 141 | 142 | 143 | 144
-                    | 186 => entity.form == 0,
+                    100 | 102 | 110 | 116 | 120 | 122 | 123 | 124 | 126 | 128 | 141 | 142 | 143
+                    | 144 | 186 => entity.form == 0,
                     104 => matches!(entity.form, 0 | 2 | 3),
                     190 | 192 | 194 | 196 | 198 => entity.form == 1,
                     502 | 504 | 508 | 510 => entity.form == 1,
@@ -513,7 +516,8 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                     procedural.id, procedural.surface
                 ))
             })?;
-        if is_native_type120_surface(&surface.geometry, &procedural.id, &procedural.definition) {
+        if is_native_surface_construction(&surface.geometry, &procedural.id, &procedural.definition)
+        {
             continue;
         }
         if !matches!(
@@ -579,7 +583,11 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             else {
                 return true;
             };
-            !is_native_type120_surface(&surface.geometry, &procedural.id, &procedural.definition)
+            !is_native_surface_construction(
+                &surface.geometry,
+                &procedural.id,
+                &procedural.definition,
+            )
         })
         .count();
     let curve_count = ir.model.procedural_curves.len();
@@ -591,25 +599,32 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
     ))])
 }
 
-fn is_native_type120_surface(
+fn is_native_surface_construction(
     geometry: &SurfaceGeometry,
     construction: &cadmpeg_ir::ids::ProceduralSurfaceId,
     definition: &ProceduralSurfaceDefinition,
 ) -> bool {
+    if !matches!(
+        geometry,
+        SurfaceGeometry::Procedural {
+            construction: owner
+        } if owner == construction
+    ) {
+        return false;
+    }
     matches!(
-        (geometry, definition),
-        (
-            SurfaceGeometry::Procedural {
-                construction: owner
-            },
-            ProceduralSurfaceDefinition::Revolution {
-                angular_parameter_interval: None,
-                parameter_interval: Some(_),
-                transposed: false,
-                revision_form: None,
-                ..
-            }
-        ) if owner == construction
+        definition,
+        ProceduralSurfaceDefinition::Revolution {
+            angular_parameter_interval: None,
+            parameter_interval: Some(_),
+            transposed: false,
+            revision_form: None,
+            ..
+        } | ProceduralSurfaceDefinition::Extrusion {
+            parameter_interval: Some(_),
+            revision_form: None,
+            ..
+        }
     )
 }
 
@@ -2866,6 +2881,16 @@ fn push_composite_entity(
     label: &'static str,
     status: &'static str,
 ) -> Result<usize, CodecError> {
+    push_composite_entity_with_reference_offset(entities, children, label, status, 0)
+}
+
+fn push_composite_entity_with_reference_offset(
+    entities: &mut Vec<Entity>,
+    children: &[usize],
+    label: &'static str,
+    status: &'static str,
+    reference_offset: usize,
+) -> Result<usize, CodecError> {
     let children = flatten_composite_children(entities, children)?;
     if children.is_empty() {
         return Err(CodecError::Malformed(
@@ -2874,6 +2899,9 @@ fn push_composite_entity(
     }
     let mut parameters = format!("102,{}", children.len());
     for child in children {
+        let child = child
+            .checked_add(reference_offset)
+            .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
         parameters.push(',');
         parameters.push_str(&reference_marker(child));
     }
@@ -4143,10 +4171,164 @@ fn surface_entities_for_ir(
 ) -> Result<Vec<Entity>, CodecError> {
     match geometry {
         SurfaceGeometry::Procedural { construction } => {
-            revolution_surface_entities(ir, construction, base_index)
+            let procedural = ir
+                .model
+                .procedural_surfaces
+                .iter()
+                .find(|candidate| candidate.id == *construction)
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "IGES procedural surface construction {construction} is missing"
+                    ))
+                })?;
+            match procedural.definition {
+                ProceduralSurfaceDefinition::Revolution { .. } => {
+                    revolution_surface_entities(ir, construction, base_index)
+                }
+                ProceduralSurfaceDefinition::Extrusion { .. } => {
+                    extrusion_surface_entities(ir, construction, base_index)
+                }
+                _ => Err(CodecError::NotImplemented(
+                    "IGES semantic writer only encodes procedural Revolution and Extrusion surfaces as native entities".into(),
+                )),
+            }
         }
         _ => surface_entities(geometry, base_index),
     }
+}
+
+fn extrusion_surface_entities(
+    ir: &CadIr,
+    construction: &cadmpeg_ir::ids::ProceduralSurfaceId,
+    base_index: usize,
+) -> Result<Vec<Entity>, CodecError> {
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|candidate| candidate.id == *construction)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "IGES procedural surface construction {construction} is missing"
+            ))
+        })?;
+    let ProceduralSurfaceDefinition::Extrusion {
+        directrix,
+        parameter_interval,
+        direction,
+        native_position,
+        revision_form,
+    } = &procedural.definition
+    else {
+        return Err(CodecError::NotImplemented(
+            "IGES semantic writer only encodes Extrusion surfaces as Type 122".into(),
+        ));
+    };
+    if revision_form.is_some() {
+        return Err(CodecError::NotImplemented(
+            "IGES Type 122 output does not encode revision-gated extrusion fields".into(),
+        ));
+    }
+    let [start_parameter, terminate_parameter] = parameter_interval.ok_or_else(|| {
+        CodecError::NotImplemented(
+            "IGES Type 122 output requires a bounded directrix parameter interval".into(),
+        )
+    })?;
+    if !start_parameter.is_finite()
+        || !terminate_parameter.is_finite()
+        || start_parameter >= terminate_parameter
+    {
+        return Err(CodecError::Malformed(
+            "IGES Type 122 directrix parameter interval is invalid".into(),
+        ));
+    }
+    if !direction.x.is_finite()
+        || !direction.y.is_finite()
+        || !direction.z.is_finite()
+        || direction.norm() <= 0.0
+    {
+        return Err(CodecError::Malformed(
+            "IGES Type 122 sweep direction must be finite and non-zero".into(),
+        ));
+    }
+    let source_curve = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *directrix)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "IGES Type 122 directrix {directrix} is missing"
+            ))
+        })?;
+    let geometry = flatten_curve(&source_curve.geometry)?;
+    let (start, end) = if matches!(&geometry, CurveGeometry::Composite { .. }) {
+        let span = curve_reference_span(ir, directrix, &geometry)?;
+        if !same_range(span.range, [start_parameter, terminate_parameter]) {
+            return Err(CodecError::NotImplemented(
+                "IGES Type 122 composite directrix range is not its canonical Type 102 range"
+                    .into(),
+            ));
+        }
+        (span.start, span.end)
+    } else {
+        let start = curve_point(&geometry, start_parameter).ok_or_else(|| {
+            CodecError::Malformed("IGES Type 122 directrix start cannot be evaluated".into())
+        })?;
+        let end = curve_point(&geometry, terminate_parameter).ok_or_else(|| {
+            CodecError::Malformed("IGES Type 122 directrix terminate cannot be evaluated".into())
+        })?;
+        (start, end)
+    };
+    ensure_finite_point(start, "Type 122 directrix start")?;
+    ensure_finite_point(end, "Type 122 directrix terminate")?;
+    let inferred_target = start.translated(*direction, 1.0);
+    ensure_finite_point(inferred_target, "Type 122 inferred terminate point")?;
+    let target = native_position.as_ref().copied().unwrap_or(inferred_target);
+    ensure_finite_point(target, "Type 122 terminate point")?;
+    if !same_point(target, inferred_target) {
+        return Err(CodecError::Malformed(
+            "IGES Type 122 native terminate point disagrees with its sweep direction".into(),
+        ));
+    }
+
+    let directrix_span = CurveSpan {
+        range: [start_parameter, terminate_parameter],
+        start,
+        end,
+    };
+    let mut entities = Vec::new();
+    let directrix_local_index = append_curve_entity_with_reference_offset(
+        &mut entities,
+        ir,
+        CurveEntityRequest {
+            curve_id: directrix,
+            geometry: &geometry,
+            span: Some(&directrix_span),
+            sense: Sense::Forward,
+            status: PHYSICALLY_DEPENDENT_STATUS,
+            reference_offset: base_index,
+        },
+    )?;
+    let directrix_index = base_index
+        .checked_add(directrix_local_index)
+        .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
+    entities.push(Entity {
+        type_code: 122,
+        form: 0,
+        label: "TABULATE",
+        status: "00000000",
+        parameters: format!(
+            "122,{},{},{},{};",
+            reference_marker(directrix_index),
+            number(target.x),
+            number(target.y),
+            number(target.z)
+        )
+        .into_bytes(),
+        transform: None,
+    });
+    Ok(entities)
 }
 
 fn revolution_surface_entities(
@@ -4653,6 +4835,16 @@ fn vertex_position(ir: &CadIr, vertex_id: &VertexId) -> Option<Point3> {
         .map(|point| point.position)
 }
 
+#[derive(Clone, Copy)]
+struct CurveEntityRequest<'a> {
+    curve_id: &'a CurveId,
+    geometry: &'a CurveGeometry,
+    span: Option<&'a CurveSpan>,
+    sense: Sense,
+    status: &'static str,
+    reference_offset: usize,
+}
+
 fn append_curve_entity(
     entities: &mut Vec<Entity>,
     ir: &CadIr,
@@ -4662,18 +4854,45 @@ fn append_curve_entity(
     sense: Sense,
     status: &'static str,
 ) -> Result<usize, CodecError> {
+    append_curve_entity_with_reference_offset(
+        entities,
+        ir,
+        CurveEntityRequest {
+            curve_id,
+            geometry,
+            span,
+            sense,
+            status,
+            reference_offset: 0,
+        },
+    )
+}
+
+fn append_curve_entity_with_reference_offset(
+    entities: &mut Vec<Entity>,
+    ir: &CadIr,
+    request: CurveEntityRequest<'_>,
+) -> Result<usize, CodecError> {
     let mut emitter = CurveEntityEmitter {
         entities,
         ir,
         active: BTreeSet::new(),
+        reference_offset: request.reference_offset,
     };
-    emitter.append(curve_id, geometry, span, sense, status)
+    emitter.append(
+        request.curve_id,
+        request.geometry,
+        request.span,
+        request.sense,
+        request.status,
+    )
 }
 
 struct CurveEntityEmitter<'a> {
     entities: &'a mut Vec<Entity>,
     ir: &'a CadIr,
     active: BTreeSet<CurveId>,
+    reference_offset: usize,
 }
 
 impl CurveEntityEmitter<'_> {
@@ -4698,7 +4917,13 @@ impl CurveEntityEmitter<'_> {
                     )))
                 } else {
                     let children = self.append_composite_constituents(segments, sense)?;
-                    push_composite_entity(self.entities, &children, "COMPOSIT", status)
+                    push_composite_entity_with_reference_offset(
+                        self.entities,
+                        &children,
+                        "COMPOSIT",
+                        status,
+                        self.reference_offset,
+                    )
                 }
             }
             _ => {

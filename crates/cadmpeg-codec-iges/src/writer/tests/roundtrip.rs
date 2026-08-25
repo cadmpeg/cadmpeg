@@ -11,7 +11,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_test_support::golden::Harness;
 
-use crate::test_support::hyperbola_surface_of_revolution_file;
+use crate::test_support::{hyperbola_surface_of_revolution_file, tabulated_hyperbola_file};
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 /// Extension of the committed fixture inputs (matches `golden_tests`).
@@ -81,6 +81,163 @@ fn lossless_exports_round_trip_to_identical_ir() {
 fn semantic_writer_emits_type120_for_cacheless_hyperbola_revolution() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
         assert_type120_round_trip(version);
+    }
+}
+
+#[test]
+fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
+    const EPS_EXTRUSION_ROUND_TRIP: f64 = 1.0e-10;
+
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
+        let original = IgesCodec
+            .decode(
+                &mut Cursor::new(tabulated_hyperbola_file()),
+                &DecodeOptions::default(),
+            )
+            .expect("hyperbola tabulated fixture decodes");
+        let plan = Encoder::plan(
+            &IgesEncoder::new(IgesWriteOptions { version }),
+            EncodeInput {
+                ir: original.ir(),
+                fidelity: None,
+            },
+        )
+        .expect("cache-less extrusion has an exact Type 122 writer path");
+        let mut produced = Vec::new();
+        let report = plan
+            .write_to(&mut produced)
+            .expect("Type 122 output writes");
+        assert!(
+            report.losses.iter().all(|loss| {
+                loss.code != crate::loss::IgesLossCode::ProceduralReduced.kind()
+                    && loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+            }),
+            "{version:?}: {:#?}",
+            report.losses
+        );
+        let round_trip = IgesCodec
+            .decode(&mut Cursor::new(produced), &DecodeOptions::default())
+            .expect("Type 122 output decodes");
+        assert!(
+            round_trip
+                .ir()
+                .native
+                .namespace("iges")
+                .and_then(|namespace| namespace.arenas.get("entities"))
+                .is_some_and(|entities| {
+                    entities.iter().any(|entity| {
+                        entity.field("entity_type").and_then(|value| value.as_i64()) == Some(122)
+                    })
+                }),
+            "{version:?}: output has no Type 122 entity"
+        );
+        let source_surface = original
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| {
+                original
+                    .ir()
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .any(|procedural| {
+                        procedural.surface == surface.id
+                            && matches!(
+                                &procedural.definition,
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                            )
+                    })
+            })
+            .expect("source extrusion surface");
+        let round_surface = round_trip
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| {
+                round_trip
+                    .ir()
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .any(|procedural| {
+                        procedural.surface == surface.id
+                            && matches!(
+                                &procedural.definition,
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                            )
+                    })
+            })
+            .expect("round-trip extrusion surface");
+        let source_range = original
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.surface == source_surface.id)
+            .and_then(|procedural| match &procedural.definition {
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+                    parameter_interval: Some(range),
+                    ..
+                } => Some(*range),
+                _ => None,
+            })
+            .expect("source extrusion interval");
+        let round_range = round_trip
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.surface == round_surface.id)
+            .and_then(|procedural| match &procedural.definition {
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+                    parameter_interval: Some(range),
+                    ..
+                } => Some(*range),
+                _ => None,
+            })
+            .expect("round-trip extrusion interval");
+        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
+        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+        for fraction in [0.25, 0.75] {
+            let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
+            let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
+            let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                &source_index,
+                &source_surface.id,
+                source_parameter,
+                1.0,
+            )
+            .expect("source extrusion evaluates");
+            let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                &round_index,
+                &round_surface.id,
+                round_parameter,
+                1.0,
+            )
+            .expect("round-trip extrusion evaluates");
+            assert!(
+                source_point.distance(round_point) < EPS_EXTRUSION_ROUND_TRIP,
+                "{version:?}: source={source_point:?} round_trip={round_point:?}"
+            );
+        }
+        assert!(
+            round_trip
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != crate::loss::IgesLossCode::EntityNotProjected.kind()),
+            "{version:?}: {:#?}",
+            round_trip.report().losses
+        );
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        assert!(
+            validation.is_ok(),
+            "{version:?}: {:#?}",
+            validation.findings
+        );
     }
 }
 

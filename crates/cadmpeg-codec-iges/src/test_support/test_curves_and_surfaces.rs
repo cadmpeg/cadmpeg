@@ -1140,6 +1140,39 @@ pub(crate) fn tabulated_cylinder_file() -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn tabulated_hyperbola_file() -> Vec<u8> {
+    owned_test_file(&tabulated_hyperbola_entities())
+}
+
+pub(crate) fn tabulated_hyperbola_file_with_global(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global_and_line_fonts(
+        &tabulated_hyperbola_entities(),
+        global,
+        &[(1, 1), (3, 1)],
+    )
+}
+
+fn tabulated_hyperbola_entities() -> Vec<OwnedTestEntity> {
+    vec![
+        OwnedTestEntity {
+            entity_type: 104,
+            form: 2,
+            label: "HYPERBOL".into(),
+            status: "00010000",
+            parameters:
+                "104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;"
+                    .into(),
+        },
+        OwnedTestEntity {
+            entity_type: 122,
+            form: 0,
+            label: "TABULATE".into(),
+            status: "00000000",
+            parameters: "122,1,3.086161269630487,3.525603580931404,2;".into(),
+        },
+    ]
+}
+
 pub(crate) fn surface_of_revolution_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
