@@ -1469,6 +1469,8 @@ The offset surface retains the support parameterization. Nested offset carriers 
 
   A table ends at the end of its sixth descriptor payload. The following framed metadata belongs to that table until the next validated table starts.
 
+  A `uoBodyPropInfo_c` class declaration separates body-property groups inside the face-table sequence. Face descriptor tables continue after that declaration without another `uoTempFaceTessData_c` declaration. A following `uoTempFaceTessData_c` declaration, or the end of the `DisplayLists` payload when there is no following declaration, ends the sequence.
+
   A `uoTempFaceTessData_c` class token has two table-header forms. Offsets are from the byte after the class token. Both forms start with the first table's triangle count as u32 LE at `+0` and strip count as u32 LE at `+4`. These values equal `C - 2*N` and `N` for that table. In the compact form, the first descriptor starts at `+8`. The extended form has u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20`, followed by 16 zero bytes at `+24`; its first descriptor starts at `+40`. The fixed cells and nonzero token select the extended form. A header that does not satisfy the complete extended grammar uses the compact offset and must frame a valid descriptor table there.
 
   Every position in one face-tessellation table lies on its owning B-rep face support surface. The f32 coordinate precision limits this incidence test. When exactly one B-rep face has an analytic support incident to all table positions, that face owns the table and its body is the face's topological owner.
