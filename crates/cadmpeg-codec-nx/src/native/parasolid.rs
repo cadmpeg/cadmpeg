@@ -323,9 +323,8 @@ pub(crate) fn parasolid_group_members(
         ) else {
             continue;
         };
-        member.current_member_xmt = parsed
-            .stream(partition)
-            .unique_semantic_xmt_by_node_id(kind, node_id);
+        let graph = parsed.stream(partition).view_for_geometry().graph.as_ref();
+        member.current_member_xmt = resolved_current_member_xmt(graph, member, kind, node_id);
     }
     members
 }
@@ -342,6 +341,26 @@ fn group_member_kind(family: &str) -> Option<u8> {
         "REGION" => 19,
         _ => return None,
     })
+}
+
+/// Resolve a GROUP member against the current merged topology graph.
+///
+/// The member XMT is the identity selected by the current GROUP chain, so it
+/// is the primary lookup key. A node-ID lookup is retained as a guarded
+/// compatibility path for a delta revision that changes the XMT while
+/// preserving the kernel node identity. Both paths require the expected
+/// topology family and the serialized node identity to agree.
+fn resolved_current_member_xmt(
+    graph: &crate::topology::Graph,
+    member: &ParasolidGroupMember,
+    kind: u8,
+    node_id: u32,
+) -> Option<u32> {
+    graph
+        .get(kind, member.member_xmt)
+        .filter(|node| node.node_id() == Some(node_id))
+        .map(|node| node.xmt)
+        .or_else(|| graph.unique_xmt_by_node_id(kind, node_id))
 }
 
 /// One completely bounded record in a Parasolid deltas stream.
@@ -3121,6 +3140,8 @@ mod tests {
     use flate2::Compression;
 
     use crate::parasolid::Stream;
+    use crate::test_support::many_face_partition_stream;
+    use crate::topology::Graph;
 
     fn group_record(xmt: u16, node_id: u32, linked_reference: u16) -> Vec<u8> {
         let mut bytes = vec![0, 90];
@@ -3206,6 +3227,44 @@ mod tests {
         let mut broken = records;
         broken[2].references[5] = 99;
         assert!(super::group_members_from_records(4, &broken).is_empty());
+    }
+
+    #[test]
+    fn group_member_xmt_is_checked_before_node_identity_fallback() {
+        let graph = Graph::parse(&many_face_partition_stream(1_000));
+        let member = ParasolidGroupMember {
+            id: "member".into(),
+            partition_stream_ordinal: 4,
+            group_xmt: 10,
+            group_node_id: 7,
+            ordinal: 0,
+            list_record_xmt: 20,
+            member_xmt: 300,
+            member_family: "FACE".into(),
+            member_node_id: Some(1_000),
+            current_member_xmt: None,
+        };
+
+        assert_eq!(
+            super::resolved_current_member_xmt(&graph, &member, 14, 1_000),
+            Some(300)
+        );
+        assert_eq!(
+            super::resolved_current_member_xmt(
+                &graph,
+                &ParasolidGroupMember {
+                    member_xmt: 999,
+                    ..member.clone()
+                },
+                14,
+                1_000,
+            ),
+            Some(300)
+        );
+        assert_eq!(
+            super::resolved_current_member_xmt(&graph, &member, 14, 2_000),
+            None
+        );
     }
 
     #[test]

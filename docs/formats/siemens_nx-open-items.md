@@ -341,7 +341,9 @@ The `BLEND` and `FACE_BLEND` labels with body-write frames identify edge-blend
 and face-blend operations. When the owned circular blend-carrier projection is
 complete, the corresponding neutral family and constant radius are available.
 The edge or face selections and created-face relation remain separate
-questions.
+questions. GROUP member XMTs are checked against the exact same-family node in
+the delta-merged partition graph before the guarded unique-node fallback; this
+resolves current topology identities without assigning creation provenance.
 Explicit Boolean operations independently require the body-image object to
 equal the target and exclude every tool. A closed GROUP chain resolves current
 members by topology family and kernel node identity and transfers current FACE,

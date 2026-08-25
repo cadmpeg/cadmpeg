@@ -1817,12 +1817,16 @@ GROUP, and every member must be a BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX,
 or REGION record. A cycle, missing record, duplicate XMT, broken reciprocal
 link, cross-GROUP row, or non-topology member rejects the complete chain.
 
-Each GROUP member family except FIN carries a kernel node identity. A current
-member XMT is assigned only when exactly one record of the same topology family
-in the delta-merged partition graph carries that node identity. Node identities
-are not compared across families. A missing node identity, zero same-family
-matches, or multiple same-family matches leaves the historical member XMT
-retained without a current-member identity.
+Each GROUP member family except FIN carries a kernel node identity. The member
+XMT is first checked as an exact identity in the delta-merged partition graph;
+the graph record must have the same topology family and kernel node identity.
+When that exact identity is absent or carries a different node identity, a
+current member XMT may instead be selected only when exactly one record of the
+same topology family in the graph carries the serialized node identity. Node
+identities are not compared across families. A missing node identity, an
+invalid exact identity, zero same-family matches, or multiple same-family
+matches leaves the historical member XMT retained without a current-member
+identity.
 
 A body-write result state contains the current FACE, EDGE, and VERTEX members
 of its resolved GROUP in GROUP order. These are feature-local intermediate
