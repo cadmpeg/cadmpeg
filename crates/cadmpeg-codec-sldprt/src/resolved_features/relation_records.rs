@@ -6,11 +6,31 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::is_history_metadata_record;
 use crate::layout::feature_input_shifted_scalar_trailer as shifted_trailer;
 use crate::records::{
-    FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
-    FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
-    FeatureInputScalarRole,
+    FeatureInputClass, FeatureInputLane, FeatureInputName, FeatureInputOperand,
+    FeatureInputOperandKind, FeatureInputRelationFamily, FeatureInputRelationInstance,
+    FeatureInputScalar, FeatureInputScalarRole,
 };
 use std::collections::{HashMap, HashSet};
+
+fn scalar_name_value<'a>(
+    scalar: &FeatureInputScalar,
+    names: &'a [FeatureInputName],
+) -> Option<&'a str> {
+    names
+        .iter()
+        .find(|name| name.id == scalar.name)
+        .map(|name| name.value.as_str())
+}
+
+fn same_scalar_name(
+    first: &FeatureInputScalar,
+    second: &FeatureInputScalar,
+    names: &[FeatureInputName],
+) -> bool {
+    scalar_name_value(first, names).is_some_and(|value| {
+        scalar_name_value(second, names).is_some_and(|candidate| candidate == value)
+    })
+}
 
 pub(super) fn feature_intervals(
     histories: &[crate::records::FeatureHistory],
@@ -222,21 +242,43 @@ pub(super) fn relation_instances(
             let Some(last_scalar) = group_scalars.last() else {
                 continue;
             };
-            let same_run = owner == feature_ref
+            let same_scope = owner == feature_ref
                 && *last_index + 1 == scalar_index
                 && !lane.classes.iter().any(|class| {
                     class.offset > last_scalar.offset
                         && class.offset < scalar.offset
                         && relation_family(&class.name).is_some()
-                })
-                && operands
+                });
+            let same_operands = operands
+                .iter()
+                .map(|operand| (operand.kind, operand.entity_index))
+                .eq(scalar
+                    .operands
                     .iter()
-                    .map(|operand| (operand.kind, operand.entity_index))
-                    .eq(scalar
-                        .operands
-                        .iter()
-                        .map(|operand| (operand.kind, operand.entity_index)));
-            if same_run && scalar.role == FeatureInputScalarRole::Driving {
+                    .map(|operand| (operand.kind, operand.entity_index)));
+            let repeated_circle_display = same_scope
+                && *family == FeatureInputRelationFamily::CircleDiameter
+                && scalar.role == FeatureInputScalarRole::Display
+                && group_scalars
+                    .iter()
+                    .all(|candidate| candidate.role == FeatureInputScalarRole::Display)
+                && scalar.operands.len() == 1
+                && group_scalars
+                    .iter()
+                    .all(|candidate| candidate.operands.len() == 1)
+                && group_scalars.iter().all(|candidate| {
+                    candidate.operands[0].kind == scalar.operands[0].kind
+                        && candidate.operands[0].entity_index != scalar.operands[0].entity_index
+                        && same_scalar_name(candidate, scalar, &lane.names)
+                });
+            if repeated_circle_display {
+                let (_, _, _, _, scalars, last_index) = groups
+                    .last_mut()
+                    .expect("a repeated display run requires an existing relation group");
+                scalars.push(scalar);
+                *last_index = scalar_index;
+            } else if same_scope && same_operands && scalar.role == FeatureInputScalarRole::Driving
+            {
                 if group_scalars.len() == 1 {
                     let (_, _, _, _, scalars, last_index) = groups
                         .last_mut()
@@ -985,6 +1027,53 @@ mod relation_records_tests {
         assert_eq!(relation.scalar_refs.len(), 1);
         assert!(relation.parameter_scalar_ref.is_none());
         assert!(circle_dimension_handle_driver(relation, &lane).is_none());
+    }
+
+    #[test]
+    fn circle_dimension_groups_repeated_display_scalars_by_name_and_entity() {
+        let mut first = circle_scalar(20, "name-d1", FeatureInputScalarRole::Display, None);
+        first.operands[0].entity_index = 0;
+        let mut second = circle_scalar(30, "name-d1", FeatureInputScalarRole::Display, None);
+        second.operands[0].entity_index = 1;
+        let mut third = circle_scalar(40, "name-d1", FeatureInputScalarRole::Display, None);
+        third.operands[0].entity_index = 2;
+        let mut different_name =
+            circle_scalar(50, "name-d2", FeatureInputScalarRole::Display, None);
+        different_name.operands[0].entity_index = 3;
+        let mut lane = lane(
+            vec![class(10, "sgCircleDim")],
+            vec![first.clone(), second, third, different_name],
+        );
+        lane.names = vec![
+            FeatureInputName {
+                id: "name-d1".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 20,
+                object_id: None,
+                value: "D1".into(),
+            },
+            FeatureInputName {
+                id: "name-d2".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 50,
+                object_id: None,
+                value: "D2".into(),
+            },
+        ];
+
+        let instances = relation_instances(&sketch_history(), &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one repeated circle relation");
+        };
+        assert_eq!(
+            relation.scalar_refs,
+            vec!["scalar-20", "scalar-30", "scalar-40"]
+        );
+        assert!(relation.parameter_scalar_ref.is_none());
+        assert!(relation.display_scalar_ref.is_none());
+        assert_eq!(relation.operands, first.operands);
     }
 
     fn dynamic_scalar(

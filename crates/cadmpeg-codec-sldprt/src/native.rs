@@ -562,7 +562,8 @@ impl SldprtNative {
             !class_ids.contains(record.class_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
                 || record.scalar_refs.is_empty()
-                || record.scalar_refs.len() > 3
+                || (record.scalar_refs.len() > 3
+                    && !repeated_circle_display_shape_valid(record, &scalars, &names))
                 || record
                     .scalar_refs
                     .iter()
@@ -1365,7 +1366,7 @@ fn relation_instance_shape_valid(
     record: &FeatureInputRelationInstance,
     lane: &FeatureInputLane,
 ) -> bool {
-    if record.scalar_refs.is_empty() || record.scalar_refs.len() > 3 {
+    if record.scalar_refs.is_empty() {
         return false;
     }
     let Some(class) = lane
@@ -1397,6 +1398,11 @@ fn relation_instance_shape_valid(
         }
         positions.push((position, scalar));
     }
+    let repeated_circle_display =
+        repeated_circle_display_shape_valid(record, &lane.scalars, &lane.names);
+    if record.scalar_refs.len() > 3 && !repeated_circle_display {
+        return false;
+    }
     let scalar_operands_match = |scalar: &crate::records::FeatureInputScalar| {
         scalar
             .operands
@@ -1411,6 +1417,10 @@ fn relation_instance_shape_valid(
                     if matches!(scalar.operands.as_slice(), [candidate]
                         if candidate.kind == first.kind
                             && candidate.entity_index == first.entity_index)))
+            || (repeated_circle_display
+                && matches!(record.operands.as_slice(), [first]
+                    if matches!(scalar.operands.as_slice(), [candidate]
+                        if candidate.kind == first.kind)))
     };
     if positions[0].1.offset != record.offset || !scalar_operands_match(positions[0].1) {
         return false;
@@ -1441,6 +1451,59 @@ fn relation_instance_shape_valid(
         }
         _ => false,
     }
+}
+
+fn repeated_circle_display_shape_valid(
+    record: &FeatureInputRelationInstance,
+    scalars: &[FeatureInputScalar],
+    names: &[FeatureInputName],
+) -> bool {
+    if record.family != crate::records::FeatureInputRelationFamily::CircleDiameter
+        || record.parameter_scalar_ref.is_some()
+        || record.display_scalar_ref.is_some()
+        || record.scalar_refs.len() < 2
+        || record.operands.len() != 1
+    {
+        return false;
+    }
+    let records = record
+        .scalar_refs
+        .iter()
+        .filter_map(|scalar_id| scalars.iter().find(|scalar| scalar.id == *scalar_id))
+        .collect::<Vec<_>>();
+    if records.len() != record.scalar_refs.len() {
+        return false;
+    }
+    if records
+        .windows(2)
+        .any(|pair| pair[1].ordinal != pair[0].ordinal.saturating_add(1))
+    {
+        return false;
+    }
+    let scalar_name_value = |scalar: &FeatureInputScalar| {
+        names
+            .iter()
+            .find(|name| name.id == scalar.name)
+            .map(|name| name.value.as_str())
+    };
+    let first = records[0];
+    let Some(first_name) = scalar_name_value(first) else {
+        return false;
+    };
+    records.iter().enumerate().all(|(index, scalar)| {
+        let [operand] = scalar.operands.as_slice() else {
+            return false;
+        };
+        scalar.role == crate::records::FeatureInputScalarRole::Display
+            && operand.kind == record.operands[0].kind
+            && scalar_name_value(scalar) == Some(first_name)
+            && records[..index].iter().all(|previous| {
+                previous
+                    .operands
+                    .first()
+                    .is_some_and(|previous| previous.entity_index != operand.entity_index)
+            })
+    })
 }
 
 #[cfg(test)]
