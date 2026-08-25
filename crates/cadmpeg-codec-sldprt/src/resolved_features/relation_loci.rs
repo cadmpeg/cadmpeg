@@ -1804,11 +1804,10 @@ fn unique_dynamic_roster_point_line_pair(
     {
         return None;
     }
-    unique_roster_point_line_pair(relation, sketch, parameter, sketch_entities)
+    unique_roster_point_line_pair(sketch, parameter, sketch_entities)
 }
 
 fn unique_roster_point_line_pair(
-    relation: &FeatureInputRelationInstance,
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
@@ -1823,16 +1822,14 @@ fn unique_roster_point_line_pair(
         .map(|(_, locus)| locus)
         .collect::<Vec<_>>();
     deduplicate_physical_loci(&mut loci, sketch_entities);
-    let solver_line_prefix = format!("{}:solver-line:", relation.feature_ref);
+    // A family-scoped point-line operand does not carry a line identity. The
+    // complete owning sketch is the semantic scope; uniqueness of the
+    // measured point/line pair is the ownership certificate. Restricting the
+    // candidates to synthetic solver lines drops ordinary profile lines.
     let lines = sketch_entities
         .iter()
         .filter(|entity| {
-            entity.sketch == *sketch
-                && entity
-                    .geometry_ref
-                    .as_deref()
-                    .is_some_and(|reference| reference.starts_with(&solver_line_prefix))
-                && matches!(entity.geometry, SketchGeometry::Line { .. })
+            entity.sketch == *sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
         })
         .collect::<Vec<_>>();
     let mut candidates = Vec::new();

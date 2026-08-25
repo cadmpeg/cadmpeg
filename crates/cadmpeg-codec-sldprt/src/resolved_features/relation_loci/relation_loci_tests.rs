@@ -412,6 +412,46 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
 }
 
 #[test]
+fn dynamic_point_line_relation_uses_unique_complete_roster_line() {
+    let sketch = SketchId("sketch".into());
+    let point = SketchEntity {
+        id: SketchEntityId("point".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some("point-marker".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(5.0, 1.0),
+        },
+    };
+    let mut line = line_entity(
+        "profile-line",
+        &sketch,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    line.native_ref = Some("profile-line-marker".into());
+    let relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
+
+    assert_eq!(
+        typed_relation_definition(
+            &relation,
+            Some(&length_parameter(1.0)),
+            &sketch,
+            &[point.clone(), line.clone()],
+            &HashMap::new(),
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::DistanceLoci {
+            first: SketchLocus::Entity(point.id),
+            second: SketchLocus::Entity(line.id),
+            parameter: ParameterId("parameter".into()),
+        })
+    );
+}
+
+#[test]
 fn dynamic_point_line_relation_with_ambiguous_geometry_stays_native() {
     let sketch = SketchId("sketch".into());
     let point = SketchEntity {
