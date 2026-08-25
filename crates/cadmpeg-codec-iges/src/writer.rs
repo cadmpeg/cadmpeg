@@ -13,7 +13,7 @@ use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
 use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
-    SurfaceGeometry,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::{PointId, ShellId, VertexId};
@@ -471,6 +471,12 @@ fn has_brep_topology(ir: &CadIr) -> bool {
 
 fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     for procedural in &ir.model.procedural_surfaces {
+        if matches!(
+            &procedural.definition,
+            ProceduralSurfaceDefinition::CurveBounded { .. }
+        ) {
+            continue;
+        }
         let surface = ir
             .model
             .surfaces

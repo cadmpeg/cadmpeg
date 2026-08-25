@@ -621,6 +621,52 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
 }
 
 #[test]
+fn curve_bounded_surface_delegates_evaluation_to_its_support() {
+    let support_id = SurfaceId("curve-bounded-support".into());
+    let bounded_id = SurfaceId("curve-bounded".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.surfaces = vec![
+        Surface {
+            id: support_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(1.0, 2.0, 3.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: bounded_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        },
+    ];
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("curve-bounded-construction".into()),
+        surface: bounded_id.clone(),
+        definition: ProceduralSurfaceDefinition::CurveBounded {
+            support: support_id,
+            boundaries: Vec::new(),
+            boundary_pcurves: Vec::new(),
+            implicit_outer: true,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &bounded_id, 0.25, 0.75),
+        Some(Point3::new(1.25, 2.75, 3.0))
+    );
+    let partials = model_surface_partials_by_id(&index, &bounded_id, 0.25, 0.75)
+        .expect("curve-bounded support evaluates");
+    assert_eq!(partials.point, Point3::new(1.25, 2.75, 3.0));
+    assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
 fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     let directrix_id = CurveId("directrix".into());
     let surface_id = SurfaceId("sweep".into());

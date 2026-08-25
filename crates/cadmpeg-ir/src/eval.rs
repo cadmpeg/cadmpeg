@@ -4036,6 +4036,9 @@ pub fn model_surface_point_by_id(
                 point: partials.point,
                 oriented_normal: None,
             }),
+            Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
+                evaluate(index, support, u, v, visiting)
+            }
             Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
                 let mut evaluation = evaluate(index, source, u, v, visiting)?;
                 let partials = model_surface_partials_by_id(index, source, u, v)?;
@@ -4275,6 +4278,9 @@ fn model_surface_mapping(
             v_scale: 1.0,
             orientation: 1.0,
         }),
+        Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
+            model_surface_mapping(index, support, u, v, visiting)
+        }
         Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
             let source = model_surface_mapping(index, source, u, v, visiting)?;
             let base = if source.offset_distance == 0.0 {

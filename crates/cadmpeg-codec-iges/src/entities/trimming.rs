@@ -4,8 +4,8 @@
 use super::composite::{bounded_nurbs_for_curve_with_tolerance, CompositeIndex};
 use super::evaluation;
 use super::geometry::{
-    entity_loss, BoundaryEndpoint, BoundaryVertexDerivation, BoundaryVertexSourceEndpoint,
-    ProjectionOutcome,
+    entity_loss, source_object, BoundaryEndpoint, BoundaryVertexDerivation,
+    BoundaryVertexSourceEndpoint, ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
@@ -13,10 +13,13 @@ use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
+    RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
@@ -979,6 +982,16 @@ pub(super) fn project(
                         ));
                         continue;
                     };
+                    if entries
+                        .get(&outer)
+                        .is_none_or(|target| target.entity_type != 142 || target.form != 0)
+                    {
+                        losses.push(entity_loss(
+                            entry,
+                            "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity",
+                        ));
+                        continue;
+                    }
                     sequences.push(outer);
                 } else if !matches!(
                     record.value(4),
@@ -1000,6 +1013,17 @@ pub(super) fn project(
                         valid = false;
                         break;
                     };
+                    if entries
+                        .get(&sequence)
+                        .is_none_or(|target| target.entity_type != 142 || target.form != 0)
+                    {
+                        losses.push(entity_loss(
+                            entry,
+                            "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity",
+                        ));
+                        valid = false;
+                        break;
+                    }
                     sequences.push(sequence);
                 }
                 (surface, sequences, has_explicit_outer, valid)
@@ -1037,6 +1061,17 @@ pub(super) fn project(
                         valid = false;
                         break;
                     };
+                    if entries
+                        .get(&sequence)
+                        .is_none_or(|target| target.entity_type != 141 || target.form != 0)
+                    {
+                        losses.push(entity_loss(
+                            entry,
+                            "bounded-surface boundary pointer does not target a Type 141 Form 0 entity",
+                        ));
+                        valid = false;
+                        break;
+                    }
                     if boundaries.get(&sequence).is_some_and(|boundary| {
                         (representation == 0
                             && boundary
@@ -1084,6 +1119,10 @@ pub(super) fn project(
         let mut candidate_boundary_vertex_derivations = Vec::new();
         let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id);
         let periodic_parameters = periodic_surface_parameters(&support_geometry);
+        let implicit_outer_domain =
+            trimmed_surface && !has_explicit_outer && !boundary_sequences.is_empty();
+        let mut implicit_boundary_curves = Vec::new();
+        let mut implicit_boundary_pcurves = Vec::new();
         let mut loop_ids = Vec::new();
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
@@ -1223,6 +1262,9 @@ pub(super) fn project(
             if !valid {
                 break;
             }
+            if implicit_outer_domain {
+                implicit_boundary_curves.extend(items.iter().map(|item| item.model_curve.clone()));
+            }
             let traversal = |item: &BoundaryItem| {
                 if item.segment.sense == Sense::Forward {
                     (item.start, item.end)
@@ -1315,6 +1357,9 @@ pub(super) fn project(
                         let id = PcurveId(format!(
                             "iges:model:pcurve#{stem}:{boundary_index}:{segment_index}:{pcurve_index}"
                         ));
+                        if implicit_outer_domain {
+                            implicit_boundary_pcurves.push(id.clone());
+                        }
                         candidate.model_mut().pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
@@ -1365,10 +1410,42 @@ pub(super) fn project(
         if !valid {
             continue;
         }
+        let face_surface_id = if implicit_outer_domain {
+            let derived_surface_id = SurfaceId(format!(
+                "iges:model:surface#D{}:implicit-outer",
+                entry.sequence
+            ));
+            candidate.model_mut().surfaces.push(Surface {
+                id: derived_surface_id.clone(),
+                geometry: support_geometry.clone(),
+                source_object: Some(source_object(entry)),
+            });
+            candidate
+                .model_mut()
+                .procedural_surfaces
+                .push(ProceduralSurface {
+                    id: ProceduralSurfaceId(format!(
+                        "iges:model:procedural-surface#D{}:implicit-outer",
+                        entry.sequence
+                    )),
+                    surface: derived_surface_id.clone(),
+                    definition: ProceduralSurfaceDefinition::CurveBounded {
+                        support: surface_id.clone(),
+                        boundaries: implicit_boundary_curves,
+                        boundary_pcurves: implicit_boundary_pcurves,
+                        implicit_outer: true,
+                    },
+                    cache_fit_tolerance: None,
+                    record_bounds: support_parameter_bounds,
+                });
+            derived_surface_id
+        } else {
+            surface_id
+        };
         candidate.model_mut().faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
-            surface: surface_id,
+            surface: face_surface_id,
             sense: Sense::Forward,
             loops: loop_ids,
             name: None,

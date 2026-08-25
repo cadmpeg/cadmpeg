@@ -5,8 +5,10 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::draft::ModelDraft;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, PcurveGeometry, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, SurfaceId, VertexId};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, PcurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, EdgeId, PcurveId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Sense, Vertex};
 use cadmpeg_ir::units::Units;
@@ -560,6 +562,55 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         loop_.boundary_role,
         cadmpeg_ir::topology::LoopBoundaryRole::Inner
     );
+    assert_eq!(face.surface.0, "iges:model:surface#D15:implicit-outer");
+    let procedural = result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|surface| surface.surface == face.surface)
+        .unwrap();
+    match &procedural.definition {
+        ProceduralSurfaceDefinition::CurveBounded {
+            support,
+            boundaries,
+            boundary_pcurves,
+            implicit_outer,
+        } => {
+            assert_eq!(support.0, "iges:model:surface#D1");
+            assert_eq!(boundaries, &[CurveId("iges:model:curve#D9".into())]);
+            assert_eq!(
+                boundary_pcurves,
+                &[PcurveId("iges:model:pcurve#D15:0:0:0".into())]
+            );
+            assert!(*implicit_outer);
+        }
+        definition => panic!("unexpected implicit-domain definition: {definition:?}"),
+    }
+}
+
+#[test]
+fn decode_rejects_a_trimmed_surface_pointer_to_a_non_type_142_entity() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_with_boundaries(
+                "106,1,5,0,0,0,1,0,1,1,0,1,0,0;",
+                "144,1,1,1,5,13;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .any(|face| face.id.0 == "iges:model:face#D15"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]
@@ -575,6 +626,29 @@ fn decode_accepts_independent_boundary_entities() {
         "{:#?}",
         result.report().losses
     );
+}
+
+#[test]
+fn decode_rejects_a_bounded_surface_pointer_to_a_non_type_141_entity() {
+    let source = String::from_utf8(parametrically_bounded_plane_file()).unwrap();
+    let source = source.replace("143,1,1,1,7;", "143,1,1,1,5;");
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(source.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .any(|face| face.id.0 == "iges:model:face#D9"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]
