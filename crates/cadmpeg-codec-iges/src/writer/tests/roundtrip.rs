@@ -11,7 +11,10 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::SourceFidelity;
 use cadmpeg_test_support::golden::Harness;
 
-use crate::test_support::{hyperbola_surface_of_revolution_file, tabulated_hyperbola_file};
+use crate::test_support::{
+    hyperbola_surface_of_revolution_file, placed_tabulated_hyperbola_file,
+    placed_tabulated_line_file, tabulated_hyperbola_file,
+};
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 /// Extension of the committed fixture inputs (matches `golden_tests`).
@@ -223,6 +226,211 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                 "{version:?}: source={source_point:?} round_trip={round_point:?}"
             );
         }
+        assert!(
+            round_trip
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != crate::loss::IgesLossCode::EntityNotProjected.kind()),
+            "{version:?}: {:#?}",
+            round_trip.report().losses
+        );
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        assert!(
+            validation.is_ok(),
+            "{version:?}: {:#?}",
+            validation.findings
+        );
+    }
+}
+
+#[test]
+fn semantic_writer_round_trips_a_placed_type122_directrix() {
+    const EPS_PLACED_EXTRUSION_ROUND_TRIP: f64 = 1.0e-10;
+
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
+        let original = IgesCodec
+            .decode(
+                &mut Cursor::new(placed_tabulated_hyperbola_file()),
+                &DecodeOptions::default(),
+            )
+            .expect("placed hyperbola tabulated fixture decodes");
+        let plan = Encoder::plan(
+            &IgesEncoder::new(IgesWriteOptions { version }),
+            EncodeInput {
+                ir: original.ir(),
+                fidelity: None,
+            },
+        )
+        .expect("placed Type 122 has an exact semantic writer path");
+        let mut produced = Vec::new();
+        let report = plan
+            .write_to(&mut produced)
+            .expect("placed Type 122 output writes");
+        assert!(
+            report.losses.iter().all(|loss| {
+                loss.code != crate::loss::IgesLossCode::ProceduralReduced.kind()
+                    && loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+            }),
+            "{version:?}: {:#?}",
+            report.losses
+        );
+        let round_trip = IgesCodec
+            .decode(&mut Cursor::new(produced), &DecodeOptions::default())
+            .expect("placed Type 122 output decodes");
+        let source_surface = original
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| {
+                original
+                    .ir()
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .any(|procedural| {
+                        procedural.surface == surface.id
+                            && matches!(
+                                &procedural.definition,
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                            )
+                    })
+            })
+            .expect("source placed extrusion surface");
+        let round_surface = round_trip
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| {
+                round_trip
+                    .ir()
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .any(|procedural| {
+                        procedural.surface == surface.id
+                            && matches!(
+                                &procedural.definition,
+                                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+                            )
+                    })
+            })
+            .expect("round-trip placed extrusion surface");
+        let source_range = original
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.surface == source_surface.id)
+            .and_then(|procedural| match &procedural.definition {
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+                    parameter_interval: Some(range),
+                    ..
+                } => Some(*range),
+                _ => None,
+            })
+            .expect("source placed extrusion interval");
+        let round_range = round_trip
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.surface == round_surface.id)
+            .and_then(|procedural| match &procedural.definition {
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+                    parameter_interval: Some(range),
+                    ..
+                } => Some(*range),
+                _ => None,
+            })
+            .expect("round-trip placed extrusion interval");
+        let source_index = cadmpeg_ir::index::ModelIndex::new(original.ir());
+        let round_index = cadmpeg_ir::index::ModelIndex::new(round_trip.ir());
+        for fraction in [0.25, 0.5, 0.75] {
+            let source_parameter = source_range[0] + fraction * (source_range[1] - source_range[0]);
+            let round_parameter = round_range[0] + fraction * (round_range[1] - round_range[0]);
+            let source_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                &source_index,
+                &source_surface.id,
+                source_parameter,
+                1.0,
+            )
+            .expect("source placed extrusion evaluates");
+            let round_point = cadmpeg_ir::eval::model_surface_point_by_id(
+                &round_index,
+                &round_surface.id,
+                round_parameter,
+                1.0,
+            )
+            .expect("round-trip placed extrusion evaluates");
+            assert!(
+                source_point.distance(round_point) < EPS_PLACED_EXTRUSION_ROUND_TRIP,
+                "{version:?}: source={source_point:?} round_trip={round_point:?}"
+            );
+        }
+        assert!(
+            round_trip
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != crate::loss::IgesLossCode::EntityNotProjected.kind()),
+            "{version:?}: {:#?}",
+            round_trip.report().losses
+        );
+        let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
+        assert!(
+            validation.is_ok(),
+            "{version:?}: {:#?}",
+            validation.findings
+        );
+    }
+}
+
+#[test]
+fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0, IgesVersion::V5_3] {
+        let original = IgesCodec
+            .decode(
+                &mut Cursor::new(placed_tabulated_line_file()),
+                &DecodeOptions::default(),
+            )
+            .expect("placed line tabulated fixture decodes");
+        let plan = Encoder::plan(
+            &IgesEncoder::new(IgesWriteOptions { version }),
+            EncodeInput {
+                ir: original.ir(),
+                fidelity: None,
+            },
+        )
+        .expect("placed NURBS Type 122 has an exact semantic writer path");
+        let mut produced = Vec::new();
+        let report = plan
+            .write_to(&mut produced)
+            .expect("placed NURBS Type 122 output writes");
+        assert!(
+            report.losses.iter().all(
+                |loss| loss.code.taxonomy() != cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+            ),
+            "{version:?}: {:#?}",
+            report.losses
+        );
+        let round_trip = IgesCodec
+            .decode(&mut Cursor::new(produced), &DecodeOptions::default())
+            .expect("placed NURBS Type 122 output decodes");
+        assert!(
+            round_trip
+                .ir()
+                .model
+                .surfaces
+                .iter()
+                .any(|surface| matches!(
+                    surface.geometry,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_)
+                )),
+            "{version:?}: no NURBS tabulated surface"
+        );
         assert!(
             round_trip
                 .report()

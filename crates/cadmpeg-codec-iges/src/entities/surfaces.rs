@@ -1204,13 +1204,22 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "generatrix endpoint is not numeric"));
             continue;
         };
-        if entry.transform != 0 {
-            losses.push(entity_loss(
-                entry,
-                "placed tabulated cylinders require transformed directrix projection",
-            ));
-            continue;
-        }
+        let transform = match resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            global.real_precision(),
+            &mut BTreeSet::new(),
+            ctx,
+        ) {
+            Ok(transform) => transform,
+            Err(message) => {
+                losses.push(entity_loss(entry, message));
+                continue;
+            }
+        };
+        let directrix_id = CurveId(format!("iges:model:curve#D{directrix_sequence}"));
         let Some((directrix, interval)) =
             bounded_nurbs(ir, directrix_sequence, ctx, &composite_index)
         else {
@@ -1231,7 +1240,8 @@ pub(super) fn project(
                 losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
                 continue;
             };
-            let target = Point3::new(x * factor, y * factor, z * factor);
+            let start = transform.point(start);
+            let target = transform.point(Point3::new(x * factor, y * factor, z * factor));
             let direction = target.vector_from(start);
             if !direction.norm().is_finite() || direction.norm() <= 0.0 {
                 losses.push(entity_loss(
@@ -1240,6 +1250,23 @@ pub(super) fn project(
                 ));
                 continue;
             }
+            let procedural_directrix = if entry.transform == 0 {
+                directrix_id
+            } else {
+                let placed_id = CurveId(format!(
+                    "iges:model:curve#D{}-placed-directrix",
+                    entry.sequence
+                ));
+                ir.model.curves.push(Curve {
+                    id: placed_id.clone(),
+                    geometry: CurveGeometry::Transformed {
+                        basis: Box::new(directrix_geometry),
+                        transform: transform.body_transform(),
+                    },
+                    source_object: Some(source_object(entry)),
+                });
+                placed_id
+            };
             let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
             let procedural_id =
                 ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence));
@@ -1254,7 +1281,7 @@ pub(super) fn project(
                 id: procedural_id,
                 surface: surface_id,
                 definition: ProceduralSurfaceDefinition::Extrusion {
-                    directrix: CurveId(format!("iges:model:curve#D{directrix_sequence}")),
+                    directrix: procedural_directrix,
                     parameter_interval: Some(interval),
                     direction,
                     native_position: Some(target),
@@ -1266,17 +1293,23 @@ pub(super) fn project(
             decoded.insert(entry.sequence);
             continue;
         };
+        let mut placed_directrix = directrix;
+        if entry.transform != 0 {
+            for point in &mut placed_directrix.control_points {
+                *point = transform.point(*point);
+            }
+        }
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
-            directrix.degree,
-            &directrix.knots,
-            &directrix.control_points,
-            directrix.weights.as_deref(),
+            placed_directrix.degree,
+            &placed_directrix.knots,
+            &placed_directrix.control_points,
+            placed_directrix.weights.as_deref(),
             interval[0],
         ) else {
             losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
             continue;
         };
-        let target = Point3::new(x * factor, y * factor, z * factor);
+        let target = transform.point(Point3::new(x * factor, y * factor, z * factor));
         let direction = target.vector_from(start);
         if !direction.norm().is_finite() || direction.norm() <= 0.0 {
             losses.push(entity_loss(
@@ -1285,34 +1318,48 @@ pub(super) fn project(
             ));
             continue;
         }
-        let control_points = directrix
+        let control_points = placed_directrix
             .control_points
             .iter()
             .flat_map(|point| [*point, point.translated(direction, 1.0)])
             .collect::<Vec<_>>();
-        let Ok(u_count) = u32::try_from(directrix.control_points.len()) else {
+        let Ok(u_count) = u32::try_from(placed_directrix.control_points.len()) else {
             losses.push(entity_loss(entry, "directrix pole count exceeds u32"));
             continue;
         };
-        let weights = directrix.weights.as_ref().map(|weights| {
+        let weights = placed_directrix.weights.as_ref().map(|weights| {
             weights
                 .iter()
                 .flat_map(|weight| [*weight, *weight])
                 .collect()
         });
+        let procedural_directrix = if entry.transform == 0 {
+            directrix_id
+        } else {
+            let placed_id = CurveId(format!(
+                "iges:model:curve#D{}-placed-directrix",
+                entry.sequence
+            ));
+            ir.model.curves.push(Curve {
+                id: placed_id.clone(),
+                geometry: CurveGeometry::Nurbs(placed_directrix.clone()),
+                source_object: Some(source_object(entry)),
+            });
+            placed_id
+        };
         let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Nurbs(NurbsSurface {
-                u_degree: directrix.degree,
+                u_degree: placed_directrix.degree,
                 v_degree: 1,
-                u_knots: directrix.knots,
+                u_knots: placed_directrix.knots,
                 v_knots: vec![0.0, 0.0, 1.0, 1.0],
                 u_count,
                 v_count: 2,
                 control_points,
                 weights,
-                u_periodic: directrix.periodic,
+                u_periodic: placed_directrix.periodic,
                 v_periodic: false,
             }),
             source_object: Some(source_object(entry)),
@@ -1321,7 +1368,7 @@ pub(super) fn project(
             id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
             surface: surface_id,
             definition: ProceduralSurfaceDefinition::Extrusion {
-                directrix: CurveId(format!("iges:model:curve#D{directrix_sequence}")),
+                directrix: procedural_directrix,
                 parameter_interval: Some(interval),
                 direction,
                 native_position: Some(target),

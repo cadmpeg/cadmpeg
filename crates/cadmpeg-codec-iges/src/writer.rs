@@ -242,6 +242,22 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         for surface in surfaces {
             append_surface_entities(&mut entities, ir, &surface.geometry)?;
         }
+        for directrix in ir.model.surfaces.iter().filter_map(|surface| {
+            let SurfaceGeometry::Procedural { construction } = &surface.geometry else {
+                return None;
+            };
+            ir.model
+                .procedural_surfaces
+                .iter()
+                .find(|procedural| procedural.id == *construction)
+                .and_then(|procedural| match &procedural.definition {
+                    ProceduralSurfaceDefinition::Revolution { directrix, .. }
+                    | ProceduralSurfaceDefinition::Extrusion { directrix, .. } => Some(directrix),
+                    _ => None,
+                })
+        }) {
+            mark_curve_descendants(ir, directrix, &mut consumed_curves, &mut BTreeSet::new())?;
+        }
         let mut edges = ir.model.edges.iter().collect::<Vec<_>>();
         edges.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for edge in edges {

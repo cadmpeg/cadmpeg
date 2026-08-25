@@ -812,6 +812,185 @@ fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
 }
 
 #[test]
+fn decode_places_a_tabulated_surface_and_its_exact_directrix() {
+    const EPS_PLACED_TABULATED_POINT: f64 = 1.0e-12;
+
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let fixtures = [
+        ("5.3", placed_tabulated_hyperbola_file()),
+        (
+            "4.0",
+            placed_tabulated_hyperbola_file_with_global(global_v4),
+        ),
+        (
+            "5.0",
+            placed_tabulated_hyperbola_file_with_global(global_v5),
+        ),
+    ];
+    for (version, bytes) in fixtures {
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            result.ir().source.as_ref().unwrap().attributes["iges_version"],
+            version
+        );
+        let surface = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.0 == "iges:model:surface#D5")
+            .expect("placed tabulated surface");
+        let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction } = &surface.geometry
+        else {
+            panic!("expected a construction-backed placed tabulated surface");
+        };
+        let procedural = result
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.id == *construction)
+            .expect("placed tabulated construction");
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            parameter_interval: Some(parameter_interval),
+            direction,
+            native_position: Some(native_position),
+            ..
+        } = &procedural.definition
+        else {
+            panic!("expected an exact placed extrusion definition");
+        };
+        assert_eq!(directrix.0, "iges:model:curve#D5-placed-directrix");
+        assert!(
+            native_position.distance(Point3::new(
+                13.086_161_269_630_487,
+                23.525_603_580_931_404,
+                32.0,
+            )) < EPS_PLACED_TABULATED_POINT
+        );
+        let directrix_geometry = &result
+            .ir()
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *directrix)
+            .expect("placed hyperbola directrix")
+            .geometry;
+        assert!(matches!(
+            directrix_geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Transformed { .. }
+        ));
+        let parameter = parameter_interval[0].midpoint(parameter_interval[1]);
+        let directrix_point = cadmpeg_ir::eval::curve_point(directrix_geometry, parameter)
+            .expect("placed hyperbola directrix evaluates");
+        let index = cadmpeg_ir::index::ModelIndex::new(result.ir());
+        let surface_point =
+            cadmpeg_ir::eval::model_surface_point_by_id(&index, &surface.id, parameter, 1.0)
+                .expect("placed hyperbola tabulated surface evaluates");
+        assert!(
+            surface_point.distance(directrix_point.translated(*direction, 1.0))
+                < EPS_PLACED_TABULATED_POINT
+        );
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+            "{:#?}",
+            result.report().losses
+        );
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let fixtures = [
+        ("5.3", placed_tabulated_line_file()),
+        ("4.0", placed_tabulated_line_file_with_global(global_v4)),
+        ("5.0", placed_tabulated_line_file_with_global(global_v5)),
+    ];
+    for (version, bytes) in fixtures {
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            result.ir().source.as_ref().unwrap().attributes["iges_version"],
+            version
+        );
+        let surface = result
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.0 == "iges:model:surface#D5")
+            .expect("placed NURBS tabulated surface");
+        assert!(matches!(
+            surface.geometry,
+            cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(_)
+        ));
+        let procedural = result
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.surface == surface.id)
+            .expect("placed NURBS tabulated construction");
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            direction,
+            native_position: Some(native_position),
+            ..
+        } = &procedural.definition
+        else {
+            panic!("expected an exact placed NURBS extrusion definition");
+        };
+        assert_eq!(directrix.0, "iges:model:curve#D5-placed-directrix");
+        assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0));
+        assert_eq!(*native_position, Point3::new(10.0, 20.0, 32.0));
+        let directrix_geometry = &result
+            .ir()
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *directrix)
+            .expect("placed NURBS directrix")
+            .geometry;
+        assert!(matches!(
+            directrix_geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+        ));
+        assert_eq!(
+            cadmpeg_ir::eval::curve_point(directrix_geometry, 0.5),
+            Some(Point3::new(10.5, 20.0, 30.0))
+        );
+        assert_eq!(
+            cadmpeg_ir::eval::surface_point(&surface.geometry, 0.5, 0.5),
+            Some(Point3::new(10.5, 20.0, 31.0))
+        );
+        assert!(
+            result
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+            "{:#?}",
+            result.report().losses
+        );
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
     let result = IgesCodec
         .decode(&mut Cursor::new(plane_file()), &DecodeOptions::default())
