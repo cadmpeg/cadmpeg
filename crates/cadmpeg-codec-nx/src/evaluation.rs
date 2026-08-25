@@ -339,6 +339,10 @@ fn rederived_body_census(
             FeatureDefinition::DeleteFaceUnresolved => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
+            FeatureDefinition::MirrorFaceUnresolved if feature.outputs.is_empty() => {}
+            FeatureDefinition::MirrorFaceUnresolved => {
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
+            }
             FeatureDefinition::Loft { op, .. } => {
                 apply_complete_boolean_outputs(
                     feature,
@@ -675,6 +679,7 @@ fn suppression_is_body_census_invariant(
                     | FeatureDefinition::Thicken { .. }
                     | FeatureDefinition::Draft { .. }
                     | FeatureDefinition::DeleteFaceUnresolved
+                    | FeatureDefinition::MirrorFaceUnresolved
                     | FeatureDefinition::ReplaceFace { .. }
             ))
 }

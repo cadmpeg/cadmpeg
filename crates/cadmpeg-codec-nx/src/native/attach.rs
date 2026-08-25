@@ -5842,6 +5842,7 @@ fn body_writing_unresolved_feature_definition(
             radius: RadiusSpec::Unresolved { form: None },
         }),
         "DELETE FACE" => Some(FeatureDefinition::DeleteFaceUnresolved),
+        "MIRROR_FACE" => Some(FeatureDefinition::MirrorFaceUnresolved),
         "THREADS" => Some(FeatureDefinition::ThreadUnresolved),
         "DETAILED_THREAD" => Some(FeatureDefinition::DetailedThreadUnresolved),
         _ => None,

@@ -813,6 +813,16 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The body-write body identity and result-topology identity are present, but no unique model-body relation is admitted. Treating the identity as a current body would assign an output without a body record.
 
+### OM-57. `MIRROR_FACE` construction roles
+
+**Question.** Which serialized fields define the source faces, mirror plane, and copy or replace mode of a body-writing `MIRROR_FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 defines a body-writing `MIRROR_FACE` record as a body-affecting face-mirror construction. The label and body-write frame establish the family, and the result topology retains the body identity, but the bounded object-index slots do not assign source-face, mirror-plane, or result-mode roles.
+
+**Need.** We must identify the source faces, mirror plane, and result mode to construct a complete neutral face-mirror operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the admitted object-index and payload lanes do not assign unique source-face, mirror-plane, or copy-or-replace roles.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream

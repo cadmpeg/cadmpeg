@@ -1597,6 +1597,8 @@ pub enum FeatureDefinition {
     },
     /// Body-affecting face-motion family whose selected faces and motion law remain unresolved.
     MoveFaceUnresolved,
+    /// Body-affecting face-mirror family whose source and plane roles remain unresolved.
+    MirrorFaceUnresolved,
     /// Rigid translation or rotation of selected bodies, optionally creating copies.
     MoveBody {
         /// Bodies transformed by the operation.
@@ -1740,6 +1742,7 @@ impl FeatureDefinition {
             Self::LinkedFaceUnresolved => Some("linked face"),
             Self::FillHoleUnresolved => Some("fill hole"),
             Self::MoveFaceUnresolved => Some("move face"),
+            Self::MirrorFaceUnresolved => Some("mirror face"),
             Self::MoveObjectUnresolved => Some("move object"),
             Self::CylinderUnresolved => Some("cylinder"),
             Self::ConeUnresolved => Some("cone"),

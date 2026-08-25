@@ -430,6 +430,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::DetailedThreadUnresolved => "detailed thread",
             FeatureDefinition::DraftUnresolved => "draft",
             FeatureDefinition::DeleteFaceUnresolved => "delete face",
+            FeatureDefinition::MirrorFaceUnresolved => "mirror face",
             _ => continue,
         };
         *unresolved_feature_families.entry(family).or_default() += 1;

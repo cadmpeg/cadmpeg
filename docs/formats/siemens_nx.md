@@ -1908,6 +1908,11 @@ relation remains unresolved. It retains the `BrepUnresolved` family and its
 feature-result topology; a BREP record without the body-write frame remains
 native.
 
+The `MIRROR_FACE` operation label with a body-write frame identifies a
+body-affecting face-mirror construction. Its source-face, mirror-plane, and
+copy or replace roles remain unresolved until the serialized construction
+relations assign them. A record without the body-write frame remains native.
+
 The `DATUM_PLANE` and `EXTRACT_DATUM_PLANE` operation labels identify datum-plane
 history operations. Their model-space frame remains unresolved until the
 operation's scalar-pair roles and coordinate space are established.
