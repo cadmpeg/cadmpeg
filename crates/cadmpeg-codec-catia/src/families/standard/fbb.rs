@@ -394,6 +394,15 @@ pub(crate) fn parse_fbb_edge_tables(
         .map(|[solution]| solution)
 }
 
+fn read_fbb_handle(bytes: &[u8], position: usize, width: usize) -> Option<u32> {
+    match width {
+        1 => bytes.get(position).copied().map(u32::from),
+        2 => View::u16_be_at(bytes, position).map(u32::from),
+        3 => View::u24_be_at(bytes, position),
+        _ => None,
+    }
+}
+
 pub(crate) fn parse_fbb_edge_tables_width(
     bytes: &[u8],
     mut position: usize,
@@ -428,10 +437,7 @@ pub(crate) fn parse_fbb_edge_tables_width(
             }
             let mut handles = Vec::with_capacity(arity);
             for _ in 0..arity {
-                let mut encoded = [0u8; 4];
-                encoded[4 - handle_width..]
-                    .copy_from_slice(bytes.get(position..position + handle_width)?);
-                handles.push(u32::from_be_bytes(encoded));
+                handles.push(read_fbb_handle(bytes, position, handle_width)?);
                 position += handle_width;
             }
             rows.push(EdgeRow {
@@ -670,10 +676,7 @@ fn parse_edge_tables_scoped_width(
             }
             let mut handles = Vec::with_capacity(arity);
             for _ in 0..arity {
-                let mut encoded = [0u8; 4];
-                encoded[4 - handle_width..]
-                    .copy_from_slice(bytes.get(position..position + handle_width)?);
-                handles.push(u32::from_be_bytes(encoded));
+                handles.push(read_fbb_handle(bytes, position, handle_width)?);
                 position += handle_width;
             }
             rows.push(EdgeRow {
@@ -933,12 +936,7 @@ pub(crate) fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Opt
         let handle = match width {
             1 => u32::from(*bytes.get(position)?),
             2 => u32::from(View::u16_be_at(bytes, position)?),
-            3 => u32::from_be_bytes([
-                0,
-                *bytes.get(position)?,
-                *bytes.get(position + 1)?,
-                *bytes.get(position + 2)?,
-            ]),
+            3 => View::u24_be_at(bytes, position)?,
             _ => return None,
         };
         handles.push(handle);

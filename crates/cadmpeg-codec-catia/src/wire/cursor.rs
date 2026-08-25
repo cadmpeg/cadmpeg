@@ -44,7 +44,7 @@ impl<'a> Cursor<'a> {
                 let b0 = view.u8()?;
                 let b1 = view.u8()?;
                 let b2 = view.u8()?;
-                u32::from_le_bytes([b0, b1, b2, 0])
+                View::u24_le_at(&[b0, b1, b2], 0)?
             }
             0x30 if extended => u32::from(view.u16_le()?) << 8,
             0x28 if extended => {

@@ -344,12 +344,7 @@ pub fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Option<Vec<
             && source[position + vertex_roster::ZERO_RUN..position + vertex_roster::LEN]
                 == [0, 0, 0]
         {
-            let identity = u32::from_le_bytes([
-                source[position + vertex_roster::TAG],
-                source[position + vertex_roster::TAG + 1],
-                source[position + vertex_roster::TAG + 2],
-                0,
-            ]);
+            let identity = View::u24_le_at(source, position + vertex_roster::TAG)?;
             if identities
                 .last()
                 .is_some_and(|previous| *previous >= identity)
@@ -586,8 +581,7 @@ fn standard_curve_support_row_at(
     const LINE: [u8; 5] = [0x00, 0x02, 0x00, 0x33, 0x36];
     const CIRCLE: [u8; 5] = [0x00, 0x12, 0x00, 0x33, 0x37];
 
-    let tag_bytes = brep.get(position + 1..position + 4)?;
-    let tag = u32::from_le_bytes([tag_bytes[0], tag_bytes[1], tag_bytes[2], 0]);
+    let tag = View::u24_le_at(brep, position + 1)?;
     let header = brep.get(position + 4..position + 9);
     let (geometry, refs) = if header == Some(&LINE) {
         (StandardCurveGeometry::Line, position + 9)
