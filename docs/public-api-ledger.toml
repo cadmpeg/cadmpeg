@@ -322,7 +322,7 @@ item = "cadmpeg_ir::FeatureDefinition::CutWithSurface::reverse: bool -> Option<b
 reason = "optional native side flag; omit when the source does not declare reverse"
 
 [[change]]
-commit = "a88cd50e654250e974238d29d95d67cae17825df"
+commit = "4f1a3cd86fcbd8652b693f7e6e77df216f36a1b5"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::features::{SheetMetalFlangeWidth::TwoSidesPerEdge,SheetMetalFlangeTwoSidedWidth}"
@@ -434,28 +434,28 @@ item = "cadmpeg_core::decode::View::utf16_le"
 reason = "sequential UTF-16LE reader paired with View::utf16le_at"
 
 [[change]]
-commit = "9ceb2cb18"
+commit = "9ceb2cb18edf7bbcd3657921dfc5c16ada833400"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::{SubdVertex::secondary_grips,SubdGripDirection,SubdGripWedge,SubdSecondaryGrip,SubdVertexGripLayout}"
 reason = "F3D T-spline control cages expose typed secondary-grip topology and compass-anchored wedge layouts"
 
 [[change]]
-commit = "97fd619b1"
+commit = "97fd619b1e3e3ce1fe350e8a8ad74a586aa18e78"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::SubdEdge::knot_interval"
 reason = "F3D T-spline edge records expose their positive knot interval without conflating it with crease sharpness"
 
 [[change]]
-commit = "0ef951c2d"
+commit = "0ef951c2d48ab97721bd89109a52a8b2183bc126"
 crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::geometry::LawExpression::Text"
 reason = "preserve serializer-owned string law expressions in revision-gated sweep carriers"
 
 [[change]]
-commit = "943468957"
+commit = "9434689579c9ac7b44f0f0720ce4e44710eaa192"
 crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::SweepRevisionForm::tail_parameterization"
