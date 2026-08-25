@@ -480,6 +480,11 @@ current levels require those matrices and representative fixtures.
   edge's face carriers, both consolidated pcurves bind to the corresponding
   face coedges. The partner face receives the uniquely selected free-form
   carrier, and the edge construction uses the two face surfaces directly.
+  An explicit class-`0x20` support identity that equals one unique standard
+  `00 33` carrier tag uses that carrier's stored chart directly. Its pcurve
+  endpoint lifts must select the same serialized edge endpoints before the
+  edge or face-side binding is admitted; duplicate tags, unknown carriers,
+  and failed lifts remain unbound.
   Opposite edge or coedge traversal reverses the corresponding pcurve
   parameterization. A missing or multiply matching edge, support carrier, face
   carrier, or coedge remains unbound.

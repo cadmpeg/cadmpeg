@@ -996,6 +996,51 @@ fn freeform_surface_source(
     }
 }
 
+/// Index standard carrier surfaces by their serialized carrier tag.
+///
+/// A consolidated pcurve support id is admitted as a standard carrier only
+/// when that tag selects one decoded surface with known geometry. Duplicate
+/// tags and unknown geometry remain explicitly unresolved; an allocation id
+/// must not choose a face-local row by emission order.
+fn standard_carrier_surface_ids(ir: &CadIr) -> HashMap<u32, Option<SurfaceId>> {
+    let mut by_tag = HashMap::new();
+    for surface in &ir.model.surfaces {
+        let Some(source) = surface.source_object.as_ref() else {
+            continue;
+        };
+        if source.format != "catia" {
+            continue;
+        }
+        let Some(tag) = source
+            .object_id
+            .strip_prefix("cgm-carrier:")
+            .and_then(|value| u32::from_str_radix(value, 16).ok())
+        else {
+            continue;
+        };
+        let candidate = (!matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
+            .then(|| surface.id.clone());
+        by_tag
+            .entry(tag)
+            .and_modify(|selected: &mut Option<SurfaceId>| *selected = None)
+            .or_insert(candidate);
+    }
+    by_tag
+}
+
+fn standard_carrier_endpoint_loci(
+    pcurve: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+    range: [f64; 2],
+) -> Option<[Point3; 2]> {
+    let start = cadmpeg_ir::eval::pcurve_uv(pcurve, range[0])?;
+    let end = cadmpeg_ir::eval::pcurve_uv(pcurve, range[1])?;
+    Some([
+        cadmpeg_ir::eval::surface_point(surface, start.u, start.v)?,
+        cadmpeg_ir::eval::surface_point(surface, end.u, end.v)?,
+    ])
+}
+
 /// Transfer every exact consolidated line carrier independently of its parameter chart.
 fn append_consolidated_line_profiles(
     ir: &mut CadIr,
@@ -1415,6 +1460,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
         .collect::<HashMap<_, _>>();
 
     let mut surface_ids = HashMap::<ConsolidatedCarrierKey, SurfaceId>::new();
+    let standard_carrier_surfaces = standard_carrier_surface_ids(ir);
     let point_positions = ir
         .model
         .points
@@ -1540,7 +1586,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             data, records,
         ),
     );
-    while let Some(resolved) = pending.pop_front() {
+    while let Some(mut resolved) = pending.pop_front() {
         let Some(run) = complete_runs.get(&resolved.block.pcurves[0].pos) else {
             continue;
         };
@@ -1549,7 +1595,41 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
             pcurve: None,
             pcurve_parameter_range: None,
         });
+        let mut standard_endpoint_loci = None;
         for (side, binding) in resolved.supports.iter().enumerate() {
+            let pcurve = &resolved.block.pcurves[side];
+            if let Some(surface_id) = standard_carrier_surfaces.get(&pcurve.support_id) {
+                let Some(surface_id) = surface_id else {
+                    continue;
+                };
+                let Some(surface_geometry) = ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *surface_id)
+                    .map(|surface| &surface.geometry)
+                else {
+                    continue;
+                };
+                let Some(geometry) =
+                    consolidated_jet_pcurve(pcurve, &ConsolidatedCarrierChart::Identity)
+                else {
+                    continue;
+                };
+                if standard_endpoint_loci.is_none() {
+                    standard_endpoint_loci = standard_carrier_endpoint_loci(
+                        &geometry,
+                        surface_geometry,
+                        resolved.block.parameters.range,
+                    );
+                }
+                sides[side] = IntcurveSupportSide {
+                    surface: Some(surface_id.clone()),
+                    pcurve: Some(geometry),
+                    pcurve_parameter_range: None,
+                };
+                continue;
+            }
             if let Some(
                 crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier {
                     pos,
@@ -1621,7 +1701,6 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         id
                     }
                 };
-                let pcurve = &resolved.block.pcurves[side];
                 let chart = ConsolidatedCarrierChart::Identity;
                 let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart) else {
                     continue;
@@ -1774,7 +1853,6 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 id
             };
 
-            let pcurve = &resolved.block.pcurves[side];
             let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart) else {
                 continue;
             };
@@ -1783,6 +1861,9 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 pcurve: Some(geometry),
                 pcurve_parameter_range: None,
             };
+        }
+        if resolved.endpoint_loci.is_none() {
+            resolved.endpoint_loci = standard_endpoint_loci;
         }
         let resolved_sides = sides
             .iter()
@@ -3015,6 +3096,85 @@ mod tests {
         .expect("reversed pcurve start");
         assert_eq!([start.u, start.v], [0.5, 1.0]);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
+    }
+
+    #[test]
+    fn consolidated_pcurve_uses_unique_standard_carrier_tag() {
+        let bytes =
+            crate::test_support::a5_native_edge_run_stream_with_support(6, 139, 142, 0x1234);
+        let mut ir = CadIr::empty(Units::default());
+        let surface_id = SurfaceId("standard-carrier".to_string());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
+        });
+
+        let counts = append_resolved_consolidated_surface_curves(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
+            &[],
+            &[],
+        );
+
+        assert_eq!(counts.standard_edges, 0);
+        let [ProceduralCurve {
+            definition:
+                ProceduralCurveDefinition::Intersection { context, .. }
+                | ProceduralCurveDefinition::SurfaceCurve { context, .. },
+            ..
+        }] = ir.model.procedural_curves.as_slice()
+        else {
+            panic!("one consolidated surface curve");
+        };
+        assert!(context
+            .sides
+            .iter()
+            .all(|side| { side.surface.as_ref() == Some(&surface_id) && side.pcurve.is_some() }));
+        let start = cadmpeg_ir::eval::pcurve_uv(
+            context.sides[0].pcurve.as_ref().expect("standard pcurve"),
+            0.0,
+        )
+        .expect("standard pcurve start");
+        assert_eq!(start, Point2::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn standard_carrier_index_rejects_duplicate_or_unknown_geometry() {
+        let mut ir = CadIr::empty(Units::default());
+        for (id, geometry) in [
+            (
+                "known-0",
+                SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+            ),
+            (
+                "known-1",
+                SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+            ),
+            ("unknown", SurfaceGeometry::Unknown { record: None }),
+        ] {
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId(id.to_string()),
+                geometry,
+                source_object: Some(crate::assemble::cgm_source("carrier", 0x1234)),
+            });
+        }
+
+        assert_eq!(standard_carrier_surface_ids(&ir).get(&0x1234), Some(&None));
     }
 
     #[test]

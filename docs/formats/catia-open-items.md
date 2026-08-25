@@ -324,9 +324,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does an `op1` or absolute persistent CGM tag select a serialized record outside the exact class-`0x19` circle and embedded type-`3` cylinder bindings?
 
-**Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding and the unique embedded type-`3` cylinder binding. The decoder retains other persistent identities.
+**Known.** `catia.md` §6.3 "When the `op1` support identity equals" defines the exact unique class-`0x19` binding, the unique embedded type-`3` cylinder binding, and the unique standard `00 33` carrier binding. A standard carrier match uses the serialized tag and its stored parameter chart; duplicate tags, unknown geometry, and failed endpoint lifts remain unresolved. The decoder retains other persistent identities.
 
-**Need.** We must resolve the namespace to bind other consolidated curve and support records.
+**Need.** We must resolve alias-only and other persistent identities that do not select a unique admitted consolidated or standard carrier record.
 
 ### SN-14. Incomplete multiple-FBB population membership
 
