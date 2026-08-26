@@ -16,12 +16,12 @@ use super::equations_coordinate::{
     SectionCoordinateEquation, SectionCoordinateVariable,
 };
 
-const EPS_RADIAL_VALUE: f64 = 1e-9;
-const EPS_RADIAL_ANGLE: f64 = 1e-9;
-const EPS_RADIAL_ZERO: f64 = 1e-12;
-const EPS_AXIS_DISTANCE: f64 = 1e-9;
-const EPS_AXIS_ZERO: f64 = 1e-12;
-const EPS_SCALAR_EQUALITY: f64 = 1e-9;
+const EPS_RADIAL_VALUE: f64 = 1.0e-9;
+const EPS_RADIAL_ANGLE: f64 = 1.0e-9;
+const EPS_RADIAL_ZERO: f64 = 1.0e-12;
+const EPS_AXIS_DISTANCE: f64 = 1.0e-9;
+const EPS_AXIS_ZERO: f64 = 1.0e-12;
+const EPS_SCALAR_EQUALITY: f64 = 1.0e-9;
 
 pub(crate) fn section_equation_coordinate_equalities(
     definition: &crate::feature::FeatureDefinition,

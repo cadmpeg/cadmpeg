@@ -32,8 +32,8 @@ use super::skamp::{
     SectionPointSource, SectionSymmetryAxis,
 };
 
-const EPS_SECTION_COORDINATE: f64 = 1e-9;
-const EPS_POINT_ON_LINE_COEFFICIENT: f64 = 1e-12;
+const EPS_SECTION_COORDINATE: f64 = 1.0e-9;
+const EPS_POINT_ON_LINE_COEFFICIENT: f64 = 1.0e-12;
 
 pub(crate) fn saved_section_coordinate_witnesses(
     definition: &crate::feature::FeatureDefinition,

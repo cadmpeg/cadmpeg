@@ -1,94 +1,61 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
-};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
-};
-use cadmpeg_ir::units::Units;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 
 use crate::test_support::*;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::IgesCodec;
 
 #[test]
-fn over_width_lines_split_into_cards_and_retained_remainders() {
-    let canonical = point_file();
-    let line_count = canonical.split_inclusive(|byte| *byte == b'\n').count();
-    let mut padded = Vec::with_capacity(canonical.len() + line_count);
-    for line in canonical.split_inclusive(|byte| *byte == b'\n') {
-        let (payload, ending) = line
-            .strip_suffix(b"\n")
-            .map_or((line, &b""[..]), |payload| (payload, &b"\n"[..]));
-        padded.extend_from_slice(payload);
-        padded.push(b' ');
-        padded.extend_from_slice(ending);
-    }
+fn overlong_preterminate_physical_line_is_malformed() {
+    let mut bytes = point_file();
+    let line_end = bytes
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .expect("Start line ending");
+    bytes.insert(line_end, b'x');
 
-    let result = IgesCodec
-        .decode(&mut Cursor::new(padded.clone()), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
-    assert_eq!(result.report().transfer_ledger.entries.len(), 1);
-    let transfer = &result.report().transfer_ledger.entries[0];
-    assert_eq!(transfer.source, "D1");
-    assert_eq!(transfer.target.as_deref(), Some("iges:entity:directory#1"));
-    assert_eq!(
-        transfer.disposition,
-        cadmpeg_ir::report::TransferDisposition::Retained
-    );
-    assert_eq!(
-        transfer.note.as_deref(),
-        Some("native record retained; semantic projection emitted")
-    );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
-    assert!(validation.is_ok(), "{validation:#?}");
-
-    let summary = IgesCodec
+    let error = IgesCodec
         .inspect(
-            &mut Cursor::new(padded),
+            &mut Cursor::new(bytes),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .unwrap();
-    let remainders = summary
-        .entries
-        .iter()
-        .find(|entry| entry.name == "noncanonical-physical-records")
-        .expect("over-width line remainders");
-    assert_eq!(
-        remainders.attributes["records"],
-        line_count.saturating_sub(1).to_string()
-    );
-    let post_terminate = summary
-        .entries
-        .iter()
-        .find(|entry| entry.name == "post-terminate")
-        .expect("Terminate-card remainder");
-    assert_eq!(post_terminate.attributes["records"], "1");
+        .unwrap_err();
+    assert!(matches!(error, CodecError::Malformed(_)));
+}
+
+#[test]
+fn inspect_rejects_unsequenced_physical_records_before_terminate() {
+    let mut blank = vec![b' '; 80];
+    blank.push(b'\n');
+    let invalid_marker = card(b"", b'X', 1);
+
+    for inserted in [blank, invalid_marker] {
+        let mut bytes = point_file();
+        let directory_card = bytes
+            .chunks_exact(81)
+            .position(|line| line[72] == b'D')
+            .expect("Directory card");
+        let offset = directory_card * 81;
+        bytes.splice(offset..offset, inserted);
+
+        let error = IgesCodec
+            .inspect(
+                &mut Cursor::new(bytes),
+                &cadmpeg_core::decode::InspectOptions::default(),
+            )
+            .unwrap_err();
+        assert!(matches!(error, CodecError::Malformed(_)));
+    }
 }
 
 #[test]
 fn malformed_sequence_padding_is_rejected_without_panicking() {
     let mut bytes = point_file();
-    bytes[73..80].copy_from_slice(b"     1 ");
+    bytes[CARD_DATA_COLUMNS + 1..CARD_COLUMNS].copy_from_slice(b"     1 ");
 
     assert_eq!(IgesCodec.detect(&bytes), Confidence::No);
     assert_eq!(
@@ -107,7 +74,7 @@ fn malformed_sequence_padding_is_rejected_without_panicking() {
 fn inspect_reports_sections_and_physical_line_endings() {
     let mut bytes = card_with_ending(b"original fixture", b'S', 1, b"\r\n");
     bytes.extend(card_with_ending(
-        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,,1,2,2HMM,1,1,1Hd,0,0,,,11;",
+        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,1,1,1,1,1,,1,2,,1,1,13H240101.000000,0,0,,,11;",
         b'G',
         1,
         b"\n",
@@ -136,43 +103,57 @@ fn inspect_reports_sections_and_physical_line_endings() {
 }
 
 #[test]
-fn decode_retains_short_and_extended_physical_records_before_terminate() {
+fn decode_rejects_extended_physical_records_before_terminate() {
     let mut bytes = point_file();
     let mut inserted = b"short record\n".to_vec();
-    inserted.extend(std::iter::repeat_n(b'x', 81));
+    inserted.extend(std::iter::repeat_n(b'x', CARD_COLUMNS + 1));
     inserted.push(b'\n');
-    bytes.splice(162..162, inserted);
+    // The over-long record goes in at the last Global card so it precedes
+    // the Directory section — the same offset this test used as a bare
+    // literal before this derivation replaced it.
+    let last_global = bytes
+        .chunks_exact(CARD_LINE_BYTES)
+        .rposition(|line| line[CARD_DATA_COLUMNS] == b'G')
+        .expect("Global card");
+    let offset = last_global * CARD_LINE_BYTES;
+    bytes.splice(offset..offset, inserted);
 
-    let summary = IgesCodec
+    let error = IgesCodec
         .inspect(
             &mut Cursor::new(bytes.as_slice()),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .unwrap();
-    let noncanonical = summary
-        .entries
-        .iter()
-        .find(|entry| entry.name == "noncanonical-physical-records")
-        .unwrap();
-    assert_eq!(noncanonical.role, "retained-opaque-records");
-    assert_eq!(noncanonical.attributes["records"], "3");
+        .unwrap_err();
+    assert!(matches!(error, CodecError::Malformed(_)));
 }
 
 #[test]
-fn inspect_rejects_terminate_count_mismatch() {
+fn inspect_recovers_a_terminate_count_from_the_card_census() {
     let mut bytes = card(b"original fixture", b'S', 1);
     bytes.extend(card(b"1H,,1H;,,;", b'G', 1));
     bytes.extend(card(b"S0000001G0000002D0000000P0000000", b'T', 1));
 
-    let error = IgesCodec
+    let summary = IgesCodec
         .inspect(
-            &mut Cursor::new(bytes),
+            &mut Cursor::new(bytes.clone()),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .unwrap_err();
+        .unwrap();
+    assert_eq!(summary.entries[1].attributes["cards"], "1");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
     assert_eq!(
-        error.to_string(),
-        "malformed container: IGES Terminate count for global is 2, actual 1"
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::IgesLossCode::CardFramingRecovered.kind())
+            .count(),
+        1,
+        "{:#?}",
+        result.report().losses
     );
 }
 
@@ -180,7 +161,7 @@ fn inspect_rejects_terminate_count_mismatch() {
 fn inspect_accepts_space_padded_terminate_counts() {
     let mut bytes = card(b"original fixture", b'S', 1);
     bytes.extend(card(
-        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,,1,2,2HMM,1,1,1Hd,0,0,,,11;",
+        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,1,1,1,1,1,,1,2,,1,1,13H240101.000000,0,0,,,11;",
         b'G',
         1,
     ));
@@ -209,5 +190,61 @@ fn decode_retains_post_terminate_physical_record() {
     assert_eq!(
         result.ir().native.namespace("iges").unwrap().arenas["cards"].len(),
         8
+    );
+}
+
+#[test]
+fn terminate_card_remainder_is_retained_after_terminate() {
+    let mut bytes = point_file();
+    let line_end = bytes.len() - 1;
+    bytes.insert(line_end, b'x');
+
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(bytes.as_slice()),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    let post_terminate = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "post-terminate")
+        .unwrap();
+    assert_eq!(post_terminate.role, "retained-trailing-records");
+    assert_eq!(post_terminate.attributes["records"], "1");
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        result.ir().native.namespace("iges").unwrap().arenas["cards"].len(),
+        8
+    );
+}
+
+#[test]
+fn decode_accepts_carriage_return_only_line_endings() {
+    let bytes = point_file()
+        .into_iter()
+        .map(|byte| if byte == b'\n' { b'\r' } else { byte })
+        .collect::<Vec<_>>();
+
+    assert_eq!(IgesCodec.detect(&bytes), Confidence::High);
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
     );
 }

@@ -11,23 +11,23 @@ mod positional;
 mod prototypes;
 mod transfer_curves;
 
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use brep::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use cylinders::*;
 #[allow(clippy::wildcard_imports, unused_imports)]
 pub(super) use intersection_candidates::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use intersection_resolve::*;
 #[allow(clippy::wildcard_imports, unused_imports)]
 pub(super) use intersections::*;
 #[allow(clippy::wildcard_imports, unused_imports)]
 pub(super) use nurbs_boundaries::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use positional::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use prototypes::*;
-#[allow(clippy::wildcard_imports, unused_imports)]
+#[allow(clippy::wildcard_imports)]
 pub(super) use transfer_curves::*;
 
 use std::collections::BTreeMap;
@@ -210,7 +210,7 @@ pub(super) fn fc05_model_frame(
     }
 }
 
-const EPS_FC05_CAP_FRAME: f64 = 1e-9;
+const EPS_FC05_CAP_FRAME: f64 = 1.0e-9;
 
 #[derive(Clone, Copy)]
 pub(super) struct Fc05CapPairFrame {

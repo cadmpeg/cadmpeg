@@ -20,6 +20,18 @@ use super::radii::{
 };
 use super::skamp::section_line_entity_fixed_coordinate_with_unique_rows;
 
+const EPS_LINE_INTERSECTION: f64 = 1.0e-12;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_RADIAL_RESIDUAL: f64 = 1.0e-10;
+const EPS_PARAMETER_BOUND: f64 = 1.0e-10;
+const EPS_CENTER_DISTANCE: f64 = 1.0e-12;
+const EPS_HEIGHT_RESIDUAL: f64 = 1.0e-9;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+const EPS_DISTANCE_MATCH: f64 = 1.0e-9;
+const EPS_DIRECTION_NONZERO: f64 = 1.0e-12;
+const EPS_OFFSET_RESIDUAL: f64 = 1.0e-9;
+const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
+
 pub(crate) fn section_line_origin_direction(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
     match geometry {
         SketchGeometry::Line { start, end } => {
@@ -54,7 +66,7 @@ pub(crate) fn intersect_section_lines(
         .max((second_origin.u - second_end.u).abs())
         .max((second_origin.v - second_end.v).abs())
         .max(1.0);
-    if denominator.abs() <= 1e-12 * scale * scale {
+    if denominator.abs() <= EPS_LINE_INTERSECTION * scale * scale {
         return None;
     }
     let first_cross = first_origin
@@ -94,7 +106,7 @@ pub(crate) fn intersect_section_line_arc(
     };
     let direction = [end.u - start.u, end.v - start.v];
     let length = direction[0].hypot(direction[1]);
-    if length <= 1e-12 || radius.0 <= 1e-12 {
+    if length <= EPS_RADIUS_NONZERO || radius.0 <= EPS_RADIUS_NONZERO {
         return None;
     }
     let direction = direction.map(|value| value / length);
@@ -110,7 +122,7 @@ pub(crate) fn intersect_section_line_arc(
     );
     let radial_squared = radius.0 * radius.0;
     let scale = radial_squared.max(1.0);
-    if distance_squared > radial_squared + 1e-10 * scale {
+    if distance_squared > radial_squared + EPS_RADIAL_RESIDUAL * scale {
         return None;
     }
     let travel = (radial_squared - distance_squared).max(0.0).sqrt();
@@ -124,9 +136,9 @@ pub(crate) fn intersect_section_line_arc(
             closest[1] - travel * direction[1],
         ],
     ];
-    if travel <= 1e-10 * radius.0.max(1.0) {
+    if travel <= EPS_RADIAL_RESIDUAL * radius.0.max(1.0) {
         let parameter = projection / length;
-        return (-1e-10..=1.0 + 1e-10)
+        return (-EPS_PARAMETER_BOUND..=1.0 + EPS_PARAMETER_BOUND)
             .contains(&parameter)
             .then_some(candidates[0]);
     }
@@ -137,7 +149,9 @@ pub(crate) fn intersect_section_line_arc(
     let inside = parameters
         .into_iter()
         .enumerate()
-        .filter(|(_, parameter)| (-1e-10..=1.0 + 1e-10).contains(parameter))
+        .filter(|(_, parameter)| {
+            (-EPS_PARAMETER_BOUND..=1.0 + EPS_PARAMETER_BOUND).contains(parameter)
+        })
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     let [index] = inside.as_slice() else {
@@ -165,7 +179,7 @@ pub(crate) fn intersect_tangent_section_arcs(
     else {
         return None;
     };
-    if first_radius.0 <= 1e-12 || second_radius.0 <= 1e-12 {
+    if first_radius.0 <= EPS_RADIUS_NONZERO || second_radius.0 <= EPS_RADIUS_NONZERO {
         return None;
     }
     let delta = [
@@ -174,7 +188,7 @@ pub(crate) fn intersect_tangent_section_arcs(
     ];
     let distance = delta[0].hypot(delta[1]);
     let scale = distance.max(first_radius.0).max(second_radius.0).max(1.0);
-    if distance <= 1e-12 * scale {
+    if distance <= EPS_CENTER_DISTANCE * scale {
         return None;
     }
     let offset = (first_radius
@@ -183,7 +197,7 @@ pub(crate) fn intersect_tangent_section_arcs(
         + distance * distance)
         / (2.0 * distance);
     let height_squared = first_radius.0.mul_add(first_radius.0, -(offset * offset));
-    if height_squared.abs() > 1e-9 * scale * scale {
+    if height_squared.abs() > EPS_HEIGHT_RESIDUAL * scale * scale {
         return None;
     }
     Some([
@@ -284,7 +298,7 @@ pub(crate) fn resolved_trim_vertex_coordinates(
             let candidate = [u, v];
             let candidate_radius = (u - center_u).hypot(v - center_v);
             let radial_scale = radius.max(candidate_radius).max(1.0);
-            if (candidate_radius - radius).abs() > 1e-9 * radial_scale {
+            if (candidate_radius - radius).abs() > EPS_RADIUS_AGREEMENT * radial_scale {
                 continue;
             }
             coordinate_candidates.push((vertex, candidate));
@@ -449,9 +463,13 @@ pub(crate) fn resolved_trim_vertex_coordinates(
                 .flatten()
                 .map(|value| value.abs())
                 .fold(1.0, f64::max);
-            let matched = if distances[0] <= 1e-9 * scale && distances[1] > 1e-9 * scale {
+            let matched = if distances[0] <= EPS_DISTANCE_MATCH * scale
+                && distances[1] > EPS_DISTANCE_MATCH * scale
+            {
                 0
-            } else if distances[1] <= 1e-9 * scale && distances[0] > 1e-9 * scale {
+            } else if distances[1] <= EPS_DISTANCE_MATCH * scale
+                && distances[0] > EPS_DISTANCE_MATCH * scale
+            {
                 1
             } else {
                 continue;
@@ -494,7 +512,8 @@ pub(crate) fn reconciled_section_coordinates(
             .map(|value| value.abs())
             .fold(1.0, f64::max);
         if values.iter().all(|candidate| {
-            (candidate[0] - first[0]).hypot(candidate[1] - first[1]) <= 1e-9 * scale
+            (candidate[0] - first[0]).hypot(candidate[1] - first[1])
+                <= EPS_ENDPOINT_AGREEMENT * scale
         }) {
             coordinates.insert(vertex, first);
         } else {
@@ -546,13 +565,14 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
             carrier_end.v / scale - carrier_start.v / scale,
         ];
         let direction_norm = direction[0].hypot(direction[1]);
-        if direction_norm <= 1e-12
+        if direction_norm <= EPS_DIRECTION_NONZERO
             || [start, end].into_iter().any(|point| {
                 let offset = [
                     point[0] / scale - carrier_start.u / scale,
                     point[1] / scale - carrier_start.v / scale,
                 ];
-                (offset[0] * direction[1] - offset[1] * direction[0]).abs() > 1e-9 * direction_norm
+                (offset[0] * direction[1] - offset[1] * direction[0]).abs()
+                    > EPS_OFFSET_RESIDUAL * direction_norm
             })
         {
             return None;
@@ -566,8 +586,8 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
         let first_radius = first[0].hypot(first[1]);
         let second_radius = second[0].hypot(second[1]);
         let scale = radius.max(first_radius).max(second_radius).max(1.0);
-        if (first_radius - radius).abs() > 1e-9 * scale
-            || (second_radius - radius).abs() > 1e-9 * scale
+        if (first_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+            || (second_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
         {
             return None;
         }
@@ -592,8 +612,8 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
             definition,
             segment.external_id,
         ) {
-            Some(0) => (start[0] - end[0]).abs() <= 1e-9 * scale,
-            Some(1) => (start[1] - end[1]).abs() <= 1e-9 * scale,
+            Some(0) => (start[0] - end[0]).abs() <= 1.0e-9 * scale,
+            Some(1) => (start[1] - end[1]).abs() <= 1.0e-9 * scale,
             _ => false,
         };
         orientation_matches.then_some(())?;

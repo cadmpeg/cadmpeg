@@ -7,7 +7,6 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
-use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
@@ -34,9 +33,16 @@ const PRODUCT_DEFINITION_TYPES: &[&str] = &[
     "PRODUCT_DEFINITION",
     "PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS",
 ];
+const DRAWING_ITEM_OWNER_TYPES: &[&str] = &[
+    "DRAWING_SHEET_REVISION",
+    "PRESENTATION_VIEW",
+    "DRAUGHTING_MODEL",
+    "DRAUGHTING_CALLOUT",
+];
 
 pub(super) struct ProductData {
     pub product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
+    pub product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
 }
 
 pub(super) fn decode(
@@ -64,6 +70,24 @@ pub(super) fn decode(
             Some((id, *formations.get(&parameters.get(2)?.reference()?)?))
         })
         .collect::<BTreeMap<_, _>>();
+    let mut definitions_by_product_in_source_order = definitions.iter().fold(
+        BTreeMap::<u64, Vec<u64>>::new(),
+        |mut definitions_by_product, (&definition, &product)| {
+            definitions_by_product
+                .entry(product)
+                .or_default()
+                .push(definition);
+            definitions_by_product
+        },
+    );
+    for definitions in definitions_by_product_in_source_order.values_mut() {
+        definitions.sort_by_key(|definition| {
+            exchange
+                .records
+                .get(definition)
+                .map_or(usize::MAX, |record| record.span.start)
+        });
+    }
     let mut definition_descriptions = BTreeMap::<u64, String>::new();
     for (id, record) in exchange.entities_any(PRODUCT_DEFINITION_TYPES) {
         let Some(parameters) = product_definition_parameters(record) else {
@@ -149,10 +173,10 @@ pub(super) fn decode(
                 )
             })
             .filter(|description| !description.is_empty());
-        let product_definitions = definitions
-            .iter()
-            .filter_map(|(&definition, &product)| (product == step_id).then_some(definition))
-            .collect::<Vec<_>>();
+        let product_definitions = definitions_by_product_in_source_order
+            .get(&step_id)
+            .cloned()
+            .unwrap_or_default();
         let definition_count = definition_counts.get(&step_id).copied().unwrap_or(0);
         let definition_iter = if product_definitions.is_empty() {
             vec![None]
@@ -233,6 +257,14 @@ pub(super) fn decode(
         }
         typed.insert(step_id);
     }
+    let product_definition_ids_by_shape = exchange
+        .entities("PRODUCT_DEFINITION_SHAPE")
+        .filter_map(|(shape_id, record)| {
+            let definition = named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+                .and_then(ValueExt::reference)?;
+            Some((shape_id, definition_prototypes.get(&definition)?.clone()))
+        })
+        .collect();
     typed.extend(formations.keys().copied());
     typed.extend(definitions.keys().copied());
 
@@ -310,7 +342,39 @@ pub(super) fn decode(
         occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
         pending_occurrences.push_back((definition, id));
     }
-    let placements = occurrence_placements(exchange, geometry, &usages, &mut warnings);
+    let mut ambiguous_placements = BTreeMap::new();
+    let mut competing_placements = BTreeMap::new();
+    let placements = occurrence_placements(
+        exchange,
+        geometry,
+        &usages,
+        &mut warnings,
+        &mut ambiguous_placements,
+        &mut competing_placements,
+    );
+    for (&usage_id, source_ids) in &ambiguous_placements {
+        if competing_placements.contains_key(&usage_id) {
+            continue;
+        }
+        let records = source_ids
+            .iter()
+            .map(|id| format!("#{id}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!(
+            "NAUO #{usage_id} has multiple resolved CONTEXT_DEPENDENT_SHAPE_REPRESENTATION placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"
+        )));
+    }
+    for (&usage_id, source_ids) in &competing_placements {
+        let records = source_ids
+            .iter()
+            .map(|id| format!("#{id}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!(
+            "NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque"
+        )));
+    }
     let mut usage_instances = BTreeMap::<u64, usize>::new();
     let mut missing_placement_reports = BTreeSet::new();
     let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
@@ -328,6 +392,9 @@ pub(super) fn decode(
             .into_iter()
             .flatten()
         {
+            if ambiguous_placements.contains_key(&usage_id) {
+                continue;
+            }
             let usage = &usages[&usage_id];
             let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
             else {
@@ -460,9 +527,16 @@ pub(super) fn decode(
             typed.insert(id);
         }
     }
+    for (&usage_id, source_ids) in &ambiguous_placements {
+        typed.remove(&usage_id);
+        for &source_id in source_ids {
+            typed.remove(&source_id);
+        }
+    }
     Ok(StageOutcome {
         value: ProductData {
             product_definition_ids_by_source,
+            product_definition_ids_by_shape,
         },
         claims: typed,
         warnings,
@@ -536,8 +610,12 @@ fn apply_body_placements(
         .collect::<BTreeMap<_, _>>();
     let mut representation_cache = BTreeMap::new();
     let mut placements_by_body = BTreeMap::<BodyId, Vec<(u64, Transform)>>::new();
+    let drawing_owned_items = drawing_owned_items(exchange);
     for (id, item) in exchange.entities("MAPPED_ITEM") {
         if item.partial("MAPPED_ITEM").is_none() {
+            continue;
+        }
+        if drawing_owned_items.contains(&id) {
             continue;
         }
         let Some((representation, origin, target)) = mapped_item_definition(item, exchange) else {
@@ -597,6 +675,74 @@ fn apply_body_placements(
                     )));
             }
         }
+    }
+}
+
+fn drawing_owned_items(exchange: &Exchange) -> BTreeSet<u64> {
+    let mut pending = Vec::new();
+    for record in exchange.records.values() {
+        let drawing_owner = record
+            .partials
+            .iter()
+            .any(|partial| DRAWING_ITEM_OWNER_TYPES.contains(&partial.name.as_str()));
+        if drawing_owner {
+            for value in record
+                .partials
+                .iter()
+                .flat_map(|partial| partial.parameters.iter())
+            {
+                collect_references(value, &mut pending);
+            }
+        }
+    }
+    let mut items = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        if record.partial("MAPPED_ITEM").is_some() {
+            items.insert(id);
+            continue;
+        }
+        if let Some(representation_items) = super::representation::items(record) {
+            pending.extend(representation_items);
+        }
+        for partial in record.partials.iter().filter(|partial| {
+            matches!(
+                partial.name.as_str(),
+                "GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET" | "TESSELLATED_GEOMETRIC_SET"
+            )
+        }) {
+            let Some(values) = partial.parameters.iter().find_map(|value| match value {
+                Value::List(values) => Some(values.as_slice()),
+                _ => None,
+            }) else {
+                continue;
+            };
+            for value in values {
+                collect_references(value, &mut pending);
+            }
+        }
+    }
+    items
+}
+
+fn collect_references(value: &Value, references: &mut Vec<u64>) {
+    match value {
+        Value::Reference(id) => {
+            references.push(*id);
+        }
+        Value::List(values) => {
+            for value in values {
+                collect_references(value, references);
+            }
+        }
+        Value::Typed(_, value) => collect_references(value, references),
+        _ => {}
     }
 }
 
@@ -702,6 +848,8 @@ fn occurrence_placements(
     geometry: &GeometryData,
     usages: &BTreeMap<u64, Usage>,
     warnings: &mut Vec<String>,
+    ambiguous: &mut BTreeMap<u64, Vec<u64>>,
+    competing: &mut BTreeMap<u64, Vec<u64>>,
 ) -> BTreeMap<u64, Transform> {
     let pds = exchange
         .records
@@ -715,9 +863,18 @@ fn occurrence_placements(
         })
         .collect::<BTreeMap<_, _>>();
     let definition_representations = definition_representations(exchange, &pds);
-    let representation_links = representation_links(exchange);
+    let mut definitions_by_representation = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for (&definition, representations) in &definition_representations {
+        for &representation in representations {
+            definitions_by_representation
+                .entry(representation)
+                .or_default()
+                .insert(definition);
+        }
+    }
     let mut result = BTreeMap::new();
-    for (_, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
+    let mut context_candidates = BTreeMap::<u64, Vec<u64>>::new();
+    for (record_id, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
         if let Some((usage, transform)) = occurrence_placement(
             record,
             exchange,
@@ -725,36 +882,44 @@ fn occurrence_placements(
             &pds,
             usages,
             &definition_representations,
-            &representation_links,
         ) {
             if usages.contains_key(&usage) {
+                context_candidates.entry(usage).or_default().push(record_id);
                 result.insert(usage, transform);
             }
         }
     }
+    for (&usage, source_ids) in &context_candidates {
+        if source_ids.len() > 1 {
+            let mut source_ids = source_ids.clone();
+            source_ids.sort_unstable();
+            source_ids.dedup();
+            ambiguous.insert(usage, source_ids);
+        }
+    }
     let occurrence_representations = exchange
         .entities("SHAPE_DEFINITION_REPRESENTATION")
-        .filter_map(|(_, record)| {
+        .filter_map(|(record_id, record)| {
             let shape = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
                 .and_then(ValueExt::reference)?;
             let usage = *pds.get(&shape)?;
             usages.contains_key(&usage).then_some((
                 usage,
-                named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
-                    .and_then(ValueExt::reference)?,
+                (
+                    record_id,
+                    named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+                        .and_then(ValueExt::reference)?,
+                ),
             ))
         })
         .fold(
-            BTreeMap::<u64, Vec<u64>>::new(),
+            BTreeMap::<u64, Vec<(u64, u64)>>::new(),
             |mut result, (usage, representation)| {
                 result.entry(usage).or_default().push(representation);
                 result
             },
         );
     for (&usage_id, representations) in &occurrence_representations {
-        if result.contains_key(&usage_id) {
-            continue;
-        }
         let Some(usage) = usages.get(&usage_id) else {
             continue;
         };
@@ -763,11 +928,11 @@ fn occurrence_placements(
             continue;
         };
         let mut candidates = Vec::new();
-        for &representation in representations {
+        for &(source_id, representation) in representations {
             let Some(record) = exchange.records.get(&representation) else {
                 continue;
             };
-            let Some(items) = representation_items(record) else {
+            let Some(items) = super::representation::items(record) else {
                 continue;
             };
             for item_id in items {
@@ -783,12 +948,27 @@ fn occurrence_placements(
                     continue;
                 };
                 if child_representations.contains(&mapped_representation) {
-                    candidates.push(transform);
+                    candidates.push((source_id, transform));
                 }
             }
         }
+        if result.contains_key(&usage_id)
+            && context_candidates
+                .get(&usage_id)
+                .is_some_and(|source_ids| !source_ids.is_empty())
+            && !candidates.is_empty()
+        {
+            let mut source_ids = context_candidates[&usage_id].clone();
+            source_ids.extend(candidates.iter().map(|(source_id, _)| *source_id));
+            source_ids.sort_unstable();
+            source_ids.dedup();
+            result.remove(&usage_id);
+            ambiguous.insert(usage_id, source_ids.clone());
+            competing.insert(usage_id, source_ids);
+            continue;
+        }
         match candidates.as_slice() {
-            [transform] => {
+            [(_, transform)] => {
                 result.insert(usage_id, *transform);
             }
             [] => {}
@@ -797,25 +977,20 @@ fn occurrence_placements(
             )),
         }
     }
-    infer_parent_representation_placements(
-        exchange,
-        geometry,
-        usages,
-        &definition_representations,
-        &mut result,
-    );
-    let mut usage_counts = BTreeMap::<u64, usize>::new();
+    let mut sibling_usage_counts = BTreeMap::<(u64, u64), usize>::new();
     for usage in usages.values() {
-        *usage_counts.entry(usage.child_definition).or_default() += 1;
+        *sibling_usage_counts
+            .entry((usage.parent_definition, usage.child_definition))
+            .or_default() += 1;
     }
     for (&usage_id, usage) in usages {
         if result.contains_key(&usage_id) {
             continue;
         }
-        let Some(child_representations) = definition_representations.get(&usage.child_definition)
-        else {
-            continue;
-        };
+        // A parent representation's MAPPED_ITEM identifies its child through
+        // the mapping source's mapped representation and that representation's
+        // SHAPE_DEFINITION_REPRESENTATION. `representation.items` is a SET,
+        // so admission cannot depend on member or record order.
         let Some(parent_representations) = definition_representations.get(&usage.parent_definition)
         else {
             continue;
@@ -825,7 +1000,7 @@ fn occurrence_placements(
             let Some(record) = exchange.records.get(&parent_representation) else {
                 continue;
             };
-            let Some(items) = representation_items(record) else {
+            let Some(items) = super::representation::items(record) else {
                 continue;
             };
             for item_id in items {
@@ -840,15 +1015,22 @@ fn occurrence_placements(
                 else {
                     continue;
                 };
-                if child_representations.contains(&mapped_representation)
+                let Some(mapped_definitions) =
+                    definitions_by_representation.get(&mapped_representation)
+                else {
+                    continue;
+                };
+                if mapped_definitions.len() == 1
+                    && mapped_definitions.contains(&usage.child_definition)
                     && !placements.contains(&transform)
                 {
                     placements.push(transform);
                 }
             }
         }
-        let matching_usages = usage_counts[&usage.child_definition];
-        if matching_usages == 1 && placements.len() == 1 {
+        let sibling_usage_count =
+            sibling_usage_counts[&(usage.parent_definition, usage.child_definition)];
+        if sibling_usage_count == 1 && placements.len() == 1 {
             result.insert(usage_id, placements[0]);
         } else if !placements.is_empty() {
             warnings.push(format!(
@@ -857,118 +1039,6 @@ fn occurrence_placements(
         }
     }
     result
-}
-
-fn infer_parent_representation_placements(
-    exchange: &Exchange,
-    geometry: &GeometryData,
-    usages: &BTreeMap<u64, Usage>,
-    definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
-    result: &mut BTreeMap<u64, Transform>,
-) {
-    // A parent representation can carry occurrence mappings without an
-    // occurrence-owned shape representation. Use that ordering only when
-    // the complete mapped-child sequence agrees with the usage sequence.
-    let mut definitions_by_representation = BTreeMap::<u64, Vec<u64>>::new();
-    for (&definition, representations) in definition_representations {
-        for &representation in representations {
-            definitions_by_representation
-                .entry(representation)
-                .or_default()
-                .push(definition);
-        }
-    }
-
-    let mut parent_definitions = usages
-        .values()
-        .map(|usage| usage.parent_definition)
-        .collect::<Vec<_>>();
-    parent_definitions.sort_unstable();
-    parent_definitions.dedup();
-
-    for parent_definition in parent_definitions {
-        let mut parent_usages = usages
-            .iter()
-            .filter(|(_, usage)| usage.parent_definition == parent_definition)
-            .collect::<Vec<_>>();
-        parent_usages.sort_by_key(|(id, _)| {
-            exchange
-                .records
-                .get(id)
-                .map_or(usize::MAX, |record| record.span.start)
-        });
-
-        let mut child_definitions = BTreeSet::new();
-        if parent_usages
-            .iter()
-            .any(|(_, usage)| !child_definitions.insert(usage.child_definition))
-        {
-            // Representation item order does not bind repeated uses of one
-            // child definition. Such uses require occurrence-owned shape
-            // representations or an explicit context-dependent placement.
-            continue;
-        }
-
-        let Some(parent_representations) = definition_representations.get(&parent_definition)
-        else {
-            continue;
-        };
-        let mut parent_representations = parent_representations.iter().copied().collect::<Vec<_>>();
-        parent_representations.sort_by_key(|representation| {
-            exchange
-                .records
-                .get(representation)
-                .map_or(usize::MAX, |record| record.span.start)
-        });
-
-        let mut mapped_children = Vec::<(u64, Transform)>::new();
-        for representation in parent_representations {
-            let Some(record) = exchange.records.get(&representation) else {
-                continue;
-            };
-            let Some(items) = representation_items(record) else {
-                continue;
-            };
-            for item_id in items {
-                let Some(item) = exchange.records.get(&item_id) else {
-                    continue;
-                };
-                if item.partial("MAPPED_ITEM").is_none() {
-                    continue;
-                }
-                let Some((mapped_representation, transform)) =
-                    mapped_item_placement(item, exchange, geometry)
-                else {
-                    continue;
-                };
-                let Some(definitions) = definitions_by_representation.get(&mapped_representation)
-                else {
-                    continue;
-                };
-                let [child_definition] = definitions.as_slice() else {
-                    continue;
-                };
-                if parent_usages
-                    .iter()
-                    .any(|(_, usage)| usage.child_definition == *child_definition)
-                {
-                    mapped_children.push((*child_definition, transform));
-                }
-            }
-        }
-
-        if mapped_children.len() != parent_usages.len()
-            || parent_usages.iter().zip(&mapped_children).any(
-                |((_, usage), (child_definition, _))| usage.child_definition != *child_definition,
-            )
-        {
-            continue;
-        }
-
-        for ((usage_id, _), (_, transform)) in parent_usages.into_iter().zip(mapped_children) {
-            result.entry(*usage_id).or_insert(transform);
-        }
-    }
 }
 
 fn mapped_item_placement(
@@ -1018,7 +1088,6 @@ fn occurrence_placement(
     pds: &BTreeMap<u64, u64>,
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
-    representation_links: &BTreeMap<u64, BTreeSet<u64>>,
 ) -> Option<(u64, Transform)> {
     let relation = exchange.records.get(
         &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)
@@ -1042,24 +1111,10 @@ fn occurrence_placement(
         .and_then(ValueExt::reference)?;
     let item_two = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 3)
         .and_then(ValueExt::reference)?;
-    let child_to_parent = representation_matches(
-        relation_representations.0,
-        child_representations,
-        representation_links,
-    ) && representation_matches(
-        relation_representations.1,
-        parent_representations,
-        representation_links,
-    );
-    let parent_to_child = representation_matches(
-        relation_representations.0,
-        parent_representations,
-        representation_links,
-    ) && representation_matches(
-        relation_representations.1,
-        child_representations,
-        representation_links,
-    );
+    let child_to_parent = child_representations.contains(&relation_representations.0)
+        && parent_representations.contains(&relation_representations.1);
+    let parent_to_child = parent_representations.contains(&relation_representations.0)
+        && child_representations.contains(&relation_representations.1);
     let (from_id, to_id) = match (child_to_parent, parent_to_child) {
         (true, false) => (item_one, item_two),
         (false, true) => (item_two, item_one),
@@ -1075,49 +1130,8 @@ fn transformation_item(id: u64, geometry: &GeometryData) -> Option<Transform> {
         .placements
         .get(&id)
         .copied()
-        .map(placement_transform)
+        .map(super::geometry::placement_transform)
         .or_else(|| geometry.transformation_operators.get(&id).copied())
-}
-
-fn representation_links(exchange: &Exchange) -> BTreeMap<u64, BTreeSet<u64>> {
-    let mut links = BTreeMap::<u64, BTreeSet<u64>>::new();
-    for record in exchange.records.values() {
-        let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
-            continue;
-        };
-        if relationship.parameters.is_empty() {
-            continue;
-        }
-        let Some((left, right)) = representation_relationship_endpoints(record) else {
-            continue;
-        };
-        links.entry(left).or_default().insert(right);
-        links.entry(right).or_default().insert(left);
-    }
-    links
-}
-
-fn representation_matches(
-    candidate: u64,
-    definitions: &BTreeSet<u64>,
-    links: &BTreeMap<u64, BTreeSet<u64>>,
-) -> bool {
-    if definitions.contains(&candidate) {
-        return true;
-    }
-    let mut pending = VecDeque::from([candidate]);
-    let mut visited = BTreeSet::from([candidate]);
-    while let Some(current) = pending.pop_front() {
-        for &linked in links.get(&current).into_iter().flatten() {
-            if definitions.contains(&linked) {
-                return true;
-            }
-            if visited.insert(linked) {
-                pending.push_back(linked);
-            }
-        }
-    }
-    false
 }
 
 fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
@@ -1131,27 +1145,6 @@ fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64
     Some((references.next()?, references.next()?))
 }
 
-fn placement_transform((origin, z_axis, x_axis): (Point3, Vector3, Vector3)) -> Transform {
-    let placement_basis = basis(z_axis, x_axis);
-    let mut rows = Transform::identity().rows;
-    for row in 0..3 {
-        for column in 0..3 {
-            rows[row][column] = placement_basis[row][column];
-        }
-    }
-    rows[0][3] = origin.x;
-    rows[1][3] = origin.y;
-    rows[2][3] = origin.z;
-    Transform { rows }
-}
-fn basis(z: Vector3, x: Vector3) -> [[f64; 3]; 3] {
-    let y = Vector3::new(
-        z.y * x.z - z.z * x.y,
-        z.z * x.x - z.x * x.z,
-        z.x * x.y - z.y * x.x,
-    );
-    [[x.x, y.x, z.x], [x.y, y.y, z.y], [x.z, y.z, z.z]]
-}
 fn product_ir_id(id: u64) -> ProductDefinitionId {
     ProductDefinitionId(StepIdentity::product("product", id))
 }
@@ -1201,18 +1194,6 @@ fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Optio
     record.partial(name)?.parameters.get(index)
 }
 
-fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
-    record
-        .partials
-        .iter()
-        .find(|partial| {
-            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
-        })
-        .and_then(|partial| partial.parameters.get(1))
-        .and_then(ValueExt::list)
-        .map(|items| items.iter().filter_map(ValueExt::reference).collect())
-}
-
 trait RecordExt {
     fn simple_name(&self) -> Option<&str>;
     fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
@@ -1227,19 +1208,11 @@ impl RecordExt for RawRecord {
 }
 trait ValueExt {
     fn reference(&self) -> Option<u64>;
-    fn list(&self) -> Option<&[Value]>;
 }
 impl ValueExt for Value {
     fn reference(&self) -> Option<u64> {
         if let Value::Reference(id) = self {
             Some(*id)
-        } else {
-            None
-        }
-    }
-    fn list(&self) -> Option<&[Value]> {
-        if let Value::List(values) = self {
-            Some(values)
         } else {
             None
         }

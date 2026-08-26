@@ -81,6 +81,8 @@ pub enum SldprtLossCode {
     GeometryPcurveAmbiguous,
     /// Current face records carry conflicting or incoherent color bindings.
     AppearanceFaceColorUnresolved,
+    /// Appearance assignments have no unambiguous `DisplayLists` target.
+    AppearanceAssignmentUnresolved,
     /// `DisplayLists` tessellation does not resolve to its B-rep face owners.
     TessellationFaceOwnershipUnresolved,
     /// No body record was available; a body hierarchy was derived.
@@ -136,6 +138,7 @@ impl SldprtLossCode {
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryPcurveAmbiguous,
         Self::AppearanceFaceColorUnresolved,
+        Self::AppearanceAssignmentUnresolved,
         Self::TessellationFaceOwnershipUnresolved,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyBodyAssignmentAmbiguous,
@@ -182,6 +185,7 @@ impl SldprtLossCode {
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
+            Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
             Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyBodyAssignmentAmbiguous => "topology.body-assignment-ambiguous",
@@ -220,37 +224,25 @@ impl SldprtLossCode {
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryParasolidNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous => LossTaxonomy::PcurveOmitted,
-            Self::AppearanceFaceColorUnresolved => LossTaxonomy::MaterialNotTransferred,
+            Self::AppearanceFaceColorUnresolved | Self::AppearanceAssignmentUnresolved => {
+                LossTaxonomy::MaterialNotTransferred
+            }
             Self::TessellationFaceOwnershipUnresolved => LossTaxonomy::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossTaxonomy::MaterialNotTransferred,
             _ => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
-    /// Strict floor pinned from this local code (independent of taxonomy remap).
-    ///
-    /// Defaults to the taxonomy floor so a later local→taxonomy remap cannot
-    /// silently change rejection; list only intentional overrides here.
-    const fn strict_floor(self) -> Option<Severity> {
-        match self {
-            Self::GeometryParasolidNotTransferred
-            | Self::TopologyGraphNotTransferred
-            | Self::ContainerNoParasolidStream => Some(Severity::Warning),
-            other => other.shared_taxonomy().strict_floor(),
-        }
-    }
-
-    /// Namespaced [`LossKind`] for this local code (taxonomy + pinned floor).
+    /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
         LossKind::namespaced("sldprt", self.code(), self.shared_taxonomy())
-            .with_strict_floor(self.strict_floor())
     }
 
     /// Build a [`LossNote`] for this code with the given per-instance message.
     ///
-    /// The structured code is `sldprt/<local>`. Severity and strict floor come
-    /// from the local code.
+    /// The structured code is `sldprt/<local>`. Severity comes from the local
+    /// code; the strict floor comes from the taxonomy.
     #[must_use]
     pub fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
@@ -301,6 +293,7 @@ mod tests {
                 "geometry.edge-support-curve-untyped",
                 "geometry.pcurve-ambiguous",
                 "appearance.face-color-unresolved",
+                "appearance.assignment-unresolved",
                 "tessellation.face-ownership-unresolved",
                 "topology.body-hierarchy-derived",
                 "topology.body-assignment-ambiguous",

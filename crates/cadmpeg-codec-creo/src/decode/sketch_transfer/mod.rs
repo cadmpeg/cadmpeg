@@ -2,7 +2,6 @@
 //! Sketch constraint emission and sketch arena transfer.
 
 // Barrel re-exports are consumed by sibling modules and decode tests.
-#![allow(unused_imports)]
 
 mod constraints;
 mod entities;
@@ -13,6 +12,7 @@ mod recipe;
 mod skamp_constraints;
 mod transfer;
 
+#[allow(unused_imports)]
 pub(super) use recipe::{
     current_additive_feature_recipe, current_feature_operation, current_feature_recipe,
     current_feature_recipe_parent, feature_is_first_material_operation, feature_recipe,
@@ -22,6 +22,7 @@ pub(super) use recipe::{
     row_feature_schema_classes, unique_feature_revolution_extent_kind,
 };
 
+#[allow(unused_imports)]
 pub(super) use constraints::{
     circular_dimension_constraint, close_sketch_constraint_parameter_references,
     joined_relation_incidence, joined_relation_incidence_entities, joined_relation_incidence_link,
@@ -43,6 +44,7 @@ pub(super) use constraints::{
     section_solver_equation_is_disabled, section_solver_relation_is_disabled,
 };
 
+#[allow(unused_imports)]
 pub(super) use loci::{
     active_complete_section_skamps, complete_section_coordinate, complete_section_skamps,
     oriented_arc_midpoint, saved_arc_midpoint, section_degenerate_axis_line,
@@ -61,10 +63,12 @@ pub(super) use loci::{
 
 #[cfg(test)]
 pub(super) use skamp_constraints::sketch_constraint_loci_compatible;
+#[allow(unused_imports)]
 pub(super) use skamp_constraints::{
     section_skamp_constraints_for_geometry, sketch_constraint_loci_compatible_with_policy,
 };
 
+#[allow(unused_imports)]
 pub(super) use identity::{
     ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
     opaque_section_segment_identity_suffix, saved_section_entity_fallback_allowed,
@@ -76,6 +80,7 @@ pub(super) use identity::{
     unique_section_segment_external_ids, unresolved_saved_section_entity, SavedSectionEntityKind,
 };
 
+#[allow(unused_imports)]
 pub(super) use profiles::{
     normalize_section_incidence_curve_family_evidence, resolved_profile_chains,
     resolved_segment_profile_chains, section_incidence_curve_family_evidence,

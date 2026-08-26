@@ -22,6 +22,13 @@ The nine `ResourceLimits` fields are `max_input_bytes`,
 `max_collection_items`, `max_recursion_depth`, and `max_work_units`.
 This classification does not add fields.
 
+The service and desktop ceilings for those fields are owned by
+`ResourceLimits::service()` and `ResourceLimits::desktop()` in
+`crates/cadmpeg-core/src/decode/policy.rs`. This document classifies
+codec-local constants against the fields; it does not restate or own the
+profile values, so a census note that names a profile number describes the
+constant, and `policy.rs` remains the authority when the two drift.
+
 ## Production census
 
 | Crate                    | File                                   | Constant                                  | Value               | Kind | Action      | Notes                                                                                                                                                               |

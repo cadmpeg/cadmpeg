@@ -79,6 +79,77 @@ pub(crate) fn schema_two_uses_the_feature_envelope_and_common_property_grammar()
 }
 
 #[test]
+fn rejects_duplicate_root_property_containers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Properties Count="1"><Property name="First" type="App::PropertyString"><String value="one"/></Property></Properties>
+<Properties Count="1"><Property name="Second" type="App::PropertyString"><String value="two"/></Property></Properties>
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("duplicate root Properties containers");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn rejects_duplicate_property_names_for_one_owner() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Part" name="Part"/></Objects>
+<ObjectData Count="1"><Object name="Part"><Properties Count="2">
+ <Property name="Label" type="App::PropertyString"><String value="one"/></Property>
+ <Property name="Label" type="App::PropertyString"><String value="two"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("duplicate object property names");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("duplicate property name Label")
+    ));
+}
+
+#[test]
+fn rejects_nested_xlink_value_children() {
+    let documents = [
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Thing"/></Objects>
+<ObjectData Count="1"><Object name="Thing"><Properties Count="1">
+<Property name="Source" type="App::PropertyXLink"><XLink file="" name="Target"><XLink file="" name="Nested"/></XLink></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Thing"/></Objects>
+<ObjectData Count="1"><Object name="Thing"><Properties Count="1">
+<Property name="Source" type="App::PropertyXLink"><XLink file="" name="Target" sub="Face1"><Sub value="Face2"/></XLink></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Thing"/></Objects>
+<ObjectData Count="1"><Object name="Thing"><Properties Count="1">
+<Property name="Source" type="App::PropertyXLink"><XLink file="" name="Target" count="1"><Sub value="Face1"><Sub value="Face2"/></Sub></XLink></Property>
+</Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Thing"/></Objects>
+<ObjectData Count="1"><Object name="Thing"><Properties Count="1">
+<Property name="Source" type="App::PropertyXLink"><XLink file="" name="Target" count="0"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+    ];
+    for document in documents {
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default(),
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+}
+
+#[test]
 pub(crate) fn legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts() {
     let cases = [
         r#"<Document SchemaVersion="2"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
@@ -414,4 +485,125 @@ fn rejects_inconsistent_object_dependency_envelopes() {
             Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
+}
+
+#[test]
+fn rejects_ambiguous_persistence_carriers() {
+    let cases = [
+        r#"<Document schemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="4" schemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="0"/><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="0"/><ObjectData Count="0"/><ObjectData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><ObjectDeps Name="B" Count="0"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="2"><Property name="Same" type="App::PropertyString"/><Property name="Same" type="App::PropertyString"/></Properties></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="0"/><Properties Count="0"/></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="0"/><Extensions Count="0"/><Properties Count="0"/></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="2"><Extension type="Vendor::First" name="Same"/><Extension type="Vendor::Second" name="Same"/></Extensions><Properties Count="0"/></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="2"><Extension type="Vendor::Same" name="First"/><Extension type="Vendor::Same" name="Second"/></Extensions><Properties Count="0"/></Object></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A" Extensions="True"><Properties Count="0"/><Extensions Count="0"/></Object></ObjectData></Document>"#,
+    ];
+
+    for document in cases {
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default()
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+}
+
+#[test]
+fn binds_nested_extension_properties_to_their_enclosing_record() {
+    let document = r#"<Document SchemaVersion="4">
+<Objects Count="1"><Object type="App::Feature" name="A"/></Objects>
+<ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="2">
+<Extension type="Vendor::First" name="First"><Properties Count="1"><Property name="FirstValue" type="App::PropertyString"><String value="first"/></Property></Properties></Extension>
+<Extension type="Vendor::Second" name="Second"><Properties Count="1"><Property name="SecondValue" type="App::PropertyString"><String value="second"/></Property></Properties></Extension>
+</Extensions><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let graph = crate::persistence::parse(document.as_bytes()).expect("extension graph");
+    let first = graph
+        .extensions
+        .iter()
+        .find(|extension| extension.name == "First")
+        .expect("first extension");
+    let second = graph
+        .extensions
+        .iter()
+        .find(|extension| extension.name == "Second")
+        .expect("second extension");
+    assert_eq!(
+        graph
+            .properties
+            .iter()
+            .find(|property| property.name == "FirstValue")
+            .expect("first property")
+            .owner,
+        first.id
+    );
+    assert_eq!(
+        graph
+            .properties
+            .iter()
+            .find(|property| property.name == "SecondValue")
+            .expect("second property")
+            .owner,
+        second.id
+    );
+}
+
+#[test]
+fn native_validation_rejects_duplicate_extension_identity() {
+    let document = r#"<Document SchemaVersion="4">
+<Objects Count="1"><Object type="App::Feature" name="A"/></Objects>
+<ObjectData Count="1"><Object name="A" Extensions="True"><Extensions Count="1"><Extension type="Vendor::Extension" name="Extension"/></Extensions><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("extension graph");
+    let mut corrupted = result.ir().clone();
+    let mut extensions = corrupted
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::ExtensionRecord>("extensions")
+        .expect("extensions")
+        .clone();
+    extensions.push(extensions[0].clone());
+    corrupted
+        .native
+        .namespace_mut("fcstd")
+        .set_arena("extensions", &extensions)
+        .expect("replace extensions");
+    let findings = crate::validate_native(&corrupted);
+    assert!(findings.iter().any(|finding| {
+        finding.message.contains("duplicate FCStd native identity")
+            || finding.message.contains("duplicates extension name")
+    }));
+}
+
+#[test]
+fn unknown_property_runtime_names_do_not_select_a_family_by_substring() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"><Properties Count="1"><Property name="Custom" type="Vendor::PropertyLinkAndPropertyString"><Link value="A"/></Property></Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("unknown property runtime type is retained");
+    let property = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties")
+        .into_iter()
+        .find(|property| property.name == "Custom")
+        .expect("custom property");
+    assert_eq!(property.family, crate::native::PropertyFamily::Unknown);
+    assert!(property.links.is_empty());
 }

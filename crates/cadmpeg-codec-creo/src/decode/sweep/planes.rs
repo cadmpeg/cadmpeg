@@ -13,7 +13,7 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_CYLINDER_CARRIER: f64 = 1e-9;
+const EPS_CYLINDER_CARRIER: f64 = 1.0e-9;
 
 fn feature_local_plane(scan: &ContainerScan, surface_id: u32) -> Result<Option<PlaneEquation>, ()> {
     if crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id).is_none() {
@@ -49,6 +49,10 @@ fn feature_local_plane(scan: &ContainerScan, surface_id: u32) -> Result<Option<P
         _ => Err(()),
     }
 }
+
+const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
+const EPS_SIGNED_LENGTH: f64 = 1.0e-9;
 
 pub(in super::super) fn feature_plane_equations(
     scan: &ContainerScan,
@@ -113,14 +117,16 @@ pub(in super::super) fn feature_outline_plane(
             .into_iter()
             .zip(right.origin)
             .all(|(left, right)| {
-                (left - right).abs() <= 1e-9 * left.abs().max(right.abs()).max(1.0)
+                (left - right).abs()
+                    <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
             })
             && left
                 .normal
                 .into_iter()
                 .zip(right.normal)
                 .all(|(left, right)| {
-                    (left - right).abs() <= 1e-9 * left.abs().max(right.abs()).max(1.0)
+                    (left - right).abs()
+                        <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
                 })
     };
     let plane = match (outlines.as_slice(), positional_frames.as_slice()) {
@@ -278,7 +284,7 @@ pub(in super::super) fn ordered_parallel_cap_extent(
         .normal
         .into_iter()
         .zip(end.normal)
-        .all(|(left, right)| (left - right).abs() <= 1e-10)
+        .all(|(left, right)| (left - right).abs() <= EPS_AXIS_ALIGNMENT)
         .then_some(())?;
     let signed_length = dot(
         std::array::from_fn(|axis| end.origin[axis] - start.origin[axis]),
@@ -290,7 +296,7 @@ pub(in super::super) fn ordered_parallel_cap_extent(
         .chain(end.origin)
         .map(f64::abs)
         .fold(1.0, f64::max);
-    (signed_length.abs() > 1e-9 * scale).then_some(())?;
+    (signed_length.abs() > EPS_SIGNED_LENGTH * scale).then_some(())?;
     Some((
         ExtrudeExtent::OneSided {
             side: blind_extrude_side(signed_length.abs()),
@@ -374,8 +380,9 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
     let first = *frames.first()?;
     let length = first.length.filter(|length| *length > 0.0)?;
     let direction = normalized(first.axis)?;
-    let close =
-        |left: f64, right: f64| (left - right).abs() <= 1e-9 * left.abs().max(right.abs()).max(1.0);
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * left.abs().max(right.abs()).max(1.0)
+    };
     frames
         .iter()
         .all(|frame| {

@@ -6,8 +6,10 @@ use cadmpeg_core::bytes::find_from as find;
 use crate::scalar;
 use crate::surface::{PositionalCylinderFrame, SurfaceKind, SurfaceParameterRecord, SurfaceRow};
 
-const EPS_ACTIVE_CYLINDER_RELATIVE: f64 = 1e-9;
-const EPS_ACTIVE_CYLINDER_MIN: f64 = 1e-12;
+const EPS_ACTIVE_CYLINDER_RELATIVE: f64 = 1.0e-9;
+const EPS_ACTIVE_CYLINDER_MIN: f64 = 1.0e-12;
+
+const EPS_DATUM_COORDINATE_AGREEMENT: f64 = 1.0e-9;
 
 /// An axis-aligned model-space datum plane.
 ///
@@ -494,7 +496,7 @@ fn slot_equal(first: &DatumSlot, second: &DatumSlot) -> Option<bool> {
     match (first.value, second.value) {
         (Some(first), Some(second)) => {
             let scale = first.abs().max(second.abs()).max(1.0);
-            Some((first - second).abs() <= 1e-9 * scale)
+            Some((first - second).abs() <= EPS_DATUM_COORDINATE_AGREEMENT * scale)
         }
         (None, None) => Some(first.token == second.token),
         _ => None,

@@ -24,9 +24,9 @@ use super::equations::{cross, dot, CarrierEquation, PlaneEquation};
 use super::planes::point_on_carrier;
 use super::vertices::model_points_agree;
 
-const EPS_AGREE: f64 = 1e-9;
-const EPS_ORTHO: f64 = 1e-10;
-const EPS_NEAR_ZERO: f64 = 1e-12;
+const EPS_AGREE: f64 = 1.0e-9;
+const EPS_ORTHO: f64 = 1.0e-10;
+const EPS_NEAR_ZERO: f64 = 1.0e-12;
 const PCURVE_MISMATCH_SAMPLE_LIMIT: usize = 4;
 const PCURVE_CARRIER_PARALLEL_EPS_SQUARED: f64 = 1e-18;
 const PCURVE_CARRIER_SAMPLE_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
@@ -1933,7 +1933,7 @@ mod tests {
 
     #[test]
     fn two_chart_endpoint_carrier_proof_ignores_interior_disagreement() {
-        const EPS_EXPECTED_POINT: f64 = 1e-12;
+        const EPS_EXPECTED_POINT: f64 = 1.0e-12;
         let mut scan = crate::container::scan_bytes(Vec::new());
         scan.curves
             .two_chart_pcurves
@@ -2007,7 +2007,7 @@ mod tests {
 
     #[test]
     fn pcurve_mismatch_diagnostics_measure_both_endpoint_orders() {
-        const EPS_TEST_ERROR: f64 = 1e-12;
+        const EPS_TEST_ERROR: f64 = 1.0e-12;
         let mapped = vec![
             MappedPcurvePath {
                 face_id: 7,

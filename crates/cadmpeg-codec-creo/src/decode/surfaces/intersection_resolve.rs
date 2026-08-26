@@ -20,7 +20,9 @@ use super::intersection_candidates::{
 };
 use super::intersections::carrier_intersection_curve;
 
-const EPS_ON_CURVE: f64 = 1e-7;
+const EPS_ON_CURVE: f64 = 1.0e-7;
+const EPS_AXIS_COMPONENT: f64 = 1.0e-10;
+const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
 
 pub(in super::super) fn multi_component_intersection_candidates(
     first: CarrierEquation,
@@ -163,34 +165,33 @@ pub(in super::super) fn select_fc14_axis_coordinate_candidate(
     candidates: Vec<(CurveGeometry, &'static str)>,
     held_coordinate: f64,
 ) -> Option<(CurveGeometry, &'static str)> {
-    let matching =
-        candidates
-            .into_iter()
-            .filter(|(geometry, tag)| {
-                if *tag != "coaxial_cone_cylinder_secant_circle" {
-                    return false;
-                }
-                let CurveGeometry::Circle { center, axis, .. } = geometry else {
-                    return false;
-                };
-                let axis = [axis.x, axis.y, axis.z];
-                let Some(axis_index) = axis.iter().enumerate().find_map(|(index, value)| {
-                    ((value.abs() - 1.0).abs() <= 1e-10).then_some(index)
-                }) else {
-                    return false;
-                };
-                if axis
-                    .iter()
-                    .enumerate()
-                    .any(|(index, value)| index != axis_index && value.abs() > 1e-10)
-                {
-                    return false;
-                }
-                let center = [center.x, center.y, center.z];
-                let scale = center[axis_index].abs().max(held_coordinate.abs()).max(1.0);
-                (center[axis_index] - held_coordinate).abs() <= 1e-9 * scale
-            })
-            .collect::<Vec<_>>();
+    let matching = candidates
+        .into_iter()
+        .filter(|(geometry, tag)| {
+            if *tag != "coaxial_cone_cylinder_secant_circle" {
+                return false;
+            }
+            let CurveGeometry::Circle { center, axis, .. } = geometry else {
+                return false;
+            };
+            let axis = [axis.x, axis.y, axis.z];
+            let Some(axis_index) = axis.iter().enumerate().find_map(|(index, value)| {
+                ((value.abs() - 1.0).abs() <= EPS_AXIS_COMPONENT).then_some(index)
+            }) else {
+                return false;
+            };
+            if axis
+                .iter()
+                .enumerate()
+                .any(|(index, value)| index != axis_index && value.abs() > EPS_AXIS_COMPONENT)
+            {
+                return false;
+            }
+            let center = [center.x, center.y, center.z];
+            let scale = center[axis_index].abs().max(held_coordinate.abs()).max(1.0);
+            (center[axis_index] - held_coordinate).abs() <= EPS_CENTER_AGREEMENT * scale
+        })
+        .collect::<Vec<_>>();
     let [candidate] = matching.as_slice() else {
         return None;
     };

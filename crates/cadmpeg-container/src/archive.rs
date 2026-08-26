@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use zip::CompressionMethod;
+use zip::{CompressionMethod, HasZipMetadata};
 
 static NEXT_ARCHIVE_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -63,16 +63,22 @@ pub struct EntryRecord {
     pub data_start: u64,
     /// Physical start of the central-directory record.
     pub central_start: u64,
+    utf8_name: bool,
     snapshot_id: u64,
 }
 
 impl EntryRecord {
+    /// Returns whether ZIP metadata uses Unicode filename support for this entry.
+    pub fn uses_utf8_name_encoding(&self) -> bool {
+        self.utf8_name
+    }
+
     /// Returns the exclusive compressed-payload boundary.
     pub fn data_end(&self) -> Result<u64, CodecError> {
         self.data_start
             .checked_add(self.compressed_size)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("ZIP data range overflows for {}", self.name))
+                CodecError::malformed(format_args!("ZIP data range overflows for {}", self.name))
             })
     }
 }
@@ -90,27 +96,36 @@ impl<'a> ArchiveSnapshot<'a> {
     /// Parses the central directory once and retains replayable physical facts.
     pub fn new(root: View<'a>) -> Result<Self, CodecError> {
         let mut archive = zip::ZipArchive::new(Cursor::new(root.window()))
-            .map_err(|error| CodecError::Malformed(format!("not a readable ZIP: {error}")))?;
+            .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
+        let central_entry_count =
+            reject_duplicate_central_names(root.window(), archive.central_directory_start())?;
+        if central_entry_count != archive.len() {
+            return Err(CodecError::Malformed(
+                "ZIP central directory contains duplicate entry names".into(),
+            ));
+        }
         let snapshot_id = NEXT_ARCHIVE_SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed);
         let mut names = BTreeSet::new();
         let mut entries = Vec::with_capacity(archive.len());
         for index in 0..archive.len() {
             let file = archive.by_index(index).map_err(|error| {
-                CodecError::Malformed(format!("bad ZIP entry {index}: {error}"))
+                CodecError::malformed(format_args!("bad ZIP entry {index}: {error}"))
             })?;
             let name = file.name().to_owned();
             if !names.insert(name.clone()) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "duplicate ZIP entry name {name}"
                 )));
             }
             if file.encrypted() {
-                return Err(CodecError::Malformed(format!("encrypted ZIP entry {name}")));
+                return Err(CodecError::malformed(format_args!(
+                    "encrypted ZIP entry {name}"
+                )));
             }
             let compression = EntryCompression::from_zip(file.compression(), &name)?;
-            let data_start = file
-                .data_start()
-                .ok_or_else(|| CodecError::Malformed(format!("missing data offset for {name}")))?;
+            let data_start = file.data_start().ok_or_else(|| {
+                CodecError::malformed(format_args!("missing data offset for {name}"))
+            })?;
             let record = EntryRecord {
                 name,
                 compression,
@@ -120,6 +135,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 header_start: file.header_start(),
                 data_start,
                 central_start: file.central_header_start(),
+                utf8_name: file.get_metadata().is_utf8,
                 snapshot_id,
             };
             for offset in [
@@ -129,7 +145,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 record.central_start,
             ] {
                 if offset > root.window().len() as u64 {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "ZIP offset outside archive for {}",
                         record.name
                     )));
@@ -176,10 +192,10 @@ impl<'a> ArchiveSnapshot<'a> {
         let archive_start = u64::try_from(self.root.start())
             .map_err(|_| CodecError::Malformed("ZIP root offset does not fit u64".into()))?;
         let absolute_start = archive_start.checked_add(entry.data_start).ok_or_else(|| {
-            CodecError::Malformed(format!("ZIP data range overflows for {}", entry.name))
+            CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
         })?;
         let absolute_end = archive_start.checked_add(end).ok_or_else(|| {
-            CodecError::Malformed(format!("ZIP data range overflows for {}", entry.name))
+            CodecError::malformed(format_args!("ZIP data range overflows for {}", entry.name))
         })?;
         match entry.compression {
             EntryCompression::Stored => {
@@ -192,13 +208,13 @@ impl<'a> ArchiveSnapshot<'a> {
                     entry.name.clone(),
                 )?;
                 if view.window().len() as u64 != entry.uncompressed_size {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "stored size mismatch for {}",
                         entry.name
                     )));
                 }
                 if crc32fast::hash(view.window()) != entry.crc32 {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "CRC mismatch for {}",
                         entry.name
                     )));
@@ -213,7 +229,7 @@ impl<'a> ArchiveSnapshot<'a> {
                     CodecError::Malformed("ZIP data offset does not fit memory".into())
                 })?;
                 let source = self.root.child(start, end).ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "ZIP data range escapes archive for {}",
                         entry.name
                     ))
@@ -225,7 +241,7 @@ impl<'a> ArchiveSnapshot<'a> {
                     EntryCompression::Zstd => Box::new(
                         zstd::stream::read::Decoder::with_buffer(source.window()).map_err(
                             |error| {
-                                CodecError::Malformed(format!(
+                                CodecError::malformed(format_args!(
                                     "cannot open Zstandard frame for {}: {error}",
                                     entry.name
                                 ))
@@ -242,7 +258,10 @@ impl<'a> ArchiveSnapshot<'a> {
                 let mut chunk = [0_u8; 16 * 1024];
                 loop {
                     let read = decoder.read(&mut chunk).map_err(|error| {
-                        CodecError::Malformed(format!("cannot inflate {}: {error}", entry.name))
+                        CodecError::malformed(format_args!(
+                            "cannot inflate {}: {error}",
+                            entry.name
+                        ))
                     })?;
                     if read == 0 {
                         break;
@@ -251,7 +270,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 }
                 let view = writer.finalize()?;
                 if crc32fast::hash(view.window()) != entry.crc32 {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "CRC mismatch for {}",
                         entry.name
                     )));
@@ -295,6 +314,44 @@ impl<'a> ArchiveSnapshot<'a> {
     }
 }
 
+fn reject_duplicate_central_names(bytes: &[u8], central_start: u64) -> Result<usize, CodecError> {
+    let mut offset = central_start;
+    let mut names = BTreeSet::new();
+    let mut entry_count = 0;
+    while signature_at(bytes, offset) == Some(*b"PK\x01\x02") {
+        entry_count += 1;
+        let fixed_end = offset
+            .checked_add(46)
+            .ok_or_else(|| CodecError::Malformed("ZIP central-header offset overflow".into()))?;
+        let name_len = u64::from(u16_at(bytes, offset + 28)?);
+        let extra_len = u64::from(u16_at(bytes, offset + 30)?);
+        let comment_len = u64::from(u16_at(bytes, offset + 32)?);
+        let name_end = fixed_end
+            .checked_add(name_len)
+            .ok_or_else(|| CodecError::Malformed("ZIP central-name offset overflow".into()))?;
+        let record_end = name_end
+            .checked_add(extra_len)
+            .and_then(|end| end.checked_add(comment_len))
+            .ok_or_else(|| CodecError::Malformed("ZIP central-record offset overflow".into()))?;
+        let name_start = usize::try_from(fixed_end).map_err(|_| {
+            CodecError::Malformed("ZIP central-name offset does not fit memory".into())
+        })?;
+        let name_end = usize::try_from(name_end).map_err(|_| {
+            CodecError::Malformed("ZIP central-name end does not fit memory".into())
+        })?;
+        let name = bytes
+            .get(name_start..name_end)
+            .ok_or_else(|| CodecError::Malformed("truncated ZIP central name".into()))?;
+        if !names.insert(name.to_vec()) {
+            return Err(CodecError::Malformed(
+                "duplicate ZIP central entry name".into(),
+            ));
+        }
+        offset = record_end;
+    }
+    Ok(entry_count)
+}
+
 /// One exact physical range in a ZIP archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhysicalSpan {
@@ -322,7 +379,7 @@ fn u16_at(bytes: &[u8], offset: u64) -> Result<u16, CodecError> {
     let raw = bytes
         .get(start..start + 2)
         .ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))?;
-    Ok(u16::from_le_bytes([raw[0], raw[1]]))
+    View::u16_le_at(raw, 0).ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))
 }
 
 fn u32_at(bytes: &[u8], offset: u64) -> Result<u32, CodecError> {
@@ -331,7 +388,7 @@ fn u32_at(bytes: &[u8], offset: u64) -> Result<u32, CodecError> {
     let raw = bytes
         .get(start..start + 4)
         .ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))?;
-    Ok(u32::from_le_bytes(raw.try_into().expect("four-byte slice")))
+    View::u32_le_at(raw, 0).ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))
 }
 
 fn u64_at(bytes: &[u8], offset: u64) -> Result<u64, CodecError> {
@@ -340,9 +397,7 @@ fn u64_at(bytes: &[u8], offset: u64) -> Result<u64, CodecError> {
     let raw = bytes
         .get(start..start + 8)
         .ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))?;
-    Ok(u64::from_le_bytes(
-        raw.try_into().expect("eight-byte slice"),
-    ))
+    View::u64_le_at(raw, 0).ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))
 }
 
 fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
@@ -382,7 +437,7 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
 
     for (index, entry) in local_order.iter().enumerate() {
         if signature_at(bytes, entry.header_start) != Some(*b"PK\x03\x04") {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid local header signature for {}",
                 entry.name
             )));
@@ -393,7 +448,7 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
         let name_end = fixed_end + name_len;
         let extra_end = name_end + extra_len;
         if extra_end != entry.data_start {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "local header lengths disagree for {}",
                 entry.name
             )));
@@ -438,7 +493,7 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
             .get(index + 1)
             .map_or(central_begin, |next| next.header_start);
         if entry.data_end()? > next {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "compressed payload overlaps following ZIP record for {}",
                 entry.name
             )));
@@ -478,7 +533,7 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
     let mut central_end = central_begin;
     for entry in central_order {
         if signature_at(bytes, entry.central_start) != Some(*b"PK\x01\x02") {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid central header signature for {}",
                 entry.name
             )));
@@ -491,7 +546,7 @@ fn physical_ledger(bytes: &[u8], entries: &[EntryRecord]) -> Result<Vec<Physical
         let extra_end = name_end + extra_len;
         let record_end = extra_end + comment_len;
         if record_end > len {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "truncated central header for {}",
                 entry.name
             )));
@@ -573,7 +628,7 @@ fn parse_data_descriptor(
             return Ok(end);
         }
     }
-    Err(CodecError::Malformed(format!(
+    Err(CodecError::malformed(format_args!(
         "invalid data descriptor for {}",
         entry.name
     )))
@@ -593,7 +648,8 @@ fn classify_end_records(
                 let raw = bytes
                     .get(start..start + 8)
                     .ok_or_else(|| CodecError::Malformed("truncated ZIP64 end record".into()))?;
-                let body = u64::from_le_bytes(raw.try_into().expect("eight-byte slice"));
+                let body = View::u64_le_at(raw, 0)
+                    .ok_or_else(|| CodecError::Malformed("truncated ZIP64 end record".into()))?;
                 (
                     "zip64-end-record",
                     12_u64
@@ -612,7 +668,7 @@ fn classify_end_records(
             .checked_add(size)
             .ok_or_else(|| CodecError::Malformed("ZIP end-record range overflow".into()))?;
         if end > len {
-            return Err(CodecError::Malformed(format!("truncated {role}")));
+            return Err(CodecError::malformed(format_args!("truncated {role}")));
         }
         push_region(regions, offset, end, role, None);
         offset = end;

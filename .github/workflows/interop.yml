@@ -1,0 +1,106 @@
+name: Native application interoperability
+
+# Slow-cadence interoperability lane. Each job feeds cadmpeg writer output to
+# an independent native application and asserts acceptance. These runs
+# re-establish the "independent native applications accept verified round
+# trips" evidence in docs/format-support.md; they do not gate pull requests.
+# New format/application pairs (STEP, Rhino) join as sibling jobs here.
+
+on:
+  schedule:
+    - cron: "41 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_RELEASE_DEBUG: 0
+
+jobs:
+  iges-freecad:
+    name: IGES geometry acceptance (FreeCAD)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: iges-freecad
+
+      - name: Install FreeCAD command line importer
+        run: sudo snap install freecad --channel=stable
+
+      - name: Test IGES acceptance harnesses
+        run: |
+          python3 -m unittest -v \
+            scripts/test_prepare_iges_freecad_golden.py \
+            scripts/test_prepare_iges_freecad_edited.py
+
+      - name: Build IGES production binary
+        run: cargo build -q --release -p cadmpeg --no-default-features --features iges
+
+      - name: Materialize writer geometry profile
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/side2/tmp/iges-l9/freecad"
+          python3 scripts/prepare-iges-freecad-golden.py \
+            --output-dir "$HOME/side2/tmp/iges-l9/freecad"
+
+      - name: Materialize every writable output
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/side2/tmp/iges-l9/freecad-all"
+          python3 scripts/prepare-iges-freecad-golden.py \
+            --all-writable \
+            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+          python3 scripts/prepare-iges-freecad-edited.py \
+            --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
+            --iges-target 5.1 \
+            --output-name edited_point_v51.igs \
+            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+          python3 scripts/prepare-iges-freecad-edited.py \
+            --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
+            --iges-target 5.2 \
+            --output-name edited_point_v52.igs \
+            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+          python3 scripts/prepare-iges-freecad-edited.py \
+            --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
+            --iges-target 5.3 \
+            --output-name edited_point_v53.igs \
+            --output-dir "$HOME/side2/tmp/iges-l9/freecad-all"
+
+      - name: Run independent FreeCAD geometry gate
+        env:
+          CADMPEG_IGES_INPUT_DIR: /home/runner/side2/tmp/iges-l9/freecad
+          CADMPEG_IGES_EXPECTATIONS: ${{ github.workspace }}/scripts/iges-freecad-expectations.json
+          CADMPEG_IGES_REPORT: /home/runner/side2/tmp/iges-l9/freecad-report.json
+        run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-iges-freecad.py"
+
+      - name: Run independent FreeCAD writer gate
+        env:
+          CADMPEG_IGES_INPUT_DIR: /home/runner/side2/tmp/iges-l9/freecad-all
+          CADMPEG_IGES_ALLOW_EMPTY: "1"
+          CADMPEG_IGES_REPORT: /home/runner/side2/tmp/iges-l9/freecad-all-report.json
+        run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-iges-freecad.py"
+
+      - name: Upload FreeCAD acceptance report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: iges-freecad-report-${{ github.run_id }}
+          path: /home/runner/side2/tmp/iges-l9
+          if-no-files-found: warn

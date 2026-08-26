@@ -514,7 +514,7 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
         .expect("active datum cylinder surface");
     assert!(matches!(
         surface.geometry,
-        SurfaceGeometry::Cylinder { radius, .. } if (radius - 0.75).abs() < 1e-12
+        SurfaceGeometry::Cylinder { radius, .. } if (radius - 0.75).abs() < 1.0e-12
     ));
     assert_eq!(
         surface

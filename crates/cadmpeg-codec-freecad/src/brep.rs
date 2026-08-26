@@ -533,48 +533,70 @@ pub fn parse_payloads(
     let mut payloads = Vec::new();
     for property in properties
         .iter()
-        .filter(|property| property.type_name.contains("PropertyPartShape"))
+        .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
-        for name in &property.side_entries {
-            let entry = entries.get(name.as_str()).ok_or_else(|| {
-                CodecError::Malformed(format!("missing exact-shape entry {name}"))
-            })?;
-            let is_shape_entry = entry.role == "brep"
-                || roxmltree::Document::parse(&property.raw_xml)
-                    .ok()
-                    .and_then(|xml| {
-                        xml.descendants()
-                            .find(|node| node.has_tag_name("Part"))
-                            .and_then(|node| node.attribute("file"))
-                            .map(|file| file == name)
-                    })
-                    .unwrap_or(false);
-            if !is_shape_entry {
-                continue;
-            }
-            let form = if entry.data.is_empty() {
-                ShapePayloadForm::Empty
-            } else if name.to_ascii_lowercase().ends_with(".bin") {
-                ShapePayloadForm::Binary
-            } else {
-                ShapePayloadForm::Text
-            };
-            let (text, binary) = match form {
-                ShapePayloadForm::Empty => (None, None),
-                ShapePayloadForm::Text => (Some(parse_text(&entry.data)?), None),
-                ShapePayloadForm::Binary => (None, Some(parse_binary_prefix(&entry.data)?)),
-            };
-            payloads.push(ShapePayloadRecord {
-                id: crate::native::native_child_id("shape-payload", &property.id, name),
-                property: property.id.clone(),
-                entry: entry.id.clone(),
-                form,
-                text,
-                binary,
-            });
-        }
+        let Some(name) = direct_shape_entry(property)? else {
+            continue;
+        };
+        let entry = entries.get(name.as_str()).ok_or_else(|| {
+            CodecError::malformed(format_args!("missing exact-shape entry {name}"))
+        })?;
+        let form = if entry.data.is_empty() {
+            ShapePayloadForm::Empty
+        } else if name.to_ascii_lowercase().ends_with(".bin") {
+            ShapePayloadForm::Binary
+        } else {
+            ShapePayloadForm::Text
+        };
+        let (text, binary) = match form {
+            ShapePayloadForm::Empty => (None, None),
+            ShapePayloadForm::Text => (Some(parse_text(&entry.data)?), None),
+            ShapePayloadForm::Binary => (None, Some(parse_binary_prefix(&entry.data)?)),
+        };
+        payloads.push(ShapePayloadRecord {
+            id: crate::native::native_child_id("shape-payload", &property.id, &name),
+            property: property.id.clone(),
+            entry: entry.id.clone(),
+            form,
+            text,
+            binary,
+        });
     }
     Ok(payloads)
+}
+
+fn direct_shape_entry(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
+    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        CodecError::malformed(format_args!(
+            "invalid exact-shape property XML {}: {error}",
+            property.id
+        ))
+    })?;
+    let root = document.root_element();
+    if !matches!(root.tag_name().name(), "Property" | "_Property") {
+        return Err(CodecError::malformed(format_args!(
+            "exact-shape property {} has no property record root",
+            property.id
+        )));
+    }
+    let parts = root
+        .children()
+        .filter(|node| node.has_tag_name("Part"))
+        .collect::<Vec<_>>();
+    let part = match parts.as_slice() {
+        [] => return Ok(None),
+        [part] => *part,
+        _ => {
+            return Err(CodecError::malformed(format_args!(
+                "exact-shape property {} has multiple direct Part carriers",
+                property.id
+            )));
+        }
+    };
+    Ok(part
+        .attribute("file")
+        .filter(|file| !file.is_empty())
+        .map(str::to_owned))
 }
 
 /// Derive an exhaustive family census from successfully parsed exact-shape payloads.
@@ -741,17 +763,28 @@ fn census_surface(
 pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
-    let topology_version = if text.contains("CASCADE Topology V1, (c) Matra-Datavision") {
-        1
-    } else if text.contains("CASCADE Topology V2, (c) Matra-Datavision") {
-        2
-    } else if text.contains("CASCADE Topology V3, (c) Open Cascade") {
-        3
-    } else {
-        return Err(CodecError::Malformed(
-            "text B-rep has no supported topology header".into(),
-        ));
-    };
+    let headers = [
+        ("CASCADE Topology V1, (c) Matra-Datavision", 1),
+        ("CASCADE Topology V2, (c) Matra-Datavision", 2),
+        ("CASCADE Topology V3, (c) Open Cascade", 3),
+    ];
+    let mut topology_version = None;
+    for (header, version) in headers {
+        let count = text.matches(header).count();
+        if count > 1 {
+            return Err(CodecError::Malformed(
+                "text B-rep has duplicate topology headers".into(),
+            ));
+        }
+        if count == 1 && topology_version.replace(version).is_some() {
+            return Err(CodecError::Malformed(
+                "text B-rep has multiple topology headers".into(),
+            ));
+        }
+    }
+    let topology_version = topology_version.ok_or_else(|| {
+        CodecError::Malformed("text B-rep has no supported topology header".into())
+    })?;
     let tokens = text.split_ascii_whitespace().collect::<Vec<_>>();
     let mut section_counts = BTreeMap::new();
     let mut previous_section = None;
@@ -765,21 +798,31 @@ pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
         "Triangulations",
         "TShapes",
     ] {
-        let index = tokens
+        let mut section_tokens = tokens
             .iter()
-            .position(|token| *token == section)
-            .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {section} table")))?;
+            .enumerate()
+            .filter(|(_, token)| **token == section);
+        let Some((index, _)) = section_tokens.next() else {
+            return Err(CodecError::malformed(format_args!(
+                "text B-rep has no {section} table"
+            )));
+        };
+        if section_tokens.next().is_some() {
+            return Err(CodecError::Malformed(
+                "text B-rep has duplicate section markers".into(),
+            ));
+        }
         let count = tokens
             .get(index + 1)
             .and_then(|value| value.parse::<usize>().ok())
-            .ok_or_else(|| CodecError::Malformed(format!("invalid {section} count")))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("invalid {section} count")))?;
         if count > 1_000_000 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "{section} count limit exceeded"
             )));
         }
         if previous_section.is_some_and(|previous| index <= previous) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "text B-rep {section} table is out of order"
             )));
         }
@@ -807,7 +850,7 @@ pub(crate) fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     }
     let declared_shapes = section_counts.get("TShapes").copied().unwrap_or(0);
     if shape_types.values().sum::<usize>() != declared_shapes {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "TShapes declares {declared_shapes} records but the shape-type census found {}",
             shape_types.values().sum::<usize>()
         )));
@@ -889,7 +932,7 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecErro
                         CodecError::Malformed("negative binary location factor".into())
                     })?;
                     if referenced == 0 || referenced > locations.len() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "binary location {} references unavailable location {referenced}",
                             index + 1
                         )));
@@ -906,7 +949,7 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecErro
                 TextLocation { factors, transform }
             }
             other => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "invalid binary location type {other}"
                 )))
             }
@@ -1126,7 +1169,7 @@ fn parse_binary_tshape(
         6 => TextShapeKind::Edge,
         7 => TextShapeKind::Vertex,
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid binary TShape kind {other}"
             )))
         }
@@ -1184,7 +1227,7 @@ fn parse_binary_tshape(
                         )?),
                     ),
                     other => {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "invalid binary vertex representation kind {other}"
                         )))
                     }
@@ -1270,7 +1313,7 @@ fn parse_binary_tshape(
                     "face triangulation",
                 )?),
                 other => {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "invalid binary face triangulation marker {other}"
                     )))
                 }
@@ -1307,7 +1350,7 @@ fn parse_binary_tshape(
         )?;
         let shape = tshape_count - reverse_index + 1;
         if shape >= index {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "binary TShape {index} references non-prior child {shape}"
             )));
         }
@@ -1484,7 +1527,7 @@ fn parse_binary_edge_representation(
             )?;
         }
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid binary edge representation kind {other}"
             )))
         }
@@ -1499,9 +1542,9 @@ fn checked_binary_reference(
     label: &str,
 ) -> Result<usize, CodecError> {
     let value = usize::try_from(value)
-        .map_err(|_| CodecError::Malformed(format!("negative binary {label}")))?;
+        .map_err(|_| CodecError::malformed(format_args!("negative binary {label}")))?;
     if value > count || (!allow_zero && value == 0) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "binary {label} index {value} exceeds table count {count}"
         )));
     }
@@ -1514,7 +1557,7 @@ fn binary_orientation(value: i32) -> Result<TextOrientation, CodecError> {
         1 => Ok(TextOrientation::Reversed),
         2 => Ok(TextOrientation::Internal),
         3 => Ok(TextOrientation::External),
-        other => Err(CodecError::Malformed(format!(
+        other => Err(CodecError::malformed(format_args!(
             "invalid binary orientation {other}"
         ))),
     }
@@ -1707,7 +1750,7 @@ fn parse_binary_surface(
             basis: Box::new(parse_binary_surface(cursor, depth + 1)?),
         },
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid binary surface kind {other}"
             )))
         }
@@ -1718,7 +1761,7 @@ fn checked_grid_count(u_count: usize, v_count: usize, label: &str) -> Result<usi
     u_count
         .checked_mul(v_count)
         .filter(|count| *count <= 1_000_000)
-        .ok_or_else(|| CodecError::Malformed(format!("{label} pole-count limit exceeded")))
+        .ok_or_else(|| CodecError::malformed(format_args!("{label} pole-count limit exceeded")))
 }
 
 fn parse_binary_curve(
@@ -1851,7 +1894,7 @@ fn parse_binary_curve(
             basis: Box::new(parse_binary_curve(cursor, depth + 1)?),
         },
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid binary 3D curve kind {other}"
             )))
         }
@@ -1966,7 +2009,7 @@ fn parse_binary_curve2d(
             basis: Box::new(parse_binary_curve2d(cursor, depth + 1)?),
         },
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid binary parameter-curve kind {other}"
             )))
         }
@@ -1994,7 +2037,7 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn truncated(label: &str) -> CodecError {
-        CodecError::Malformed(format!("truncated {label}"))
+        CodecError::malformed(format_args!("truncated {label}"))
     }
 
     /// Clamps a declared element count to what the unread bytes can hold.
@@ -2002,8 +2045,9 @@ impl<'a> BinaryCursor<'a> {
     /// `element_size` is the minimum encoded bytes of one element; a count that
     /// could not physically fit in the remaining input is rejected.
     fn bounded(&self, count: usize, element_size: usize, label: &str) -> Result<usize, CodecError> {
-        bounded_len(count as u64, element_size, self.remaining())
-            .ok_or_else(|| CodecError::Malformed(format!("{label} count exceeds remaining input")))
+        bounded_len(count as u64, element_size, self.remaining()).ok_or_else(|| {
+            CodecError::malformed(format_args!("{label} count exceeds remaining input"))
+        })
     }
 
     fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
@@ -2015,10 +2059,10 @@ impl<'a> BinaryCursor<'a> {
         let length = tail
             .iter()
             .position(|byte| *byte == b'\n')
-            .ok_or_else(|| CodecError::Malformed(format!("unterminated {label}")))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("unterminated {label}")))?;
         let line = self.take(length + 1, label)?;
         std::str::from_utf8(&line[..length])
-            .map_err(|_| CodecError::Malformed(format!("non-UTF-8 {label}")))
+            .map_err(|_| CodecError::malformed(format_args!("non-UTF-8 {label}")))
     }
 
     fn section_count(&mut self, name: &str) -> Result<usize, CodecError> {
@@ -2030,7 +2074,7 @@ impl<'a> BinaryCursor<'a> {
         };
         let mut tokens = line.split_ascii_whitespace();
         if tokens.next() != Some(name) || tokens.clone().count() != 1 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "binary B-rep expected {name} section, found {line:?}"
             )));
         }
@@ -2038,7 +2082,7 @@ impl<'a> BinaryCursor<'a> {
             .next()
             .and_then(|value| value.parse::<usize>().ok())
             .filter(|count| *count <= 1_000_000)
-            .ok_or_else(|| CodecError::Malformed(format!("invalid binary {name} count")))
+            .ok_or_else(|| CodecError::malformed(format_args!("invalid binary {name} count")))
     }
 
     fn u8(&mut self, label: &str) -> Result<u8, CodecError> {
@@ -2049,7 +2093,7 @@ impl<'a> BinaryCursor<'a> {
         match self.u8(label)? {
             0 => Ok(false),
             1 => Ok(true),
-            other => Err(CodecError::Malformed(format!(
+            other => Err(CodecError::malformed(format_args!(
                 "invalid {label} byte {other}"
             ))),
         }
@@ -2068,7 +2112,7 @@ impl<'a> BinaryCursor<'a> {
         usize::try_from(value)
             .ok()
             .filter(|count| *count <= 1_000_000)
-            .ok_or_else(|| CodecError::Malformed(format!("invalid {label}")))
+            .ok_or_else(|| CodecError::malformed(format_args!("invalid {label}")))
     }
 
     fn f64(&mut self, label: &str) -> Result<f64, CodecError> {
@@ -2076,7 +2120,7 @@ impl<'a> BinaryCursor<'a> {
         value
             .is_finite()
             .then_some(value)
-            .ok_or_else(|| CodecError::Malformed(format!("non-finite {label}")))
+            .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
     }
 
     fn f32(&mut self, label: &str) -> Result<f32, CodecError> {
@@ -2084,7 +2128,7 @@ impl<'a> BinaryCursor<'a> {
         value
             .is_finite()
             .then_some(value)
-            .ok_or_else(|| CodecError::Malformed(format!("non-finite {label}")))
+            .ok_or_else(|| CodecError::malformed(format_args!("non-finite {label}")))
     }
 
     fn point2(&mut self, label: &str) -> Result<Point2, CodecError> {
@@ -2125,7 +2169,7 @@ impl<'a> BinaryCursor<'a> {
                 .checked_add(multiplicity)
                 .is_none_or(|len| len > 1_000_000)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "{label} expanded knot-count limit exceeded"
                 )));
             }
@@ -2181,7 +2225,7 @@ fn parse_locations(
                         CodecError::Malformed("negative location factor index".into())
                     })?;
                     if referenced == 0 || referenced > locations.len() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "location {} references unavailable location {referenced}",
                             index + 1
                         )));
@@ -2202,7 +2246,7 @@ fn parse_locations(
                 TextLocation { factors, transform }
             }
             other => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "invalid location type {other} at table index {}",
                     index + 1
                 )))
@@ -2600,12 +2644,14 @@ fn section_cursor<'a>(
     let start = tokens
         .iter()
         .position(|token| *token == section)
-        .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {section} table")))?
+        .ok_or_else(|| CodecError::malformed(format_args!("text B-rep has no {section} table")))?
         + 2;
     let end = tokens
         .iter()
         .position(|token| *token == following)
-        .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {following} table")))?;
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("text B-rep has no {following} table"))
+        })?;
     Ok(TokenCursor::new(&tokens[start..end]))
 }
 
@@ -2613,7 +2659,7 @@ fn ensure_section_consumed(cursor: &TokenCursor<'_>, section: &str) -> Result<()
     if cursor.is_empty() {
         Ok(())
     } else {
-        Err(CodecError::Malformed(format!(
+        Err(CodecError::malformed(format_args!(
             "text B-rep {section} table contains trailing tokens"
         )))
     }
@@ -2645,7 +2691,7 @@ fn parse_tshapes(
             }
             let child = parse_shape_use(&mut cursor, count, section_counts)?;
             if child.shape >= index {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "TShape {index} references non-prior child {}",
                     child.shape
                 )));
@@ -2686,7 +2732,7 @@ fn parse_shape_kind(token: &str) -> Result<TextShapeKind, CodecError> {
         "So" => Ok(TextShapeKind::Solid),
         "CS" => Ok(TextShapeKind::CompSolid),
         "Co" => Ok(TextShapeKind::Compound),
-        _ => Err(CodecError::Malformed(format!(
+        _ => Err(CodecError::malformed(format_args!(
             "invalid TShape kind {token:?}"
         ))),
     }
@@ -2765,7 +2811,7 @@ fn parse_vertex_geometry(
                 )?),
             ),
             other => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "invalid vertex representation kind {other}"
                 )))
             }
@@ -2942,7 +2988,7 @@ fn parse_edge_representation(
             )?;
         }
         other => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid edge representation kind {other}"
             )))
         }
@@ -2980,7 +3026,7 @@ fn parse_face_geometry(
 
 fn parse_shape_flags(token: &str, topology_version: u8) -> Result<[bool; 7], CodecError> {
     if token.len() != 7 || !token.bytes().all(|byte| matches!(byte, b'0' | b'1')) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "invalid TShape flags {token:?}"
         )));
     }
@@ -3006,16 +3052,16 @@ fn parse_shape_use(
         Some(b'i') => (TextOrientation::Internal, &token[1..]),
         Some(b'e') => (TextOrientation::External, &token[1..]),
         _ => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid shape use {token:?}"
             )))
         }
     };
     let encoded = encoded
         .parse::<usize>()
-        .map_err(|_| CodecError::Malformed(format!("invalid shape use {token:?}")))?;
+        .map_err(|_| CodecError::malformed(format_args!("invalid shape use {token:?}")))?;
     if encoded == 0 || encoded > shape_count {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "shape use index {encoded} is out of range"
         )));
     }
@@ -3036,7 +3082,7 @@ fn parse_reference(
 ) -> Result<usize, CodecError> {
     let value = cursor.count(label, maximum)?;
     if value == 0 && !allow_zero {
-        return Err(CodecError::Malformed(format!("{label} index is zero")));
+        return Err(CodecError::malformed(format_args!("{label} index is zero")));
     }
     Ok(value)
 }
@@ -3053,9 +3099,11 @@ fn parse_reference_suffix(
     let (reference, suffix) = token.split_at(split);
     let value = reference
         .parse::<usize>()
-        .map_err(|_| CodecError::Malformed(format!("invalid {label}")))?;
+        .map_err(|_| CodecError::malformed(format_args!("invalid {label}")))?;
     if value == 0 || value > maximum {
-        return Err(CodecError::Malformed(format!("{label} limit exceeded")));
+        return Err(CodecError::malformed(format_args!(
+            "{label} limit exceeded"
+        )));
     }
     Ok((value, (!suffix.is_empty()).then(|| suffix.to_owned())))
 }
@@ -3066,7 +3114,7 @@ fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[f64; 2], Co
         cursor.real(&format!("{label} last parameter"))?,
     ];
     if range[0] > range[1] {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{label} parameter range is reversed"
         )));
     }
@@ -3322,7 +3370,7 @@ fn parse_knots(
             .checked_add(multiplicity)
             .filter(|count| *count <= 2_000_000)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("expanded {label} knot limit exceeded"))
+                CodecError::malformed(format_args!("expanded {label} knot limit exceeded"))
             })?;
         knots.resize(expanded, knot);
     }
@@ -3686,8 +3734,9 @@ impl<'a> TokenCursor<'a> {
     /// `element_size` is the minimum tokens one element consumes; a count that
     /// could not fit in the remaining tokens is rejected.
     fn bounded(&self, count: usize, element_size: usize, label: &str) -> Result<usize, CodecError> {
-        bounded_len(count as u64, element_size, self.remaining())
-            .ok_or_else(|| CodecError::Malformed(format!("{label} count exceeds available tokens")))
+        bounded_len(count as u64, element_size, self.remaining()).ok_or_else(|| {
+            CodecError::malformed(format_args!("{label} count exceeds available tokens"))
+        })
     }
 
     fn peek(&self) -> Option<&'a str> {
@@ -3696,16 +3745,18 @@ impl<'a> TokenCursor<'a> {
 
     fn integer(&mut self, label: &str) -> Result<i64, CodecError> {
         self.next(label)?.parse().map_err(|_| {
-            CodecError::Malformed(format!("invalid {label} in text B-rep Curves table"))
+            CodecError::malformed(format_args!("invalid {label} in text B-rep Curves table"))
         })
     }
 
     fn count(&mut self, label: &str, maximum: usize) -> Result<usize, CodecError> {
         let value = self.integer(label)?;
         let value = usize::try_from(value)
-            .map_err(|_| CodecError::Malformed(format!("negative {label}")))?;
+            .map_err(|_| CodecError::malformed(format_args!("negative {label}")))?;
         if value > maximum {
-            return Err(CodecError::Malformed(format!("{label} limit exceeded")));
+            return Err(CodecError::malformed(format_args!(
+                "{label} limit exceeded"
+            )));
         }
         Ok(value)
     }
@@ -3714,16 +3765,16 @@ impl<'a> TokenCursor<'a> {
         match self.integer(label)? {
             0 => Ok(false),
             1 => Ok(true),
-            _ => Err(CodecError::Malformed(format!("invalid {label}"))),
+            _ => Err(CodecError::malformed(format_args!("invalid {label}"))),
         }
     }
 
     fn real(&mut self, label: &str) -> Result<f64, CodecError> {
         let value = self.next(label)?.parse::<f64>().map_err(|_| {
-            CodecError::Malformed(format!("invalid {label} in text B-rep Curves table"))
+            CodecError::malformed(format_args!("invalid {label} in text B-rep Curves table"))
         })?;
         if !value.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "non-finite {label} in text B-rep Curves table"
             )));
         }
@@ -3752,7 +3803,7 @@ impl<'a> TokenCursor<'a> {
 
     fn next(&mut self, label: &str) -> Result<&'a str, CodecError> {
         let token = self.tokens.get(self.index).copied().ok_or_else(|| {
-            CodecError::Malformed(format!("truncated {label} in text B-rep Curves table"))
+            CodecError::malformed(format_args!("truncated {label} in text B-rep Curves table"))
         })?;
         self.index += 1;
         Ok(token)
@@ -4286,7 +4337,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn retains_zero_byte_null_shape_as_typed_empty_payload() {
+    fn binds_only_the_direct_shape_entry_as_typed_payload() {
         let property = PropertyRecord {
             id: crate::native::native_id("property", "Shape:SuppressedShape"),
             owner: crate::native::native_id("object", "Shape"),
@@ -4300,7 +4351,8 @@ pub(crate) mod tests {
             values: Vec::new(),
             links: Vec::new(),
             side_entries: vec!["empty.brp".into(), "empty-2.brp".into()],
-            raw_xml: String::new(),
+            raw_xml: r#"<Property><Part file="empty.brp"/><Extra file="empty-2.brp"/></Property>"#
+                .into(),
             byte_start: 0,
             byte_end: 0,
         };
@@ -4324,11 +4376,106 @@ pub(crate) mod tests {
         };
         let payloads =
             parse_payloads(&[property], &[entry, second_entry]).expect("empty shape payload");
-        assert_eq!(payloads.len(), 2);
-        assert_ne!(payloads[0].id, payloads[1].id);
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].entry, "fcstd:native:entry#empty.brp");
         assert_eq!(payloads[0].form, ShapePayloadForm::Empty);
         assert!(payloads[0].text.is_none());
         assert!(payloads[0].binary.is_none());
+    }
+
+    #[test]
+    fn ignores_nested_shape_part_carriers() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape:Nested"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Nested".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: None,
+            transient: false,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["nested.brp".into()],
+            raw_xml: r#"<Property><Wrapper><Part file="nested.brp"/></Wrapper></Property>"#.into(),
+            byte_start: 0,
+            byte_end: 0,
+        };
+        let payloads = parse_payloads(&[property], &[]).expect("nested carrier is ignored");
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
+    fn rejects_duplicate_direct_shape_part_carriers() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape:Duplicate"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Duplicate".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: None,
+            transient: false,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["first.brp".into(), "second.brp".into()],
+            raw_xml: r#"<Property><Part file="first.brp"/><Part file="second.brp"/></Property>"#
+                .into(),
+            byte_start: 0,
+            byte_end: 0,
+        };
+        assert!(parse_payloads(&[property], &[]).is_err());
+    }
+
+    #[test]
+    fn retains_transient_shape_without_a_carrier() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape:PreviewShape"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "PreviewShape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: Some(152),
+            transient: true,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: Vec::new(),
+            raw_xml:
+                r#"<_Property name="PreviewShape" type="Part::PropertyPartShape" status="152"/>"#
+                    .into(),
+            byte_start: 0,
+            byte_end: 0,
+        };
+        let payloads = parse_payloads(&[property], &[]).expect("transient shape is retained");
+        assert!(payloads.is_empty());
+    }
+
+    #[test]
+    fn ignores_non_shape_runtime_names_when_framing_payloads() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape:Custom"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "Custom".into(),
+            type_name: "Custom::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Unknown,
+            status: None,
+            transient: false,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["custom.brp".into()],
+            raw_xml: String::new(),
+            byte_start: 0,
+            byte_end: 0,
+        };
+
+        let payloads = parse_payloads(&[property], &[]).expect("unknown type is retained");
+        assert!(payloads.is_empty());
     }
 
     #[test]
@@ -4598,6 +4745,21 @@ pub(crate) mod tests {
             .expect_err("out-of-order table")
             .to_string()
             .contains("out of order"));
+    }
+
+    #[test]
+    fn rejects_duplicate_text_headers_and_section_markers() {
+        let duplicate_header = b"CASCADE Topology V1, (c) Matra-Datavision\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        assert!(matches!(
+            parse_text(duplicate_header),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+
+        let duplicate_section = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
+        assert!(matches!(
+            parse_text(duplicate_section),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     }
 
     #[test]

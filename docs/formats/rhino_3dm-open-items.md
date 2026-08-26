@@ -1,295 +1,670 @@
 # Rhino 3DM Open Items
 
-This document lists the parts of the Rhino 3DM format that we do not know. The specification `rhino_3dm.md` gives the parts that we know.
-
-Each item has these parts:
-
-- **Question** — what we must find.
-- **Known** — what the specification gives now.
-- **Need** — why we must find the answer.
-- **Conflict** — a disagreement between two documents, or between a document and the decoder. An item with this part needs a decision.
-- **Note** — a defect in the item or in the specification.
-
-When an item is resolved, delete it in the same change that writes the answer into the specification. Do not keep a Resolved part.
-
-Each item has an identifier. Use the identifier in commit messages and in code comments.
-
-This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
-
-## 1. Third-party plug-ins
-
-### PP-01. Plug-in class payloads
-
-**Question.** What payload grammar and semantics does each class UUID that a third-party plug-in registers select?
-
-**Known.** `rhino_3dm.md` §7 "An object record is:" through `rhino_3dm.md` §7 "The object type is a category bitfield, not a class identity. The UUID chunk" define the class wrapper, class UUID, bounded class-data payload, and checksum boundary. `rhino_3dm.md` §20.5 "The 32-byte" through `rhino_3dm.md` §20.5 "The 32-byte" define the opaque-record identity for a class that the built-in registry does not define.
-
-**Need.** We must know the grammar and semantics to decode the class payload as typed geometry, topology, presentation, or document data.
-
-### PP-02. Plug-in userdata payloads
-
-**Question.** What payload grammar and semantics does each third-party userdata class UUID and item UUID pair select?
-
-**Known.** `rhino_3dm.md` §7.2 "A class userdata chunk begins with a packed version byte." through `rhino_3dm.md` §7.2 "The header has the checksum selected by its typecode." define the userdata header, application identity, version fields, anonymous payload boundary, and legacy archive-version rule.
-
-**Need.** We must know the grammar and semantics to decode the bounded userdata payload as typed data.
-
-### PP-03. Plug-in dictionary entries
-
-**Question.** What value grammar and semantics does each plug-in-defined dictionary entry select?
-
-**Known.** `rhino_3dm.md` §6.3 "| dictionary |" through `rhino_3dm.md` §6.3 "| dictionary end |" define the dictionary chunk typecodes. `rhino_3dm.md` §7.2 "A class userdata chunk begins with a packed version byte." through `rhino_3dm.md` §7.2 "The header has the checksum selected by its typecode." define the containing userdata boundary and identity.
-
-**Need.** We must know the value grammar and semantics to decode a plug-in dictionary without treating its entries as one opaque record.
-
-### PP-04. Plug-in application records
-
-**Question.** What payload grammar and semantics does each plug-in-defined application record select?
-
-**Known.** `rhino_3dm.md` §7 "The normal V2+ table sequence is:" through `rhino_3dm.md` §7 "Optional tables may be absent. A table is a bounded table chunk containing" define bounded table records and user tables. `rhino_3dm.md` §20.5 "The 32-byte" through `rhino_3dm.md` §20.5 "The 32-byte" define the identity and byte boundary of a remaining opaque record.
-
-**Need.** We must know the grammar and semantics to transfer the application record as typed document data.
-
-### PP-05. Plug-in object-attribute items
-
-**Question.** What width, payload grammar, and semantics does each plug-in-defined object-attribute item ID select?
-
-**Known.** `rhino_3dm.md` §9.2 "The payload" through `rhino_3dm.md` §9.2 "minor 0: items 1..21" define the payload and version gate for each built-in object-attribute item ID through 41. The item stream has no general length field for an unknown item.
-
-**Need.** We must know the width and grammar to find the next item boundary and to transfer the item as typed object state.
-
-### PP-06. Plug-in layer-extension items
-
-**Question.** What width, payload grammar, and semantics does each plug-in-defined layer-extension item ID select?
-
-**Known.** `rhino_3dm.md` §8.3 "Gated fields" through `rhino_3dm.md` §8.3 "The extension stream is item byte, payload, next item byte, terminated by item" define the stream terminator, payload, and version gate for each built-in layer-extension item ID through 36. The item stream has no general length field for an unknown item.
-
-**Need.** We must know the width and grammar to find the next item boundary and to transfer the item as typed layer state.
-
-## 2. Later built-in versions
-
-### FV-01. Unregistered built-in classes
-
-**Question.** What payload grammar and semantics does each later built-in class UUID select?
-
-**Known.** `rhino_3dm.md` §7 "An object record is:" through `rhino_3dm.md` §7 "The object type is a category bitfield, not a class identity. The UUID chunk" define a class wrapper independently of the class-data grammar. `rhino_3dm.md` §20.5 "The 32-byte" through `rhino_3dm.md` §20.5 "The 32-byte" require a complete unregistered class record to remain one named opaque record.
-
-**Need.** We must know the grammar and semantics to add the class to the built-in registry and to transfer its typed data.
-
-### FV-02. Later object-attribute items
-
-**Question.** What width, payload grammar, version gate, and semantics does each later built-in object-attribute item ID select?
-
-**Known.** `rhino_3dm.md` §9.2 "The payload" through `rhino_3dm.md` §9.2 "minor 0: items 1..21" define item IDs 1 through 41 and their introduction gates. The tagged stream has no general length field for a later item.
-
-**Need.** We must know the width and grammar to find the next item boundary and to extend the built-in object-attribute model.
-
-### FV-03. Later layer-extension items
-
-**Question.** What width, payload grammar, version gate, and semantics does each later built-in layer-extension item ID select?
-
-**Known.** `rhino_3dm.md` §8.3 "Gated fields" through `rhino_3dm.md` §8.3 "The extension stream is item byte, payload, next item byte, terminated by item" define item IDs 28 through 36 and their introduction gates. The extension stream has no general length field for a later item.
-
-**Need.** We must know the width and grammar to find the next item boundary and to extend the built-in layer model.
-
-### FV-04. Later major payload versions
-
-**Question.** What complete payload grammar and semantics does each built-in major version that `rhino_3dm.md` does not define select?
-
-**Known.** `rhino_3dm.md` §5 "A packed payload version is one byte:" through `rhino_3dm.md` §5 "These forms" define packed and anonymous payload-version fields. Each containing long or anonymous chunk supplies the complete payload boundary.
-
-**Need.** We must know the grammar and semantics to decode the new major version as typed data.
-
-### FV-05. Later minor-version suffixes
-
-**Question.** What field grammar and semantics does each later built-in minor-version suffix select?
-
-**Known.** `rhino_3dm.md` §5 "A packed payload version is one byte:" through `rhino_3dm.md` §5 "These forms" define packed and anonymous minor-version fields. A bounded payload fixes the end of the suffix but does not give its field boundaries.
-
-**Need.** We must know the field grammar and semantics to decode the suffix and to distinguish it from malformed trailing bytes.
-
-## 3. Reopened closures audited on 2026-08-10
-
-The following items were removed by `b8c98b9c5` and were reopened by the QA pass. The commit changed the implementation and documentation, but did not establish the settled rule recorded in each item.
-
-### LG-01. V1 geometry payloads
-
-**Question.** What grammar and semantics does each V1 geometry payload use?
-
-**Known.** The current specification and `crates/cadmpeg-codec-rhino/src/legacy.rs` define several V1 point, curve, face, surface, boundary, and mesh paths. They do not establish the complete V1 geometry family or every field and variant.
-
-**Note.** Reopened. This is promotion to spec: partial decoder coverage was written as a complete V1 rule. Passing self-authored fixtures or matching the current decoder does not prove the missing V1 payload grammar.
-
-**Need.** We must know the payload grammar and semantics to decode V1 geometry as typed neutral geometry.
-
-### LG-02. V2 geometry payloads
-
-**Question.** What grammar and semantics does each V2 geometry payload use?
-
-**Known.** The current specification states that V2 class payloads use the same point, curve, surface, mesh, Brep, and annotation grammar as later archives. The class wrapper and CRC framing are defined, but the payload claim is not verified against openNURBS source or corpus files for every V2 class and version.
-
-**Note.** Reopened. This is promotion to spec. The broad V2 statement is an assertion derived from the current decoder shape, not evidence for every V2 payload. Agreement with the branch's fixtures is consistency with the guess.
-
-**Need.** We must know the payload grammar and semantics to decode V2 geometry as typed neutral geometry.
-
-### ON-04. Strictness rules that openNURBS does not apply
-
-**Question.** Which of the codec's framing refusals must stay fatal?
-
-**Known.** `chunks.rs` now demotes negative long values, accepts an EOF body at least the file-size width, and keeps the stored EOF size informational. `container.rs` warns when a table has no end marker. The specification still says every table has a short end marker, so the decoder and specification do not state the same rule.
-
-**Note.** Reopened. The four-way decision was not closed as a specification-plus-decoder contract. The missing-table-marker path is recoverable in code but still described as required in `rhino_3dm.md` §7.
-
-**Need.** We must decide, for each rule, whether it stays fatal, becomes a warning with recovery, or is removed. The decision changes the specification and the decoder together.
-
-### TE-01. Object transfer on Rhino-authored files
-
-**Question.** Why does an object class fail on a Rhino-authored file where the committed fixture for the same class passes?
-
-**Known.** The external witness runs the codec and openNURBS over the example corpus and checks archive-level object totals and supported-count floors. It does not identify the byte-level difference for each class that remains undecoded.
-
-**Note.** Reopened. The aggregate witness does not answer the item question. Treating corpus agreement with the current decoder as verification would be the consistency-as-verification failure this item was intended to prevent.
-
-**Need.** We must find, for each affected class, which byte-level difference separates a Rhino-authored record from the fixture.
-
-### TE-02. Witness strategy and the support claim
-
-**Question.** Which files give an uncorrelated witness that the codec reads and writes 3DM?
-
-**Known.** The branch adds an external openNURBS transfer test over the example corpus and pins aggregate floors by archive version. It does not add the requested synthesized second fixture tier or remeasure the full support claim with a per-version transfer requirement.
-
-**Note.** Reopened. A test over the same corpus is useful regression evidence, but it does not supply the independent synthesized fixtures and support-boundary measurement required by this item.
-
-**Need.** We need a second fixture tier that mirrors the example-file structure, plus a per-archive-version transfer measurement that defines the support claim.
-
-### NS-01. Brep mesh-side wrapper version byte
-
-**Question.** What is the first byte of a Brep mesh-side wrapper body?
-
-**Known.** `crates/cadmpeg-codec-rhino/src/brep.rs:733-780` now reads the first byte as face-zero presence, with no version field. `rhino_3dm.md` §19.4 "For Brep minor at least 1, each mesh-side wrapper" still documents a packed version byte `0x00` before the presence entries.
-
-**Note.** Reopened. The decoder change is consistent with the openNURBS rule, but the settled specification still records the removed byte. The closure is therefore incomplete and would mislead the next implementation pass.
-
-**Need.** The wrapper body starts at the presence byte of face 0. The decoder and `rhino_3dm.md` must state that rule, and cache degradation must remain a typed loss.
-
-### RS-01. Trailing bytes in a bounded chunk
-
-**Question.** What does a bounded chunk with unread trailing bytes mean?
-
-**Known.** `brep.rs` skips trailing bytes in some anonymous helpers, but `brep.rs:384-388`, `history.rs`, `mesh.rs`, and `instances.rs` still reject unread bytes at other bounded payload and record boundaries. The behavior is not a consistent bounded-chunk rule.
-
-**Note.** Reopened. The implementation only partially applies the openNURBS recovery behavior. A later suffix can still discard a complete geometry or instance record at the remaining fatal checks.
-
-**Need.** We must decide whether a bounded chunk may carry unread bytes and apply that decision consistently at every bounded reader.
-
-### RS-02. Exact minor-version equality
-
-**Question.** Which version fields must a decode site compare exactly?
-
-**Known.** The specification says major-1 array and element readers accept every nonnegative minor. Exact checks remain in `history.rs`, `mesh.rs`, `instances.rs`, `morph.rs`, `polyedge.rs`, and Brep nested readers. Later minor fields therefore still take incompatible paths at different sites.
-
-**Note.** Reopened. The broad promotion in `rhino_3dm.md` §4.2 "A reader consumes the fields defined for the payload major version" is not true of the current decoder. The version policy and suffix policy need a site-by-site rule with evidence.
-
-**Need.** A decode site must accept a minor version that is not less than the one whose fields it reads and then apply the trailing-byte rule of RS-01.
-
-### RS-04. Non-canonical boolean bytes
-
-**Question.** Which byte values does a stored `bool` field allow?
-
-**Known.** `chunks.rs:304-307` normalizes every nonzero byte to true for every archive version. It has no pre- or post-2017 archive gate for the later strict `ReadBool` behavior, and the specification states the same unconditional rule.
-
-**Note.** Reopened. The branch removed the old rejection but did not implement the source's archive-version distinction or distinguish raw character fields from strict Boolean fields.
-
-**Need.** The archive-version condition must gate the refusal, and a field read as a raw character must not use the strict Boolean rule.
-
-### RS-05. Enumeration values outside the known range
-
-**Question.** What must a reader do with an enumeration value that it does not know?
-
-**Known.** `objects.rs:1101-1123` warns and returns no color for an unknown selector. `brep.rs:366-375` normalizes an unknown `is_solid` value to unset, while `decode.rs:4251-4259` then derives a body kind. The specification calls value 3 `not-solid`, which the decoder does not preserve.
-
-**Note.** Reopened. The branch still mixes fallback, unset, and silent normalization. It does not apply one source-backed clamp-or-retain rule or emit a typed loss for each unknown enumeration.
-
-**Need.** An unknown enumeration value must clamp and record a typed loss, or stay as stored data. It must not discard the containing record.
-
-### RS-06. Redundant count and index agreement
-
-**Question.** Which stored counts and indices must agree before a record decodes?
-
-**Known.** Some positional checks were removed and some SubD count mismatches are cleared, but the implementation has no typed loss for those repairs and still has exact count, index, and unit checks in several geometry and instance paths. A repaired or discarded field is not distinguished in the loss census.
-
-**Note.** Reopened. Partial tolerance is not the requested rule. Each redundant field needs a source-backed repair or degradation policy and a typed loss where the IR no longer carries the stored value.
-
-**Need.** Each redundant field must repair or degrade and record a typed loss. Discarding a record loses data that the file holds.
-
-### IC-04. Quad triangulation diagonal
-
-**Question.** Which diagonal splits a quadrilateral mesh face?
-
-**Known.** `mesh.rs` now compares diagonal lengths and removes repeated vertices. `decode.rs:3026-3034` still marks an unscaled tessellation byte-exact, and `commit_mesh` records an n-gon loss but no loss for converting stored quadrilateral topology to triangles.
-
-**Note.** Reopened. The geometric split rule is implemented, but the IR conversion remains falsely byte-exact and does not expose the topology loss required by the item.
-
-**Need.** The split must match openNURBS, and the loss of quadrilateral topology must be recorded.
-
-## 4. Hostile sweep findings recorded on 2026-08-10
-
-### SW-01. Duplicate layer index resolution
-
-**Question.** Which layer record owns an archive layer index when the index occurs more than once?
-
-**Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:1273-1317` retains every layer record and emits only a duplicate-index warning. `crates/cadmpeg-codec-rhino/src/objects.rs:1377-1390` builds a map with `layers.entry(layer.index).or_insert(layer)`, so the first record supplies object identity, color, visibility, and name.
-
-**Note.** Duplicate indexes may be malformed, but the scanner already accepts and reports them; the resolver has no source-backed owner rule.
-
-**Need.** Establish the duplicate-index behavior from the openNURBS reader source or from a corpus case, then define a deterministic owner rule with an ambiguity loss when the source does not identify one. If two layer records share an index and the later record carries the authoritative name or appearance, objects that reference the index resolve to the first record. Reordering the two records changes object identity without changing the reference. No ambiguity loss is emitted.
-
-### SW-02. Duplicate singleton metadata selection
-
-**Question.** Which metadata record owns a singleton property or setting when the file contains more than one?
-
-**Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:1273-1303` assigns `writer_version` on each matching property in table iteration order. `settings.rs:1357-1432` assigns `units`, current layer, current material, current color, font, and dimstyle each time a matching setting is read. There is no duplicate check or ambiguity loss for these fields.
-
-**Note.** The normal table model treats these fields as singletons, but the decoder has no source-backed response to a duplicate and no diagnostic that identifies which value won.
-
-**Need.** Establish the openNURBS reader behavior for duplicate singleton records, or settle a reject/first/last policy with a typed ambiguity diagnostic. If two unit records disagree, the later record silently changes coordinate scaling. If two writer-version records disagree, the later record changes version gates. Reordering the records changes the decoded document without a stated ownership rule.
-
-### SW-03. Instance transform ownership inferred from topology
-
-**Question.** Which decoded entities from one instance-definition member receive the instance transform?
-
-**Known.** `crates/cadmpeg-codec-rhino/src/decode.rs:1940-1973` decodes one definition member and then calls `transform_new_entities`. At `decode.rs:1982-2107`, points referenced by new vertices, curves referenced by new edges, and surfaces referenced by new faces are classified as body-owned; other points, curves, and surfaces are transformed directly. Meshes and SubD entities are always transformed, and procedural curves and surfaces are omitted.
-
-**Note.** The heuristic prevents double transformation for ordinary Brep topology, but the openNURBS membership rule has not been traced to establish that topology attachment is the ownership rule for every member class.
-
-**Need.** Establish the membership rule from the openNURBS instance-definition source, with an instance fixture with mixed body and free member entities that identifies which entities move and which stay local. If one member emits a body plus an auxiliary curve or surface whose source ownership is not represented by topology, the topology heuristic decides whether it moves. A shared or cache-like entity can therefore be transformed as free geometry, left in body-local coordinates, or omitted based on the emitted IR shape rather than the source member identity. No ownership ambiguity loss is emitted.
-
-### SW-04. V1 vertex deduplication by first nearby point
-
-**Question.** Does V1 topology identify shared vertices by source references or by geometric proximity?
-
-**Known.** `crates/cadmpeg-codec-rhino/src/legacy.rs:578-612` builds IR vertices from endpoint coordinates and reuses the first existing vertex for which `same_point` succeeds. The comparison uses the maximum of the source tolerances and a fixed floor; it does not use a source vertex identifier.
-
-**Note.** The code is an explicit first-match plausibility choice. The broad V1 grammar item LG-01 did not record this topology-selection rule.
-
-**Need.** We need a source-backed V1 vertex identity rule and a fixture with distinct nearby vertices to test whether tolerance permits merging or only validates coordinates. If two distinct V1 vertex records lie within the selected tolerance but are topologically separate, the first endpoint inserted absorbs the second. Changing trim or face order changes the chosen IR vertex and can collapse a narrow edge or face.
-
-### SW-05. V1 seam-group curve selection
-
-**Question.** Which model-space curve owns a V1 seam or mate group when more than one trim stores one?
-
-**Known.** `crates/cadmpeg-codec-rhino/src/legacy.rs:527-539` unions seam and shell mates, then stores only the first explicit curve for each union root with `or_insert_with`. It uses that curve's endpoints for the shared edge.
-
-**Note.** Seam and mate records may be required to carry equivalent curves, but the current code does not verify that rule and the V1 ledger did not record the first-wins selection.
-
-**Need.** Establish the V1 seam/mate ownership rule from the openNURBS source, with an authored pair of records with different curve copies to establish whether one is authoritative or disagreement is malformed. If two trims in one union group contain different model-space curve copies, source order selects the edge geometry and endpoints. A stale or transformed second copy is silently discarded, with no consistency check or loss.
-
-### SW-06. First-match selection of built-in userdata extensions
-
-**Question.** Which built-in userdata extension owns a dimension or hatch when duplicate class UUIDs occur?
-
-**Known.** `crates/cadmpeg-codec-rhino/src/dimensions.rs:945-985` selects the first matching angular or dimension extension with `.find`. `crates/cadmpeg-codec-rhino/src/hatch.rs:255-264` selects the first matching V5 hatch extension. Later matching records are ignored without a warning or loss.
-
-**Note.** The extensions may be singleton by source convention, but no uniqueness rule is documented and the implementation does not detect duplicates.
-
-**Need.** We need the source uniqueness or precedence rule for these built-in userdata classes, plus an ambiguity loss when a file supplies more than one conflicting extension. If a dimension or hatch contains two extension records with different offsets, arrow data, or base-point data, changing userdata order changes the decoded presentation while the discarded record leaves no trace.
+Settled format rules remain in
+[`rhino_3dm.md`](rhino_3dm.md). OpenNURBS transfer evidence remains in
+[`rhino_3dm-opennurbs-comparison.md`](rhino_3dm-opennurbs-comparison.md).
+
+## Remaining items
+
+### FV-01. Future object-class payloads
+
+**Question.** What field grammar does each later built-in object-class major
+define, and which of its fields can be admitted as typed data?
+
+**Known.** The typed readers consume the specified class prefixes and bounded
+minor suffixes. The current producer paths define the object-class families
+specified in sections 12 through 18; they do not define a later object-class
+major. Section 20.6 settles the CADIR half: a registered class UUID and a
+retained source record do not admit a later major, and the complete containing
+record remains opaque until its grammar and neutral mapping are specified.
+
+**Need.** A producer implementation or independent versioned witness for each
+later object-class major that is to enter typed decoding, with its field
+grammar and boundaries. The same change must state the field-specific neutral
+mapping required by the section-20.6 admission rule.
+
+**Note.** The absence of a current later producer does not settle a future
+layout. Opaque retention and refusal are settled CADIR decisions, not typed
+compatibility evidence.
+
+### FV-02. Future table-record payloads
+
+**Question.** Which later table-record versions retain typed decoding, and what
+fields do changed versions add or change?
+
+**Known.** Current producer-defined additions include the direct V2/V3
+material major-1 minor-1 grammar, dimension-style minor-10 and minor-11
+fields, the archive-90 hatch-pattern tail, and layer extension item 37. These
+individual branches do not define later table-record layouts in general.
+The current table-record families use the bounded branches specified throughout
+this document, including sections 8.3, 18, and 20.2 through 20.4; no current
+writer defines a later table-record major or changed layout outside those
+branches. Unknown table records remain bounded source records without typed
+fields from their typecode alone. Section 20.6 settles the CADIR half: a later
+table-record major or changed layout is not typed from its record typecode until
+its grammar and neutral mapping are specified.
+
+**Need.** Producer source or an independent witness for each later table-record
+major or changed layout that is to be admitted as typed data, including field
+order, boundaries, defaults, and normalization. The same change must state the
+field-specific neutral mapping required by the section-20.6 admission rule.
+
+**Note.** The dimension-style, hatch, and layer closures each settled only a
+subset of this item. The later archive-90 and layer reopenings show that an
+individual current field is not complete table-record coverage. Opaque
+retention and refusal are settled CADIR decisions, not evidence that a future
+layout has been characterized.
+
+### FV-03. Future user-data payloads
+
+**Question.** Which later user-data versions have a typed payload grammar, and
+which fields remain admissible?
+
+**Known.** The generic user-data headers and the audited class-owned payloads
+have bounded children and source-defined minor gates. Unknown classes can be
+retained, but the generic header does not define their payload fields. The
+current OpenNURBS writer emits generic header version 2.2; its class-owned
+payload writers remain the audited carriers and do not define a later
+user-data major or an untyped class-specific payload grammar beyond them.
+Section 20.6 settles the CADIR half: an unknown class or later major remains a
+complete opaque userdata-bearing record, and the generic header never supplies
+typed fields for the class-owned payload. The light-table attributes owner is
+also proven to retain the complete record when the registered
+`ON_UserStringList` payload has an unsupported anonymous major; independent
+light fields remain typed and the user-string fields are omitted.
+The material-table owner is proven to retain the complete record when the
+registered `ON_PhysicallyBasedMaterialUserData` payload has an unsupported
+anonymous major; independent material fields remain typed and the
+physically-based value is omitted.
+The V5 dimension-style owner is proven to retain the complete record when the
+registered `ON_DimStyleExtra` payload has an unsupported anonymous major;
+independent packed dimension-style fields remain typed and the extra value is
+omitted.
+The material-table owner is also proven to retain the complete record when the
+registered `ON_RdkUserData` payload uses the callback-owned version-2 UTF-8
+form; the userdata supplies no typed fields, independent material fields remain
+typed, and the owner emits a presentation loss.
+The object owner is proven to retain the complete object record when the
+registered `ON_UserStringList` payload has an unsupported anonymous major;
+independently admitted object geometry and attributes remain typed, the
+user-string fields are omitted, and the owner emits an object decode loss.
+The top-level mesh owner is proven to retain the complete object record when
+the registered `ON_SubDMeshProxyUserData` payload has an unsupported anonymous
+major; the parent tessellation remains typed, no SubD entity is admitted, and
+the owner emits a decode warning for the failed proxy.
+The Brep owner is proven to retain the complete object record when the
+registered `ON_V5_BrepRegionTopologyUserData` payload has an unsupported
+anonymous major; independent Brep geometry remains typed, the optional region
+carrier is discarded, and the owner emits the repair warning.
+The Brep nested-mesh owner is proven to retain the complete object record when
+the registered `ON_V4V5_MeshNgonUserData` payload has an unsupported anonymous
+major; the nested mesh tessellation remains typed, no n-gon grouping is
+admitted, and the owner emits the mesh userdata warning.
+The V5 extrusion display-mesh cache owner is proven to retain the complete
+extrusion object record when a cached mesh carries the same registered
+`ON_V4V5_MeshNgonUserData` payload with an unsupported anonymous major; the
+analytic extrusion and cached tessellation remain typed, and the owner emits
+the nested mesh userdata warning.
+The texture-mapping owner is proven to retain the complete table record when a
+custom mapping primitive carries a registered `MappingCRCCache` payload with
+an unsupported anonymous major; the mapping fields and primitive class remain
+typed, no `mapping_crc` field is admitted, and the owner emits a presentation
+loss.
+The top-level mesh owner is also proven for the registered
+`CTtMappingMeshInfoUserData` and `CTtRenderMeshInfoUserData` carriers: when
+either bounded payload has an unsupported anonymous major, the parent
+tessellation remains typed, correspondence state is omitted, the complete
+mesh object record is retained, and the owner emits a decode warning naming
+the carrier.
+The render-settings owner is proven to retain a complete framed
+`TCODE_SETTINGS_RENDER_USERDATA` record when its registered class-owned
+anonymous payload has an unsupported major; the typed render-settings record
+remains, and no class-owned payload fields enter native data.
+The viewport owner is proven to retain the complete containing named-view list
+record when a framed `TCODE_VIEW_VIEWPORT_USERDATA` stream has a registered
+class-owned anonymous payload with an unsupported major; the typed view and
+viewport remain, and no viewport-userdata fields enter native data.
+The layer owner is proven to retain the complete `TCODE_LAYER_RECORD` when a
+framed `ON__LayerExtensions` payload has an unsupported outer anonymous major
+or cannot be parsed; the typed layer remains, its per-viewport array is empty,
+and no class-owned userdata fields enter native data.
+The hatch owner is proven for the registered `ON_GradientColorData` carrier:
+its current major-1 grammar supplies the native gradient parameter, while an
+unsupported or malformed gradient payload leaves the hatch class data and loop
+curves typed, omits that parameter, emits the hatch-userdata diagnostic, and
+retains the complete `TCODE_OBJECT_RECORD`.
+The object-attributes owner is proven for the registered
+`ON_PerObjectMeshParameters` carrier: its current outer major-1 grammar
+supplies the owning presentation's `custom_render_mesh` value, while an
+unsupported outer major or malformed nested child leaves the point class data
+and object attributes typed, omits that value, emits the bounded userdata
+diagnostic, and retains the complete `TCODE_OBJECT_RECORD`.
+The same object owner is proven across the five registered mesh-modifier XML
+carriers: current XML userdata version 2 reaches the matching native modifier,
+while version 3 leaves the point and attributes typed, omits the modifier,
+emits the carrier-specific bounded diagnostic, and retains the complete object
+record.
+
+The mesh owner is proven for `ON_V5_MeshDoubleVertices`: a current major-1
+payload supplies the synchronized f64 vertex array, while an unsupported major,
+malformed child, or count mismatch leaves the float mesh typed, omits only the
+redundant array, emits the bounded repair diagnostic, and retains the complete
+object record.
+
+The instance-definition owner is proven for the registered
+`ON_OBSOLETE_IDefAlternativePathUserData` carrier: its current major-1 payload
+trims the UTF-16 path and fills only the selected empty linked-definition slot;
+an unsupported major or malformed payload leaves the linked definition typed,
+omits the alternate path, emits the bounded diagnostic, and retains the
+complete definition record in source fidelity.
+The V5 text owner is proven for the registered `ON_OBSOLETE_V5_TextExtra`
+carrier: its current anonymous major-1 child supplies the nil-parent, mask,
+color, and border fields; an unsupported major or malformed child leaves the
+legacy text annotation typed, omits `v5_text_extra`, emits the annotation
+userdata loss, and retains the complete object record.
+The obsolete custom-mesh owner is proven for the registered
+`ON_OBSOLETE_CCustomMeshUserData` carrier: its direct legacy fields transfer
+to the object presentation's `custom_render_mesh`; a bounded mesh-parameter
+failure leaves point geometry and attributes typed, omits that presentation
+field, emits the bounded userdata diagnostic, and retains the complete object
+record.
+The V5 dimension owner is proven for the registered
+`ON_OBSOLETE_V5_DimExtra` carrier: its anonymous 1.2 child supplies forced
+arrow position, detail distance scale, and measured-detail UUID to a legacy
+linear dimension; an unsupported child major or truncated child retains the
+complete object record, admits no dimension, and emits the bounded dimension
+diagnostic. The class and item UUID must both match before the carrier is
+admitted.
+The separate V5 angular owner is proven for the registered
+`ON_AngularDimension2Extra` carrier: its anonymous 1.0 child supplies the two
+extension-line origin offsets in order; an unsupported child major or
+truncated child retains the complete object record, admits no angular
+dimension, and emits the bounded dimension diagnostic. The class and item UUID
+must both match before the offsets are applied.
+The V5 hatch owner is proven for the registered
+`ON_OBSOLETE_V5_HatchExtra` carrier: its anonymous 1.0 child supplies the
+serialized base point for a packed V5 hatch; an unsupported child major or
+truncated coordinate retains the complete object record, keeps the hatch and
+loop curve typed, leaves the base point at `[0,0]`, and emits the bounded hatch
+userdata diagnostic. The class and item UUID must both match before the base
+point is applied.
+The obsolete layer-settings owner is proven for both
+`ON_OBSOLETE_IDefLayerSettingsUserData` and
+`ON_OBSOLETE_LayerSettingsUserData`: their shared reader consumes one
+anonymous child without reading fields and deletes the userdata after reading.
+A well-framed child leaves the typed layer unchanged, creates no
+per-viewport-settings field, and emits no layer-userdata loss, including when
+the child major is later than the current writer major. If the generic wrapper
+is framed but the obsolete child is absent or malformed, the userdata item is
+discarded and the typed layer remains unchanged.
+The generic unregistered class boundary is also proven: a point object with an
+unregistered class, item, and application UUID in generic userdata 2.2 retains
+typed point geometry and its complete object record without typed userdata
+fields; a later generic userdata header has the same result.
+
+The current built-in class-userdata inventory is complete. The registered
+object, table, geometry, presentation, view, layer, and render-settings
+carriers are covered by the owner rules above. `ON_AnnotationTextFormula` is
+not an archived carrier: its source class forbids `Write` and `Read`, and the
+formula is the direct minor-2 UTF-16 field in the legacy annotation record.
+No current OpenNURBS writer defines another class-owned userdata major or
+unlisted carrier.
+
+**Need.** A later user-data class writer and reader, or an independent witness,
+for each version that is to be typed, including its fields and boundaries. The
+same change must state the field-specific loss or neutral mapping required by
+the section-20.6 admission rule. The current-producer audit is complete; only a
+future class-owned grammar can answer the remaining format question.
+
+**Note.** No current later producer is evidence that future class-specific
+payload semantics are settled. Opaque retention and refusal are settled CADIR
+decisions, not evidence that a future payload has been characterized.
+
+### FV-06. Later major payload grammar
+
+**Question.** What wire fields and boundaries does a later major version of a
+built-in table, object, geometry, presentation, or user-data payload define?
+
+**Known.** Section 20.6 retains an unknown major record and withholds typed
+fields until a grammar and neutral admission rule exist. The current producer
+inventory defines no additional major family. The CADIR half is settled in
+section 20.6: the codec never applies a known-major prefix to an undefined
+major and retains the complete containing record.
+
+**Need.** Producer source or an independent witness for each later major that
+is to be admitted, naming its fields, boundaries, and validation. The same
+change must add the field-specific neutral mapping before typed admission.
+
+**Note.** This item retains only the format half of the question. Opaque
+retention and refusal are settled CADIR decisions, not evidence that a later
+major has been characterized.
+
+### FV-07. Later minor payload suffixes
+
+**Question.** Which fields and boundaries do future minor versions append after
+the known prefix of each built-in payload?
+
+**Known.** Source-defined later-minor fields are consumed at their version
+gates, and bytes after a known prefix remain bounded source bytes. A generic
+future-minor policy does not assign names or meanings to a suffix that no
+audited producer writes. Section 20.6 settles the CADIR half: an undefined
+minor suffix receives no typed field or neutral value and remains in its
+containing bounded payload.
+
+**Need.** A future producer writer and reader, or an independent witness, for
+each suffix that is to be typed, with its field order, boundary, and
+validation. The same change must state the field-specific neutral mapping
+before typed admission.
+
+**Note.** The current producer inventory and bounded retention policy do not
+settle future suffix field semantics. Opaque retention and refusal are settled
+CADIR decisions, not evidence that a future suffix has been characterized.
+
+### QA-01. Named construction-plane child CRC admission
+
+**Question.** How does the named-construction-plane owner validate the CRC of
+each counted `TCODE_VIEW_CPLANE` child before admitting its typed fields?
+
+**Known.** Section 4.1 defines a CRC-bearing leaf as covering its direct body,
+and section 20.4 states that the named-construction-plane list CRC excludes
+each complete child while each `TCODE_VIEW_CPLANE` child has its own CRC.
+`views.rs:1235-1248` frames and parses each child but does not call
+`direct_view_child_checksum_warning`. `container.rs:211-219` validates only
+the parent list's direct ranges. OpenNURBS reads each child through
+`EndRead3dmChunk` after `BeginRead3dmBigChunk` at
+`opennurbs_3dm_settings.cpp:5663-5672`.
+
+**Need.** The owner must validate each child CRC and apply the documented
+recoverable integrity-warning or retention policy before transferring the
+construction plane.
+
+**Note.** If a child body changes while its child CRC is stale and the parent
+list CRC is recomputed over its unchanged direct fields, the current parser
+admits the changed `parse_cplane` result into `construction_planes` without an
+integrity finding.
+
+### QA-02. Nested anonymous CRC admission
+
+**Question.** Which owner validates each CRC-bearing nested anonymous chunk
+before transferring its fields?
+
+**Known.** Section 4.1 gives nested CRC-bearing chunks independent boundaries.
+The generic userdata reader checks its header and wrapper ranges but excludes
+the anonymous payload child at `objects.rs:550-557`. The user-string owner at
+`objects.rs:581-620` parses the list and each entry without validating either
+anonymous chunk. The layer-extension owner at `settings.rs:752-884` likewise
+parses the outer and per-viewport anonymous chunks without validation. The
+shared settings helper at `settings.rs:1193-1210` admits anonymous plugin,
+earth-anchor, IO-settings, SubD-display, and settings-attributes children
+without validating the returned chunk; the shared presentation helper at
+`presentation.rs:1013-1027` does the same for material, texture, linetype,
+dimension-style, and other class-data children. Source readers close these
+`TCODE_ANONYMOUS_CHUNK` records with `EndRead3dmChunk`, including
+`ON_UserStringList` at `opennurbs_userdata.cpp:761-820`,
+`ON__LayerExtensions` at `opennurbs_layer.cpp:1299-1363`, `1368-1446`, and
+`1593-1668`, plugin references at `opennurbs_pluginlist.cpp:50-80` and
+`117-168`, and settings children at
+`opennurbs_3dm_settings.cpp:4178-4261` and `5110-5135`.
+The same omission is present in the clipping-plane surface and detail-view
+anonymous readers at `surfaces.rs:156-192` and `detail.rs:25-70`, and in the
+SubD proxy reader at `subd.rs:250-296`; their source writers and readers also
+use the anonymous chunk API and close the chunk.
+The rendering-attributes reader records mapping-channel ranges for the parent
+CRC at `settings.rs:1761-1790` but never validates each channel chunk; the
+source `ON_MappingChannel` reader closes the same anonymous chunk at
+`opennurbs_material.cpp:7536-7567`.
+
+**Need.** Each registered nested-chunk reader must validate the CRC-bearing
+anonymous chunks it admits and route a mismatch through that owner's warning,
+drop, or opaque-retention rule.
+
+**Note.** A stale user-string entry CRC can still produce a typed user-string
+record, a stale layer-extension entry CRC can still produce a typed
+per-viewport setting, and a stale plugin-reference, material-texture,
+clipping-plane, detail-view, or SubD-proxy CRC can still produce its typed
+child. The generic userdata and parent record checks do not replace the nested
+checks because their CRC ranges exclude complete children.
+
+### QA-04. Instance-definition layout selection below archive 50
+
+**Question.** Which packed or anonymous instance-definition layout does an
+archive-2, archive-3, or archive-4 record use, and which owner selects it?
+
+**Known.** `rhino_3dm.md` §18 "Instance-definition records are in the
+instance-definition table." states that archive versions through 50 use packed
+major version 1, minor 6. `rhino_3dm.md` §19.6 "The instance-definition table
+record contains the class payload." states the same packed form for archive 50,
+and the anonymous V6 form for archives 60 and later. `instances.rs:982-988`
+selects the packed layout only when the archive is 50, or when the archive is
+60 and the first class-data byte is not zero. An archive-2, archive-3, or
+archive-4 record therefore goes to the anonymous reader at `instances.rs:705`.
+OpenNURBS selects the packed reader for every archive version through 50 at
+`opennurbs_instance.cpp:2304-2331`, and its writer selects the packed writer
+under the same rule at `opennurbs_instance.cpp:2294-2302`.
+
+**Need.** The owner must state the archive band that selects each layout, and
+the specification must state the same band. If archives 2 through 4 stay
+outside typed decoding, the specification must state that boundary in place of
+the packed rule.
+
+**Note.** With the current rule, each archive-2, archive-3, and archive-4
+instance definition fails its framing check at the anonymous reader, becomes an
+opaque record with the retained-definition diagnostic, and supplies no
+definition for the instance references that name it.
+
+### QA-05. Archive OpenNURBS version gates that owners do not apply
+
+**Question.** Which record owners must read the archive OpenNURBS version
+before they frame or default their fields, and what does each gate change?
+
+**Known.** The scan decodes the archive OpenNURBS version as the writer
+version. Four owners apply it: `objects.rs:28`, `settings.rs:2177`,
+`brep.rs:1570`, and `mesh.rs:346`. Three owners do not apply a source gate that
+uses the same value. `presentation.rs:2661-2668` reads three arrow-block UUIDs
+after the arrow types for every dimension-style minor, and `rhino_3dm.md` §20.3
+"3 × UUID arrow block IDs" states the same field. The source reader stops
+before those UUIDs when the minor is 0, the archive is 60, and the archive
+OpenNURBS version is at most 2348833437, at
+`opennurbs_dimensionstyle.cpp:2880-2913`. `settings.rs:1352-1354` admits the
+earth latitude, longitude, and elevation as decoded; the source reader replaces
+all three with the unset values when the minor is below 2, the three values are
+zero, and the archive OpenNURBS version is at most 2348834428, at
+`opennurbs_3dm_settings.cpp:4194-4206`. `dimensions.rs:616-620` and
+`annotations.rs:244-247` select the direct packed legacy annotation form from
+the archive version alone, and `rhino_3dm.md` §18.1 "For archive versions 2
+through 4, the linear, radial, and angular class data" states the same rule;
+the source reader also requires an archive OpenNURBS version of at least
+200710180, at `opennurbs_internal_V2_annotation.cpp:1062`.
+
+**Need.** Each owner must state whether its source gate applies to the archive
+bands the codec decodes, and the specification must carry the same rule. An
+owner that does not apply a gate needs the source citation that supports that
+result.
+
+**Note.** Without the dimension-style gate, an archive-60 record that has no
+arrow-block UUIDs exhausts its bounded body, becomes an opaque record with a
+presentation loss, and each dimension that names the style loses it. Without
+the earth-anchor gate, an unset anchor enters native data as latitude 0,
+longitude 0, and elevation 0, which is a valid position. The legacy annotation
+gate has no effect now because `container.rs:1190-1194` refuses raw archive
+value 5.
+
+### QA-06. Material class-data form discriminator
+
+**Question.** Which value selects the packed-`2.0` wrapper form or the direct
+anonymous form of a material class-data payload, and for which archive
+versions does each form occur?
+
+**Known.** `rhino_3dm.md` §20.2 "For archive versions 4, 5, and 50, the
+class-data payload begins with packed" gives the archive version as the
+discriminator and names archives 4, 5, and 50. The OpenNURBS writer agrees with
+that band, because it emits the packed form when the archive version is above 3
+and below 60 (`opennurbs_material.cpp:130-133,321-337`). The OpenNURBS reader
+is wider: it also reads the packed form for archives 60 and later when the
+archive OpenNURBS version is below 2348833910
+(`opennurbs_material.cpp:222-232`). `presentation.rs:1874` does not use the
+archive version. It selects the anonymous form when the first class-data byte
+is zero and the packed form for any other first byte, and rejects a first byte
+other than `0x20` in the packed branch.
+
+**Need.** The specification and the owner must state the same discriminator. If
+the first class-data byte is the intended discriminator, the specification must
+state that rule and the byte values that select each form, together with the
+archive bands in which each form occurs.
+
+**Note.** A material record in an archive-60, archive-70, or archive-80 file
+whose archive OpenNURBS version is below 2348833910 has the packed form. The
+specification does not admit that record, while the owner accepts it through
+the first-byte test. The obsolete transparent-color substitution is bound to
+the same branch, so the two rules must select the same records.
+
+### QA-07. Declared archive OpenNURBS version in written archives
+
+**Question.** Which archive OpenNURBS version value must a written 3DM archive
+declare, and how is that value obtained?
+
+**Known.** `rhino_3dm.md` §6.3 "| writer version" gives `0xa0000026` as the
+typecode of the writer-version record, and `settings.rs:26`,
+`container.rs:67`, and `writer.rs:33` all hold that same value as a typecode.
+`writer.rs:34` holds `0xa000_0026` again as the record's value, and
+`writer.rs:236-239` writes it as the declared archive OpenNURBS version. A
+reader therefore obtains 2684354598. Decoded under the source version-number
+rule at `opennurbs_version_number.cpp:81-113`, that value is major 16, dated
+9 January 2000. No OpenNURBS release has that number. `settings.rs:2391-2393`
+stores the value as the writer version, and the owners at `objects.rs:28`,
+`settings.rs:2177`, `brep.rs:1570`, `mesh.rs:346`, `chunks.rs:31`, and
+`presentation.rs:1924-1929` compare it against source thresholds.
+
+**Need.** The writer must declare a version it can support, and the
+specification must state which value a written archive carries and why. The
+same change must confirm the record layouts that the value selects.
+
+**Note.** The written records are read back with the current-generation rules
+only because the declared value is above every threshold the owners compare
+against. Two of those selections change the record layout, not a repair: the
+object-attributes reader selects the item-coded form only at or above
+200712190 (`opennurbs_3dm_attributes.cpp:925-929`), and the mesh reader
+expects the mapping tag only at or above 200606010
+(`opennurbs_mesh.cpp:2692`). A corrected value must stay above both.
+
+### QA-08. Legacy major-2 Brep vertices for an edge with no trim
+
+**Question.** What vertex identity does a legacy major-2 Brep edge with no
+trim receive, and what does the transfer record for it?
+
+**Known.** `rhino_3dm.md` §15.0 "Major-2 has no serialized vertex table."
+states that an edge with no trim uses its C3 endpoints as independent vertex
+positions. `brep.rs:1056-1076` does not keep them independent: `legacy_vertex`
+at `brep.rs:1350-1358` returns an existing vertex when its stored point is
+exactly equal to the new point, so two such edges share a vertex and
+`brep.rs:1078-1097` then averages their endpoints. The source reader creates
+one edge for each C3 curve at `opennurbs_brep_io.cpp:1239-1244`, but builds
+vertices only from loop rings at `opennurbs_brep.cpp:5994-6006`; an edge with
+no trim keeps the `ON_BrepEdge` initial vertex indices of `-1`
+(`opennurbs_brep.cpp:158-171`). The transfer emits no loss for the added
+vertices.
+
+**Need.** The owner must state the vertex identity rule for a trimless legacy
+edge, the specification must state the same rule, and the added vertices need
+a named loss or finding because the source admits none.
+
+**Note.** Exact floating-point equality is the current identity test. Two
+trimless edges whose endpoints differ by one unit in the last place receive
+separate vertices, and a trimless edge whose two C3 endpoints are exactly
+equal collapses to one vertex used twice. Each result changes the vertex
+count, the averaged vertex position, and the vertex tolerance that §15.0
+derives from that position.
+
+### QA-09. Brep solid-cache reset threshold
+
+**Question.** Which archive OpenNURBS version values make the serialized Brep
+`m_is_solid` cache unusable, and does any source reader discard it?
+
+**Known.** `rhino_3dm.md` §15.5 "For minor at least 2, the writer copies the
+Brep" states that the source reader resets the value to 0 when the archive
+OpenNURBS writer version is before 2 October 2002.
+`decode.rs:4613-4615` puts that rule in code: it keeps the stored value only
+when the writer version is at least 200210020. The source literal is not that
+value. `opennurbs_brep_io.cpp:1134-1137` reads
+`ArchiveOpenNURBSVersion() < 20021002`, which is eight digits, while every
+archive value in the year-month-day form has nine digits and starts at
+200012210 (`opennurbs_version_number.cpp:167-174`). The source condition is
+therefore false for every such archive, and the source reader keeps the stored
+value in each of them.
+
+**Need.** The owner and the specification must state the reset rule that the
+source applies, or state that the codec deliberately departs from the source
+literal and name the evidence for the departure.
+
+**Note.** A Brep in an archive whose writer version is between 200012210 and
+200210019 has a minor at least 2 record whose `m_is_solid` the source keeps and
+the codec discards. When that stored value is 1 or 2 and the topology does not
+close, the neutral `BodyKind` becomes a sheet where the source is solid. The
+codec also has no diagnostic for the discarded cache.
+
+### QA-10. Marked CADIR decisions have no decision records
+
+**Question.** Where does each marked CADIR decision record its Question,
+Silence, Rule, Ground, Cost, and Reopens fields?
+
+**Known.** `rhino_3dm.md` marks CADIR decisions at sections 7.2.4, 7.2.5,
+7.2.6, 7.2.18, 8.3, 13.2, 13.3, 13.4, 15.4, 18.2, 20.1, 20.6, and other
+typed-transfer clauses. The working tree contains no Rhino decision-record
+document and no record with the required Question, Silence, Rule, Ground,
+Cost, and Reopens fields. For example, section 7.2.4 "CADIR decision: neutral
+tessellation carries" assigns legacy mesh n-gon grouping to a loss, while
+section 20.6 "CADIR decision: a major version" and the following marked
+paragraphs define later-major, later-minor, and archive-version admission.
+Those clauses state rules and some costs, but do not record the format silence,
+grounds, or reopening conditions that make them auditable as project-owned
+decisions.
+
+**Need.** A decision record for each distinct marked rule, or a cited format
+rule that removes the project-owned decision, with Question, Silence, Rule,
+Ground, Cost, and Reopens present in the current tree. Grouped records must
+identify every specification clause they own and every named loss or refusal
+that charges their cost.
+
+**Note.** A future audit cannot falsify a silence claim or distinguish a
+deliberate transfer boundary from an unsupported promoted rule when the
+silence, ground, and reopening condition exist only implicitly in prose and
+code.
+
+### QA-11. Gradient userdata duplicate arbitration
+
+**Question.** Does the first serialized matching gradient userdata item own
+the hatch gradient when that item is malformed, or may a later duplicate
+supply the typed value?
+
+**Known.** Section 7.2 "An object accepts one userdata item" states that
+attachment rejects a duplicate item UUID, the first serialized item owns
+object state, and attached built-in extension readers use the first serialized
+matching item. The gradient rule in section 18.2 "If a registered gradient
+userdata item" states that a malformed registered gradient omits the typed
+parameter and retains the object record. `hatch.rs:289-300` instead parses
+every matching class UUID and stores the first gradient that parses. The
+integration tests cover one valid item and one malformed item separately; they
+do not cover a malformed first item followed by a valid duplicate.
+
+**Need.** An OpenNURBS attachment or read witness containing duplicate
+`ON_GradientColorData` item UUIDs, including the result when the first payload
+is malformed. The owner, specification, and a duplicate-order test must then
+state the same arbitration and diagnostic rule.
+
+**Conflict.** If a file contains a malformed matching gradient followed by a
+valid duplicate, the specification withholds the gradient because the first
+item owns the state, while the codec admits the later duplicate as typed
+native data. Reversing the two records admits the same valid gradient, so the
+current gate does not enforce serialized ownership.
+
+**Note.** The obsolete V5 hatch extension is not a counterexample. It is
+consumed after reading and section 18.2 "The obsolete hatch extension is
+consumed after reading" explicitly gives that class a last-valid-record
+side-effect rule.
+
+### QA-12. Shipped-guess paths lack discriminating witnesses
+
+**Question.** Which tests fail when the shipped selection and version-gate
+rules named by QA-04 through QA-09 and QA-11 choose the wrong branch?
+
+**Known.** The current tests exercise archive-2 framing, current instance
+definitions, individual valid and malformed gradient carriers, current earth
+anchors, and current material forms. No test contains an archive-2 through
+archive-4 packed instance definition, an archive-60 dimension style below the
+arrow-block writer threshold, a zero-valued old-writer earth anchor, an
+archive-60-or-later old-writer packed material, a trimless legacy major-2 Brep
+edge, a Brep solid cache on either side of the disputed threshold, or a
+malformed-first duplicate gradient sequence. The source tree contains no test
+literal for thresholds `2348833437`, `2348834428`, `2348833910`, or
+`200210020`. Writer round-trip tests accept the writer-version value emitted by
+the same implementation and therefore do not independently establish QA-07.
+
+**Need.** One independent or source-derived witness per branch boundary named
+above, plus a test that asserts the specification-owned result. The writer
+version needs a value obtained independently of the codec constant. Each test
+must fail under the current disputed rule before that rule is changed.
+
+**Note.** The existing tests establish local framing and ordinary transfers;
+they do not close the selection questions because none supplies the competing
+candidate or boundary value that makes the arbitration observable.
+
+### PC-01. Polycurve endpoints moved to an invented midpoint
+
+**Question.** What neutral geometry can transfer from an `ON_PolyCurve` whose
+adjacent child endpoints do not agree?
+
+**Known.** `rhino_3dm.md` §12.6 states that the source validity rule rejects a
+gap between adjacent children. The same section defines a CADIR midpoint
+repair. `crates/cadmpeg-codec-rhino/src/curves.rs:912-931` computes the midpoint
+of every unequal adjacent endpoint pair, replaces the last control point of the
+preceding segment and the first control point of the next segment with that
+midpoint, and reports the distance moved. The joined neutral NURBS therefore
+contains neither source endpoint at that join.
+
+**Conflict.** The source object is invalid because it does not define one
+continuous join. The decoder creates a continuous curve by changing both
+source geometries and admits the result as the neutral carrier.
+
+**Need.** The answer keeps the ordered child carriers and their endpoint gap
+without claiming one continuous curve, or defines an explicit repaired
+geometry whose invented join and displacement remain queryable on that curve.
+The ordinary neutral carrier must not present the midpoint as source geometry.
+
+### BR-01. Region topology replaced by incidence-derived shells
+
+**Question.** What neutral region and shell structure can transfer when a
+minor-3 Brep's serialized region topology does not assign exactly one bounded
+region to each face?
+
+**Known.** The Brep stores explicit face-side and region records.
+`crates/cadmpeg-codec-rhino/src/decode.rs:4997-5060` uses those records only
+when every face has one bounded side. Otherwise
+`region_shell_groups_without_records` groups faces by edge-incidence component
+and assigns generated numeric region labels. The decoder commits those inferred
+shells and reports that incidence-derived shells were used. The source region
+records remain in native data but no longer determine the neutral ownership
+graph.
+
+**Need.** Edge incidence can identify connected face components, but it does
+not define the source's bounded-region membership. The answer withholds the
+region and shell projection when the explicit relationship is unusable, or
+represents the incidence grouping as inferred topology that cannot be mistaken
+for the serialized Brep regions.
+
+### WR-01. Unspecified loop role selected from neutral list order
+
+**Question.** Which Rhino loop type can the writer emit for a neutral loop whose
+`boundary_role` is `Unspecified`?
+
+**Known.** Rhino Brep loop types distinguish outer, inner, slit,
+curve-on-surface, and point-on-surface loops. `rhino_3dm.md` §15 states that an
+unspecified neutral role makes the first loop of a face outer and all remaining
+loops inner. `crates/cadmpeg-codec-rhino/src/writer.rs:1968-1985` implements
+that rule by comparing each loop with `face.loops.first()`. It does not use a
+declared neutral role or geometric containment to establish the distinction.
+
+**Need.** Neutral loop order is traversal order, not an outer-boundary
+declaration. The writer therefore creates Rhino topology semantics from list
+position. The answer requires explicit representable boundary roles, or derives
+the roles through a stated geometric containment result with an explicit
+inference status. It must not silently classify the first loop as outer.
+
+### LY-01. Duplicate layer identity rewritten during decode
+
+**Question.** What neutral identity and archive index can a later layer retain
+when its UUID or integer layer index duplicates an earlier layer record?
+
+**Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:2417-2428` keeps every
+typed layer but assigns archive-identity ownership of a duplicate UUID to the
+first serialized record. `crates/cadmpeg-codec-rhino/src/settings.rs:2495-2512`
+keeps the first occurrence of a duplicate integer index and replaces each later
+layer's index with the next unused value above the existing range. `LayerRecord`
+has no separate original-index field, so the typed layer record retains the
+generated value in place of its serialized index. A duplicate-resolution loss
+reports the rewrite.
+
+**Need.** A generated index was not declared by the archive and can be confused
+with a valid source layer index. First-record UUID ownership also does not give
+the later record a distinct source identity. The answer preserves each
+serialized identity and represents the collision explicitly, or withholds the
+ambiguous archive-reference binding without manufacturing a replacement index.

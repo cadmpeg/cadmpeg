@@ -216,15 +216,15 @@ mod sealed {
 ///     fn id(&self) -> &'static str { "rogue" }
 ///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
 ///     fn inspect_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
-///         -> Result<ContainerSummary, CodecError> { unimplemented!() }
+///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
-///         -> Result<DecodeResult, CodecError> { unimplemented!() }
+///         -> Result<DecodeResult, CodecError> { panic!("never runs") }
 /// }
 /// impl Codec for Rogue {
 ///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
-///         -> Result<ContainerSummary, CodecError> { unimplemented!() }
+///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode(&self, _: &mut dyn ReadSeek, _: &DecodeOptions)
-///         -> Result<DecodeResult, CodecError> { unimplemented!() }
+///         -> Result<DecodeResult, CodecError> { panic!("never runs") }
 /// }
 /// ```
 pub trait Codec: CodecBackend + sealed::Sealed {
@@ -236,6 +236,16 @@ pub trait Codec: CodecBackend + sealed::Sealed {
     ) -> Result<ContainerSummary, CodecError>;
 
     /// Decodes the source under its input and resource limits.
+    ///
+    /// [`DecodeMode::Strict`] refuses the decode with
+    /// [`CodecError::StrictRefusal`] for the first reported loss whose
+    /// [`StrictConsequence`] is [`StrictConsequence::Reject`]. The gate
+    /// evaluates full-decode reports only: a container-only decode keeps its
+    /// losses and is never refused. This gate owns the refusal predicate and
+    /// the refusal class for every codec. A backend reports its losses with
+    /// their strict floors and adds no strict gate of its own; a local gate
+    /// widens the predicate and reclassifies the refusal without the caller
+    /// seeing it.
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,
@@ -270,18 +280,19 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         ctx.set_container_only(options.container_only);
         let result = self.decode_impl(&ctx, root);
         ctx.finish_session()?;
-        let result = result?;
-        if options.policy.mode == DecodeMode::Strict && !result.report().container_only {
+        let mut result = result?;
+        result.report_mut().container_only = options.container_only;
+        if options.policy.mode == DecodeMode::Strict && !options.container_only {
             if let Some(loss) = result
                 .report()
                 .losses
                 .iter()
                 .find(|loss| loss.strict_consequence() == StrictConsequence::Reject)
             {
-                return Err(CodecError::Malformed(format!(
-                    "strict mode rejects {}: {}",
-                    loss.code, loss.message
-                )));
+                return Err(CodecError::StrictRefusal {
+                    loss_code: loss.code.to_string(),
+                    message: loss.message.clone(),
+                });
             }
         }
         Ok(result)

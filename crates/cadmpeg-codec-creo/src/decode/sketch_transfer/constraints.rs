@@ -32,7 +32,7 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_POLAR_ZERO: f64 = 1e-12;
+const EPS_POLAR_ZERO: f64 = 1.0e-12;
 
 pub(in super::super) fn section_segment_verhor_definition(
     segment: &crate::feature::FeatureSegment,

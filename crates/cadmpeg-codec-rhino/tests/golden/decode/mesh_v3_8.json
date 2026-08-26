@@ -231,6 +231,15 @@
       },
       {
         "code": {
+          "code": "mesh.quad-topology-triangulated",
+          "kind": "record_not_typed",
+          "namespace": "rhino"
+        },
+        "message": "1 quadrilateral face(s) were triangulated for mesh rhino:object:tessellation#record-000000-offset-177",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
           "namespace": "rhino"
@@ -256,7 +265,7 @@
     "annotations": {
       "exactness": {
         "rhino:object:tessellation#record-000000-offset-177": {
-          "entity": "byte_exact"
+          "entity": "derived"
         }
       }
     },

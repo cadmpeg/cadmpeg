@@ -3,25 +3,41 @@
 
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::{Dialect, ProjectedGlobal};
+use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
 
-pub(super) struct CopiousProjection {
-    pub(super) handled: BTreeSet<u32>,
+pub(super) struct CopiousProjectionOutcome {
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
     pub(super) wire_edges: Vec<EdgeId>,
     pub(super) free_vertices: Vec<VertexId>,
+}
+
+impl CopiousProjectionOutcome {
+    pub(super) fn merge_into(
+        self,
+        decoded: &mut BTreeSet<u32>,
+        losses: &mut Vec<LossNote>,
+        wire_edges: &mut Vec<EdgeId>,
+        free_vertices: &mut Vec<VertexId>,
+    ) {
+        decoded.extend(self.decoded);
+        losses.extend(self.losses);
+        wire_edges.extend(self.wire_edges);
+        free_vertices.extend(self.free_vertices);
+    }
 }
 
 fn expected_interpretation(form: i64) -> Option<i64> {
@@ -37,13 +53,114 @@ fn presentation_form(form: i64) -> bool {
     matches!(form, 20 | 21 | 31..=38 | 40)
 }
 
+fn presentation_use_flag_valid(form: i64, use_flag: u8) -> bool {
+    !presentation_form(form) || use_flag == 1
+}
+
+fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
+    IgesLossCode::DisplayDataNotProjected
+        .note(format!(
+            "IGES entity type {} form {} display data was not projected: {}",
+            entry.entity_type,
+            entry.form,
+            message.into()
+        ))
+        .with_provenance(entry.loss_provenance())
+}
+
+fn points_coincident(left: Point3, right: Point3, resolution: f64) -> bool {
+    let distance = left.distance(right);
+    distance == 0.0 || distance < resolution
+}
+
+fn has_forbidden_form_63_duplicate(points: &[Point3], resolution: f64) -> bool {
+    if points.len() == 2 {
+        return true;
+    }
+    let allowed_endpoint_pair = |left: usize, right: usize| left == 0 && right + 1 == points.len();
+    let exact_key = |point: Point3| {
+        let key = |value: f64| {
+            if value == 0.0 {
+                0
+            } else {
+                value.to_bits()
+            }
+        };
+        (key(point.x), key(point.y), key(point.z))
+    };
+    let mut exact_points = None;
+    let mut cells = HashMap::new();
+    let cell_size = resolution * 0.5;
+    for (index, point) in points.iter().copied().enumerate() {
+        if cell_size <= 0.0 {
+            let exact_points = exact_points.get_or_insert_with(HashMap::new);
+            if let Some(previous) = exact_points.insert(exact_key(point), index) {
+                if !allowed_endpoint_pair(previous, index) {
+                    return true;
+                }
+            }
+            continue;
+        }
+        let cell_index = |value: f64| {
+            let index = (value / cell_size).floor();
+            (index.is_finite() && index >= i128::MIN as f64 && index <= i128::MAX as f64)
+                .then_some(index as i128)
+        };
+        let Some((x, y, z)) = cell_index(point.x)
+            .zip(cell_index(point.y))
+            .zip(cell_index(point.z))
+            .map(|((x, y), z)| (x, y, z))
+        else {
+            let exact_points = exact_points.get_or_insert_with(HashMap::new);
+            if let Some(previous) = exact_points.insert(exact_key(point), index) {
+                if !allowed_endpoint_pair(previous, index) {
+                    return true;
+                }
+            }
+            continue;
+        };
+        for dx in -2_i128..=2 {
+            for dy in -2_i128..=2 {
+                for dz in -2_i128..=2 {
+                    let Some(neighbor) = x
+                        .checked_add(dx)
+                        .zip(y.checked_add(dy))
+                        .zip(z.checked_add(dz))
+                        .map(|((x, y), z)| (x, y, z))
+                    else {
+                        continue;
+                    };
+                    let Some(&(previous, previous_point)) = cells.get(&neighbor) else {
+                        continue;
+                    };
+                    if points_coincident(point, previous_point, resolution)
+                        && !allowed_endpoint_pair(previous, index)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        cells.entry((x, y, z)).or_insert((index, point));
+    }
+    false
+}
+
+fn has_form_63_self_intersection(points: &[Point3]) -> bool {
+    let planar_points = points
+        .iter()
+        .map(|point| [point.x, point.y])
+        .collect::<Vec<_>>();
+    super::geometry::planar_polyline_has_self_intersection(&planar_points)
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> CopiousProjection {
+) -> Result<CopiousProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -52,7 +169,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -62,22 +178,36 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
-        handled.insert(entry.sequence);
+        if !presentation_use_flag_valid(entry.form, entry.status.use_flag) {
+            losses.push(entity_loss(
+                entry,
+                "Type 106 presentation forms require Entity Use Flag 01",
+            ));
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let (Some(interpretation), Some(tuple_count)) = (
-            record.integer(1),
-            record
-                .integer(2)
-                .and_then(|value| usize::try_from(value).ok()),
-        ) else {
-            losses.push(entity_loss(
-                entry,
-                "interpretation or tuple count is invalid",
+        let Some(interpretation) = record.integer(1) else {
+            losses.push(entity_loss(entry, "interpretation is invalid"));
+            continue;
+        };
+        let Some(raw_tuple_count) = record.integer(2) else {
+            losses.push(entity_loss(entry, "tuple count is invalid"));
+            continue;
+        };
+        if raw_tuple_count > MAX_COPIOUS_TUPLES as i64 {
+            return Err(refuse_local_limit(
+                "iges_copious_tuples",
+                MAX_COPIOUS_TUPLES as u64,
+                u64::try_from(raw_tuple_count).unwrap_or(u64::MAX),
+                None,
             ));
+        }
+        let Some(tuple_count) = usize::try_from(raw_tuple_count).ok() else {
+            losses.push(entity_loss(entry, "tuple count is invalid"));
             continue;
         };
         if Some(interpretation) != expected_interpretation(entry.form) {
@@ -87,17 +217,33 @@ pub(super) fn project(
             ));
             continue;
         }
-        if tuple_count == 0 || tuple_count > MAX_COPIOUS_TUPLES {
+        if tuple_count == 0 {
             losses.push(entity_loss(
                 entry,
                 format!("tuple count is outside 1..={MAX_COPIOUS_TUPLES}"),
             ));
             continue;
         }
-        if matches!(entry.form, 11..=13 | 63) && tuple_count < 2 {
+        if matches!(entry.form, 11..=13) {
+            let minimum_tuple_count = if matches!(global.dialect(), Dialect::V4_0) {
+                1
+            } else {
+                2
+            };
+            if tuple_count < minimum_tuple_count {
+                losses.push(entity_loss(
+                    entry,
+                    format!(
+                        "linear paths require at least {minimum_tuple_count} tuple(s) under the declared dialect"
+                    ),
+                ));
+                continue;
+            }
+        }
+        if entry.form == 63 && tuple_count < 2 {
             losses.push(entity_loss(
                 entry,
-                "linear paths require at least two tuples",
+                "simple closed paths require at least two tuples",
             ));
             continue;
         }
@@ -160,24 +306,33 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "tuple array is truncated or non-finite"));
             continue;
         };
-        let points = values
+        let definition_points = values
             .chunks_exact(tuple_width)
             .map(|tuple| {
                 let z = match common_z {
                     Some(z) => z,
                     None => tuple[2],
                 };
-                transform.point(Point3::new(
-                    tuple[0] * factor,
-                    tuple[1] * factor,
-                    z * factor,
-                ))
+                Point3::new(tuple[0] * factor, tuple[1] * factor, z * factor)
             })
             .collect::<Vec<_>>();
+        let points = definition_points
+            .iter()
+            .copied()
+            .map(|point| transform.point(point))
+            .collect::<Vec<_>>();
         if presentation_form(entry.form) {
+            losses.push(presentation_loss(
+                entry,
+                "copious presentation tuples have no neutral display carrier",
+            ));
             continue;
         }
-        if matches!(entry.form, 1..=3) {
+        let projects_as_points = matches!(entry.form, 1..=3)
+            || (matches!(entry.form, 11..=13)
+                && tuple_count == 1
+                && matches!(global.dialect(), Dialect::V4_0));
+        if projects_as_points {
             for (index, position) in points.into_iter().enumerate() {
                 let point = PointId(format!(
                     "iges:model:point#D{}-{}",
@@ -205,21 +360,28 @@ pub(super) fn project(
             continue;
         }
         let resolution = global.minimum_resolution_mm();
-        if entry.form == 63 && points[0].distance(points[points.len() - 1]) > resolution {
+        if entry.form == 63 && !points_coincident(points[0], points[points.len() - 1], resolution) {
             losses.push(entity_loss(
                 entry,
                 "simple closed path endpoints disagree beyond the minimum resolution",
             ));
             continue;
         }
-        if entry.form == 63
-            && points
-                .windows(2)
-                .any(|pair| pair[0].distance(pair[1]) <= resolution)
-        {
+        if entry.form == 63 && has_forbidden_form_63_duplicate(&points, resolution) {
             losses.push(entity_loss(
                 entry,
-                "simple closed path has coincident consecutive points",
+                if points.len() == 2 {
+                    "simple closed path has no non-zero segment"
+                } else {
+                    "simple closed path has coincident non-endpoint points"
+                },
+            ));
+            continue;
+        }
+        if entry.form == 63 && has_form_63_self_intersection(&definition_points) {
+            losses.push(entity_loss(
+                entry,
+                "simple closed path intersects itself away from shared endpoints",
             ));
             continue;
         }
@@ -286,13 +448,12 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    CopiousProjection {
-        handled,
+    Ok(CopiousProjectionOutcome {
         decoded,
         losses,
         wire_edges,
         free_vertices,
-    }
+    })
 }
 
 #[cfg(test)]

@@ -20,6 +20,9 @@ use cadmpeg_ir::sketches::{
 use std::collections::BTreeMap;
 
 const EPS_NONDEGENERATE_LINE: f64 = 0.000_000_000_001_f64;
+const EPS_LOCUS_COORDINATE: f64 = 1.0e-9;
+const EPS_LOCUS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_LOCUS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
 pub(in super::super) fn section_point_locus(
     definition: &crate::feature::FeatureDefinition,
@@ -594,7 +597,8 @@ pub(in super::super) fn section_skamp_same_coordinate(
                 .chain(&second_point)
                 .map(|coordinate| coordinate.abs())
                 .fold(1.0, f64::max);
-            ((first_point[coordinate] - second_point[coordinate]).abs() <= 1e-9 * scale)
+            ((first_point[coordinate] - second_point[coordinate]).abs()
+                <= EPS_LOCUS_COORDINATE * scale)
                 .then_some(())?;
         }
     }
@@ -1058,9 +1062,9 @@ pub(in super::super) fn oriented_arc_midpoint(
         .chain(second)
         .chain([first_radius, second_radius, radius])
         .all(f64::is_finite)
-        || radius <= 1e-12
-        || (first_radius - second_radius).abs() > 1e-9 * scale
-        || (radius - first_radius).abs() > 1e-9 * scale
+        || radius <= EPS_LOCUS_RADIUS_NONZERO
+        || (first_radius - second_radius).abs() > EPS_LOCUS_RADIUS_AGREEMENT * scale
+        || (radius - first_radius).abs() > EPS_LOCUS_RADIUS_AGREEMENT * scale
     {
         return None;
     }

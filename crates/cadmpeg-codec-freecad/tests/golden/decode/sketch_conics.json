@@ -761,9 +761,34 @@
       "view_presentations": []
     },
     "native": {
-      "__elided": "native arenas are pinned by digest, not by value",
-      "__serialized_len": 326298,
-      "__sha256": "36ca9f9e638badc4306c892f5432a5ec8f3978c7f0ff276de8f23f31063baca0"
+      "__arena_counts": {
+        "fcstd": {
+          "annotations": 0,
+          "applications": 2,
+          "attachments": 1,
+          "byte_coverage": 1,
+          "carrier_census": 1,
+          "design_census": 1,
+          "document": 1,
+          "drawings": 0,
+          "element_maps": 1,
+          "entries": 4,
+          "extensions": 1,
+          "gui_documents": 0,
+          "gui_properties": 0,
+          "gui_view_providers": 0,
+          "joints": 0,
+          "logical_ledger": 111,
+          "objects": 2,
+          "physical_ledger": 29,
+          "product_nodes": 0,
+          "properties": 54,
+          "shape_payloads": 2,
+          "string_tables": 1
+        }
+      },
+      "__elided": "native arena values are omitted; structure is pinned by identity",
+      "__shape_sha256": "28ebb3a9ce768cac5602306c6c6a3e28df2e1c1626502066d7518e10c9e5f688"
     },
     "source": {
       "attributes": {

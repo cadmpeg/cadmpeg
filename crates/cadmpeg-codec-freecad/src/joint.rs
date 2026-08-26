@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::{JointRecord, ObjectRecord, PropertyRecord};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::products::{
     AssemblyJoint, JointId, JointKind, JointLimits, JointOperand, Occurrence,
 };
@@ -12,7 +13,7 @@ use cadmpeg_ir::transform::Transform;
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-) -> Vec<JointRecord> {
+) -> Result<Vec<JointRecord>, CodecError> {
     let by_owner = properties.iter().fold(
         HashMap::<&str, Vec<&PropertyRecord>>::new(),
         |mut map, property| {
@@ -26,41 +27,63 @@ pub(crate) fn transfer(
             .get(object.id.as_str())
             .cloned()
             .unwrap_or_default();
-        let grounded = owned
-            .iter()
-            .any(|property| property.name == "ObjectToGround");
-        let joint_type = owned
-            .iter()
-            .find(|property| property.name == "JointType")
-            .and_then(|property| enumeration_value(property));
+        let grounded_property = unique_property(&owned, "ObjectToGround")?;
+        let joint_type_property = unique_property(&owned, "JointType")?;
+        if grounded_property.is_some() && joint_type_property.is_some() {
+            return Err(CodecError::malformed(format_args!(
+                "joint object {} carries both ObjectToGround and JointType",
+                object.id
+            )));
+        }
+        if let Some(property) = grounded_property {
+            let legacy_empty_sub = property.type_name == "App::PropertyLinkSub"
+                && property.links.len() == 1
+                && property.links[0].subelements.iter().all(String::is_empty);
+            if !matches!(
+                property.type_name.as_str(),
+                "App::PropertyLinkGlobal" | "App::PropertyLink"
+            ) && !legacy_empty_sub
+            {
+                return Err(CodecError::malformed(format_args!(
+                    "joint property {} has the wrong runtime type for ObjectToGround",
+                    property.id
+                )));
+            }
+        }
+        if let Some(property) = joint_type_property {
+            if property.type_name != "App::PropertyEnumeration" {
+                return Err(CodecError::malformed(format_args!(
+                    "joint property {} has the wrong runtime type for JointType",
+                    property.id
+                )));
+            }
+        }
+        let grounded = grounded_property.is_some();
+        let joint_type = joint_type_property.map(enumeration_value).transpose()?;
         if !grounded && joint_type.is_none() {
             continue;
         }
         let (references, placements, offsets) = if grounded {
+            let placement = placement(&owned, "Placement")?;
             (
                 links(&owned, "ObjectToGround"),
-                placement(&owned, "Placement").into_iter().collect(),
+                placement.into_iter().collect(),
                 Vec::new(),
             )
         } else {
+            let placement1 = placement(&owned, "Placement1")?;
+            let offset1 = placement(&owned, "Offset1")?;
+            let placement2 = placement(&owned, "Placement2")?;
+            let offset2 = placement(&owned, "Offset2")?;
+            let reference1 = connector(&owned, "Reference1")?;
+            let reference2 = connector(&owned, "Reference2")?;
             let slots = [
-                (
-                    links(&owned, "Reference1"),
-                    placement(&owned, "Placement1"),
-                    placement(&owned, "Offset1"),
-                ),
-                (
-                    links(&owned, "Reference2"),
-                    placement(&owned, "Placement2"),
-                    placement(&owned, "Offset2"),
-                ),
-            ]
-            .into_iter()
-            .filter(|(references, _, _)| !references.is_empty())
-            .collect::<Vec<_>>();
+                (reference1, placement1, offset1),
+                (reference2, placement2, offset2),
+            ];
             let references = slots
                 .iter()
-                .flat_map(|(references, _, _)| references.clone())
+                .flat_map(|(references, _, _)| references.iter().cloned())
                 .collect();
             let placements = slots
                 .iter()
@@ -93,16 +116,13 @@ pub(crate) fn transfer(
                         | "Suppressed"
                 )
             })
-            .filter_map(|property| {
-                Some((
-                    property.name.clone(),
-                    property
-                        .values
-                        .iter()
-                        .find_map(|value| value.attributes.get("value"))?
-                        .clone(),
-                ))
+            .map(|property| {
+                scalar_parameter(property)
+                    .map(|value| value.map(|value| (property.name.clone(), value)))
             })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
             .collect::<BTreeMap<_, _>>();
         output.push(JointRecord {
             id: crate::native::native_id("joint", &object.name),
@@ -118,7 +138,7 @@ pub(crate) fn transfer(
             parameters,
         });
     }
-    output
+    Ok(output)
 }
 
 pub(crate) fn transfer_neutral(
@@ -263,23 +283,191 @@ fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-fn enumeration_value(property: &PropertyRecord) -> Option<String> {
-    let index = property
-        .values
-        .iter()
-        .find(|value| value.tag == "Integer")?
-        .attributes
-        .get("value")?
+fn enumeration_value(property: &PropertyRecord) -> Result<String, CodecError> {
+    let document = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        malformed(format!(
+            "joint enumeration property {} has invalid XML: {error}",
+            property.id
+        ))
+    })?;
+    let root = document.root_element();
+    if !root.has_tag_name("Property") {
+        return Err(malformed(format!(
+            "joint enumeration property {} has no Property root",
+            property.id
+        )));
+    }
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let Some(integer) = values
+        .first()
+        .copied()
+        .filter(|value| value.has_tag_name("Integer"))
+    else {
+        return Err(malformed(format!(
+            "joint enumeration property {} requires one direct Integer value",
+            property.id
+        )));
+    };
+    if integer.children().any(|value| value.is_element()) {
+        return Err(malformed(format!(
+            "joint enumeration property {} has nested Integer values",
+            property.id
+        )));
+    }
+    if values.len() > 2
+        || values
+            .get(1)
+            .is_some_and(|value| !value.has_tag_name("CustomEnumList"))
+    {
+        return Err(malformed(format!(
+            "joint enumeration property {} has extra direct value roots",
+            property.id
+        )));
+    }
+    let custom_list = values.get(1).copied();
+    let custom = match integer.attribute("CustomEnum") {
+        None => false,
+        Some("true") => true,
+        Some(_) => {
+            return Err(malformed(format!(
+                "joint enumeration property {} has an invalid CustomEnum marker",
+                property.id
+            )));
+        }
+    };
+    if custom != custom_list.is_some() {
+        return Err(malformed(format!(
+            "joint enumeration property {} has inconsistent custom enumeration carriers",
+            property.id
+        )));
+    }
+    let index = integer
+        .attribute("value")
+        .ok_or_else(|| {
+            malformed(format!(
+                "joint enumeration property {} has no Integer value",
+                property.id
+            ))
+        })?
         .parse::<usize>()
-        .ok()?;
-    property
-        .values
-        .iter()
-        .filter(|value| value.tag == "Enum")
-        .nth(index)
-        .and_then(|value| value.attributes.get("value"))
+        .map_err(|_| {
+            malformed(format!(
+                "joint enumeration property {} has an invalid Integer value",
+                property.id
+            ))
+        })?;
+    let enum_values = if let Some(custom_list) = custom_list {
+        let count = custom_list
+            .attribute("count")
+            .ok_or_else(|| {
+                malformed(format!(
+                    "joint enumeration property {} CustomEnumList has no count",
+                    property.id
+                ))
+            })?
+            .parse::<usize>()
+            .map_err(|_| {
+                malformed(format!(
+                    "joint enumeration property {} CustomEnumList count is invalid",
+                    property.id
+                ))
+            })?;
+        let values = custom_list
+            .children()
+            .filter(roxmltree::Node::is_element)
+            .collect::<Vec<_>>();
+        if values.len() != count || values.iter().any(|value| !value.has_tag_name("Enum")) {
+            return Err(malformed(format!(
+                "joint enumeration property {} CustomEnumList count={count} but {} direct Enum values were found",
+                property.id,
+                values.len()
+            )));
+        }
+        values
+            .into_iter()
+            .map(|value| {
+                if value.children().any(|child| child.is_element()) {
+                    return Err(malformed(format!(
+                        "joint enumeration property {} has nested Enum values",
+                        property.id
+                    )));
+                }
+                value.attribute("value").map(str::to_owned).ok_or_else(|| {
+                    malformed(format!(
+                        "joint enumeration property {} Enum has no value",
+                        property.id
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        Vec::new()
+    };
+    Ok(enum_values
+        .get(index)
         .cloned()
-        .or_else(|| Some(index.to_string()))
+        .unwrap_or_else(|| index.to_string()))
+}
+
+fn scalar_parameter(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
+    let (expected_type, expected_tag) = match property.name.as_str() {
+        "Angle" | "AngleMin" | "AngleMax" => ("App::PropertyAngle", "Float"),
+        "Distance" | "Distance2" | "LengthMin" | "LengthMax" => ("App::PropertyLength", "Float"),
+        "EnableAngleMin" | "EnableAngleMax" | "EnableLengthMin" | "EnableLengthMax" | "Detach1"
+        | "Detach2" | "Suppressed" => ("App::PropertyBool", "Bool"),
+        _ => return Ok(None),
+    };
+    if property.type_name != expected_type {
+        return Err(malformed(format!(
+            "joint parameter property {} has runtime type {}, expected {expected_type}",
+            property.id, property.type_name
+        )));
+    }
+    let [value] = property.values.as_slice() else {
+        return Err(malformed(format!(
+            "joint parameter property {} requires one {expected_tag} value",
+            property.id
+        )));
+    };
+    if value.tag != expected_tag {
+        return Err(malformed(format!(
+            "joint parameter property {} requires a {expected_tag} value",
+            property.id
+        )));
+    }
+    value
+        .attributes
+        .get("value")
+        .cloned()
+        .ok_or_else(|| {
+            malformed(format!(
+                "joint parameter property {} has no value",
+                property.id
+            ))
+        })
+        .map(Some)
+}
+
+fn unique_property<'a>(
+    properties: &[&'a PropertyRecord],
+    name: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let mut matches = properties
+        .iter()
+        .copied()
+        .filter(|property| property.name == name);
+    let Some(property) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::malformed(format_args!(
+            "joint property {name} occurs more than once"
+        )));
+    }
+    Ok(Some(property))
 }
 
 fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkTarget> {
@@ -303,8 +491,54 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
         .unwrap_or_default()
 }
 
-fn placement(properties: &[&PropertyRecord], name: &str) -> Option<[[f64; 4]; 4]> {
-    crate::product::placement_matrix(properties.iter().find(|property| property.name == name)?)
+fn connector(
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Vec<crate::native::LinkTarget>, CodecError> {
+    let Some(property) = unique_property(properties, name)? else {
+        return Err(malformed(format!("joint connector {name} is missing")));
+    };
+    if !matches!(
+        property.type_name.as_str(),
+        "App::PropertyXLinkSub" | "App::PropertyXLinkSubHidden"
+    ) {
+        return Err(malformed(format!(
+            "joint connector {} has runtime type {}, expected App::PropertyXLinkSub",
+            property.id, property.type_name
+        )));
+    }
+    if property
+        .values
+        .first()
+        .is_none_or(|value| value.tag != "XLink")
+    {
+        return Err(malformed(format!(
+            "joint connector {} requires one XLink value",
+            property.id
+        )));
+    }
+    if property.links.len() != 1 {
+        return Err(malformed(format!(
+            "joint connector {} requires one target, found {}",
+            property.id,
+            property.links.len()
+        )));
+    }
+    Ok(property.links.clone())
+}
+
+fn placement(
+    properties: &[&PropertyRecord],
+    name: &str,
+) -> Result<Option<[[f64; 4]; 4]>, CodecError> {
+    let Some(property) = unique_property(properties, name)? else {
+        return Ok(None);
+    };
+    crate::product::placement_matrix(property)
+}
+
+fn malformed(message: impl Into<String>) -> CodecError {
+    CodecError::Malformed(message.into())
 }
 
 #[cfg(test)]
@@ -353,7 +587,7 @@ pub(crate) mod tests {
 <ObjectData Count="2">
  <Object name="Assembly"><Properties Count="0"/></Object>
  <Object name="Joint"><Properties Count="14">
-  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
+  <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
   <Property name="Reference1" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="2"><Sub value="A.Face1"/><Sub value="A.Edge2"/></XLink></Property>
   <Property name="Reference2" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="1"><Sub value="B.Edge3"/></XLink></Property>
   <Property name="Placement1" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
@@ -449,7 +683,7 @@ pub(crate) mod tests {
 <ObjectData Count="2">
  <Object name="BasePlate"><Properties Count="0"/></Object>
  <Object name="Ground"><Properties Count="2">
-  <Property name="ObjectToGround" type="App::PropertyLink"><Link value="BasePlate"/></Property>
+  <Property name="ObjectToGround" type="App::PropertyLinkGlobal"><Link value="BasePlate"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="7" Py="8" Pz="9" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -470,5 +704,155 @@ pub(crate) mod tests {
         assert_eq!(joint.frames[0].rows[2][3], 9.0);
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
+    }
+
+    #[test]
+    fn rejects_wrong_runtime_types_for_joint_carriers() {
+        for property in [
+            r#"<Property name="ObjectToGround" type="App::PropertyString"><String value="Base"/></Property>"#,
+            r#"<Property name="JointType" type="App::PropertyInteger"><Integer value="0"/></Property>"#,
+        ] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object><Object name="Joint"><Properties Count="1">{property}</Properties></Object></ObjectData>
+</Document>"#
+            );
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_wrong_connector_type_and_target_cardinality() {
+        for properties in [
+            r#"<Property name="Reference1" type="App::PropertyLinkSub"><LinkSub value="Base" count="0"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+            r#"<Property name="Reference1" type="App::PropertyXLinkSubList"><XLinkSubList count="2"><XLink file="" name="Base"/><XLink file="" name="Other"/></XLinkSubList></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+            r#"<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+        ] {
+            let property_count = properties.lines().count() + 1;
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="1"><Object name="Joint"><Properties Count="{property_count}">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+{properties}
+</Properties></Object></ObjectData></Document>"#
+            );
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_nested_joint_enumeration_carriers() {
+        let cases = [
+            r#"<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Wrapper><Enum value="Fixed"/></Wrapper></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+            r#"<Property name="JointType" type="App::PropertyEnumeration"><Wrapper><Integer value="0"/></Wrapper><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+            r#"<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+            r#"<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name="Base"/></Property>"#,
+        ];
+        for properties in cases {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="1"><Object name="Joint"><Properties Count="3">{properties}</Properties></Object></ObjectData>
+</Document>"#
+            );
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_wrong_joint_scalar_runtime_types_and_value_tags() {
+        for property in [
+            r#"<Property name="Angle" type="App::PropertyFloat"><Float value="15"/></Property>"#,
+            r#"<Property name="Distance" type="App::PropertyLength"><Integer value="3"/></Property>"#,
+            r#"<Property name="EnableAngleMin" type="App::PropertyBool"><Bool value="true"/><Bool value="false"/></Property>"#,
+            r#"<Property name="Suppressed" type="App::PropertyString"><String value="true"/></Property>"#,
+        ] {
+            let document = format!(
+                r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="1"><Object name="Joint"><Properties Count="4">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+<Property name="Reference1" type="App::PropertyXLinkSub"><XLink file="" name=""/></Property>
+<Property name="Reference2" type="App::PropertyXLinkSub"><XLink file="" name=""/></Property>
+{property}
+</Properties></Object></ObjectData></Document>"#
+            );
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(&document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_ambiguous_joint_kind_and_scalar_carriers() {
+        let documents = [
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object><Object name="Joint"><Properties Count="3">
+<Property name="ObjectToGround" type="App::PropertyLinkGlobal"><Link value="Base"/></Property>
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="1"><Object name="Joint"><Properties Count="1">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><Integer value="1"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="1"><Object name="Joint"><Properties Count="2">
+<Property name="JointType" type="App::PropertyEnumeration"><Integer value="0" CustomEnum="true"/><CustomEnumList count="1"><Enum value="Fixed"/></CustomEnumList></Property>
+<Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/><Bool value="false"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Base"/><Object type="App::FeaturePython" name="Joint"/></Objects>
+<ObjectData Count="2"><Object name="Base"><Properties Count="0"/></Object><Object name="Joint"><Properties Count="2">
+<Property name="ObjectToGround" type="App::PropertyLinkGlobal"><Link value="Base"/></Property>
+<Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+</Properties></Object></ObjectData></Document>"#,
+        ];
+        for document in documents {
+            assert!(matches!(
+                FcstdCodec.decode(
+                    &mut Cursor::new(archive(document)),
+                    &DecodeOptions::default(),
+                ),
+                Err(cadmpeg_core::CodecError::Malformed(_))
+            ));
+        }
     }
 }

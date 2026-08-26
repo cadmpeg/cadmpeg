@@ -314,7 +314,7 @@ pub fn decode_parameter_owners(
             .insert(header.record_index, header)
             .is_some()
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Fusion Design stream has duplicate primary headers for record {}",
                 header.record_index
             )));
@@ -343,7 +343,7 @@ pub fn decode_parameter_owners(
             continue;
         };
         let malformed = |invariant: &str| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "Fusion Design parameter {} owner {} {invariant}",
                 parameter.record_index, owner_index
             ))

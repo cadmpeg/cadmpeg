@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body membership, sheet classification, and face-use decode tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::LossTaxonomy;
 
-use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
 

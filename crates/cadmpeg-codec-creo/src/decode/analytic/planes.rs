@@ -22,16 +22,16 @@ use super::equations::{
 };
 use super::vertices::model_points_agree;
 
-const EPS_ON_CARRIER: f64 = 1e-7;
-const EPS_POINT_UNIQUE: f64 = 1e-7;
-const EPS_AGREE: f64 = 1e-9;
-const EPS_ORTHO: f64 = 1e-10;
-const EPS_NEAR_ZERO: f64 = 1e-12;
-const EPS_STORED_FRAME_NONZERO: f64 = 1e-6;
-const EPS_STORED_FRAME_RELATIVE: f64 = 1e-9;
-const EPS_FC05_TANGENT_AXIS: f64 = 1e-10;
-const EPS_FC05_TANGENT_RESIDUAL: f64 = 1e-9;
-const EPS_FC05_CAP_AXIS: f64 = 1e-9;
+const EPS_ON_CARRIER: f64 = 1.0e-7;
+const EPS_POINT_UNIQUE: f64 = 1.0e-7;
+const EPS_AGREE: f64 = 1.0e-9;
+const EPS_ORTHO: f64 = 1.0e-10;
+const EPS_NEAR_ZERO: f64 = 1.0e-12;
+const EPS_STORED_FRAME_NONZERO: f64 = 1.0e-6;
+const EPS_STORED_FRAME_RELATIVE: f64 = 1.0e-9;
+const EPS_FC05_TANGENT_AXIS: f64 = 1.0e-10;
+const EPS_FC05_TANGENT_RESIDUAL: f64 = 1.0e-9;
+const EPS_FC05_CAP_AXIS: f64 = 1.0e-9;
 
 pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
     match carrier {

@@ -8,6 +8,8 @@ use cadmpeg_core::decode::View;
 
 use crate::psb::{compact_int, short_form_float};
 
+const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
+
 /// Counted `double_xar` dictionary stored in a model-level scalar section.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DoubleXarTable {
@@ -955,8 +957,8 @@ pub(crate) enum PlaneSupportFrameLayout {
     MatrixColumns,
 }
 
-const EPS_PLANE_LAYOUT_NONZERO: f64 = 1e-6;
-const EPS_PLANE_LAYOUT_RELATIVE: f64 = 1e-9;
+const EPS_PLANE_LAYOUT_NONZERO: f64 = 1.0e-6;
+const EPS_PLANE_LAYOUT_RELATIVE: f64 = 1.0e-9;
 
 fn valid_equal_scale_orthogonal_directions(first: [f64; 3], second: [f64; 3]) -> bool {
     let first_magnitude = first.iter().map(|value| value * value).sum::<f64>().sqrt();
@@ -1519,9 +1521,11 @@ fn decode_reflected_xy_cylinder_local_system(
         .all(f64::is_finite)
         .then_some(())?;
     let scale = first_x.abs().max(first_y.abs()).max(1.0);
-    ((first_x.mul_add(first_x, first_y * first_y) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
-    ((stored_first_y - first_y).abs() <= 1e-9 * scale).then_some(())?;
-    ((stored_first_x - first_x).abs() <= 1e-9 * scale).then_some(())?;
+    ((first_x.mul_add(first_x, first_y * first_y) - 1.0).abs()
+        <= EPS_SUPPORT_FRAME_AGREEMENT * scale)
+        .then_some(())?;
+    ((stored_first_y - first_y).abs() <= EPS_SUPPORT_FRAME_AGREEMENT * scale).then_some(())?;
+    ((stored_first_x - first_x).abs() <= EPS_SUPPORT_FRAME_AGREEMENT * scale).then_some(())?;
 
     let mut origin = [0.0; 3];
     for value in &mut origin {
@@ -1618,8 +1622,11 @@ fn decode_prefixed_orthogonal_plane_support(
         .all(f64::is_finite)
         .then_some(())?;
     let scale = first_x.abs().max(first_z.abs()).max(1.0);
-    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
-    ((stored_first_x_magnitude.abs() - first_x.abs()).abs() <= 1e-9 * scale).then_some(())?;
+    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs()
+        <= EPS_SUPPORT_FRAME_AGREEMENT * scale)
+        .then_some(())?;
+    ((stored_first_x_magnitude.abs() - first_x.abs()).abs() <= EPS_SUPPORT_FRAME_AGREEMENT * scale)
+        .then_some(())?;
 
     let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
     Some((
@@ -1662,8 +1669,11 @@ fn decode_trailing_rank_orthogonal_plane_support(
         .all(f64::is_finite)
         .then_some(())?;
     let scale = first_x.abs().max(first_z.abs()).max(1.0);
-    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
-    ((stored_first_x_magnitude.abs() - first_x.abs()).abs() <= 1e-9 * scale).then_some(())?;
+    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs()
+        <= EPS_SUPPORT_FRAME_AGREEMENT * scale)
+        .then_some(())?;
+    ((stored_first_x_magnitude.abs() - first_x.abs()).abs() <= EPS_SUPPORT_FRAME_AGREEMENT * scale)
+        .then_some(())?;
 
     let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
     Some((
@@ -1705,9 +1715,11 @@ fn decode_reflected_component_plane_support(
         .all(f64::is_finite)
         .then_some(())?;
     let scale = first_x.abs().max(first_z.abs()).max(1.0);
-    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
-    ((second_x - first_z).abs() <= 1e-9 * scale).then_some(())?;
-    ((stored_first_x - first_x).abs() <= 1e-9 * scale).then_some(())?;
+    ((first_x.mul_add(first_x, first_z * first_z) - 1.0).abs()
+        <= EPS_SUPPORT_FRAME_AGREEMENT * scale)
+        .then_some(())?;
+    ((second_x - first_z).abs() <= EPS_SUPPORT_FRAME_AGREEMENT * scale).then_some(())?;
+    ((stored_first_x - first_x).abs() <= EPS_SUPPORT_FRAME_AGREEMENT * scale).then_some(())?;
 
     let (origin, cursor) = decode_plane_support_origin(body, cursor, cache)?;
     Some((
@@ -1751,7 +1763,9 @@ fn decode_trailing_rank_reflected_plane_support(
         .all(f64::is_finite)
         .then_some(())?;
     let scale = first_y.abs().max(first_z.abs()).max(1.0);
-    ((first_y.mul_add(first_y, first_z * first_z) - 1.0).abs() <= 1e-9 * scale).then_some(())?;
+    ((first_y.mul_add(first_y, first_z * first_z) - 1.0).abs()
+        <= EPS_SUPPORT_FRAME_AGREEMENT * scale)
+        .then_some(())?;
     (stored_second_y == first_z).then_some(())?;
     (stored_first_y == first_y).then_some(())?;
 

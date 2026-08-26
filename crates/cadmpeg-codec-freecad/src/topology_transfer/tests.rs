@@ -6,13 +6,13 @@ use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
-fn occurrence_keys_canonicalize_equivalent_transform_roundoff() {
+fn neutral_identity_keys_preserve_exact_composed_locations() {
     let mut positive = Transform::identity();
     positive.rows[0][3] = 0.5e-12;
     let mut negative = Transform::identity();
     negative.rows[0][3] = -0.5e-12;
 
-    assert_eq!(
+    assert_ne!(
         OccurrenceKey::new(7, positive),
         OccurrenceKey::new(7, negative)
     );
@@ -31,7 +31,7 @@ fn occurrence_keys_canonicalize_equivalent_transform_roundoff() {
     let mut direct = Transform::identity();
     direct.rows[0][3] = 258.75;
 
-    assert_eq!(
+    assert_ne!(
         OccurrenceKey::new(14, composed),
         OccurrenceKey::new(14, direct)
     );
@@ -45,10 +45,201 @@ fn occurrence_keys_canonicalize_equivalent_transform_roundoff() {
         OccurrenceKey::new(14, composed),
         OccurrenceKey::new(14, direct)
     );
+
+    assert!(is_identity(Transform::identity()));
+    assert!(!is_identity(positive));
 }
 
 #[test]
-fn endpoint_selection_matches_the_last_oriented_direct_children() {
+fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
+    let mut translated = Transform::identity();
+    translated.rows[0][3] = 10.0;
+    let locations = [TextLocation {
+        factors: Vec::new(),
+        transform: translated,
+    }];
+    let tshapes = [TextTShape {
+        index: 1,
+        kind: TextShapeKind::Edge,
+        geometry: TextTShapeGeometry::Empty,
+        flags: [false; 7],
+        children: Vec::new(),
+    }];
+    let roots = [
+        TextShapeUse {
+            shape: 1,
+            orientation: TextOrientation::Forward,
+            location: 0,
+        },
+        TextShapeUse {
+            shape: 1,
+            orientation: TextOrientation::Reversed,
+            location: 0,
+        },
+        TextShapeUse {
+            shape: 1,
+            orientation: TextOrientation::Forward,
+            location: 1,
+        },
+    ];
+    let tables = Tables {
+        locations: &locations,
+        curve2ds: &[],
+        curves: &[],
+        surfaces: &[],
+        polygons3d: &[],
+        polygons_on_triangulations: &[],
+        tshapes: &tshapes,
+        triangulations: &[],
+        roots: &roots,
+    };
+
+    let indices = source_topology_indices(tables);
+
+    assert_eq!(
+        indices.get(&(
+            TextShapeKind::Edge,
+            SourceOccurrenceKey::new(1, Transform::identity()),
+        )),
+        Some(&1)
+    );
+    assert_eq!(
+        indices.get(&(TextShapeKind::Edge, SourceOccurrenceKey::new(1, translated),)),
+        Some(&2)
+    );
+}
+
+#[test]
+fn source_indices_follow_depth_first_topology_order() {
+    let use_shape = |shape: usize| TextShapeUse {
+        shape,
+        orientation: TextOrientation::Forward,
+        location: 0,
+    };
+    let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
+        index,
+        kind,
+        geometry: TextTShapeGeometry::Empty,
+        flags: [false; 7],
+        children: children.into_iter().map(use_shape).collect(),
+    };
+    let tshapes = vec![
+        empty(1, TextShapeKind::Compound, vec![2, 3]),
+        empty(2, TextShapeKind::Solid, vec![4]),
+        empty(3, TextShapeKind::Solid, vec![5]),
+        empty(4, TextShapeKind::Shell, vec![6]),
+        empty(5, TextShapeKind::Shell, vec![7]),
+        empty(6, TextShapeKind::Face, vec![8]),
+        empty(7, TextShapeKind::Face, vec![9]),
+        empty(8, TextShapeKind::Wire, vec![10]),
+        empty(9, TextShapeKind::Wire, vec![11]),
+        empty(10, TextShapeKind::Edge, vec![12, 13]),
+        empty(11, TextShapeKind::Edge, vec![14, 15]),
+        empty(12, TextShapeKind::Vertex, Vec::new()),
+        empty(13, TextShapeKind::Vertex, Vec::new()),
+        empty(14, TextShapeKind::Vertex, Vec::new()),
+        empty(15, TextShapeKind::Vertex, Vec::new()),
+    ];
+    let roots = [use_shape(1)];
+    let tables = Tables {
+        locations: &[],
+        curve2ds: &[],
+        curves: &[],
+        surfaces: &[],
+        polygons3d: &[],
+        polygons_on_triangulations: &[],
+        tshapes: &tshapes,
+        triangulations: &[],
+        roots: &roots,
+    };
+    let indices = source_topology_indices(tables);
+    let index =
+        |kind, shape| indices.get(&(kind, SourceOccurrenceKey::new(shape, Transform::identity())));
+
+    assert_eq!(index(TextShapeKind::Compound, 1), Some(&1));
+    assert_eq!(index(TextShapeKind::Solid, 2), Some(&1));
+    assert_eq!(index(TextShapeKind::Solid, 3), Some(&2));
+    assert_eq!(index(TextShapeKind::Shell, 4), Some(&1));
+    assert_eq!(index(TextShapeKind::Shell, 5), Some(&2));
+    assert_eq!(index(TextShapeKind::Face, 6), Some(&1));
+    assert_eq!(index(TextShapeKind::Face, 7), Some(&2));
+    assert_eq!(index(TextShapeKind::Wire, 8), Some(&1));
+    assert_eq!(index(TextShapeKind::Wire, 9), Some(&2));
+    assert_eq!(index(TextShapeKind::Edge, 10), Some(&1));
+    assert_eq!(index(TextShapeKind::Edge, 11), Some(&2));
+    assert_eq!(index(TextShapeKind::Vertex, 12), Some(&1));
+    assert_eq!(index(TextShapeKind::Vertex, 13), Some(&2));
+    assert_eq!(index(TextShapeKind::Vertex, 14), Some(&3));
+    assert_eq!(index(TextShapeKind::Vertex, 15), Some(&4));
+}
+
+#[test]
+fn source_indices_stop_at_nested_same_kind_shapes() {
+    let use_shape = |shape: usize| TextShapeUse {
+        shape,
+        orientation: TextOrientation::Forward,
+        location: 0,
+    };
+    let empty = |index: usize, kind: TextShapeKind, children: Vec<usize>| TextTShape {
+        index,
+        kind,
+        geometry: TextTShapeGeometry::Empty,
+        flags: [false; 7],
+        children: children.into_iter().map(use_shape).collect(),
+    };
+    let tshapes = vec![
+        empty(1, TextShapeKind::Compound, vec![2, 2, 4]),
+        empty(2, TextShapeKind::Compound, vec![3]),
+        empty(3, TextShapeKind::Solid, Vec::new()),
+        empty(4, TextShapeKind::Compound, Vec::new()),
+    ];
+    let roots = [use_shape(1)];
+    let tables = Tables {
+        locations: &[],
+        curve2ds: &[],
+        curves: &[],
+        surfaces: &[],
+        polygons3d: &[],
+        polygons_on_triangulations: &[],
+        tshapes: &tshapes,
+        triangulations: &[],
+        roots: &roots,
+    };
+
+    let indices = source_topology_indices(tables);
+
+    assert_eq!(
+        indices.get(&(
+            TextShapeKind::Compound,
+            SourceOccurrenceKey::new(1, Transform::identity()),
+        )),
+        Some(&1)
+    );
+    assert_eq!(
+        indices.get(&(
+            TextShapeKind::Compound,
+            SourceOccurrenceKey::new(2, Transform::identity()),
+        )),
+        None
+    );
+    assert_eq!(
+        indices.get(&(
+            TextShapeKind::Compound,
+            SourceOccurrenceKey::new(4, Transform::identity()),
+        )),
+        None
+    );
+    assert_eq!(
+        indices.get(&(
+            TextShapeKind::Solid,
+            SourceOccurrenceKey::new(3, Transform::identity()),
+        )),
+        Some(&1)
+    );
+}
+
+#[test]
+fn endpoint_selection_requires_unique_oriented_direct_children() {
     let children = [
         TextShapeUse {
             shape: 1,
@@ -61,24 +252,275 @@ fn endpoint_selection_matches_the_last_oriented_direct_children() {
             location: 0,
         },
         TextShapeUse {
-            shape: 3,
-            orientation: TextOrientation::Forward,
-            location: 0,
-        },
-        TextShapeUse {
             shape: 4,
             orientation: TextOrientation::Reversed,
             location: 0,
         },
+        TextShapeUse {
+            shape: 5,
+            orientation: TextOrientation::External,
+            location: 0,
+        },
     ];
     let (start, end) = edge_endpoint_uses(9, &children).expect("endpoint uses");
-    assert_eq!(start.shape, 3);
+    assert_eq!(start.shape, 1);
     assert_eq!(end.shape, 4);
 
+    let closed = [
+        TextShapeUse {
+            shape: 7,
+            orientation: TextOrientation::Forward,
+            location: 0,
+        },
+        TextShapeUse {
+            shape: 7,
+            orientation: TextOrientation::Reversed,
+            location: 0,
+        },
+    ];
+    let (start, end) = edge_endpoint_uses(9, &closed).expect("closed edge endpoints");
+    assert_eq!(start.shape, end.shape);
+
     assert!(matches!(
-        edge_endpoint_uses(9, &children[..3]),
+        edge_endpoint_uses(9, &children[..2]),
         Err(CodecError::Malformed(_))
     ));
+    let duplicate_forward = [
+        children[0].clone(),
+        TextShapeUse {
+            shape: 3,
+            orientation: TextOrientation::Forward,
+            location: 0,
+        },
+        children[2].clone(),
+    ];
+    assert!(matches!(
+        edge_endpoint_uses(9, &duplicate_forward),
+        Err(CodecError::Malformed(_))
+    ));
+    let duplicate_reversed = [
+        children[0].clone(),
+        children[2].clone(),
+        TextShapeUse {
+            shape: 5,
+            orientation: TextOrientation::Reversed,
+            location: 0,
+        },
+    ];
+    assert!(matches!(
+        edge_endpoint_uses(9, &duplicate_reversed),
+        Err(CodecError::Malformed(_))
+    ));
+}
+
+#[test]
+fn edge_representation_selection_follows_family_rules() {
+    let representation = |kind, primary| TextEdgeRepresentation {
+        kind,
+        primary,
+        secondary: None,
+        surface: None,
+        second_surface: None,
+        location: 0,
+        second_location: None,
+        parameter_range: None,
+        continuity: None,
+        uv_endpoints: None,
+    };
+    let curves = [
+        TextCurve::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        TextCurve::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        TextCurve::Line {
+            origin: Point3::new(0.0, 1.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+    ];
+    let tables = Tables {
+        locations: &[],
+        curve2ds: &[],
+        curves: &curves,
+        surfaces: &[],
+        polygons3d: &[],
+        polygons_on_triangulations: &[],
+        tshapes: &[],
+        triangulations: &[],
+        roots: &[],
+    };
+    let equivalent_exact = [representation(1, 1), representation(1, 2)];
+    let selected = select_exact_curve_representation(7, &equivalent_exact, &tables)
+        .expect("equivalent exact curves")
+        .expect("exact curve");
+    assert_eq!(selected.0, 0);
+
+    let distinct_exact = [representation(1, 1), representation(1, 3)];
+    assert!(matches!(
+        select_exact_curve_representation(7, &distinct_exact, &tables),
+        Err(CodecError::Malformed(_))
+    ));
+
+    let fallback = [representation(5, 1), representation(6, 1)];
+    assert!(matches!(
+        unique_fallback_polygon_representation(7, &fallback),
+        Err(CodecError::Malformed(_))
+    ));
+
+    let matching_pcurves = [representation(2, 1), representation(2, 1)];
+    let selected = first_edge_representation(&matching_pcurves, |candidate| candidate.kind == 2)
+        .expect("first matching pcurve");
+    assert_eq!(selected.0, 0);
+
+    let exact_precedes_polygon = [representation(5, 1), representation(1, 1)];
+    let selected = select_exact_curve_representation(7, &exact_precedes_polygon, &tables)
+        .expect("exact curve after polygon")
+        .expect("exact curve");
+    assert_eq!(selected.0, 1);
+}
+
+#[test]
+fn pcurve_selection_requires_exact_composed_location() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 2
+1
+1 0 0 0
+0 1 0 0
+0 0 1 0
+1
+1 0 0 0
+0 1 0 0
+0 0 1 5e-13
+Curve2ds 2
+1 0.25 0 1 0
+1 0 0 1 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+1 0 0 0 0 0 1 1 0 0 0 1 0
+Triangulations 0
+TShapes 5
+Ve 1e-7
+0 0 0
+0 0
+0101101
+*
+Ve 1e-7
+1 0 0
+0 0
+0101101
+*
+Ed
+1e-7 1 1 0
+1 1 0 0 1
+2 2 1 2 0 1
+2 1 1 0 0 1
+0
+0101000
++5 0 -4 0 *
+Wi
+0101000
++3 0 *
+Fa
+0 1e-7 1 0
+1101000
++2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("exact pcurve location selection");
+    let pcurve_id = &result.ir().model.coedges[0].pcurves[0].pcurve;
+    let pcurve = result
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id == *pcurve_id)
+        .expect("selected pcurve");
+    match &pcurve.geometry {
+        PcurveGeometry::Line { origin, .. } => assert_eq!(origin.v, 0.0),
+        geometry => panic!("unexpected pcurve geometry: {geometry:?}"),
+    }
+}
+
+#[test]
+fn nearby_composed_locations_remain_distinct_in_neutral_transfer() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 3
+1
+1.000000000000000 0.000000000000000 0.000000000000000 0.000000000000000
+0.000000000000000 1.000000000000000 0.000000000000000 0.000000000000000
+0.000000000000000 0.000000000000000 1.000000000000000 0.000000000000000
+1
+1.000000000000000 0.000000000000000 0.000000000000000 0.000000000002000
+0.000000000000000 1.000000000000000 0.000000000000000 0.000000000000000
+0.000000000000000 0.000000000000000 1.000000000000000 0.000000000000000
+1
+1.000000000000000 0.000000000000000 0.000000000000000 0.000000000004000
+0.000000000000000 1.000000000000000 0.000000000000000 0.000000000000000
+0.000000000000000 0.000000000000000 1.000000000000000 0.000000000000000
+Curve2ds 0
+Curves 1
+1 0.00000000000000000 0.00000000000000000 0.00000000000000000 1.00000000000000000 0.00000000000000000 0.00000000000000000
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 4
+Ve
+0.000000100000000
+0.000000000000000 0.000000000000000 0.000000000000000
+0 0
+
+0101101
+*
+Ve
+0.000000100000000
+1.000000000000000 0.000000000000000 0.000000000000000
+0 0
+
+0101101
+*
+Ed
+ 0.000000100000000 1 1 0
+1  1 0 0.000000000000000 1.000000000000000
+0
+
+0101000
++4 0 -3 0 *
+Co
+
+1100000
++2 2 +2 3 *
+
++1 1";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("nearby location transfer");
+    let model = &result.ir().model;
+    assert_eq!(model.edges.len(), 2);
+    assert_eq!(model.points.len(), 4);
+    assert_eq!(model.vertices.len(), 4);
+    assert_eq!(model.curves.len(), 3);
+    assert_eq!(model.regions.len(), 2);
+    assert_eq!(model.shells.len(), 2);
+    assert_ne!(model.edges[0].id, model.edges[1].id);
+    assert_ne!(model.regions[0].id, model.regions[1].id);
 }
 
 #[test]
@@ -103,6 +545,51 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
         .collect::<Vec<_>>();
     close_radial_rings(&mut coedges);
     assert!(coedges.iter().all(|coedge| coedge.radial_next == coedge.id));
+
+    let mut four = (0..4)
+        .map(|index| {
+            let id = CoedgeId(format!("coedge-four-{index}"));
+            Coedge {
+                id: id.clone(),
+                owner_loop: LoopId(format!("loop-four-{index}")),
+                edge: edge.clone(),
+                next: id.clone(),
+                previous: id.clone(),
+                radial_next: id,
+                sense: Sense::Forward,
+                use_curve: None,
+                use_curve_parameter_range: None,
+                pcurves: Vec::new(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let original_ids = four
+        .iter()
+        .map(|coedge| coedge.radial_next.clone())
+        .collect::<Vec<_>>();
+    close_radial_rings(&mut four);
+    assert_eq!(
+        four.iter()
+            .map(|coedge| &coedge.radial_next)
+            .collect::<Vec<_>>(),
+        original_ids.iter().collect::<Vec<_>>()
+    );
+
+    let id = CoedgeId("coedge-single".into());
+    let mut singleton = vec![Coedge {
+        id: id.clone(),
+        owner_loop: LoopId("loop-single".into()),
+        edge,
+        next: id.clone(),
+        previous: id.clone(),
+        radial_next: id.clone(),
+        sense: Sense::Forward,
+        use_curve: None,
+        use_curve_parameter_range: None,
+        pcurves: Vec::new(),
+    }];
+    close_radial_rings(&mut singleton);
+    assert_eq!(singleton[0].radial_next, id);
 }
 
 #[test]
@@ -179,10 +666,12 @@ fn face_connectivity_partitions_transitively_without_reordering() {
     ];
 
     assert_eq!(
-        connected_components(&sets),
+        connected_components(&sets).expect("connected-component allocation"),
         vec![vec![0, 2, 3], vec![1], vec![4]]
     );
-    assert!(connected_components(&[]).is_empty());
+    assert!(connected_components(&[])
+        .expect("connected-component allocation")
+        .is_empty());
 }
 
 #[test]
@@ -240,9 +729,10 @@ pub(crate) fn transfers_connected_text_brep_topology() {
 </Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
-Curve2ds 2
+Curve2ds 3
 1 0 0 1 0
 1 1 0 -1 0
+1 0 0 1 0
 Curves 2
 1 0 0 0 1 0 0
 1 1 0 0 -1 0 0
@@ -254,7 +744,7 @@ Triangulations 0
 TShapes 9
 Ve 0.001 0 0 0 0 0 1001000 *
 Ve 0.001 1 0 0 0 0 1001000 *
-Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +9 0 -8 0 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 2 3 1 0 0 1 0 1001000 +9 0 -8 0 *
 Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +8 0 -9 0 *
 Wi 1001000 +7 0 +6 0 *
 Fa 0 0.001 1 0 1001000 +5 0 *
@@ -289,6 +779,12 @@ Co 1001000 +2 0 *
     assert_eq!(result.ir().model.edges.len(), 2);
     assert_eq!(result.ir().model.vertices.len(), 2);
     assert_eq!(result.ir().model.pcurves.len(), 2);
+    assert!(result
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .any(|coedge| { coedge.pcurves[0].pcurve.0.ends_with("3%3A2%3A1") }));
     assert_eq!(result.ir().model.appearances.len(), 3);
     assert_eq!(result.ir().model.appearance_bindings.len(), 5);
     assert_eq!(
@@ -374,7 +870,7 @@ Co 1001000 +2 0 *
         .expect("carrier census");
     assert_eq!(census.len(), 1);
     assert_eq!(census[0].topology_version, 1);
-    assert_eq!(census[0].curves_2d["line"], 2);
+    assert_eq!(census[0].curves_2d["line"], 3);
     assert_eq!(census[0].curves_3d["line"], 2);
     assert_eq!(census[0].surfaces["plane"], 1);
     assert_eq!(census[0].topology["edge"], 2);
@@ -566,6 +1062,39 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
     assert_eq!(result.ir().model.shells.len(), 1);
     assert_eq!(result.ir().model.shells[0].wire_edges.len(), 1);
     assert!(result.ir().model.shells[0].faces.is_empty());
+}
+
+#[test]
+fn accepts_equivalent_repeated_exact_curve_records() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 2
+1 0 0 0 1 0 0
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 3
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 1 2 0 0 1 0 1001000 +3 0 -2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("equivalent repeated exact curve");
+    assert_eq!(result.ir().model.edges.len(), 1);
+    assert_eq!(result.ir().model.curves.len(), 2);
+    assert!(result.ir().model.edges[0]
+        .curve
+        .as_ref()
+        .is_some_and(|curve| curve.0.ends_with(":1")));
 }
 
 #[test]

@@ -1,29 +1,15 @@
 //! Axial hole-profile role tests.
-#![allow(unused_imports)]
 
 use super::{lane_with_position_reference, model_hole, native_history, profile_line};
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::features::{
-    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, HolePlacement, Length, Termination,
+    Angle, FeatureDefinition, FeatureId, HoleBottom, HoleKind, Length, Termination,
 };
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, PointId, ShellId, SurfaceId, VertexId};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SpatialSketch,
-    SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
-};
-use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
 
-use super::super::super::compact_reference_planes::CompactReferencePlaneIndex;
-use super::super::super::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
 use super::super::*;
-use crate::records::{
-    FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputGeneratedSurfaceIdentity,
-    FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
-    FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchRelationKind,
-};
 
 #[test]
 fn axial_profile_resolves_counterbore_roles() {

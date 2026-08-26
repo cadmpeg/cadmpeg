@@ -4,12 +4,14 @@
 use super::super::analytic::{cross, nurbs_intrinsic_parameter_range, valid_positive_nurbs_curve};
 use super::super::holes::ExtrusionSpan;
 use super::super::sketch::{normalized, section_point_in_model, section_xyz_in_model};
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::SketchGeometry;
 
 const EPS_TABULATED_ENDPOINT_ROUNDING: f64 = 1e-4;
-const EPS_TABULATED_FRAME_EXACT: f64 = 1e-9;
+const EPS_TABULATED_FRAME_EXACT: f64 = 1.0e-9;
+const EPS_PLANAR_COORDINATE: f64 = 1.0e-12;
 
 pub(in super::super) fn extruded_geometry_surface(
     transform: &crate::placement::FeatureSectionTransform,
@@ -160,7 +162,8 @@ pub(in super::super) fn interpolation_curve_data(
         .then_some(())?;
     parameters.last()?.is_finite().then_some(())?;
     let control_count = point_count + 2;
-    let mut knots = vec![parameters[0]; DEGREE + 1];
+    let mut knots =
+        alloc_filled(DEGREE + 1, parameters[0], "creo interpolation curve knots").ok()?;
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.extend(std::iter::repeat_n(parameters[point_count - 1], DEGREE + 1));
     let mut matrix = Vec::with_capacity(control_count);
@@ -214,7 +217,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     nurbs
         .control_points
         .iter()
-        .all(|point| point.z.abs() <= 1e-12)
+        .all(|point| point.z.abs() <= EPS_PLANAR_COORDINATE)
         .then(|| SketchGeometry::Nurbs {
             degree: nurbs.degree,
             knots: nurbs.knots,
@@ -249,7 +252,18 @@ pub(in super::super) fn interpolation_spline_surface(
 
     let u_control_count = u_sample_count.checked_add(2)?;
     let v_control_count = v_sample_count.checked_add(2)?;
-    let mut position_controls = vec![vec![[0.0; 3]; v_sample_count]; u_control_count];
+    let position_template = alloc_filled(
+        v_sample_count,
+        [0.0; 3],
+        "creo interpolation surface position row",
+    )
+    .ok()?;
+    let mut position_controls = alloc_filled(
+        u_control_count,
+        position_template,
+        "creo interpolation surface position controls",
+    )
+    .ok()?;
     let mut u_knots = None;
     for v in 0..v_sample_count {
         let samples = (0..u_sample_count)
@@ -266,7 +280,18 @@ pub(in super::super) fn interpolation_spline_surface(
         }
     }
 
-    let mut v_derivative_controls = vec![vec![[0.0; 3]; u_control_count]; 2];
+    let derivative_template = alloc_filled(
+        u_control_count,
+        [0.0; 3],
+        "creo interpolation surface derivative row",
+    )
+    .ok()?;
+    let mut v_derivative_controls = alloc_filled(
+        2,
+        derivative_template,
+        "creo interpolation surface derivative controls",
+    )
+    .ok()?;
     for v_boundary in 0..2 {
         let samples = (0..u_sample_count)
             .map(|u| end_v_derivatives[v_boundary * u_sample_count + u])

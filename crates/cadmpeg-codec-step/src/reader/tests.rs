@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 use super::*;
 use crate::loss::StepLossCode;
 
@@ -12,7 +11,8 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
     let mut extended = input.to_vec();
     extended.push(0xc3);
 
-    let accounting = byte_accounting(&extended, &exchange, &HashSet::new());
+    let accounting = byte_accounting(&extended, &exchange, &HashSet::new(), None)
+        .expect("byte accounting allocation");
 
     assert_eq!(accounting.unclassified, 1);
     assert_eq!(
@@ -70,29 +70,12 @@ fn implicit_face_plane_work_scales_with_point_count() {
 use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use cadmpeg_core::decode::DecodeMode;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::ids::CurveId;
 
-use crate::ids::StepIdentity;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::test_support::decode_inline;
+use crate::StepCodec;
 
 #[test]
 fn semantic_decode_uses_the_decode_session_work_budget() {
@@ -224,6 +207,86 @@ pub(crate) fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("EXAMPLE_RECORD")));
+}
+
+#[test]
+pub(crate) fn decode_retains_signature_opaque_without_verification_result() {
+    let bytes = include_bytes!("../signature/tests/data/sg04_openssl_detached.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode signature witness");
+
+    let signature = result
+        .ir()
+        .native_unknowns("step")
+        .unwrap()
+        .into_iter()
+        .find(|record| record.id.0 == "step:file:signature#0")
+        .expect("signature is retained as an opaque source record");
+    let retained = result
+        .source_fidelity()
+        .retained_record(&signature.id.0)
+        .expect("signature source fidelity");
+    assert_eq!(
+        retained.data.as_deref(),
+        Some(&bytes[retained.offset as usize..(retained.offset + retained.byte_len) as usize])
+    );
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::OpaqueRecordPreserved.kind()
+            && loss.message.contains("SIGNATURE")
+    }));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.message.contains("signature valid")
+            || loss.message.contains("signature invalid")
+            || loss.message.contains("signature indeterminate")
+    }));
+}
+
+#[test]
+pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
+    let bytes = include_bytes!("tests/data/ud01_user_defined_entity.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode user-defined entity witness");
+
+    assert_eq!(result.ir().model.entity_count(), 0);
+    let unknowns = result.ir().native_unknowns("step").unwrap();
+    assert_eq!(unknowns.len(), 2);
+
+    let target = unknowns
+        .iter()
+        .find(|record| record.id.0 == "step:data:!vendor_target#1")
+        .expect("user-defined target record");
+    assert!(target.links.is_empty());
+    let target_source = result
+        .source_fidelity()
+        .retained_record(&target.id.0)
+        .expect("retained user-defined target span");
+    assert_eq!(
+        target_source.data.as_deref(),
+        Some(b"#1=!VENDOR_TARGET('target');".as_slice())
+    );
+
+    let entity = unknowns
+        .iter()
+        .find(|record| record.id.0 == "step:data:!vendor_entity#2")
+        .expect("user-defined entity record");
+    assert_eq!(entity.links, vec!["step:data:!vendor_target#1".to_string()]);
+    let entity_source = result
+        .source_fidelity()
+        .retained_record(&entity.id.0)
+        .expect("retained user-defined entity span");
+    assert_eq!(
+        entity_source.data.as_deref(),
+        Some(b"#2=!VENDOR_ENTITY('vendor payload',#1,!VENDOR_TYPE((#1)));".as_slice())
+    );
+
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.message
+            .contains("!VENDOR_ENTITY instance(s) as named opaque STEP records")
+    }));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.findings.is_empty(), "{:#?}", validation.findings);
 }
 
 #[test]
@@ -554,4 +617,225 @@ fn retention_reports_every_deleted_carrier_category() {
         .points
         .iter()
         .all(|point| point.id.as_str() != "step:data:point#74"));
+}
+
+#[test]
+fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("an out-of-range component does not refuse the file");
+
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::SchemaObjectIdentifierOutOfRange.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
+    assert_eq!(
+        losses[0].message,
+        "FILE_SCHEMA identifier AUTOMOTIVE_DESIGN_CC2 has an out-of-range object identifier component -1; the object identifier is not admitted"
+    );
+    let provenance = losses[0].provenance.as_ref().expect("source provenance");
+    assert_eq!(provenance.format, "step");
+    assert_eq!(
+        provenance.offset,
+        source.find("FILE_SCHEMA").unwrap() as u64
+    );
+    assert_eq!(provenance.tag.as_deref(), Some("schema_identifier"));
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["schema"],
+        "AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }"
+    );
+}
+
+#[test]
+fn decode_does_not_charge_a_loss_for_a_valid_schema_object_identifier() {
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("valid schema object identifier");
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::SchemaObjectIdentifierOutOfRange.kind()));
+}
+
+#[test]
+fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
+    let bytes = include_bytes!("../../tests/fixtures/noncanonical_solid_angle.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("salvage mode accepts recoverable source order");
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::ParseNoncanonicalSyntax.kind())
+        .collect::<Vec<_>>();
+
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
+    let provenance = losses[0].provenance.as_ref().expect("source provenance");
+    assert_eq!(provenance.format, "step");
+    assert_eq!(provenance.stream, "");
+    assert_eq!(
+        provenance.offset,
+        bytes.windows(2).position(|window| window == b"#1").unwrap() as u64
+    );
+    assert_eq!(provenance.tag.as_deref(), Some("complex_entity"));
+    assert_eq!(result.ir().native_unknowns("step").unwrap().len(), 0);
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["bytes_named_opaque"],
+        "0"
+    );
+}
+
+#[test]
+fn strict_decode_rejects_noncanonical_complex_partial_order() {
+    let bytes = include_bytes!("../../tests/fixtures/noncanonical_solid_angle.p21");
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &options)
+        .expect_err("strict mode rejects noncanonical source order");
+
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::StrictRefusal { .. }
+    ));
+}
+
+#[test]
+fn strict_decode_rejects_omitted_entity_name_recovery() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(source), &options)
+        .expect_err("strict mode rejects omitted-name recovery");
+
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::StrictRefusal { .. }
+    ));
+    assert!(error.to_string().contains("parse.noncanonical-syntax"));
+}
+
+#[test]
+fn omitted_geometry_names_preserve_intersection_curve_topology() {
+    let mut source =
+        String::from_utf8(include_bytes!("../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));",
+                "#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#69)) REPRESENTATION_CONTEXT('model','3D'));",
+            )
+            .replace(
+                "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+                "#57=INTERSECTION_CURVE(#16,(#56),.PCURVE_S1.);",
+            )
+            .replace(
+                "ENDSEC;\nEND-ISO-10303-21;",
+                "#69=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\nENDSEC;\nEND-ISO-10303-21;",
+            );
+    for (id, entity) in [
+        ("3", "CARTESIAN_POINT"),
+        ("4", "CARTESIAN_POINT"),
+        ("5", "CARTESIAN_POINT"),
+        ("6", "VERTEX_POINT"),
+        ("7", "VERTEX_POINT"),
+        ("8", "VERTEX_POINT"),
+        ("9", "DIRECTION"),
+        ("10", "DIRECTION"),
+        ("11", "DIRECTION"),
+        ("12", "DIRECTION"),
+        ("13", "VECTOR"),
+        ("14", "VECTOR"),
+        ("15", "VECTOR"),
+        ("16", "LINE"),
+        ("17", "LINE"),
+        ("18", "LINE"),
+        ("19", "EDGE_CURVE"),
+        ("20", "EDGE_CURVE"),
+        ("21", "EDGE_CURVE"),
+        ("22", "ORIENTED_EDGE"),
+        ("23", "ORIENTED_EDGE"),
+        ("24", "ORIENTED_EDGE"),
+        ("25", "EDGE_LOOP"),
+        ("26", "FACE_OUTER_BOUND"),
+        ("27", "AXIS2_PLACEMENT_3D"),
+        ("28", "PLANE"),
+        ("29", "ADVANCED_FACE"),
+        ("30", "OPEN_SHELL"),
+        ("31", "SHELL_BASED_SURFACE_MODEL"),
+        ("33", "ORIENTED_OPEN_SHELL"),
+        ("51", "CARTESIAN_POINT"),
+        ("52", "DIRECTION"),
+        ("53", "VECTOR"),
+        ("54", "LINE"),
+        ("55", "DEFINITIONAL_REPRESENTATION"),
+        ("56", "PCURVE"),
+    ] {
+        let named = format!("#{id}={entity}('',");
+        let unnamed = format!("#{id}={entity}(");
+        let previous_len = source.len();
+        source = source.replace(&named, &unnamed);
+        assert!(
+            source.len() < previous_len,
+            "fixture record #{id} was not converted to omitted-name syntax"
+        );
+    }
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode omitted-name intersection curve");
+
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    let edge = decoded
+        .ir()
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id.as_str() == "step:data:edge#19")
+        .expect("omitted-name intersection edge");
+    assert_eq!(
+        edge.curve.as_ref().map(CurveId::as_str),
+        Some("step:data:curve#16")
+    );
+    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+        coedge
+            .pcurves
+            .iter()
+            .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+    }));
+    let name_loss = decoded
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == StepLossCode::ParseNoncanonicalSyntax.kind()
+                && loss
+                    .message
+                    .contains("recovered 37 simple named carrier instance(s)")
+        })
+        .expect("omitted-name recovery loss");
+    assert_eq!(
+        name_loss
+            .provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("entity_name")
+    );
+    assert!(decoded.report().losses.iter().all(|loss| {
+        !loss
+            .message
+            .contains("INTERSECTION_CURVE #57 has no decoded 3D curve")
+    }));
+
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

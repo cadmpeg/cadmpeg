@@ -7,13 +7,23 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use super::super::analytic::{circular_cone, cross, dot, CarrierEquation};
 use super::super::sketch::normalized;
 
-const EPS_AXIS_ALIGNMENT: f64 = 1e-10;
-const EPS_CENTER_ALIGNMENT: f64 = 1e-9;
-const EPS_TANGENT_ROOT: f64 = 1e-9;
-const EPS_NONZERO_SLOPE: f64 = 1e-12;
-const EPS_POSITIVE_RADIUS: f64 = 1e-12;
-const EPS_COINCIDENT_CENTER: f64 = 1e-12;
-const EPS_MERIDIAN_ROOT: f64 = 1e-12;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
+const EPS_CENTER_ALIGNMENT: f64 = 1.0e-9;
+const EPS_TANGENT_ROOT: f64 = 1.0e-9;
+const EPS_NONZERO_SLOPE: f64 = 1.0e-12;
+const EPS_POSITIVE_RADIUS: f64 = 1.0e-12;
+const EPS_COINCIDENT_CENTER: f64 = 1.0e-12;
+const EPS_MERIDIAN_ROOT: f64 = 1.0e-12;
+const EPS_AXIS_ORTHO: f64 = 1.0e-10;
+const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
+const EPS_DISTANCE_NONZERO: f64 = 1.0e-12;
+const EPS_HEIGHT_RESIDUAL: f64 = 1.0e-12;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_SLOPE_NONZERO: f64 = 1.0e-12;
+const EPS_METRIC_AGREEMENT: f64 = 1.0e-10;
+const EPS_DETERMINANT: f64 = 1.0e-12;
+const EPS_DISCRIMINANT: f64 = 1.0e-9;
+const EPS_PARAMETER_DEDUP: f64 = 1.0e-9;
 
 pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
     first: CarrierEquation,
@@ -30,7 +40,7 @@ pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
     let Some(axis) = normalized(cylinder.axis) else {
         return Vec::new();
     };
-    if dot(normal, axis).abs() > 1e-10 || cylinder.radius <= 0.0 {
+    if dot(normal, axis).abs() > EPS_AXIS_ORTHO || cylinder.radius <= 0.0 {
         return Vec::new();
     }
     let signed_distance = dot(
@@ -78,7 +88,7 @@ pub(in super::super) fn parallel_cylinder_generator_candidates(
     else {
         return Vec::new();
     };
-    if (dot(first_axis, second_axis).abs() - 1.0).abs() > 1e-10
+    if (dot(first_axis, second_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO
         || first.radius <= 0.0
         || second.radius <= 0.0
     {
@@ -91,9 +101,9 @@ pub(in super::super) fn parallel_cylinder_generator_candidates(
         std::array::from_fn(|index| relative[index] - axial * first_axis[index]);
     let distance = dot(transverse, transverse).sqrt();
     let scale = first.radius.max(second.radius).max(distance).max(1.0);
-    if distance <= 1e-12 * scale
-        || distance >= first.radius + second.radius - 1e-9 * scale
-        || distance <= (first.radius - second.radius).abs() + 1e-9 * scale
+    if distance <= EPS_DISTANCE_NONZERO * scale
+        || distance >= first.radius + second.radius - EPS_GEOMETRY_AGREEMENT * scale
+        || distance <= (first.radius - second.radius).abs() + EPS_GEOMETRY_AGREEMENT * scale
     {
         return Vec::new();
     }
@@ -101,7 +111,7 @@ pub(in super::super) fn parallel_cylinder_generator_candidates(
     let along = (first.radius * first.radius - second.radius * second.radius + distance * distance)
         / (2.0 * distance);
     let height_squared = first.radius.mul_add(first.radius, -(along * along));
-    if height_squared <= 1e-12 * scale * scale {
+    if height_squared <= EPS_HEIGHT_RESIDUAL * scale * scale {
         return Vec::new();
     }
     let Some(perpendicular) = normalized(cross(first_axis, center_direction)) else {
@@ -205,7 +215,7 @@ pub(in super::super) fn coaxial_cone_cylinder_circle_candidates(
     ) else {
         return Vec::new();
     };
-    if (dot(cone_axis, cylinder_axis).abs() - 1.0).abs() > 1e-10 {
+    if (dot(cone_axis, cylinder_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
         return Vec::new();
     }
     let relative: [f64; 3] =
@@ -215,10 +225,10 @@ pub(in super::super) fn coaxial_cone_cylinder_circle_candidates(
         std::array::from_fn(|index| relative[index] - axial * cone_axis[index]);
     let scale = cone.radius.max(cylinder.radius).max(1.0);
     let slope = cone.half_angle.tan();
-    if dot(transverse, transverse).sqrt() > 1e-9 * scale
-        || cylinder.radius <= 1e-12 * scale
+    if dot(transverse, transverse).sqrt() > EPS_GEOMETRY_AGREEMENT * scale
+        || cylinder.radius <= EPS_RADIUS_NONZERO * scale
         || cone.radius < 0.0
-        || slope.abs() <= 1e-12
+        || slope.abs() <= EPS_SLOPE_NONZERO
         || !slope.is_finite()
     {
         return Vec::new();
@@ -265,9 +275,9 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         return Vec::new();
     };
     let axis_alignment = dot(first_axis, second_axis);
-    if (axis_alignment.abs() - 1.0).abs() > 1e-10
-        || dot(first_axis, reference).abs() > 1e-10
-        || dot(second_axis, second_reference).abs() > 1e-10
+    if (axis_alignment.abs() - 1.0).abs() > EPS_AXIS_ORTHO
+        || dot(first_axis, reference).abs() > EPS_AXIS_ORTHO
+        || dot(second_axis, second_reference).abs() > EPS_AXIS_ORTHO
     {
         return Vec::new();
     }
@@ -290,9 +300,9 @@ pub(in super::super) fn coaxial_cones_section_candidates(
         || !metric_scale_squared.is_finite()
         || !metric_yy.is_finite()
         || !metric_xy.is_finite()
-        || metric_xy.abs() > 1e-10 * metric_coefficient_scale
+        || metric_xy.abs() > EPS_METRIC_AGREEMENT * metric_coefficient_scale
         || (metric_yy - metric_scale_squared / (first.ratio * first.ratio)).abs()
-            > 1e-10 * metric_coefficient_scale
+            > EPS_METRIC_AGREEMENT * metric_coefficient_scale
     {
         return Vec::new();
     }
@@ -306,11 +316,11 @@ pub(in super::super) fn coaxial_cones_section_candidates(
     let first_slope = first.half_angle.tan();
     let second_slope = axis_alignment * second.half_angle.tan();
     let second_intercept = second.radius - second_slope * second_origin_axial;
-    if dot(transverse, transverse).sqrt() > 1e-9 * scale
+    if dot(transverse, transverse).sqrt() > EPS_GEOMETRY_AGREEMENT * scale
         || first.radius < 0.0
         || second.radius < 0.0
-        || first_slope.abs() <= 1e-12
-        || second_slope.abs() <= 1e-12
+        || first_slope.abs() <= EPS_SLOPE_NONZERO
+        || second_slope.abs() <= EPS_SLOPE_NONZERO
         || !first_slope.is_finite()
         || !second_slope.is_finite()
     {
@@ -330,20 +340,20 @@ pub(in super::super) fn coaxial_cones_section_candidates(
     for radial_sense in [-1.0, 1.0] {
         let denominator = scaled_first_slope - radial_sense * second_slope;
         let numerator = radial_sense * second_intercept - scaled_first_radius;
-        if denominator.abs() <= 1e-12 * slope_scale {
-            if numerator.abs() <= 1e-9 * intercept_scale {
+        if denominator.abs() <= EPS_DETERMINANT * slope_scale {
+            if numerator.abs() <= EPS_GEOMETRY_AGREEMENT * intercept_scale {
                 return Vec::new();
             }
             continue;
         }
         let parameter = numerator / denominator;
         let radius = (first.radius + parameter * first_slope).abs();
-        if radius <= 1e-12 * scale {
+        if radius <= EPS_RADIUS_NONZERO * scale {
             continue;
         }
         if !parameters
             .iter()
-            .any(|known| (parameter - known).abs() <= 1e-9 * scale)
+            .any(|known| (parameter - known).abs() <= EPS_PARAMETER_DEDUP * scale)
         {
             parameters.push(parameter);
         }
@@ -400,12 +410,12 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
         return Vec::new();
     };
     let slope = cone.half_angle.tan();
-    if slope <= 1e-12
+    if slope <= EPS_SLOPE_NONZERO
         || !slope.is_finite()
         || cone.radius < 0.0
         || cone.ratio <= 0.0
         || !cone.ratio.is_finite()
-        || dot(axis, x_axis).abs() > 1e-10
+        || dot(axis, x_axis).abs() > EPS_AXIS_ORTHO
     {
         return Vec::new();
     }
@@ -416,7 +426,7 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
         std::array::from_fn(|index| apex[index] - plane.origin[index]),
     );
     let scale = cone.radius.max(1.0);
-    if plane_distance.abs() > 1e-9 * scale {
+    if plane_distance.abs() > EPS_GEOMETRY_AGREEMENT * scale {
         return Vec::new();
     }
     let reference = cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
@@ -449,7 +459,7 @@ pub(in super::super) fn apex_plane_cone_generator_candidates(
         .max(quadratic_vv.abs())
         .max(1.0);
     let determinant = quadratic_uu.mul_add(quadratic_vv, -quadratic_uv * quadratic_uv);
-    let determinant_tolerance = 1e-12 * coefficient_scale * coefficient_scale;
+    let determinant_tolerance = EPS_DETERMINANT * coefficient_scale * coefficient_scale;
     if determinant > determinant_tolerance {
         return Vec::new();
     }
@@ -602,7 +612,7 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
     ) else {
         return Vec::new();
     };
-    if (dot(cone_axis, torus_axis).abs() - 1.0).abs() > 1e-10 {
+    if (dot(cone_axis, torus_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
         return Vec::new();
     }
     let relative: [f64; 3] = std::array::from_fn(|index| torus.center[index] - cone.origin[index]);
@@ -615,11 +625,11 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
         .max(torus.minor_radius)
         .max(1.0);
     let slope = cone.half_angle.tan();
-    if dot(transverse, transverse).sqrt() > 1e-9 * scale
+    if dot(transverse, transverse).sqrt() > EPS_GEOMETRY_AGREEMENT * scale
         || cone.radius < 0.0
-        || torus.major_radius <= 1e-12 * scale
-        || torus.minor_radius <= 1e-12 * scale
-        || slope.abs() <= 1e-12
+        || torus.major_radius <= EPS_RADIUS_NONZERO * scale
+        || torus.minor_radius <= EPS_RADIUS_NONZERO * scale
+        || slope.abs() <= EPS_SLOPE_NONZERO
         || !slope.is_finite()
     {
         return Vec::new();
@@ -638,7 +648,7 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
             .abs()
             .max((4.0 * quadratic * constant).abs().sqrt())
             .max(1.0);
-        let tolerance = 1e-9 * discriminant_scale * discriminant_scale;
+        let tolerance = EPS_DISCRIMINANT * discriminant_scale * discriminant_scale;
         let deltas = if discriminant < -tolerance {
             continue;
         } else if discriminant.abs() <= tolerance {
@@ -650,12 +660,12 @@ pub(in super::super) fn coaxial_cone_torus_circle_candidates(
         for delta in deltas {
             let parameter = (-linear + delta) / (2.0 * quadratic);
             let radius = radial_sense * (cone.radius + parameter * slope);
-            if radius <= 1e-12 * scale {
+            if radius <= EPS_RADIUS_NONZERO * scale {
                 continue;
             }
             if !parameters
                 .iter()
-                .any(|known| (parameter - known).abs() <= 1e-9 * scale)
+                .any(|known| (parameter - known).abs() <= EPS_PARAMETER_DEDUP * scale)
             {
                 parameters.push(parameter);
             }
@@ -863,12 +873,12 @@ pub(in super::super) fn axis_containing_plane_torus_circle_candidates(
     let scale = torus.major_radius.max(torus.minor_radius).max(1.0);
     let center_offset: [f64; 3] =
         std::array::from_fn(|index| torus.center[index] - plane.origin[index]);
-    if dot(normal, axis).abs() > 1e-10
-        || dot(normal, center_offset).abs() > 1e-9 * scale
+    if dot(normal, axis).abs() > EPS_AXIS_ORTHO
+        || dot(normal, center_offset).abs() > EPS_GEOMETRY_AGREEMENT * scale
         || !torus.major_radius.is_finite()
         || !torus.minor_radius.is_finite()
-        || torus.major_radius <= 1e-12 * scale
-        || torus.minor_radius <= 1e-12 * scale
+        || torus.major_radius <= EPS_RADIUS_NONZERO * scale
+        || torus.minor_radius <= EPS_RADIUS_NONZERO * scale
     {
         return Vec::new();
     }

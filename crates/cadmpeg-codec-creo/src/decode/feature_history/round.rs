@@ -18,11 +18,17 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
 use std::collections::BTreeSet;
 
-const EPS_CYLINDER_FIT: f64 = 1e-8;
-const EPS_ROUND_CAP_GAP: f64 = 1e-9;
-const EPS_ROUND_CAP_PARALLEL: f64 = 1e-10;
-const EPS_ROUND_RADIUS_RECONCILIATION: f64 = 1e-9;
-const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1e-9;
+const EPS_CYLINDER_FIT: f64 = 1.0e-8;
+const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
+const EPS_NORMAL_ALIGNMENT: f64 = 1.0e-10;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_CONE_ANGLE: f64 = 1.0e-10;
+const EPS_DENOMINATOR_ALIGNMENT: f64 = 1.0e-10;
+const EPS_SETBACK_NONZERO: f64 = 1.0e-12;
+const EPS_ROUND_CAP_GAP: f64 = 1.0e-9;
+const EPS_ROUND_CAP_PARALLEL: f64 = 1.0e-10;
+const EPS_ROUND_RADIUS_RECONCILIATION: f64 = 1.0e-9;
+const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1.0e-9;
 
 pub(in super::super) fn parallel_support_radius(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
@@ -38,7 +44,7 @@ pub(in super::super) fn parallel_support_radius(
                 .zip(second_normal)
                 .map(|(first, second)| first * second)
                 .sum::<f64>();
-            if alignment.abs() < 1.0 - 1e-9 {
+            if alignment.abs() < 1.0 - EPS_GEOMETRY_AGREEMENT {
                 continue;
             }
             let gap = planes[second]
@@ -55,7 +61,7 @@ pub(in super::super) fn parallel_support_radius(
                 .chain(&planes[second].0)
                 .map(|value| value.abs())
                 .fold(1.0, f64::max);
-            if gap > 1e-9 * scale {
+            if gap > EPS_GEOMETRY_AGREEMENT * scale {
                 radii.push(0.5 * gap);
             }
         }
@@ -64,7 +70,7 @@ pub(in super::super) fn parallel_support_radius(
     let scale = radius.abs().max(1.0);
     radii
         .iter()
-        .all(|candidate| (candidate - radius).abs() <= 1e-9 * scale)
+        .all(|candidate| (candidate - radius).abs() <= EPS_GEOMETRY_AGREEMENT * scale)
         .then_some(radius)
 }
 
@@ -74,7 +80,7 @@ pub(in super::super) fn slot_fillet_cylinder(
 ) -> Option<CylinderEquation> {
     let axis = normalized(cap_planes[0].normal)?;
     let second_cap_normal = normalized(cap_planes[1].normal)?;
-    if (dot(axis, second_cap_normal).abs() - 1.0).abs() > 1e-10 {
+    if (dot(axis, second_cap_normal).abs() - 1.0).abs() > EPS_NORMAL_ALIGNMENT {
         return None;
     }
     let cap_gap = dot(
@@ -82,18 +88,18 @@ pub(in super::super) fn slot_fillet_cylinder(
         std::array::from_fn(|index| cap_planes[1].origin[index] - cap_planes[0].origin[index]),
     )
     .abs();
-    if cap_gap <= 1e-9 {
+    if cap_gap <= EPS_GEOMETRY_AGREEMENT {
         return None;
     }
     let mut midplanes = Vec::<(PlaneEquation, f64)>::new();
     for first in 0..support_planes.len() {
         let first_normal = normalized(support_planes[first].normal)?;
-        if dot(first_normal, axis).abs() > 1e-9 {
+        if dot(first_normal, axis).abs() > EPS_GEOMETRY_AGREEMENT {
             return None;
         }
         for second in first + 1..support_planes.len() {
             let second_normal = normalized(support_planes[second].normal)?;
-            if (dot(first_normal, second_normal).abs() - 1.0).abs() > 1e-10 {
+            if (dot(first_normal, second_normal).abs() - 1.0).abs() > EPS_NORMAL_ALIGNMENT {
                 continue;
             }
             let gap = dot(
@@ -103,7 +109,7 @@ pub(in super::super) fn slot_fillet_cylinder(
                 }),
             )
             .abs();
-            if gap <= 1e-9 {
+            if gap <= EPS_GEOMETRY_AGREEMENT {
                 continue;
             }
             midplanes.push((
@@ -123,8 +129,9 @@ pub(in super::super) fn slot_fillet_cylinder(
         for second in first + 1..midplanes.len() {
             let radius = midplanes[first].1;
             let scale = radius.max(midplanes[second].1).max(1.0);
-            if (midplanes[second].1 - radius).abs() > 1e-9 * scale
-                || dot(midplanes[first].0.normal, midplanes[second].0.normal).abs() > 1.0 - 1e-9
+            if (midplanes[second].1 - radius).abs() > EPS_GEOMETRY_AGREEMENT * scale
+                || dot(midplanes[first].0.normal, midplanes[second].0.normal).abs()
+                    > 1.0 - EPS_GEOMETRY_AGREEMENT
             {
                 continue;
             }
@@ -161,8 +168,8 @@ pub(in super::super) fn slot_fillet_cylinder(
         .all(|candidate| {
             let origin_delta: [f64; 3] =
                 std::array::from_fn(|index| candidate.origin[index] - first.origin[index]);
-            (candidate.radius - first.radius).abs() <= 1e-9 * scale
-                && (dot(candidate.axis, first.axis).abs() - 1.0).abs() <= 1e-10
+            (candidate.radius - first.radius).abs() <= EPS_GEOMETRY_AGREEMENT * scale
+                && (dot(candidate.axis, first.axis).abs() - 1.0).abs() <= EPS_NORMAL_ALIGNMENT
                 && dot(
                     cross(origin_delta, first.axis),
                     cross(origin_delta, first.axis),
@@ -185,7 +192,9 @@ pub(in super::super) fn outline_has_unique_radius_delta(
     frame.values[..3]
         .iter()
         .zip(&frame.values[3..])
-        .filter(|(first, second)| ((*second - *first).abs() - radius).abs() <= 1e-9 * scale)
+        .filter(|(first, second)| {
+            ((*second - *first).abs() - radius).abs() <= EPS_GEOMETRY_AGREEMENT * scale
+        })
         .count()
         == 1
 }
@@ -200,7 +209,7 @@ pub(in super::super) fn coordinate_pair_proves_torus_radii(
         major_radius.abs().max(minor_radius.abs()).max(1.0),
         f64::max,
     );
-    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * scale;
     let proves = |outer: f64, minor: f64| {
         close(outer.abs(), 2.0 * (major_radius + minor_radius)) && close(minor.abs(), minor_radius)
     };
@@ -219,7 +228,7 @@ pub(in super::super) fn five_coordinate_envelope_proves_torus_radii(
         major_radius.abs().max(minor_radius.abs()).max(1.0),
         f64::max,
     );
-    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * scale;
     close(a1, b0)
         && coordinate_pair_proves_torus_radii([a1, a2], [b1, b2], major_radius, minor_radius)
 }
@@ -234,7 +243,7 @@ pub(in super::super) fn paired_five_coordinate_sphere_center(
         .flat_map(|envelope| envelope.values)
         .map(f64::abs)
         .fold(radius.max(1.0), f64::max);
-    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * scale;
     let decoded = envelopes.map(|envelope| {
         let [x_min, z0, y_min, radial_max, z1] = envelope.values;
         (close(x_min, y_min)
@@ -896,7 +905,7 @@ pub(in super::super) fn differing_positive_lengths(values: &[f64]) -> bool {
         .fold(first.abs().max(1.0), f64::max);
     values
         .iter()
-        .any(|value| (*value - first).abs() > 1e-9 * scale)
+        .any(|value| (*value - first).abs() > EPS_GEOMETRY_AGREEMENT * scale)
 }
 
 pub(in super::super) fn unique_positive_length(values: &[f64]) -> Option<f64> {
@@ -912,7 +921,9 @@ pub(in super::super) fn unique_positive_length(values: &[f64]) -> Option<f64> {
     values
         .iter()
         .all(|candidate| {
-            candidate.is_finite() && *candidate > 0.0 && (*candidate - value).abs() <= 1e-9 * scale
+            candidate.is_finite()
+                && *candidate > 0.0
+                && (*candidate - value).abs() <= EPS_GEOMETRY_AGREEMENT * scale
         })
         .then_some(value)
 }
@@ -927,22 +938,22 @@ pub(in super::super) fn equal_distance_chamfer_setback(
         .map(|cone| {
             let axis = normalized(cone.axis)?;
             (circular_cone(*cone)
-                && cone.radius.abs() <= 1e-12
-                && (cone.half_angle - std::f64::consts::FRAC_PI_4).abs() <= 1e-10)
+                && cone.radius.abs() <= EPS_RADIUS_NONZERO
+                && (cone.half_angle - std::f64::consts::FRAC_PI_4).abs() <= EPS_CONE_ANGLE)
                 .then_some(())?;
             support_planes
                 .iter()
                 .filter_map(|plane| {
                     let normal = normalized(plane.normal)?;
                     let denominator = dot(axis, normal);
-                    (denominator.abs() >= 1.0 - 1e-10).then_some(())?;
+                    (denominator.abs() >= 1.0 - EPS_DENOMINATOR_ALIGNMENT).then_some(())?;
                     let displacement = [
                         plane.origin[0] - cone.origin[0],
                         plane.origin[1] - cone.origin[1],
                         plane.origin[2] - cone.origin[2],
                     ];
                     let setback = dot(displacement, normal) / denominator;
-                    (setback.is_finite() && setback > 1e-12).then_some(setback)
+                    (setback.is_finite() && setback > EPS_SETBACK_NONZERO).then_some(setback)
                 })
                 .min_by(f64::total_cmp)
         })

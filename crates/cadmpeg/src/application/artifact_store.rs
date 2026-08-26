@@ -12,6 +12,7 @@ use std::io::{self, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::codec::ExportPlan;
 use cadmpeg_ir::report::{DecodeReport, ExportReport};
 use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar, SourceFidelity};
@@ -34,7 +35,8 @@ impl ArtifactStore {
     pub fn read_prefix(path: &Path, n: usize) -> Result<Vec<u8>> {
         let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
         let mut buf = Vec::with_capacity(n);
-        let mut chunk = vec![0_u8; 64 * 1024].into_boxed_slice();
+        let mut chunk =
+            alloc_filled(64 * 1024, 0_u8, "cli artifact prefix chunk")?.into_boxed_slice();
         while buf.len() < n {
             let remaining = n - buf.len();
             let chunk_len = remaining.min(chunk.len());

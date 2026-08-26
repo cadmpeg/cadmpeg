@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchId};
@@ -14,6 +15,14 @@ use super::super::sketch_transfer::{
 };
 use super::radii::trim_segment_id;
 use super::skamp::section_line_entity_fixed_coordinate;
+
+const EPS_POINT_NONZERO: f64 = 1.0e-12;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+const EPS_DENOMINATOR_NONZERO: f64 = 1.0e-12;
+const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-9;
+const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
+const EPS_PARAMETER_FULL_TURN: f64 = 1.0e-9;
+const EPS_ANGLE_FULL_TURN: f64 = 1.0e-12;
 
 pub(crate) fn section_line_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
@@ -27,7 +36,8 @@ pub(crate) fn section_line_geometry(
         .chain(end)
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    (((end[0] - start[0]) / scale).hypot((end[1] - start[1]) / scale) > 1e-12).then_some(())?;
+    (((end[0] - start[0]) / scale).hypot((end[1] - start[1]) / scale) > EPS_POINT_NONZERO)
+        .then_some(())?;
     Some(SketchGeometry::Line {
         start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
         end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
@@ -60,7 +70,9 @@ pub(crate) fn section_arc_geometry(
     let first_radius = first_offset[0].hypot(first_offset[1]);
     let second_radius = second_offset[0].hypot(second_offset[1]);
     let scale = first_radius.max(second_radius).max(1.0);
-    if first_radius <= 1e-12 || (first_radius - second_radius).abs() > 1e-9 * scale {
+    if first_radius <= EPS_POINT_NONZERO
+        || (first_radius - second_radius).abs() > EPS_RADIUS_AGREEMENT * scale
+    {
         return None;
     }
     let start = second_offset[1].atan2(second_offset[0]);
@@ -112,9 +124,9 @@ pub(crate) fn section_centered_line_geometry(
         .chain(center)
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    ((end[0] - start[0]).hypot(end[1] - start[1]) > 1e-12 * scale).then_some(())?;
+    ((end[0] - start[0]).hypot(end[1] - start[1]) > EPS_POINT_NONZERO * scale).then_some(())?;
     ((start[0] + end[0] - 2.0 * center[0]).hypot(start[1] + end[1] - 2.0 * center[1])
-        <= 1e-9 * scale)
+        <= EPS_RADIUS_AGREEMENT * scale)
         .then_some(())?;
     Some(SketchGeometry::Line {
         start: Point2::new(start[0], start[1]),
@@ -137,7 +149,7 @@ pub(crate) fn section_reference_line_geometry(
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     let direction = [end[0] - start[0], end[1] - start[1]];
-    (direction[0].hypot(direction[1]) > 1e-12 * scale).then_some(())?;
+    (direction[0].hypot(direction[1]) > EPS_POINT_NONZERO * scale).then_some(())?;
     Some(SketchGeometry::ReferenceLine {
         origin: Point2::new(start[0], start[1]),
         direction: Point2::new(direction[0], direction[1]),
@@ -163,7 +175,7 @@ pub(crate) fn resolved_section_reference_line_geometry(
         return None;
     };
     let scale = first.abs().max(second.abs()).max(1.0);
-    ((first - second).abs() <= 1e-9 * scale).then(|| {
+    ((first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale).then(|| {
         if fixed_coordinate == 0 {
             SketchGeometry::ReferenceLine {
                 origin: Point2::new(first, 0.0),
@@ -313,7 +325,7 @@ pub(crate) fn saved_section_arc_carrier(
     let [center_u, center_v, _] = arc.center;
     if let ([Some(center_u), Some(center_v)], Some(radius)) = (
         [center_u, center_v],
-        arc.radius.filter(|radius| *radius > 1e-12),
+        arc.radius.filter(|radius| *radius > EPS_POINT_NONZERO),
     ) {
         return Some(([center_u, center_v], radius));
     }
@@ -329,7 +341,7 @@ pub(crate) fn saved_section_arc_carrier(
         [Some(u), Some(v)] => [u, v],
         [Some(u), None] => {
             let denominator = 2.0 * (second_v - first_v);
-            if denominator.abs() <= 1e-12 * scale {
+            if denominator.abs() <= EPS_DENOMINATOR_NONZERO * scale {
                 return None;
             }
             let v = ((second_u - u).mul_add(
@@ -340,7 +352,7 @@ pub(crate) fn saved_section_arc_carrier(
         }
         [None, Some(v)] => {
             let denominator = 2.0 * (second_u - first_u);
-            if denominator.abs() <= 1e-12 * scale {
+            if denominator.abs() <= EPS_DENOMINATOR_NONZERO * scale {
                 return None;
             }
             let u = ((second_v - v).mul_add(
@@ -354,10 +366,10 @@ pub(crate) fn saved_section_arc_carrier(
     let first_radius = (first_u - center_u).hypot(first_v - center_v);
     let second_radius = (second_u - center_u).hypot(second_v - center_v);
     let radial_scale = first_radius.max(second_radius).max(1.0);
-    if first_radius <= 1e-12
-        || (first_radius - second_radius).abs() > 1e-9 * radial_scale
+    if first_radius <= EPS_POINT_NONZERO
+        || (first_radius - second_radius).abs() > EPS_RADIUS_AGREEMENT * radial_scale
         || arc.radius.is_some_and(|stored| {
-            (stored - first_radius).abs() > 1e-9 * stored.max(first_radius).max(1.0)
+            (stored - first_radius).abs() > EPS_RADIUS_AGREEMENT * stored.max(first_radius).max(1.0)
         })
     {
         return None;
@@ -381,7 +393,8 @@ pub(crate) fn saved_section_arc_geometry(
     let first_radius = first[0].hypot(first[1]);
     let second_radius = second[0].hypot(second[1]);
     let scale = radius.max(first_radius).max(second_radius).max(1.0);
-    if (first_radius - radius).abs() > 1e-9 * scale || (second_radius - radius).abs() > 1e-9 * scale
+    if (first_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+        || (second_radius - radius).abs() > EPS_RADIUS_AGREEMENT * scale
     {
         return None;
     }
@@ -468,7 +481,7 @@ pub(crate) fn saved_section_entity_geometry(
         crate::feature::FeatureSavedEntity::Arc(arc) => {
             let ([Some(center_u), Some(center_v)], Some(radius)) = (
                 [arc.center[0], arc.center[1]],
-                arc.radius.filter(|radius| *radius > 1e-12),
+                arc.radius.filter(|radius| *radius > EPS_POINT_NONZERO),
             ) else {
                 return None;
             };
@@ -483,8 +496,8 @@ pub(crate) fn saved_section_entity_geometry(
                 .max(first[0].hypot(first[1]))
                 .max(second[0].hypot(second[1]))
                 .max(1.0);
-            if (first[0].hypot(first[1]) - radius).abs() > 1e-9 * scale
-                || (second[0].hypot(second[1]) - radius).abs() > 1e-9 * scale
+            if (first[0].hypot(first[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
+                || (second[0].hypot(second[1]) - radius).abs() > EPS_RADIUS_AGREEMENT * scale
             {
                 return None;
             }
@@ -507,7 +520,7 @@ pub(crate) fn saved_section_entity_geometry(
         crate::feature::FeatureSavedEntity::Circle(circle) => {
             let ([Some(center_u), Some(center_v)], Some(radius)) = (
                 [circle.center[0], circle.center[1]],
-                circle.radius.filter(|radius| *radius > 1e-12),
+                circle.radius.filter(|radius| *radius > EPS_POINT_NONZERO),
             ) else {
                 return None;
             };
@@ -532,19 +545,20 @@ pub(crate) fn saved_section_entity_geometry(
             let second_length = second_axis[0].hypot(second_axis[1]);
             let scale = first_length.max(second_length).max(1.0);
             if !frame.into_iter().all(f64::is_finite)
-                || first_radius <= 1e-12
-                || second_radius <= 1e-12
-                || (first_length - 1.0).abs() > 1e-9 * scale
-                || (second_length - 1.0).abs() > 1e-9 * scale
-                || (first_axis[0] * second_axis[0] + first_axis[1] * second_axis[1]).abs() > 1e-9
+                || first_radius <= EPS_POINT_NONZERO
+                || second_radius <= EPS_POINT_NONZERO
+                || (first_length - 1.0).abs() > EPS_FRAME_ORTHONORMAL * scale
+                || (second_length - 1.0).abs() > EPS_FRAME_ORTHONORMAL * scale
+                || (first_axis[0] * second_axis[0] + first_axis[1] * second_axis[1]).abs()
+                    > EPS_FRAME_ORTHONORMAL
                 || (first_axis[0] * second_axis[1] - first_axis[1] * second_axis[0] - 1.0).abs()
-                    > 1e-9
-                || frame[2].abs() > 1e-9
-                || frame[5].abs() > 1e-9
-                || frame[6].abs() > 1e-9
-                || frame[7].abs() > 1e-9
-                || (frame[8] - 1.0).abs() > 1e-9
-                || frame[11].abs() > 1e-9
+                    > EPS_FRAME_ORTHONORMAL
+                || frame[2].abs() > EPS_FRAME_ORTHONORMAL
+                || frame[5].abs() > EPS_FRAME_ORTHONORMAL
+                || frame[6].abs() > EPS_FRAME_ORTHONORMAL
+                || frame[7].abs() > EPS_FRAME_ORTHONORMAL
+                || (frame[8] - 1.0).abs() > EPS_FRAME_ORTHONORMAL
+                || frame[11].abs() > EPS_FRAME_ORTHONORMAL
             {
                 return None;
             }
@@ -568,13 +582,14 @@ pub(crate) fn saved_section_entity_geometry(
                             return false;
                         };
                         let scale = first.abs().max(second.abs()).max(1.0);
-                        (first - second).abs() <= 1e-9 * scale
+                        (first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale
                     });
             let (start_angle, end_angle) = match conic.parameters {
                 [Some(start), Some(end)]
                     if start.is_finite()
                         && end.is_finite()
-                        && (end - start - std::f64::consts::TAU).abs() <= 1e-9 =>
+                        && (end - start - std::f64::consts::TAU).abs()
+                            <= EPS_PARAMETER_FULL_TURN =>
                 {
                     (None, None)
                 }
@@ -583,7 +598,9 @@ pub(crate) fn saved_section_entity_geometry(
                     Some(Angle(end + parameter_shift)),
                 ),
                 [Some(start), None]
-                    if start.is_finite() && start.abs() <= 1e-9 && coincident_endpoints =>
+                    if start.is_finite()
+                        && start.abs() <= EPS_PARAMETER_FULL_TURN
+                        && coincident_endpoints =>
                 {
                     (None, None)
                 }
@@ -615,7 +632,8 @@ pub(crate) fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
                 start_angle,
                 end_angle,
                 ..
-            } if (end_angle.0 - start_angle.0 - std::f64::consts::TAU).abs() <= 1e-12
+                } if (end_angle.0 - start_angle.0 - std::f64::consts::TAU).abs()
+                    <= EPS_ANGLE_FULL_TURN
         )
 }
 
@@ -731,7 +749,8 @@ pub(crate) fn saved_section_missing_line_geometry(
         .chain(end)
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    ((start[fixed_coordinate] - end[fixed_coordinate]).abs() <= 1e-9 * scale).then_some(())?;
+    ((start[fixed_coordinate] - end[fixed_coordinate]).abs() <= EPS_PARAMETER_AGREEMENT * scale)
+        .then_some(())?;
     Some((
         missing.offset,
         SketchGeometry::Line {
@@ -750,7 +769,7 @@ pub(crate) fn saved_points_coincide(first: [f64; 2], second: [f64; 2]) -> bool {
     first
         .into_iter()
         .zip(second)
-        .all(|(left, right)| (left - right).abs() <= 1e-9 * scale)
+        .all(|(left, right)| (left - right).abs() <= EPS_PARAMETER_AGREEMENT * scale)
 }
 
 pub(crate) fn saved_profile_chains(
@@ -773,7 +792,10 @@ pub(crate) fn saved_profile_chains(
             Some((*external_id, saved_geometry_endpoints(geometry)?))
         })
         .collect::<Vec<_>>();
-    let mut mates = vec![[None; 2]; rows.len()];
+    let Ok(mut mates) = alloc_filled(rows.len(), [None; 2], "creo saved profile endpoint mates")
+    else {
+        return profiles;
+    };
     for (row_index, (_, endpoints)) in rows.iter().enumerate() {
         for endpoint_index in 0..2 {
             let matches = rows
@@ -903,7 +925,8 @@ pub(crate) fn resolved_section_segment_geometry_with_missing_line(
                     saved_points_coincide(
                         [stored_center.u, stored_center.v],
                         [saved_center.u, saved_center.v],
-                    ) && (stored_radius.0 - saved_radius.0).abs() <= 1e-9 * radius_scale
+                    ) && (stored_radius.0 - saved_radius.0).abs()
+                        <= EPS_RADIUS_AGREEMENT * radius_scale
                         && saved_geometry_endpoints(&stored)
                             .zip(saved_geometry_endpoints(&saved))
                             .is_some_and(|(stored, saved)| {

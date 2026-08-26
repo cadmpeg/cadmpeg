@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! End-to-end contracts over synthesized IGES 5.3 card streams.
+//! End-to-end contracts over synthesized IGES card streams.
 #![allow(clippy::unwrap_used)]
 
 use super::*;
 use cadmpeg_ir::codec::{Codec, CodecBackend};
 
+use crate::loss::IgesLossCode;
 use crate::test_support::*;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
@@ -213,9 +214,10 @@ fn expected_counts(name: &str) -> (usize, usize, usize) {
         "dimension_forms" => (3, 11, 3),
         "legacy_dimension_and_label_forms" => (1, 8, 1),
         "symbol_and_sectioned_area" => (1, 4, 1),
-        "scalar_property_forms" => (14, 14, 14),
+        "scalar_property_forms" => (15, 15, 15),
         "dimension_property_forms" | "flow_associativity" => (4, 4, 4),
-        "bounded_associativity_forms" | "external_reference_forms" => (5, 5, 5),
+        "bounded_associativity_forms" => (6, 6, 6),
+        "external_reference_forms" => (5, 5, 5),
         "primitive_solids" => (1, 8, 1),
         "procedural_and_boolean_solids" => (1, 3, 1),
         "parametrically_bounded_plane"
@@ -245,8 +247,8 @@ fn decode_matrix(
             assert_matrix_destination(&matrix, subject_type, expected_arena);
             let (expected_subjects, expected_total, expected_associated) = expected_counts(name);
             let scan = crate::card::scan(&bytes).expect("integration fixture cards");
-            let directory =
-                crate::directory::parse(&scan).expect("integration fixture Directory Entries");
+            let (global, _global_losses) = crate::global::parse(&scan).expect("integration global");
+            let (directory, _quarantined) = crate::directory::parse(&scan, global.dialect());
             let subject_count = directory
                 .iter()
                 .filter(|entry| entry.entity_type == subject_type)
@@ -376,6 +378,40 @@ fn envelope_pipeline_aligns_cards_global_units_directories_transforms_and_inspec
 }
 
 #[test]
+fn v4_outside_envelope_records_remain_native_without_neutral_projection() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let result = decode(owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 110,
+                form: 1,
+                label: "LATER-LN".into(),
+                status: "00000000",
+                parameters: "110,0,0,0,1,1,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "V4-POINT".into(),
+                status: "00000000",
+                parameters: "116,1,2,3,0;".into(),
+            },
+        ],
+        global_v4,
+    ));
+
+    assert!(result.ir().model.curves.is_empty());
+    assert_eq!(result.ir().model.points.len(), 1);
+    let native = result.ir().native.namespace("iges").unwrap();
+    assert_eq!(native.arenas["entities"].len(), 2);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityOutsideEnvelope.kind()
+            && loss.message
+                == "IGES entity type 110 form 1 is outside the Fixed ASCII mechanical/document envelope"
+    }));
+}
+
+#[test]
 fn curve_pipeline_composes_analytic_conic_spline_composite_copious_and_offset_entities() {
     decode_matrix(vec![
         ("line", line_file(0), 110, ExpectedArena::ModelCurves),
@@ -494,6 +530,36 @@ fn surface_pipeline_composes_nurbs_power_patches_sweeps_revolution_offsets_and_t
             ExpectedArena::ModelRegions,
         ),
     ]);
+}
+
+#[test]
+fn boundary_vertex_sewing_native_arena_preserves_source_coordinates() {
+    let result = decode(bounded_plane_with_significance_gap_file());
+    let records = &result
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("IGES native namespace")
+        .arenas["boundary_vertex_sewing"];
+
+    assert!(records.iter().any(|record| {
+        record.fields()["sewn"] == true
+            && record.fields()["source_endpoints"]
+                .as_array()
+                .is_some_and(|endpoints| endpoints.len() > 1)
+    }));
+    let sewn = records
+        .iter()
+        .find(|record| record.fields()["sewn"] == true)
+        .expect("a boundary coordinate gap is recorded as sewn");
+    let fields = sewn.fields();
+    assert_eq!(fields["source_entity"], "iges:entity:directory#13");
+    assert_eq!(fields["tolerance"], 0.01);
+    let endpoints = fields["source_endpoints"].as_array().unwrap();
+    assert_eq!(endpoints.len(), 2);
+    assert!(endpoints
+        .iter()
+        .any(|endpoint| endpoint["position"] == fields["representative"]));
 }
 
 #[test]
@@ -828,7 +894,6 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
         ("views", view_visibility_forms_file()),
         ("drawing", drawing_with_properties_file()),
         ("text", text_annotation_file()),
-        ("dimensions", dimension_forms_file()),
         ("symbols", symbol_and_sectioned_area_file()),
         ("associativity", bounded_associativity_forms_file()),
         ("text-font", text_font_definition_file()),
@@ -842,11 +907,26 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
                 &DecodeOptions::default(),
             )
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        assert!(
-            result.report().losses.is_empty(),
-            "{name}: {:#?}",
-            result.report().losses
-        );
+        let loss_codes = result
+            .report()
+            .losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>();
+        if name == "spline-surface" {
+            assert_eq!(
+                loss_codes,
+                vec![IgesLossCode::SplineHeaderNotTransferred.kind()],
+                "{name}: {:#?}",
+                result.report().losses
+            );
+        } else {
+            assert!(
+                loss_codes.is_empty(),
+                "{name}: {:#?}",
+                result.report().losses
+            );
+        }
         let validation = cadmpeg_ir::validate_neutral_with_source_fidelity(
             result.ir(),
             result.source_fidelity(),

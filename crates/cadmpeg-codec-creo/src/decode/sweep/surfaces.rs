@@ -29,6 +29,12 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition,
     Surface, SurfaceGeometry,
 };
+
+const EPS_RADIUS_NONZERO: f64 = 1.0e-10;
+const EPS_COPLANAR_RESIDUAL: f64 = 1.0e-9;
+const EPS_RADIAL_SPEED: f64 = 1.0e-10;
+const EPS_AXIAL_RATE: f64 = 1.0e-10;
+const EPS_MAJOR_RADIUS: f64 = 1.0e-10;
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
@@ -66,7 +72,7 @@ pub(in super::super) fn revolved_section_surface(
             let direction = normalized(std::array::from_fn(|index| end[index] - start[index]))?;
             let (mut on_axis, mut radial) = project(start);
             let mut radius = dot(radial, radial).sqrt();
-            if radius <= 1e-10 {
+            if radius <= EPS_RADIUS_NONZERO {
                 (on_axis, radial) = project(end);
                 radius = dot(radial, radial).sqrt();
             }
@@ -75,13 +81,13 @@ pub(in super::super) fn revolved_section_surface(
                 std::array::from_fn(|index| direction[index] - axial_rate * axis[index]);
             let radial_speed = dot(radial_rate, radial_rate).sqrt();
             let scale = radius.max(1.0);
-            if radius > 1e-10 {
+            if radius > EPS_RADIUS_NONZERO {
                 let coplanar_residual = dot(cross(radial, radial_rate), axis).abs();
-                (coplanar_residual <= 1e-9 * scale).then_some(())?;
+                (coplanar_residual <= EPS_COPLANAR_RESIDUAL * scale).then_some(())?;
             }
             let reference = normalized(radial).or_else(|| normalized(radial_rate))?;
-            if radial_speed <= 1e-10 {
-                (radius > 1e-10).then_some(())?;
+            if radial_speed <= EPS_RADIAL_SPEED {
+                (radius > EPS_RADIUS_NONZERO).then_some(())?;
                 return Some(SurfaceGeometry::Cylinder {
                     origin: point(on_axis),
                     axis: vector(axis),
@@ -89,7 +95,7 @@ pub(in super::super) fn revolved_section_surface(
                     radius,
                 });
             }
-            if axial_rate.abs() <= 1e-10 {
+            if axial_rate.abs() <= EPS_AXIAL_RATE {
                 return Some(SurfaceGeometry::Plane {
                     origin: point(on_axis),
                     normal: vector(axis),
@@ -125,7 +131,7 @@ pub(in super::super) fn revolved_section_surface(
                         }))
                     })
             })?;
-            if major_radius <= 1e-10 {
+            if major_radius <= EPS_MAJOR_RADIUS {
                 Some(SurfaceGeometry::Sphere {
                     center: point(center),
                     axis: vector(axis),
@@ -398,7 +404,7 @@ pub(in super::super) fn revolved_section_circle(
         .chain(&axis_origin)
         .map(|coordinate| coordinate.abs())
         .fold(1.0, f64::max);
-    (radius > 1e-10 * scale).then_some(())?;
+    (radius > EPS_RADIUS_NONZERO * scale).then_some(())?;
     let reference = radial.map(|component| component / radius);
     Some(CurveGeometry::Circle {
         center: Point3::new(center[0], center[1], center[2]),

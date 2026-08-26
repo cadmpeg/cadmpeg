@@ -1568,8 +1568,11 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [],
           "network_definitions": [],
           "network_instances": [],
           "primitive_solids": [],
@@ -1587,6 +1590,8 @@
           "product_occurrences": [],
           "product_properties": [],
           "properties": [],
+          "quarantined_directory_records": [],
+          "quarantined_parameter_records": [],
           "rectangular_arrays": [],
           "segmented_visibility": [],
           "selected_components": [],
@@ -1669,7 +1674,7 @@
             }
           ]
         },
-        "version": 2
+        "version": 6
       }
     },
     "source": {
@@ -1688,7 +1693,7 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 0.001
     },
     "units": {
       "length": "millimeter"
@@ -1697,8 +1702,39 @@
   "report": {
     "container_only": false,
     "format": "iges",
-    "geometry_transferred": true,
-    "losses": [],
+    "geometry_transferred": false,
+    "losses": [
+      {
+        "code": {
+          "code": "entity.not-projected",
+          "kind": "record_not_typed",
+          "namespace": "iges"
+        },
+        "message": "IGES entity type 410 form 0 was not projected: view number, projection, transform, scale, or clipping fields are invalid",
+        "provenance": {
+          "format": "iges",
+          "offset": 243,
+          "stream": "iges",
+          "tag": "directory_entry:D1"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "entity.not-projected",
+          "kind": "record_not_typed",
+          "namespace": "iges"
+        },
+        "message": "IGES entity type 410 form 1 was not projected: view number, projection, transform, scale, or clipping fields are invalid",
+        "provenance": {
+          "format": "iges",
+          "offset": 405,
+          "stream": "iges",
+          "tag": "directory_entry:D3"
+        },
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "entities=2",
       "entity.410.form.0=1",
@@ -1711,13 +1747,13 @@
       "entries": [
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
+          "note": "native record retained; semantic projection omitted with an attributed loss",
           "source": "D1",
           "target": "iges:entity:directory#1"
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
+          "note": "native record retained; semantic projection omitted with an attributed loss",
           "source": "D3",
           "target": "iges:entity:directory#3"
         }

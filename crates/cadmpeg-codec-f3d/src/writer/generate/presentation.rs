@@ -90,12 +90,12 @@ impl GeneratedDesignRegistry {
             };
             let entity_suffix = metadata.map_or(asm_body_key, |metadata| metadata.entity_suffix);
             if body_map.insert(asm_body_key, entity_suffix).is_some() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "multiple source-less F3D bodies use ASM body key {asm_body_key}"
                 )));
             }
             if !suffixes.insert(entity_suffix) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "multiple source-less F3D bodies use Design entity {entity_suffix}"
                 )));
             }
@@ -239,7 +239,7 @@ fn register_generated_type(
         }
         [ordinal] => *ordinal,
         _ => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D Design type registry repeats built-in type {type_guid}"
             )))
         }
@@ -252,7 +252,7 @@ fn register_generated_type(
             .as_deref()
             .is_none_or(|base| !base.eq_ignore_ascii_case(base_type_guid))
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D Design type {type_guid} conflicts with its built-in registration"
         )));
     }

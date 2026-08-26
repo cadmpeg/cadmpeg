@@ -51,8 +51,8 @@ pub(crate) fn decode_asm_binary(
         Some(limit) => sab::frame(bytes, start, limit, width),
         None => sab::frame_history(bytes, start, bytes.len(), width),
     };
-    let records =
-        framed.map_err(|error| CodecError::Malformed(format!("SAB framing failed: {error}")))?;
+    let records = framed
+        .map_err(|error| CodecError::malformed(format_args!("SAB framing failed: {error}")))?;
     let brep = decode_with_header(
         &records,
         bytes,
@@ -94,7 +94,7 @@ pub(crate) fn decode_acis_binary(
         None => sab::frame_history(bytes, start, bytes.len(), 4),
     };
     let records = framed
-        .map_err(|error| CodecError::Malformed(format!("ACIS SAB framing failed: {error}")))?;
+        .map_err(|error| CodecError::malformed(format_args!("ACIS SAB framing failed: {error}")))?;
     let brep = decode_with_header(
         &records,
         bytes,
@@ -110,8 +110,9 @@ pub(crate) fn decode_acis_binary(
 }
 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, CodecError> {
-    let stream = sat::parse(bytes)
-        .map_err(|error| CodecError::Malformed(format!("text stream parse failed: {error}")))?;
+    let stream = sat::parse(bytes).map_err(|error| {
+        CodecError::malformed(format_args!("text stream parse failed: {error}"))
+    })?;
     let header = stream.header.as_kernel_header();
     let brep = decode_with_header(
         &stream.records,
@@ -199,7 +200,7 @@ fn build_result(
     source_fidelity
         .attach_native_unknown_records(&mut ir, FORMAT, unknowns)
         .map_err(|error| {
-            CodecError::Malformed(format!("unknown-record retention failed: {error}"))
+            CodecError::malformed(format_args!("unknown-record retention failed: {error}"))
         })?;
     Ok(DecodeResult::new(ir, report, source_fidelity))
 }

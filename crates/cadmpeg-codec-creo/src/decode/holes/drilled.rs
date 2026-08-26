@@ -14,6 +14,12 @@ use super::super::feature_history::{
 use super::super::sketch::{approximately_equal, normalized};
 use super::super::sweep::unique_available_positional_cylinder_frame_records;
 
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_COORDINATE_AGREEMENT: f64 = 1.0e-9;
+const EPS_DIAMETER_NONZERO: f64 = 1.0e-12;
+const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
+
 pub fn stepped_hole_form(
     feature_id: u32,
     tables: &[crate::feature::FeatureEntityTable],
@@ -450,7 +456,7 @@ pub fn simple_drilled_axis_placement_from_frames(
             if !frame.origin.into_iter().all(f64::is_finite)
                 || !frame.radius.is_finite()
                 || frame.radius <= 0.0
-                || (frame.radius - radius).abs() > 1e-9 * radius_scale
+                || (frame.radius - radius).abs() > EPS_RADIUS_AGREEMENT * radius_scale
             {
                 return false;
             }
@@ -459,7 +465,7 @@ pub fn simple_drilled_axis_placement_from_frames(
                 .zip(candidate_axis)
                 .map(|(left, right)| left * right)
                 .sum::<f64>();
-            if alignment.abs() < 1.0 - 1e-9 {
+            if alignment.abs() < 1.0 - EPS_AXIS_ALIGNMENT {
                 return false;
             }
             let delta =
@@ -476,7 +482,7 @@ pub fn simple_drilled_axis_placement_from_frames(
                 .map(|component| component * component)
                 .sum::<f64>()
                 .sqrt()
-                <= 1e-9 * coordinate_scale
+                <= EPS_COORDINATE_AGREEMENT * coordinate_scale
         })
         .then_some(cadmpeg_ir::features::HolePlacement::Axis {
             origin: Point3::new(first.origin[0], first.origin[1], first.origin[2]),
@@ -512,8 +518,9 @@ pub fn drilled_hole_envelope_layout(
         .chain([&diameter, &depth])
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    (diameter > 1e-12 * scale && depth > 1e-12 * scale).then_some(())?;
-    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    (diameter > EPS_DIAMETER_NONZERO * scale && depth > EPS_DIAMETER_NONZERO * scale)
+        .then_some(())?;
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * scale;
     let intervals = corners.map(|patch| {
         std::array::from_fn::<_, 3, _>(|axis| {
             [
@@ -560,7 +567,7 @@ pub fn drilled_hole_layout_close(
     left: f64,
     right: f64,
 ) -> bool {
-    (left - right).abs() <= 1e-9 * layout.scale
+    (left - right).abs() <= EPS_GEOMETRY_AGREEMENT * layout.scale
 }
 
 pub fn drilled_hole_layout_shared(layout: &DrilledHoleEnvelopeLayout, axis: usize) -> bool {

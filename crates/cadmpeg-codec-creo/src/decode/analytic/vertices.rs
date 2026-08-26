@@ -25,8 +25,8 @@ use super::pcurves::{
 };
 use super::planes::{solve_carriers_with_diagnostics, CarrierSolveDiagnostics};
 
-const EPS_AGREE: f64 = 1e-9;
-const EPS_NEAR_ZERO: f64 = 1e-12;
+const EPS_AGREE: f64 = 1.0e-9;
+const EPS_NEAR_ZERO: f64 = 1.0e-12;
 const CARRIER_VERTEX_SAMPLE_LIMIT: usize = 8;
 
 fn unique_model_curve<'a>(ir: &'a CadIr, id: &CurveId) -> Option<&'a Curve> {
@@ -732,7 +732,7 @@ mod tests {
 
     #[test]
     fn pcurve_endpoint_ambiguity_requires_distinct_points() {
-        const EPS_TEST_POINT_AGREE: f64 = 1e-12;
+        const EPS_TEST_POINT_AGREE: f64 = 1.0e-12;
         assert!(!pcurve_endpoint_is_ambiguous(&[[1.0, 2.0, 3.0]]));
         assert!(!pcurve_endpoint_is_ambiguous(&[
             [1.0, 2.0, 3.0],

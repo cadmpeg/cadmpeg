@@ -556,7 +556,7 @@ fn edge_prefix(
             cursor.u32(&format!("{field} list gate 1"))?,
         ];
         if gate != [1, 0] {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc {field} list gate is {gate:?}"
             )));
         }
@@ -578,7 +578,7 @@ fn edge_prefix(
         }
     }
     if cursor.remaining() != fixed_tail {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Inventor PmDc {field} has {} bytes before its fixed tail, expected {fixed_tail}",
             cursor.remaining()
         )));
@@ -700,7 +700,7 @@ fn parse_direction(source: View<'_>, version: u8) -> Result<PmDcDirection, Codec
         24 => None,
         28 => Some(cursor.u32("direction extension")?),
         remaining => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Inventor PmDc direction has {remaining} bytes before its vector"
             )))
         }
@@ -731,7 +731,7 @@ fn map_header(
         cursor.u16(&format!("{field} marker form"))?,
     ];
     if marker != [6, 0x3000] {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Inventor PmDc {field} marker is {marker:?}"
         )));
     }

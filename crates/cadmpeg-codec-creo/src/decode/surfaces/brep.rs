@@ -38,8 +38,8 @@ use super::super::uniqueness::exactly_one;
 
 use super::{fc05_cap_pair_model_frame, fc05_model_frame, native_surface_id};
 
-const EPS_PARAMETER_AGREE: f64 = 1e-9;
-const EPS_GEOMETRY_AGREE: f64 = 1e-9;
+const EPS_PARAMETER_AGREE: f64 = 1.0e-9;
+const EPS_GEOMETRY_AGREE: f64 = 1.0e-9;
 const FACE_REJECTION_SAMPLE_LIMIT: usize = 4;
 const FACE_REJECTION_OPERAND_SAMPLE_LIMIT: usize = 8;
 

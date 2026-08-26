@@ -78,16 +78,20 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     archive
         .start_file("Manifest.dat", options)
-        .map_err(|error| CodecError::Malformed(format!("cannot create F3D manifest: {error}")))?;
+        .map_err(|error| {
+            CodecError::malformed(format_args!("cannot create F3D manifest: {error}"))
+        })?;
     archive.write_all(&manifest::generated_top_level()?)?;
     archive
         .start_file("Properties.dat", options)
-        .map_err(|error| CodecError::Malformed(format!("cannot create F3D properties: {error}")))?;
+        .map_err(|error| {
+            CodecError::malformed(format_args!("cannot create F3D properties: {error}"))
+        })?;
     archive.write_all(&0u32.to_le_bytes())?;
     archive
         .start_file(format!("{DESIGN_FOLDER}/Manifest.dat"), options)
         .map_err(|error| {
-            CodecError::Malformed(format!("cannot create F3D asset manifest: {error}"))
+            CodecError::malformed(format_args!("cannot create F3D asset manifest: {error}"))
         })?;
     archive.write_all(&manifest::generated_design_asset()?)?;
     archive
@@ -95,7 +99,9 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             format!("{DESIGN_FOLDER}/Breps.BlobParts/BREP.generated.smbh"),
             options,
         )
-        .map_err(|error| CodecError::Malformed(format!("cannot create F3D BREP entry: {error}")))?;
+        .map_err(|error| {
+            CodecError::malformed(format_args!("cannot create F3D BREP entry: {error}"))
+        })?;
     archive.write_all(&smbh)?;
     if has_native {
         let mut configuration_names = BTreeSet::new();
@@ -104,7 +110,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             if !configuration_names.insert(configuration.entry_name.as_str())
                 || !configuration_ids.insert(configuration.id.as_str())
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "duplicate F3D configuration identity: {}",
                     configuration.entry_name
                 )));
@@ -118,7 +124,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
                 }
             };
             if !valid_name {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D configuration kind conflicts with entry name: {}",
                     configuration.entry_name
                 )));
@@ -128,7 +134,9 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             archive
                 .start_file(&configuration.entry_name, options)
                 .map_err(|error| {
-                    CodecError::Malformed(format!("cannot create F3D configuration entry: {error}"))
+                    CodecError::malformed(format_args!(
+                        "cannot create F3D configuration entry: {error}"
+                    ))
                 })?;
             archive.write_all(&payload)?;
         }
@@ -138,7 +146,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
             .map_err(|error| {
-                CodecError::Malformed(format!("cannot create F3D Design BulkStream: {error}"))
+                CodecError::malformed(format_args!("cannot create F3D Design BulkStream: {error}"))
             })?;
         archive.write_all(&bulk_stream.bytes)?;
     }
@@ -149,7 +157,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"), options)
             .map_err(|error| {
-                CodecError::Malformed(format!("cannot create F3D Design MetaStream: {error}"))
+                CodecError::malformed(format_args!("cannot create F3D Design MetaStream: {error}"))
             })?;
         archive.write_all(&meta_stream)?;
     }
@@ -161,13 +169,13 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
                 options,
             )
             .map_err(|error| {
-                CodecError::Malformed(format!("cannot create F3D Protein asset: {error}"))
+                CodecError::malformed(format_args!("cannot create F3D Protein asset: {error}"))
             })?;
         archive.write_all(&protein)?;
     }
-    archive
-        .finish()
-        .map_err(|error| CodecError::Malformed(format!("cannot finish F3D archive: {error}")))?;
+    archive.finish().map_err(|error| {
+        CodecError::malformed(format_args!("cannot finish F3D archive: {error}"))
+    })?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     Ok(())
