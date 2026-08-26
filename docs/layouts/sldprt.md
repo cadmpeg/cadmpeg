@@ -2552,7 +2552,7 @@ Unstated regions:
 
 Spec §2 · layout: byte offsets · size: 96 B
 
-The fixed prefix ends at the relation terminator. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator, or by the terminal reference-table prefix.
+The fixed prefix ends at the relation terminator. An ordinary geometry point uses tail words `8`, `1`; a relation point uses `1`, `0`. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator, or by the terminal reference-table prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -2566,8 +2566,8 @@ The fixed prefix ends at the relation terminator. The following native tail is b
 | 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
 | 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `0e 00` at marker +56 |
 | 58 | 24 | `coordinates` | `f64[3]` | little | spec | xyz coordinates at marker +58 |
-| 82 | 2 | `tail_word_0` | `u16` | little | spec | u16 `8` at marker +82 |
-| 84 | 2 | `tail_word_1` | `u16` | little | spec | u16 `1` at marker +84 |
+| 82 | 2 | `tail_word_0` | `u16` | little | spec | u16 `8` for an ordinary point or `1` for a relation point at marker +82 |
+| 84 | 2 | `tail_word_1` | `u16` | little | spec | u16 `1` for an ordinary point or `0` for a relation point at marker +84 |
 | 86 | 6 | `tail_zero` | `bytes[6]` | little | spec | six zero bytes at marker +86 |
 | 92 | 4 | `terminator` | `bytes[4]` | little | spec | `fe ff ff ff` at marker +92 |
 

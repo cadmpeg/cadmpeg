@@ -63,6 +63,17 @@ pub(super) fn current_indexed_xyz_spatial_point(
     payload
 }
 
+fn current_indexed_xyz_spatial_relation_point(object_index: u32, coordinates: [f64; 3]) -> Vec<u8> {
+    let mut payload = current_indexed_xyz_spatial_point(object_index, coordinates, 158);
+    payload[4 + indexed_xyz_spatial::NATIVE_KIND..4 + indexed_xyz_spatial::NATIVE_KIND + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    payload[4 + indexed_xyz_spatial::TAIL_WORD_0..4 + indexed_xyz_spatial::TAIL_WORD_0 + 2]
+        .copy_from_slice(&1u16.to_le_bytes());
+    payload[4 + indexed_xyz_spatial::TAIL_WORD_1..4 + indexed_xyz_spatial::TAIL_WORD_1 + 2]
+        .copy_from_slice(&0u16.to_le_bytes());
+    payload
+}
+
 fn compact_spatial_point() -> Vec<u8> {
     let mut payload = vec![0; compact_spatial::LEN];
     payload[compact_spatial::MARKER..compact_spatial::HEADER].copy_from_slice(SKETCH_MARKER);
@@ -166,6 +177,24 @@ fn current_indexed_profile_spatial_point_requires_its_tail_boundary() {
     relation[4 + indexed_xyz_spatial::NATIVE_KIND..4 + indexed_xyz_spatial::NATIVE_KIND + 4]
         .copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(marker_spatial_coordinates(&relation, 4), None);
+}
+
+#[test]
+fn current_indexed_spatial_relation_point_uses_the_relation_tail() {
+    let payload = current_indexed_xyz_spatial_relation_point(1, [0.0235, 0.01, -0.075]);
+
+    assert_eq!(marker_spatial_coordinates(&payload, 4), None);
+    assert_eq!(
+        spatial_relation_marker_coordinates(&payload, 4),
+        Some(Point3::new(23.5, 10.0, -75.0))
+    );
+
+    let mut missing_boundary = payload;
+    missing_boundary.truncate(4 + indexed_xyz_spatial::LEN);
+    assert_eq!(
+        spatial_relation_marker_coordinates(&missing_boundary, 4),
+        None
+    );
 }
 
 fn terminal_current_indexed_xyz_spatial_point(

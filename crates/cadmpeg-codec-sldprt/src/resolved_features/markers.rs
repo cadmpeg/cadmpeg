@@ -48,6 +48,8 @@ use crate::layout::legacy_144_single_incidence_profile_point as pt_144;
 use crate::layout::wide_spatial_marker_coordinate_prefix as spatial_pre;
 
 /// Project spatial sketches from their model-space marker coordinates or bounded lines.
+/// Relation-owned indexed point markers use the relation-tail decoder below;
+/// their native relation kind must remain intact for downstream binding.
 pub(crate) fn spatial_sketches(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
@@ -107,6 +109,16 @@ pub(crate) fn spatial_sketches(
                         return None;
                     }
                     marker_spatial_coordinates(&lane.native_payload, offset)
+                        .or_else(|| {
+                            declared_spatial
+                                .then(|| {
+                                    current_indexed_spatial_relation_coordinates(
+                                        &lane.native_payload,
+                                        offset,
+                                    )
+                                })
+                                .flatten()
+                        })
                         .map(|point| (marker.id.clone(), point, offset))
                 })
                 .collect::<Vec<_>>();
@@ -438,6 +450,32 @@ pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) ->
 fn current_indexed_spatial_xyz_point(payload: &[u8], offset: usize) -> bool {
     const NEXT_MARKER_OFFSETS: [usize; 2] = [158, 162];
 
+    let continuation_tail = View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_0) == Some(8)
+        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_1) == Some(1);
+    let terminal_geometry_locus = View::u32_le_at(payload, offset + spatial_xyz::NATIVE_KIND)
+        == Some(0)
+        && payload.get(offset + spatial_xyz::PROFILE_LOCUS..offset + spatial_xyz::PROFILE_ROLE)
+            == Some(&[0x05, 0x00, 0x01, 0x00]);
+    let terminal_tail = terminal_geometry_locus
+        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_0) == Some(1)
+        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_1) == Some(0);
+
+    current_indexed_spatial_xyz_common(payload, offset)
+        && (continuation_tail || terminal_tail)
+        && payload.get(offset + spatial_xyz::TAIL_ZERO..offset + spatial_xyz::TERMINATOR)
+            == Some(&[0; 6])
+        && payload.get(offset + spatial_xyz::TERMINATOR..offset + spatial_xyz::TERMINATOR + 4)
+            == Some(&[0xfe, 0xff, 0xff, 0xff])
+        && ((continuation_tail
+            && NEXT_MARKER_OFFSETS.iter().any(|relative| {
+                offset
+                    .checked_add(*relative)
+                    .is_some_and(|next| sketch_marker_prefix_at(payload, next))
+            }))
+            || (terminal_tail && current_indexed_spatial_xyz_terminal_tail(payload, offset)))
+}
+
+fn current_indexed_spatial_xyz_common(payload: &[u8], offset: usize) -> bool {
     let kind_locus = matches!(
         (
             View::u32_le_at(payload, offset + spatial_xyz::NATIVE_KIND),
@@ -445,16 +483,6 @@ fn current_indexed_spatial_xyz_point(payload: &[u8], offset: usize) -> bool {
         ),
         (Some(0 | 1), Some([0x04, 0x00, 0x02, 0x00])) | (Some(0), Some([0x05, 0x00, 0x01, 0x00]))
     );
-    let terminal_geometry_locus = View::u32_le_at(payload, offset + spatial_xyz::NATIVE_KIND)
-        == Some(0)
-        && payload.get(offset + spatial_xyz::PROFILE_LOCUS..offset + spatial_xyz::PROFILE_ROLE)
-            == Some(&[0x05, 0x00, 0x01, 0x00]);
-    let continuation_tail = View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_0) == Some(8)
-        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_1) == Some(1);
-    let terminal_tail = terminal_geometry_locus
-        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_0) == Some(1)
-        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_1) == Some(0);
-
     payload.get(offset..offset + spatial_xyz::HEADER) == Some(SKETCH_MARKER)
         && payload.get(offset + spatial_xyz::HEADER..offset + spatial_xyz::SENTINEL)
             == Some(&[0xff; 8])
@@ -471,19 +499,29 @@ fn current_indexed_spatial_xyz_point(payload: &[u8], offset: usize) -> bool {
         && View::f64_le_at(payload, offset + spatial_xyz::STATE_VALUE) == Some(1.0)
         && payload.get(offset + spatial_xyz::COORDINATE_TAG..offset + spatial_xyz::COORDINATES)
             == Some(&[0x0e, 0x00])
-        && (continuation_tail || terminal_tail)
+        && marker_object_index(payload, offset).is_some()
+}
+
+fn current_indexed_spatial_relation_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
+    const NEXT_MARKER_OFFSETS: [usize; 2] = [158, 162];
+
+    (current_indexed_spatial_xyz_common(payload, offset)
+        && View::u32_le_at(payload, offset + spatial_xyz::NATIVE_KIND) == Some(1)
+        && payload.get(offset + spatial_xyz::PROFILE_LOCUS..offset + spatial_xyz::PROFILE_ROLE)
+            == Some(&[0x04, 0x00, 0x02, 0x00])
+        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_0) == Some(1)
+        && View::u16_le_at(payload, offset + spatial_xyz::TAIL_WORD_1) == Some(0)
         && payload.get(offset + spatial_xyz::TAIL_ZERO..offset + spatial_xyz::TERMINATOR)
             == Some(&[0; 6])
         && payload.get(offset + spatial_xyz::TERMINATOR..offset + spatial_xyz::TERMINATOR + 4)
             == Some(&[0xfe, 0xff, 0xff, 0xff])
-        && marker_object_index(payload, offset).is_some()
-        && ((continuation_tail
-            && NEXT_MARKER_OFFSETS.iter().any(|relative| {
-                offset
-                    .checked_add(*relative)
-                    .is_some_and(|next| sketch_marker_prefix_at(payload, next))
-            }))
-            || (terminal_tail && current_indexed_spatial_xyz_terminal_tail(payload, offset)))
+        && NEXT_MARKER_OFFSETS.iter().any(|relative| {
+            offset
+                .checked_add(*relative)
+                .is_some_and(|next| sketch_marker_prefix_at(payload, next))
+        }))
+    .then(|| marker_spatial_point(payload, offset + spatial_xyz::COORDINATES))
+    .flatten()
 }
 
 fn current_indexed_spatial_xyz_terminal_tail(payload: &[u8], offset: usize) -> bool {
@@ -561,8 +599,12 @@ fn current_indexed_spatial_xyz_terminal_tail(payload: &[u8], offset: usize) -> b
 }
 
 fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
-    const NATIVE_TO_IR: f64 = 1000.0;
     let coordinate_offset = marker_spatial_coordinate_offset(payload, offset)?;
+    marker_spatial_point(payload, coordinate_offset)
+}
+
+fn marker_spatial_point(payload: &[u8], coordinate_offset: usize) -> Option<Point3> {
+    const NATIVE_TO_IR: f64 = 1000.0;
     let coordinate = |offset: usize| {
         let value = View::f64_le_at(payload, offset)?;
         (value == 0.0 || value.is_normal()).then_some(value * NATIVE_TO_IR)
@@ -577,12 +619,16 @@ fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
 /// Read the guarded 3D coordinate layouts used by spatial-relation markers.
 ///
 /// The established indexed layout is shared with ordinary spatial points. A
-/// relation can also carry a source point in one of the older profile-locus
-/// layouts; those records use the same marker identity and profile role but
-/// store the coordinate triplet at one of two tagged offsets. Require exactly
-/// one tagged triplet so an incidental byte pattern cannot become geometry.
+/// relation can also carry a source point in the current indexed layout or in
+/// one of the older profile-locus layouts. Relation-owned records retain their
+/// relation kind in the input roster; this function only exposes their model
+/// coordinates to relation and spatial-sketch projection. Require the complete
+/// record boundary so an incidental byte pattern cannot become geometry.
 pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
     if let Some(point) = marker_spatial_coordinates(payload, offset) {
+        return Some(point);
+    }
+    if let Some(point) = current_indexed_spatial_relation_coordinates(payload, offset) {
         return Some(point);
     }
     let code = marker_native_code(payload, offset)?;

@@ -3719,7 +3719,7 @@ pub(crate) mod draft_extended_direction_frame {
 /// Spec §2. Record length 96 B.
 ///
 /// ```text
-/// The fixed prefix ends at the relation terminator. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator, or by the terminal reference-table prefix.
+/// The fixed prefix ends at the relation terminator. An ordinary geometry point uses tail words `8`, `1`; a relation point uses `1`, `0`. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator, or by the terminal reference-table prefix.
 /// ```
 pub(crate) mod current_indexed_spatial_xyz_point_prefix {
     /// Record length in bytes. Spec §2.

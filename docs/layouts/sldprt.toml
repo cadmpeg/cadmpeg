@@ -10011,10 +10011,10 @@ anchor = "an unaligned xyz unit vector occupies +129, +137, and +145"
 name = "current_indexed_spatial_xyz_point_prefix"
 kind = "byte"
 section = "2"
-anchor = "A current-prefix indexed XYZ spatial point has the same fixed prefix through xyz coordinates"
+anchor = "A current-prefix indexed XYZ spatial point or relation point has the same fixed prefix through xyz coordinates"
 size = 96
 endianness = "little"
-note = "The fixed prefix ends at the relation terminator. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator, or by the terminal reference-table prefix."
+note = "The fixed prefix ends at the relation terminator. An ordinary geometry point uses tail words `8`, `1`; a relation point uses `1`, `0`. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator, or by the terminal reference-table prefix."
 
 [[record.field]]
 name = "marker"
@@ -10091,14 +10091,14 @@ name = "tail_word_0"
 offset = 82
 type = "u16"
 source = "spec"
-anchor = "u16 `8` at marker +82"
+anchor = "u16 `8` for an ordinary point or `1` for a relation point at marker +82"
 
 [[record.field]]
 name = "tail_word_1"
 offset = 84
 type = "u16"
 source = "spec"
-anchor = "u16 `1` at marker +84"
+anchor = "u16 `1` for an ordinary point or `0` for a relation point at marker +84"
 
 [[record.gap]]
 offset = 21
