@@ -1798,6 +1798,17 @@ the witnessed cylinder and exactly one stored-frame candidate satisfies that
 tangency. Without this cylinder witness, the stored origin is unchanged; a
 direction/normal mirror does not imply an origin mirror.
 
+For a cap pair with two or more placed cap planes, the cap-plane axial origins
+and the corresponding row-frame cap ordinates establish the cylinder's native
+parameter chart. The absolute model-space span and row-frame span must be equal
+and nonzero. Their signed ratio is the model-space axis direction. For each cap,
+`origin_axis = cap_origin_axis - axis_sign * cap_ordinate` establishes the
+model-space coordinate of native parameter `v = 0`; all cap pairs must produce
+the same value. Missing caps, a zero span, unequal spans, or inconsistent
+parameter origins leave the native chart unresolved. This witness establishes
+the axis placement; the circle's angular parameter sign does not select the
+axial direction.
+
 In a support-triple body, the slots are:
 
 ```text
@@ -2217,7 +2228,7 @@ parameter path. A decoder may transfer this path only after mapping both
 endpoints through the first face chart and applying the ordinary endpoint and
 carrier admission rules.
 
-`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the owning cylinder's axis-placement ordinate. The adjacent plane supplies the cap circle's axial coordinate. `t` is the angular curve parameter in radians. The signed relation between successive polar angles and `t` determines curve sense; subtracting the signed stored parameter from a point's polar angle determines the parameter-zero radial direction. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`; for a model-Z axis it maps to `(Y, X, Z)`. The row-frame radial vector `(A, B)` maps to `(0, B, A)`, `(A, 0, B)`, or `(B, A, 0)`, respectively. `fc 13` stores a control polyline rather than an analytic circle.
+`fc 05` records store cap-circle control points in the order `A`, `B`, `t`, `C`, where `A` and `C` use eight-byte world-coordinate tokens and `B` and `t` use DICT or standalone-zero scalar tokens. `C` is the owning cylinder's row-frame axial ordinate; the paired cap planes provide its model-space axial coordinate. `t` is the angular curve parameter in radians. The signed relation between successive polar angles and `t` determines curve sense and the parameter-zero radial direction; it does not select the cylinder's axial direction when the paired-cap span witness is complete. For a model-X axis, `(A, B, C)` maps to `(Z, Y, X)`; for a model-Y axis it maps to `(X, Z, Y)`; for a model-Z axis it maps to `(Y, X, Z)`. The row-frame radial vector `(A, B)` maps to `(0, B, A)`, `(A, 0, B)`, or `(B, A, 0)`, respectively. `fc 13` stores a control polyline rather than an analytic circle.
 
 In an `fc 14` body for a circle shared by an axis-aligned coaxial circular cone
 and cylinder, every `2d` world-coordinate token is the same exact token image.
@@ -2257,25 +2268,28 @@ constant cap ordinates. This binding establishes the cylinder radius and its
 axis line in the owning feature's row frame. Model-space placement additionally
 requires that feature's row-frame transform.
 
-When both cap-plane outlines establish parallel axis-normal planes, the axis
-direction, coordinate permutation, and cap offsets supply that transform
-directly.
+When both cap-plane outlines establish parallel axis-normal planes, the paired
+cap span supplies the axis direction and `v = 0` origin directly. The cap
+offsets supply each circle's model-space axial coordinate through
+`cap_origin_axis = origin_axis + axis_sign * cap_ordinate`.
 
 Each participating `fc 05` curve is a circle centered at the shared in-plane
 center and its own transformed cap ordinate, with the cylinder axis and radius.
 The curve identifier remains the `crv_array.crv_id`.
 
 One `fc 05` curve bound to one cylinder face and one resolved axis-normal cap
-plane independently defines both its model-space circle and the cylinder
-carrier. The cap plane supplies the model-space axial coordinate. The fitted
-center and radius define the axis line and cylinder radius. When every stored
+plane independently defines its model-space circle and the cylinder carrier.
+The cap plane supplies the model-space axial coordinate. The paired-cap span
+supplies the cylinder axis sense and native `v = 0` origin. The fitted center
+and radius define the axis line and cylinder radius. When every stored
 parameter agrees with one signed polar-angle progression, that sign defines
-the cylinder-axis sense and the extrapolated parameter-zero radial direction
-defines the circle and cylinder reference direction. Otherwise, the cap-plane
-normal supplies the neutral axis sense and the radial direction from the fitted
-center to the first stored sample supplies a neutral reference direction. The
-cylinder axis passes through the cap-circle center. The neutral chart changes
-neither carrier equation and does not assign native parameter semantics.
+curve sense and the extrapolated parameter-zero radial direction defines the
+circle and cylinder reference direction. Otherwise, the cap-plane normal
+supplies a neutral axis sense and the radial direction from the fitted center
+to the first stored sample supplies a neutral reference direction. The
+cylinder axis passes through the cap-circle center. A neutral angular chart
+changes neither carrier equation and does not assign native parameter
+semantics.
 
 ## 5. Topology and section records
 

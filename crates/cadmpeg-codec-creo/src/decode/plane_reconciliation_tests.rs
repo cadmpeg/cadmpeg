@@ -6,6 +6,7 @@ use crate::decode::analytic::{
     topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes, BoundaryLine,
     CylinderEquation, PlaneCandidate, PlaneChart, PlaneEquation,
 };
+use crate::decode::surfaces::fc05_cap_pair_model_frame;
 use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
 };
@@ -660,6 +661,58 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
     assert!((candidate.equation.normal[2] + 0.8).abs() < EPS_BRANCH_TEST);
     assert!((candidate.equation.origin[2] + origin_z).abs() < EPS_BRANCH_TEST);
     assert!((candidate.chart.expect("stored chart").u_axis[2] - 0.6).abs() < EPS_BRANCH_TEST);
+}
+
+#[test]
+fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
+    const EPS_FC05_FRAME_TEST: f64 = 1e-12;
+
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.planes.outlines.extend([
+        OutlinePlane {
+            surface_id: 1,
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 10,
+        },
+        OutlinePlane {
+            surface_id: 2,
+            origin: [0.0, 38.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 20,
+        },
+    ]);
+    let pair = crate::curve::Fc05CylinderCapPair {
+        surface_id: 7,
+        curve_ids: vec![11, 12],
+        cap_plane_ids: vec![1, 2],
+        curve_cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        center_row_frame: [2.0, 3.0],
+        radius_mm: 0.5,
+        reference_direction_row_frame: [1.0, 0.0],
+        parameter_sign: 1,
+        cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        offset: 30,
+    };
+
+    let frame = fc05_cap_pair_model_frame(&scan, &pair).expect("unit cap-span frame");
+    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+    assert!((frame.origin[0] - 2.0).abs() <= EPS_FC05_FRAME_TEST);
+    assert!((frame.origin[1] - 87.5368).abs() <= EPS_FC05_FRAME_TEST);
+    assert!((frame.origin[2] - 3.0).abs() <= EPS_FC05_FRAME_TEST);
+
+    let reversed = crate::curve::Fc05CylinderCapPair {
+        cap_plane_ids: vec![2, 1],
+        curve_cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        ..pair
+    };
+    let reversed_frame =
+        fc05_cap_pair_model_frame(&scan, &reversed).expect("reversed unit cap-span frame");
+    assert_eq!(reversed_frame.axis, [0.0, -1.0, 0.0]);
+    assert!((reversed_frame.origin[1] + 49.5368).abs() <= EPS_FC05_FRAME_TEST);
 }
 
 #[test]

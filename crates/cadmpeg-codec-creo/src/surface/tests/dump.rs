@@ -1338,8 +1338,8 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
     assert_eq!(
         cylinder.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-            origin: cadmpeg_ir::math::Point3::new(2.0, 5.0, 3.0),
-            axis: cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
+            origin: cadmpeg_ir::math::Point3::new(0.0, 5.0, 3.0),
+            axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             ref_direction: cadmpeg_ir::math::Vector3::new(0.0, (-2.0_f64).sin(), (-2.0_f64).cos(),),
             radius: 1.0,
         }
@@ -1349,7 +1349,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Circle {
             axis: cadmpeg_ir::math::Vector3 {
-                x: -1.0,
+                x: 1.0,
                 y: 0.0,
                 z: 0.0
             },
