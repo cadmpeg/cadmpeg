@@ -2886,12 +2886,12 @@ pub fn parasolid_topology_attribute_class_uses(
             .or_default()
             .push(record);
     }
-    let mut records_by_parent = BTreeMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
+    let mut records_by_owner = BTreeMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
     for record in entity_records {
-        let parent_xmt = record.leading_references[2];
-        if parent_xmt > 1 {
-            records_by_parent
-                .entry((record.stream_ordinal, parent_xmt))
+        let owner_xmt = record.leading_references[0];
+        if owner_xmt > 1 {
+            records_by_owner
+                .entry((record.stream_ordinal, owner_xmt))
                 .or_default()
                 .push(record);
         }
@@ -2918,38 +2918,20 @@ pub fn parasolid_topology_attribute_class_uses(
             continue;
         }
 
-        let mut members = Vec::new();
-        let mut pending = vec![head.xmt];
-        let mut seen = BTreeSet::from([head.xmt]);
-        while let Some(parent_xmt) = pending.pop() {
-            if parent_xmt == head.xmt {
-                members.push(head);
-            }
-            for child in records_by_parent
-                .get(&(reference.stream_ordinal, parent_xmt))
-                .into_iter()
-                .flatten()
-            {
-                if child.leading_references[0] != reference.topology_xmt {
-                    continue;
-                }
-                let Some([child]) = records_by_identity
-                    .get(&(reference.stream_ordinal, child.xmt))
-                    .map(Vec::as_slice)
-                else {
-                    continue;
-                };
-                if seen.insert(child.xmt) {
-                    pending.push(child.xmt);
-                    members.push(child);
-                }
-            }
-        }
+        let Some(members) =
+            records_by_owner.get(&(reference.stream_ordinal, reference.topology_xmt))
+        else {
+            continue;
+        };
 
         let base_id = format!(
             "nx:s{}:topology-attribute-class-use#{}-{}",
             reference.stream_ordinal, reference.topology_type, reference.topology_xmt
         );
+        let mut member_xmt_counts = BTreeMap::<u32, usize>::new();
+        for member in members {
+            *member_xmt_counts.entry(member.xmt).or_default() += 1;
+        }
         for member in members {
             let Some([class_use]) = class_uses_by_entity
                 .get(member.id.as_str())
@@ -2959,8 +2941,10 @@ pub fn parasolid_topology_attribute_class_uses(
             };
             let id = if member.id == head.id {
                 base_id.clone()
-            } else {
+            } else if member_xmt_counts.get(&member.xmt) == Some(&1) {
                 format!("{base_id}-{}", member.xmt)
+            } else {
+                format!("{base_id}-{}-{}", member.xmt, member.inflated_offset)
             };
             uses.push(ParasolidTopologyAttributeClassUse {
                 id,
@@ -4638,7 +4622,7 @@ mod tests {
     }
 
     #[test]
-    fn topology_attribute_class_uses_follow_type_81_attribute_list_links() {
+    fn topology_attribute_class_uses_follow_type_81_owner_references() {
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 0,
@@ -4672,7 +4656,7 @@ mod tests {
             id: "child".into(),
             xmt: 31,
             sequence: 2,
-            leading_references: [40, 1, 30, 1, 1],
+            leading_references: [40, 1, 999, 1, 1],
             inflated_offset: 60,
             ..head.clone()
         };

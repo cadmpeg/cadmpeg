@@ -353,6 +353,9 @@ body identity to that partition. When the partition has one body, every labeled
 write with that identity writes that body. Independently, a unique plain-stream
 alias equal to the persistent body identity binds that write to the unique body
 in the selected stream without requiring body-image block resolution.
+Parasolid topology attribute ownership is independently resolved from a valid
+attribute-list head and the first leading reference of each type-81 record; the
+third leading reference is not required for that ownership relation.
 
 **Need.** We must identify the blend construction relation that assigns the
 created-face subset.

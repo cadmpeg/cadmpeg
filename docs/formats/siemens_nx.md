@@ -2411,12 +2411,12 @@ affect framing. References are either consecutive XMT values or individually
 binary-status-prefixed XMT values followed by a binary terminal; the two forms
 are atomic. A
 topology attribute-list identity resolves only when exactly one type-81 record
-in the same stream has that xmt. The head record owns the topology only when
-its first leading reference equals the topology XMT. Additional list records
-are reached transitively: a record whose third leading reference names an
-already reached list record and whose first leading reference repeats the same
-topology XMT is in that list. Duplicate XMT identities, missing links, or a
-different owner leave the additional record outside the topology relation.
+in the same stream has that xmt. The head record must have the topology XMT in
+its first leading reference. Once the head is valid, every type-81 record in
+the same stream whose first leading reference is that topology XMT is owned by
+the topology. The third leading reference is retained as a structural reference
+but is not required for this ownership relation. Duplicate XMT identities,
+missing heads, or a different head owner leave the topology relation unresolved.
 
 The terminal `00` of a status-prefixed type-81 or printable type-84 record may
 also be the leading `00` of the immediately following two-byte record tag. The
@@ -2473,8 +2473,9 @@ and has no value assignment. An absent field declaration, an ambiguous class or 
 relation, or a value-family mismatch leaves the field unassigned.
 
 A shell, face, loop, edge, FIN, or vertex topology record with one uniquely resolved
-attribute-list identity owns every uniquely resolved attribute value referenced
-by each uniquely resolved type-81 record in that list. Each value record transfers as
+attribute-list identity owns every uniquely resolved attribute value referenced by
+each uniquely resolved type-81 record whose first leading reference names that
+topology. Each value record transfers as
 one topology-targeted source attribute whose values retain serialized lane
 order. The independently resolved class relation identifies the owning
 attribute definition. Integer and tag lanes transfer as integers, real lanes as
