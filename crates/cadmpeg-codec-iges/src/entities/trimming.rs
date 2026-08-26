@@ -256,28 +256,52 @@ pub(super) struct PcurveSupport<'a> {
     pub(super) factor: f64,
 }
 
-fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64, f64, f64, f64)> {
+#[derive(Clone, Copy)]
+enum ProceduralSourceParameterMap {
+    NotApplicable,
+    Unavailable,
+    Mapped((f64, f64, f64, f64)),
+}
+
+fn procedural_source_parameter_map(
+    ir: &CadIr,
+    support: &PcurveSupport<'_>,
+) -> ProceduralSourceParameterMap {
     let procedural = ir
         .model
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.surface == *support.surface_id);
-    let parameter_map = match procedural {
-        Some(procedural)
-            if matches!(
-                &procedural.definition,
-                ProceduralSurfaceDefinition::Extrusion { .. }
-                    | ProceduralSurfaceDefinition::Revolution { .. }
-            ) =>
-        {
-            Some(procedural_pcurve_parameter_map(ir, &procedural.id))
+    if let Some(procedural) = procedural.filter(|procedural| {
+        matches!(
+            &procedural.definition,
+            ProceduralSurfaceDefinition::Extrusion { .. }
+                | ProceduralSurfaceDefinition::Revolution { .. }
+        )
+    }) {
+        return procedural_pcurve_parameter_map(ir, &procedural.id).map_or(
+            ProceduralSourceParameterMap::Unavailable,
+            ProceduralSourceParameterMap::Mapped,
+        );
+    }
+    match support.geometry {
+        SurfaceGeometry::Procedural { construction } => {
+            procedural_pcurve_parameter_map(ir, construction).map_or(
+                ProceduralSourceParameterMap::Unavailable,
+                ProceduralSourceParameterMap::Mapped,
+            )
         }
-        _ => None,
-    };
-    match parameter_map {
-        Some(Some(parameter_map)) => Some(parameter_map),
-        Some(None) => None,
-        None => match support.geometry {
+        _ => ProceduralSourceParameterMap::NotApplicable,
+    }
+}
+
+fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64, f64, f64, f64)> {
+    match procedural_source_parameter_map(ir, support) {
+        ProceduralSourceParameterMap::Mapped(parameter_map) => {
+            source_parameter_map_to_neutral(parameter_map, support.factor)
+        }
+        ProceduralSourceParameterMap::Unavailable => None,
+        ProceduralSourceParameterMap::NotApplicable => match support.geometry {
             SurfaceGeometry::Plane { .. } => Some((1.0, 0.0, 1.0, 0.0)),
             SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
                 Some((1.0 / support.factor, 0.0, 1.0, 0.0))
@@ -287,14 +311,45 @@ fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64,
             | SurfaceGeometry::Nurbs(_) => {
                 Some((1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0))
             }
-            SurfaceGeometry::Procedural { construction } => {
-                procedural_pcurve_parameter_map(ir, construction)
-            }
+            SurfaceGeometry::Procedural { .. } => None,
             SurfaceGeometry::Polygonal { .. }
             | SurfaceGeometry::Transformed { .. }
             | SurfaceGeometry::Unknown { .. } => None,
         },
     }
+}
+
+fn source_parameter_map_to_neutral(
+    (u_factor, u_offset, v_factor, v_offset): (f64, f64, f64, f64),
+    length_factor_mm: f64,
+) -> Option<(f64, f64, f64, f64)> {
+    // A generic projected curve is length-scaled, but a procedural pcurve
+    // stores source surface parameters. Remove that conversion before the
+    // procedural map evaluates those parameters on the neutral surface.
+    if !length_factor_mm.is_finite() || length_factor_mm <= 0.0 {
+        return None;
+    }
+    let map = (
+        u_factor / length_factor_mm,
+        u_offset,
+        v_factor / length_factor_mm,
+        v_offset,
+    );
+    (map.0.is_finite() && map.1.is_finite() && map.2.is_finite() && map.3.is_finite())
+        .then_some(map)
+}
+
+fn source_parameter_point_to_neutral(
+    point: Point2,
+    (u_factor, u_offset, v_factor, v_offset): (f64, f64, f64, f64),
+    length_factor_mm: f64,
+) -> Point2 {
+    let source_u = point.u / length_factor_mm;
+    let source_v = point.v / length_factor_mm;
+    Point2::new(
+        source_u.mul_add(u_factor, u_offset),
+        source_v.mul_add(v_factor, v_offset),
+    )
 }
 
 pub(super) fn pcurve_geometry(
@@ -308,6 +363,12 @@ pub(super) fn pcurve_geometry(
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
     let (nurbs, range) =
         bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?;
+    let source_parameter_map = match procedural_source_parameter_map(ir, support) {
+        ProceduralSourceParameterMap::Mapped(parameter_map) => Some(parameter_map),
+        ProceduralSourceParameterMap::NotApplicable | ProceduralSourceParameterMap::Unavailable => {
+            None
+        }
+    };
     let (u_factor, u_offset, v_factor, v_offset) = pcurve_parameter_map(ir, support)?;
     Some((
         PcurveGeometry::Nurbs {
@@ -317,9 +378,20 @@ pub(super) fn pcurve_geometry(
                 .control_points
                 .iter()
                 .map(|point| {
-                    Point2::new(
-                        point.x.mul_add(u_factor, u_offset),
-                        point.y.mul_add(v_factor, v_offset),
+                    source_parameter_map.map_or_else(
+                        || {
+                            Point2::new(
+                                point.x.mul_add(u_factor, u_offset),
+                                point.y.mul_add(v_factor, v_offset),
+                            )
+                        },
+                        |(u_factor, u_offset, v_factor, v_offset)| {
+                            source_parameter_point_to_neutral(
+                                Point2::new(point.x, point.y),
+                                (u_factor, u_offset, v_factor, v_offset),
+                                support.factor,
+                            )
+                        },
                     )
                 })
                 .collect(),
@@ -609,6 +681,19 @@ fn affine_parameter_interval(
     mapped.is_finite().then_some(mapped)
 }
 
+fn parameter_interval_reaches_bounds(
+    value: DeclaredInterval,
+    lower: Option<DeclaredInterval>,
+    upper: Option<DeclaredInterval>,
+) -> bool {
+    // A source real that reaches a support bound can represent the boundary
+    // value. This is representation uncertainty, not a receiver tolerance;
+    // an interval separated from either finite bound remains invalid.
+    value.is_finite()
+        && lower.is_none_or(|bound| bound.is_finite() && value.upper_bound() >= bound.lower_bound())
+        && upper.is_none_or(|bound| bound.is_finite() && value.lower_bound() <= bound.upper_bound())
+}
+
 fn source_curve_control_polygon_within_bounds(
     ir: &CadIr,
     curve_id: &CurveId,
@@ -643,12 +728,8 @@ fn source_curve_control_polygon_within_bounds(
             let Some(v) = affine_parameter_interval(v, v_factor, v_offset) else {
                 return false;
             };
-            u.is_finite()
-                && v.is_finite()
-                && bounds[0].is_none_or(|bound| u.lower_bound() >= bound.lower_bound())
-                && bounds[1].is_none_or(|bound| u.upper_bound() <= bound.upper_bound())
-                && bounds[2].is_none_or(|bound| v.lower_bound() >= bound.lower_bound())
-                && bounds[3].is_none_or(|bound| v.upper_bound() <= bound.upper_bound())
+            parameter_interval_reaches_bounds(u, bounds[0], bounds[1])
+                && parameter_interval_reaches_bounds(v, bounds[2], bounds[3])
         })
 }
 
