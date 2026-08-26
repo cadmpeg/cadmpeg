@@ -23,7 +23,6 @@ Generated fixtures establish codec-owned invariants. Producer interoperability i
 
 The current evidence set contains two producer outputs that are not written by the fixture builders:
 
-- An Autodesk Inventor 2019 IGES sample from the LGPL-2.1 `occt-import-js` project: [Cube 10x10 IGES sample](https://raw.githubusercontent.com/kovacsv/occt-import-js/main/test/testfiles/cube-10x10mm/Cube%2010x10.igs), SHA-256 `8bcbc86a044f592ba2a1a18f89a905358a85aa5093c0dd0756771b1b022b4c6f`. The reader decoded 36 source entities, produced 379 retained/model entities, and `cadmpeg check` reported zero findings and zero losses.
 - A FreeCAD 1.1.1 export using the Open CASCADE IGES processor 7.8, generated from a 10 × 20 × 30 millimetre box, SHA-256 `0f55a6e5321716ef4b33c873b513c98493f8ad76b6bfb5bd0baacf607b4effc7`. The reader decoded 49 source entities, produced 502 retained/model entities, and `cadmpeg check` reported zero findings. One Type 402 Form 1 projection warning was retained as a source loss; model validation remained successful.
 
 Both files were decoded with the service resource profile on 2026-08-15. Source bytes remain outside the repository.
