@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "8fdf2e2674ab35f3e505513987551585e41654b8"
+measured_at = "346b52106014a2a1356db49b7d737bf3fa3ce64b"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude test, test-support, golden, integration, and bench path segments; exclude files named tests.rs or *test*.rs; lexically mask Rust comments and literals, then strip cfg(test)-attributed items with blank-preserving elision. bare tolerance literals count at use sites; named const/static numeric initializers are declarations and are excluded. nonliteral vec repeats exclude literal sizes and sizes derived from an existing collection's admitted len(). from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -34,9 +34,8 @@ bare_tolerance_literals = 0
 nonliteral_vec_repeat = 0
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 818
+test_line_debt = 0
 production_line_debt = 0
 
 [reasons]
 from_endian_bytes = "The remaining 48 calls are intentional exceptions retained after merging the mainline codec work. None reads a bounded decode window as a standard-width scalar."
-test_line_debt = "The merged tree contains 155 lines in CATIA B2 tests, 278 lines in NX tests, 178 lines in the IR evaluator suite, and 207 lines in five SLDPRT test suites."
