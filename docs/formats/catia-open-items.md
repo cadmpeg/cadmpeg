@@ -440,14 +440,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Resolve the `ec` tail roles and its axis-frame source before transferring that layout as a neutral plane support.
 
-### SN-28. Standard limit-curve point occurrence binding
-
-**Question.** Which parameter occurrence on a standard degree-5 limit curve names a serialized endpoint when more than one parameter is within the point tolerance?
-
-**Known.** `catia.md` §5.8 "A standard spline edge with two distinct adjacent face carriers" requires every within-tolerance candidate for one endpoint to occupy one parameter-tolerance cluster. The decoder rejects any separated occurrence, independent of residual ordering.
-
-**Need.** We must know the endpoint-occurrence identity to bind a curve that has separated candidates instead of retaining it natively.
-
 ### SN-33. Spine grammar arbitration
 
 **Question.** Which container field distinguishes a standard-nested spine from an FBB-only spine when the file admits both edge-table grammars, or neither?
