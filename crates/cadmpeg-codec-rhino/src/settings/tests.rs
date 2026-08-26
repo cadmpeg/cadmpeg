@@ -664,7 +664,10 @@ fn layer_metadata_with_extension(extension: &[u8]) -> settings::DocumentMetadata
 /// Parses one layer record, with the writer-version stamp under test control.
 ///
 /// A `Some` stamp is delivered the way an archive delivers it: a short
-/// writer-version record in a properties table ahead of the layer table.
+/// writer-version record in a properties table ahead of the layer table. The
+/// payload follows the stamp: a stamped archive carries the parent link and the
+/// expanded flag that the stamped reading consumes, an unstamped one does not,
+/// so each arm parses a record its own reading admits.
 fn layer_metadata(
     extension: &[u8],
     writer_version: Option<i64>,
@@ -688,6 +691,10 @@ fn layer_metadata(
     payload.extend(0.0_f64.to_le_bytes());
     payload.push(0);
     payload.extend([0; 16]);
+    if writer_version.is_some() {
+        payload.extend([0x44; 16]);
+        payload.push(1);
+    }
     payload.extend(crc_chunk(
         archive,
         0x4000_8000,
@@ -747,7 +754,12 @@ fn layer_metadata(
 /// The layer parent link rests on the stamp, so the loss follows the stamp.
 #[test]
 fn unstamped_layer_charges_the_parent_link_dialect_loss() {
-    let (_, unstamped) = layer_metadata(&[], None);
+    // A single zero closes the extension-item chain, so both arms read a whole
+    // record and the difference between them is only the stamp.
+    let (unstamped_metadata, unstamped) = layer_metadata(&[0], None);
+    assert_eq!(unstamped_metadata.layers.len(), 1, "{unstamped:?}");
+    assert_eq!(unstamped_metadata.layers[0].parent_id, None);
+    assert_eq!(unstamped_metadata.layers[0].expanded, None);
     assert!(
         unstamped
             .iter()
@@ -755,7 +767,14 @@ fn unstamped_layer_charges_the_parent_link_dialect_loss() {
         "{unstamped:?}"
     );
 
-    let (_, stamped) = layer_metadata(&[], Some(200_912_010));
+    // The stamped arm must read a layer, or its silence proves nothing.
+    let (stamped_metadata, stamped) = layer_metadata(&[0], Some(200_912_010));
+    assert_eq!(stamped_metadata.layers.len(), 1, "{stamped:?}");
+    assert_eq!(
+        stamped_metadata.layers[0].parent_id,
+        Some(Uuid::from_canonical([0x44; 16]))
+    );
+    assert_eq!(stamped_metadata.layers[0].expanded, Some(true));
     assert!(
         !stamped
             .iter()
