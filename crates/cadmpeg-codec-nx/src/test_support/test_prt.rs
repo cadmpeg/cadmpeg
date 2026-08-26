@@ -16,8 +16,9 @@ use super::*;
 /// payloads, pairs, scalars, descriptors, headers, block uses, identity uses),
 /// plus the point/draft/surface/pattern/extrude/block reference and header lanes.
 pub(crate) fn composed_feature_history_prt() -> Vec<u8> {
-    let (operations, block1, block2, block3, block4, block5) = composed_feature_history_inputs();
-    let store_records: Vec<&[u8]> = vec![&block1, &block2, &block3, &block4, &block5];
+    let (operations, block1, block2, block3, block4, block5, block6) =
+        composed_feature_history_inputs();
+    let store_records: Vec<&[u8]> = vec![&block1, &block2, &block3, &block4, &block5, &block6];
     let payload = composed_feature_history_payload(&operations, &store_records);
     prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }

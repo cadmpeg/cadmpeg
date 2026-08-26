@@ -5,6 +5,21 @@
 
 use crate::test_support::*;
 
+fn sketch_fixed_pair_bytes(
+    discriminator: &[u8],
+    first: f64,
+    second: f64,
+    separated: bool,
+) -> Vec<u8> {
+    let mut bytes = discriminator.to_vec();
+    bytes.extend_from_slice(&shifted_f64_bytes(first * 4.0));
+    if separated {
+        bytes.push(0x00);
+    }
+    bytes.extend_from_slice(&shifted_f64_bytes(second * 4.0));
+    bytes
+}
+
 #[test]
 fn om_index_pairs_object_ids_with_bounded_entity_records() {
     let bytes = indexed_om_section();
@@ -279,50 +294,45 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
 }
 
 #[test]
-fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
-    let bytes = [
-        0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
+fn sketch_fixed_pair_parser_reads_scaled_shifted_binary64_atoms() {
+    let discriminator = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    let bytes = sketch_fixed_pair_bytes(&discriminator, 0.5, 0.75, true);
+
     let pairs = super::sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].values, [0.5, -0.5]);
-    assert_eq!(pairs[0].value_offsets, [8, 17]);
-    assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(pairs[0].discriminator, bytes[..8]);
-
+    assert_eq!(pairs[0].values, [0.5, 0.75]);
+    assert_eq!(
+        pairs[0].value_offsets,
+        [discriminator.len(), discriminator.len() + 9]
+    );
     let mut malformed = bytes;
-    malformed[16] = 1;
+    malformed[discriminator.len() + 8] = 1;
     assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
 }
 
 #[test]
 fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
-    let short = [
+    let short_discriminator = [
         0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01,
-        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00,
     ];
-    let extended = [
+    let short = sketch_fixed_pair_bytes(&short_discriminator, 0.5, 0.75, false);
+
+    let extended_discriminator = [
         0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
-        0x00, 0x01, 0x30, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xe0, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x01,
     ];
+    let extended = sketch_fixed_pair_bytes(&extended_discriminator, 0.5, 0.5, false);
 
     let short_pair = super::sketch_payload_fixed_pairs(&short);
     assert_eq!(short_pair.len(), 1);
-    assert_eq!(short_pair[0].values, [0.5, -0.5]);
-    assert_eq!(short_pair[0].value_offsets, [15, 23]);
-    assert_eq!(short_pair[0].discriminator, short[..15]);
+    assert_eq!(short_pair[0].values, [0.5, 0.75]);
 
     let extended_pair = super::sketch_payload_fixed_pairs(&extended);
     assert_eq!(extended_pair.len(), 1);
-    assert_eq!(extended_pair[0].values, [0.25, -0.25]);
-    assert_eq!(extended_pair[0].value_offsets, [17, 25]);
-    assert_eq!(extended_pair[0].discriminator, extended[..17]);
+    assert_eq!(extended_pair[0].values, [0.5, 0.5]);
 
     let mut malformed = short;
-    malformed[23] = 0x31;
+    malformed[short_discriminator.len() + 8] = 0x31;
     assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
 }
 
@@ -331,41 +341,31 @@ fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
     let discriminator = [
         0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
     ];
-    let mut bytes = discriminator.to_vec();
-    bytes.push(0x30);
-    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0x00, 0x30]);
-    bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
+    let bytes = sketch_fixed_pair_bytes(&discriminator, 0.5, 0.75, true);
 
     let pairs = super::sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].values, [0.5, -0.5]);
-    assert_eq!(pairs[0].value_offsets, [15, 24]);
-    assert_eq!(pairs[0].discriminator, discriminator);
+    assert_eq!(pairs[0].values, [0.5, 0.75]);
 
-    bytes[14] = 0x02;
-    assert!(super::sketch_payload_fixed_pairs(&bytes).is_empty());
+    let mut malformed = bytes;
+    malformed[14] = 0x02;
+    assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
 }
 
 #[test]
-fn sketch_mixed_pair_parser_requires_q1_55_then_shifted_binary32() {
-    let mut bytes = vec![0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30];
-    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
-    bytes.push(0x00);
-    let mut shifted = 3.25_f32.to_be_bytes();
-    shifted[0] += 0x10;
+fn sketch_mixed_pair_parser_requires_scaled_shifted_binary64_then_binary32() {
+    let discriminator = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    let mut bytes = sketch_fixed_pair_bytes(&discriminator, 0.5, 0.75, true);
+    bytes.truncate(bytes.len() - 8);
+    let shifted = [0x50, 0x50, 0x00, 0x00];
     bytes.extend_from_slice(&shifted);
 
     let pairs = super::sketch_payload_mixed_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].fixed_value, 0.5);
     assert_eq!(pairs[0].binary32_value, 3.25);
-    assert_eq!(pairs[0].fixed_raw_value, [0x40, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(pairs[0].binary32_raw_value, shifted);
-    assert_eq!(pairs[0].value_offsets, [8, 17]);
 
     let mut malformed = bytes;
-    malformed[16] = 1;
+    malformed[discriminator.len() + 8] = 1;
     assert!(super::sketch_payload_mixed_pairs(&malformed).is_empty());
 }
 

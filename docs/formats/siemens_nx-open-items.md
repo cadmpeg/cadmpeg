@@ -266,9 +266,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What geometric quantities and coordinate spaces do the framed scalar pairs in a `SKETCH` construction payload represent?
 
-**Known.** `siemens_nx.md` §2 "An operation label equal to `SKETCH` denotes a sketch history operation." `siemens_nx.md` §7.1 "A sketch payload scalar field is", `siemens_nx.md` §7.1 "A sketch repeated-type scalar pair is", `siemens_nx.md` §7.1 "A sketch fixed pair has one of four exact forms:", and `siemens_nx.md` §7.1 "A sketch scalar-vector lane is" define sketch record identity and the framed payload lanes but do not assign a model-space frame, sketch entity, or constraint role from equal scalar values. Shifted binary64 atoms are admitted only for the marker ranges defined in `siemens_nx.md` §7.1; other leading bytes do not form shifted binary64 values.
+**Known.** `siemens_nx.md` §2 "An operation label equal to `SKETCH` denotes a sketch history operation." `siemens_nx.md` §7.1 "A sketch payload scalar field is", `siemens_nx.md` §7.1 "A sketch repeated-type scalar pair is", `siemens_nx.md` §7.1 "A sketch fixed pair has one of four exact forms:", and `siemens_nx.md` §7.1 "A sketch scalar-vector lane is" define sketch record identity and the framed payload lanes. In the exact four fixed-pair branches, each `30` marker plus seven-byte suffix is a shifted binary64 atom whose emitted value is scaled by `1/4`; the first atom of the mixed branch uses the same rule. Shifted binary64 atoms are admitted only for the marker ranges defined in `siemens_nx.md` §7.1; other leading bytes do not form shifted binary64 values. The remaining lanes have no assigned model-space frame, sketch entity, or constraint role.
 
-**Need.** We must know the roles to construct neutral sketch geometry and constraints.
+**Need.** We must identify the entity roles and coordinate space of the scalar fields, repeated pairs, coordinate pairs, scalar-vector lanes, and mixed-pair binary32 value to construct neutral sketch geometry and constraints. The fixed-pair second value and the relationship between the named point records and sketch geometry also require a typed owner or controlled differential.
 
 ### OM-03. `DATUM_PLANE` scalar-pair geometry
 

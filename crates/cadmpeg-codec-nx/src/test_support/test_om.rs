@@ -415,6 +415,7 @@ pub(crate) type ComposedInputs = (
     Vec<u8>,
     Vec<u8>,
     Vec<u8>,
+    Vec<u8>,
 );
 
 /// A 31-character lowercase-hex identity (no `f`, so no `0x66` name markers)
@@ -422,22 +423,23 @@ pub(crate) type ComposedInputs = (
 /// descriptor in `block5`, joining them through `datum_plane_csys_identity_uses`.
 pub(crate) const COMPOSED_DESCRIPTOR_IDENTITY: &[u8] = b"0123456789abcde0123456789abcde0";
 
-/// Build the operation list and four offset-store data blocks for the composed
+/// Build the operation list and six offset-store data blocks for the composed
 /// feature-history fixture.
 ///
 /// - block1+block2 form a two-block offset-store named point `Point7`;
-/// - block3+block4 carry rich sketch geometry (named points, scalar fields,
-///   coordinate and fixed pairs, and datum-CSYS pair discriminators).
+/// - block3 carries the shared datum payload and descriptor identity;
+/// - block6+block4 carry rich sketch geometry (named points, scalar fields,
+///   coordinate and fixed pairs).
 ///
 /// Operations: `SKETCH` referencing the named point (object indices 1,2),
-/// `SKETCH` referencing the geometry (3,4), `DATUM_CSYS` (eight refs to 1) and
+/// `SKETCH` referencing the geometry (6,4), `DATUM_CSYS` (eight refs to 3) and
 /// `DATUM_PLANE`.
 pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
     let sketch_named = vec![
         0x01, 0x00, 0x01, 0x02, 0xf0, 0x01, 0x00, 0x00, 0xf0, 0x02, 0x01, 0x00, 0x00, 0x00,
     ];
     let sketch_geometry = vec![
-        0x01, 0x00, 0x01, 0x02, 0xf0, 0x03, 0x00, 0x00, 0xf0, 0x04, 0x01, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x01, 0x02, 0xf0, 0x06, 0x00, 0x00, 0xf0, 0x04, 0x01, 0x00, 0x00, 0x00,
     ];
     let mut datum_csys = vec![
         0x13, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
@@ -503,7 +505,7 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
 
     let operations: Vec<(&'static [u8], &'static str, Vec<u8>)> = vec![
         (&[1, 0xff, 0xff, 0xff], "SKETCH", sketch_named),
-        (&[3, 0xff, 0xff, 0xff], "SKETCH", sketch_geometry),
+        (&[6, 0xff, 0xff, 0xff], "SKETCH", sketch_geometry),
         (&[3, 0xff, 0xff, 0xff], "DATUM_CSYS", datum_csys),
         (&[3, 0xff, 0xff, 0xff], "DATUM_PLANE", datum_plane),
         (&[3, 0xff, 0xff, 0xff], "POINT", point),
@@ -532,7 +534,7 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
         0x50, 0x59, 0x66, 0x59, 0x00, 0x31, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
     ];
 
-    // Rich sketch geometry across block3 (payload) and block4 (terminal filler).
+    // Shared compatibility payload across block3 and the datum feature lanes.
     let mut block3: Vec<u8> = Vec::new();
     // Point1: payload-leading name plus two PYf scalar fields.
     block3.extend_from_slice(&[0x03, 0x08]);
@@ -544,13 +546,16 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
     block3.extend_from_slice(&[
         0x50, 0x59, 0x66, 0x59, 0x00, 0x31, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
     ]);
-    // Point2: 66-form name plus one signed Q1.55 fixed pair (no scalars).
+    // Point2: 66-form name plus one legacy signed Q1.55 fixed pair (no scalars).
     block3.extend_from_slice(&[0x66, 0x32, 0x03, 0x08]);
     block3.extend_from_slice(b"Point2");
     block3.push(0x00);
+    let point2_discriminator = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    let point2_offset = block3.len();
+    block3.extend_from_slice(&point2_discriminator);
     block3.extend_from_slice(&[
-        0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
     ]);
     // Point3: 66-form name closing Point2's named-record interval.
     block3.extend_from_slice(&[0x66, 0x32, 0x03, 0x08]);
@@ -562,9 +567,14 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
         0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00,
     ]);
-    // datum_csys signed Q1.55 fixed pair (0b discriminator).
-    block3.extend_from_slice(&[
+    // The 0b branch remains in its legacy form in block3. The sketch operation
+    // addresses block6, where the clone uses the sketch-specific shifted-f64 form.
+    let sketch_branch_discriminator = [
         0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    ];
+    let sketch_branch_offset = block3.len();
+    block3.extend_from_slice(&sketch_branch_discriminator);
+    block3.extend_from_slice(&[
         0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00,
     ]);
@@ -581,6 +591,30 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
     block3.push(0x00);
     let block4: Vec<u8> = vec![0x00];
 
+    // The sketch operation addresses this independent clone. Patch only its
+    // two sketch fixed-pair branches; block3 remains the datum fixture.
+    let mut block6 = block3.clone();
+    for (offset, value) in [
+        (
+            point2_offset + point2_discriminator.len(),
+            shifted_f64_bytes(2.0),
+        ),
+        (
+            point2_offset + point2_discriminator.len() + 9,
+            shifted_f64_bytes(3.0),
+        ),
+        (
+            sketch_branch_offset + sketch_branch_discriminator.len(),
+            shifted_f64_bytes(2.0),
+        ),
+        (
+            sketch_branch_offset + sketch_branch_discriminator.len() + 9,
+            shifted_f64_bytes(3.0),
+        ),
+    ] {
+        block6[offset..offset + 8].copy_from_slice(&value);
+    }
+
     // block5: a 40-byte datum-plane descriptor block sharing the CSYS identity.
     let mut block5: Vec<u8> = Vec::new();
     block5.extend_from_slice(COMPOSED_DESCRIPTOR_IDENTITY); // hex identity (31)
@@ -590,7 +624,7 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
     block5.extend_from_slice(b"DPd"); // graphic label; pads block to 40 bytes
     debug_assert_eq!(block5.len(), 40);
 
-    (operations, block1, block2, block3, block4, block5)
+    (operations, block1, block2, block3, block4, block5, block6)
 }
 
 pub(crate) fn indexed_om_section() -> Vec<u8> {

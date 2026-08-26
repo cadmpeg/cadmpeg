@@ -1353,7 +1353,7 @@ pub struct FeatureSketchPayloadCoordinatePair {
     pub discriminator: Vec<u8>,
 }
 
-/// One exactly framed signed fixed-point pair in a reconstructed sketch payload.
+/// One exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureSketchPayloadFixedPair {
     /// Globally unique fixed-pair identity.
@@ -1364,9 +1364,9 @@ pub struct FeatureSketchPayloadFixedPair {
     pub construction_payload: String,
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
-    /// Ordered dimensionless signed Q1.55 values.
+    /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
     pub values: [f64; 2],
-    /// Exact ordered seven-byte two's-complement payloads.
+    /// Exact ordered seven-byte suffixes following the `30` atom markers.
     pub raw_values: [[u8; 7]; 2],
     /// Exact discriminator and branch prefix selecting the pair layout.
     pub discriminator: Vec<u8>,
@@ -1380,7 +1380,7 @@ pub struct FeatureSketchPayloadFixedPair {
     pub value_source_offsets: [u64; 2],
 }
 
-/// One exactly framed mixed Q1.55/binary32 pair in a reconstructed sketch payload.
+/// One exactly framed mixed scaled shifted-binary64/binary32 pair in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureSketchPayloadMixedPair {
     /// Globally unique mixed-pair identity.
@@ -1391,11 +1391,11 @@ pub struct FeatureSketchPayloadMixedPair {
     pub construction_payload: String,
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
-    /// Dimensionless signed Q1.55 value.
+    /// Value reconstructed from the `30` shifted-binary64 atom and scaled by `1/4`.
     pub fixed_value: f64,
     /// Finite shifted-IEEE binary32 value widened exactly to binary64.
     pub binary32_value: f64,
-    /// Exact seven-byte two's-complement Q1.55 payload.
+    /// Exact seven-byte suffix following the `30` shifted-binary64 atom marker.
     pub fixed_raw_value: [u8; 7],
     /// Exact four-byte shifted-binary32 encoding.
     pub binary32_raw_value: [u8; 4],
@@ -1511,7 +1511,7 @@ pub struct FeatureSketchPayloadNamedRecord {
     pub scalar_fields: Vec<String>,
     /// Ordered fixed-pair fields before the next complete name field.
     pub fixed_pairs: Vec<String>,
-    /// Mixed Q1.55/binary32 pairs contained by this interval in payload order.
+    /// Mixed scaled shifted-binary64/binary32 pairs contained by this interval in payload order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mixed_pairs: Vec<String>,
     /// Payload-relative offset of the opening name marker.
@@ -1537,7 +1537,7 @@ pub struct FeatureSketchPoint {
     pub coordinates: [f64; 2],
 }
 
-/// Complete named dimensionless fixed-point record in a reconstructed sketch payload.
+/// Complete named scaled shifted-binary64 record in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureSketchFixedPoint {
     /// Globally unique fixed-point identity.
@@ -1550,7 +1550,7 @@ pub struct FeatureSketchFixedPoint {
     pub name: String,
     /// Exact fixed-pair field carrying the two values.
     pub fixed_pair: String,
-    /// Ordered dimensionless signed Q1.55 values.
+    /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
     pub values: [f64; 2],
     /// Absolute source offset of the fixed-pair discriminator.
     pub source_offset: u64,
@@ -6060,7 +6060,7 @@ pub fn feature_sketch_payload_coordinate_pairs(
     )
 }
 
-/// Decode exact signed fixed-point pair frames from reconstructed sketch payloads.
+/// Decode exact scaled shifted-binary64 pair frames from reconstructed sketch payloads.
 pub fn feature_sketch_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
@@ -6091,7 +6091,7 @@ pub fn feature_sketch_payload_fixed_pairs(
     )
 }
 
-/// Decode exact mixed Q1.55/binary32 pair frames from reconstructed sketch payloads.
+/// Decode exact mixed scaled shifted-binary64/binary32 pair frames from reconstructed sketch payloads.
 pub fn feature_sketch_payload_mixed_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
