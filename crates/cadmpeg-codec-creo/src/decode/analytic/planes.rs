@@ -773,14 +773,17 @@ fn fc05_cylinder_branch_witnesses(
             reference,
             axis_sign,
         );
-        cylinder_frames
-            .entry(*cylinder_id)
-            .or_insert_with(|| super::equations::CylinderEquation {
-                origin,
-                axis,
-                ref_direction,
-                radius: circle.radius_mm,
-            });
+        if cylinder_frames.contains_key(cylinder_id) {
+            continue;
+        }
+        let legacy = super::equations::CylinderEquation {
+            origin,
+            axis,
+            ref_direction,
+            radius: circle.radius_mm,
+        };
+        let witness = fc05_cylinder_model_witness(scan, *cylinder_id, legacy);
+        cylinder_frames.insert(*cylinder_id, witness);
     }
 
     let mut witnesses = BTreeMap::<u32, Vec<super::equations::CylinderEquation>>::new();
@@ -819,6 +822,133 @@ fn fc05_cylinder_branch_witnesses(
         }
     }
     witnesses
+}
+
+/// Select a non-pair FC05 cylinder frame only when reference geometry improves
+/// the independent stored-plane tangency score. Strict cap pairs remain the
+/// primary frame source; this witness does not turn an ID match into geometry.
+pub(crate) fn fc05_cylinder_model_witness(
+    scan: &ContainerScan,
+    cylinder_id: u32,
+    legacy: super::equations::CylinderEquation,
+) -> super::equations::CylinderEquation {
+    let curve_ids = scan
+        .curves
+        .fc05_circles
+        .iter()
+        .filter(|circle| {
+            scan.curves.topology_rows.iter().any(|topology| {
+                topology.id == circle.curve_id && topology.faces.contains(&cylinder_id)
+            })
+        })
+        .map(|circle| circle.curve_id)
+        .collect::<BTreeSet<_>>();
+    let circles = curve_ids
+        .iter()
+        .flat_map(|curve_id| {
+            scan.references
+                .circles
+                .iter()
+                .filter(move |circle| circle.entity_id == *curve_id)
+        })
+        .collect::<Vec<_>>();
+    let Some(frame) = fc05_reference_circle_frame(&circles) else {
+        return legacy;
+    };
+    if (frame.radius - legacy.radius).abs() > EPS_FC05_TANGENT_RESIDUAL
+        || dot(frame.axis, legacy.axis).abs() < 1.0 - EPS_FC05_TANGENT_AXIS
+    {
+        return legacy;
+    }
+    let legacy_score = fc05_tangent_plane_score(scan, cylinder_id, legacy);
+    let mut reference_origin = frame.origin;
+    if let Some(axis_index) = (0..3).find(|axis| legacy.axis[*axis].abs() > 1.0 - EPS_FC05_CAP_AXIS)
+    {
+        reference_origin[axis_index] = legacy.origin[axis_index];
+    }
+    let reference = super::equations::CylinderEquation {
+        origin: reference_origin,
+        axis: legacy.axis,
+        ref_direction: legacy.ref_direction,
+        radius: legacy.radius,
+    };
+    if fc05_tangent_plane_score(scan, cylinder_id, reference) > legacy_score {
+        reference
+    } else {
+        legacy
+    }
+}
+
+fn fc05_reference_circle_frame(
+    circles: &[&crate::reference::ReferenceCircle],
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    if let Some(frame) = super::super::surfaces::reference_circle_pair_cylinder_frame(circles) {
+        return Some(frame);
+    }
+    let [circle] = circles else {
+        return None;
+    };
+    if !circle.center_stored || !circle.radius.is_finite() || circle.radius <= 0.0 {
+        return None;
+    }
+    let axis = normalized(circle.axis)?;
+    let radial = std::array::from_fn(|index| circle.start[index] - circle.center[index]);
+    let end_radial = std::array::from_fn(|index| circle.end[index] - circle.center[index]);
+    let radial_length = dot(radial, radial).sqrt();
+    let end_radial_length = dot(end_radial, end_radial).sqrt();
+    let scale = circle
+        .center
+        .into_iter()
+        .chain(circle.start)
+        .chain(circle.end)
+        .map(f64::abs)
+        .fold(circle.radius.max(1.0), f64::max);
+    if !radial_length.is_finite()
+        || !end_radial_length.is_finite()
+        || (radial_length - circle.radius).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
+        || (end_radial_length - circle.radius).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
+        || dot(axis, radial).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
+        || dot(axis, end_radial).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
+    {
+        return None;
+    }
+    Some(crate::surface::PositionalCylinderFrame {
+        origin: circle.center,
+        axis,
+        ref_direction: radial.map(|value| value / radial_length),
+        radius: circle.radius,
+        length: None,
+    })
+    .filter(crate::surface::PositionalCylinderFrame::is_valid)
+}
+
+fn fc05_tangent_plane_score(
+    scan: &ContainerScan,
+    cylinder_id: u32,
+    cylinder: super::equations::CylinderEquation,
+) -> usize {
+    scan.curves
+        .topology_rows
+        .iter()
+        .filter(|topology| topology.faces.contains(&cylinder_id))
+        .flat_map(|topology| topology.faces.into_iter())
+        .filter(|face_id| *face_id != cylinder_id)
+        .filter(|face_id| {
+            crate::surface::unique_surface_row(&scan.surfaces.rows, *face_id)
+                .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|plane_id| {
+            scan.planes
+                .local_systems
+                .iter()
+                .filter(|frame| frame.surface_id == *plane_id)
+                .filter_map(stored_parameter_normal_candidates)
+                .flatten()
+                .any(|candidate| plane_candidate_is_fc05_tangent(candidate, cylinder))
+        })
+        .count()
 }
 
 fn plane_candidate_is_fc05_tangent(

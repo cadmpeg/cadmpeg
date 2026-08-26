@@ -318,7 +318,9 @@ pub(super) fn transfer_fc05_cap_circles(
         ) else {
             continue;
         };
-        let Some(axis_index) = (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - 1e-9) else {
+        let Some(axis_index) =
+            (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - EPS_FC05_CAP_FRAME)
+        else {
             continue;
         };
         let [first, second] = circle.center_row_frame;
@@ -332,13 +334,33 @@ pub(super) fn transfer_fc05_cap_circles(
                 ),
                 |(reference, parameter_sign)| (reference, -f64::from(parameter_sign)),
             );
-        let (center, axis, ref_direction) = fc05_model_frame(
+        let legacy_frame = fc05_model_frame(
             axis_index,
             cap.origin[axis_index],
             [first, second],
             reference,
             axis_sign,
         );
+        let (center, axis, ref_direction) = if scan
+            .curves
+            .fc05_cylinder_cap_pairs
+            .iter()
+            .any(|pair| pair.surface_id == *cylinder_id)
+        {
+            legacy_frame
+        } else {
+            let witness = crate::decode::analytic::fc05_cylinder_model_witness(
+                scan,
+                *cylinder_id,
+                crate::decode::analytic::CylinderEquation {
+                    origin: legacy_frame.0,
+                    axis: legacy_frame.1,
+                    ref_direction: legacy_frame.2,
+                    radius: circle.radius_mm,
+                },
+            );
+            (witness.origin, witness.axis, witness.ref_direction)
+        };
         let id = CurveId(format!("creo:visibgeom:curve#{}", circle.curve_id));
         if !ir.model.curves.iter().any(|curve| curve.id == id) {
             annotate(

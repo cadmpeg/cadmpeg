@@ -1,10 +1,10 @@
 use crate::decode::analytic::{
     agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
-    analytic_curve_plane, dot, envelope_reconciled_plane_candidate,
+    analytic_curve_plane, dot, envelope_reconciled_plane_candidate, fc05_cylinder_model_witness,
     frame_bound_outline_plane_candidate, held_coordinate_plane,
     plane_candidate_pcurve_lies_on_carrier, plane_candidates, stored_parameter_normal_candidates,
     topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes, BoundaryLine,
-    PlaneCandidate, PlaneChart, PlaneEquation,
+    CylinderEquation, PlaneCandidate, PlaneChart, PlaneEquation,
 };
 use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
@@ -660,6 +660,108 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
     assert!((candidate.equation.normal[2] + 0.8).abs() < EPS_BRANCH_TEST);
     assert!((candidate.equation.origin[2] + origin_z).abs() < EPS_BRANCH_TEST);
     assert!((candidate.chart.expect("stored chart").u_axis[2] - 0.6).abs() < EPS_BRANCH_TEST);
+}
+
+#[test]
+fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([
+        crate::surface::SurfaceRow {
+            id: 1,
+            type_byte: 0x22,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: 1,
+        },
+        crate::surface::SurfaceRow {
+            id: 2,
+            type_byte: 0x23,
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: 2,
+        },
+    ]);
+    scan.curves.fc05_circles.push(crate::curve::Fc05Circle {
+        curve_id: 7,
+        center_row_frame: [0.0, 0.0],
+        radius_mm: 1.0,
+        sample_direction_row_frame: [1.0, 0.0],
+        reference_direction_row_frame: Some([1.0, 0.0]),
+        parameter_sign: Some(1),
+        cap_ordinate_row_frame: Some(0.0),
+        point_count: 8,
+        max_residual: 0.0,
+        angle_parameter_consistent: true,
+        offset: 7,
+    });
+    scan.references
+        .circles
+        .push(crate::reference::ReferenceCircle {
+            entity_id: 7,
+            center: [1.0, 0.0, 0.5],
+            center_stored: true,
+            radius: 1.0,
+            axis: [0.0, 1.0, 0.0],
+            start: [2.0, 0.0, 0.5],
+            end: [1.0, 0.0, 1.5],
+            offset: 8,
+        });
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 7,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [2, 1],
+            next_edges: [0; 2],
+            offset: 9,
+        });
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 1,
+        body: Vec::new(),
+        slots: vec![
+            Some(0.8),
+            Some(0.0),
+            Some(-0.6),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.6),
+            Some(0.0),
+            Some(0.8),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+        ],
+        origin: Some([0.0, 0.0, 0.0]),
+        u_axis: Some([0.8, 0.0, -0.6]),
+        normal: Some([0.6, 0.0, 0.8]),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 10,
+        offset: 11,
+    });
+
+    let witness = fc05_cylinder_model_witness(
+        &scan,
+        2,
+        CylinderEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 1.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 1.0,
+        },
+    );
+
+    assert_eq!(witness.origin, [1.0, 0.0, 0.5]);
+    assert_eq!(witness.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(witness.radius, 1.0);
 }
 
 fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerScan<'static> {
