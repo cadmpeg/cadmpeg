@@ -16,6 +16,7 @@ fn unit_square_surface() -> NurbsSurface {
             Point3::new(1.0, 1.0, 0.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     }
@@ -532,6 +533,7 @@ fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
             Point3::new(1.0, 1.0, 0.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });

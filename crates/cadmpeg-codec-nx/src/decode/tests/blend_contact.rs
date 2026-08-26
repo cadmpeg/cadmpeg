@@ -3,10 +3,12 @@
 #![allow(clippy::default_trait_access)]
 
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralSurfaceDefinition,
-    SurfaceGeometry,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
+
+use crate::decode::point_distance;
 
 #[test]
 fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
@@ -24,6 +26,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
             cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
         ],
         weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -238,6 +241,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
             .flat_map(|(x, y)| [Point3::new(x, y, 0.0), Point3::new(x, y, 1.0)])
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: true,
         v_periodic: false,
     };
@@ -369,6 +373,7 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
                 distance: 1.0,
                 u_sense: Some(0),
                 v_sense: Some(0),
+                support_extension: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },
@@ -377,8 +382,9 @@ fn periodic_surface_lookup_rejects_a_cyclic_offset_graph() {
         });
     }
 
+    let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
     assert_eq!(
-        crate::decode::surface_parameter_periods(&ir, &surfaces[0]),
+        crate::decode::offset::surface_parameter_periods_with_index(&model_index, &surfaces[0]),
         [None, None]
     );
 }
@@ -407,6 +413,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
         v_count: 2,
         control_points,
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -442,6 +449,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
         v_count: 2,
         control_points,
         weights: Some(vec![1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2, 1.0, 1.2]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -808,6 +816,174 @@ fn blend_contact_matches_concentric_blend_carriers() {
 }
 
 #[test]
+fn reverse_blend_contact_transfers_a_boundary_sample_to_its_support() {
+    use cadmpeg_ir::geometry::{
+        BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+        ProceduralSurface, Surface,
+    };
+    use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+    use cadmpeg_ir::math::Point3;
+
+    const FIT_TOLERANCE: f64 = 1.0e-10;
+
+    let support = SurfaceId("synthetic:reverse-contact-support".into());
+    let support_offset = SurfaceId("synthetic:reverse-contact-support-offset".into());
+    let other = SurfaceId("synthetic:reverse-contact-other".into());
+    let blend = SurfaceId("synthetic:reverse-contact-blend".into());
+    let spine = CurveId("synthetic:reverse-contact-spine".into());
+    let spine_procedural = ProceduralCurveId("synthetic:reverse-contact-spine-record".into());
+    let support_offset_construction =
+        ProceduralSurfaceId("synthetic:reverse-contact-support-offset-record".into());
+    let blend_construction = ProceduralSurfaceId("synthetic:reverse-contact-blend-record".into());
+    let plane = |id, origin, normal| Surface {
+        id,
+        geometry: SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    };
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.extend([
+        plane(
+            support.clone(),
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        plane(
+            support_offset.clone(),
+            Point3::new(1.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        plane(
+            other.clone(),
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        ),
+        Surface {
+            id: blend.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: blend_construction.clone(),
+            },
+            source_object: None,
+        },
+    ]);
+    ir.model.procedural_surfaces.extend([
+        ProceduralSurface {
+            id: support_offset_construction.clone(),
+            surface: support_offset.clone(),
+            definition: ProceduralSurfaceDefinition::Offset {
+                support: support.clone(),
+                distance: 1.0,
+                u_sense: None,
+                v_sense: None,
+                support_extension: None,
+                extension_flags: Vec::new(),
+                revision_form: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        },
+        ProceduralSurface {
+            id: blend_construction,
+            surface: blend.clone(),
+            definition: ProceduralSurfaceDefinition::Blend {
+                supports: [
+                    Some(BlendSupport {
+                        surface: support.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: other.clone(),
+                        reversed: false,
+                    }),
+                ],
+                spine: Some(spine.clone()),
+                radius: BlendRadiusLaw::Constant { signed_radius: 1.0 },
+                cross_section: BlendCrossSection::Circular,
+                native: None,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        },
+    ]);
+    ir.model.curves.push(Curve {
+        id: spine.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    });
+    let contact_pcurve = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        weights: None,
+        periodic: false,
+    };
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: spine_procedural,
+        curve: spine,
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(support_offset),
+                        pcurve: Some(contact_pcurve.clone()),
+                        pcurve_parameter_range: None,
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(other),
+                        pcurve: Some(contact_pcurve),
+                        pcurve_parameter_range: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: None,
+    });
+
+    let source_pcurve = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: [Point2::new(0.0, 1.0), Point2::new(1.0, 1.0)].to_vec(),
+        weights: None,
+        periodic: false,
+    };
+    let parameter = 0.35;
+    let expected = Point2::new(parameter, 0.0);
+    let point = Point3::new(0.0, 0.0, parameter);
+    let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
+    let mut contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
+    let actual =
+        crate::decode::blend::blend_support_parameter_from_source_pcurve_with_index_and_budget_and_seed_cache(
+            &index,
+            &blend,
+            &support,
+            &source_pcurve,
+            parameter,
+            crate::decode::blend::BoundaryInverseTarget {
+                point,
+                seed: None,
+                tolerance: FIT_TOLERANCE,
+            },
+            &mut contact_seeds,
+            &geometry_budget,
+        )
+        .expect("reverse contact relation transfers the certified boundary");
+    assert!((actual.u - expected.u).abs() <= FIT_TOLERANCE);
+    assert!((actual.v - expected.v).abs() <= FIT_TOLERANCE);
+}
+
+#[test]
 fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     use cadmpeg_ir::geometry::Curve;
     use cadmpeg_ir::ids::CurveId;
@@ -869,6 +1045,9 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::topology::Edge;
+
+    const OUTSIDE_BLEND_SECTION_DELTA: f64 = 1.0e-6;
+    const DIRECT_INVERSE_TOLERANCE: f64 = 1.0e-8;
 
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
     let first = SurfaceId("synthetic:first-plane".into());
@@ -957,9 +1136,20 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     });
     let expected = Point2::new(8.0, 0.35);
     let point = crate::decode::blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
+    let boundary_without_contact_chart =
+        crate::decode::blend_surface_point(&ir, &surface, expected.u, 1.0)
+            .expect("analytic supports provide a blend boundary without a spine pcurve");
+    let boundary_without_contact_parameters = crate::decode::blend_surface_parameters(
+        &ir,
+        &surface,
+        boundary_without_contact_chart,
+        None,
+    )
+    .expect("blend inverse evaluates an analytic-support boundary");
+    assert!((0.0..=1.0).contains(&boundary_without_contact_parameters.v));
 
     assert_eq!(
-        crate::decode::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
+        crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
         0.25
     );
     ir.model.procedural_curves.push(ProceduralCurve {
@@ -993,7 +1183,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         cache_fit_tolerance: Some(0.75),
     });
     assert_eq!(
-        crate::decode::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
+        crate::decode::support_uv::blend_spine_cache_fit_tolerance(&ir, &surface, 0.25),
         1.0
     );
 
@@ -1001,6 +1191,62 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
+
+    let boundary_point =
+        crate::decode::blend_surface_point(&ir, &surface, expected.u, 1.0).unwrap();
+    let boundary_parameters =
+        crate::decode::blend_surface_parameters(&ir, &surface, boundary_point, None)
+            .expect("blend inverse returns the section boundary");
+    assert!((0.0..=1.0).contains(&boundary_parameters.v));
+
+    let outside_boundary_point = crate::decode::blend_surface_point(
+        &ir,
+        &surface,
+        expected.u,
+        1.0 + OUTSIDE_BLEND_SECTION_DELTA,
+    )
+    .unwrap();
+    let outside_parameters =
+        crate::decode::blend_surface_parameters(&ir, &surface, outside_boundary_point, None);
+    assert!(outside_parameters.is_none());
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
+    let continuation_parameters =
+        crate::decode::blend::blend_surface_parameters_for_fit_with_source_continuation_and_budget(
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
+            &surface,
+            outside_boundary_point,
+            None,
+            1.0e-8,
+            crate::decode::BlendParameterGrid::Disabled,
+            &geometry_budget,
+        )
+        .expect("bounded source continuation admits the certified section point");
+    assert!((continuation_parameters.u - expected.u).abs() < 1.0e-8);
+    assert!((continuation_parameters.v - (1.0 + OUTSIDE_BLEND_SECTION_DELTA)).abs() < 1.0e-8);
+
+    let direct_geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
+    let mut direct_contact_seeds = crate::decode::blend::BlendContactSeedCache::default();
+    let direct_parameters =
+        crate::decode::blend::blend_surface_parameters_from_point_with_index_and_budget(
+            &cadmpeg_ir::index::ModelIndex::new(&ir),
+            &surface,
+            outside_boundary_point,
+            None,
+            DIRECT_INVERSE_TOLERANCE,
+            &mut direct_contact_seeds,
+            &direct_geometry_budget,
+        )
+        .expect("direct blend inverse admits a certified continuation point");
+    assert!((direct_parameters.u - expected.u).abs() < DIRECT_INVERSE_TOLERANCE);
+    assert!(
+        (direct_parameters.v - (1.0 + OUTSIDE_BLEND_SECTION_DELTA)).abs()
+            < DIRECT_INVERSE_TOLERANCE
+    );
+
     let continued = crate::decode::blend_surface_parameters_for_fit(
         &ir,
         &surface,
@@ -1142,7 +1388,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         param_range: Some([0.0, 1.0]),
         tolerance: Some(1.0e-8),
     });
-    crate::decode::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &ir.model.procedural_curves.last().unwrap().definition
     else {
@@ -1280,6 +1526,28 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     });
     let expected = Point2::new(4.0, 0.2);
     let point = crate::decode::blend_surface_point(&ir, &outer, expected.u, expected.v).unwrap();
+    let outer_geometry = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.id == outer)
+        .map(|surface| &surface.geometry)
+        .unwrap();
+    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
+    let evaluated = crate::decode::blend::decoded_surface_point_with_geometry_and_budget(
+        &index,
+        &outer,
+        outer_geometry,
+        expected.u,
+        expected.v,
+        0,
+        &geometry_budget,
+    )
+    .expect("budgeted evaluation handles a nested blend support");
+    assert!(point_distance(evaluated, point) <= 64.0 * f64::EPSILON);
     let actual = crate::decode::blend_surface_parameters(&ir, &outer, point, None).unwrap();
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);

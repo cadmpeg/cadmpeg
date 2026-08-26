@@ -1103,6 +1103,7 @@ mod route_tests {
                 distance: 2.0,
                 u_sense: Some(1),
                 v_sense: Some(1),
+                support_extension: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },

@@ -58,6 +58,40 @@ pub(crate) fn segment_body_binding_payload(stream_kind: &str) -> Vec<u8> {
     payload
 }
 
+pub(crate) fn segment_body_binding_repeated_link_payload() -> Vec<u8> {
+    let mut rows = [
+        [7_u32, 9, 11],
+        [1, 1, 0],
+        [0, 0, 94],
+        [150, 19, 0],
+        [0, 0, 95],
+        [151, 20, 0],
+    ];
+    let index_byte_len = u32::try_from(rows.len() * std::mem::size_of::<[u32; 3]>())
+        .expect("synthetic segment-index length");
+    let wrapper_offset = index_byte_len
+        + u32::try_from(std::mem::size_of::<[u32; 4]>()).expect("synthetic wrapper padding length");
+    rows[1][2] = index_byte_len;
+    rows[2][0] = wrapper_offset;
+    rows[4][0] = wrapper_offset;
+    let mut payload = rows
+        .into_iter()
+        .flatten()
+        .flat_map(u32::to_le_bytes)
+        .collect::<Vec<_>>();
+    payload.resize(usize::try_from(wrapper_offset).unwrap(), 0);
+    payload.extend_from_slice(&0x8000_0000u32.to_le_bytes());
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder
+        .write_all(
+            b"PS\0\0 (partition) SCH_test repeated stream-link payload with more than sixty-four inflated bytes........",
+        )
+        .unwrap();
+    payload.extend_from_slice(&encoder.finish().unwrap());
+    payload
+}
+
 pub(crate) fn segment_extended_wrapper_payload() -> Vec<u8> {
     let mut payload = Vec::new();
     for word in [7u32, 9, 11, 1, 1, 48, 64, 0, 94, 150, 19, 0] {
@@ -94,6 +128,103 @@ pub(crate) fn segment_om_record_area_payload() -> Vec<u8> {
     }
     payload.resize(32, 0);
     payload.extend_from_slice(&size_framed_om_section_with_record_area());
+    payload
+}
+
+pub(crate) fn segment_om_record_area_with_state_counter_map() -> Vec<u8> {
+    let mut payload = segment_om_record_area_payload();
+    payload.extend_from_slice(&[
+        0x05, 0x01, 0x83, 0x20, 0x01, 0x02, 0x4e, 0x05, 0x02, 0x90, 0x12, 0x34, 0x03, 0x04, 0x4e,
+    ]);
+    let section_start = 32;
+    let section_len = u32::from_be_bytes(
+        payload[section_start + 8..section_start + 12]
+            .try_into()
+            .expect("section length field"),
+    );
+    payload[section_start + 8..section_start + 12]
+        .copy_from_slice(&(section_len + 15).to_be_bytes());
+    payload
+}
+
+pub(crate) fn segment_om_record_area_with_state_groups_and_counter_map() -> Vec<u8> {
+    let mut payload = segment_om_record_area_payload();
+    let section_start = 32;
+    let marker = b"unframed UGS::PayloadText";
+    let field = b"\x14m_rollForwardStates\xa0\x12\x8b";
+    let field_at = section_start
+        + payload[section_start..]
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("registry tail marker");
+    let pointer_at = field_at + marker.len();
+    payload.splice(field_at..field_at, field.iter().copied());
+    let pointer_at = pointer_at + field.len();
+    let pointer = u32::from_le_bytes(
+        payload[pointer_at..pointer_at + 4]
+            .try_into()
+            .expect("record-area pointer"),
+    );
+    payload[pointer_at..pointer_at + 4]
+        .copy_from_slice(&(pointer + field.len() as u32).to_le_bytes());
+    let message_bytes = [
+        0x03, 0x0f, b's', b't', b'a', b't', b'e', b' ', b'w', b'a', b'r', b'n', b'i', b'n', b'g',
+        0x00, 0x00, 0x00, 0x00, 0x00, 0xaa, 0x60, 0x6b, 0x01, 0x00,
+    ];
+    let state_bytes = [
+        0x01, 0x03, 0x4a, 0x83, 0xba, 0x01, 0xff, 0x4a, 0x83, 0xb7, 0x02, 0xff, 0x01, 0x01, 0x01,
+        0x02, 0x4f, 0xf1, 0x04, 0x2d, 0x83, 0xe1, 0xff, 0xff, 0x01, 0x01, 0x00, 0x01, 0x01, 0x05,
+        0x01, 0x83, 0x20, 0x01, 0x02, 0x4e, 0x05, 0x02, 0x90, 0x12, 0x34, 0x03, 0x04, 0x4e,
+    ];
+    payload.extend(message_bytes);
+    payload.extend(state_bytes);
+    let section_len = u32::from_be_bytes(
+        payload[section_start + 8..section_start + 12]
+            .try_into()
+            .expect("section length field"),
+    );
+    payload[section_start + 8..section_start + 12].copy_from_slice(
+        &(section_len
+            + u32::try_from(field.len() + message_bytes.len() + state_bytes.len())
+                .expect("fixture length"))
+        .to_be_bytes(),
+    );
+    payload
+}
+
+pub(crate) fn composed_feature_history_payload_with_operation_state_statuses() -> Vec<u8> {
+    let mut section =
+        composed_feature_history_section(&[(&[1, 0xff, 0xff, 0xff], "SKETCH", vec![0x00])]);
+    let state_bytes = [
+        0x41, 0x80, 0x20, 0x3f, 0x44, 0x80, 0x21, 0x4b, 0xff, 0x80, 0x22, 0xff, 0x02, 0x01, 0x11,
+        0xff, 0x83, 0xad, 0xff, 0x02, 0x11, 0x03, 0x0f, b's', b't', b'a', b't', b'e', b' ', b'w',
+        b'a', b'r', b'n', b'i', b'n', b'g', 0x00, 0x00, 0x00, 0x00, 0x00, 0xaa, 0x60, 0x6b, 0x01,
+        0x00, 0x05, 0x01, 0x83, 0x20, 0x01, 0x02, 0x4e, 0x05, 0x02, 0x90, 0x12, 0x34, 0x03, 0x04,
+        0x4e,
+    ];
+    let section_len = u32::from_be_bytes(section[8..12].try_into().expect("section length field"));
+    section[8..12].copy_from_slice(
+        &(section_len + u32::try_from(state_bytes.len()).expect("state fixture length"))
+            .to_be_bytes(),
+    );
+    section.extend_from_slice(&state_bytes);
+
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend_from_slice(&section);
+
+    let mut store = composed_offset_store(&[]);
+    let base = payload.len() as u32;
+    let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
+    for index in 0..2 {
+        let at = index_start + index * 4;
+        let value = u32::from_le_bytes(store[at..at + 4].try_into().unwrap());
+        store[at..at + 4].copy_from_slice(&(value + base).to_le_bytes());
+    }
+    payload.extend_from_slice(&store);
     payload
 }
 
@@ -235,8 +366,51 @@ pub(crate) fn composed_feature_history_payload(
     payload
 }
 
+/// Compose a feature-history payload with two anchored state-journal groups.
+pub(crate) fn composed_feature_history_payload_with_state_journal() -> Vec<u8> {
+    let input_slots: &'static [u8] = &[1, 0xff, 0xff, 0xff];
+    let mut section =
+        composed_feature_history_section(&[(input_slots, "SKETCH", vec![0x02, 0x02, 0xff, 0x00])]);
+    let operation_marker = section
+        .windows(15)
+        .position(|window| {
+            window == b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff"
+        })
+        .expect("operation marker");
+    let journal = [
+        0x41, 0x00, 0x03, 0x05, 0x01, 0x03, 0x03, 0x02, 0x00, 0x04, 0x01, 0x02, 0x00, 0x00, 0xe0,
+        0x65, 0x53, 0x4d, 0x20, 0xc0, 0x01, 0x02, 0x03, 0x83, 0x10, 0x02, 0x13, 0x04, 0x00, 0x04,
+        0x05, 0x06, 0x00, 0xe0, 0x65, 0x53, 0x4d, 0x21, 0xa0, 0x01, 0x02, 0x83, 0x11, 0x03, 0x13,
+    ];
+    section.splice(operation_marker..operation_marker, journal.iter().copied());
+    let section_len = u32::from_be_bytes(section[8..12].try_into().expect("section length field"));
+    section[8..12].copy_from_slice(
+        &(section_len + u32::try_from(journal.len()).expect("journal fixture length"))
+            .to_be_bytes(),
+    );
+
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend_from_slice(&section);
+
+    let mut store = composed_offset_store(&[]);
+    let base = payload.len() as u32;
+    let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
+    for index in 0..2 {
+        let at = index_start + index * 4;
+        let value = u32::from_le_bytes(store[at..at + 4].try_into().unwrap());
+        store[at..at + 4].copy_from_slice(&(value + base).to_le_bytes());
+    }
+    payload.extend_from_slice(&store);
+    payload
+}
+
 pub(crate) type ComposedInputs = (
     Vec<(&'static [u8], &'static str, Vec<u8>)>,
+    Vec<u8>,
     Vec<u8>,
     Vec<u8>,
     Vec<u8>,
@@ -249,22 +423,23 @@ pub(crate) type ComposedInputs = (
 /// descriptor in `block5`, joining them through `datum_plane_csys_identity_uses`.
 pub(crate) const COMPOSED_DESCRIPTOR_IDENTITY: &[u8] = b"0123456789abcde0123456789abcde0";
 
-/// Build the operation list and four offset-store data blocks for the composed
+/// Build the operation list and six offset-store data blocks for the composed
 /// feature-history fixture.
 ///
 /// - block1+block2 form a two-block offset-store named point `Point7`;
-/// - block3+block4 carry rich sketch geometry (named points, scalar fields,
-///   coordinate and fixed pairs, and datum-CSYS pair discriminators).
+/// - block3 carries the shared datum payload and descriptor identity;
+/// - block6+block4 carry rich sketch geometry (named points, scalar fields,
+///   coordinate and fixed pairs).
 ///
 /// Operations: `SKETCH` referencing the named point (object indices 1,2),
-/// `SKETCH` referencing the geometry (3,4), `DATUM_CSYS` (eight refs to 1) and
+/// `SKETCH` referencing the geometry (6,4), `DATUM_CSYS` (eight refs to 3) and
 /// `DATUM_PLANE`.
 pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
     let sketch_named = vec![
         0x01, 0x00, 0x01, 0x02, 0xf0, 0x01, 0x00, 0x00, 0xf0, 0x02, 0x01, 0x00, 0x00, 0x00,
     ];
     let sketch_geometry = vec![
-        0x01, 0x00, 0x01, 0x02, 0xf0, 0x03, 0x00, 0x00, 0xf0, 0x04, 0x01, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x01, 0x02, 0xf0, 0x06, 0x00, 0x00, 0xf0, 0x04, 0x01, 0x00, 0x00, 0x00,
     ];
     let mut datum_csys = vec![
         0x13, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
@@ -330,7 +505,7 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
 
     let operations: Vec<(&'static [u8], &'static str, Vec<u8>)> = vec![
         (&[1, 0xff, 0xff, 0xff], "SKETCH", sketch_named),
-        (&[3, 0xff, 0xff, 0xff], "SKETCH", sketch_geometry),
+        (&[6, 0xff, 0xff, 0xff], "SKETCH", sketch_geometry),
         (&[3, 0xff, 0xff, 0xff], "DATUM_CSYS", datum_csys),
         (&[3, 0xff, 0xff, 0xff], "DATUM_PLANE", datum_plane),
         (&[3, 0xff, 0xff, 0xff], "POINT", point),
@@ -359,7 +534,7 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
         0x50, 0x59, 0x66, 0x59, 0x00, 0x31, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
     ];
 
-    // Rich sketch geometry across block3 (payload) and block4 (terminal filler).
+    // Shared compatibility payload across block3 and the datum feature lanes.
     let mut block3: Vec<u8> = Vec::new();
     // Point1: payload-leading name plus two PYf scalar fields.
     block3.extend_from_slice(&[0x03, 0x08]);
@@ -371,13 +546,16 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
     block3.extend_from_slice(&[
         0x50, 0x59, 0x66, 0x59, 0x00, 0x31, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
     ]);
-    // Point2: 66-form name plus one signed Q1.55 fixed pair (no scalars).
+    // Point2: 66-form name plus one legacy signed Q1.55 fixed pair (no scalars).
     block3.extend_from_slice(&[0x66, 0x32, 0x03, 0x08]);
     block3.extend_from_slice(b"Point2");
     block3.push(0x00);
+    let point2_discriminator = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
+    let point2_offset = block3.len();
+    block3.extend_from_slice(&point2_discriminator);
     block3.extend_from_slice(&[
-        0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
     ]);
     // Point3: 66-form name closing Point2's named-record interval.
     block3.extend_from_slice(&[0x66, 0x32, 0x03, 0x08]);
@@ -389,9 +567,14 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
         0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00,
     ]);
-    // datum_csys signed Q1.55 fixed pair (0b discriminator).
-    block3.extend_from_slice(&[
+    // The 0b branch remains in its legacy form in block3. The sketch operation
+    // addresses block6, where the clone uses the sketch-specific shifted-f64 form.
+    let sketch_branch_discriminator = [
         0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    ];
+    let sketch_branch_offset = block3.len();
+    block3.extend_from_slice(&sketch_branch_discriminator);
+    block3.extend_from_slice(&[
         0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00,
     ]);
@@ -408,6 +591,30 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
     block3.push(0x00);
     let block4: Vec<u8> = vec![0x00];
 
+    // The sketch operation addresses this independent clone. Patch only its
+    // two sketch fixed-pair branches; block3 remains the datum fixture.
+    let mut block6 = block3.clone();
+    for (offset, value) in [
+        (
+            point2_offset + point2_discriminator.len(),
+            shifted_f64_bytes(2.0),
+        ),
+        (
+            point2_offset + point2_discriminator.len() + 9,
+            shifted_f64_bytes(3.0),
+        ),
+        (
+            sketch_branch_offset + sketch_branch_discriminator.len(),
+            shifted_f64_bytes(2.0),
+        ),
+        (
+            sketch_branch_offset + sketch_branch_discriminator.len() + 9,
+            shifted_f64_bytes(3.0),
+        ),
+    ] {
+        block6[offset..offset + 8].copy_from_slice(&value);
+    }
+
     // block5: a 40-byte datum-plane descriptor block sharing the CSYS identity.
     let mut block5: Vec<u8> = Vec::new();
     block5.extend_from_slice(COMPOSED_DESCRIPTOR_IDENTITY); // hex identity (31)
@@ -417,7 +624,7 @@ pub(crate) fn composed_feature_history_inputs() -> ComposedInputs {
     block5.extend_from_slice(b"DPd"); // graphic label; pads block to 40 bytes
     debug_assert_eq!(block5.len(), 40);
 
-    (operations, block1, block2, block3, block4, block5)
+    (operations, block1, block2, block3, block4, block5, block6)
 }
 
 pub(crate) fn indexed_om_section() -> Vec<u8> {
@@ -651,6 +858,54 @@ pub(crate) fn size_framed_om_section() -> Vec<u8> {
         bytes.extend_from_slice(&suffix);
     }
     bytes.extend_from_slice(b"unframed UGS::PayloadText");
+    let payload_len = (bytes.len() - 16) as u32;
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    bytes
+}
+
+pub(crate) fn size_framed_audit_trail_section_with_record_area() -> Vec<u8> {
+    let mut bytes = vec![0xff; 16];
+    bytes[4..8].fill(0);
+    bytes[12..14].copy_from_slice(b"OM");
+    bytes.extend_from_slice(&[0, 1, 2]);
+    for (index, (name, code)) in [
+        (b"UGS::OM::SaveAuditTrail".as_slice(), 0xa0),
+        (b"UGS::ModlUtils::BooleanComponent".as_slice(), 0x65),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        bytes.push((name.len() + 1) as u8);
+        bytes.extend_from_slice(name);
+        bytes.push(code);
+        if index == 0 {
+            bytes.extend_from_slice(&[
+                0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
+            ]);
+        }
+    }
+    for (name, code, suffix) in [
+        (b"m_target".as_slice(), 0x80, [0x01, 0x02]),
+        (b"m_tools".as_slice(), 0x81, [0x03, 0x04]),
+    ] {
+        bytes.push((name.len() + 1) as u8);
+        bytes.extend_from_slice(name);
+        bytes.push(code);
+        bytes.extend_from_slice(&suffix);
+    }
+    bytes.extend_from_slice(b"unframed UGS::PayloadText");
+    let record_area = bytes.len() + 20;
+    bytes.extend_from_slice(&(record_area as u32).to_le_bytes());
+    bytes.resize(record_area, 0);
+    bytes.extend_from_slice(&13u32.to_le_bytes());
+    bytes.extend_from_slice(&14u32.to_le_bytes());
+    bytes.extend_from_slice(&44u32.to_le_bytes());
+    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0");
+    bytes.extend_from_slice(&[
+        0x41, 0x00, 0x03, 0x05, 0x01, 0x04, 0x00, 0x04, 0x02, 0x13, 0xe0, 0x65, 0x53, 0x4d, 0x20,
+        0xe0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x13, 0x04, 0x05, 0x07, 0x00, 0xe0, 0x65, 0x53,
+        0x4d, 0x21, 0xc0, 0x01, 0x02, 0x03,
+    ]);
     let payload_len = (bytes.len() - 16) as u32;
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes

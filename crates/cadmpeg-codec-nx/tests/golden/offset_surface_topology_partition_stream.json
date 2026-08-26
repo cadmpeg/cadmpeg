@@ -102,7 +102,8 @@
               "distance": 2.5,
               "extension_flags": [],
               "kind": "offset",
-              "support": "nx:s0:surf#0"
+              "support": "nx:s0:surf#0",
+              "support_extension": "linear"
             },
             "id": "nx:s0:offset#0",
             "surface": "nx:s0:offset-surf#0"

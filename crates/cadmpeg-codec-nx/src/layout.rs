@@ -116,6 +116,26 @@ pub(crate) mod directory_file_payload {
     pub(crate) const SIZE: usize = 8;
 }
 
+/// Byte offsets for the `legacy_ugii_payload_prefix` record.
+///
+/// Spec §2.4. Record length 9 B.
+///
+/// ```text
+/// The CFB directory path identifies the NX wrapper; the CFB signature alone is not sufficient.
+/// ```
+pub(crate) mod legacy_ugii_payload_prefix {
+    /// Record length in bytes. Spec §2.4.
+    pub(crate) const LEN: usize = 9;
+    /// Offset of `marker` (`bytes[2]`). Spec §2.4.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `product` (`bytes[4]`). Spec §2.4.
+    pub(crate) const PRODUCT: usize = 2;
+    /// Offset of `padding` (`bytes[2]`). Spec §2.4.
+    pub(crate) const PADDING: usize = 6;
+    /// Offset of `version` (`u8`). Spec §2.4.
+    pub(crate) const VERSION: usize = 8;
+}
+
 /// Byte offsets for the `ug_part_segment_index_row` record.
 ///
 /// Spec §2. Record length 12 B.

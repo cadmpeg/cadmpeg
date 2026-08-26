@@ -667,6 +667,7 @@ pub(crate) fn rectangular_nurbs_patch() -> CadIr {
         v_count: 2,
         control_points: vec![points[0], points[3], points[1], points[2]],
         weights: Some(vec![1.0, 0.8, 1.2, 1.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });
@@ -751,6 +752,7 @@ pub(crate) fn mixed_plane_nurbs_sheet() -> CadIr {
         v_count: 2,
         control_points: vec![points[0], points[3], points[1], points[2]],
         weights: Some(vec![1.0, 0.8, 1.2, 1.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });
@@ -831,6 +833,7 @@ pub(crate) fn make_planar_nurbs_trimmed_face(ir: &mut CadIr) {
             Point3::new(4.0, 4.0, 0.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });

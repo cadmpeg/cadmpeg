@@ -23,6 +23,292 @@ fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
 }
 
 #[test]
+fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
+    let bytes = legacy_cfb_with_ug_part();
+    assert_eq!(NxCodec.detect(&bytes), Confidence::High);
+    assert_eq!(NxCodec.detect(&bytes[..8]), Confidence::No);
+
+    let summary = NxCodec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("legacy CFB NX inspection");
+    assert_eq!(summary.container_kind, "cfb");
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note.contains("legacy CFB container")));
+    assert!(summary
+        .entries
+        .iter()
+        .any(|entry| entry.role == "parasolid-stream"));
+
+    let result = decode(bytes);
+    assert!(!result.report().geometry_transferred);
+    assert!(!result.source_fidelity().retained_records.is_empty());
+}
+
+#[test]
+fn legacy_cfb_nx_accepts_a_partial_final_stream_sector() {
+    let bytes = legacy_cfb_with_partial_ug_part();
+    let summary = NxCodec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("legacy CFB with a partial stream sector is inspectable");
+    assert_eq!(summary.container_kind, "cfb");
+    assert!(summary
+        .entries
+        .iter()
+        .any(|entry| entry.role == "parasolid-stream"));
+
+    let result = decode(bytes);
+    assert!(!result.report().geometry_transferred);
+    assert!(!result.source_fidelity().retained_records.is_empty());
+}
+
+#[test]
+fn legacy_cfb_catalogues_logical_stream_spans() {
+    let summary = NxCodec
+        .inspect(
+            &mut Cursor::new(legacy_cfb_with_ug_part()),
+            &InspectOptions::default(),
+        )
+        .expect("legacy CFB inspection");
+    let part = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
+        .expect("legacy UG_PART stream entry");
+    assert_eq!(part.role, "part-payload");
+    assert!(part.compressed_size > 0);
+    assert_eq!(part.compressed_size, part.uncompressed_size);
+}
+
+#[test]
+fn legacy_cfb_catalogues_each_reachable_stream_in_a_disjoint_logical_span() {
+    let bytes = legacy_cfb_with_two_streams();
+    let summary = NxCodec
+        .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
+        .expect("legacy CFB multi-stream inspection");
+    let part = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "/Root/UG_PART/UG_PART")
+        .expect("legacy UG_PART stream entry");
+    let extra = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "/Root/UG_PART/Extra")
+        .expect("legacy extra stream entry");
+    assert_eq!(part.compressed_size, 10 * 512);
+    assert_eq!(part.compressed_size, part.uncompressed_size);
+    assert_eq!(extra.role, "named-opaque-stream");
+    assert_eq!(extra.compressed_size, 8 * 512);
+    assert_eq!(extra.compressed_size, extra.uncompressed_size);
+
+    let result = decode(bytes);
+    assert!(!result.source_fidelity().retained_records.is_empty());
+}
+
+#[test]
+fn legacy_cfb_detection_rejects_the_compound_signature_without_ug_part_path() {
+    let mut bytes = legacy_cfb_with_ug_part();
+    let directory_entry = &mut bytes[512 + 2 * 128..512 + 3 * 128];
+    for (offset, unit) in "OTHER".encode_utf16().enumerate() {
+        put_u16(directory_entry, offset * 2, unit);
+    }
+    put_u16(directory_entry, 64, 12);
+
+    assert_eq!(NxCodec.detect(&bytes), Confidence::No);
+}
+
+fn legacy_cfb_with_ug_part() -> Vec<u8> {
+    const SECTOR: usize = 512;
+    const END: u32 = 0xffff_fffe;
+    const FREE: u32 = 0xffff_ffff;
+    const FAT: u32 = 0xffff_fffd;
+    const STREAM_SECTORS: usize = 10;
+    const FAT_SECTOR: usize = 11;
+    let mut file = vec![0; SECTOR * (1 + FAT_SECTOR + 1)];
+    file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    put_u16(&mut file, 24, 0x003e);
+    put_u16(&mut file, 26, 3);
+    put_u16(&mut file, 28, 0xfffe);
+    put_u16(&mut file, 30, 9);
+    put_u16(&mut file, 32, 6);
+    put_u32(&mut file, 40, 0);
+    put_u32(&mut file, 44, 1);
+    put_u32(&mut file, 48, 0);
+    put_u32(&mut file, 56, 4096);
+    put_u32(&mut file, 60, END);
+    put_u32(&mut file, 64, 0);
+    put_u32(&mut file, 68, END);
+    put_u32(&mut file, 72, 0);
+    for index in 0..109 {
+        put_u32(&mut file, 76 + index * 4, FREE);
+    }
+    put_u32(&mut file, 76, FAT_SECTOR as u32);
+
+    let directory = sector_mut(&mut file, 0);
+    for index in 0..4 {
+        put_u32(directory, index * 128 + 68, FREE);
+        put_u32(directory, index * 128 + 72, FREE);
+        put_u32(directory, index * 128 + 76, FREE);
+    }
+    cfb_directory_entry(directory, 0, "Root Entry", 5, END, 1, 0);
+    cfb_directory_entry(directory, 1, "UG_PART", 1, END, 2, 0);
+    cfb_directory_entry(
+        directory,
+        2,
+        "UG_PART",
+        2,
+        1,
+        END,
+        (STREAM_SECTORS * SECTOR) as u64,
+    );
+
+    let payload = sector_mut(&mut file, 1);
+    payload[..8].copy_from_slice(b"\x0d\x01UGII  ");
+    payload[8] = 0x32;
+    let description = b": TRANSMIT FILE (partition) created by test";
+    let mut at = 9;
+    payload[at..at + 2].copy_from_slice(b"PS");
+    at += 2;
+    payload[at..at + 4].copy_from_slice(&(description.len() as u32).to_be_bytes());
+    at += 4;
+    payload[at..at + description.len()].copy_from_slice(description);
+
+    let fat = sector_mut(&mut file, FAT_SECTOR);
+    fat.fill(0xff);
+    put_u32(fat, 0, END);
+    for sector in 1..=STREAM_SECTORS {
+        put_u32(
+            fat,
+            sector * 4,
+            if sector == STREAM_SECTORS {
+                END
+            } else {
+                (sector + 1) as u32
+            },
+        );
+    }
+    put_u32(fat, FAT_SECTOR * 4, FAT);
+    file
+}
+
+fn legacy_cfb_with_partial_ug_part() -> Vec<u8> {
+    const SECTOR: usize = 512;
+    const END: u32 = 0xffff_fffe;
+    const STREAM_LAST: usize = 10;
+    const FAT_SECTOR: usize = 11;
+    let mut file = legacy_cfb_with_ug_part();
+    file.resize(file.len() + SECTOR, 0);
+    let directory_entry = &mut file[SECTOR + 2 * 128..SECTOR + 3 * 128];
+    directory_entry[120..128].copy_from_slice(&5133_u64.to_le_bytes());
+    let unallocated_entry = &mut file[SECTOR + 3 * 128..SECTOR + 4 * 128];
+    unallocated_entry[..64].fill(0xa5);
+    unallocated_entry[68..80].fill(0xa5);
+    unallocated_entry[120..128].fill(0xa5);
+    let fat = sector_mut(&mut file, FAT_SECTOR);
+    put_u32(fat, STREAM_LAST * 4, 12);
+    put_u32(fat, 12 * 4, END);
+    file.truncate(SECTOR * 13 + 13);
+    file
+}
+
+fn legacy_cfb_with_two_streams() -> Vec<u8> {
+    const SECTOR: usize = 512;
+    const END: u32 = 0xffff_fffe;
+    const FAT: u32 = 0xffff_fffd;
+    const EXTRA_FIRST_SECTOR: usize = 12;
+    const EXTRA_SECTORS: usize = 8;
+    const FAT_SECTOR: usize = 20;
+    let mut file = legacy_cfb_with_ug_part();
+    file.resize(SECTOR * (1 + FAT_SECTOR + 1), 0);
+    put_u32(&mut file, 76, FAT_SECTOR as u32);
+    sector_mut(&mut file, 11).fill(0xff);
+
+    let directory = sector_mut(&mut file, 0);
+    cfb_directory_entry(
+        directory,
+        3,
+        "Extra",
+        2,
+        EXTRA_FIRST_SECTOR as u32,
+        END,
+        (EXTRA_SECTORS * SECTOR) as u64,
+    );
+    put_u32(directory, 128 + 76, 3);
+    put_u32(directory, 3 * 128 + 72, 2);
+
+    let extra = sector_mut(&mut file, EXTRA_FIRST_SECTOR);
+    extra.fill(0xa5);
+    let marker = b"SECOND STREAM PAYLOAD";
+    extra[..marker.len()].copy_from_slice(marker);
+
+    let fat = sector_mut(&mut file, FAT_SECTOR);
+    fat.fill(0xff);
+    put_u32(fat, 0, END);
+    for sector in 1..=10 {
+        put_u32(
+            fat,
+            sector * 4,
+            if sector == 10 {
+                END
+            } else {
+                (sector + 1) as u32
+            },
+        );
+    }
+    for sector in EXTRA_FIRST_SECTOR..EXTRA_FIRST_SECTOR + EXTRA_SECTORS {
+        put_u32(
+            fat,
+            sector * 4,
+            if sector + 1 == EXTRA_FIRST_SECTOR + EXTRA_SECTORS {
+                END
+            } else {
+                (sector + 1) as u32
+            },
+        );
+    }
+    put_u32(fat, FAT_SECTOR * 4, FAT);
+    file
+}
+
+fn cfb_directory_entry(
+    directory: &mut [u8],
+    index: usize,
+    name: &str,
+    object_type: u8,
+    start_sector: u32,
+    child: u32,
+    size: u64,
+) {
+    let entry = &mut directory[index * 128..(index + 1) * 128];
+    for (offset, unit) in name.encode_utf16().enumerate() {
+        put_u16(entry, offset * 2, unit);
+    }
+    put_u16(entry, 64, ((name.encode_utf16().count() + 1) * 2) as u16);
+    entry[66] = object_type;
+    entry[67] = 1;
+    put_u32(entry, 68, 0xffff_ffff);
+    put_u32(entry, 72, 0xffff_ffff);
+    put_u32(entry, 76, child);
+    put_u32(entry, 116, start_sector);
+    entry[120..128].copy_from_slice(&size.to_le_bytes());
+}
+
+fn sector_mut(file: &mut [u8], sector: usize) -> &mut [u8] {
+    let start = (sector + 1) * 512;
+    &mut file[start..start + 512]
+}
+
+fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
+    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+#[test]
 fn splmsstr_pipeline_aligns_detection_inspection_and_parasolid_classification() {
     let bytes = single_part_prt();
     assert_eq!(NxCodec.detect(&bytes), Confidence::High);
@@ -248,6 +534,28 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
         "feature_datum_plane_descriptors",
         "datum_plane_descriptor",
     );
+    assert_valid(&result);
+}
+
+#[test]
+fn object_model_pipeline_projects_extract_body_source_from_offset_store() {
+    let result = decode(extract_body_feature_history_prt());
+    let feature = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("EXTRACT_BODY"))
+        .expect("EXTRACT_BODY feature");
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::ExtractBody {
+            source: cadmpeg_ir::features::BodySelection::Local { bodies, native },
+        } if bodies.len() == 1
+            && bodies[0].ends_with(":block#1")
+            && native == "nx:om-object-index#1"
+    ));
+    assert!(feature.outputs.is_empty());
     assert_valid(&result);
 }
 

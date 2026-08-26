@@ -332,6 +332,7 @@ pub(in super::super) fn interpolation_spline_surface(
         v_count: u32::try_from(v_control_count).ok()?,
         control_points,
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })
@@ -416,6 +417,7 @@ pub(in super::super) fn extruded_nurbs_surface(
         v_count: 2,
         control_points,
         weights,
+        normal_reversed: false,
         u_periodic: directrix.periodic,
         v_periodic: false,
     })

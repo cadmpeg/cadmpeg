@@ -176,7 +176,8 @@ impl<'a> View<'a> {
         mut read: impl FnMut(&mut Self) -> Option<T>,
     ) -> Option<Vec<T>> {
         let count = self.counted(count, element_size)?.get();
-        let mut values = Vec::with_capacity(count);
+        let mut values = Vec::new();
+        values.try_reserve_exact(count).ok()?;
         for _ in 0..count {
             values.push(read(self)?);
         }

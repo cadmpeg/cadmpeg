@@ -663,6 +663,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
                     Point3::new(1.0, 1.0, 0.0),
                 ],
                 weights: None,
+                normal_reversed: false,
                 u_periodic: false,
                 v_periodic: false,
             }),

@@ -236,7 +236,8 @@
                 "section_ordinal": 0,
                 "sha256": "be58233c8b1c33d2911eccf0f47364922b872acca2e95e4423bc21820b59ddf6",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 424
+                "source_offset": 424,
+                "stable_identity": "nx:om:data-block:bd7fb9100c7e59e26d2adca8cfecb6b9c413aaa8e98e93fd69659e2850af9277"
               },
               {
                 "block_ordinal": 1,
@@ -247,7 +248,8 @@
                 "section_ordinal": 0,
                 "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 432
+                "source_offset": 432,
+                "stable_identity": "nx:om:data-block:9464897cedc24ff34620b1a83066aa2001f2442fcbd8f2967bd60920a9eabdc6"
               },
               {
                 "block_ordinal": 2,
@@ -258,7 +260,8 @@
                 "section_ordinal": 0,
                 "sha256": "6690abf98f671ca97a189957e9fe96618388bb0b8174d4fbb0685bf56b3669ef",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 467
+                "source_offset": 467,
+                "stable_identity": "nx:om:data-block:b7743888bdf6016d4c56711690a0228e557bed833528bbf63ee2675ca6bcda21"
               }
             ],
             "expressions": [
@@ -400,6 +403,8 @@
                 "id": "nx:om-entry-0:field#117",
                 "name": "m_target",
                 "ordinal": 0,
+                "registry_owner_class": 2,
+                "registry_storage_code": 2,
                 "registry_suffix": [
                   1,
                   2

@@ -36,9 +36,9 @@ pub struct LoadOutcome {
     pub notices: Vec<LoadNotice>,
 }
 
-/// Read at most `n` leading bytes for content-based format detection.
-pub fn read_prefix(path: &Path, n: usize) -> Result<Vec<u8>> {
-    ArtifactStore::read_prefix(path, n)
+/// Read the bounded byte image used for content-based format detection.
+pub fn read_detection_input(path: &Path, n: usize, max_bytes: u64) -> Result<Vec<u8>> {
+    ArtifactStore::read_detection_input(path, n, max_bytes)
 }
 
 /// Load CADIR from a native CAD file or CADIR JSON.
@@ -52,7 +52,11 @@ pub fn load_artifact(
     options: DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadOutcome> {
-    let prefix = ArtifactStore::read_prefix(path, DETECTION_PREFIX_LEN)?;
+    let prefix = ArtifactStore::read_detection_input(
+        path,
+        DETECTION_PREFIX_LEN,
+        options.policy.limits.max_input_bytes,
+    )?;
     let resolved = catalog
         .resolve_source(&prefix, forced)
         .map_err(|error| anyhow!(error.to_string()))?;

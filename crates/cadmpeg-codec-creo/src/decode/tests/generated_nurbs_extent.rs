@@ -26,6 +26,7 @@ fn translated_surface() -> NurbsSurface {
             Point3::new(2.0, 0.0, 2.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     }

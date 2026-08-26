@@ -34,6 +34,32 @@ pub(crate) fn simple_hole_diameters(
     hole_diameters_for_operations(ir, &operations, outputs)
 }
 
+mod blend;
+mod body_writes;
+mod brep;
+mod bridge_curve;
+mod cone;
 mod configuration;
+mod copy_face;
+mod cylinder;
+mod delete_face;
+mod enlarge;
+mod extract_datum_axis;
+mod extract_face;
+mod fill_hole;
 mod holes_offsets_and_attributes;
+mod linked_face;
+mod mirror_face;
+mod move_face;
+mod move_object;
+mod operation_sources;
 mod operations_and_holes;
+mod shell;
+mod sketches;
+mod sphere;
+mod subdivision_body;
+mod symbolic_thread;
+mod thread;
+mod through_curve_mesh;
+mod topology_optimization;
+mod trim_body;

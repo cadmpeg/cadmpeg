@@ -3,8 +3,144 @@
 #![allow(clippy::default_trait_access)]
 
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::math::{Point2, Point3};
 
 use crate::test_support::*;
+
+use super::*;
+
+const EPS_SHARED_NURBS_GEOMETRY: f64 = f64::EPSILON;
+
+fn assert_same_f64s(actual: &[f64], expected: &[f64]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert!((actual - expected).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+    }
+}
+
+fn assert_same_points3(actual: &[Point3], expected: &[Point3]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert!((actual.x - expected.x).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+        assert!((actual.y - expected.y).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+        assert!((actual.z - expected.z).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+    }
+}
+
+fn assert_same_points2(actual: &[Point2], expected: &[Point2]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert!((actual.u - expected.u).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+        assert!((actual.v - expected.v).abs() <= EPS_SHARED_NURBS_GEOMETRY);
+    }
+}
+
+fn assert_same_weights(actual: Option<&[f64]>, expected: Option<&[f64]>) {
+    match (actual, expected) {
+        (Some(actual), Some(expected)) => assert_same_f64s(actual, expected),
+        (None, None) => {}
+        _ => panic!("shared and standalone NURBS weights differ"),
+    }
+}
+
+fn assert_same_surfaces(actual: &[Surface], expected: &[Surface]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.pos, expected.pos);
+        let (SurfaceGeometry::Nurbs(actual), SurfaceGeometry::Nurbs(expected)) =
+            (&actual.geometry, &expected.geometry)
+        else {
+            panic!("shared and standalone surface kinds differ");
+        };
+        assert_eq!(actual.u_degree, expected.u_degree);
+        assert_eq!(actual.v_degree, expected.v_degree);
+        assert_eq!(actual.u_count, expected.u_count);
+        assert_eq!(actual.v_count, expected.v_count);
+        assert_eq!(actual.u_periodic, expected.u_periodic);
+        assert_eq!(actual.v_periodic, expected.v_periodic);
+        assert_eq!(actual.normal_reversed, expected.normal_reversed);
+        assert_same_f64s(&actual.u_knots, &expected.u_knots);
+        assert_same_f64s(&actual.v_knots, &expected.v_knots);
+        assert_same_points3(&actual.control_points, &expected.control_points);
+        assert_same_weights(actual.weights.as_deref(), expected.weights.as_deref());
+    }
+}
+
+fn assert_same_curves(actual: &[Curve], expected: &[Curve]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.pos, expected.pos);
+        let (CurveGeometry::Nurbs(actual), CurveGeometry::Nurbs(expected)) =
+            (&actual.geometry, &expected.geometry)
+        else {
+            panic!("shared and standalone curve kinds differ");
+        };
+        assert_eq!(actual.degree, expected.degree);
+        assert_eq!(actual.periodic, expected.periodic);
+        assert_same_f64s(&actual.knots, &expected.knots);
+        assert_same_points3(&actual.control_points, &expected.control_points);
+        assert_same_weights(actual.weights.as_deref(), expected.weights.as_deref());
+    }
+}
+
+fn assert_same_pcurves(actual: &[Pcurve], expected: &[Pcurve]) {
+    assert_eq!(actual.len(), expected.len());
+    for (actual, expected) in actual.iter().zip(expected) {
+        assert_eq!(actual.pos, expected.pos);
+        let (
+            PcurveGeometry::Nurbs {
+                degree: actual_degree,
+                knots: actual_knots,
+                control_points: actual_control_points,
+                weights: actual_weights,
+                periodic: actual_periodic,
+            },
+            PcurveGeometry::Nurbs {
+                degree: expected_degree,
+                knots: expected_knots,
+                control_points: expected_control_points,
+                weights: expected_weights,
+                periodic: expected_periodic,
+            },
+        ) = (&actual.geometry, &expected.geometry)
+        else {
+            panic!("shared and standalone pcurve kinds differ");
+        };
+        assert_eq!(actual_degree, expected_degree);
+        assert_eq!(actual_periodic, expected_periodic);
+        assert_same_f64s(actual_knots, expected_knots);
+        assert_same_points2(actual_control_points, expected_control_points);
+        assert_same_weights(actual_weights.as_deref(), expected_weights.as_deref());
+    }
+}
+
+fn assert_shared_parse_matches_standalone(stream: &[u8]) {
+    let graph = crate::topology::Graph::parse(stream);
+    let shared = crate::nurbs::parse_with_graph(stream, &graph);
+    assert_same_surfaces(&shared.surfaces, &crate::nurbs::surfaces(stream));
+    assert_same_curves(&shared.curves, &crate::nurbs::curves(stream));
+    assert_same_pcurves(&shared.pcurves, &crate::nurbs::pcurves(stream));
+}
+
+#[test]
+fn shared_nurbs_parse_matches_each_standalone_family_decoder() {
+    assert_shared_parse_matches_standalone(&bspline_partition_stream());
+
+    let mut pcurve_stream = bspline_partition_stream();
+    let descriptor = pcurve_stream
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    put_ref(&mut pcurve_stream, descriptor + 10, 2);
+    let payload = pcurve_stream
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .expect("curve payload");
+    for (index, value) in [0.0, 0.0, 1.0, 0.02, 0.0, 1.0].into_iter().enumerate() {
+        put_f64(&mut pcurve_stream, payload + 15 + index * 8, value);
+    }
+    assert_shared_parse_matches_standalone(&pcurve_stream);
+}
 
 #[test]
 fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
@@ -119,6 +255,116 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
         panic!("expected NURBS pcurve");
     };
     assert!(!periodic);
+}
+
+#[test]
+fn nurbs_surface_retains_reversed_carrier_normal() {
+    let mut stream = bspline_partition_stream();
+    let surface = stream
+        .windows(2)
+        .position(|window| window == [0, 124])
+        .expect("B_SURFACE record");
+    stream[surface + 18] = b'-';
+
+    let [surface] = crate::nurbs::surfaces(&stream)
+        .try_into()
+        .expect("one surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("expected NURBS surface");
+    };
+
+    assert!(surface.normal_reversed);
+}
+
+#[test]
+fn nurbs_knot_type_values_do_not_select_periodicity_or_rationality() {
+    for knot_type in 1u8..=6 {
+        let mut surface = bspline_partition_stream();
+        let surface_descriptor = surface
+            .windows(4)
+            .position(|window| window == [0, 126, 0, 20])
+            .expect("surface descriptor");
+        surface[surface_descriptor + 18] = knot_type;
+        surface[surface_descriptor + 19] = knot_type;
+        let [surface] = crate::nurbs::surfaces(&surface)
+            .try_into()
+            .expect("one surface");
+        let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+            panic!("expected NURBS surface");
+        };
+        assert!(!surface.u_periodic && !surface.v_periodic);
+
+        let mut curve = bspline_partition_stream();
+        let curve_descriptor = curve
+            .windows(4)
+            .position(|window| window == [0, 136, 0, 40])
+            .expect("curve descriptor");
+        curve[curve_descriptor + 16] = knot_type;
+        let [curve] = crate::nurbs::curves(&curve).try_into().expect("one curve");
+        let CurveGeometry::Nurbs(curve) = curve.geometry else {
+            panic!("expected NURBS curve");
+        };
+        assert!(!curve.periodic);
+        assert!(curve.weights.is_none());
+
+        let mut pcurve = bspline_partition_stream();
+        let pcurve_descriptor = pcurve
+            .windows(4)
+            .position(|window| window == [0, 136, 0, 40])
+            .expect("curve descriptor");
+        put_ref(&mut pcurve, pcurve_descriptor + 10, 2);
+        pcurve[pcurve_descriptor + 16] = knot_type;
+        let payload = pcurve
+            .windows(4)
+            .position(|window| window == [0, 135, 0, 41])
+            .expect("pcurve payload");
+        for (index, value) in [0.0, 0.0, 1.0, 0.02, 0.0, 1.0].into_iter().enumerate() {
+            put_f64(&mut pcurve, payload + 15 + index * 8, value);
+        }
+        let [pcurve] = crate::nurbs::pcurves(&pcurve)
+            .try_into()
+            .expect("one pcurve");
+        let PcurveGeometry::Nurbs {
+            periodic, weights, ..
+        } = pcurve.geometry
+        else {
+            panic!("expected NURBS pcurve");
+        };
+        assert!(!periodic);
+        assert_eq!(weights.as_deref(), Some([1.0, 1.0].as_slice()));
+    }
+}
+
+#[test]
+fn nurbs_scanners_defer_unreferenced_lane_materialization() {
+    const ARRAY_CANDIDATES: usize = 128;
+    const ARRAY_COUNT: usize = u16::MAX as usize;
+    const PAYLOAD_CANDIDATES: usize = 64;
+    const PAYLOAD_COUNT: usize = 32_768;
+    let mut arrays = vec![0; ARRAY_CANDIDATES * 8 + 8 + ARRAY_COUNT * 2];
+    for index in 0..ARRAY_CANDIDATES {
+        let pos = index * 8;
+        let reference = (index + 11) as u16;
+        arrays[pos..pos + 2].copy_from_slice(&[0, 127]);
+        arrays[pos + 4..pos + 6].copy_from_slice(&(ARRAY_COUNT as u16).to_be_bytes());
+        arrays[pos + 6..pos + 8].copy_from_slice(&reference.to_be_bytes());
+    }
+    let parsed_arrays = crate::nurbs::arrays(&arrays);
+    assert_eq!(parsed_arrays.u16s.len(), ARRAY_CANDIDATES);
+    assert!(crate::nurbs::curves(&arrays).is_empty());
+
+    let mut payloads = vec![0; PAYLOAD_CANDIDATES * 16 + 15 + PAYLOAD_COUNT * 8];
+    for index in 0..PAYLOAD_CANDIDATES {
+        let pos = index * 16;
+        let reference = (index + 11) as u16;
+        payloads[pos..pos + 2].copy_from_slice(&[0, 135]);
+        payloads[pos + 2..pos + 4].copy_from_slice(&reference.to_be_bytes());
+        payloads[pos + 9..pos + 13].copy_from_slice(&(PAYLOAD_COUNT as u32).to_be_bytes());
+        payloads[pos + 13..pos + 15].copy_from_slice(&1u16.to_be_bytes());
+    }
+    let parsed_payloads = crate::nurbs::curve_payloads(&payloads);
+    assert_eq!(parsed_payloads.len(), PAYLOAD_CANDIDATES);
+    assert!(crate::nurbs::curves(&payloads).is_empty());
 }
 
 #[test]

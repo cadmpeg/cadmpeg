@@ -132,7 +132,7 @@ Decoders convert kernel conventions at decode:
 - Fusion ellipse phases are normalized to the major-direction origin and marked `derived`.
 - Kernel full-circle intervals are re-anchored to `[0, 2π]` and marked `derived`.
 
-NURBS surfaces store degrees, full knot vectors, pole counts, u-major control points, optional per-pole weights, and periodicity flags. NURBS curves store degree, full knot vector, ordered control points, optional weights, and periodicity.
+NURBS surfaces store degrees, full knot vectors, pole counts, u-major control points, optional per-pole weights, periodicity flags, and whether the carrier's oriented normal is opposite `Pu × Pv`. NURBS curves store degree, full knot vector, ordered control points, optional weights, and periodicity.
 
 ## Procedural carriers
 

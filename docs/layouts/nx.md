@@ -7,7 +7,7 @@
 Source of truth: [`docs/formats/siemens_nx.md`](../../docs/formats/siemens_nx.md).
 Table source: `docs/layouts/nx.toml`.
 
-Covers the SPLMSSTR container (§2), the Parasolid XT fixed record families
+Covers the SPLMSSTR and legacy CFB containers (§2 and §2.4), the Parasolid XT fixed record families
 (§4.1), the topology node field maps (§5.1), the analytic payload offsets
 (§6.1), the B-spline descriptor prefixes (§6.2), the trimmed and SP curve
 carriers (§6.4), the rolling-ball blend (§6.5), and the CHART_s preamble
@@ -95,6 +95,22 @@ The 16-byte payload of a directory entry when it names a file. Other payloads re
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 8 | `file_offset` | `u64` | little | spec | A file payload is `file_offset:u64 LE, size:u64 LE` |
 | 8 | 8 | `size` | `u64` | little | spec | `file_offset:u64 LE, size:u64 LE`, with nonzero size |
+
+## `legacy_ugii_payload_prefix`
+
+Spec §2.4 · layout: byte offsets · size: 9 B
+
+The CFB directory path identifies the NX wrapper; the CFB signature alone is not sufficient.
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `marker` | `bytes[2]` | — | spec | 0x00..0x01 bytes `0d 01` |
+| 2 | 4 | `product` | `bytes[4]` | — | spec | 0x02..0x05 ASCII `UGII` |
+| 6 | 2 | `padding` | `bytes[2]` | — | spec | 0x06..0x07 ASCII two spaces |
+| 8 | 1 | `version` | `u8` | — | spec | 0x08 UGII version byte |
 
 ## `ug_part_segment_index_row`
 

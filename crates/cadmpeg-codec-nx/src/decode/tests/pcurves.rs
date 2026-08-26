@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
@@ -58,6 +59,23 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
             .and_then(|source| source.attributes.get("rmfastload_hits"))
             .map(String::as_str),
         Some("1")
+    );
+}
+
+#[test]
+fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
+    let first = BodyId("nx:s3:body#first".into());
+    let second = BodyId("nx:s8:body#second".into());
+    let body_node_ids = BTreeMap::from([
+        (first.clone(), BTreeSet::from([7, 8])),
+        (second, BTreeSet::from([8, 9])),
+    ]);
+
+    let selected = super::rmfastload_selected_bodies(&body_node_ids, &[7, 8]);
+    assert_eq!(selected, BTreeSet::from([first]));
+    assert_eq!(
+        super::rmfastload_stream_indices(&selected),
+        Some(BTreeSet::from([3]))
     );
 }
 
@@ -150,15 +168,30 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
     ]);
 
     let range = [0.0, std::f64::consts::TAU];
-    let cone_pcurve =
-        super::exact_analytic_isocurve_pcurve(&ir, &cone_ellipse, &cone, range, 1.0e-12)
-            .expect("cone ellipse");
-    let sphere_pcurve =
-        super::exact_analytic_isocurve_pcurve(&ir, &sphere_circle, &sphere, range, 1.0e-12)
-            .expect("sphere parallel");
-    let torus_pcurve =
-        super::exact_analytic_isocurve_pcurve(&ir, &torus_circle, &torus, range, 1.0e-12)
-            .expect("torus meridian");
+    let cone_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+        &ir,
+        &cone_ellipse,
+        &cone,
+        range,
+        1.0e-12,
+    )
+    .expect("cone ellipse");
+    let sphere_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+        &ir,
+        &sphere_circle,
+        &sphere,
+        range,
+        1.0e-12,
+    )
+    .expect("sphere parallel");
+    let torus_pcurve = crate::decode::pcurves::exact_analytic_isocurve_pcurve(
+        &ir,
+        &torus_circle,
+        &torus,
+        range,
+        1.0e-12,
+    )
+    .expect("torus meridian");
     assert!(matches!(
         sphere_pcurve,
         PcurveGeometry::Line { origin, direction }
@@ -241,7 +274,31 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         tolerance: Some(1.0e-8),
     });
 
-    super::complete_exact_boundary_intersection_pcurves(&mut ir, &mut AnnotationBuilder::new());
+    let procedural_start = ir.model.procedural_curves.len();
+    let mut annotations = AnnotationBuilder::new();
+    let transfer_budget = WorkBudget::new(usize::MAX);
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(usize::MAX);
+    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
+        &mut ir,
+        &mut annotations,
+        procedural_start,
+        &transfer_budget,
+        &geometry_budget,
+    );
+    let ProceduralCurveDefinition::TolerantIntersection {
+        parameterization, ..
+    } = &ir.model.procedural_curves[0].definition
+    else {
+        panic!("closed intersection construction");
+    };
+    assert!(parameterization.is_none());
+    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves_with_budget(
+        &mut ir,
+        &mut annotations,
+        0,
+        &transfer_budget,
+        &geometry_budget,
+    );
     let ProceduralCurveDefinition::TolerantIntersection {
         supports,
         parameterization: Some(parameterization),
@@ -395,6 +452,7 @@ fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {
             Point3::new(3.0, 2.0, z),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })
@@ -417,6 +475,7 @@ fn quadratic_translation_surface(z: f64) -> SurfaceGeometry {
             })
             .collect(),
         weights: Some(vec![2.0; 9]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })
@@ -439,6 +498,7 @@ fn degree_elevated_affine_surface(z: f64) -> SurfaceGeometry {
             })
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })
@@ -466,6 +526,7 @@ fn quadratic_paraboloid_surface() -> SurfaceGeometry {
             })
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })
@@ -495,6 +556,106 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
         0.000_4
     )
     .is_none());
+}
+
+#[test]
+fn adaptive_offset_certification_fails_closed_when_the_work_slice_is_empty() {
+    let support = quadratic_paraboloid_surface();
+    let SurfaceGeometry::Nurbs(support) = &support else {
+        unreachable!();
+    };
+    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
+
+    assert!(
+        crate::decode::offset::certified_curved_offset_cache_fit_with_budget(
+            support, support, 0.01, 0.02, true, &budget,
+        )
+        .is_none()
+    );
+    assert!(budget.exhausted());
+}
+
+#[test]
+fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
+    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
+    let span = crate::decode::blend::ScalarBezierSpan {
+        domain: [0.0, 1.0],
+        controls: vec![-1.0, 1.0],
+    };
+
+    assert!(crate::decode::blend::scalar_bezier_roots_with_budget(span, &budget).is_none());
+    assert!(budget.exhausted());
+}
+
+#[test]
+fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
+    let surface = SurfaceId("nx:test:budget-plane".into());
+    let start_point = PointId("nx:test:budget-start-point".into());
+    let end_point = PointId("nx:test:budget-end-point".into());
+    let start_vertex = VertexId("nx:test:budget-start-vertex".into());
+    let end_vertex = VertexId("nx:test:budget-end-vertex".into());
+    let edge = EdgeId("nx:test:budget-edge".into());
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.points.extend([
+        Point {
+            id: start_point.clone(),
+            position: Point3::new(0.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: end_point.clone(),
+            position: Point3::new(1.0, 0.0, 0.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: start_vertex.clone(),
+            point: start_point,
+            tolerance: Some(0.0),
+        },
+        Vertex {
+            id: end_vertex.clone(),
+            point: end_point,
+            tolerance: Some(0.0),
+        },
+    ]);
+    ir.model.edges.push(Edge {
+        id: edge.clone(),
+        curve: None,
+        start: start_vertex,
+        end: end_vertex,
+        param_range: None,
+        tolerance: Some(0.0),
+    });
+    let index = cadmpeg_ir::index::ModelIndex::new(&ir);
+    let budget = crate::decode::geometry_work::GeometryWorkBudget::new(0);
+    let pcurve = PcurveGeometry::Line {
+        origin: Point2::new(0.0, 0.0),
+        direction: Point2::new(1.0, 0.0),
+    };
+
+    assert!(
+        !crate::decode::pcurves::pcurve_matches_edge_range_with_index_and_budget(
+            &index,
+            &edge,
+            &surface,
+            &pcurve,
+            Some([0.0, 1.0]),
+            None,
+            &budget,
+        )
+    );
+    assert!(budget.exhausted());
 }
 
 #[test]
@@ -568,6 +729,7 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
             .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });
@@ -592,6 +754,7 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
             .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });
@@ -644,6 +807,7 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
             .flat_map(|u| (0..2).map(move |v| Point3::new(x[u], v as f64, z[u])))
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     });
@@ -776,6 +940,7 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
             distance: 4.0,
             u_sense: Some(0),
             v_sense: Some(0),
+            support_extension: None,
             extension_flags: Vec::new(),
             revision_form: None,
         },
@@ -1471,6 +1636,7 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
             distance: 1.0,
             u_sense: Some(0),
             v_sense: Some(0),
+            support_extension: None,
             extension_flags: Vec::new(),
             revision_form: None,
         },
@@ -1527,6 +1693,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
             })
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };

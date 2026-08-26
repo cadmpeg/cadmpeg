@@ -52,6 +52,22 @@ pub(crate) fn partition_stream() -> Vec<u8> {
     s
 }
 
+/// Partition stream carrying one complete variable-width Parasolid GROUP record.
+pub(crate) fn parasolid_group_partition_stream() -> Vec<u8> {
+    let mut stream = partition_stream();
+    stream.extend_from_slice(&90u16.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [3u16, 4, 5, 6] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(4);
+    stream.extend_from_slice(&8u16.to_be_bytes());
+    stream.push(0);
+    stream
+}
+
 /// Raw bytes for an `ExternalReferences` container entry: an `EXTREFSTREAM`
 /// index over one empty record and one four-slot handle-set record, followed by
 /// an end-anchored four-string table. Decoding walks the record index, string

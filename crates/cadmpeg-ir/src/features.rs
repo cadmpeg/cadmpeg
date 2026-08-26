@@ -767,6 +767,8 @@ pub enum FeatureDefinition {
         /// Axis direction.
         direction: Vector3,
     },
+    /// Constructed reference-axis family whose model-space line is unresolved.
+    DatumAxisUnresolved,
     /// Constructed reference point.
     DatumPoint {
         /// Point position in model space.
@@ -920,6 +922,8 @@ pub enum FeatureDefinition {
         #[serde(default)]
         closed: bool,
     },
+    /// Bridge curve construction whose source curves and continuity remain unresolved.
+    BridgeCurveUnresolved,
     /// Circular helix or planar spiral constructed around an axis.
     Helix {
         /// Point on the construction axis at the curve start.
@@ -1043,6 +1047,8 @@ pub enum FeatureDefinition {
     ///
     /// The feature's `outputs` identify the retained bodies when geometry is present.
     StoredGeometry,
+    /// Body-affecting direct BREP whose result-body relation remains unresolved.
+    BrepUnresolved,
     /// Body geometry copied from existing bodies.
     ExtractBody {
         /// Bodies supplying the copied geometry.
@@ -1067,6 +1073,16 @@ pub enum FeatureDefinition {
         /// Boolean combination with an existing `PartDesign` body.
         op: BooleanOp,
     },
+    /// Body-affecting cylinder primitive whose dimensions and placement remain unresolved.
+    CylinderUnresolved,
+    /// Body-affecting cone primitive whose dimensions and placement remain unresolved.
+    ConeUnresolved,
+    /// Body-affecting sphere primitive whose dimensions and placement remain unresolved.
+    SphereUnresolved,
+    /// Body-affecting thread construction whose selected faces and thread law remain unresolved.
+    ThreadUnresolved,
+    /// Body-affecting detailed thread construction whose selected faces and thread law remain unresolved.
+    DetailedThreadUnresolved,
     /// Linear extrusion of a profile.
     Extrude {
         /// Profile swept along `direction`.
@@ -1169,6 +1185,8 @@ pub enum FeatureDefinition {
     },
     /// Loft-family skin whose section semantics remain unresolved.
     LoftUnresolved,
+    /// Through-curve mesh surface whose curve networks and construction remain unresolved.
+    ThroughCurveMeshUnresolved,
     /// Freeform surface whose control geometry remains unresolved.
     FreeformSurfaceUnresolved,
     /// Linear extrusion whose profile, extent, and result semantics remain unresolved.
@@ -1427,6 +1445,14 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         merge_result: Option<bool>,
     },
+    /// Surface body extracted from selected faces whose source roles remain unresolved.
+    ExtractFaceUnresolved,
+    /// Body-affecting face-copy family whose source and target roles remain unresolved.
+    CopyFaceUnresolved,
+    /// Body-affecting linked-face family whose source and associativity roles remain unresolved.
+    LinkedFaceUnresolved,
+    /// Body-affecting hole-fill operation whose construction roles remain unresolved.
+    FillHoleUnresolved,
     /// Boundary-surface operation whose curve networks remain unresolved.
     BoundarySurfaceUnresolved,
     /// Restricts selected surface faces to one side of a trimming path.
@@ -1559,6 +1585,8 @@ pub enum FeatureDefinition {
         /// Whether adjacent faces extend to heal the resulting boundary.
         heal: bool,
     },
+    /// Body-affecting face deletion whose selected faces and healing policy remain unresolved.
+    DeleteFaceUnresolved,
     /// Replaces selected faces with another face set.
     ReplaceFace {
         /// Faces removed from the target body.
@@ -1573,6 +1601,14 @@ pub enum FeatureDefinition {
         /// Motion applied to the selected faces.
         motion: FaceMotion,
     },
+    /// Body-affecting face-motion family whose selected faces and motion law remain unresolved.
+    MoveFaceUnresolved,
+    /// Body-affecting face-mirror family whose source and plane roles remain unresolved.
+    MirrorFaceUnresolved,
+    /// Body-affecting subdivision-body family whose source and subdivision roles remain unresolved.
+    SubdivisionBodyUnresolved,
+    /// Body-affecting topology-optimization family whose input and optimization roles remain unresolved.
+    TopologyOptimizationUnresolved,
     /// Rigid translation or rotation of selected bodies, optionally creating copies.
     MoveBody {
         /// Bodies transformed by the operation.
@@ -1586,6 +1622,8 @@ pub enum FeatureDefinition {
         #[serde(default)]
         copies: u32,
     },
+    /// Body-affecting object-motion family whose selected objects and motion law remain unresolved.
+    MoveObjectUnresolved,
     /// Dome grown from selected planar faces.
     Dome {
         /// Faces that bound the dome base.
@@ -1703,9 +1741,26 @@ impl FeatureDefinition {
     pub fn body_output_family(&self) -> Option<&'static str> {
         match self {
             Self::BaseFeature { .. } => Some("base feature"),
+            Self::BrepUnresolved => Some("brep"),
             Self::Block { .. } => Some("block"),
+            Self::Sphere { .. } => Some("sphere"),
             Self::ExtractBody { .. } => Some("extract body"),
             Self::Loft { .. } => Some("loft"),
+            Self::ThroughCurveMeshUnresolved => Some("through curve mesh"),
+            Self::ExtractFaceUnresolved => Some("extract face"),
+            Self::CopyFaceUnresolved => Some("copy face"),
+            Self::LinkedFaceUnresolved => Some("linked face"),
+            Self::FillHoleUnresolved => Some("fill hole"),
+            Self::MoveFaceUnresolved => Some("move face"),
+            Self::MirrorFaceUnresolved => Some("mirror face"),
+            Self::SubdivisionBodyUnresolved => Some("subdivision body"),
+            Self::TopologyOptimizationUnresolved => Some("topology optimization"),
+            Self::MoveObjectUnresolved => Some("move object"),
+            Self::CylinderUnresolved => Some("cylinder"),
+            Self::ConeUnresolved => Some("cone"),
+            Self::SphereUnresolved => Some("sphere"),
+            Self::ThreadUnresolved => Some("thread"),
+            Self::DetailedThreadUnresolved => Some("detailed thread"),
             Self::ExtrudeUnresolved => Some("extrude"),
             Self::RevolveUnresolved => Some("revolve"),
             Self::TrimSurface { .. } => Some("trim surface"),
@@ -1718,6 +1773,7 @@ impl FeatureDefinition {
             Self::FilletUnresolved => Some("fillet"),
             Self::FullRoundFillet { .. } => Some("fillet"),
             Self::FaceBlend { .. } => Some("face blend"),
+            Self::Shell { .. } => Some("shell"),
             Self::SewBodies { .. } => Some("sew bodies"),
             Self::TrimBodies { .. } => Some("trim bodies"),
             Self::Extrude { .. } => Some("extrude"),
@@ -1729,6 +1785,7 @@ impl FeatureDefinition {
             Self::Pattern { .. } => Some("pattern"),
             Self::Combine { .. } => Some("body combine"),
             Self::ReplaceFace { .. } => Some("replace face"),
+            Self::DeleteFace { .. } | Self::DeleteFaceUnresolved => Some("delete face"),
             _ => None,
         }
     }

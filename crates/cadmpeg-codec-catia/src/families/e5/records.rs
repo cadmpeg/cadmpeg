@@ -655,6 +655,7 @@ fn e5_nurbs_surface(data: &[u8], record: E5Record) -> Option<SurfaceGeometry> {
             v_count: u32::try_from(v_count).ok()?,
             control_points,
             weights,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         }))

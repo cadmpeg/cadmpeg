@@ -43,43 +43,54 @@ pub(crate) struct FixedRecordFrame {
     pub(crate) end: usize,
 }
 
+/// The framing grammar admits at most the direct and escaped readings at one
+/// type-tag offset. Keep both slots inline so a rejected probe does not allocate
+/// while a whole stream is scanned.
+pub(crate) type FixedRecordCandidates = [Option<FixedRecordFrame>; 2];
+
 /// Build all complete direct and escaped interpretations at one fixed-record tag.
 pub(crate) fn fixed_record_candidates(
     stream: &[u8],
     pos: usize,
     kind: u8,
     len: usize,
-) -> Vec<FixedRecordFrame> {
-    let mut candidates = Vec::new();
+) -> FixedRecordCandidates {
+    let mut candidates = [None; 2];
     if let Some((xmt, shift)) = read_xmt(stream, pos + 2) {
-        candidates.push((xmt, shift));
+        candidates[0] = complete_frame(stream, pos, kind, len, xmt, shift);
     }
     if stream.get(pos + 2) == Some(&0xff) {
         if let Some((xmt, shift)) = read_xmt(stream, pos + 3) {
-            candidates.push((xmt, shift + 1));
+            candidates[1] = complete_frame(stream, pos, kind, len, xmt, shift + 1);
         }
     }
     candidates
-        .into_iter()
-        .filter_map(|(xmt, shift)| {
-            // 1 is Parasolid's null reference. A record itself cannot occupy it.
-            if xmt <= 1 {
-                return None;
-            }
-            let payload_shift = payload_shift(stream, pos, kind, shift)?;
-            let end = pos
-                .checked_add(len)?
-                .checked_add(shift)?
-                .checked_add(payload_shift)?;
-            stream.get(pos..end)?;
-            Some(FixedRecordFrame {
-                xmt,
-                shift,
-                payload_shift,
-                end,
-            })
-        })
-        .collect()
+}
+
+fn complete_frame(
+    stream: &[u8],
+    pos: usize,
+    kind: u8,
+    len: usize,
+    xmt: u32,
+    shift: usize,
+) -> Option<FixedRecordFrame> {
+    // 1 is Parasolid's null reference. A record itself cannot occupy it.
+    if xmt <= 1 {
+        return None;
+    }
+    let payload_shift = payload_shift(stream, pos, kind, shift)?;
+    let end = pos
+        .checked_add(len)?
+        .checked_add(shift)?
+        .checked_add(payload_shift)?;
+    stream.get(pos..end)?;
+    Some(FixedRecordFrame {
+        xmt,
+        shift,
+        payload_shift,
+        end,
+    })
 }
 
 /// Return whether `end` is the stream boundary or a complete fixed-record start.
@@ -96,7 +107,11 @@ pub(crate) fn fixed_record_boundary(stream: &[u8], end: usize) -> bool {
     let Some(len) = fixed_len(kind) else {
         return false;
     };
-    !fixed_record_candidates(stream, end, kind, len).is_empty()
+    fixed_record_candidates(stream, end, kind, len)
+        .iter()
+        .flatten()
+        .next()
+        .is_some()
 }
 
 pub(crate) fn read_and_advance(stream: &[u8], at: &mut usize) -> Option<u32> {
@@ -107,6 +122,18 @@ pub(crate) fn read_and_advance(stream: &[u8], at: &mut usize) -> Option<u32> {
 
 pub(crate) fn read_sequence_at(stream: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {
     (0..count).map(|_| read_and_advance(stream, at)).collect()
+}
+
+/// Advance across encoded XMT references without retaining them.
+///
+/// Fixed-record probing uses a reference sequence only to establish the shifted
+/// field boundary. Keeping that validation allocation-free prevents rejected
+/// byte candidates from creating temporary vectors during a whole-stream scan.
+pub(crate) fn skip_sequence_at(stream: &[u8], at: &mut usize, count: usize) -> Option<()> {
+    for _ in 0..count {
+        read_and_advance(stream, at)?;
+    }
+    Some(())
 }
 
 /// Decode the compact and extended XMT forms. The extended form uses a negative
@@ -140,9 +167,9 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
         let start = at;
         read_and_advance(stream, &mut at)?;
         at += 8;
-        read_sequence_at(stream, &mut at, 5)?;
+        skip_sequence_at(stream, &mut at, 5)?;
         at += 1;
-        read_sequence_at(stream, &mut at, 5)?;
+        skip_sequence_at(stream, &mut at, 5)?;
         return Some(at - start - 31);
     }
     if kind == 16 {
@@ -150,7 +177,7 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
         let start = at;
         read_and_advance(stream, &mut at)?;
         at += 8;
-        read_sequence_at(stream, &mut at, 7)?;
+        skip_sequence_at(stream, &mut at, 7)?;
         return Some(at - start - 24);
     }
     let (offset, before, trailing_bytes, after) = match kind {
@@ -164,9 +191,9 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
     if before != 0 {
         let mut at = pos + offset + header_shift;
         let start = at;
-        read_sequence_at(stream, &mut at, before)?;
+        skip_sequence_at(stream, &mut at, before)?;
         at += trailing_bytes;
-        read_sequence_at(stream, &mut at, after)?;
+        skip_sequence_at(stream, &mut at, after)?;
         let compact = before * 2 + trailing_bytes + after * 2;
         return Some(at - start - compact);
     }
@@ -179,31 +206,31 @@ fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Op
     }
     let mut at = pos + analytic::ATTRIBUTES + header_shift;
     let start = at;
-    read_sequence_at(stream, &mut at, 5)?;
+    skip_sequence_at(stream, &mut at, 5)?;
     matches!(stream.get(at), Some(b'+' | b'-')).then_some(())?;
     at += 1;
     let common_extra = at - start - 11;
     let tail_start = at;
     match kind {
         38 => {
-            read_sequence_at(stream, &mut at, 6)?;
+            skip_sequence_at(stream, &mut at, 6)?;
         }
         56 => {
             at += 1;
-            read_sequence_at(stream, &mut at, 3)?;
+            skip_sequence_at(stream, &mut at, 3)?;
         }
         60 => {
             at += 2;
             read_and_advance(stream, &mut at)?;
         }
         124 | 134 => {
-            read_sequence_at(stream, &mut at, 2)?;
+            skip_sequence_at(stream, &mut at, 2)?;
         }
         133 => {
             read_and_advance(stream, &mut at)?;
         }
         137 => {
-            read_sequence_at(stream, &mut at, 3)?;
+            skip_sequence_at(stream, &mut at, 3)?;
         }
         _ => {}
     }
@@ -246,4 +273,31 @@ pub(crate) fn fixed_len(kind: u8) -> Option<usize> {
         137 => sp_curve::LEN,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{read_sequence_at, skip_sequence_at};
+
+    #[test]
+    fn skip_sequence_tracks_compact_and_extended_xmt_widths() {
+        let bytes = [0xff, 0xfe, 0x00, 0x02, 0x00, 0x03];
+        let mut skipped_at = 0;
+        assert_eq!(skip_sequence_at(&bytes, &mut skipped_at, 2), Some(()));
+        assert_eq!(skipped_at, bytes.len());
+
+        let mut read_at = 0;
+        assert_eq!(
+            read_sequence_at(&bytes, &mut read_at, 2),
+            Some(vec![65_536, 3])
+        );
+        assert_eq!(read_at, skipped_at);
+    }
+
+    #[test]
+    fn skip_sequence_rejects_truncated_xmt() {
+        let mut at = 0;
+        assert_eq!(skip_sequence_at(&[0xff, 0xfe, 0x00], &mut at, 1), None);
+        assert_eq!(at, 0);
+    }
 }

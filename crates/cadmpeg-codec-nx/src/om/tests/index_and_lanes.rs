@@ -229,7 +229,7 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
         0x45, 0x04, 0x00, 0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33,
         0x07,
     ];
-    let point = super::offset_store_named_point(&[&first, &second]).unwrap();
+    let point = super::offset_store_named_point([&first[..], &second[..]]).unwrap();
     assert_eq!(point.name, "Point7");
     assert!(point
         .values
@@ -246,13 +246,13 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     let mut same_block = first.to_vec();
     same_block.extend_from_slice(&second);
     assert_eq!(
-        super::offset_store_named_point(&[&same_block])
+        super::offset_store_named_point([&same_block[..]])
             .unwrap()
             .block_count,
         1
     );
     assert_eq!(
-        super::offset_store_named_point(&[&first[..9], &first[9..], &second])
+        super::offset_store_named_point([&first[..9], &first[9..], &second[..]])
             .unwrap()
             .block_count,
         3
@@ -260,112 +260,22 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     let third = [
         0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
     ];
-    assert!(super::offset_store_named_point(&[&first, &second, &third]).is_none());
+    assert!(super::offset_store_named_point([&first[..], &second[..], &third[..]]).is_none());
     let next_name = [
         0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00,
     ];
-    assert!(super::offset_store_named_point(&[&first, &second, &next_name]).is_none());
+    let next_name_blocks = [&first[..], &second[..], &next_name[..]];
+    assert!(super::offset_store_named_point(next_name_blocks).is_some());
     let next_point = [0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00];
     assert_eq!(
-        super::offset_store_named_point(&[&first, &second, &next_point])
+        super::offset_store_named_point([&first[..], &second[..], &next_point[..]])
             .unwrap()
             .block_count,
         2
     );
     let mut zero = first;
     zero[7] = b'0';
-    assert!(super::offset_store_named_point(&[&zero, &second]).is_none());
-}
-
-#[test]
-fn sketch_fixed_pair_parser_reads_signed_q1_55_atoms() {
-    let bytes = [
-        0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    ];
-    let pairs = super::sketch_payload_fixed_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].values, [0.5, -0.5]);
-    assert_eq!(pairs[0].value_offsets, [8, 17]);
-    assert_eq!(pairs[0].raw_values[0], [0x40, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(pairs[0].discriminator, bytes[..8]);
-
-    let mut malformed = bytes;
-    malformed[16] = 1;
-    assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
-}
-
-#[test]
-fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
-    let short = [
-        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x01,
-        0x30, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00,
-    ];
-    let extended = [
-        0x08, 0x02, 0x03, 0x01, 0xc0, 0x40, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
-        0x00, 0x01, 0x30, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0xe0, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00,
-    ];
-
-    let short_pair = super::sketch_payload_fixed_pairs(&short);
-    assert_eq!(short_pair.len(), 1);
-    assert_eq!(short_pair[0].values, [0.5, -0.5]);
-    assert_eq!(short_pair[0].value_offsets, [15, 23]);
-    assert_eq!(short_pair[0].discriminator, short[..15]);
-
-    let extended_pair = super::sketch_payload_fixed_pairs(&extended);
-    assert_eq!(extended_pair.len(), 1);
-    assert_eq!(extended_pair[0].values, [0.25, -0.25]);
-    assert_eq!(extended_pair[0].value_offsets, [17, 25]);
-    assert_eq!(extended_pair[0].discriminator, extended[..17]);
-
-    let mut malformed = short;
-    malformed[23] = 0x31;
-    assert!(super::sketch_payload_fixed_pairs(&malformed).is_empty());
-}
-
-#[test]
-fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
-    let discriminator = [
-        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ];
-    let mut bytes = discriminator.to_vec();
-    bytes.push(0x30);
-    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
-    bytes.extend_from_slice(&[0x00, 0x30]);
-    bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
-
-    let pairs = super::sketch_payload_fixed_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].values, [0.5, -0.5]);
-    assert_eq!(pairs[0].value_offsets, [15, 24]);
-    assert_eq!(pairs[0].discriminator, discriminator);
-
-    bytes[14] = 0x02;
-    assert!(super::sketch_payload_fixed_pairs(&bytes).is_empty());
-}
-
-#[test]
-fn sketch_mixed_pair_parser_requires_q1_55_then_shifted_binary32() {
-    let mut bytes = vec![0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84, 0x30];
-    bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
-    bytes.push(0x00);
-    let mut shifted = 3.25_f32.to_be_bytes();
-    shifted[0] += 0x10;
-    bytes.extend_from_slice(&shifted);
-
-    let pairs = super::sketch_payload_mixed_pairs(&bytes);
-    assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].fixed_value, 0.5);
-    assert_eq!(pairs[0].binary32_value, 3.25);
-    assert_eq!(pairs[0].fixed_raw_value, [0x40, 0, 0, 0, 0, 0, 0]);
-    assert_eq!(pairs[0].binary32_raw_value, shifted);
-    assert_eq!(pairs[0].value_offsets, [8, 17]);
-
-    let mut malformed = bytes;
-    malformed[16] = 1;
-    assert!(super::sketch_payload_mixed_pairs(&malformed).is_empty());
+    assert!(super::offset_store_named_point([&zero[..], &second[..]]).is_none());
 }
 
 #[test]
@@ -1094,6 +1004,52 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
 }
 
 #[test]
+fn om_operation_body_write_is_not_a_direct_primary_body_reference() {
+    let label = super::OperationLabel {
+        header_offset: 100,
+        offset: 100,
+        value: "EXTRUDE",
+        object_indices: [None; 4],
+        object_index_offsets: [0; 4],
+    };
+    let bytes = [
+        0x01, 0x02, 0x0b, 0xa0, 0x66, 0xa4, 0x97, 0x75, 0x01, 0x02, 0x10, 0x43, 0xff,
+    ];
+    let record = super::OperationRecord {
+        offset: 100,
+        bytes: &bytes,
+        payload_offset: 100,
+        payload: &bytes,
+        label,
+    };
+    assert!(super::operation_body_reference(record).is_none());
+    assert_eq!(
+        super::operation_body_write_frames(record),
+        [super::OperationBodyWriteFrame {
+            offset: 100,
+            body_identity: 0x0b,
+            group_node: 0x66a4,
+            raw_group_node: vec![0xa0, 0x66, 0xa4],
+            group_node_offset: 103,
+            endpoint_tag: 0x10,
+            body_image_object_index: 0x43,
+            raw_body_image_object_index: vec![0x43],
+            body_image_object_index_offset: 111,
+            end_offset: 113,
+        }]
+    );
+
+    let mut invalid_endpoint_tag = bytes;
+    invalid_endpoint_tag[10] = 0x11;
+    let nested_record = super::OperationRecord {
+        bytes: &invalid_endpoint_tag,
+        payload: &invalid_endpoint_tag,
+        ..record
+    };
+    assert!(super::operation_body_references(nested_record).is_empty());
+}
+
+#[test]
 fn om_operation_object_relation_requires_complete_canonical_endpoints() {
     let label = super::OperationLabel {
         header_offset: 100,
@@ -1103,7 +1059,7 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
         object_index_offsets: [0; 4],
     };
     let payload = [
-        0x01, 0x02, 0x17, 0x81, 0x23, 0x97, 0x75, 0x01, 0x02, 0x11, 0x86, 0x45, 0xff, 0x01, 0x02,
+        0x01, 0x02, 0x17, 0x81, 0x23, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x45, 0xff, 0x01, 0x02,
         0x10, 0x81, 0x23, 0xff,
     ];
     let record = super::OperationRecord {
@@ -1114,23 +1070,24 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
         label,
     };
     assert_eq!(
-        super::operation_object_relations(record),
-        [super::OperationObjectRelation {
+        super::operation_body_write_frames(record),
+        [super::OperationBodyWriteFrame {
             offset: 100,
-            link_tag: 0x17,
-            first_object_index: 0x123,
-            raw_first_object_index: vec![0x81, 0x23],
-            first_object_index_offset: 103,
-            second_object_index: 0x645,
-            raw_second_object_index: vec![0x86, 0x45],
-            second_object_index_offset: 110,
+            body_identity: 0x17,
+            group_node: 0x123,
+            raw_group_node: vec![0x81, 0x23],
+            group_node_offset: 103,
+            endpoint_tag: 0x10,
+            body_image_object_index: 0x645,
+            raw_body_image_object_index: vec![0x86, 0x45],
+            body_image_object_index_offset: 110,
             end_offset: 113,
         }]
     );
 
     let mut noncanonical_first = payload;
     noncanonical_first[3] = 0x80;
-    assert!(super::operation_object_relations(super::OperationRecord {
+    assert!(super::operation_body_write_frames(super::OperationRecord {
         bytes: &noncanonical_first,
         payload: &noncanonical_first,
         ..record
@@ -1139,7 +1096,7 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
 
     let mut truncated = payload[..13].to_vec();
     truncated.pop();
-    assert!(super::operation_object_relations(super::OperationRecord {
+    assert!(super::operation_body_write_frames(super::OperationRecord {
         bytes: &truncated,
         payload: &truncated,
         ..record
@@ -1147,7 +1104,7 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
     .is_empty());
 
     let direct_body = [0x01, 0x02, 0x10, 0x81, 0x23, 0xff];
-    assert!(super::operation_object_relations(super::OperationRecord {
+    assert!(super::operation_body_write_frames(super::OperationRecord {
         bytes: &direct_body,
         payload: &direct_body,
         ..record
@@ -1155,17 +1112,17 @@ fn om_operation_object_relation_requires_complete_canonical_endpoints() {
     .is_empty());
 
     let nested = [
-        0x01, 0x02, 0x11, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x11, 0x86, 0x93, 0xff,
+        0x01, 0x02, 0x11, 0x80, 0xa9, 0x97, 0x75, 0x01, 0x02, 0x10, 0x86, 0x93, 0xff,
     ];
-    let nested_relations = super::operation_object_relations(super::OperationRecord {
+    let nested_relations = super::operation_body_write_frames(super::OperationRecord {
         bytes: &nested,
         payload: &nested,
         ..record
     });
     assert_eq!(nested_relations.len(), 1);
-    assert_eq!(nested_relations[0].link_tag, 0x11);
-    assert_eq!(nested_relations[0].first_object_index, 0xa9);
-    assert_eq!(nested_relations[0].second_object_index, 0x693);
+    assert_eq!(nested_relations[0].body_identity, 0x11);
+    assert_eq!(nested_relations[0].group_node, 0xa9);
+    assert_eq!(nested_relations[0].body_image_object_index, 0x693);
 }
 
 #[test]
@@ -1509,6 +1466,55 @@ fn om_size_frame_uses_validated_internal_record_area_pointer() {
     assert_eq!(super::sections(&invalid)[0].record_area, None);
 }
 
+fn legacy_feature_om_section_with_record_area() -> Vec<u8> {
+    let mut bytes = vec![0xff; 16];
+    bytes[12..14].copy_from_slice(b"OM");
+    bytes.extend_from_slice(&[0, 1, 2]);
+    let class_name = b"UGS::FEATURE_RECORD";
+    bytes.push((class_name.len() + 1) as u8);
+    bytes.extend_from_slice(class_name);
+    bytes.push(0xa0);
+    bytes.extend_from_slice(&[0x81, 0x21, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0x06]);
+    let pointer_offset = bytes.len();
+    let record_area_offset = pointer_offset + 20;
+    bytes.push(0x01);
+    bytes.extend_from_slice(&((record_area_offset - 1) as u32).to_le_bytes());
+    bytes.resize(record_area_offset, 0);
+    bytes.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    bytes.extend_from_slice(b"\x01\x0eNX 1980.1700\0");
+    bytes.extend_from_slice(
+        b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07UNITE\0",
+    );
+    let payload_len = (bytes.len() - 16) as u32;
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    bytes
+}
+
+#[test]
+fn om_feature_section_accepts_the_legacy_record_area_pointer_and_product_frame() {
+    let bytes = legacy_feature_om_section_with_record_area();
+    let section = super::sections(&bytes).remove(0);
+    let record_area_offset = section.record_area_offset.expect("record area");
+    assert_eq!(
+        record_area_offset,
+        16 + 3 + 1 + b"UGS::FEATURE_RECORD".len() + 1 + 12 + 20
+    );
+    assert_eq!(
+        section
+            .record_area_header()
+            .expect("record header")
+            .product
+            .value,
+        "NX 1980.1700"
+    );
+    assert_eq!(section.operation_labels().len(), 1);
+    assert_eq!(section.operation_labels()[0].value, "UNITE");
+
+    let mut invalid = bytes;
+    invalid[record_area_offset + 13] = 0x02;
+    assert!(super::sections(&invalid)[0].record_area.is_none());
+}
+
 #[test]
 fn om_registry_uses_the_bounded_record_area_as_its_registry_end() {
     let mut bytes = size_framed_om_section();
@@ -1570,6 +1576,11 @@ fn om_operation_labels_require_the_complete_frame() {
 fn om_operation_records_use_consecutive_validated_headers() {
     let bytes = b"prefix\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x07UNITE\0payload\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x08SKETCH\0tail";
     let records = super::operation_records(bytes, 10);
+    let labels = super::operation_labels(bytes, 10);
+    let records_with_ordinals =
+        super::operation_records_with_labels_and_ordinals(bytes, 10, &labels);
+    assert_eq!(records_with_ordinals[0].0, 0);
+    assert_eq!(records_with_ordinals[1].0, 1);
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].offset, 16);
     assert_eq!(records[0].label.value, "UNITE");
@@ -1603,6 +1614,46 @@ fn om_operation_payload_strings_require_complete_utf8_frames() {
     assert_eq!(strings[0].offset, 201);
     assert_eq!(strings[0].value, "BLOCK");
     assert_eq!(strings[1].value, "×");
+}
+
+#[test]
+fn om_operation_payload_text_frames_retain_marker_and_order() {
+    let label = super::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SYMBOLIC_THREAD",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x03\x05CUT\0\x04\x06DONE\0\x03\x0bM Profile\0";
+    let record = super::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let frames = super::operation_payload_text_frames(record);
+    assert_eq!(
+        frames,
+        vec![
+            super::OperationPayloadTextFrame {
+                marker: 0x03,
+                offset: 200,
+                value: "CUT",
+            },
+            super::OperationPayloadTextFrame {
+                marker: 0x04,
+                offset: 206,
+                value: "DONE",
+            },
+            super::OperationPayloadTextFrame {
+                marker: 0x03,
+                offset: 213,
+                value: "M Profile",
+            },
+        ]
+    );
 }
 
 #[test]
@@ -1761,6 +1812,10 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
     };
     let field = super::pattern_payload_references(record).expect("complete graph");
     assert_eq!(
+        field.layout,
+        super::PatternPayloadReferenceLayout::CanonicalGraph
+    );
+    assert_eq!(
         field
             .references
             .iter()
@@ -1791,6 +1846,26 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
         ..record
     })
     .is_none());
+
+    let compact = b"\x3b\xf1\x1b\x20\xff\x00\x01\xf1\x1b\x21\xf1\x1b\x22\x3b\xf1\x1b\x23\xff\x00\x01\xf1\x1b\x24\xf1\x1b\x25\xff\x3c\xf1\x1b\x26\xf1\x1b\x27\xff\x00\x00\x01\xf1\x1b\x28\xff\xff\xff\x01";
+    let field = super::pattern_payload_references(super::OperationRecord {
+        bytes: compact,
+        payload: compact,
+        ..record
+    })
+    .expect("complete compact graph");
+    assert_eq!(
+        field.layout,
+        super::PatternPayloadReferenceLayout::CompactGraph
+    );
+    assert_eq!(
+        field
+            .references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        (0x1b20..=0x1b28).collect::<Vec<_>>()
+    );
 }
 
 #[test]

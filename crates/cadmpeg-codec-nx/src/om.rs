@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Frame NX object-model entities using external boundary and identity arrays.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use cadmpeg_core::decode::{alloc_filled, View};
+
+pub(crate) mod registry;
 
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,7 +29,7 @@ pub struct TypeDefinition<'a> {
     pub offset: usize,
     /// Registered `UGS::` class name.
     pub name: &'a str,
-    /// Declaration code following the name.
+    /// First registry-token byte following the name (legacy field name).
     pub trailing_code: u8,
     /// Bytes between this declaration core and the next class declaration.
     pub registry_suffix: &'a [u8],
@@ -39,10 +42,30 @@ pub struct FieldDefinition<'a> {
     pub offset: usize,
     /// Registered `m_` member name.
     pub name: &'a str,
-    /// Declaration code immediately following the name.
+    /// First registry-token byte following the name (legacy field name).
     pub trailing_code: u8,
     /// Bytes between this declaration core and the next member declaration.
     pub registry_suffix: &'a [u8],
+}
+
+impl TypeDefinition<'_> {
+    /// Decode the complete registry tail of this class declaration.
+    ///
+    /// The source representation keeps the first tail byte in
+    /// `trailing_code` for compatibility. Registry tokens are decoded from
+    /// the logical concatenation of that byte and `registry_suffix`; the
+    /// generic operation compact-index family is deliberately not reused.
+    pub(crate) fn class_registry_layout(&self) -> Option<registry::ClassRegistryLayout> {
+        registry::class_registry_layout(self.trailing_code, self.registry_suffix)
+    }
+}
+
+impl FieldDefinition<'_> {
+    /// Decode the storage and owner tokens at the head of this member
+    /// declaration.
+    pub(crate) fn field_registry_layout(&self) -> Option<registry::FieldRegistryLayout> {
+        registry::field_registry_layout(self.trailing_code, self.registry_suffix)
+    }
 }
 
 /// One self-framed printable string value in an NX OM entity.
@@ -127,6 +150,13 @@ pub fn compact_indices(bytes: &[u8]) -> Option<Vec<CompactIndex>> {
     Some(values)
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CompactToken {
+    value: CompactIndex,
+    offset: usize,
+    width: usize,
+}
+
 fn compact_index(bytes: &[u8]) -> Option<(CompactIndex, usize)> {
     let prefix = *bytes.first()?;
     if prefix == 0xff {
@@ -137,6 +167,24 @@ fn compact_index(bytes: &[u8]) -> Option<(CompactIndex, usize)> {
     } else {
         Some((CompactIndex::Value(u32::from(prefix)), 1))
     }
+}
+
+fn compact_token(bytes: &[u8], offset: usize) -> Option<CompactToken> {
+    let (value, width) = compact_index(bytes.get(offset..)?)?;
+    Some(CompactToken {
+        value,
+        offset,
+        width,
+    })
+}
+
+fn compact_value_token(bytes: &[u8], offset: usize) -> Option<CompactToken> {
+    let token = compact_token(bytes, offset)?;
+    matches!(token.value, CompactIndex::Value(_)).then_some(token)
+}
+
+fn raw_compact_token(bytes: &[u8], token: CompactToken) -> Vec<u8> {
+    bytes[token.offset..token.offset + token.width].to_vec()
 }
 
 /// One counted compact-index lane ending in the exact `01 11` marker.
@@ -356,16 +404,16 @@ pub struct ColorTable<'a> {
     pub definitions: Vec<ColorTableDefinition<'a>>,
 }
 
-fn color_component(bytes: &[u8]) -> Option<(f32, Vec<u8>, usize)> {
+fn color_component_layout(bytes: &[u8]) -> Option<(f32, usize)> {
     match bytes.first().copied()? {
-        0x00 => Some((0.0, vec![0x00], 1)),
-        0x01 => Some((1.0, vec![0x01], 1)),
-        marker @ (0x20..=0x3f | 0xa0..=0xbf) => {
+        0x00 => Some((0.0, 1)),
+        0x01 => Some((1.0, 1)),
+        marker if is_shifted_ieee_f64_marker(marker) => {
             let raw: [u8; 8] = bytes.get(..8)?.try_into().ok()?;
             let value = shifted_ieee_f64(&raw)? / 4.0;
             (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
                 debug_assert_eq!(raw[0], marker);
-                (value as f32, raw.to_vec(), 8)
+                (value as f32, 8)
             })
         }
         marker @ (0x40..=0x5f | 0xc0..=0xdf) => {
@@ -375,100 +423,174 @@ fn color_component(bytes: &[u8]) -> Option<(f32, Vec<u8>, usize)> {
             let value = f32::from_be_bytes(decoded) / 4.0;
             (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
                 debug_assert_eq!(raw[0], marker);
-                (value, raw.to_vec(), 4)
+                (value, 4)
             })
         }
         _ => None,
     }
 }
 
+fn color_component(bytes: &[u8]) -> Option<(f32, Vec<u8>, usize)> {
+    let (value, width) = color_component_layout(bytes)?;
+    Some((value, bytes.get(..width)?.to_vec(), width))
+}
+
+fn color_name_frame(bytes: &[u8], offset: usize) -> Option<(&str, usize)> {
+    let byte_len = usize::from(bytes.get(offset).copied()?);
+    if byte_len < 2 {
+        return None;
+    }
+    let end = offset.checked_add(byte_len)?;
+    let text = bytes.get(offset + 1..end)?.strip_suffix(&[0])?;
+    if text.is_empty()
+        || !text
+            .iter()
+            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    {
+        return None;
+    }
+    Some((std::str::from_utf8(text).ok()?, byte_len))
+}
+
+const COLOR_TABLE_NAME_HEADER: [u8; 4] = [0x02, 0x80, 0xd9, 0x01];
+const COLOR_TABLE_DEFINITION_PREAMBLE: [u8; 21] = [
+    0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13, 0x0a, 0xc6,
+    0x01, 0x80, 0xd9, 0x80, 0xc8,
+];
+
+// Validate a complete palette through borrowed names, component widths, and
+// index tokens. The owning color vectors are materialized only after this
+// self-framed candidate has passed every check.
+fn color_table_end(bytes: &[u8], start: usize) -> Option<usize> {
+    if bytes.get(start..start + COLOR_TABLE_NAME_HEADER.len()) != Some(&COLOR_TABLE_NAME_HEADER) {
+        return None;
+    }
+    let mut at = start + COLOR_TABLE_NAME_HEADER.len();
+    for ordinal in 0..=216 {
+        let (name, width) = color_name_frame(bytes, at)?;
+        if ordinal == 0 && name != "Background" {
+            return None;
+        }
+        at += width;
+    }
+    if bytes.get(at..at + COLOR_TABLE_DEFINITION_PREAMBLE.len())
+        != Some(&COLOR_TABLE_DEFINITION_PREAMBLE)
+    {
+        return None;
+    }
+    at += COLOR_TABLE_DEFINITION_PREAMBLE.len();
+    for _ in 0..3 {
+        at += color_component_layout(bytes.get(at..)?)?.1;
+    }
+    for color_index in 1u16..=216 {
+        if bytes.get(at) != Some(&0x05) {
+            return None;
+        }
+        at += 1;
+        let token = if color_index < 128 {
+            [color_index as u8, 0]
+        } else {
+            [0x80, (color_index - 1) as u8]
+        };
+        let token_width = if color_index < 128 { 1 } else { 2 };
+        if bytes.get(at..at + token_width) != Some(&token[..token_width]) {
+            return None;
+        }
+        at += token_width;
+        if bytes.get(at..at + 3) != Some(&[0x01, 0x80, 0xc8]) {
+            return None;
+        }
+        at += 3;
+        for _ in 0..3 {
+            at += color_component_layout(bytes.get(at..)?)?.1;
+        }
+    }
+    Some(at)
+}
+
+fn color_table_at(bytes: &[u8], start: usize) -> Option<ColorTable<'_>> {
+    let mut at = start + COLOR_TABLE_NAME_HEADER.len();
+    let mut names = Vec::with_capacity(217);
+    for _ in 0..217 {
+        let (name, width) = color_name_frame(bytes, at)?;
+        names.push(name);
+        at += width;
+    }
+    at += COLOR_TABLE_DEFINITION_PREAMBLE.len();
+
+    let mut background_rgb = Vec::with_capacity(3);
+    let mut raw_background_components = Vec::with_capacity(3);
+    let mut background_component_offsets = Vec::with_capacity(3);
+    for _ in 0..3 {
+        background_component_offsets.push(at);
+        let (value, raw, width) = color_component(bytes.get(at..)?)?;
+        background_rgb.push(value);
+        raw_background_components.push(raw);
+        at += width;
+    }
+
+    let mut definitions = Vec::with_capacity(216);
+    for color_index in 1u16..=216 {
+        let offset = at;
+        at += 1;
+        let raw_color_index = if color_index < 128 {
+            vec![color_index as u8]
+        } else {
+            vec![0x80, (color_index - 1) as u8]
+        };
+        at += raw_color_index.len();
+        at += 3;
+
+        let mut rgb = Vec::with_capacity(3);
+        let mut raw_components = Vec::with_capacity(3);
+        let mut component_offsets = Vec::with_capacity(3);
+        for _ in 0..3 {
+            component_offsets.push(at);
+            let (value, raw, width) = color_component(bytes.get(at..)?)?;
+            rgb.push(value);
+            raw_components.push(raw);
+            at += width;
+        }
+        definitions.push(ColorTableDefinition {
+            color_index,
+            name: names[usize::from(color_index)],
+            rgb: rgb.try_into().ok()?,
+            raw_color_index,
+            raw_components: raw_components.try_into().ok()?,
+            offset,
+            component_offsets: component_offsets.try_into().ok()?,
+        });
+    }
+    Some(ColorTable {
+        offset: start,
+        background_name: names[0],
+        background_rgb: background_rgb.try_into().ok()?,
+        raw_background_components: raw_background_components.try_into().ok()?,
+        background_component_offsets: background_component_offsets.try_into().ok()?,
+        definitions,
+    })
+}
+
 /// Decode every complete NX part color table in a bounded byte region.
 pub fn color_tables(bytes: &[u8]) -> Vec<ColorTable<'_>> {
-    const NAME_HEADER: [u8; 4] = [0x02, 0x80, 0xd9, 0x01];
-    const DEFINITION_PREAMBLE: [u8; 21] = [
-        0x02, 0x14, 0xff, 0x06, 0x00, 0xf0, 0x02, 0x80, 0x9d, 0x80, 0xc7, 0x00, 0xc0, 0x13, 0x0a,
-        0xc6, 0x01, 0x80, 0xd9, 0x80, 0xc8,
-    ];
-
-    (0..bytes.len().saturating_sub(NAME_HEADER.len()))
-        .filter_map(|start| {
-            (bytes.get(start..start + NAME_HEADER.len()) == Some(&NAME_HEADER)).then_some(())?;
-            let mut at = start + NAME_HEADER.len();
-            let mut names = Vec::with_capacity(217);
-            for _ in 0..217 {
-                let byte_len = usize::from(*bytes.get(at)?);
-                (byte_len >= 2).then_some(())?;
-                let text = bytes.get(at + 1..at + byte_len)?;
-                let text = text.strip_suffix(&[0])?;
-                (!text.is_empty()
-                    && text
-                        .iter()
-                        .all(|byte| byte.is_ascii_graphic() || *byte == b' '))
-                .then_some(())?;
-                names.push(std::str::from_utf8(text).ok()?);
-                at += byte_len;
-            }
-            (names.first().copied() == Some("Background")).then_some(())?;
-            (bytes.get(at..at + DEFINITION_PREAMBLE.len()) == Some(&DEFINITION_PREAMBLE))
-                .then_some(())?;
-            at += DEFINITION_PREAMBLE.len();
-            let mut background_rgb = Vec::with_capacity(3);
-            let mut raw_background_components = Vec::with_capacity(3);
-            let mut background_component_offsets = Vec::with_capacity(3);
-            for _ in 0..3 {
-                background_component_offsets.push(at);
-                let (value, raw, width) = color_component(bytes.get(at..)?)?;
-                background_rgb.push(value);
-                raw_background_components.push(raw);
-                at += width;
-            }
-
-            let mut definitions = Vec::with_capacity(216);
-            for color_index in 1u16..=216 {
-                (bytes.get(at) == Some(&0x05)).then_some(())?;
-                let offset = at;
-                at += 1;
-                let raw_color_index = if color_index < 128 {
-                    vec![color_index as u8]
-                } else {
-                    vec![0x80, (color_index - 1) as u8]
-                };
-                (bytes.get(at..at + raw_color_index.len()) == Some(raw_color_index.as_slice()))
-                    .then_some(())?;
-                at += raw_color_index.len();
-                (bytes.get(at..at + 3) == Some(&[0x01, 0x80, 0xc8])).then_some(())?;
-                at += 3;
-
-                let mut rgb = Vec::with_capacity(3);
-                let mut raw_components = Vec::with_capacity(3);
-                let mut component_offsets = Vec::with_capacity(3);
-                for _ in 0..3 {
-                    component_offsets.push(at);
-                    let (value, raw, width) = color_component(bytes.get(at..)?)?;
-                    rgb.push(value);
-                    raw_components.push(raw);
-                    at += width;
-                }
-                definitions.push(ColorTableDefinition {
-                    color_index,
-                    name: names[usize::from(color_index)],
-                    rgb: rgb.try_into().ok()?,
-                    raw_color_index,
-                    raw_components: raw_components.try_into().ok()?,
-                    offset,
-                    component_offsets: component_offsets.try_into().ok()?,
-                });
-            }
-            Some(ColorTable {
-                offset: start,
-                background_name: names[0],
-                background_rgb: background_rgb.try_into().ok()?,
-                raw_background_components: raw_background_components.try_into().ok()?,
-                background_component_offsets: background_component_offsets.try_into().ok()?,
-                definitions,
-            })
-        })
-        .collect()
+    let mut tables = Vec::new();
+    let mut start = 0;
+    while start + COLOR_TABLE_NAME_HEADER.len() <= bytes.len() {
+        if bytes.get(start..start + COLOR_TABLE_NAME_HEADER.len()) != Some(&COLOR_TABLE_NAME_HEADER)
+        {
+            start += 1;
+            continue;
+        }
+        let Some(end) = color_table_end(bytes, start) else {
+            start += 1;
+            continue;
+        };
+        if let Some(table) = color_table_at(bytes, start) {
+            tables.push(table);
+        }
+        start = end;
+    }
+    tables
 }
 
 /// Decode complete self-framed index rows from contiguous column storage.
@@ -477,55 +599,71 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
     const MIDDLE: [u8; 2] = [0x93, 0x8a];
     const SUFFIX: [u8; 9] = [0x00, 0x47, 0x04, 0x04, 0x01, 0xc0, 0x44, 0x04, 0x00];
     let mut rows = Vec::new();
-    for start in 0..bytes.len().saturating_sub(PREFIX.len()) {
+    let mut start = 0;
+    while start + PREFIX.len() <= bytes.len() {
         if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
+            start += 1;
             continue;
         }
         let first_index_offset = start + PREFIX.len();
-        let Some((CompactIndex::Value(first_index), first_width)) =
-            bytes.get(first_index_offset..).and_then(compact_index)
-        else {
+        let Some(first_token) = compact_value_token(bytes, first_index_offset) else {
+            start += 1;
             continue;
         };
-        let marker = first_index_offset + first_width;
-        let raw_first_index = bytes[first_index_offset..marker].to_vec();
+        let CompactIndex::Value(first_index) = first_token.value else {
+            unreachable!("compact value token is non-null")
+        };
+        let marker = first_token.offset + first_token.width;
         if bytes.get(marker..marker + 2) != Some(&MIDDLE[..2]) {
+            start += 1;
             continue;
         }
         let Some(flag @ (0x03 | 0x07)) = bytes.get(marker + 2).copied() else {
+            start += 1;
             continue;
         };
         let mut at = marker + 3;
-        let mut indices = Vec::new();
-        let mut raw_indices = Vec::new();
-        for _ in 0..4 {
-            let Some((CompactIndex::Value(index), width)) = bytes.get(at..).and_then(compact_index)
-            else {
-                indices.clear();
+        let mut index_tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; 4];
+        let mut complete = true;
+        for token in &mut index_tokens {
+            let Some(index_token) = compact_value_token(bytes, at) else {
+                complete = false;
                 break;
             };
-            indices.push((index, at));
-            raw_indices.push(bytes[at..at + width].to_vec());
-            at += width;
+            at += index_token.width;
+            *token = index_token;
         }
-        let Ok(indices) = indices.try_into() else {
+        if !complete {
+            start += 1;
+            continue;
+        }
+        let Some(end) = at.checked_add(SUFFIX.len()) else {
+            start += 1;
             continue;
         };
-        let Ok(raw_indices) = raw_indices.try_into() else {
-            continue;
-        };
-        if bytes.get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
+        if bytes.get(at..end) != Some(&SUFFIX) {
+            start += 1;
             continue;
         }
         rows.push(OffsetStoreIndexRow {
             offset: start,
             first_index,
-            raw_first_index,
+            raw_first_index: raw_compact_token(bytes, first_token),
             first_index_offset,
             flag,
-            indices,
-            raw_indices,
+            indices: index_tokens.map(|token| {
+                let CompactIndex::Value(index) = token.value else {
+                    unreachable!("compact value token is non-null")
+                };
+                (index, token.offset)
+            }),
+            raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
         });
+        start = end;
     }
     rows
 }
@@ -535,78 +673,99 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
     const MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
     const SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
     let mut rows = Vec::new();
-    for start in 0..bytes.len().saturating_sub(2) {
+    let mut start = 0;
+    while start + 2 <= bytes.len() {
         if bytes.get(start..start + 2) != Some(&[0x02, 0x0b]) {
+            start += 1;
             continue;
         }
         let first_offset = start + 2;
-        let Some((CompactIndex::Value(first_index), first_width)) =
-            bytes.get(first_offset..).and_then(compact_index)
-        else {
+        let Some(first_token) = compact_value_token(bytes, first_offset) else {
+            start += 1;
             continue;
         };
-        let marker = first_offset + first_width;
-        let raw_first_index = bytes[first_offset..marker].to_vec();
+        let CompactIndex::Value(first_index) = first_token.value else {
+            unreachable!("compact value token is non-null")
+        };
+        let marker = first_token.offset + first_token.width;
         if bytes.get(marker..marker + 2) != Some(&[0x93, 0x8c]) {
+            start += 1;
             continue;
         }
         let Some(discriminator @ (0x16..=0x18)) = bytes.get(marker + 2).copied() else {
+            start += 1;
             continue;
         };
         let target_offset = marker + 3;
-        let Some((CompactIndex::Value(target_index), target_width)) =
-            bytes.get(target_offset..).and_then(compact_index)
-        else {
+        let Some(target_token) = compact_value_token(bytes, target_offset) else {
+            start += 1;
             continue;
         };
-        let mut at = target_offset + target_width;
-        let raw_target_index = bytes[target_offset..at].to_vec();
+        let CompactIndex::Value(target_index) = target_token.value else {
+            unreachable!("compact value token is non-null")
+        };
+        let mut at = target_token.offset + target_token.width;
         if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
+            start += 1;
             continue;
         }
         at += MIDDLE.len();
-        let mut indices = Vec::new();
-        let mut raw_indices = Vec::new();
-        for _ in 0..3 {
-            let Some((CompactIndex::Value(index), width)) = bytes.get(at..).and_then(compact_index)
-            else {
-                indices.clear();
+        let mut index_tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; 3];
+        let mut complete = true;
+        for token in &mut index_tokens {
+            let Some(index_token) = compact_value_token(bytes, at) else {
+                complete = false;
                 break;
             };
-            indices.push((index, at));
-            raw_indices.push(bytes[at..at + width].to_vec());
-            at += width;
+            at += index_token.width;
+            *token = index_token;
         }
-        let Ok(indices) = indices.try_into() else {
+        if !complete {
+            start += 1;
             continue;
-        };
-        let Ok(raw_indices) = raw_indices.try_into() else {
-            continue;
-        };
+        }
         if bytes.get(at..at + 2) != Some(&[0x00, 0x47]) {
+            start += 1;
             continue;
         }
         let Some(flag @ (0x03 | 0x07)) = bytes.get(at + 2).copied() else {
+            start += 1;
             continue;
         };
         let Some(mode @ (0x04 | 0x07)) = bytes.get(at + 3).copied() else {
+            start += 1;
             continue;
         };
-        if bytes.get(at + 4..at + 4 + SUFFIX.len()) != Some(&SUFFIX) {
+        let Some(end) = at.checked_add(4 + SUFFIX.len()) else {
+            start += 1;
+            continue;
+        };
+        if bytes.get(at + 4..end) != Some(&SUFFIX) {
+            start += 1;
             continue;
         }
         rows.push(OffsetStoreLinkedIndexRow {
             offset: start,
             first_index: (first_index, first_offset),
-            raw_first_index,
+            raw_first_index: raw_compact_token(bytes, first_token),
             discriminator,
             target_index: (target_index, target_offset),
-            raw_target_index,
-            indices,
-            raw_indices,
+            raw_target_index: raw_compact_token(bytes, target_token),
+            indices: index_tokens.map(|token| {
+                let CompactIndex::Value(index) = token.value else {
+                    unreachable!("compact value token is non-null")
+                };
+                (index, token.offset)
+            }),
+            raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
             flag,
             mode,
         });
+        start = end;
     }
     rows
 }
@@ -617,57 +776,74 @@ pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetInde
     const MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
     const SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
     let mut rows = Vec::new();
-    for start in 0..bytes.len().saturating_sub(PREFIX.len()) {
+    let mut start = 0;
+    while start + PREFIX.len() <= bytes.len() {
         if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
+            start += 1;
             continue;
         }
         let target_offset = start + PREFIX.len();
-        let Some((CompactIndex::Value(target_index), target_width)) =
-            bytes.get(target_offset..).and_then(compact_index)
-        else {
+        let Some(target_token) = compact_value_token(bytes, target_offset) else {
+            start += 1;
             continue;
         };
-        let mut at = target_offset + target_width;
-        let raw_target_index = bytes[target_offset..at].to_vec();
+        let CompactIndex::Value(target_index) = target_token.value else {
+            unreachable!("compact value token is non-null")
+        };
+        let mut at = target_token.offset + target_token.width;
         if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
+            start += 1;
             continue;
         }
         at += MIDDLE.len();
-        let mut indices = Vec::new();
-        let mut raw_indices = Vec::new();
-        for _ in 0..3 {
-            let Some((CompactIndex::Value(index), width)) = bytes.get(at..).and_then(compact_index)
-            else {
-                indices.clear();
+        let mut index_tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; 3];
+        let mut complete = true;
+        for token in &mut index_tokens {
+            let Some(index_token) = compact_value_token(bytes, at) else {
+                complete = false;
                 break;
             };
-            indices.push((index, at));
-            raw_indices.push(bytes[at..at + width].to_vec());
-            at += width;
+            at += index_token.width;
+            *token = index_token;
         }
-        let Ok(indices) = indices.try_into() else {
+        if !complete {
+            start += 1;
             continue;
-        };
-        let Ok(raw_indices) = raw_indices.try_into() else {
-            continue;
-        };
+        }
         if bytes.get(at..at + 3) != Some(&[0x00, 0x47, 0x03]) {
+            start += 1;
             continue;
         }
         let Some(mode @ (0x04 | 0x07)) = bytes.get(at + 3).copied() else {
+            start += 1;
             continue;
         };
-        if bytes.get(at + 4..at + 4 + SUFFIX.len()) != Some(&SUFFIX) {
+        let Some(end) = at.checked_add(4 + SUFFIX.len()) else {
+            start += 1;
+            continue;
+        };
+        if bytes.get(at + 4..end) != Some(&SUFFIX) {
+            start += 1;
             continue;
         }
         rows.push(OffsetStoreTargetIndexRow {
             offset: start,
             target_index: (target_index, target_offset),
-            raw_target_index,
-            indices,
-            raw_indices,
+            raw_target_index: raw_compact_token(bytes, target_token),
+            indices: index_tokens.map(|token| {
+                let CompactIndex::Value(index) = token.value else {
+                    unreachable!("compact value token is non-null")
+                };
+                (index, token.offset)
+            }),
+            raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
             mode,
         });
+        start = end;
     }
     rows
 }
@@ -677,33 +853,54 @@ pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrRefer
     const SLOT_COUNT: usize = 16;
     const TERMINATOR: [u8; 7] = [0x02, 0x11, b'A', b'B', b'R', 0xff, 0x03];
     let mut lanes = Vec::new();
-    for start in 0..bytes.len() {
+    let mut start = 0;
+    while start < bytes.len() {
         if bytes[start] != 0x11 {
+            start += 1;
             continue;
         }
         let mut at = start + 1;
-        let mut slots = Vec::with_capacity(SLOT_COUNT);
-        let mut raw_slots = Vec::with_capacity(SLOT_COUNT);
-        for _ in 0..SLOT_COUNT {
-            let Some((value, width)) = bytes.get(at..).and_then(compact_index) else {
+        let mut tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; SLOT_COUNT];
+        let mut complete = true;
+        for token in &mut tokens {
+            let Some(slot_token) = compact_token(bytes, at) else {
+                complete = false;
                 break;
             };
-            slots.push((
-                match value {
-                    CompactIndex::Null => None,
-                    CompactIndex::Value(value) => Some(value),
-                },
-                at,
-            ));
-            raw_slots.push(bytes[at..at + width].to_vec());
-            at += width;
+            at += slot_token.width;
+            *token = slot_token;
         }
-        if slots.len() == SLOT_COUNT && bytes.get(at..at + TERMINATOR.len()) == Some(&TERMINATOR) {
+        let Some(end) = at.checked_add(TERMINATOR.len()) else {
+            start += 1;
+            continue;
+        };
+        if complete && bytes.get(at..end) == Some(&TERMINATOR) {
             lanes.push(OffsetStoreAbrReferenceLane {
                 offset: start,
-                slots,
-                raw_slots,
+                slots: tokens
+                    .map(|token| {
+                        (
+                            match token.value {
+                                CompactIndex::Null => None,
+                                CompactIndex::Value(value) => Some(value),
+                            },
+                            token.offset,
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+                raw_slots: tokens
+                    .map(|token| raw_compact_token(bytes, token))
+                    .into_iter()
+                    .collect(),
             });
+            start = end;
+        } else {
+            start += 1;
         }
     }
     lanes
@@ -716,44 +913,63 @@ pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrRefer
 /// null indices reject the candidate atomically.
 pub fn offset_store_counted_index_lanes(bytes: &[u8]) -> Vec<OffsetStoreCountedIndexLane> {
     let mut lanes = Vec::new();
-    for start in 0..bytes.len().saturating_sub(4) {
+    let mut start = 0;
+    while start + 4 <= bytes.len() {
         if bytes[start] != 0x01 {
+            start += 1;
             continue;
         }
         let declared_count = bytes[start + 1];
         if declared_count < 3 {
+            start += 1;
             continue;
         }
-        let mut at = start + 2;
-        let Some((CompactIndex::Value(anchor), width)) = compact_index(&bytes[at..]) else {
+        let Some(anchor_token) = compact_value_token(bytes, start + 2) else {
+            start += 1;
             continue;
         };
-        let anchor_offset = at;
-        let raw_anchor = bytes[at..at + width].to_vec();
-        at += width;
-        let mut members = Vec::with_capacity(usize::from(declared_count) - 2);
-        let mut raw_members = Vec::with_capacity(usize::from(declared_count) - 2);
+        let mut at = anchor_token.offset + anchor_token.width;
         let mut complete = true;
         for _ in 0..usize::from(declared_count) - 2 {
-            let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
-            else {
+            let Some(member_token) = compact_value_token(bytes, at) else {
                 complete = false;
                 break;
             };
-            members.push((value, at));
-            raw_members.push(bytes[at..at + width].to_vec());
-            at += width;
+            at += member_token.width;
         }
-        if complete && bytes.get(at..at + 2) == Some(&[0x01, 0x11]) {
+        let Some(end) = at.checked_add(2) else {
+            start += 1;
+            continue;
+        };
+        if complete && bytes.get(at..end) == Some(&[0x01, 0x11]) {
+            let CompactIndex::Value(anchor) = anchor_token.value else {
+                unreachable!("compact value token is non-null")
+            };
+            let mut member_at = anchor_token.offset + anchor_token.width;
+            let mut members = Vec::with_capacity(usize::from(declared_count) - 2);
+            let mut raw_members = Vec::with_capacity(usize::from(declared_count) - 2);
+            for _ in 0..usize::from(declared_count) - 2 {
+                let member_token = compact_value_token(bytes, member_at)
+                    .expect("validated counted lane member remains readable");
+                let CompactIndex::Value(value) = member_token.value else {
+                    unreachable!("compact value token is non-null")
+                };
+                members.push((value, member_token.offset));
+                raw_members.push(raw_compact_token(bytes, member_token));
+                member_at += member_token.width;
+            }
             lanes.push(OffsetStoreCountedIndexLane {
                 offset: start,
                 declared_count,
                 anchor,
-                raw_anchor,
-                anchor_offset,
+                raw_anchor: raw_compact_token(bytes, anchor_token),
+                anchor_offset: anchor_token.offset,
                 members,
                 raw_members,
             });
+            start = end;
+        } else {
+            start += 1;
         }
     }
     lanes
@@ -772,18 +988,22 @@ pub struct ConstructionPayloadScalarField {
     pub raw_value: [u8; 8],
 }
 
+const SHIFTED_BINARY64_SCALAR_FRAME_LEN: usize = 13;
+
 /// Decode exact `50 59 66, field_code, 00, shifted-f64` construction fields.
 pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPayloadScalarField> {
     let mut fields = Vec::new();
     for start in 0..bytes.len().saturating_sub(12) {
         if bytes.get(start..start + 3) != Some(b"PYf")
             || bytes.get(start + 4) != Some(&0x00)
-            || !matches!(bytes.get(start + 5), Some(0x20..=0x3f | 0xa0..=0xbf))
+            || !bytes
+                .get(start + 5)
+                .is_some_and(|marker| is_shifted_ieee_f64_marker(*marker))
         {
             continue;
         }
         let Some(raw_value) = bytes
-            .get(start + 5..start + 13)
+            .get(start + 5..start + SHIFTED_BINARY64_SCALAR_FRAME_LEN)
             .and_then(|value| <[u8; 8]>::try_from(value).ok())
         else {
             continue;
@@ -833,11 +1053,13 @@ pub struct OffsetStoreNamedPoint {
     pub block_count: usize,
 }
 
-/// Decode the minimal consecutive-block span beginning with a named two-scalar point.
-pub fn offset_store_named_point(blocks: &[&[u8]]) -> Option<OffsetStoreNamedPoint> {
+/// Decode a named two-scalar point from a streaming block sequence.
+pub(crate) fn offset_store_named_point<'a>(
+    blocks: impl IntoIterator<Item = &'a [u8]>,
+) -> Option<OffsetStoreNamedPoint> {
     let mut bytes = Vec::new();
     let mut candidate = None;
-    for (block_ordinal, block) in blocks.iter().enumerate() {
+    for (block_ordinal, block) in blocks.into_iter().enumerate() {
         // A later type-free name starts the next bounded data-block object.
         if !bytes.is_empty()
             && construction_payload_named_fields(block)
@@ -852,10 +1074,20 @@ pub fn offset_store_named_point(blocks: &[&[u8]]) -> Option<OffsetStoreNamedPoin
         if !name.payload_leading || parse_positive_decimal_suffix(name.value, "Point").is_none() {
             return None;
         }
-        if names.len() > 1 {
-            return None;
-        }
-        let scalars = construction_payload_scalar_fields(&bytes);
+        let next_name = names
+            .iter()
+            .find(|next| !next.payload_leading && next.offset > name.offset);
+        let interval_end = next_name.map_or(bytes.len(), |next| next.offset);
+        let scalars = construction_payload_scalar_fields(&bytes)
+            .into_iter()
+            .filter(|scalar| {
+                scalar.offset > name.offset
+                    && scalar
+                        .offset
+                        .checked_add(SHIFTED_BINARY64_SCALAR_FRAME_LEN)
+                        .is_some_and(|end| end <= interval_end)
+            })
+            .collect::<Vec<_>>();
         match scalars.as_slice() {
             [] | [_] => {}
             [first_scalar, second_scalar] => {
@@ -868,6 +1100,9 @@ pub fn offset_store_named_point(blocks: &[&[u8]]) -> Option<OffsetStoreNamedPoin
                 });
             }
             _ => return None,
+        }
+        if next_name.is_some() {
+            return candidate;
         }
     }
     candidate
@@ -951,12 +1186,16 @@ pub struct ReferenceValue {
 }
 
 /// Unit declared by an NX numeric-expression serialization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExpressionUnit {
-    /// Canonical model length in millimeters.
+    /// Model length in millimeters as serialized by NX.
     Millimeter,
+    /// Model length in inches as serialized by NX.
+    Inch,
     /// Angular value in degrees as serialized by NX.
     Degree,
+    /// Unit label without a neutral dimensional mapping.
+    Native(String),
 }
 
 /// One numeric expression decoded from an exactly bounded OM entity.
@@ -990,9 +1229,9 @@ pub struct IndexedSection<'a> {
     /// Absolute offset of the object-id table or offset-only identity metadata.
     pub object_id_table_offset: usize,
     /// Length-framed class definitions preceding the entity index.
-    pub types: Vec<TypeDefinition<'a>>,
+    pub types: Arc<[TypeDefinition<'a>]>,
     /// Length-framed member definitions preceding the entity index.
-    pub fields: Vec<FieldDefinition<'a>>,
+    pub fields: Arc<[FieldDefinition<'a>]>,
     /// Store-level control block bounded by slot zero in an offset-only index.
     pub control: Option<EntityRecord<'a>>,
     /// Contiguous column-storage region after the control block.
@@ -1001,7 +1240,152 @@ pub struct IndexedSection<'a> {
     /// delimit logical field lanes within this region.
     pub column_storage: Option<&'a [u8]>,
     /// Entity records following the reserved zero-offset slot.
-    pub records: Vec<EntityRecord<'a>>,
+    pub records: Arc<[EntityRecord<'a>]>,
+}
+
+/// Byte ranges needed to materialize one indexed section without rescanning
+/// the containing payload.
+#[derive(Debug, Clone, Copy)]
+struct IndexedByteRange {
+    start: usize,
+    end: usize,
+}
+
+/// One cached declaration range in an indexed section.
+#[derive(Debug, Clone, Copy)]
+struct IndexedDefinitionLayout {
+    offset: usize,
+    name_len: usize,
+    trailing_code: u8,
+    registry_suffix: Option<IndexedByteRange>,
+}
+
+/// One cached entity-record range in an indexed section.
+#[derive(Debug, Clone, Copy)]
+struct IndexedRecordLayout {
+    object_id: Option<u32>,
+    object_id_offset: Option<usize>,
+    bytes: IndexedByteRange,
+}
+
+/// Cached indexed-section layout owned by a parsed container.
+#[derive(Debug, Clone)]
+pub(crate) struct IndexedSectionLayout {
+    base: usize,
+    entity_index_offset: usize,
+    pub(crate) object_id_table_offset: usize,
+    types: Vec<IndexedDefinitionLayout>,
+    fields: Vec<IndexedDefinitionLayout>,
+    control: Option<IndexedRecordLayout>,
+    column_storage: Option<IndexedByteRange>,
+    records: Vec<IndexedRecordLayout>,
+}
+
+impl IndexedSectionLayout {
+    fn from_section(section: &IndexedSection<'_>) -> Self {
+        let types = section
+            .types
+            .iter()
+            .map(|definition| IndexedDefinitionLayout {
+                offset: definition.offset,
+                name_len: definition.name.len(),
+                trailing_code: definition.trailing_code,
+                registry_suffix: Some(IndexedByteRange {
+                    start: definition.offset + definition.name.len() + 2,
+                    end: definition.offset
+                        + definition.name.len()
+                        + 2
+                        + definition.registry_suffix.len(),
+                }),
+            })
+            .collect();
+        let fields = section
+            .fields
+            .iter()
+            .map(|definition| IndexedDefinitionLayout {
+                offset: definition.offset,
+                name_len: definition.name.len(),
+                trailing_code: definition.trailing_code,
+                registry_suffix: Some(IndexedByteRange {
+                    start: definition.offset + definition.name.len() + 2,
+                    end: definition.offset
+                        + definition.name.len()
+                        + 2
+                        + definition.registry_suffix.len(),
+                }),
+            })
+            .collect();
+        let record_layout = |record: &EntityRecord<'_>| IndexedRecordLayout {
+            object_id: record.object_id,
+            object_id_offset: record.object_id_offset,
+            bytes: IndexedByteRange {
+                start: record.offset,
+                end: record.offset + record.bytes.len(),
+            },
+        };
+        let control = section.control.as_ref().map(record_layout);
+        let column_storage = section.column_storage.map(|storage| {
+            let start = section
+                .records
+                .first()
+                .expect("offset-only indexed section has records")
+                .offset;
+            IndexedByteRange {
+                start,
+                end: start + storage.len(),
+            }
+        });
+        Self {
+            base: section.base,
+            entity_index_offset: section.entity_index_offset,
+            object_id_table_offset: section.object_id_table_offset,
+            types,
+            fields,
+            control,
+            column_storage,
+            records: section.records.iter().map(record_layout).collect(),
+        }
+    }
+
+    pub(crate) fn materialize<'a>(&self, bytes: &'a [u8]) -> IndexedSection<'a> {
+        let materialize_record = |layout: &IndexedRecordLayout| EntityRecord {
+            object_id: layout.object_id,
+            object_id_offset: layout.object_id_offset,
+            offset: layout.bytes.start,
+            bytes: bytes
+                .get(layout.bytes.start..layout.bytes.end)
+                .expect("cached indexed record remains in source"),
+        };
+        IndexedSection {
+            base: self.base,
+            entity_index_offset: self.entity_index_offset,
+            object_id_table_offset: self.object_id_table_offset,
+            types: self
+                .types
+                .iter()
+                .map(|layout| registry::materialize_type_definition(bytes, layout))
+                .collect::<Vec<_>>()
+                .into(),
+            fields: self
+                .fields
+                .iter()
+                .map(|layout| registry::materialize_field_definition(bytes, layout))
+                .collect::<Vec<_>>()
+                .into(),
+            control: self.control.as_ref().map(materialize_record),
+            column_storage: self.column_storage.map(|range| {
+                bytes
+                    .get(range.start..range.end)
+                    .expect("cached indexed column storage remains in source")
+            }),
+            records: self
+                .records
+                .iter()
+                .map(materialize_record)
+                .collect::<Vec<_>>()
+                .into(),
+        }
+    }
 }
 
 /// One size-framed NX object-model section.
@@ -1012,13 +1396,90 @@ pub struct Section<'a> {
     /// Complete section length including its 16-byte header.
     pub byte_len: usize,
     /// Class declarations in the section's contiguous type registry.
-    pub types: Vec<TypeDefinition<'a>>,
+    pub types: Arc<[TypeDefinition<'a>]>,
     /// Member declarations in the section's field registry.
-    pub fields: Vec<FieldDefinition<'a>>,
+    pub fields: Arc<[FieldDefinition<'a>]>,
     /// Absolute offset of the section's internally pointed record area.
     pub record_area_offset: Option<usize>,
     /// Exact record-area bytes, including its 12-byte control prefix.
     pub record_area: Option<&'a [u8]>,
+    /// Operation labels decoded while the section's record area is framed.
+    cached_operation_labels: Arc<[OperationLabel<'a>]>,
+}
+
+/// Cached byte layout for one size-framed object-model section.
+///
+/// The layout contains offsets and validated declaration metadata only. It
+/// does not borrow the container image, so a container that owns its input can
+/// reuse the layout without reparsing the section on every extractor call.
+#[derive(Debug, Clone)]
+pub(crate) struct SectionLayout {
+    offset: usize,
+    byte_len: usize,
+    types: Vec<IndexedDefinitionLayout>,
+    fields: Vec<IndexedDefinitionLayout>,
+    record_area_offset: Option<usize>,
+    record_area: Option<IndexedByteRange>,
+    operation_labels: Vec<OperationLabelLayout>,
+}
+
+impl SectionLayout {
+    pub(crate) fn from_section(section: &Section<'_>) -> Self {
+        let record_area = section.record_area.map(|bytes| {
+            let start = section
+                .record_area_offset
+                .expect("record area has an absolute offset");
+            IndexedByteRange {
+                start,
+                end: start + bytes.len(),
+            }
+        });
+        Self {
+            offset: section.offset,
+            byte_len: section.byte_len,
+            types: registry::type_definition_layouts(&section.types),
+            fields: registry::field_definition_layouts(&section.fields),
+            record_area_offset: section.record_area_offset,
+            record_area,
+            operation_labels: operation_label_layouts(&section.cached_operation_labels),
+        }
+    }
+
+    pub(crate) fn materialize<'a>(&self, bytes: &'a [u8]) -> Section<'a> {
+        let record_area = self.record_area.map(|range| {
+            bytes
+                .get(range.start..range.end)
+                .expect("cached section record area remains in source")
+        });
+        let cached_operation_labels = match (record_area, self.record_area_offset) {
+            (Some(record_area), Some(record_area_offset)) => materialize_operation_labels(
+                record_area,
+                record_area_offset,
+                &self.operation_labels,
+            )
+            .into(),
+            _ => Arc::from([]),
+        };
+        Section {
+            offset: self.offset,
+            byte_len: self.byte_len,
+            types: self
+                .types
+                .iter()
+                .map(|layout| registry::materialize_type_definition(bytes, layout))
+                .collect::<Vec<_>>()
+                .into(),
+            fields: self
+                .fields
+                .iter()
+                .map(|layout| registry::materialize_field_definition(bytes, layout))
+                .collect::<Vec<_>>()
+                .into(),
+            record_area_offset: self.record_area_offset,
+            record_area,
+            cached_operation_labels,
+        }
+    }
 }
 
 /// A feature operation name in a size-framed feature-history record area.
@@ -1036,6 +1497,63 @@ pub struct OperationLabel<'a> {
     pub object_index_offsets: [usize; 4],
 }
 
+/// Cached byte layout for one validated operation label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OperationLabelLayout {
+    header_offset: usize,
+    offset: usize,
+    value_len: usize,
+    object_indices: [Option<u32>; 4],
+    object_index_offsets: [usize; 4],
+}
+
+/// Convert borrowed operation labels into cached byte layouts.
+pub(crate) fn operation_label_layouts(labels: &[OperationLabel<'_>]) -> Vec<OperationLabelLayout> {
+    labels
+        .iter()
+        .map(|label| OperationLabelLayout {
+            header_offset: label.header_offset,
+            offset: label.offset,
+            value_len: label.value.len(),
+            object_indices: label.object_indices,
+            object_index_offsets: label.object_index_offsets,
+        })
+        .collect()
+}
+
+fn materialize_operation_labels<'a>(
+    bytes: &'a [u8],
+    base_offset: usize,
+    layouts: &[OperationLabelLayout],
+) -> Vec<OperationLabel<'a>> {
+    layouts
+        .iter()
+        .map(|layout| {
+            let value_start = layout
+                .offset
+                .checked_sub(base_offset)
+                .and_then(|offset| offset.checked_add(2))
+                .expect("cached operation label offset remains in record area");
+            let value_end = value_start
+                .checked_add(layout.value_len)
+                .expect("cached operation label length remains in record area");
+            let value = std::str::from_utf8(
+                bytes
+                    .get(value_start..value_end)
+                    .expect("cached operation label value remains in record area"),
+            )
+            .expect("cached operation label remains UTF-8");
+            OperationLabel {
+                header_offset: layout.header_offset,
+                offset: layout.offset,
+                value,
+                object_indices: layout.object_indices,
+                object_index_offsets: layout.object_index_offsets,
+            }
+        })
+        .collect()
+}
+
 /// One operation record bounded by consecutive validated operation headers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationRecord<'a> {
@@ -1049,6 +1567,23 @@ pub struct OperationRecord<'a> {
     pub payload: &'a [u8],
     /// Label decoded from this record's header.
     pub label: OperationLabel<'a>,
+}
+
+/// One unlabeled operation record bounded by validated operation headers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnlabeledOperationRecord<'a> {
+    /// Absolute offset of the fixed operation-header marker.
+    pub offset: usize,
+    /// Complete record bytes through the next operation header or section end.
+    pub bytes: &'a [u8],
+    /// Absolute offset of the first byte after the four header slots.
+    pub payload_offset: usize,
+    /// Serialized payload after the four header slots.
+    pub payload: &'a [u8],
+    /// Four object-index slots in header order; `None` is the `ff` sentinel.
+    pub object_indices: [Option<u32>; 4],
+    /// Absolute byte offset of each object-index token in header order.
+    pub object_index_offsets: [usize; 4],
 }
 
 /// Exactly framed common record in one bounded operation payload.
@@ -1103,12 +1638,312 @@ pub struct OperationTerminalFrame {
     pub object_index_offset: usize,
 }
 
+/// Encoding family for an object index in an operation-state lane.
+#[allow(dead_code)] // Retained for the exact parser API and focused tests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStateIndexForm {
+    /// One-byte value in `00..7f`.
+    Direct,
+    /// `80..8f` followed by one low byte.
+    Compact,
+    /// `90` followed by a big-endian `u16`.
+    Wide16,
+    /// `a0..af` followed by a big-endian `u16`.
+    Wide20,
+    /// `f1` followed by a big-endian `u16`.
+    Extended16,
+    /// The `ff` null token.
+    Null,
+}
+
+/// One operation-state object-index token with its exact serialized form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateIndex<'a> {
+    /// Decoded value, or `None` for the `ff` null token.
+    pub value: Option<u32>,
+    /// Encoding family selected by the first byte.
+    pub form: OperationStateIndexForm,
+    /// Exact serialized token.
+    pub raw: &'a [u8],
+    /// Absolute byte offset of the token.
+    pub offset: usize,
+}
+
+/// Width family for one tagged integer in the operation-state block.
+#[allow(dead_code)] // Retained for the exact parser API and focused tests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStateTaggedValueForm {
+    /// `a0..bf` followed by two bytes.
+    Two,
+    /// `c0..df` followed by three bytes.
+    Three,
+    /// `e0` or `ff` followed by four bytes.
+    Four,
+}
+
+/// One operation-state tagged integer with its exact serialized form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateTaggedValue<'a> {
+    /// Decoded unsigned value.
+    pub value: u32,
+    /// Width family selected by the marker.
+    pub form: OperationStateTaggedValueForm,
+    /// First serialized marker byte.
+    pub marker: u8,
+    /// Exact marker and payload bytes.
+    pub raw: &'a [u8],
+    /// Absolute byte offset of the marker.
+    pub offset: usize,
+}
+
+/// One row in the operation-state object counter map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateCounter<'a> {
+    /// Absolute byte offset of the row's `05` marker.
+    pub offset: usize,
+    /// Row-kind byte following `05`; modern files use `01` and `02`.
+    pub row_kind: u8,
+    /// Object whose state-counter pair is recorded.
+    pub object_index: OperationStateIndex<'a>,
+    /// Journal state at which the object was introduced.
+    pub introduced_state: u8,
+    /// Journal state at which the object was last modified.
+    pub modified_state: u8,
+    /// Exclusive absolute end offset after the `4e` terminator.
+    pub end_offset: usize,
+}
+
+/// Contiguous object state-counter map at the end of a feature-history area.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateCounterMap<'a> {
+    /// Absolute byte offset of the first counter row.
+    pub offset: usize,
+    /// Absolute byte offset after the final counter row.
+    pub end_offset: usize,
+    /// Rows in serialized order.
+    pub rows: Vec<OperationStateCounter<'a>>,
+    /// Exact bytes after the counter rows within the bounded record area.
+    pub trailing_bytes: &'a [u8],
+}
+
+/// One diagnostic/message record in the operation-state block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateMessage<'a> {
+    /// Absolute byte offset of the opening `03` marker.
+    pub offset: usize,
+    /// Declared length from the `03` length byte through the text terminator.
+    pub declared_length: u8,
+    /// Exact ASCII Part Navigator text.
+    pub text: &'a str,
+    /// Tagged value following the four zero bytes.
+    pub value: OperationStateTaggedValue<'a>,
+    /// Big-endian count or severity word following the tagged value.
+    pub count_or_severity: u16,
+    /// Exclusive absolute end offset after the count/severity word.
+    pub end_offset: usize,
+}
+
+/// Payload form of one per-object operation-state status row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStateStatusPayload<'a> {
+    /// Normal built/healthy object state, encoded as `3f`.
+    Plain,
+    /// Status with a link-code and one linked object index.
+    Linked {
+        /// Serialized link discriminator.
+        link_code: u8,
+        /// Linked object index between the two `ff` sentinels.
+        object_index: OperationStateIndex<'a>,
+    },
+    /// Status carrying the exact inline diagnostic record.
+    Diagnostic {
+        /// Inline diagnostic record beginning at the payload's `03` marker.
+        message: OperationStateMessage<'a>,
+    },
+    /// A typed status code whose payload lane has no settled subgrammar.
+    Opaque {
+        /// Exact bytes from the first payload byte through its lane terminator.
+        raw: &'a [u8],
+    },
+}
+
+/// One per-object status row in the operation-state block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateStatus<'a> {
+    /// Absolute byte offset of the status-code token.
+    pub offset: usize,
+    /// Exact status-code token and decoded value.
+    pub status_code: OperationStateIndex<'a>,
+    /// Object carrying this status.
+    pub object_index: OperationStateIndex<'a>,
+    /// Status payload, retained without naming suppression codes.
+    pub payload: OperationStateStatusPayload<'a>,
+    /// Exclusive absolute end offset after the payload.
+    pub end_offset: usize,
+}
+
+/// A bounded sequence of operation-state status rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateStatusTable<'a> {
+    /// Absolute byte offset of the first status row.
+    pub offset: usize,
+    /// Absolute byte offset after the final complete status row.
+    pub end_offset: usize,
+    /// Rows in serialized order.
+    pub rows: Vec<OperationStateStatus<'a>>,
+    /// Standalone feature-record slot lanes following the status rows.
+    pub slot_lanes: Vec<OperationStateSlotLane<'a>>,
+    /// Exact bounded bytes after the last complete status row.
+    pub trailing_bytes: &'a [u8],
+}
+
+/// One standalone feature-record slot lane in the operation-state block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateSlotLane<'a> {
+    /// Absolute byte offset of the `02 01 11` lane prefix.
+    pub offset: usize,
+    /// Null or object-index slots in serialized order.
+    pub slots: Vec<OperationStateIndex<'a>>,
+    /// Exclusive absolute end offset after the `02 11` terminator.
+    pub end_offset: usize,
+}
+
+struct OperationStateBlock<'a> {
+    offset: usize,
+    status_end_offset: usize,
+    rows: Vec<OperationStateStatus<'a>>,
+    slot_lanes: Vec<OperationStateSlotLane<'a>>,
+    messages: Vec<OperationStateMessage<'a>>,
+}
+
+/// One row in an `m_rollForwardStates` group table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStateGroupRow<'a> {
+    /// `4a object_index position ff` list member. The common position is a
+    /// direct byte; one generation uses the same compact token family as an
+    /// object index for positions above the direct range.
+    List {
+        /// Absolute byte offset of the row's `4a` marker.
+        offset: usize,
+        /// Ordered feature-record member.
+        object_index: OperationStateIndex<'a>,
+        /// Serialized list-position token.
+        position: OperationStateIndex<'a>,
+    },
+    /// `tag object_index object_index ff ff` relation member.
+    Pair {
+        /// Absolute byte offset of the row's relation tag.
+        offset: usize,
+        /// Schema-generation relation tag (`4f` or `48`).
+        tag: u8,
+        /// First relation endpoint.
+        first: OperationStateIndex<'a>,
+        /// Second relation endpoint.
+        second: OperationStateIndex<'a>,
+    },
+}
+
+/// One counted `m_rollForwardStates` group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateGroup<'a> {
+    /// Absolute byte offset of the two-byte group opener.
+    pub offset: usize,
+    /// Exact group opener, normally `01 01`.
+    pub opener: [u8; 2],
+    /// Whether the count used the nonempty `01 count` form.
+    pub count_prefix: Option<u8>,
+    /// Serialized member count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered list or pair rows.
+    pub rows: Vec<OperationStateGroupRow<'a>>,
+    /// Exclusive absolute end offset after the final group row.
+    pub end_offset: usize,
+}
+
+/// A bounded sequence of `m_rollForwardStates` groups.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateGroupTable<'a> {
+    /// Absolute byte offset of the first group.
+    pub offset: usize,
+    /// Absolute byte offset after the final group.
+    pub end_offset: usize,
+    /// Groups in serialized order.
+    pub groups: Vec<OperationStateGroup<'a>>,
+    /// Exact table-boundary bytes after the final complete group.
+    pub trailing_bytes: &'a [u8],
+}
+
+/// One state-journal row preceding feature operation records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationStateJournalRow<'a> {
+    /// Absolute byte offset of the row's `e0` timestamp marker.
+    pub offset: usize,
+    /// Big-endian Unix timestamp.
+    pub timestamp: u32,
+    /// Tagged schema value stored by the journal.
+    pub value: OperationStateTaggedValue<'a>,
+    /// Schema identifier varint.
+    pub schema_id: OperationStateIndex<'a>,
+    /// Monotone state ordinal varint.
+    pub ordinal: OperationStateIndex<'a>,
+    /// Exclusive absolute end offset after the `13` terminator.
+    pub end_offset: usize,
+}
+
+/// One state-journal group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationStateJournalGroup<'a> {
+    /// Absolute byte offset of the `04` group opener.
+    pub offset: usize,
+    /// Two opener selector bytes.
+    pub selector: [u8; 2],
+    /// Journal rows in serialized order.
+    pub rows: Vec<OperationStateJournalRow<'a>>,
+    /// Exclusive absolute end offset after the final row.
+    pub end_offset: usize,
+}
+
+/// One complete row in an audit-trail record area.
+///
+/// Audit rows share the tagged-value width family with feature-history state,
+/// but they are a separate record-area grammar. Their optional four-byte
+/// selector envelope is retained without assigning an event or suppression
+/// meaning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuditTrailRow<'a> {
+    /// Absolute byte offset of the opening `04` marker.
+    pub offset: usize,
+    /// Monotone audit-row ordinal and its exact token.
+    pub ordinal: OperationStateIndex<'a>,
+    /// Optional selector byte in the exact `04 05 selector 00` envelope.
+    pub frame_selector: Option<u8>,
+    /// Big-endian timestamp following the `e0` marker.
+    pub timestamp: u32,
+    /// Tagged value following the timestamp.
+    pub value: OperationStateTaggedValue<'a>,
+    /// Exact complete row bytes.
+    pub raw: &'a [u8],
+    /// Exclusive absolute end offset after the tagged value.
+    pub end_offset: usize,
+}
+
 /// One length-framed UTF-8 string in a bounded operation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationPayloadString<'a> {
     /// Absolute offset of the `04` marker.
     pub offset: usize,
     /// Exact non-empty string value.
+    pub value: &'a str,
+}
+
+/// One length-framed UTF-8 text frame in a bounded operation payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationPayloadTextFrame<'a> {
+    /// Marker selecting the payload text-frame family.
+    pub marker: u8,
+    /// Absolute offset of the marker.
+    pub offset: usize,
+    /// Exact non-empty text value.
     pub value: &'a str,
 }
 
@@ -1139,10 +1974,34 @@ pub struct ProjectedCurvePayloadReferenceField {
     pub references: Vec<PayloadObjectReference>,
 }
 
+/// Byte layout selected by a pattern construction-reference field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternPayloadReferenceLayout {
+    /// The `61`/`ff 00 ff 01`/`ff 62` graph framing.
+    CanonicalGraph,
+    /// The `3b`/`ff 00 01`/`ff 3c` graph framing.
+    CompactGraph,
+    /// The one-reference `Geometry Instance` framing.
+    GeometryInstance,
+}
+
 /// Exact non-null construction references in a pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatternPayloadReferenceField {
+    /// Exact byte layout that framed the field.
+    pub layout: PatternPayloadReferenceLayout,
     /// Non-null references in serialized slot order.
+    pub references: Vec<PayloadObjectReference>,
+}
+
+/// Exact counted non-null reference lane in a `Pattern Feature` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PatternPayloadCountedReferenceLane {
+    /// Absolute offset of the opening `01, count` field.
+    pub offset: usize,
+    /// Serialized count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered non-null object references after the count.
     pub references: Vec<PayloadObjectReference>,
 }
 
@@ -1332,6 +2191,82 @@ pub struct SurfaceFeaturePayloadReferenceField {
     pub references: [PayloadObjectReference; 14],
 }
 
+/// Exact leading construction references in a `THRU_CURVE` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThruCurvePayloadReferenceField {
+    /// Nonzero construction discriminator at the payload start.
+    pub discriminator: u8,
+    /// Exact opaque controls between the two reference groups.
+    pub controls: [u8; 9],
+    /// Three header references followed by six construction references.
+    pub references: [PayloadObjectReference; 9],
+    /// Nonzero control byte following the reference groups.
+    pub trailing_control: u8,
+    /// Exact two-byte value selected by the `a0` marker.
+    pub trailing_value: [u8; 2],
+    /// Absolute offset immediately after the envelope.
+    pub end_offset: usize,
+}
+
+/// One exact counted branch in a `THRU_CURVE` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThruCurvePayloadBranch {
+    /// Absolute offset of the branch mode byte.
+    pub offset: usize,
+    /// Serialized nonzero branch mode.
+    pub mode: u8,
+    /// Count including the terminal reference.
+    pub declared_count: u8,
+    /// Exact state lane after the repeated count.
+    pub state_lane: Vec<u8>,
+    /// Ordered nonterminal references.
+    pub members: Vec<PayloadObjectReference>,
+    /// Terminal reference.
+    pub terminal: PayloadObjectReference,
+    /// Exact two-byte branch suffix.
+    pub suffix: [u8; 2],
+}
+
+/// Exact counted branch group after a `THRU_CURVE` reference envelope.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThruCurvePayloadBranchGroup {
+    /// Absolute offset of the serialized group count.
+    pub offset: usize,
+    /// Serialized group count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered explicit branches.
+    pub branches: Vec<ThruCurvePayloadBranch>,
+    /// Exact group terminator selected by the schema generation.
+    pub terminator: Vec<u8>,
+}
+
+/// Exact leading construction branch in a `SWP104` payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Swp104PayloadLeadingBranch {
+    /// Nonzero construction discriminator at the payload start.
+    pub discriminator: u8,
+    /// Four finite shifted-binary64 values in serialized order.
+    pub scalars: [f64; 4],
+    /// Exact shifted-binary64 encodings.
+    pub raw_scalars: [[u8; 8]; 4],
+    /// Whether one zero byte precedes the branch mode.
+    pub leading_zero: bool,
+    /// Serialized nonzero branch mode.
+    pub mode: u8,
+    /// Count including the terminal reference.
+    pub declared_count: u8,
+    /// Optional independent count that bounds the state lane.
+    pub witnessed_count: Option<u8>,
+    /// Exact state lane preceding the terminal marker.
+    pub state_lane: Vec<u8>,
+    /// Ordered nonterminal references.
+    pub members: Vec<PayloadObjectReference>,
+    /// Terminal reference.
+    pub terminal: PayloadObjectReference,
+    /// Absolute offset immediately after the terminal zero.
+    pub end_offset: usize,
+}
+
 /// One counted construction branch in a surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceFeaturePayloadBranch {
@@ -1365,10 +2300,12 @@ pub struct SurfaceFeaturePayloadBranches {
 /// Ordered extrusion profile-reference field and its redundant witness state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtrudeProfileReferenceField {
+    /// Serialized field tag between the relation marker and list marker.
+    pub field_tag: u8,
     /// Ordered profile object indices.
     pub references: Vec<PayloadObjectReference>,
-    /// Whether a second field repeats the encoded reference list exactly once.
-    pub witnessed: bool,
+    /// Ordered duplicate-list references when exactly one complete witness exists.
+    pub witness_references: Option<Vec<PayloadObjectReference>>,
 }
 
 /// Fixed ordered construction-reference lane in a datum coordinate-system payload.
@@ -1456,7 +2393,7 @@ pub struct DatumPlaneDescriptorBlock {
     pub label: String,
 }
 
-/// Exact scalar pair following a datum-coordinate-system discriminator.
+/// Exact scalar pair following an object or sketch discriminator.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectPayloadScalarPair {
     /// Payload-relative offset of the discriminator.
@@ -1471,31 +2408,48 @@ pub struct ObjectPayloadScalarPair {
     pub discriminator: Vec<u8>,
 }
 
-/// Exact pair of signed Q1.55 atoms in a reconstructed sketch payload.
+/// Exact pair of scaled shifted-binary64 atoms in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SketchPayloadFixedPair {
     /// Payload-relative offset of the discriminator.
     pub offset: usize,
-    /// Ordered dimensionless Q1.55 values.
+    /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
     pub values: [f64; 2],
     /// Payload-relative offsets of the two `30` atom markers.
     pub value_offsets: [usize; 2],
-    /// Exact seven-byte two's-complement payloads.
+    /// Exact seven-byte suffixes following the two `30` atom markers.
     pub raw_values: [[u8; 7]; 2],
     /// Exact discriminator and branch prefix selecting the pair layout.
     pub discriminator: Vec<u8>,
 }
 
-/// Exact mixed Q1.55 and shifted-binary32 pair in a sketch payload.
+/// Exact scalar-vector frame in a reconstructed sketch payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchPayloadScalarLane {
+    /// Payload-relative offset of the fixed scalar-lane discriminator.
+    pub offset: usize,
+    /// Exact discriminator selecting the scalar-lane form.
+    pub discriminator: Vec<u8>,
+    /// Ordered finite scalar values after the discriminator.
+    pub values: Vec<f64>,
+    /// Exact nonzero scalar atoms in serialized order.
+    pub raw_values: Vec<Vec<u8>>,
+    /// Payload-relative offsets of the scalar atoms.
+    pub value_offsets: Vec<usize>,
+    /// Payload-relative offset of the terminating zero atom.
+    pub terminator_offset: usize,
+}
+
+/// Exact mixed scaled shifted-binary64 and shifted-binary32 pair in a sketch payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SketchPayloadMixedPair {
     /// Payload-relative offset of the discriminator.
     pub offset: usize,
-    /// Dimensionless signed Q1.55 value.
+    /// Value reconstructed from the `30` shifted-binary64 atom and scaled by `1/4`.
     pub fixed_value: f64,
     /// Finite shifted-IEEE binary32 value widened exactly to binary64.
     pub binary32_value: f64,
-    /// Exact seven-byte two's-complement Q1.55 payload.
+    /// Exact seven-byte suffix following the `30` shifted-binary64 atom marker.
     pub fixed_raw_value: [u8; 7],
     /// Exact four-byte shifted-binary32 encoding.
     pub binary32_raw_value: [u8; 4],
@@ -1863,28 +2817,66 @@ pub struct OperationBodyReference {
     pub raw_object_index: Vec<u8>,
 }
 
-/// One exact nested object-relation frame in a bounded operation record.
-///
-/// Object indices in wire order; roles depend on the owning operation.
+/// One exact body-write frame in a bounded operation record.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationObjectRelation {
+pub struct OperationBodyWriteFrame {
     /// Absolute offset of the opening `01 02` marker.
     pub offset: usize,
     /// Byte between the opening marker and the first object index.
-    pub link_tag: u8,
-    /// First object index in serialized order.
-    pub first_object_index: u32,
-    /// Exact serialized first object-index token.
-    pub raw_first_object_index: Vec<u8>,
-    /// Absolute offset of the first object-index token.
-    pub first_object_index_offset: usize,
-    /// Second object index in serialized order.
-    pub second_object_index: u32,
-    /// Exact serialized second object-index token.
-    pub raw_second_object_index: Vec<u8>,
-    /// Absolute offset of the second object-index token.
-    pub second_object_index_offset: usize,
+    pub body_identity: u8,
+    /// Partition-local Parasolid GROUP node.
+    pub group_node: u32,
+    /// Exact serialized GROUP-node token.
+    pub raw_group_node: Vec<u8>,
+    /// Absolute offset of the GROUP-node token.
+    pub group_node_offset: usize,
+    /// Tagged body-image field discriminator.
+    pub endpoint_tag: u8,
+    /// Offset-store body-image object index.
+    pub body_image_object_index: u32,
+    /// Exact serialized body-image object-index token.
+    pub raw_body_image_object_index: Vec<u8>,
+    /// Absolute offset of the body-image object-index token.
+    pub body_image_object_index_offset: usize,
     /// Exclusive absolute end offset after the frame terminator.
+    pub end_offset: usize,
+}
+
+/// One exact direct tagged-reference field in a bounded operation record.
+///
+/// The field's tag is retained as native evidence; it does not assign a
+/// semantic role to the referenced object.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationTaggedReference {
+    /// Absolute offset of the opening `01 02` marker.
+    pub offset: usize,
+    /// Byte between the opening marker and the object index.
+    pub tag: u8,
+    /// Referenced feature object index.
+    pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the object-index token.
+    pub object_index_offset: usize,
+    /// Exclusive absolute end offset after the fixed field suffix.
+    pub end_offset: usize,
+}
+
+/// One exact direct operation data-block reference field.
+///
+/// The frame retains its object index and fixed suffix without assigning an
+/// operation or construction role to the target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationDataBlockReference {
+    /// Absolute offset of the opening `01 02` marker.
+    pub offset: usize,
+    /// Referenced feature object index.
+    pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// Absolute offset of the object-index token.
+    pub object_index_offset: usize,
+    /// Exclusive absolute end offset after the fixed field suffix.
     pub end_offset: usize,
 }
 
@@ -2021,27 +3013,27 @@ impl<'a> Section<'a> {
             View::u32_le_at(bytes, 8)?,
         ];
         let suffix = bytes.get(12..)?;
-        is_product_record(suffix).then_some(())?;
-        let length = usize::from(suffix[2]) - 2;
+        let layout = product_record_layout(suffix, ProductRecordForm::Modern)
+            .or_else(|| product_record_layout(suffix, ProductRecordForm::LegacyFeature))?;
         Some(RecordAreaHeader {
             offset,
             control_words,
             product: StoreVersion {
                 offset: offset + 12,
-                value: std::str::from_utf8(&suffix[3..3 + length]).ok()?,
+                value: std::str::from_utf8(&suffix[layout.text_start..layout.text_end]).ok()?,
             },
         })
     }
 
-    /// Decode strictly framed operation labels from the pointed record area.
+    /// Decode strictly framed operation labels for parser/cache tests.
+    #[cfg(test)]
     pub fn operation_labels(&self) -> Vec<OperationLabel<'a>> {
-        let Some(bytes) = self.record_area else {
-            return Vec::new();
-        };
-        let Some(base_offset) = self.record_area_offset else {
-            return Vec::new();
-        };
-        operation_labels(bytes, base_offset)
+        self.cached_operation_labels.to_vec()
+    }
+
+    /// Return the validated operation-label layouts for container caching.
+    pub(crate) fn operation_label_layouts(&self) -> Vec<OperationLabelLayout> {
+        operation_label_layouts(&self.cached_operation_labels)
     }
 
     /// Decode fully framed Boolean operations from the pointed record area.
@@ -2052,32 +3044,187 @@ impl<'a> Section<'a> {
         let Some(base_offset) = self.record_area_offset else {
             return Vec::new();
         };
-        boolean_operations(bytes, base_offset)
+        boolean_operations_with_labels(bytes, base_offset, &self.cached_operation_labels)
     }
 
-    /// Bound operation records by consecutive validated operation headers.
-    pub fn operation_records(&self) -> Vec<OperationRecord<'a>> {
+    /// Bound operation records and retain their ordinal in the complete label sequence.
+    pub fn operation_records_with_label_ordinals(&self) -> Vec<(usize, OperationRecord<'a>)> {
         let Some(bytes) = self.record_area else {
             return Vec::new();
         };
         let Some(base_offset) = self.record_area_offset else {
             return Vec::new();
         };
-        operation_records(bytes, base_offset)
+        operation_records_with_labels_and_ordinals(
+            bytes,
+            base_offset,
+            &self.cached_operation_labels,
+        )
     }
 
-    /// Bound operation records and retain their ordinal in the complete label sequence.
-    pub fn operation_records_with_label_ordinals(&self) -> Vec<(usize, OperationRecord<'a>)> {
-        let labels = self.operation_labels();
-        self.operation_records()
+    /// Bound validated operation headers that have no complete label frame.
+    pub fn unlabeled_operation_records_with_ordinals(
+        &self,
+    ) -> Vec<(usize, UnlabeledOperationRecord<'a>)> {
+        let Some(bytes) = self.record_area else {
+            return Vec::new();
+        };
+        let Some(base_offset) = self.record_area_offset else {
+            return Vec::new();
+        };
+        unlabeled_operation_records_with_ordinals(bytes, base_offset, &self.cached_operation_labels)
+    }
+
+    /// Decode the bounded state-counter map of a feature-history record area.
+    ///
+    /// The section-role check is intentional. The same byte patterns occur in
+    /// ordinary model-store payloads, where they do not carry operation state.
+    pub fn operation_state_counter_map(&self) -> Option<OperationStateCounterMap<'a>> {
+        let is_feature_history = self
+            .types
+            .iter()
+            .any(|definition| definition.name == "UGS::FEATURE_RECORD")
+            || self
+                .fields
+                .iter()
+                .any(|definition| definition.name == "m_rollForwardStates");
+        if !is_feature_history {
+            return None;
+        }
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        operation_state_counter_map(bytes, base_offset)
+    }
+
+    /// Decode the field-declared `m_rollForwardStates` group table before the
+    /// bounded operation-state counter map.
+    pub fn operation_state_group_table(&self) -> Option<OperationStateGroupTable<'a>> {
+        if !self
+            .fields
+            .iter()
+            .any(|definition| definition.name == "m_rollForwardStates")
+        {
+            return None;
+        }
+        let map = self.operation_state_counter_map()?;
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        let map_start = map.offset.checked_sub(base_offset)?;
+        operation_state_group_table_before_counter_map(bytes, map_start, base_offset)
+    }
+
+    /// Decode anchored state-journal groups from a feature-history record area.
+    ///
+    /// The journal prefix is selected by the record-area marker and its
+    /// version-token run. After a complete group, only the exact `04 00`
+    /// separator form may be skipped when it leads to another complete group.
+    /// Any other byte stops the journal so later record-region data cannot
+    /// become state.
+    pub fn operation_state_journal_groups(&self) -> Option<Vec<OperationStateJournalGroup<'a>>> {
+        let is_feature_history = self
+            .types
+            .iter()
+            .any(|definition| definition.name == "UGS::FEATURE_RECORD");
+        if !is_feature_history {
+            return None;
+        }
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        let header = self.record_area_header()?;
+        let product = header.product.offset.checked_sub(base_offset)?;
+        let product_end = record_area_product_end(bytes, product)?;
+        let start = operation_state_journal_start(bytes, product_end)?;
+        let end = self
+            .cached_operation_labels
+            .first()
+            .and_then(|label| label.header_offset.checked_sub(base_offset))
+            .unwrap_or(bytes.len());
+        operation_state_journal_groups_before_boundary(bytes, start, end, base_offset)
+    }
+
+    fn operation_state_block(&self) -> Option<OperationStateBlock<'a>> {
+        let map = self.operation_state_counter_map()?;
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        let (_, last_record) = self
+            .operation_records_with_label_ordinals()
             .into_iter()
-            .filter_map(|record| {
-                labels
-                    .iter()
-                    .position(|label| label.offset == record.label.offset)
-                    .map(|ordinal| (ordinal, record))
-            })
-            .collect()
+            .last()?;
+        let start_offset = last_record.payload_offset;
+        let start = start_offset.checked_sub(base_offset)?;
+        let group = self.operation_state_group_table();
+        let terminal = group
+            .as_ref()
+            .map_or(map.offset, |table| table.offset)
+            .checked_sub(base_offset)?;
+        let mut ends = Vec::with_capacity(2);
+        if let Some(table) = &group {
+            let overlap_end = terminal.checked_add(table.groups.first()?.opener.len())?;
+            ends.push(overlap_end);
+        }
+        ends.push(terminal);
+        ends.into_iter()
+            .find_map(|end| operation_state_block_before_boundary(bytes, start, end, base_offset))
+    }
+
+    /// Decode the bounded per-object status lane after the operation records.
+    pub fn operation_state_status_table(&self) -> Option<OperationStateStatusTable<'a>> {
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        let block = self.operation_state_block()?;
+        let status_after = block.status_end_offset.checked_sub(base_offset)?;
+        let message_start = match block.messages.first() {
+            Some(message) => message.offset.checked_sub(base_offset)?,
+            None => status_after,
+        };
+        (!block.rows.is_empty() || !block.slot_lanes.is_empty()).then_some(
+            OperationStateStatusTable {
+                offset: block.offset,
+                end_offset: block.status_end_offset,
+                rows: block.rows,
+                slot_lanes: block.slot_lanes,
+                trailing_bytes: bytes.get(status_after..message_start)?,
+            },
+        )
+    }
+
+    /// Decode the contiguous standalone message records immediately before
+    /// the roll-forward table or counter-map boundary.
+    pub fn operation_state_messages(&self) -> Option<Vec<OperationStateMessage<'a>>> {
+        Some(self.operation_state_block()?.messages)
+    }
+
+    /// Decode complete rows in an audit-trail record area.
+    ///
+    /// The registry role check prevents the same compact byte patterns in
+    /// feature-history and model areas from being interpreted as audit data.
+    /// Unknown bytes before, between, and after complete rows remain outside
+    /// this typed view.
+    pub fn audit_trail_rows(&self) -> Option<Vec<AuditTrailRow<'a>>> {
+        let has_audit_marker = self
+            .types
+            .iter()
+            .any(|definition| definition.name == "UGS::OM::SaveAuditTrail");
+        let has_specialized_marker = self.types.iter().any(|definition| {
+            matches!(
+                definition.name,
+                "UGS::FEATURE_RECORD" | "UGS::EXP_expression" | "UGS::Solid::Topol"
+            )
+        });
+        if !has_audit_marker || has_specialized_marker {
+            return None;
+        }
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        let header = self.record_area_header()?;
+        let product = header.product.offset.checked_sub(base_offset)?;
+        let product_end = record_area_product_end(bytes, product)?;
+        let start = bytes
+            .get(product_end..)?
+            .windows(2)
+            .position(|window| window == [0x41, 0x00])?
+            .checked_add(product_end + 2)?;
+        audit_trail_rows(bytes, start, bytes.len(), base_offset)
     }
 
     /// Decode unambiguous primary body references from bounded operation records.
@@ -2093,16 +3240,39 @@ impl<'a> Section<'a> {
 
 /// Decode complete feature-operation headers and their label frames.
 pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<'_>> {
-    const HEADER: &[u8] = &[
-        0x80, 0xcd, 0x01, 0x04, 0x01, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0xff, 0xff,
-    ];
-    let mut labels = Vec::new();
+    validated_operation_headers(bytes, base_offset)
+        .into_iter()
+        .filter_map(|header| operation_label_at(bytes, base_offset, header))
+        .collect()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OperationHeaderLayout {
+    offset: usize,
+    fields_end: usize,
+    object_indices: [Option<u32>; 4],
+    object_index_offsets: [usize; 4],
+}
+
+fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<OperationHeaderLayout> {
+    const PREFIX: &[u8] = &[0x80, 0xcd, 0x01, 0x04, 0x01];
+    const SCALAR_LEN: usize = 8;
+    let mut headers = Vec::new();
     for marker in bytes
-        .windows(HEADER.len())
+        .windows(PREFIX.len())
         .enumerate()
-        .filter_map(|(offset, window)| (window == HEADER).then_some(offset))
+        .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
     {
-        let mut at = marker + HEADER.len();
+        let scalar_at = marker + PREFIX.len();
+        let Some(raw_scalar) = bytes.get(scalar_at..scalar_at + SCALAR_LEN) else {
+            continue;
+        };
+        if shifted_ieee_f64(raw_scalar).is_none()
+            || bytes.get(scalar_at + SCALAR_LEN..scalar_at + SCALAR_LEN + 2) != Some(&[0xff, 0xff])
+        {
+            continue;
+        }
+        let mut at = scalar_at + SCALAR_LEN + 2;
         let mut object_indices = [None; 4];
         let mut object_index_offsets = [0; 4];
         let mut valid = true;
@@ -2118,76 +3288,151 @@ pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<
             *slot = value;
             at = next;
         }
-        if !valid || bytes.get(at) != Some(&0x03) {
+        if !valid {
             continue;
         }
-        let Some(length) = bytes.get(at + 1).copied().map(usize::from) else {
-            continue;
-        };
-        if length < 3 {
-            continue;
-        }
-        let Some(end) = at.checked_add(length) else {
-            continue;
-        };
-        if bytes.get(end) != Some(&0) {
-            continue;
-        }
-        let Some(name) = bytes.get(at + 2..end) else {
-            continue;
-        };
-        if !name
-            .iter()
-            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-        {
-            continue;
-        }
-        let Ok(value) = std::str::from_utf8(name) else {
-            continue;
-        };
-        labels.push(OperationLabel {
-            header_offset: base_offset + marker,
-            offset: base_offset + at,
-            value,
+        headers.push(OperationHeaderLayout {
+            offset: base_offset + marker,
+            fields_end: at,
             object_indices,
             object_index_offsets,
         });
     }
-    labels
+    headers
+}
+
+fn operation_label_at(
+    bytes: &[u8],
+    base_offset: usize,
+    header: OperationHeaderLayout,
+) -> Option<OperationLabel<'_>> {
+    let at = header.fields_end;
+    if bytes.get(at) != Some(&0x03) {
+        return None;
+    }
+    let length = bytes.get(at + 1).copied().map(usize::from)?;
+    if length < 3 {
+        return None;
+    }
+    let end = at.checked_add(length)?;
+    if bytes.get(end) != Some(&0) {
+        return None;
+    }
+    let name = bytes.get(at + 2..end)?;
+    if !name
+        .iter()
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    {
+        return None;
+    }
+    let Ok(value) = std::str::from_utf8(name) else {
+        return None;
+    };
+    Some(OperationLabel {
+        header_offset: header.offset,
+        offset: base_offset + at,
+        value,
+        object_indices: header.object_indices,
+        object_index_offsets: header.object_index_offsets,
+    })
 }
 
 /// Bound every validated operation header through its successor or area end.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused parser tests.
 pub fn operation_records(bytes: &[u8], base_offset: usize) -> Vec<OperationRecord<'_>> {
     let labels = operation_labels(bytes, base_offset);
-    labels
+    operation_records_with_labels(bytes, base_offset, &labels)
+}
+
+fn operation_records_with_labels<'a>(
+    bytes: &'a [u8],
+    base_offset: usize,
+    labels: &[OperationLabel<'a>],
+) -> Vec<OperationRecord<'a>> {
+    operation_records_with_labels_and_ordinals(bytes, base_offset, labels)
+        .into_iter()
+        .map(|(_, record)| record)
+        .collect()
+}
+
+fn operation_records_with_labels_and_ordinals<'a>(
+    bytes: &'a [u8],
+    base_offset: usize,
+    labels: &[OperationLabel<'a>],
+) -> Vec<(usize, OperationRecord<'a>)> {
+    let headers = validated_operation_headers(bytes, base_offset);
+    headers
         .iter()
         .enumerate()
-        .filter_map(|(ordinal, label)| {
+        .filter_map(|(ordinal, header)| {
+            let label = labels
+                .iter()
+                .find(|label| label.header_offset == header.offset)?;
             let start = label.header_offset.checked_sub(base_offset)?;
-            let end = labels
+            let end = headers
                 .get(ordinal + 1)
-                .map_or(bytes.len(), |next| next.header_offset - base_offset);
+                .map_or(bytes.len(), |next| next.offset - base_offset);
             let label_at = label.offset.checked_sub(base_offset)?;
             let payload_start = label_at
                 .checked_add(usize::from(*bytes.get(label_at + 1)?))?
                 .checked_add(1)?;
-            Some(OperationRecord {
-                offset: label.header_offset,
-                bytes: bytes.get(start..end)?,
-                payload_offset: base_offset + payload_start,
-                payload: bytes.get(payload_start..end)?,
-                label: *label,
-            })
+            Some((
+                ordinal,
+                OperationRecord {
+                    offset: label.header_offset,
+                    bytes: bytes.get(start..end)?,
+                    payload_offset: base_offset + payload_start,
+                    payload: bytes.get(payload_start..end)?,
+                    label: *label,
+                },
+            ))
         })
         .collect()
 }
 
-/// Decode ordered `04, length, text, 00` strings from one operation payload.
-pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPayloadString<'_>> {
-    let mut strings = Vec::new();
+fn unlabeled_operation_records_with_ordinals<'a>(
+    bytes: &'a [u8],
+    base_offset: usize,
+    labels: &[OperationLabel<'a>],
+) -> Vec<(usize, UnlabeledOperationRecord<'a>)> {
+    let headers = validated_operation_headers(bytes, base_offset);
+    headers
+        .iter()
+        .enumerate()
+        .filter_map(|(ordinal, header)| {
+            if labels
+                .iter()
+                .any(|label| label.header_offset == header.offset)
+            {
+                return None;
+            }
+            let start = header.offset.checked_sub(base_offset)?;
+            let end = headers
+                .get(ordinal + 1)
+                .map_or(bytes.len(), |next| next.offset - base_offset);
+            Some((
+                ordinal,
+                UnlabeledOperationRecord {
+                    offset: header.offset,
+                    bytes: bytes.get(start..end)?,
+                    payload_offset: base_offset + header.fields_end,
+                    payload: bytes.get(header.fields_end..end)?,
+                    object_indices: header.object_indices,
+                    object_index_offsets: header.object_index_offsets,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// Decode ordered `03|04, length, text, 00` frames from one operation payload.
+pub fn operation_payload_text_frames(
+    record: OperationRecord<'_>,
+) -> Vec<OperationPayloadTextFrame<'_>> {
+    let mut frames = Vec::new();
     let mut at = 0usize;
     while at + 4 <= record.payload.len() {
-        if record.payload[at] != 0x04 {
+        if !matches!(record.payload[at], 0x03 | 0x04) {
             at += 1;
             continue;
         }
@@ -2210,13 +3455,26 @@ pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPa
             at += 1;
             continue;
         }
-        strings.push(OperationPayloadString {
+        frames.push(OperationPayloadTextFrame {
+            marker: record.payload[at],
             offset: record.payload_offset + at,
             value,
         });
         at = end + 1;
     }
-    strings
+    frames
+}
+
+/// Decode ordered `04, length, text, 00` strings from one operation payload.
+pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPayloadString<'_>> {
+    operation_payload_text_frames(record)
+        .into_iter()
+        .filter(|frame| frame.marker == 0x04)
+        .map(|frame| OperationPayloadString {
+            offset: frame.offset,
+            value: frame.value,
+        })
+        .collect()
 }
 
 /// Decode an exact nonempty duplicated shifted-binary64 lane before a hole template.
@@ -2326,7 +3584,7 @@ pub fn hole_package_construction_group_lane(
     if record.label.value != "HOLE PACKAGE" {
         return None;
     }
-    let mut matches = Vec::new();
+    let mut candidate = None;
     for start in 0..record.payload.len().saturating_sub(PREFIX.len()) {
         if record.payload.get(start..start + PREFIX.len()) != Some(&PREFIX) {
             continue;
@@ -2376,12 +3634,12 @@ pub fn hole_package_construction_group_lane(
         })() else {
             continue;
         };
-        matches.push(lane);
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(lane);
     }
-    let [lane] = matches.as_slice() else {
-        return None;
-    };
-    Some(lane.clone())
+    candidate
 }
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
@@ -2391,19 +3649,14 @@ pub fn sketch_payload_references(
     if record.label.value != "SKETCH" {
         return None;
     }
-    let mut matches = Vec::new();
-    for start in 0..record.payload.len().saturating_sub(3) {
-        if record.payload.get(start..start + 2) != Some(&[0x01, 0x00]) {
-            continue;
-        }
-        if let Some(references) = sketch_reference_field(record, start) {
-            matches.push(references);
-        }
-    }
-    let [references] = matches.as_slice() else {
-        return None;
-    };
-    Some(references.clone())
+    unique_candidate(
+        (0..record.payload.len().saturating_sub(3)).filter_map(|start| {
+            if record.payload.get(start..start + 2) != Some(&[0x01, 0x00]) {
+                return None;
+            }
+            sketch_reference_field(record, start)
+        }),
+    )
 }
 
 fn sketch_reference_field(
@@ -2423,7 +3676,24 @@ fn sketch_reference_field(
         _ => return None,
     };
     let leading_count = declared_count.saturating_sub(1) as usize;
+    let leading_start = at;
+    let mut scan_at = leading_start;
+    for _ in 0..leading_count {
+        let (_, width) = payload_object_index(record.payload.get(scan_at..)?)?;
+        scan_at += width;
+    }
+    if record.payload.get(scan_at..scan_at + 2) != Some(&[0x00, 0x00]) {
+        return None;
+    }
+    scan_at += 2;
+    let (_, width) = payload_object_index(record.payload.get(scan_at..)?)?;
+    scan_at += width;
+    if record.payload.get(scan_at..scan_at + 4) != Some(&[0x01, 0x00, 0x00, 0x00]) {
+        return None;
+    }
+
     let mut references = Vec::with_capacity(leading_count + 1);
+    at = leading_start;
     for _ in 0..leading_count {
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
         references.push(PayloadObjectReference {
@@ -2433,9 +3703,6 @@ fn sketch_reference_field(
         });
         at += width;
     }
-    if record.payload.get(at..at + 2) != Some(&[0x00, 0x00]) {
-        return None;
-    }
     at += 2;
     let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
     references.push(PayloadObjectReference {
@@ -2443,10 +3710,6 @@ fn sketch_reference_field(
         object_index,
         raw_object_index: record.payload[at..at + width].to_vec(),
     });
-    at += width;
-    if record.payload.get(at..at + 4) != Some(&[0x01, 0x00, 0x00, 0x00]) {
-        return None;
-    }
     Some(SketchPayloadReferenceField {
         declared_count,
         references,
@@ -2546,19 +3809,14 @@ pub fn projected_curve_payload_references(
         "CPROJ_CMB" => &CMB_PREFIX[..],
         _ => return None,
     };
-    let mut matches = Vec::new();
-    for start in 0..=record.payload.len().saturating_sub(marker.len()) {
-        if record.payload.get(start..start + marker.len()) != Some(marker) {
-            continue;
-        }
-        if let Some(field) = decode_field(start) {
-            matches.push(field);
-        }
-    }
-    let [field] = matches.as_slice() else {
-        return None;
-    };
-    Some(field.clone())
+    unique_candidate(
+        (0..=record.payload.len().saturating_sub(marker.len())).filter_map(|start| {
+            if record.payload.get(start..start + marker.len()) != Some(marker) {
+                return None;
+            }
+            decode_field(start)
+        }),
+    )
 }
 
 /// Decode the unique exactly framed construction-reference field in a bounded
@@ -2569,6 +3827,8 @@ pub fn pattern_payload_references(
     const GRAPH_SEPARATOR: [u8; 4] = [0xff, 0x00, 0xff, 0x01];
     const GRAPH_TAIL_PREFIX: [u8; 4] = [0xff, 0x00, 0x00, 0x01];
     const GRAPH_SUFFIX: [u8; 3] = [0xff, 0xff, 0x01];
+    const COMPACT_GRAPH_SEPARATOR: [u8; 3] = [0xff, 0x00, 0x01];
+    const COMPACT_GRAPH_MIDDLE: [u8; 2] = [0xff, 0x3c];
     const INSTANCE_PREFIX: [u8; 3] = [0x00, 0xff, 0xff];
     const INSTANCE_SUFFIX: [u8; 17] = [
         0x01, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
@@ -2615,7 +3875,49 @@ pub fn pattern_payload_references(
             references.push(decode_reference(&mut at)?);
         }
         (record.payload.get(at..at + GRAPH_SUFFIX.len()) == Some(&GRAPH_SUFFIX)).then_some(())?;
-        Some(PatternPayloadReferenceField { references })
+        Some(PatternPayloadReferenceField {
+            layout: PatternPayloadReferenceLayout::CanonicalGraph,
+            references,
+        })
+    };
+    let decode_compact_graph = |start: usize| {
+        let mut at = start + 1;
+        let mut references = Vec::with_capacity(10);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + COMPACT_GRAPH_SEPARATOR.len())
+            == Some(&COMPACT_GRAPH_SEPARATOR))
+        .then_some(())?;
+        at += COMPACT_GRAPH_SEPARATOR.len();
+        references.push(decode_reference(&mut at)?);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at) == Some(&0x3b)).then_some(())?;
+        at += 1;
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + COMPACT_GRAPH_SEPARATOR.len())
+            == Some(&COMPACT_GRAPH_SEPARATOR))
+        .then_some(())?;
+        at += COMPACT_GRAPH_SEPARATOR.len();
+        references.push(decode_reference(&mut at)?);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + COMPACT_GRAPH_MIDDLE.len()) == Some(&COMPACT_GRAPH_MIDDLE))
+            .then_some(())?;
+        at += COMPACT_GRAPH_MIDDLE.len();
+        references.push(decode_reference(&mut at)?);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + GRAPH_TAIL_PREFIX.len()) == Some(&GRAPH_TAIL_PREFIX))
+            .then_some(())?;
+        at += GRAPH_TAIL_PREFIX.len();
+        references.push(decode_reference(&mut at)?);
+        if record.payload.get(at) == Some(&0xff) {
+            at += 1;
+        } else {
+            references.push(decode_reference(&mut at)?);
+        }
+        (record.payload.get(at..at + GRAPH_SUFFIX.len()) == Some(&GRAPH_SUFFIX)).then_some(())?;
+        Some(PatternPayloadReferenceField {
+            layout: PatternPayloadReferenceLayout::CompactGraph,
+            references,
+        })
     };
     let decode_instance = |start: usize| {
         let mut at = start + INSTANCE_PREFIX.len();
@@ -2623,26 +3925,83 @@ pub fn pattern_payload_references(
         (record.payload.get(at..at + INSTANCE_SUFFIX.len()) == Some(&INSTANCE_SUFFIX))
             .then_some(())?;
         Some(PatternPayloadReferenceField {
+            layout: PatternPayloadReferenceLayout::GeometryInstance,
             references: vec![reference],
         })
     };
-    let marker = match record.label.value {
-        "Pattern Feature" | "Pattern Geometry" => &[0x61][..],
-        "Geometry Instance" => &INSTANCE_PREFIX,
+    let field = match record.label.value {
+        "Pattern Feature" | "Pattern Geometry" => {
+            unique_candidate((0..record.payload.len()).filter_map(|start| {
+                match record.payload.get(start) {
+                    Some(0x61) => decode_graph(start),
+                    Some(0x3b) => decode_compact_graph(start),
+                    _ => None,
+                }
+            }))
+        }
+        "Geometry Instance" => unique_candidate(
+            (0..=record.payload.len().saturating_sub(INSTANCE_PREFIX.len()))
+                .filter(|&start| {
+                    record.payload.get(start..start + INSTANCE_PREFIX.len())
+                        == Some(&INSTANCE_PREFIX)
+                })
+                .filter_map(decode_instance),
+        ),
         _ => return None,
     };
-    let matches = (0..=record.payload.len().saturating_sub(marker.len()))
-        .filter(|&start| record.payload.get(start..start + marker.len()) == Some(marker))
-        .filter_map(|start| match record.label.value {
-            "Pattern Feature" | "Pattern Geometry" => decode_graph(start),
-            "Geometry Instance" => decode_instance(start),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let [field] = matches.as_slice() else {
+    field
+}
+
+/// Decode the unique exactly terminated counted reference lane in a bounded
+/// `Pattern Feature` payload without assigning its reference roles.
+pub fn pattern_payload_counted_reference_lane(
+    record: OperationRecord<'_>,
+) -> Option<PatternPayloadCountedReferenceLane> {
+    const TRAILER: [u8; 19] = [
+        0x00, 0x00, 0x00, 0x37, 0xff, 0xff, 0x01, 0x00, 0x00, 0x00, 0x38, 0xff, 0x01, 0xff, 0xff,
+        0xff, 0xff, 0x01, 0xff,
+    ];
+    if record.label.value != "Pattern Feature" {
         return None;
+    }
+    let decode = |start: usize| {
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload.get(start + 1)?;
+        (declared_count >= 2).then_some(())?;
+        let reference_count = usize::from(declared_count - 1);
+        let references_start = start.checked_add(2)?;
+        cadmpeg_core::decode::bounded_len(
+            u64::from(declared_count - 1),
+            2,
+            record.payload.len().saturating_sub(references_start),
+        )?;
+        let mut scan_at = references_start;
+        for _ in 0..reference_count {
+            let (_, width) = payload_object_index(record.payload.get(scan_at..)?)?;
+            scan_at = scan_at.checked_add(width)?;
+        }
+        let trailer_end = scan_at.checked_add(TRAILER.len())?;
+        (record.payload.get(scan_at..trailer_end) == Some(&TRAILER)).then_some(())?;
+
+        let mut at = references_start;
+        let mut references = Vec::with_capacity(reference_count);
+        for _ in 0..reference_count {
+            let offset = at;
+            let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+            at = at.checked_add(width)?;
+            references.push(PayloadObjectReference {
+                offset: record.payload_offset + offset,
+                object_index,
+                raw_object_index: record.payload[offset..at].to_vec(),
+            });
+        }
+        Some(PatternPayloadCountedReferenceLane {
+            offset: record.payload_offset + start,
+            declared_count,
+            references,
+        })
     };
-    Some(field.clone())
+    unique_candidate((0..record.payload.len()).filter_map(decode))
 }
 
 /// Decode the unique exactly bounded two-group reference graph in an `FSET`
@@ -2675,8 +4034,8 @@ pub fn fset_payload_reference_graph(
             && record.payload.get(body_start) == Some(&0x3c)
             && record.payload.get(body_end.checked_sub(1)?) == Some(&0x3e))
         .then_some(())?;
-        let first = (body_start + 2..body_end - 1)
-            .filter_map(|selector_end| {
+        let (selector, first) =
+            unique_candidate((body_start + 2..body_end - 1).filter_map(|selector_end| {
                 let selector = record.payload.get(body_start + 1..selector_end)?;
                 (!selector.is_empty()
                     && selector
@@ -2687,11 +4046,7 @@ pub fn fset_payload_reference_graph(
                 let first = [decode_reference(&mut at)?, decode_reference(&mut at)?];
                 (at == body_end - 1)
                     .then_some((std::str::from_utf8(selector).ok()?.to_string(), first))
-            })
-            .collect::<Vec<_>>();
-        let [(selector, first)] = first.as_slice() else {
-            return None;
-        };
+            }))?;
         let mut at = body_end;
         let second = [
             decode_reference(&mut at)?,
@@ -2700,19 +4055,13 @@ pub fn fset_payload_reference_graph(
         ];
         (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
         Some(FsetPayloadReferenceGraph {
-            selector: selector.clone(),
-            first: first.clone(),
+            selector,
+            first,
             second,
             offset: record.payload_offset + start,
         })
     };
-    let matches = (0..record.payload.len().saturating_sub(1))
-        .filter_map(decode)
-        .collect::<Vec<_>>();
-    let [graph] = matches.as_slice() else {
-        return None;
-    };
-    Some(graph.clone())
+    unique_candidate((0..record.payload.len().saturating_sub(1)).filter_map(decode))
 }
 
 /// Decode the exactly counted nullable construction-reference field at the
@@ -2773,13 +4122,90 @@ pub fn pattern_payload_transform_lane(
         ),
         _ => return None,
     };
-    let decode = |start: usize| {
+    let validate_scalar = |start: usize| {
         (record.payload.get(start) == Some(&0x01)).then_some(())?;
         let declared_count = *record.payload.get(start + 1)?;
         (declared_count >= 2).then_some(())?;
-        let row_count = usize::from(declared_count - 1);
         let mut at = start + 2;
         let row_schema_index = *record.payload.get(at)?;
+        for ordinal in 1..declared_count {
+            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
+            (record.payload.get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
+                .then_some(())?;
+            at += 1 + prefix_tail.len();
+            let (_, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+            (encoding != PayloadScalarEncoding::Zero).then_some(())?;
+            at += width;
+            (record.payload.get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
+                .then_some(())?;
+            at += scalar_suffix.len();
+            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
+                return None;
+            };
+            at += width;
+            (record.payload.get(at) == Some(&0x01)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            (record.payload.get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
+                .then_some(())?;
+            at += 2 + ROW_TAIL.len();
+        }
+        let terminal_schema_index = row_schema_index.checked_sub(1)?;
+        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
+        (record.payload.get(at + 1..at + 3) == Some(&[0x00, 0x00])).then_some(())?;
+        (record.payload.get(at + 3) == Some(&0x01)).then_some(())?;
+        Some((declared_count, row_schema_index))
+    };
+    let validate_wide = |start: usize| {
+        (record.label.value == "Pattern Feature").then_some(())?;
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload.get(start + 1)?;
+        (declared_count >= 2).then_some(())?;
+        let mut at = start + 2;
+        let row_schema_index = *record.payload.get(at)?;
+        for ordinal in 1..declared_count {
+            (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
+            at += 1;
+            for value_ordinal in 0..4 {
+                let (_, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                (encoding == PayloadScalarEncoding::Binary64 && width == 8).then_some(())?;
+                at += width;
+                if value_ordinal == 1 {
+                    (record.payload.get(at..at + 2) == Some(&[0x00, 0x00])).then_some(())?;
+                    at += 2;
+                }
+            }
+            (record.payload.get(at..at + 4) == Some(&[0x00; 4])).then_some(())?;
+            at += 4;
+            let width = if record.payload.get(at) == Some(&0x01) {
+                1
+            } else {
+                let (_, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                (encoding == PayloadScalarEncoding::Binary32).then_some(())?;
+                width
+            };
+            at += width;
+            (record.payload.get(at..at + 7) == Some(&[0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03]))
+                .then_some(())?;
+            at += 7;
+            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
+                return None;
+            };
+            at += width;
+            (record.payload.get(at) == Some(&0x01)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            (record.payload.get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
+                .then_some(())?;
+            at += 2 + ROW_TAIL.len();
+        }
+        let terminal_schema_index = row_schema_index.checked_sub(1)?;
+        (record.payload.get(at) == Some(&terminal_schema_index)).then_some(())?;
+        (record.payload.get(at + 1..at + 4) == Some(&[0x00, 0x00, 0x02])).then_some(())?;
+        Some((declared_count, row_schema_index))
+    };
+    let decode = |start: usize| {
+        let (declared_count, row_schema_index) = validate_scalar(start)?;
+        let row_count = usize::from(declared_count - 1);
+        let mut at = start + 2;
         let mut encodings = Vec::with_capacity(row_count);
         let mut values = Vec::with_capacity(row_count);
         let mut value_offsets = Vec::with_capacity(row_count);
@@ -2839,13 +4265,9 @@ pub fn pattern_payload_transform_lane(
         })
     };
     let decode_wide = |start: usize| {
-        (record.label.value == "Pattern Feature").then_some(())?;
-        (record.payload.get(start) == Some(&0x01)).then_some(())?;
-        let declared_count = *record.payload.get(start + 1)?;
-        (declared_count >= 2).then_some(())?;
+        let (declared_count, row_schema_index) = validate_wide(start)?;
         let row_count = usize::from(declared_count - 1);
         let mut at = start + 2;
-        let row_schema_index = *record.payload.get(at)?;
         let mut encodings = Vec::with_capacity(row_count * 5);
         let mut values = Vec::with_capacity(row_count * 5);
         let mut value_offsets = Vec::with_capacity(row_count * 5);
@@ -2923,14 +4345,11 @@ pub fn pattern_payload_transform_lane(
             selector_offsets,
         })
     };
-    let mut matches = (0..record.payload.len().saturating_sub(1))
-        .filter_map(decode)
-        .collect::<Vec<_>>();
-    matches.extend((0..record.payload.len().saturating_sub(1)).filter_map(decode_wide));
-    let [lane] = matches.as_slice() else {
-        return None;
-    };
-    Some(lane.clone())
+    unique_candidate(
+        (0..record.payload.len().saturating_sub(1))
+            .filter_map(decode)
+            .chain((0..record.payload.len().saturating_sub(1)).filter_map(decode_wide)),
+    )
 }
 
 /// Decode the unique exactly counted instance-output lane in a bounded payload.
@@ -2945,10 +4364,40 @@ pub fn multi_instance_output_payload_lane(
     if record.label.value != "Multi Instance Output" {
         return None;
     }
-    let decode = |start: usize| {
+    let validate = |start: usize| {
         (record.payload.get(start..start + ENVELOPE.len()) == Some(&ENVELOPE)).then_some(())?;
         let declared_count = *record.payload.get(start + ENVELOPE.len())?;
         (declared_count >= 2).then_some(())?;
+        let mut at = start + ENVELOPE.len() + 1;
+        let mut instance_count = 0;
+        for expected_row_index in 2..=declared_count {
+            (record.payload.get(at..at + ROW_PREFIX.len()) == Some(&ROW_PREFIX)).then_some(())?;
+            at += ROW_PREFIX.len();
+            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
+                return None;
+            };
+            at += width;
+            (record.payload.get(at) == Some(&ROW_ORDINAL_MARKER)).then_some(())?;
+            let ordinal = *record.payload.get(at + 1)?;
+            (ordinal >= 2).then_some(())?;
+            instance_count = instance_count.max(ordinal);
+            (record.payload.get(at + 2) == Some(&expected_row_index)).then_some(())?;
+            at += 3;
+        }
+        (record.payload.get(at..at + REFERENCE_PREFIX.len()) == Some(&REFERENCE_PREFIX))
+            .then_some(())?;
+        at += REFERENCE_PREFIX.len();
+        for _ in 1..instance_count {
+            let (Some(_), end) = feature_object_index(record.payload, at)? else {
+                return None;
+            };
+            at = end;
+        }
+        (record.payload.get(at..at + 2) == Some(&[0x01, instance_count])).then_some(())?;
+        Some((declared_count, instance_count))
+    };
+    let decode = |start: usize| {
+        let (declared_count, instance_count) = validate(start)?;
         let row_count = usize::from(declared_count - 1);
         let mut at = start + ENVELOPE.len() + 1;
         let mut selectors = Vec::with_capacity(row_count);
@@ -2976,7 +4425,7 @@ pub fn multi_instance_output_payload_lane(
             row_indices.push(expected_row_index);
             at += 3;
         }
-        let instance_count = *ordinals.iter().max()?;
+        (ordinals.iter().copied().max() == Some(instance_count)).then_some(())?;
         let expected_ordinals = (2..=instance_count).collect::<Vec<_>>();
         let mut distinct_selectors = Vec::new();
         for selector in &selectors {
@@ -3022,13 +4471,7 @@ pub fn multi_instance_output_payload_lane(
             trailing_references,
         })
     };
-    let matches = (0..=record.payload.len().saturating_sub(ENVELOPE.len()))
-        .filter_map(decode)
-        .collect::<Vec<_>>();
-    let [lane] = matches.as_slice() else {
-        return None;
-    };
-    Some(lane.clone())
+    unique_candidate((0..=record.payload.len().saturating_sub(ENVELOPE.len())).filter_map(decode))
 }
 
 /// Decode the unique exactly counted selector lane in an
@@ -3042,7 +4485,7 @@ pub fn identical_instance_output_payload_lane(
     if record.label.value != "IDENTICAL INSTANCE OUTPUT" {
         return None;
     }
-    let decode = |start: usize| {
+    let validate = |start: usize| {
         let leading_schema_index = *record.payload.get(start)?;
         let count_schema_index = *record.payload.get(start + 1)?;
         (record.payload.get(start + 2) == Some(&0x01)).then_some(())?;
@@ -3051,6 +4494,39 @@ pub fn identical_instance_output_payload_lane(
         let first_schema_index = count_schema_index.checked_add(1)?;
         let second_schema_index = count_schema_index.checked_add(2)?;
         let third_schema_index = count_schema_index.checked_add(3)?;
+        let mut at = start + 4;
+        for ordinal in 2..=declared_count {
+            (record.payload.get(at) == Some(&first_schema_index)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&second_schema_index)).then_some(())?;
+            (record.payload.get(at + 2..at + 4) == Some(&ROW_MIDDLE)).then_some(())?;
+            (record.payload.get(at + 4) == Some(&third_schema_index)).then_some(())?;
+            at += 5;
+            let (CompactIndex::Value(_), width) = compact_index(record.payload.get(at..)?)? else {
+                return None;
+            };
+            at += width;
+            (record.payload.get(at) == Some(&0x00)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            at += 2;
+        }
+        let terminal_count = declared_count.checked_add(1)?;
+        (record.payload.get(at) == Some(&0x00)).then_some(())?;
+        (record.payload.get(at + 1) == Some(&terminal_count)).then_some(())?;
+        (record.payload.get(at + 2..at + 2 + SENTINEL.len()) == Some(&SENTINEL)).then_some(())?;
+        Some((
+            leading_schema_index,
+            count_schema_index,
+            declared_count,
+            [first_schema_index, second_schema_index, third_schema_index],
+        ))
+    };
+    let decode = |start: usize| {
+        let (
+            leading_schema_index,
+            count_schema_index,
+            declared_count,
+            [first_schema_index, second_schema_index, third_schema_index],
+        ) = validate(start)?;
         let mut at = start + 4;
         let mut selectors = Vec::with_capacity(usize::from(declared_count - 1));
         let mut raw_selectors = Vec::with_capacity(usize::from(declared_count - 1));
@@ -3089,13 +4565,7 @@ pub fn identical_instance_output_payload_lane(
             selector_offsets,
         })
     };
-    let matches = (0..record.payload.len().saturating_sub(3))
-        .filter_map(decode)
-        .collect::<Vec<_>>();
-    let [lane] = matches.as_slice() else {
-        return None;
-    };
-    Some(lane.clone())
+    unique_candidate((0..record.payload.len().saturating_sub(3)).filter_map(decode))
 }
 
 /// Decode the exact leading construction header in a bounded `POINT` payload.
@@ -3221,16 +4691,13 @@ pub fn draft_feature_payload_references(
             references: [first, second, third, fourth],
         })
     };
-    let matches = (PAYLOAD_PREFIX.len()..=record.payload.len().saturating_sub(GRAPH_PREFIX.len()))
-        .filter(|&start| {
-            record.payload.get(start..start + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)
-        })
-        .filter_map(decode)
-        .collect::<Vec<_>>();
-    let [field] = matches.as_slice() else {
-        return None;
-    };
-    Some(field.clone())
+    unique_candidate(
+        (PAYLOAD_PREFIX.len()..=record.payload.len().saturating_sub(GRAPH_PREFIX.len()))
+            .filter(|&start| {
+                record.payload.get(start..start + GRAPH_PREFIX.len()) == Some(&GRAPH_PREFIX)
+            })
+            .filter_map(decode),
+    )
 }
 
 /// Decode the exactly positioned counted compact-index lane preceding a `DRAFT` graph.
@@ -3249,8 +4716,19 @@ pub fn draft_feature_leading_index_lane(
     let declared_count = *record.payload.get(at + 1)?;
     (declared_count >= 2).then_some(())?;
     at += 2;
+    let indices_start = at;
+    let mut scan_at = indices_start;
+    for _ in 1..declared_count {
+        let (CompactIndex::Value(_), width) = compact_index(record.payload.get(scan_at..)?)? else {
+            return None;
+        };
+        scan_at += width;
+    }
+    (record.payload.get(scan_at..scan_at + 2) == Some(&[0x01, 0x02])).then_some(())?;
+
     let mut indices = Vec::with_capacity(usize::from(declared_count - 1));
     let mut raw_indices = Vec::with_capacity(usize::from(declared_count - 1));
+    at = indices_start;
     for _ in 1..declared_count {
         let offset = at;
         let (CompactIndex::Value(value), width) = compact_index(record.payload.get(at..)?)? else {
@@ -3260,7 +4738,6 @@ pub fn draft_feature_leading_index_lane(
         indices.push((value, record.payload_offset + offset));
         raw_indices.push(record.payload[offset..offset + width].to_vec());
     }
-    (record.payload.get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
     Some(DraftFeatureLeadingIndexLane {
         declared_count,
         indices,
@@ -3278,7 +4755,7 @@ pub fn draft_feature_terminal_lane(
     if record.label.value != "DRAFT" {
         return None;
     }
-    let mut matches = Vec::new();
+    let mut candidate = None;
     for start in 0..record.payload.len() {
         let mut at = start;
         let first_offset = at;
@@ -3324,7 +4801,7 @@ pub fn draft_feature_terminal_lane(
         if at + 1 != record.payload.len() || record.payload.get(at) != Some(&0x00) {
             continue;
         }
-        matches.push(DraftFeatureTerminalLane {
+        let lane = DraftFeatureTerminalLane {
             indices: [first, second],
             raw_indices: [
                 record.payload[first_offset..first_offset + first_width]
@@ -3340,12 +4817,13 @@ pub fn draft_feature_terminal_lane(
             ],
             tail,
             offset: record.payload_offset + start,
-        });
+        };
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(lane);
     }
-    let [lane] = matches.as_slice() else {
-        return None;
-    };
-    Some(lane.clone())
+    candidate
 }
 
 /// Decode the exact common construction-reference envelope in a bounded
@@ -3391,15 +4869,13 @@ pub fn surface_feature_payload_references(
         references.push(decode_reference(&mut at)?);
     }
 
-    let trailing_starts = record
-        .payload
-        .windows(TRAILING_PREFIX.len())
-        .enumerate()
-        .filter_map(|(start, bytes)| (bytes == TRAILING_PREFIX).then_some(start))
-        .collect::<Vec<_>>();
-    let [trailing_start] = trailing_starts.as_slice() else {
-        return None;
-    };
+    let trailing_start = unique_candidate(
+        record
+            .payload
+            .windows(TRAILING_PREFIX.len())
+            .enumerate()
+            .filter_map(|(start, bytes)| (bytes == TRAILING_PREFIX).then_some(start)),
+    )?;
     at = trailing_start + TRAILING_PREFIX.len();
     for _ in 0..3 {
         references.push(decode_reference(&mut at)?);
@@ -3407,6 +4883,254 @@ pub fn surface_feature_payload_references(
     (record.payload.get(at..at + TRAILING_SUFFIX.len()) == Some(&TRAILING_SUFFIX)).then_some(())?;
     Some(SurfaceFeaturePayloadReferenceField {
         references: references.try_into().ok()?,
+    })
+}
+
+/// Decode the exact leading construction-reference envelope in a bounded
+/// `THRU_CURVE` payload.
+pub fn thru_curve_payload_references(
+    record: OperationRecord<'_>,
+) -> Option<ThruCurvePayloadReferenceField> {
+    const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
+    (record.label.value == "THRU_CURVE").then_some(())?;
+    let discriminator = *record.payload.first()?;
+    (discriminator != 0).then_some(())?;
+    (record.payload.get(1..1 + HEADER.len()) == Some(&HEADER)).then_some(())?;
+
+    let mut at = 1 + HEADER.len();
+    let mut references = Vec::with_capacity(9);
+    let decode_reference = |at: &mut usize| {
+        let offset = *at;
+        let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+        *at += width;
+        Some(PayloadObjectReference {
+            offset: record.payload_offset + offset,
+            object_index,
+            raw_object_index: record.payload[offset..offset + width].to_vec(),
+        })
+    };
+    for _ in 0..3 {
+        references.push(decode_reference(&mut at)?);
+    }
+    (record.payload.get(at..at + 2) == Some(&[0x01, 0x08])).then_some(())?;
+    at += 2;
+    let controls: [u8; 9] = record.payload.get(at..at + 9)?.try_into().ok()?;
+    (controls[8] == 0x07).then_some(())?;
+    at += controls.len();
+    for _ in 0..6 {
+        references.push(decode_reference(&mut at)?);
+    }
+    (*record.payload.get(at)? == 0x04).then_some(())?;
+    let trailing_control = *record.payload.get(at + 1)?;
+    (trailing_control != 0).then_some(())?;
+    (*record.payload.get(at + 2)? == 0xa0).then_some(())?;
+    let trailing_value = record.payload.get(at + 3..at + 5)?.try_into().ok()?;
+    (record.payload.get(at + 5..at + 7) == Some(&[0x13, 0x01])).then_some(())?;
+
+    Some(ThruCurvePayloadReferenceField {
+        discriminator,
+        controls,
+        references: references.try_into().ok()?,
+        trailing_control,
+        trailing_value,
+        end_offset: record.payload_offset + at + 7,
+    })
+}
+
+fn thru_curve_payload_branch(
+    record: OperationRecord<'_>,
+    at: usize,
+) -> Option<(ThruCurvePayloadBranch, usize)> {
+    let mode = *record.payload.get(at)?;
+    (mode != 0).then_some(())?;
+    (*record.payload.get(at + 1)? == 0x01).then_some(())?;
+    let declared_count @ 2.. = *record.payload.get(at + 2)? else {
+        return None;
+    };
+    let mut cursor = at + 3;
+    let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
+    for _ in 1..declared_count {
+        let offset = cursor;
+        let (object_index, width) = payload_object_index(record.payload.get(cursor..)?)?;
+        cursor += width;
+        members.push(PayloadObjectReference {
+            offset: record.payload_offset + offset,
+            object_index,
+            raw_object_index: record.payload[offset..cursor].to_vec(),
+        });
+    }
+    (record.payload.get(cursor..cursor + 2) == Some(&[0x01, declared_count])).then_some(())?;
+    cursor += 2;
+
+    let standard_len = usize::from(declared_count) + 3;
+    let standard = record
+        .payload
+        .get(cursor..cursor + standard_len)
+        .filter(|lane| lane.iter().all(|&byte| byte == 0))
+        .map(<[u8]>::to_vec);
+    let extended = (declared_count == 5)
+        .then(|| record.payload.get(cursor..cursor + 18))
+        .flatten()
+        .filter(|lane| {
+            lane[..4] == [0; 4]
+                && lane[4..6] == [0x01, declared_count]
+                && lane[10..12] == [0x01, declared_count]
+                && lane[16..] == [0; 2]
+        })
+        .map(<[u8]>::to_vec);
+    let ((Some(state_lane), None) | (None, Some(state_lane))) = (standard, extended) else {
+        return None;
+    };
+    cursor += state_lane.len();
+    (record.payload.get(cursor..cursor + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
+    cursor += 3;
+    let terminal_offset = cursor;
+    let (object_index, width) = payload_object_index(record.payload.get(cursor..)?)?;
+    cursor += width;
+    let terminal = PayloadObjectReference {
+        offset: record.payload_offset + terminal_offset,
+        object_index,
+        raw_object_index: record.payload[terminal_offset..cursor].to_vec(),
+    };
+    (*record.payload.get(cursor)? == 0x00).then_some(())?;
+    cursor += 1;
+    let suffix: [u8; 2] = record.payload.get(cursor..cursor + 2)?.try_into().ok()?;
+    (suffix[0] == 0x81 && matches!(suffix[1], 0x48 | 0x58)).then_some(())?;
+    cursor += suffix.len();
+
+    Some((
+        ThruCurvePayloadBranch {
+            offset: record.payload_offset + at,
+            mode,
+            declared_count,
+            state_lane,
+            members,
+            terminal,
+            suffix,
+        },
+        cursor,
+    ))
+}
+
+/// Decode the exact counted branch group after a bounded `THRU_CURVE`
+/// reference envelope.
+pub fn thru_curve_payload_branch_group(
+    record: OperationRecord<'_>,
+) -> Option<ThruCurvePayloadBranchGroup> {
+    const TERMINATORS: [&[u8]; 2] = [
+        &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x00, 0xff, 0x01],
+        &[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01],
+    ];
+    let envelope = thru_curve_payload_references(record)?;
+    let mut at = envelope.end_offset.checked_sub(record.payload_offset)?;
+    let group_offset = at;
+    let declared_count @ 2.. = *record.payload.get(at)? else {
+        return None;
+    };
+    at += 1;
+    let mut branches = Vec::with_capacity(usize::from(declared_count) - 1);
+    for _ in 1..declared_count {
+        let (branch, next) = thru_curve_payload_branch(record, at)?;
+        branches.push(branch);
+        at = next;
+    }
+    let terminator = TERMINATORS
+        .into_iter()
+        .find(|terminator| record.payload.get(at..at + terminator.len()) == Some(*terminator))?
+        .to_vec();
+    Some(ThruCurvePayloadBranchGroup {
+        offset: record.payload_offset + group_offset,
+        declared_count,
+        branches,
+        terminator,
+    })
+}
+
+/// Decode the exact leading construction branch in a bounded `SWP104`
+/// payload.
+pub fn swp104_payload_leading_branch(
+    record: OperationRecord<'_>,
+) -> Option<Swp104PayloadLeadingBranch> {
+    const HEADER: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
+    (record.label.value == "SWP104").then_some(())?;
+    let discriminator = *record.payload.first()?;
+    (discriminator != 0).then_some(())?;
+    (record.payload.get(1..5) == Some(&HEADER)).then_some(())?;
+
+    let mut at = 5;
+    let mut raw_scalars = [[0; 8]; 4];
+    let mut scalars = [0.0; 4];
+    for ordinal in 0..4 {
+        raw_scalars[ordinal] = record.payload.get(at..at + 8)?.try_into().ok()?;
+        scalars[ordinal] = shifted_ieee_f64(&raw_scalars[ordinal])?;
+        at += 8;
+    }
+
+    let leading_zero = record.payload.get(at) == Some(&0x00);
+    at += usize::from(leading_zero);
+    let mode = *record.payload.get(at)?;
+    (mode != 0).then_some(())?;
+    (*record.payload.get(at + 1)? == 0x01).then_some(())?;
+    let declared_count @ 2.. = *record.payload.get(at + 2)? else {
+        return None;
+    };
+    at += 3;
+    let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
+    for _ in 1..declared_count {
+        let offset = at;
+        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+        at += width;
+        members.push(PayloadObjectReference {
+            offset: record.payload_offset + offset,
+            object_index,
+            raw_object_index: record.payload[offset..at].to_vec(),
+        });
+    }
+
+    let witnessed_count = if record.payload.get(at) == Some(&0x01) {
+        let count @ 2.. = *record.payload.get(at + 1)? else {
+            return None;
+        };
+        Some(count)
+    } else {
+        None
+    };
+    let state_len = if let Some(count) = witnessed_count {
+        at += 2;
+        usize::from(count) + 3
+    } else {
+        5
+    };
+    let state_lane = record.payload.get(at..at + state_len)?.to_vec();
+    if witnessed_count.is_none() && !state_lane.iter().all(|&byte| byte == 0) {
+        return None;
+    }
+    at += state_len;
+    (record.payload.get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
+    at += 3;
+    let terminal_offset = at;
+    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    at += width;
+    let terminal = PayloadObjectReference {
+        offset: record.payload_offset + terminal_offset,
+        object_index,
+        raw_object_index: record.payload[terminal_offset..at].to_vec(),
+    };
+    (*record.payload.get(at)? == 0x00).then_some(())?;
+    at += 1;
+
+    Some(Swp104PayloadLeadingBranch {
+        discriminator,
+        scalars,
+        raw_scalars,
+        leading_zero,
+        mode,
+        declared_count,
+        witnessed_count,
+        state_lane,
+        members,
+        terminal,
+        end_offset: record.payload_offset + at,
     })
 }
 
@@ -3427,18 +5151,12 @@ fn surface_feature_branch_paths(
     let Some(declared_count @ 2..) = payload.get(at + 2).copied() else {
         return Vec::new();
     };
-    let mut cursor = at + 3;
-    let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
+    let members_start = at + 3;
+    let mut cursor = members_start;
     for _ in 1..declared_count {
-        let Some((object_index, width)) = payload.get(cursor..).and_then(payload_object_index)
-        else {
+        let Some((_, width)) = payload.get(cursor..).and_then(payload_object_index) else {
             return Vec::new();
         };
-        members.push(PayloadObjectReference {
-            offset: payload_offset + cursor,
-            object_index,
-            raw_object_index: payload[cursor..cursor + width].to_vec(),
-        });
         cursor += width;
     }
     let witnessed = payload.get(cursor..cursor + 2) == Some(&[0x01, declared_count]);
@@ -3464,11 +5182,8 @@ fn surface_feature_branch_paths(
     let Some((object_index, width)) = payload.get(cursor..).and_then(payload_object_index) else {
         return Vec::new();
     };
-    let terminal = PayloadObjectReference {
-        offset: payload_offset + cursor,
-        object_index,
-        raw_object_index: payload[cursor..cursor + width].to_vec(),
-    };
+    let terminal_offset = cursor;
+    let terminal_width = width;
     cursor += width;
     if payload.get(cursor) != Some(&0x00) {
         return Vec::new();
@@ -3488,6 +5203,29 @@ fn surface_feature_branch_paths(
                 .collect::<Vec<_>>()
         } else {
             surface_feature_branch_paths(payload, payload_offset, next, remaining - 1, terminator)
+        };
+        if continuations.is_empty() {
+            continue;
+        }
+        let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
+        let mut member_cursor = members_start;
+        for _ in 1..declared_count {
+            let Some((object_index, width)) =
+                payload.get(member_cursor..).and_then(payload_object_index)
+            else {
+                return Vec::new();
+            };
+            members.push(PayloadObjectReference {
+                offset: payload_offset + member_cursor,
+                object_index,
+                raw_object_index: payload[member_cursor..member_cursor + width].to_vec(),
+            });
+            member_cursor += width;
+        }
+        let terminal = PayloadObjectReference {
+            offset: payload_offset + terminal_offset,
+            object_index,
+            raw_object_index: payload[terminal_offset..terminal_offset + terminal_width].to_vec(),
         };
         for mut continuation in continuations {
             let branch = SurfaceFeaturePayloadBranch {
@@ -3523,7 +5261,7 @@ pub fn surface_feature_payload_branches(
         "Studio Surface" => &STUDIO_TERMINATOR[..],
         _ => return None,
     };
-    let mut matches = Vec::new();
+    let mut candidate = None;
     for start in 0..record.payload.len().saturating_sub(6) {
         if record.payload.get(start..start + 2) != Some(&[0xa0, 0x5a]) {
             continue;
@@ -3550,16 +5288,17 @@ pub fn surface_feature_payload_branches(
         let [branches] = paths.as_slice() else {
             continue;
         };
-        matches.push(SurfaceFeaturePayloadBranches {
+        let group = SurfaceFeaturePayloadBranches {
             family,
             header_code,
             branches: branches.clone(),
-        });
+        };
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(group);
     }
-    let [group] = matches.as_slice() else {
-        return None;
-    };
-    Some(group.clone())
+    candidate
 }
 
 /// Decode the unique witnessed profile-reference field in an `EXTRUDE` payload.
@@ -3569,20 +5308,16 @@ pub fn extrude_profile_references(
     if record.label.value != "EXTRUDE" {
         return None;
     }
-    let mut matches = Vec::new();
-    for start in 0..record.payload.len().saturating_sub(6) {
-        if record.payload.get(start..start + 4) != Some(&[0x01, 0x02, 0x16, 0x01]) {
-            continue;
-        }
-        let Some(references) = extrude_profile_reference_field(record, start) else {
-            continue;
-        };
-        matches.push(references);
-    }
-    let [references] = matches.as_slice() else {
-        return None;
-    };
-    Some(references.clone())
+    unique_candidate(
+        (0..record.payload.len().saturating_sub(6)).filter_map(|start| {
+            if record.payload.get(start..start + 2) != Some(&[0x01, 0x02])
+                || record.payload.get(start + 3) != Some(&0x01)
+            {
+                return None;
+            }
+            extrude_profile_reference_field(record, start)
+        }),
+    )
 }
 
 /// Decode the fixed two-scalar header in a bounded `EXTRUDE` payload.
@@ -3613,92 +5348,112 @@ pub fn operation_terminal_discriminator(
     if record.payload.last() != Some(&0) {
         return None;
     }
-    let mut matches = Vec::new();
-    for start in 0..record.payload.len().saturating_sub(18) {
+
+    let decode = |start: usize| {
         if record.payload.get(start..start + 3) != Some(&[0x01, 0x01, 0x02]) {
-            continue;
+            return None;
         }
         let mut at = start + 3;
+        let mut type_tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; 2];
         let mut type_indices = [0; 2];
-        let mut raw_type_indices = Vec::with_capacity(2);
-        let mut type_index_offsets = Vec::with_capacity(2);
-        let mut valid = true;
-        for value in &mut type_indices {
-            let Some((CompactIndex::Value(index), width)) =
-                record.payload.get(at..).and_then(compact_index)
-            else {
-                valid = false;
-                break;
+        let mut type_index_offsets = [0; 2];
+        for slot in 0..2 {
+            let token = compact_value_token(record.payload, at)?;
+            type_indices[slot] = match token.value {
+                CompactIndex::Value(value) => value,
+                CompactIndex::Null => return None,
             };
-            *value = index;
-            raw_type_indices.push(record.payload[at..at + width].to_vec());
-            type_index_offsets.push(record.payload_offset + at);
-            at += width;
+            type_index_offsets[slot] = record.payload_offset + at;
+            type_tokens[slot] = token;
+            at += token.width;
         }
-        let Ok(raw_type_indices) = raw_type_indices.try_into() else {
-            continue;
-        };
-        let Ok(type_index_offsets) = type_index_offsets.try_into() else {
-            continue;
-        };
-        if !valid || record.payload.get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
-            continue;
+        if record.payload.get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
+            return None;
         }
         at += 4;
-        let Some(flags) = record
+        let flags = record
             .payload
             .get(at..at + 4)
-            .and_then(|bytes| bytes.try_into().ok())
-        else {
-            continue;
-        };
+            .and_then(|bytes| bytes.try_into().ok())?;
         at += 4;
         if record.payload.get(at..at + 5) != Some(&[0x00, 0x00, 0x00, 0x29, 0x29]) {
-            continue;
+            return None;
         }
         at += 5;
+
         let trailing_end = record.payload.len() - 1;
-        let mut trailing_indices = Vec::new();
-        let mut raw_trailing_indices = Vec::new();
-        let mut trailing_index_offsets = Vec::new();
-        while at < trailing_end {
-            let Some((CompactIndex::Value(value), width)) =
-                record.payload.get(at..trailing_end).and_then(compact_index)
-            else {
-                valid = false;
-                break;
+        let mut trailing_at = at;
+        let mut trailing_count = 0;
+        while trailing_at < trailing_end {
+            let token = compact_value_token(record.payload, trailing_at)?;
+            trailing_at += token.width;
+            trailing_count += 1;
+        }
+        (trailing_at == trailing_end).then_some(())?;
+
+        // Validate the complete trailing lane before allocating its owned
+        // representation. A terminal candidate is tested at every payload
+        // offset, so malformed prefixes must remain allocation-free.
+        let mut trailing_indices = Vec::with_capacity(trailing_count);
+        let mut raw_trailing_indices = Vec::with_capacity(trailing_count);
+        let mut trailing_index_offsets = Vec::with_capacity(trailing_count);
+        trailing_at = at;
+        while trailing_at < trailing_end {
+            let token = compact_value_token(record.payload, trailing_at)?;
+            let value = match token.value {
+                CompactIndex::Value(value) => value,
+                CompactIndex::Null => return None,
             };
             trailing_indices.push(value);
-            raw_trailing_indices.push(record.payload[at..at + width].to_vec());
-            trailing_index_offsets.push(record.payload_offset + at);
-            at += width;
+            raw_trailing_indices.push(raw_compact_token(record.payload, token));
+            trailing_index_offsets.push(record.payload_offset + trailing_at);
+            trailing_at += token.width;
         }
-        if !valid || at != trailing_end {
-            continue;
-        }
-        matches.push(OperationTerminalDiscriminator {
+
+        Some(OperationTerminalDiscriminator {
             offset: record.payload_offset + start,
             type_indices,
-            raw_type_indices,
+            raw_type_indices: std::array::from_fn(|slot| {
+                raw_compact_token(record.payload, type_tokens[slot])
+            }),
             type_index_offsets,
             flags,
             trailing_indices,
             raw_trailing_indices,
             trailing_index_offsets,
-        });
-    }
-    let [footer] = matches.as_slice() else {
-        return None;
+        })
     };
-    Some(footer.clone())
+
+    let mut found = None;
+    for start in 0..record.payload.len().saturating_sub(18) {
+        let Some(lane) = decode(start) else {
+            continue;
+        };
+        if found.is_some() {
+            return None;
+        }
+        found = Some(lane);
+    }
+    found
 }
 
 fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
     let encoded: [u8; 8] = bytes.try_into().ok()?;
+    if !is_shifted_ieee_f64_marker(encoded[0]) {
+        return None;
+    }
     let mut raw = encoded;
     raw[0] = raw[0].checked_add(0x10)?;
     let value = f64::from_be_bytes(raw);
     value.is_finite().then_some(value)
+}
+
+fn is_shifted_ieee_f64_marker(marker: u8) -> bool {
+    matches!(marker, 0x20..=0x3f | 0xa0..=0xbf)
 }
 
 /// Decode complete three-scalar clauses following ordered operation body fields.
@@ -3769,6 +5524,26 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
                 return Vec::new();
             }
             at += 2;
+            let members_start = at;
+            let mut scan_at = members_start;
+            for _ in 0..count - 1 {
+                if record.bytes.get(scan_at) != Some(&0x2e) {
+                    return Vec::new();
+                }
+                scan_at += 1;
+                let Some((CompactIndex::Value(_), width)) =
+                    record.bytes.get(scan_at..).and_then(compact_index)
+                else {
+                    return Vec::new();
+                };
+                scan_at += width;
+                if record.bytes.get(scan_at) != Some(&0x00) {
+                    return Vec::new();
+                }
+                scan_at += 1;
+            }
+
+            at = members_start;
             let mut members = Vec::with_capacity(count - 1);
             for ordinal in 0..count - 1 {
                 if record.bytes.get(at) != Some(&0x2e) {
@@ -3945,11 +5720,30 @@ pub fn operation_body_reference_lanes(
 
 fn operation_body_reference_lane_values(
     record: OperationRecord<'_>,
-    mut at: usize,
+    at: usize,
     count: usize,
     encoding: OperationBodyReferenceLaneEncoding,
 ) -> Option<Vec<OperationBodyReferenceLaneValue>> {
+    let mut scan_at = at;
+    for _ in 0..count {
+        let width = match encoding {
+            OperationBodyReferenceLaneEncoding::CompactIndex => {
+                let (CompactIndex::Value(_), width) = compact_index(record.bytes.get(scan_at..)?)?
+                else {
+                    return None;
+                };
+                width
+            }
+            OperationBodyReferenceLaneEncoding::PayloadObjectIndex => {
+                payload_object_index(record.bytes.get(scan_at..)?)?.1
+            }
+        };
+        scan_at += width;
+    }
+    (record.bytes.get(scan_at..scan_at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(())?;
+
     let mut values = Vec::with_capacity(count);
+    let mut at = at;
     for ordinal in 0..count {
         let value_at = at;
         let (object_index, width) = match encoding {
@@ -3972,7 +5766,7 @@ fn operation_body_reference_lane_values(
             offset: record.offset + value_at,
         });
     }
-    (record.bytes.get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values)
+    Some(values)
 }
 
 /// Decode the structured `32` branch following an extrusion body field.
@@ -4277,10 +6071,26 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
         if declared_count < 2 {
             continue;
         }
-        let mut at = start + 2;
+        let indices_start = start + 2;
+        let mut at = indices_start;
+        let mut complete = true;
+        for _ in 1..declared_count {
+            let Some((CompactIndex::Value(_), width)) = bytes.get(at..).and_then(compact_index)
+            else {
+                complete = false;
+                break;
+            };
+            at += width;
+        }
+        if !complete || bytes.get(at) != Some(&0x00) || at + 5 != bytes.len() {
+            continue;
+        }
+        let Some(trailer) = View::u32_be_at(bytes, at + 1) else {
+            continue;
+        };
         let mut indices = Vec::with_capacity(usize::from(declared_count) - 1);
         let mut raw_indices = Vec::with_capacity(usize::from(declared_count) - 1);
-        let mut complete = true;
+        at = indices_start;
         for _ in 1..declared_count {
             let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
             else {
@@ -4291,12 +6101,9 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
             raw_indices.push(bytes[at..at + width].to_vec());
             at += width;
         }
-        if !complete || bytes.get(at) != Some(&0x00) || at + 5 != bytes.len() {
+        if !complete {
             continue;
         }
-        let Some(trailer) = View::u32_be_at(bytes, at + 1) else {
-            continue;
-        };
         lanes.push(DatumPlaneObjectIndexLane {
             offset: start,
             declared_count,
@@ -4426,7 +6233,116 @@ pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
     pairs
 }
 
-/// Decode every exactly framed signed Q1.55 pair in a reconstructed sketch payload.
+/// Decode the repeated-type scalar-pair lane in a reconstructed sketch payload.
+pub fn sketch_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair> {
+    const FRAME_SUFFIX: [u8; 14] = [
+        0x00, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+    ];
+    let mut pairs = object_payload_scalar_pairs(bytes);
+    for (offset, window) in bytes.windows(3).enumerate() {
+        let [type_code, repeated_type_code, 0x41] = window else {
+            continue;
+        };
+        if *type_code == 0 || type_code != repeated_type_code {
+            continue;
+        }
+        if offset == 0 || bytes.get(offset - 1) != Some(&0x00) {
+            continue;
+        }
+        let discriminator_len = 3 + FRAME_SUFFIX.len();
+        if bytes.get(offset + 3..offset + discriminator_len) != Some(&FRAME_SUFFIX) {
+            continue;
+        }
+        let first = offset + discriminator_len;
+        let second = first + 8;
+        let Some(raw_values) = bytes
+            .get(first..first + 8)
+            .and_then(|value| <[u8; 8]>::try_from(value).ok())
+            .zip(
+                bytes
+                    .get(second..second + 8)
+                    .and_then(|value| <[u8; 8]>::try_from(value).ok()),
+            )
+            .map(|(first, second)| [first, second])
+        else {
+            continue;
+        };
+        let Some(values) = shifted_ieee_f64(&raw_values[0])
+            .zip(shifted_ieee_f64(&raw_values[1]))
+            .map(|(first, second)| [first, second])
+        else {
+            continue;
+        };
+        pairs.push(ObjectPayloadScalarPair {
+            offset,
+            values,
+            raw_values,
+            value_offsets: [first, second],
+            discriminator: bytes[offset..offset + discriminator_len].to_vec(),
+        });
+    }
+    pairs.sort_by_key(|pair| pair.offset);
+    pairs
+}
+
+/// Decode every complete scalar-vector frame in a reconstructed sketch
+/// payload.
+pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchPayloadScalarLane> {
+    const DISCRIMINATORS: [&[u8]; 2] = [
+        &[
+            0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x04, 0x80, 0x86,
+            0x81, 0x02, 0x00, 0x01, 0x00,
+        ],
+        &[
+            0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86,
+            0x02, 0x00, 0x01, 0x00,
+        ],
+    ];
+
+    let mut lanes = DISCRIMINATORS
+        .into_iter()
+        .flat_map(|discriminator| {
+            bytes
+                .windows(discriminator.len())
+                .enumerate()
+                .filter_map(move |(offset, window)| {
+                    (window == discriminator).then_some(())?;
+                    let mut at = offset + discriminator.len();
+                    let mut values = Vec::new();
+                    let mut raw_values = Vec::new();
+                    let mut value_offsets = Vec::new();
+                    loop {
+                        if bytes.get(at) == Some(&0x00) {
+                            break;
+                        }
+                        let (value, encoding, width) = payload_scalar(bytes.get(at..)?)?;
+                        if encoding == PayloadScalarEncoding::Zero {
+                            return None;
+                        }
+                        values.push(value);
+                        raw_values.push(bytes.get(at..at + width)?.to_vec());
+                        value_offsets.push(at);
+                        at += width;
+                    }
+                    if values.is_empty() {
+                        return None;
+                    }
+                    Some(SketchPayloadScalarLane {
+                        offset,
+                        discriminator: discriminator.to_vec(),
+                        values,
+                        raw_values,
+                        value_offsets,
+                        terminator_offset: at,
+                    })
+                })
+        })
+        .collect::<Vec<_>>();
+    lanes.sort_by_key(|lane| lane.offset);
+    lanes
+}
+
+/// Decode every exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
 pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
     const LEGACY: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
     const SHORT: [u8; 15] = [
@@ -4458,21 +6374,15 @@ pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
             {
                 continue;
             }
-            let Some(first_raw) = bytes
-                .get(first + 1..first + 8)
-                .and_then(|raw| raw.try_into().ok())
-            else {
+            let Some((first_raw, first_value)) = sketch_fixed_atom(bytes, first) else {
                 continue;
             };
-            let Some(second_raw) = bytes
-                .get(second + 1..second + 8)
-                .and_then(|raw| raw.try_into().ok())
-            else {
+            let Some((second_raw, second_value)) = sketch_fixed_atom(bytes, second) else {
                 continue;
             };
             pairs.push(SketchPayloadFixedPair {
                 offset,
-                values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
+                values: [first_value, second_value],
                 value_offsets: [first, second],
                 raw_values: [first_raw, second_raw],
                 discriminator: discriminator.to_vec(),
@@ -4483,7 +6393,7 @@ pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
     pairs
 }
 
-/// Decode every exactly framed mixed Q1.55/binary32 pair in a sketch payload.
+/// Decode every exactly framed mixed scaled shifted-binary64/binary32 pair in a sketch payload.
 pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
     const DISCRIMINATOR: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
     let mut pairs = Vec::new();
@@ -4496,12 +6406,6 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
         if bytes.get(fixed_offset) != Some(&0x30) || bytes.get(fixed_offset + 8) != Some(&0x00) {
             continue;
         }
-        let Some(fixed_raw_value) = bytes
-            .get(fixed_offset + 1..fixed_offset + 8)
-            .and_then(|raw| raw.try_into().ok())
-        else {
-            continue;
-        };
         let Some(binary32_raw_value): Option<[u8; 4]> = bytes
             .get(binary32_offset..binary32_offset + 4)
             .and_then(|raw| raw.try_into().ok())
@@ -4513,9 +6417,12 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
         else {
             continue;
         };
+        let Some((fixed_raw_value, fixed_value)) = sketch_fixed_atom(bytes, fixed_offset) else {
+            continue;
+        };
         pairs.push(SketchPayloadMixedPair {
             offset,
-            fixed_value: decode_q1_55(fixed_raw_value),
+            fixed_value,
             binary32_value,
             fixed_raw_value,
             binary32_raw_value,
@@ -4524,6 +6431,20 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
         });
     }
     pairs
+}
+
+const SKETCH_FIXED_ATOM_SCALE: f64 = 0.25;
+
+fn sketch_fixed_atom_value(raw: [u8; 7]) -> Option<f64> {
+    let mut encoded = [0_u8; 8];
+    encoded[0] = 0x30;
+    encoded[1..].copy_from_slice(&raw);
+    shifted_ieee_f64(&encoded).map(|value| value * SKETCH_FIXED_ATOM_SCALE)
+}
+
+fn sketch_fixed_atom(bytes: &[u8], offset: usize) -> Option<([u8; 7], f64)> {
+    let raw = bytes.get(offset + 1..offset + 8)?.try_into().ok()?;
+    Some((raw, sketch_fixed_atom_value(raw)?))
 }
 
 /// Decode every exactly framed signed Q1.55 pair in a datum-CSYS payload.
@@ -4682,7 +6603,7 @@ pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionB
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.
 pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBlock> {
-    let mut matches = Vec::new();
+    let mut candidate = None;
     let mut at = 0;
     while at < bytes.len() {
         if !(bytes[at].is_ascii_digit() || (b'a'..=b'f').contains(&bytes[at])) {
@@ -4695,17 +6616,18 @@ pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBl
             at += 1;
         }
         if (30..=32).contains(&(at - start)) {
-            matches.push((start, at));
+            if candidate.is_some() {
+                return None;
+            }
+            candidate = Some((start, at));
         }
     }
-    let [(start, end)] = matches.as_slice() else {
-        return None;
-    };
+    let (start, end) = candidate?;
     Some(DatumCsysDescriptorBlock {
-        prefix: bytes[..*start].to_vec(),
-        identity: std::str::from_utf8(&bytes[*start..*end]).ok()?.to_string(),
-        suffix: bytes[*end..].to_vec(),
-        identity_offset: *start,
+        prefix: bytes[..start].to_vec(),
+        identity: std::str::from_utf8(&bytes[start..end]).ok()?.to_string(),
+        suffix: bytes[end..].to_vec(),
+        identity_offset: start,
     })
 }
 
@@ -4823,8 +6745,16 @@ fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<(Vec<u32>, Vec<usiz
         return None;
     }
     *at += 2;
+    let values_start = *at;
+    let mut scan_at = values_start;
+    for _ in 1..count {
+        View::u32_be_at(bytes, scan_at)?;
+        scan_at += 4;
+    }
+
     let mut values = Vec::with_capacity(count - 1);
     let mut offsets = Vec::with_capacity(count - 1);
+    *at = values_start;
     for _ in 1..count {
         offsets.push(*at);
         values.push(View::u32_be_at(bytes, *at)?);
@@ -4848,13 +6778,22 @@ fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<CountedCompact
         return None;
     }
     *at += 2;
+    let values_start = *at;
+    let mut scan_at = values_start;
+    for _ in 1..count {
+        let (CompactIndex::Value(_), width) = compact_index(bytes.get(scan_at..)?)? else {
+            return None;
+        };
+        scan_at += width;
+    }
+
     let mut values = Vec::with_capacity(count - 1);
     let mut raw_values = Vec::with_capacity(count - 1);
     let mut offsets = Vec::with_capacity(count - 1);
+    *at = values_start;
     for _ in 1..count {
         let value_at = *at;
-        let (value, width) = compact_index(bytes.get(*at..)?)?;
-        let CompactIndex::Value(value) = value else {
+        let (CompactIndex::Value(value), width) = compact_index(bytes.get(*at..)?)? else {
             return None;
         };
         values.push(value);
@@ -4873,7 +6812,7 @@ fn payload_scalar(bytes: &[u8]) -> Option<(f64, PayloadScalarEncoding, usize)> {
     let marker = *bytes.first()?;
     match marker {
         0x00 => Some((0.0, PayloadScalarEncoding::Zero, 1)),
-        0x20..=0x3f | 0xa0..=0xbf => Some((
+        marker if is_shifted_ieee_f64_marker(marker) => Some((
             shifted_ieee_f64(bytes.get(..8)?)?,
             PayloadScalarEncoding::Binary64,
             8,
@@ -4900,6 +6839,15 @@ fn extrude_profile_reference_field(
         return None;
     }
     let references_start = start + 5;
+    let mut scan_at = references_start;
+    for _ in 1..count {
+        let (_, width) = payload_object_index(record.payload.get(scan_at..)?)?;
+        scan_at += width;
+    }
+    if record.payload.get(scan_at..scan_at + 3) != Some(&[0x01, 0x03, 0x79]) {
+        return None;
+    }
+
     let mut at = references_start;
     let mut references = Vec::with_capacity(usize::from(count - 1));
     for _ in 1..count {
@@ -4911,30 +6859,53 @@ fn extrude_profile_reference_field(
         });
         at += width;
     }
-    if record.payload.get(at..at + 3) != Some(&[0x01, 0x03, 0x79]) {
-        return None;
-    }
     let encoded_references = record.payload.get(references_start..at)?;
     let witness_len = 2 + encoded_references.len() + 2;
-    let witness_count = record
+    let witness_starts = record
         .payload
         .windows(witness_len)
-        .filter(|candidate| {
-            candidate.starts_with(&[0x01, count])
+        .enumerate()
+        .filter_map(|(witness_start, candidate)| {
+            (candidate.starts_with(&[0x01, count])
                 && candidate.get(2..2 + encoded_references.len()) == Some(encoded_references)
-                && candidate.ends_with(&[0x00, 0x00])
+                && candidate.ends_with(&[0x00, 0x00]))
+            .then_some(witness_start)
         })
-        .count();
+        .collect::<Vec<_>>();
+    let witness_references = match witness_starts.as_slice() {
+        [witness_start] => {
+            let mut witness_at = witness_start + 2;
+            Some(
+                references
+                    .iter()
+                    .map(|reference| {
+                        let (_, width) = payload_object_index(record.payload.get(witness_at..)?)?;
+                        let witness = PayloadObjectReference {
+                            offset: record.payload_offset + witness_at,
+                            object_index: reference.object_index,
+                            raw_object_index: record.payload[witness_at..witness_at + width]
+                                .to_vec(),
+                        };
+                        witness_at += width;
+                        Some(witness)
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            )
+        }
+        _ => None,
+    };
     Some(ExtrudeProfileReferenceField {
+        field_tag: record.payload[start + 2],
         references,
-        witnessed: witness_count == 1,
+        witness_references,
     })
 }
 
 /// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.
 pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclarationName<'_>> {
-    let mut matches = Vec::new();
-    let mut literals = Vec::new();
+    let mut declaration = None;
+    let mut literal = None;
+    let mut multiple_literals = false;
     for at in 0..bytes.len().saturating_sub(4) {
         if bytes[at] != 0x04 {
             continue;
@@ -4956,118 +6927,235 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
             continue;
         };
         let Some((parameter_index, qualifier)) = parameter_name_parts(value) else {
-            if evaluate_constant_expression(value).is_some() {
-                literals.push(value);
+            if evaluate_constant_expression(value).is_some() && literal.replace(value).is_some() {
+                multiple_literals = true;
             }
             continue;
         };
-        matches.push(ExpressionDeclarationName {
+        let next = ExpressionDeclarationName {
             offset: at,
             value,
             parameter_index,
             qualifier,
             literal: None,
-        });
+        };
+        if declaration.replace(next).is_some() {
+            return None;
+        }
     }
-    let [declaration] = matches.as_slice() else {
-        return None;
-    };
-    let literal = match literals.as_slice() {
-        [literal] => Some(*literal),
-        _ => None,
-    };
+    let declaration = declaration?;
+    let literal = (!multiple_literals).then_some(literal).flatten();
     Some(ExpressionDeclarationName {
         literal,
-        ..*declaration
+        ..declaration
     })
 }
 
-/// Decode the unique `01 02 10 index ff` primary-body field in one operation.
+/// Decode the unique direct primary-body field in one operation.
 pub fn operation_body_reference(record: OperationRecord<'_>) -> Option<OperationBodyReference> {
-    let matches = operation_body_references(record);
-    let [reference] = matches.as_slice() else {
-        return None;
-    };
-    Some(reference.clone())
+    unique_candidate(operation_body_reference_candidates(record))
 }
 
-/// Decode every ordered `01 02 10 index ff` body-reference field in one operation.
-pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBodyReference> {
-    let mut matches = Vec::new();
-    for marker in record
-        .bytes
-        .windows(3)
-        .enumerate()
-        .filter_map(|(offset, window)| (window == [0x01, 0x02, 0x10]).then_some(offset))
-    {
-        let token = marker + 3;
-        let Some((Some(object_index), end)) = feature_object_index(record.bytes, token) else {
+fn operation_body_reference_candidates(
+    record: OperationRecord<'_>,
+) -> impl Iterator<Item = OperationBodyReference> + '_ {
+    let payload_start = record.payload_offset.checked_sub(record.offset);
+    let mut cursor = 0usize;
+    std::iter::from_fn(move || loop {
+        let window_end = cursor.checked_add(3)?;
+        let window = record.bytes.get(cursor..window_end)?;
+        let marker = cursor;
+        cursor += 1;
+        let body_write = payload_start
+            .and_then(|payload_start| marker.checked_sub(payload_start))
+            .and_then(|payload_marker| {
+                operation_body_write_frame_at(record.payload, record.payload_offset, payload_marker)
+            });
+        if let Some(body_write) = body_write {
+            if let Some(end) = body_write.end_offset.checked_sub(record.offset) {
+                cursor = cursor.max(end);
+            }
             continue;
-        };
-        if record.bytes.get(end) == Some(&0xff) {
-            matches.push(OperationBodyReference {
+        }
+        if window == [0x01, 0x02, 0x10] {
+            let token = marker + 3;
+            let Some((Some(object_index), end)) = feature_object_index(record.bytes, token) else {
+                continue;
+            };
+            if record.bytes.get(end) != Some(&0xff) {
+                continue;
+            }
+            return Some(OperationBodyReference {
                 offset: record.offset + token,
                 object_index,
                 raw_object_index: record.bytes[token..end].to_vec(),
             });
         }
-    }
-    matches
+    })
 }
 
-/// Decode every exact nested `01 02 tag index 97 75 01 02 11 index ff` frame.
+/// Decode every ordered direct primary-body field in one operation.
+pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBodyReference> {
+    operation_body_reference_candidates(record).collect()
+}
+
+/// Decode every exact nested `01 02 tag index 97 75 01 02 endpoint_tag index ff` frame.
 ///
-/// Both indices are non-null and canonical. The fixed middle sequence is a
-/// structural relation marker; this parser does not assign endpoint roles.
-pub fn operation_object_relations(record: OperationRecord<'_>) -> Vec<OperationObjectRelation> {
-    const MIDDLE: &[u8] = &[0x97, 0x75, 0x01, 0x02, 0x11];
+/// Both indices are non-null and canonical. Endpoint tags `10`, `12`, and
+/// `15` select the body-image field across the supported schema generations.
+pub fn operation_body_write_frames(record: OperationRecord<'_>) -> Vec<OperationBodyWriteFrame> {
+    body_write_frames(record.payload, record.payload_offset)
+}
+
+/// Decode body-write frames from one independently bounded unlabeled record.
+pub fn unlabeled_operation_body_write_frames(
+    record: UnlabeledOperationRecord<'_>,
+) -> Vec<OperationBodyWriteFrame> {
+    body_write_frames(record.payload, record.payload_offset)
+}
+
+fn body_write_frames(payload: &[u8], payload_offset: usize) -> Vec<OperationBodyWriteFrame> {
     let mut relations = Vec::new();
-    for marker in record
-        .payload
+    for marker in payload
         .windows(2)
         .enumerate()
         .filter_map(|(offset, window)| (window == [0x01, 0x02]).then_some(offset))
     {
-        let Some(link_tag) = record.payload.get(marker + 2).copied() else {
-            continue;
-        };
-        let first_token = marker + 3;
-        let Some((Some(first_object_index), first_end)) =
-            feature_object_index(record.payload, first_token)
-        else {
-            continue;
-        };
-        let raw_first_object_index = &record.payload[first_token..first_end];
-        if !canonical_feature_object_index(Some(first_object_index), raw_first_object_index)
-            || record.payload.get(first_end..first_end + MIDDLE.len()) != Some(MIDDLE)
-        {
-            continue;
+        if let Some(write) = operation_body_write_frame_at(payload, payload_offset, marker) {
+            relations.push(write);
         }
-        let second_token = first_end + MIDDLE.len();
-        let Some((Some(second_object_index), second_end)) =
-            feature_object_index(record.payload, second_token)
-        else {
-            continue;
-        };
-        let raw_second_object_index = &record.payload[second_token..second_end];
-        if !canonical_feature_object_index(Some(second_object_index), raw_second_object_index)
-            || record.payload.get(second_end) != Some(&0xff)
-        {
-            continue;
-        }
-        relations.push(OperationObjectRelation {
-            offset: record.payload_offset + marker,
-            link_tag,
-            first_object_index,
-            raw_first_object_index: raw_first_object_index.to_vec(),
-            first_object_index_offset: record.payload_offset + first_token,
-            second_object_index,
-            raw_second_object_index: raw_second_object_index.to_vec(),
-            second_object_index_offset: record.payload_offset + second_token,
-            end_offset: record.payload_offset + second_end + 1,
-        });
     }
     relations
+}
+
+fn operation_body_write_frame_at(
+    payload: &[u8],
+    payload_offset: usize,
+    marker: usize,
+) -> Option<OperationBodyWriteFrame> {
+    let body_identity = *payload.get(marker + 2)?;
+    let first_token = marker + 3;
+    let (Some(first_object_index), first_end) =
+        operation_relation_object_index(payload, first_token)?
+    else {
+        return None;
+    };
+    let raw_first_object_index = payload.get(first_token..first_end)?;
+    if !canonical_operation_relation_object_index(Some(first_object_index), raw_first_object_index)
+        || payload.get(first_end..first_end + 4) != Some(&[0x97, 0x75, 0x01, 0x02])
+    {
+        return None;
+    }
+    let endpoint_tag = *payload.get(first_end + 4)?;
+    matches!(endpoint_tag, 0x10 | 0x12 | 0x15).then_some(())?;
+    let second_token = first_end + 5;
+    let (Some(second_object_index), second_end) =
+        operation_relation_object_index(payload, second_token)?
+    else {
+        return None;
+    };
+    let raw_second_object_index = payload.get(second_token..second_end)?;
+    if !canonical_operation_relation_object_index(
+        Some(second_object_index),
+        raw_second_object_index,
+    ) || payload.get(second_end) != Some(&0xff)
+    {
+        return None;
+    }
+    Some(OperationBodyWriteFrame {
+        offset: payload_offset + marker,
+        body_identity,
+        group_node: first_object_index,
+        raw_group_node: raw_first_object_index.to_vec(),
+        group_node_offset: payload_offset + first_token,
+        endpoint_tag,
+        body_image_object_index: second_object_index,
+        raw_body_image_object_index: raw_second_object_index.to_vec(),
+        body_image_object_index_offset: payload_offset + second_token,
+        end_offset: payload_offset + second_end + 1,
+    })
+}
+
+/// Decode every exact direct `01 02 17 index ff 80 00 00 02` field.
+///
+/// The fixed suffix separates this field from the nested body-write frame,
+/// which uses the same opening marker and tag but has a different
+/// middle sequence. The parser retains no endpoint or operation role.
+pub fn operation_tagged_references(record: OperationRecord<'_>) -> Vec<OperationTaggedReference> {
+    const PREFIX: &[u8] = &[0x01, 0x02, 0x17];
+    const SUFFIX: &[u8] = &[0xff, 0x80, 0x00, 0x00, 0x02];
+    let mut references = Vec::new();
+    for marker in record
+        .payload
+        .windows(PREFIX.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
+    {
+        let token = marker + PREFIX.len();
+        let Some((Some(object_index), end)) = feature_object_index(record.payload, token) else {
+            continue;
+        };
+        let raw_object_index = &record.payload[token..end];
+        if !canonical_feature_object_index(Some(object_index), raw_object_index) {
+            continue;
+        }
+        let Some(suffix_end) = end.checked_add(SUFFIX.len()) else {
+            continue;
+        };
+        if record.payload.get(end..suffix_end) != Some(SUFFIX) {
+            continue;
+        }
+        references.push(OperationTaggedReference {
+            offset: record.payload_offset + marker,
+            tag: 0x17,
+            object_index,
+            raw_object_index: raw_object_index.to_vec(),
+            object_index_offset: record.payload_offset + token,
+            end_offset: record.payload_offset + suffix_end,
+        });
+    }
+    references
+}
+
+/// Decode every exact direct `01 02 03 index 01 00 00 00 00 00` field.
+///
+/// The object index is retained as native evidence. It does not assign a
+/// body, operand, input, output, seed, transform, or construction role.
+pub fn operation_data_block_references(
+    record: OperationRecord<'_>,
+) -> Vec<OperationDataBlockReference> {
+    const PREFIX: &[u8] = &[0x01, 0x02, 0x03];
+    const SUFFIX: &[u8] = &[0x01, 0x00, 0x00, 0x00, 0x00, 0x00];
+    let mut references = Vec::new();
+    for marker in record
+        .payload
+        .windows(PREFIX.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == PREFIX).then_some(offset))
+    {
+        let token = marker + PREFIX.len();
+        let Some((Some(object_index), end)) = feature_object_index(record.payload, token) else {
+            continue;
+        };
+        let raw_object_index = &record.payload[token..end];
+        if !canonical_feature_object_index(Some(object_index), raw_object_index) {
+            continue;
+        }
+        let Some(suffix_end) = end.checked_add(SUFFIX.len()) else {
+            continue;
+        };
+        if record.payload.get(end..suffix_end) != Some(SUFFIX) {
+            continue;
+        }
+        references.push(OperationDataBlockReference {
+            offset: record.payload_offset + marker,
+            object_index,
+            raw_object_index: raw_object_index.to_vec(),
+            object_index_offset: record.payload_offset + token,
+            end_offset: record.payload_offset + suffix_end,
+        });
+    }
+    references
 }
 
 fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
@@ -5084,6 +7172,1125 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
     }
 }
 
+fn operation_relation_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
+    let token = operation_state_index_at(bytes, at, 0)?;
+    Some((token.value, at + token.raw.len()))
+}
+
+/// Decode one object-index token used by the operation-state block.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
+pub fn operation_state_index(bytes: &[u8], at: usize) -> Option<OperationStateIndex<'_>> {
+    operation_state_index_at(bytes, at, 0)
+}
+
+fn operation_state_index_at(
+    bytes: &[u8],
+    at: usize,
+    base_offset: usize,
+) -> Option<OperationStateIndex<'_>> {
+    let prefix = *bytes.get(at)?;
+    let (form, value, width) = match prefix {
+        0x00..=0x7f => (OperationStateIndexForm::Direct, Some(u32::from(prefix)), 1),
+        0x80..=0x8f => (
+            OperationStateIndexForm::Compact,
+            Some(u32::from(prefix - 0x80) * 256 + u32::from(*bytes.get(at + 1)?)),
+            2,
+        ),
+        0x90 => (
+            OperationStateIndexForm::Wide16,
+            Some(u32::from(View::u16_be_at(bytes, at + 1)?)),
+            3,
+        ),
+        0xa0..=0xaf => (
+            OperationStateIndexForm::Wide20,
+            Some(u32::from(prefix - 0xa0) * 0x1_0000 + u32::from(View::u16_be_at(bytes, at + 1)?)),
+            3,
+        ),
+        0xf1 => (
+            OperationStateIndexForm::Extended16,
+            Some(u32::from(View::u16_be_at(bytes, at + 1)?)),
+            3,
+        ),
+        0xff => (OperationStateIndexForm::Null, None, 1),
+        _ => return None,
+    };
+    Some(OperationStateIndex {
+        value,
+        form,
+        raw: bytes.get(at..at + width)?,
+        offset: base_offset.checked_add(at)?,
+    })
+}
+
+/// Decode one tagged integer used by an operation-state row.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
+pub fn operation_state_tagged_value(
+    bytes: &[u8],
+    at: usize,
+) -> Option<OperationStateTaggedValue<'_>> {
+    operation_state_tagged_value_at(bytes, at, 0)
+}
+
+fn operation_state_tagged_value_at(
+    bytes: &[u8],
+    at: usize,
+    base_offset: usize,
+) -> Option<OperationStateTaggedValue<'_>> {
+    let marker = *bytes.get(at)?;
+    let (form, width, value) = match marker {
+        0xa0..=0xbf => (
+            OperationStateTaggedValueForm::Two,
+            3,
+            u32::from(marker - 0xa0) * 0x1_0000 + u32::from(View::u16_be_at(bytes, at + 1)?),
+        ),
+        0xc0..=0xdf => (
+            OperationStateTaggedValueForm::Three,
+            4,
+            u32::from(marker - 0xc0) * 0x1_000_000
+                + (u32::from(*bytes.get(at + 1)?) << 16)
+                + (u32::from(*bytes.get(at + 2)?) << 8)
+                + u32::from(*bytes.get(at + 3)?),
+        ),
+        0xe0 | 0xff => (
+            OperationStateTaggedValueForm::Four,
+            5,
+            View::u32_be_at(bytes, at + 1)?,
+        ),
+        _ => return None,
+    };
+    Some(OperationStateTaggedValue {
+        value,
+        form,
+        marker,
+        raw: bytes.get(at..at + width)?,
+        offset: base_offset.checked_add(at)?,
+    })
+}
+
+fn operation_state_counter_row(
+    bytes: &[u8],
+    at: usize,
+    base_offset: usize,
+) -> Option<OperationStateCounter<'_>> {
+    if bytes.get(at) != Some(&0x05) {
+        return None;
+    }
+    let row_kind = *bytes.get(at + 1)?;
+    if !matches!(row_kind, 0x01 | 0x02) {
+        return None;
+    }
+    let object_at = at.checked_add(2)?;
+    let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
+    object_index.value?;
+    let state_at = object_at.checked_add(object_index.raw.len())?;
+    let introduced_state = *bytes.get(state_at)?;
+    let modified_state = *bytes.get(state_at + 1)?;
+    let end = state_at.checked_add(3)?;
+    (bytes.get(end - 1) == Some(&0x4e)).then_some(OperationStateCounter {
+        offset: base_offset.checked_add(at)?,
+        row_kind,
+        object_index,
+        introduced_state,
+        modified_state,
+        end_offset: base_offset.checked_add(end)?,
+    })
+}
+
+/// Decode the contiguous operation-state counter-map suffix of a bounded area.
+///
+/// The map is selected by the longest run of complete `05, row_kind, index,
+/// state, state, 4e` rows whose remaining bounded tail is small enough to be
+/// an area footer. This end anchor prevents a syntactically valid short lane in
+/// an operation payload from becoming a state map.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
+pub fn operation_state_counter_map(
+    bytes: &[u8],
+    base_offset: usize,
+) -> Option<OperationStateCounterMap<'_>> {
+    const MAX_COUNTER_TAIL_BYTES: usize = 64;
+    let mut best: Option<(usize, usize, usize)> = None;
+    let mut run_start = 0;
+    let mut run_end = 0;
+    let mut run_len = 0;
+    for at in 0..bytes.len().saturating_sub(2) {
+        if bytes.get(at) != Some(&0x05) || !matches!(bytes.get(at + 1), Some(0x01 | 0x02)) {
+            continue;
+        }
+        let Some(row) = operation_state_counter_row(bytes, at, base_offset) else {
+            continue;
+        };
+        let row_end = row
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("counter row offset is based on the same record area");
+        if at == run_end {
+            run_end = row_end;
+            run_len += 1;
+        } else {
+            run_start = at;
+            run_end = row_end;
+            run_len = 1;
+        }
+        if run_len >= 2
+            && bytes.len().saturating_sub(run_end) <= MAX_COUNTER_TAIL_BYTES
+            && best.is_none_or(|(_, _, current_len)| run_len > current_len)
+        {
+            best = Some((run_start, run_end, run_len));
+        }
+    }
+    let (start, end, row_count) = best?;
+    let mut rows = Vec::with_capacity(row_count);
+    let mut cursor = start;
+    while cursor < end {
+        let row = operation_state_counter_row(bytes, cursor, base_offset)?;
+        cursor = row
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("counter row offset is based on the same record area");
+        rows.push(row);
+    }
+    (cursor == end).then_some(OperationStateCounterMap {
+        offset: base_offset.checked_add(start)?,
+        end_offset: base_offset.checked_add(end)?,
+        rows,
+        trailing_bytes: bytes.get(end..)?,
+    })
+}
+
+fn operation_state_message_at(
+    bytes: &[u8],
+    at: usize,
+    base_offset: usize,
+) -> Option<OperationStateMessage<'_>> {
+    if bytes.get(at) != Some(&0x03) {
+        return None;
+    }
+    let declared_length = *bytes.get(at + 1)?;
+    if declared_length < 3 {
+        return None;
+    }
+    let text_end = at.checked_add(usize::from(declared_length))?;
+    let text = bytes.get(at + 2..text_end)?;
+    if !text
+        .iter()
+        .all(|byte| *byte == b' ' || byte.is_ascii_graphic())
+    {
+        return None;
+    }
+    let text = std::str::from_utf8(text).ok()?;
+    let terminator = text_end;
+    (bytes.get(terminator) == Some(&0)).then_some(())?;
+    let zeros_start = terminator.checked_add(1)?;
+    let zeros_end = zeros_start.checked_add(4)?;
+    (bytes.get(zeros_start..zeros_end) == Some(&[0, 0, 0, 0])).then_some(())?;
+    let value = operation_state_tagged_value_at(bytes, zeros_end, base_offset)?;
+    let count_at = zeros_end.checked_add(value.raw.len())?;
+    let count_or_severity = View::u16_be_at(bytes, count_at)?;
+    let end = count_at.checked_add(2)?;
+    Some(OperationStateMessage {
+        offset: base_offset.checked_add(at)?,
+        declared_length,
+        text,
+        value,
+        count_or_severity,
+        end_offset: base_offset.checked_add(end)?,
+    })
+}
+
+fn operation_state_status_end_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+    opaque_lane_starts: Option<&[usize]>,
+) -> Option<usize> {
+    if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
+        let precomputed_end = opaque_lane_starts
+            .and_then(|starts| operation_state_opaque_lane_end_at(starts, at, end));
+        precomputed_end.or_else(|| operation_state_slot_lane_end_at(bytes, at, end))
+    } else {
+        operation_state_status_row_at(bytes, at, end, base_offset, opaque_lane_starts)
+            .and_then(|row| row.end_offset.checked_sub(base_offset))
+    }
+}
+
+#[derive(Clone, Copy)]
+struct OperationStatePath {
+    length: usize,
+    end: usize,
+}
+
+fn operation_state_path_at(
+    paths: &[(usize, OperationStatePath)],
+    at: usize,
+) -> Option<OperationStatePath> {
+    paths
+        .binary_search_by(|(offset, _)| offset.cmp(&at).reverse())
+        .ok()
+        .map(|index| paths[index].1)
+}
+
+fn operation_state_opaque_lane_end_at(
+    lane_starts: &[usize],
+    at: usize,
+    end: usize,
+) -> Option<usize> {
+    let index = lane_starts.binary_search(&at).unwrap_or_else(|index| index);
+    let lane_start = *lane_starts.get(index)?;
+    let lane_end = lane_start.checked_add(2)?;
+    (lane_end <= end).then_some(lane_end)
+}
+
+fn operation_state_block_before_boundary(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateBlock<'_>> {
+    const MAX_STATE_BLOCK_TAIL_BYTES: usize = 64 * 1024;
+
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+
+    let mut opaque_lane_starts = Vec::new();
+    for at in start..end.saturating_sub(1) {
+        if bytes.get(at..at + 2) == Some(&[0x02, 0x11]) {
+            opaque_lane_starts.try_reserve(1).ok()?;
+            opaque_lane_starts.push(at);
+        }
+    }
+
+    let mut status_paths = Vec::new();
+    let mut message_paths = Vec::new();
+    for at in (start..end).rev() {
+        if let Some(message) = operation_state_message_at(bytes, at, base_offset) {
+            let next = message.end_offset.checked_sub(base_offset)?;
+            if next > at && next <= end {
+                let continuation = (next < end)
+                    .then(|| operation_state_path_at(&message_paths, next))
+                    .flatten();
+                let length = continuation.map_or(Some(1), |path| path.length.checked_add(1))?;
+                let path_end = continuation.map_or(next, |path| path.end);
+                message_paths.try_reserve(1).ok()?;
+                message_paths.push((
+                    at,
+                    OperationStatePath {
+                        length,
+                        end: path_end,
+                    },
+                ));
+            }
+        }
+
+        let (status_length, status_end) =
+            operation_state_status_end_at(bytes, at, end, base_offset, Some(&opaque_lane_starts))
+                .filter(|next| *next > at && *next <= end)
+                .map_or((0, usize::MAX), |next| {
+                    let continuation = (next < end)
+                        .then(|| operation_state_path_at(&status_paths, next))
+                        .flatten();
+                    let Some(length) =
+                        continuation.map_or(Some(1), |path| path.length.checked_add(1))
+                    else {
+                        return (0, usize::MAX);
+                    };
+                    let path_end = continuation.map_or(next, |path| path.end);
+                    (length, path_end)
+                });
+        let message_path = operation_state_path_at(&message_paths, at);
+        let best_path =
+            if status_length >= message_path.map_or(0, |path| path.length) && status_length > 0 {
+                Some(OperationStatePath {
+                    length: status_length,
+                    end: status_end,
+                })
+            } else {
+                message_path
+            };
+        if let Some(path) = best_path {
+            status_paths.try_reserve(1).ok()?;
+            status_paths.push((at, path));
+        }
+    }
+
+    let has_exact_boundary_path = status_paths.iter().any(|(_, path)| path.end == end);
+    let (offset, path) = status_paths
+        .iter()
+        .filter(|(at, path)| {
+            if has_exact_boundary_path {
+                path.end == end
+            } else {
+                path.end >= *at && end.saturating_sub(path.end) <= MAX_STATE_BLOCK_TAIL_BYTES
+            }
+        })
+        .max_by_key(|(at, path)| (path.length, std::cmp::Reverse(*at)))
+        .map(|(at, path)| (*at, *path))?;
+    let path_end = path.end;
+    let mut rows = Vec::new();
+    let mut slot_lanes = Vec::new();
+    let mut messages = Vec::new();
+    let mut status_end_offset = base_offset.checked_add(offset)?;
+    let mut at = offset;
+    let mut in_messages = false;
+    while at < path_end {
+        if in_messages {
+            let message = operation_state_message_at(bytes, at, base_offset)?;
+            let next = message.end_offset.checked_sub(base_offset)?;
+            (next > at && next <= path_end).then_some(())?;
+            messages.push(message);
+            at = next;
+            continue;
+        }
+
+        let status_next =
+            operation_state_status_end_at(bytes, at, end, base_offset, Some(&opaque_lane_starts));
+        let status_length = status_next
+            .filter(|next| {
+                *next > at
+                    && *next <= path_end
+                    && (*next == path_end
+                        || (*next < end
+                            && operation_state_path_at(&status_paths, *next)
+                                .is_some_and(|path| path.end == path_end)))
+            })
+            .map_or(0, |next| {
+                if next == path_end {
+                    1
+                } else {
+                    operation_state_path_at(&status_paths, next)
+                        .and_then(|path| path.length.checked_add(1))
+                        .unwrap_or(0)
+                }
+            });
+        let message = operation_state_message_at(bytes, at, base_offset);
+        let message_next = message
+            .as_ref()
+            .and_then(|message| message.end_offset.checked_sub(base_offset));
+        let message_length = operation_state_path_at(&message_paths, at)
+            .filter(|path| path.end == path_end)
+            .map_or(0, |path| path.length);
+
+        if status_length >= message_length && status_length > 0 {
+            let next = status_next?;
+            if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
+                let lane = operation_state_slot_lane_at(bytes, at, end, base_offset)?;
+                let lane_end = lane.end_offset.checked_sub(base_offset)?;
+                (lane_end == next).then_some(())?;
+                let lane_end_offset = lane.end_offset;
+                slot_lanes.push(lane);
+                at = next;
+                status_end_offset = lane_end_offset;
+            } else {
+                let row = operation_state_status_row_at(
+                    bytes,
+                    at,
+                    end,
+                    base_offset,
+                    Some(&opaque_lane_starts),
+                )?;
+                let row_end = row.end_offset.checked_sub(base_offset)?;
+                (row_end == next).then_some(())?;
+                rows.push(row);
+                at = next;
+                status_end_offset = row.end_offset;
+            }
+        } else {
+            let message = message?;
+            let next = message_next?;
+            (next > at && next <= path_end && message_length > 0).then_some(())?;
+            messages.push(message);
+            at = next;
+            in_messages = true;
+        }
+    }
+    Some(OperationStateBlock {
+        offset: base_offset.checked_add(offset)?,
+        status_end_offset,
+        rows,
+        slot_lanes,
+        messages,
+    })
+}
+
+/// Decode complete message records in one already bounded state region.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
+pub fn operation_state_messages(
+    bytes: &[u8],
+    base_offset: usize,
+) -> Vec<OperationStateMessage<'_>> {
+    let mut messages = Vec::new();
+    let mut at = 0;
+    while at < bytes.len() {
+        let Some(message) = operation_state_message_at(bytes, at, base_offset) else {
+            at += 1;
+            continue;
+        };
+        at = message
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("message offset is based on the same bounded region");
+        messages.push(message);
+    }
+    messages
+}
+
+fn operation_state_opaque_payload_end(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+    const MAX_OPAQUE_STATUS_BYTES: usize = 64 * 1024;
+    let first = *bytes.get(at)?;
+    if !matches!(first, 0x02 | 0x1e | 0xff) {
+        return None;
+    }
+    if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
+        return Some(at + 3);
+    }
+    let search_end = end.min(at.saturating_add(MAX_OPAQUE_STATUS_BYTES));
+    for cursor in at..search_end.saturating_sub(1) {
+        if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
+            return Some(cursor + 2);
+        }
+    }
+    None
+}
+
+fn operation_state_link_payload(
+    bytes: &[u8],
+    payload_at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<(OperationStateStatusPayload<'_>, usize)> {
+    let link_code = *bytes.get(payload_at)?;
+    if matches!(link_code, 0x02 | 0x03 | 0x1e | 0x3f | 0xff)
+        || bytes.get(payload_at + 1) != Some(&0xff)
+    {
+        return None;
+    }
+    let linked_at = payload_at.checked_add(2)?;
+    let linked = operation_state_index_at(bytes, linked_at, base_offset)?;
+    linked.value?;
+    let sentinel_at = linked_at.checked_add(linked.raw.len())?;
+    if bytes.get(sentinel_at) != Some(&0xff) {
+        return None;
+    }
+    let payload_end = sentinel_at.checked_add(1)?;
+    (payload_end <= end).then_some((
+        OperationStateStatusPayload::Linked {
+            link_code,
+            object_index: linked,
+        },
+        payload_end,
+    ))
+}
+
+fn operation_state_slot_lane_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateSlotLane<'_>> {
+    if bytes.get(at..at + 3) != Some(&[0x02, 0x01, 0x11]) {
+        return None;
+    }
+    let mut slots = Vec::new();
+    let mut cursor = at + 3;
+    while cursor < end {
+        if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
+            let lane_end = cursor + 2;
+            return Some(OperationStateSlotLane {
+                offset: base_offset.checked_add(at)?,
+                slots,
+                end_offset: base_offset.checked_add(lane_end)?,
+            });
+        }
+        let slot = operation_state_index_at(bytes, cursor, base_offset)?;
+        cursor = cursor.checked_add(slot.raw.len())?;
+        slots.push(slot);
+    }
+    None
+}
+
+fn operation_state_slot_lane_end_at(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+    if bytes.get(at..at + 3) != Some(&[0x02, 0x01, 0x11]) {
+        return None;
+    }
+    let mut cursor = at + 3;
+    while cursor < end {
+        if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
+            return cursor.checked_add(2);
+        }
+        let slot = operation_state_index_at(bytes, cursor, 0)?;
+        cursor = cursor.checked_add(slot.raw.len())?;
+    }
+    None
+}
+
+fn operation_state_status_row_at<'a>(
+    bytes: &'a [u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+    opaque_lane_starts: Option<&[usize]>,
+) -> Option<OperationStateStatus<'a>> {
+    let status_code = operation_state_index_at(bytes, at, base_offset)?;
+    status_code.value?;
+    let object_at = at.checked_add(status_code.raw.len())?;
+    let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
+    object_index.value?;
+    let payload_at = object_at.checked_add(object_index.raw.len())?;
+    if payload_at >= end {
+        return None;
+    }
+    let (payload, payload_end) = match bytes[payload_at] {
+        0x3f => (OperationStateStatusPayload::Plain, payload_at + 1),
+        0x03 => {
+            let message = operation_state_message_at(bytes, payload_at, base_offset)?;
+            let payload_end = message
+                .end_offset
+                .checked_sub(base_offset)
+                .expect("message offset is based on the same bounded region");
+            (
+                OperationStateStatusPayload::Diagnostic { message },
+                payload_end,
+            )
+        }
+        0x02 | 0x1e | 0xff => {
+            let precomputed_end = opaque_lane_starts
+                .and_then(|starts| operation_state_opaque_lane_end_at(starts, payload_at, end));
+            let payload_end = precomputed_end
+                .or_else(|| operation_state_opaque_payload_end(bytes, payload_at, end))?;
+            (
+                OperationStateStatusPayload::Opaque {
+                    raw: bytes.get(payload_at..payload_end)?,
+                },
+                payload_end,
+            )
+        }
+        _ => operation_state_link_payload(bytes, payload_at, end, base_offset)?,
+    };
+    (payload_end <= end).then_some(OperationStateStatus {
+        offset: base_offset.checked_add(at)?,
+        status_code,
+        object_index,
+        payload,
+        end_offset: base_offset.checked_add(payload_end)?,
+    })
+}
+
+/// Decode a bounded sequence of per-object operation-state status rows.
+#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
+pub fn operation_state_status_table(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateStatusTable<'_>> {
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut rows = Vec::new();
+    let mut slot_lanes = Vec::new();
+    let mut at = start;
+    while at < end {
+        if operation_state_message_at(bytes, at, base_offset).is_some() {
+            break;
+        }
+        if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
+            let lane = operation_state_slot_lane_at(bytes, at, end, base_offset)?;
+            at = lane
+                .end_offset
+                .checked_sub(base_offset)
+                .expect("slot-lane offset is based on the same bounded region");
+            slot_lanes.push(lane);
+            continue;
+        }
+        let Some(row) = operation_state_status_row_at(bytes, at, end, base_offset, None) else {
+            break;
+        };
+        at = row
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("status offset is based on the same bounded region");
+        rows.push(row);
+    }
+    (!rows.is_empty()).then_some(OperationStateStatusTable {
+        offset: base_offset.checked_add(start)?,
+        end_offset: base_offset.checked_add(at)?,
+        rows,
+        slot_lanes,
+        trailing_bytes: bytes.get(at..end)?,
+    })
+}
+
+fn operation_state_group_header_at(
+    bytes: &[u8],
+    at: usize,
+) -> Option<([u8; 2], Option<u8>, u8, usize)> {
+    let opener: [u8; 2] = bytes.get(at..at + 2)?.try_into().ok()?;
+    if !matches!(opener, [0x01, 0x00 | 0x01]) {
+        return None;
+    }
+    let count_at = at.checked_add(2)?;
+    let (count_prefix, declared_count, cursor) = match bytes.get(count_at) {
+        Some(0) => (None, 0, count_at + 1),
+        Some(1) => (Some(1), *bytes.get(count_at + 1)?, count_at + 2),
+        _ => return None,
+    };
+    Some((opener, count_prefix, declared_count, cursor))
+}
+
+fn operation_state_group_row_at(
+    bytes: &[u8],
+    cursor: usize,
+    base_offset: usize,
+) -> Option<(OperationStateGroupRow<'_>, usize)> {
+    let tag = *bytes.get(cursor)?;
+    match tag {
+        0x4a => {
+            let object_at = cursor.checked_add(1)?;
+            let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
+            object_index.value?;
+            let position_at = object_at.checked_add(object_index.raw.len())?;
+            let position = operation_state_index_at(bytes, position_at, base_offset)?;
+            position.value?;
+            let sentinel_at = position_at.checked_add(position.raw.len())?;
+            let row_end = sentinel_at.checked_add(1)?;
+            (bytes.get(sentinel_at) == Some(&0xff)).then_some((
+                OperationStateGroupRow::List {
+                    offset: base_offset.checked_add(cursor)?,
+                    object_index,
+                    position,
+                },
+                row_end,
+            ))
+        }
+        0x4f | 0x48 => {
+            let first_at = cursor.checked_add(1)?;
+            let first = operation_state_index_at(bytes, first_at, base_offset)?;
+            first.value?;
+            let second_at = first_at.checked_add(first.raw.len())?;
+            let second = operation_state_index_at(bytes, second_at, base_offset)?;
+            second.value?;
+            let sentinels_at = second_at.checked_add(second.raw.len())?;
+            let row_end = sentinels_at.checked_add(2)?;
+            (bytes.get(sentinels_at..row_end) == Some(&[0xff, 0xff])).then_some((
+                OperationStateGroupRow::Pair {
+                    offset: base_offset.checked_add(cursor)?,
+                    tag,
+                    first,
+                    second,
+                },
+                row_end,
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn operation_state_group_end_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<usize> {
+    let (_, _, declared_count, mut cursor) = operation_state_group_header_at(bytes, at)?;
+    let member_count = usize::from(declared_count.saturating_sub(1));
+    for _ in 0..member_count {
+        cursor = operation_state_group_row_at(bytes, cursor, base_offset)?.1;
+    }
+    (cursor <= end).then_some(cursor)
+}
+
+fn operation_state_group_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateGroup<'_>> {
+    let (opener, count_prefix, declared_count, mut cursor) =
+        operation_state_group_header_at(bytes, at)?;
+    let member_count = usize::from(declared_count.saturating_sub(1));
+    let mut rows = Vec::with_capacity(member_count);
+    for _ in 0..member_count {
+        let (row, row_end) = operation_state_group_row_at(bytes, cursor, base_offset)?;
+        rows.push(row);
+        cursor = row_end;
+    }
+    (cursor <= end).then_some(OperationStateGroup {
+        offset: base_offset.checked_add(at)?,
+        opener,
+        count_prefix,
+        declared_count,
+        rows,
+        end_offset: base_offset.checked_add(cursor)?,
+    })
+}
+
+fn operation_state_group_table_before_counter_map(
+    bytes: &[u8],
+    map_start: usize,
+    base_offset: usize,
+) -> Option<OperationStateGroupTable<'_>> {
+    #[derive(Clone, Copy)]
+    struct GroupPath {
+        last_candidate: usize,
+        length: usize,
+        first_start: usize,
+    }
+
+    if map_start > bytes.len() {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for at in 0..map_start.saturating_sub(2) {
+        if !matches!(bytes.get(at..at + 2), Some([0x01, 0x00 | 0x01])) {
+            continue;
+        }
+        let Some(end) = operation_state_group_end_at(bytes, at, map_start, base_offset) else {
+            continue;
+        };
+        candidates.push((at, end));
+    }
+    candidates.sort_by_key(|(start, end)| (*end, *start));
+
+    let mut predecessors = cadmpeg_core::decode::alloc_filled(
+        candidates.len(),
+        None,
+        "nx operation-state group predecessors",
+    )
+    .ok()?;
+    let mut best_by_end = BTreeMap::<usize, GroupPath>::new();
+    for (candidate_index, (start, end)) in candidates.iter().enumerate() {
+        let previous = best_by_end.get(start).copied();
+        let path = GroupPath {
+            last_candidate: candidate_index,
+            length: previous.map_or(1, |path| path.length + 1),
+            first_start: previous.map_or(*start, |path| path.first_start),
+        };
+        predecessors[candidate_index] = previous.map(|path| path.last_candidate);
+        let replace = best_by_end.get(end).is_none_or(|current| {
+            path.length > current.length
+                || (path.length == current.length && path.first_start < current.first_start)
+        });
+        if replace {
+            best_by_end.insert(*end, path);
+        }
+    }
+
+    let trailing_start =
+        if map_start >= 2 && bytes.get(map_start - 2..map_start) == Some(&[0x01, 0x01]) {
+            map_start - 2
+        } else {
+            map_start
+        };
+    let terminal = best_by_end.get(&trailing_start).copied()?;
+    let mut path = Vec::with_capacity(terminal.length);
+    let mut candidate = Some(terminal.last_candidate);
+    while let Some(candidate_index) = candidate {
+        path.push(candidate_index);
+        candidate = predecessors[candidate_index];
+    }
+    path.reverse();
+    let first = *path.first()?;
+    let last = *path.last()?;
+    let groups = path
+        .into_iter()
+        .map(|candidate| {
+            operation_state_group_at(bytes, candidates[candidate].0, map_start, base_offset)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(OperationStateGroupTable {
+        offset: base_offset.checked_add(candidates[first].0)?,
+        end_offset: base_offset.checked_add(map_start)?,
+        groups,
+        trailing_bytes: bytes.get(candidates[last].1..map_start)?,
+    })
+}
+
+/// Decode a complete bounded `m_rollForwardStates` group table.
+#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
+pub fn operation_state_group_table(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateGroupTable<'_>> {
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut groups = Vec::new();
+    let mut at = start;
+    let mut trailing_start = end;
+    while at < end {
+        let Some(group) = operation_state_group_at(bytes, at, end, base_offset) else {
+            if bytes.get(at..end) == Some(&[0x01, 0x01]) {
+                trailing_start = at;
+                at = end;
+                break;
+            }
+            return None;
+        };
+        at = group
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("group offset is based on the same bounded region");
+        groups.push(group);
+    }
+    (!groups.is_empty() && at == end).then_some(OperationStateGroupTable {
+        offset: base_offset.checked_add(start)?,
+        end_offset: base_offset.checked_add(end)?,
+        groups,
+        trailing_bytes: bytes.get(trailing_start..end)?,
+    })
+}
+
+fn operation_state_journal_row_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateJournalRow<'_>> {
+    if bytes.get(at) != Some(&0xe0) {
+        return None;
+    }
+    let timestamp = View::u32_be_at(bytes, at + 1)?;
+    let value = operation_state_tagged_value_at(bytes, at + 5, base_offset)?;
+    let schema_at = at.checked_add(5 + value.raw.len())?;
+    let schema_id = operation_state_index_at(bytes, schema_at, base_offset)?;
+    schema_id.value?;
+    let ordinal_at = schema_at.checked_add(schema_id.raw.len())?;
+    let ordinal = operation_state_index_at(bytes, ordinal_at, base_offset)?;
+    ordinal.value?;
+    let terminator_at = ordinal_at.checked_add(ordinal.raw.len())?;
+    if terminator_at >= end || bytes.get(terminator_at) != Some(&0x13) {
+        return None;
+    }
+    let row_end = terminator_at + 1;
+    Some(OperationStateJournalRow {
+        offset: base_offset.checked_add(at)?,
+        timestamp,
+        value,
+        schema_id,
+        ordinal,
+        end_offset: base_offset.checked_add(row_end)?,
+    })
+}
+
+fn audit_trail_row_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<AuditTrailRow<'_>> {
+    let bytes = bytes.get(..end)?;
+    if bytes.get(at) != Some(&0x04) {
+        return None;
+    }
+    let ordinal = operation_state_index_at(bytes, at.checked_add(1)?, base_offset)?;
+    ordinal.value?;
+    let mut cursor = at.checked_add(1 + ordinal.raw.len())?;
+    if bytes.get(cursor) != Some(&0x13) {
+        return None;
+    }
+    cursor += 1;
+
+    let frame_selector = if bytes
+        .get(cursor..cursor + 4)
+        .is_some_and(|frame| frame[0] == 0x04 && frame[1] == 0x05 && frame[3] == 0x00)
+    {
+        let selector = *bytes.get(cursor + 2)?;
+        cursor += 4;
+        Some(selector)
+    } else {
+        None
+    };
+
+    if bytes.get(cursor) != Some(&0xe0) {
+        return None;
+    }
+    let timestamp = View::u32_be_at(bytes, cursor + 1)?;
+    cursor = cursor.checked_add(5)?;
+    let value = operation_state_tagged_value_at(bytes, cursor, base_offset)?;
+    let row_end = cursor.checked_add(value.raw.len())?;
+    Some(AuditTrailRow {
+        offset: base_offset.checked_add(at)?,
+        ordinal,
+        frame_selector,
+        timestamp,
+        value,
+        raw: bytes.get(at..row_end)?,
+        end_offset: base_offset.checked_add(row_end)?,
+    })
+}
+
+/// Decode complete audit-trail rows from a bounded record-area suffix.
+///
+/// A row scan is admitted only when its ordinal tokens are strictly increasing
+/// in source order. This rejects a coincidental inner match instead of
+/// assigning a second interpretation to a row sequence. Bytes that do not
+/// complete the row grammar are left untyped.
+#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
+pub fn audit_trail_rows(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<Vec<AuditTrailRow<'_>>> {
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut rows = Vec::new();
+    let mut at = start;
+    let mut previous_ordinal = None;
+    while at < end {
+        let Some(row) = audit_trail_row_at(bytes, at, end, base_offset) else {
+            at += 1;
+            continue;
+        };
+        let ordinal = row.ordinal.value?;
+        if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
+            return None;
+        }
+        previous_ordinal = Some(ordinal);
+        at = row.end_offset.checked_sub(base_offset)?;
+        rows.push(row);
+    }
+    Some(rows)
+}
+
+fn operation_state_journal_group_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<OperationStateJournalGroup<'_>> {
+    if bytes.get(at) != Some(&0x04) {
+        return None;
+    }
+    let selector = [*bytes.get(at + 1)?, *bytes.get(at + 2)?];
+    if bytes.get(at + 3) != Some(&0) {
+        return None;
+    }
+    let mut cursor = at + 4;
+    if bytes.get(cursor) == Some(&0) {
+        cursor += 1;
+    }
+    let mut rows = Vec::new();
+    while cursor < end {
+        let Some(row) = operation_state_journal_row_at(bytes, cursor, end, base_offset) else {
+            break;
+        };
+        cursor = row
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("journal offset is based on the same bounded region");
+        rows.push(row);
+    }
+    (!rows.is_empty()).then_some(OperationStateJournalGroup {
+        offset: base_offset.checked_add(at)?,
+        selector,
+        rows,
+        end_offset: base_offset.checked_add(cursor)?,
+    })
+}
+
+fn operation_state_journal_start(bytes: &[u8], product_end: usize) -> Option<usize> {
+    let marker = bytes
+        .get(product_end..)?
+        .windows(2)
+        .position(|window| window == [0x41, 0x00])?
+        .checked_add(product_end)?;
+    let mut at = marker.checked_add(2)?;
+    let mut count_tokens = 0usize;
+    let mut saw_repeated_token = false;
+    loop {
+        if bytes
+            .get(at..at + 3)
+            .is_some_and(|token| token[0] == 0x03 && token[1] == 0x05)
+        {
+            count_tokens += 1;
+            at += 3;
+        } else if bytes.get(at..at + 4) == Some(&[0x03, 0x03, 0x02, 0x00]) {
+            saw_repeated_token = true;
+            at += 4;
+        } else {
+            break;
+        }
+    }
+    if bytes.get(at) == Some(&0x00) {
+        at += 1;
+    }
+    while bytes.get(at..at + 2) == Some(&[0x04, 0x00]) {
+        at += 2;
+    }
+    (count_tokens > 0 && (saw_repeated_token || count_tokens >= 2)).then_some(at)
+}
+
+fn operation_state_journal_groups_before_boundary(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<Vec<OperationStateJournalGroup<'_>>> {
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut groups = Vec::new();
+    let mut at = start;
+    let mut previous_ordinal = None;
+    loop {
+        let Some(group) = operation_state_journal_group_at(bytes, at, end, base_offset) else {
+            let mut next = at;
+            while bytes.get(next..next + 2) == Some(&[0x04, 0x00]) {
+                next += 2;
+            }
+            if next == at
+                || operation_state_journal_group_at(bytes, next, end, base_offset).is_none()
+            {
+                break;
+            }
+            at = next;
+            continue;
+        };
+        for row in &group.rows {
+            let ordinal = row.ordinal.value?;
+            if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
+                return None;
+            }
+            previous_ordinal = Some(ordinal);
+        }
+        at = group
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("journal offset is based on the same bounded region");
+        groups.push(group);
+    }
+    (!groups.is_empty()).then_some(groups)
+}
+
+/// Decode a complete bounded state journal.
+#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
+pub fn operation_state_journal(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<Vec<OperationStateJournalGroup<'_>>> {
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut groups = Vec::new();
+    let mut at = start;
+    while at < end {
+        let group = operation_state_journal_group_at(bytes, at, end, base_offset)?;
+        at = group
+            .end_offset
+            .checked_sub(base_offset)
+            .expect("journal offset is based on the same bounded region");
+        groups.push(group);
+    }
+    (!groups.is_empty() && at == end).then_some(groups)
+}
+
 fn canonical_feature_object_index(value: Option<u32>, raw: &[u8]) -> bool {
     matches!(
         (value, raw),
@@ -5094,29 +8301,73 @@ fn canonical_feature_object_index(value: Option<u32>, raw: &[u8]) -> bool {
     )
 }
 
+fn canonical_operation_relation_object_index(value: Option<u32>, raw: &[u8]) -> bool {
+    matches!(
+        (value, raw),
+        (None, [0xff])
+            | (Some(0..=0x7f), [_])
+            | (Some(0x80..=0x0fff), [0x80..=0x8f, _])
+            | (Some(0x1000..=0xffff), [0x90, _, _])
+            | (Some(_), [0xa0..=0xaf | 0xf1, _, _])
+    )
+}
+
+/// Return one decoded candidate only when the scan produced exactly one.
+///
+/// A number of OM fields are discovered by probing every byte in an already
+/// bounded payload. Materializing all successful probes lets overlapping
+/// malformed framing turn a linear scan into an allocation proportional to
+/// the number of hits. The parser needs only the uniqueness decision, so keep
+/// the first candidate and reject as soon as a second one is complete.
+fn unique_candidate<T>(candidates: impl IntoIterator<Item = T>) -> Option<T> {
+    let mut candidate = None;
+    for next in candidates {
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(next);
+    }
+    candidate
+}
+
 /// Decode every exact common frame in one bounded operation payload.
 pub fn operation_common_frames(record: OperationRecord<'_>) -> Vec<OperationCommonFrame> {
     let decode = |prefix_start: usize, widths: [usize; 3], marker: [u8; 3]| {
         if marker == [0x01, 0x01, 0x01] && record.label.value != "DELETE" {
             return None;
         }
+
+        // The compact prefix has fixed widths for each frame family. Check the
+        // discriminator at its exact position before decoding any token. This
+        // scan visits every payload byte, so a candidate must not own heap
+        // storage until all of its framing and suffix invariants pass.
+        let prefix_width = widths.into_iter().sum::<usize>();
+        let marker_start = prefix_start.checked_add(prefix_width)?;
+        (record
+            .payload
+            .get(marker_start..marker_start + marker.len())
+            == Some(&marker))
+        .then_some(())?;
+
         let mut at = prefix_start;
-        let mut indices = Vec::with_capacity(3);
-        let mut raw_indices = Vec::with_capacity(3);
-        let mut index_offsets = Vec::with_capacity(3);
-        for width in widths {
-            let token = record.payload.get(at..at + width)?;
-            let (index, end) = compact_index(record.payload.get(at..)?)?;
-            let CompactIndex::Value(index) = index else {
+        let mut tokens = [CompactToken {
+            value: CompactIndex::Null,
+            offset: 0,
+            width: 0,
+        }; 3];
+        let mut indices = [0; 3];
+        let mut index_offsets = [0; 3];
+        for (slot, width) in widths.into_iter().enumerate() {
+            let token = compact_token(record.payload, at)?;
+            let CompactIndex::Value(index) = token.value else {
                 return None;
             };
-            (end == width).then_some(())?;
-            indices.push(index);
-            raw_indices.push(token.to_vec());
-            index_offsets.push(record.payload_offset + at);
+            (token.width == width).then_some(())?;
+            tokens[slot] = token;
+            indices[slot] = index;
+            index_offsets[slot] = record.payload_offset + at;
             at += width;
         }
-        (record.payload.get(at..at + marker.len()) == Some(&marker)).then_some(())?;
         at += marker.len();
         let state_offset = at;
         let state = record.payload.get(at..at + 8)?.try_into().ok()?;
@@ -5137,12 +8388,11 @@ pub fn operation_common_frames(record: OperationRecord<'_>) -> Vec<OperationComm
         let object_raw = &record.payload[second_end..object_end];
         canonical_feature_object_index(object_index, object_raw).then_some(())?;
         (record.payload.get(object_end) == Some(&0)).then_some(())?;
-        let indices: [u32; 3] = indices.try_into().ok()?;
-        let raw_indices: [Vec<u8>; 3] = raw_indices.try_into().ok()?;
-        let index_offsets: [usize; 3] = index_offsets.try_into().ok()?;
         Some(OperationCommonFrame {
             indices,
-            raw_indices,
+            raw_indices: std::array::from_fn(|slot| {
+                raw_compact_token(record.payload, tokens[slot])
+            }),
             marker,
             state,
             offset: record.payload_offset + prefix_start,
@@ -5176,54 +8426,51 @@ pub fn operation_terminal_frame(record: OperationRecord<'_>) -> Option<Operation
     let terminator = record.payload.len().checked_sub(1)?;
     (record.payload.get(terminator) == Some(&0)).then_some(())?;
     let common_frames = operation_common_frames(record);
-    let mut matches = Vec::new();
-    for start in terminator.saturating_sub(9)..terminator {
-        let Some((Some(local_ordinal), first_end)) = feature_object_index(record.payload, start)
-        else {
-            continue;
-        };
-        let first_raw = &record.payload[start..first_end];
-        if !canonical_feature_object_index(Some(local_ordinal), first_raw) {
-            continue;
-        }
-        let Some((Some(repeated), second_end)) = feature_object_index(record.payload, first_end)
-        else {
-            continue;
-        };
-        let second_raw = &record.payload[first_end..second_end];
-        if repeated != local_ordinal || second_raw != first_raw {
-            continue;
-        }
-        let Some((object_index, object_end)) = feature_object_index(record.payload, second_end)
-        else {
-            continue;
-        };
-        let object_raw = &record.payload[second_end..object_end];
-        if object_end != terminator || !canonical_feature_object_index(object_index, object_raw) {
-            continue;
-        }
-        let local_ordinal_offset = record.payload_offset + start;
-        let immediate_common_frame_offset = common_frames
-            .iter()
-            .find(|frame| {
-                frame.local_ordinal_offset == local_ordinal_offset
-                    && frame.end_offset == record.payload_offset + object_end + 1
+    unique_candidate(
+        (terminator.saturating_sub(9)..terminator).filter_map(|start| {
+            let Some((Some(local_ordinal), first_end)) =
+                feature_object_index(record.payload, start)
+            else {
+                return None;
+            };
+            let first_raw = &record.payload[start..first_end];
+            if !canonical_feature_object_index(Some(local_ordinal), first_raw) {
+                return None;
+            }
+            let Some((Some(repeated), second_end)) =
+                feature_object_index(record.payload, first_end)
+            else {
+                return None;
+            };
+            let second_raw = &record.payload[first_end..second_end];
+            if repeated != local_ordinal || second_raw != first_raw {
+                return None;
+            }
+            let (object_index, object_end) = feature_object_index(record.payload, second_end)?;
+            let object_raw = &record.payload[second_end..object_end];
+            if object_end != terminator || !canonical_feature_object_index(object_index, object_raw)
+            {
+                return None;
+            }
+            let local_ordinal_offset = record.payload_offset + start;
+            let immediate_common_frame_offset = common_frames
+                .iter()
+                .find(|frame| {
+                    frame.local_ordinal_offset == local_ordinal_offset
+                        && frame.end_offset == record.payload_offset + object_end + 1
+                })
+                .map(|frame| frame.offset);
+            Some(OperationTerminalFrame {
+                immediate_common_frame_offset,
+                local_ordinal,
+                raw_local_ordinal: first_raw.to_vec(),
+                object_index,
+                raw_object_index: object_raw.to_vec(),
+                offset: local_ordinal_offset,
+                object_index_offset: record.payload_offset + second_end,
             })
-            .map(|frame| frame.offset);
-        matches.push(OperationTerminalFrame {
-            immediate_common_frame_offset,
-            local_ordinal,
-            raw_local_ordinal: first_raw.to_vec(),
-            object_index,
-            raw_object_index: object_raw.to_vec(),
-            offset: local_ordinal_offset,
-            object_index_offset: record.payload_offset + second_end,
-        });
-    }
-    let [frame] = matches.as_slice() else {
-        return None;
-    };
-    Some(frame.clone())
+        }),
+    )
 }
 
 /// Decode ordered `04 00, object_index, 02 0b` references from one bounded block.
@@ -5255,13 +8502,24 @@ pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReferenc
 }
 
 /// Decode Boolean target and tool lists following complete operation labels.
+#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused parser tests.
 pub fn boolean_operations(bytes: &[u8], base_offset: usize) -> Vec<BooleanOperation> {
+    let labels = operation_labels(bytes, base_offset);
+    boolean_operations_with_labels(bytes, base_offset, &labels)
+}
+
+fn boolean_operations_with_labels(
+    bytes: &[u8],
+    base_offset: usize,
+    labels: &[OperationLabel<'_>],
+) -> Vec<BooleanOperation> {
     const BODY_HEADER: &[u8] = &[
         0x31, 0x00, 0x00, 0x01, 0x00, 0x14, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03,
         0x00, 0x00, 0xe0, 0x7f, 0xff, 0xff, 0xff, 0x01, 0x01,
     ];
-    operation_labels(bytes, base_offset)
-        .into_iter()
+    labels
+        .iter()
+        .copied()
         .filter_map(|label| {
             let kind = match label.value {
                 "UNITE" => BooleanOperationKind::Unite,
@@ -5310,7 +8568,15 @@ fn counted_feature_object_indices(
         return None;
     }
     let count = usize::from(*bytes.get(at + 1)?).checked_sub(1)?;
-    let mut cursor = at + 2;
+    let values_start = at + 2;
+    let mut scan_cursor = values_start;
+    for _ in 0..count {
+        let (value, next) = feature_object_index(bytes, scan_cursor)?;
+        value?;
+        scan_cursor = next;
+    }
+
+    let mut cursor = values_start;
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
         let (value, next) = feature_object_index(bytes, cursor)?;
@@ -5343,6 +8609,14 @@ pub fn counted_record_references(
             continue;
         };
         if end > bytes.len() || (0..count).any(|index| bytes[at + 2 + index * 3] != 0x90) {
+            at += 1;
+            continue;
+        }
+        if (0..count).any(|index| {
+            let token = at + 2 + index * 3;
+            let value = u16::from_be_bytes([bytes[token + 1], bytes[token + 2]]);
+            usize::from(value) >= record_count
+        }) {
             at += 1;
             continue;
         }
@@ -5567,6 +8841,15 @@ pub fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
 
 /// Locate independently size-framed OM sections and their type registries.
 pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
+    sections_with_operation_label_layouts(bytes, None, &[])
+}
+
+/// Locate sections while reusing cached operation-label layouts when present.
+pub(crate) fn sections_with_operation_label_layouts<'a>(
+    bytes: &'a [u8],
+    entry_index: Option<usize>,
+    cached_operation_label_layouts: &[(usize, usize, Vec<OperationLabelLayout>)],
+) -> Vec<Section<'a>> {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at + 16 <= bytes.len() {
@@ -5599,27 +8882,45 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
             at = offset + 4;
             continue;
         }
-        let types = type_definitions(bytes, offset + 16, end);
-        let field_start = types.last().map_or(offset + 16, |definition| {
-            definition.offset + definition.name.len() + 2
-        });
-        let record_area_pointer = section_record_area_pointer(bytes, offset, field_start, end);
+        let type_registry = registry::type_registry(bytes, offset + 16, end);
+        let types = type_registry.definitions;
+        let field_start = type_registry.field_start;
+        let record_area_pointer = section_record_area_pointer(bytes, offset, field_start, end)
+            .or_else(|| {
+                legacy_feature_record_area_pointer(bytes, offset, field_start, end, &types)
+            });
         let (fields, record_area_offset) =
             if let Some((record_area_offset, pointer_offset)) = record_area_pointer {
                 (
-                    all_field_definitions(bytes, field_start, pointer_offset),
+                    registry::all_field_definitions(bytes, field_start, pointer_offset),
                     Some(record_area_offset),
                 )
             } else {
-                (field_definitions(bytes, field_start, end), None)
+                (registry::field_definitions(bytes, field_start, end), None)
             };
+        let record_area = record_area_offset.map(|start| &bytes[start..end]);
+        let cached_operation_labels = match (record_area, record_area_offset) {
+            (Some(record_area), Some(record_area_offset)) => cached_operation_label_layouts
+                .iter()
+                .find(|(cached_entry, offset, _)| {
+                    Some(*cached_entry) == entry_index && *offset == record_area_offset
+                })
+                .map_or_else(
+                    || operation_labels(record_area, record_area_offset),
+                    |(_, _, layouts)| {
+                        materialize_operation_labels(record_area, record_area_offset, layouts)
+                    },
+                ),
+            _ => Vec::new(),
+        };
         out.push(Section {
             offset,
             byte_len: end - offset,
-            types,
-            fields,
+            types: types.into(),
+            fields: fields.into(),
             record_area_offset,
-            record_area: record_area_offset.map(|start| &bytes[start..end]),
+            record_area,
+            cached_operation_labels: cached_operation_labels.into(),
         });
         at = end;
     }
@@ -5642,28 +8943,284 @@ fn section_record_area_pointer(
     matches.next().is_none().then_some(first)
 }
 
+fn legacy_feature_record_area_pointer(
+    bytes: &[u8],
+    section_offset: usize,
+    schema_start: usize,
+    section_end: usize,
+    types: &[TypeDefinition<'_>],
+) -> Option<(usize, usize)> {
+    if !types
+        .iter()
+        .any(|definition| definition.name == "UGS::FEATURE_RECORD")
+    {
+        return None;
+    }
+    unique_candidate(
+        (schema_start..section_end.saturating_sub(4)).filter_map(|at| {
+            if bytes.get(at) != Some(&0x01) {
+                return None;
+            }
+            let relative = usize::try_from(View::u32_le_at(bytes, at + 1)?).ok()?;
+            let target = section_offset.checked_add(relative)?.checked_add(1)?;
+            (target >= at.checked_add(5)? && target.checked_add(12)? <= section_end)
+                .then_some(())?;
+            View::u32_le_at(bytes, target)?;
+            View::u32_le_at(bytes, target + 4)?;
+            View::u32_le_at(bytes, target + 8)?;
+            product_record_layout(
+                bytes.get(target + 12..section_end)?,
+                ProductRecordForm::LegacyFeature,
+            )?;
+            Some((target, at))
+        }),
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProductRecordLayout {
+    text_start: usize,
+    text_end: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ProductRecordForm {
+    Modern,
+    LegacyFeature,
+}
+
+fn product_record_layout(bytes: &[u8], form: ProductRecordForm) -> Option<ProductRecordLayout> {
+    let (length_offset, text_start): (usize, usize) = match form {
+        ProductRecordForm::Modern if matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) => (2, 3),
+        ProductRecordForm::LegacyFeature if bytes.first() == Some(&0x01) => (1, 2),
+        _ => return None,
+    };
+    let text_length = usize::from(*bytes.get(length_offset)?).checked_sub(2)?;
+    let text_end = text_start.checked_add(text_length)?;
+    let text = bytes.get(text_start..text_end)?;
+    (text.starts_with(b"NX ")
+        && text
+            .iter()
+            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+        && bytes.get(text_end) == Some(&0))
+    .then_some(ProductRecordLayout {
+        text_start,
+        text_end,
+    })
+}
+
 /// Validate one self-framed NX product record.
 pub(crate) fn is_product_record(bytes: &[u8]) -> bool {
-    if !matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) {
-        return false;
+    product_record_layout(bytes, ProductRecordForm::Modern).is_some()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProductRecordRange {
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct IndexedCandidateSpan {
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum IndexedCandidateKind {
+    Fixed {
+        base: usize,
+        entity_index_offset: usize,
+        object_id_table_offset: usize,
+        count: usize,
+    },
+    OffsetOnly {
+        entity_index_offset: usize,
+        object_id_table_offset: usize,
+        first: usize,
+        first_record: usize,
+        last: usize,
+        record_count: usize,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+struct IndexedCandidate {
+    span: IndexedCandidateSpan,
+    discovery_order: usize,
+    kind: IndexedCandidateKind,
+}
+
+fn product_record_range_at(bytes: &[u8], offset: usize) -> Option<ProductRecordRange> {
+    let suffix = bytes.get(offset..)?;
+    let layout = product_record_layout(suffix, ProductRecordForm::Modern)?;
+    Some(ProductRecordRange {
+        start: offset,
+        end: offset.checked_add(layout.text_end)?.checked_add(1)?,
+    })
+}
+
+fn record_area_product_end(bytes: &[u8], offset: usize) -> Option<usize> {
+    let suffix = bytes.get(offset..)?;
+    let layout = product_record_layout(suffix, ProductRecordForm::Modern)
+        .or_else(|| product_record_layout(suffix, ProductRecordForm::LegacyFeature))?;
+    offset.checked_add(layout.text_end)?.checked_add(1)
+}
+
+/// Count validated product records fully contained in `[lower, upper]`.
+///
+/// A validated product record cannot contain another validated product-record
+/// start: its text is restricted to printable ASCII and spaces, while a record
+/// start begins with a non-printable byte. The discovery pass therefore orders
+/// both starts and ends. This makes the containment query a pair of binary
+/// searches instead of a scan over every product record for every candidate.
+fn product_record_count_within(ranges: &[ProductRecordRange], lower: usize, upper: usize) -> usize {
+    let first = ranges.partition_point(|range| range.start < lower);
+    let end = ranges.partition_point(|range| range.end <= upper);
+    end.saturating_sub(first)
+}
+
+/// Select outer indexed interpretations before materializing section records.
+///
+/// The entity-index and object-id arrays are the physical ownership envelope
+/// of an indexed section. A second valid table wholly inside that envelope is
+/// serialized record content, not another section. Partial overlap remains in
+/// the result because neither candidate owns the other candidate's bytes.
+///
+/// Sorting by start and then descending end makes the furthest end of all
+/// admitted candidates sufficient to recognize every nested candidate. This
+/// keeps the admission pass linear after sorting and, more importantly, keeps
+/// rejected candidates as layout metadata rather than allocated records.
+fn select_outer_indexed_candidates(mut candidates: Vec<IndexedCandidate>) -> Vec<IndexedCandidate> {
+    candidates.sort_by(|left, right| {
+        left.span
+            .start
+            .cmp(&right.span.start)
+            .then_with(|| right.span.end.cmp(&left.span.end))
+    });
+    let mut admitted = Vec::with_capacity(candidates.len());
+    let mut furthest_end = 0;
+    for candidate in candidates {
+        if candidate.span.end <= furthest_end {
+            continue;
+        }
+        furthest_end = candidate.span.end;
+        admitted.push(candidate);
     }
-    let Some(length) = bytes
-        .get(2)
-        .copied()
-        .map(usize::from)
-        .and_then(|declared| declared.checked_sub(2))
-    else {
-        return false;
-    };
-    let Some(end) = 3usize.checked_add(length) else {
-        return false;
-    };
-    bytes.get(3..end).is_some_and(|text| {
-        text.starts_with(b"NX ")
-            && text
-                .iter()
-                .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-    }) && bytes.get(end) == Some(&0)
+    admitted.sort_by_key(|candidate| candidate.discovery_order);
+    admitted
+}
+
+fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> IndexedSection<'_> {
+    match candidate.kind {
+        IndexedCandidateKind::Fixed {
+            base,
+            entity_index_offset: entity_index_start,
+            object_id_table_offset,
+            count,
+        } => {
+            let type_registry = registry::type_registry(bytes, base, entity_index_start);
+            let fields = registry::all_field_definitions(
+                bytes,
+                type_registry.field_start,
+                entity_index_start,
+            );
+            let records = (1..count)
+                .map(|index| {
+                    let start_offset = entity_index_offset(bytes, entity_index_start, index)
+                        .expect("validated entity index remains readable");
+                    let end_offset = entity_index_offset(bytes, entity_index_start, index + 1)
+                        .expect("validated entity index remains readable");
+                    let start = base
+                        .checked_add(start_offset)
+                        .expect("validated entity index remains bounded");
+                    let end = base
+                        .checked_add(end_offset)
+                        .expect("validated entity index remains bounded");
+                    let payload = bytes
+                        .get(start..end)
+                        .expect("validated entity index remains readable");
+                    let object_id_offset = object_id_table_offset
+                        .checked_add(4)
+                        .and_then(|offset| {
+                            offset
+                                .checked_add(index.checked_mul(4).expect("object-id index bounded"))
+                        })
+                        .expect("object-id table offset remains bounded");
+                    let object_id = View::u32_le_at(bytes, object_id_offset)
+                        .expect("validated object-id table remains readable");
+                    EntityRecord {
+                        object_id: Some(object_id),
+                        object_id_offset: Some(object_id_offset),
+                        offset: start,
+                        bytes: payload,
+                    }
+                })
+                .collect::<Vec<_>>();
+            IndexedSection {
+                base,
+                entity_index_offset: entity_index_start,
+                object_id_table_offset,
+                types: type_registry.definitions.into(),
+                fields: fields.into(),
+                control: None,
+                column_storage: None,
+                records: records.into(),
+            }
+        }
+        IndexedCandidateKind::OffsetOnly {
+            entity_index_offset: entity_index_start,
+            object_id_table_offset,
+            first,
+            first_record,
+            last,
+            record_count,
+        } => {
+            let type_registry = registry::type_registry(bytes, 0, entity_index_start);
+            let fields = registry::all_field_definitions(
+                bytes,
+                type_registry.field_start,
+                entity_index_start,
+            );
+            let records = (0..record_count)
+                .map(|index| {
+                    let start = entity_index_offset(bytes, entity_index_start, index + 1)
+                        .expect("validated offset-only index remains readable");
+                    let end = entity_index_offset(bytes, entity_index_start, index + 2)
+                        .expect("validated offset-only index remains readable");
+                    EntityRecord {
+                        object_id: None,
+                        object_id_offset: None,
+                        offset: start,
+                        bytes: bytes
+                            .get(start..end)
+                            .expect("validated offset-only index remains readable"),
+                    }
+                })
+                .collect::<Vec<_>>();
+            IndexedSection {
+                base: 0,
+                entity_index_offset: entity_index_start,
+                object_id_table_offset,
+                types: type_registry.definitions.into(),
+                fields: fields.into(),
+                control: Some(EntityRecord {
+                    object_id: None,
+                    object_id_offset: None,
+                    offset: first,
+                    bytes: bytes
+                        .get(first..first_record)
+                        .expect("validated offset-only control range remains readable"),
+                }),
+                column_storage: Some(
+                    bytes
+                        .get(first_record..last)
+                        .expect("validated offset-only storage range remains readable"),
+                ),
+                records: records.into(),
+            }
+        }
+    }
 }
 
 /// Locate validated NX OM entity-index/object-id-table pairs.
@@ -5673,8 +9230,12 @@ pub(crate) fn is_product_record(bytes: &[u8]) -> bool {
 /// entity exactly at the end of the object-id table, and that entity carries the
 /// NX root marker.
 pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
-    let mut out = Vec::new();
+    let mut candidates = Vec::new();
     let mut seen_record_starts = BTreeSet::new();
+    let product_record_ranges = (0..bytes.len())
+        .filter_map(|offset| product_record_range_at(bytes, offset))
+        .collect::<Vec<_>>();
+    let descending_u32_edges = DescendingU32Edges::new(bytes);
     for table in 0..bytes.len().saturating_sub(4) {
         let Some(count) = View::u32_le_at(bytes, table).map(|value| value as usize) else {
             continue;
@@ -5694,10 +9255,10 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         else {
             continue;
         };
-        if !is_product_record(bytes.get(table_end..).unwrap_or_default())
-            || View::u32_le_at(bytes, index_start) != Some(0)
-            || !seen_record_starts.insert(table_end)
-        {
+        let Some(_) = product_record_range_at(bytes, table_end) else {
+            continue;
+        };
+        if View::u32_le_at(bytes, index_start) != Some(0) {
             continue;
         }
         let Some(first) = View::u32_le_at(bytes, index_start + 4).map(|value| value as usize)
@@ -5707,57 +9268,28 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         let Some(base) = table_end.checked_sub(first) else {
             continue;
         };
-        let mut offsets = Vec::with_capacity(count + 1);
-        for index in 0..=count {
-            let Some(value) = View::u32_le_at(bytes, index_start + index * 4).map(|v| v as usize)
-            else {
-                offsets.clear();
-                break;
-            };
-            offsets.push(value);
-        }
-        if offsets.len() != count + 1
-            || offsets[1] == 0
-            || !offsets.windows(2).all(|pair| pair[0] <= pair[1])
-            || base
-                .checked_add(offsets[count])
-                .is_none_or(|end| end > bytes.len())
-        {
+        if !entity_index_is_valid(bytes, &descending_u32_edges, index_start, count, base) {
             continue;
         }
-        let mut records = Vec::with_capacity(count - 1);
-        for index in 1..count {
-            let start = base + offsets[index];
-            let end = base + offsets[index + 1];
-            let Some(payload) = bytes.get(start..end) else {
-                records.clear();
-                break;
-            };
-            let Some(object_id) = View::u32_le_at(bytes, table + 4 + index * 4) else {
-                records.clear();
-                break;
-            };
-            records.push(EntityRecord {
-                object_id: Some(object_id),
-                object_id_offset: Some(table + 4 + index * 4),
-                offset: start,
-                bytes: payload,
-            });
+        let section_end = entity_index_offset(bytes, index_start, count)
+            .and_then(|end| base.checked_add(end))
+            .expect("validated entity index remains bounded");
+        if !seen_record_starts.insert(table_end) {
+            continue;
         }
-        if records.len() == count - 1 {
-            let types = type_definitions(bytes, base, index_start);
-            let fields = all_field_definitions(bytes, base, index_start);
-            out.push(IndexedSection {
+        candidates.push(IndexedCandidate {
+            span: IndexedCandidateSpan {
+                start: index_start,
+                end: section_end,
+            },
+            discovery_order: candidates.len(),
+            kind: IndexedCandidateKind::Fixed {
                 base,
                 entity_index_offset: index_start,
                 object_id_table_offset: table,
-                types,
-                fields,
-                control: None,
-                column_storage: None,
-                records,
-            });
-        }
+                count,
+            },
+        });
     }
     for count_offset in 8..bytes.len().saturating_sub(4) {
         let Some(record_count) = View::u32_le_at(bytes, count_offset).map(|value| value as usize)
@@ -5781,66 +9313,187 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         else {
             continue;
         };
+        let Some(third) = View::u32_le_at(bytes, index_start + 8).map(|value| value as usize)
+        else {
+            continue;
+        };
         let Some(last) = View::u32_le_at(bytes, count_offset - 4).map(|value| value as usize)
         else {
             continue;
         };
-        if first < count_offset + 4 || first >= second || second > last || last > bytes.len() {
-            continue;
-        }
-        let mut offsets = Vec::with_capacity(offset_count);
-        for index in 0..offset_count {
-            let Some(offset) = View::u32_le_at(bytes, index_start + index * 4).map(|v| v as usize)
-            else {
-                offsets.clear();
-                break;
-            };
-            offsets.push(offset);
-        }
-        if offsets.len() != offset_count
-            || offsets[0] < count_offset + 4
-            || !offsets.windows(2).all(|pair| pair[0] <= pair[1])
-            || offsets.last().is_none_or(|end| *end > bytes.len())
+        if first < count_offset + 4
+            || first >= second
+            || second > third
+            || third > last
+            || last > bytes.len()
         {
             continue;
         }
-        let product_record_count = root_record_count(&bytes[offsets[0]..offsets[1]])
-            + root_record_count(&bytes[offsets[1]..offsets[2]]);
-        if product_record_count != 1 || !seen_record_starts.insert(offsets[1]) {
+        // The first two data ranges contain the sole product marker. Reject
+        // random count words before allocating and walking the full offset
+        // table; malformed payloads commonly satisfy the cheap monotonicity
+        // checks while carrying no self-framed NX record at all.
+        let product_record_count =
+            product_record_count_within(&product_record_ranges, first, second).saturating_add(
+                product_record_count_within(&product_record_ranges, second, third),
+            );
+        if product_record_count != 1 {
             continue;
         }
-        let records = offsets[1..]
-            .windows(2)
-            .map(|bounds| EntityRecord {
-                object_id: None,
-                object_id_offset: None,
-                offset: bounds[0],
-                bytes: &bytes[bounds[0]..bounds[1]],
-            })
-            .collect::<Vec<_>>();
-        out.push(IndexedSection {
-            base: 0,
-            entity_index_offset: index_start,
-            object_id_table_offset: offsets[0],
-            types: type_definitions(bytes, 0, index_start),
-            fields: all_field_definitions(bytes, 0, index_start),
-            control: Some(EntityRecord {
-                object_id: None,
-                object_id_offset: None,
-                offset: offsets[0],
-                bytes: &bytes[offsets[0]..offsets[1]],
-            }),
-            column_storage: Some(&bytes[offsets[1]..*offsets.last().expect("nonempty offsets")]),
-            records,
+        if !offset_only_index_is_valid(
+            bytes,
+            &descending_u32_edges,
+            index_start,
+            offset_count,
+            count_offset,
+        ) {
+            continue;
+        }
+        let first_record = second;
+        if !seen_record_starts.insert(first_record) {
+            continue;
+        }
+        candidates.push(IndexedCandidate {
+            span: IndexedCandidateSpan {
+                start: index_start,
+                end: last,
+            },
+            discovery_order: candidates.len(),
+            kind: IndexedCandidateKind::OffsetOnly {
+                entity_index_offset: index_start,
+                object_id_table_offset: first,
+                first,
+                first_record,
+                last,
+                record_count,
+            },
         });
     }
-    out
+    select_outer_indexed_candidates(candidates)
+        .into_iter()
+        .map(|candidate| materialize_indexed_candidate(bytes, candidate))
+        .collect()
 }
 
-fn root_record_count(bytes: &[u8]) -> usize {
-    (0..bytes.len())
-        .filter(|offset| is_product_record(&bytes[*offset..]))
-        .count()
+fn entity_index_offset(bytes: &[u8], index_start: usize, index: usize) -> Option<usize> {
+    let offset = index_start.checked_add(index.checked_mul(4)?)?;
+    usize::try_from(View::u32_le_at(bytes, offset)?).ok()
+}
+
+/// Positions where one little-endian u32 index word decreases at the next
+/// word boundary. Candidate index tables are allowed to start at any byte, so
+/// the scan records every byte position rather than assuming four-byte file
+/// alignment.
+#[derive(Debug, Default)]
+struct DescendingU32Edges {
+    offsets_by_alignment: [Vec<usize>; 4],
+}
+
+impl DescendingU32Edges {
+    fn new(bytes: &[u8]) -> Self {
+        let mut offsets_by_alignment = <[Vec<usize>; 4]>::default();
+        for offset in 0..bytes.len().saturating_sub(7) {
+            if View::u32_le_at(bytes, offset)
+                .zip(View::u32_le_at(bytes, offset + 4))
+                .is_some_and(|(current, next)| current > next)
+            {
+                offsets_by_alignment[offset % 4].push(offset);
+            }
+        }
+        Self {
+            offsets_by_alignment,
+        }
+    }
+
+    /// Check all adjacent words in `[start, end)` without walking the range.
+    fn is_nondecreasing(&self, start: usize, end: usize) -> bool {
+        if end < start {
+            return false;
+        }
+        if end - start < 8 {
+            return true;
+        }
+        let offsets = &self.offsets_by_alignment[start % 4];
+        let first = offsets.partition_point(|offset| *offset < start);
+        offsets
+            .get(first)
+            .is_none_or(|offset| *offset >= end.saturating_sub(4))
+    }
+}
+
+// Validate candidate offset tables through borrowed words. A count word is
+// only a framing hint; do not allocate an offset table until every word is
+// monotone and its terminal range is in bounds.
+fn entity_index_is_valid(
+    bytes: &[u8],
+    descending_u32_edges: &DescendingU32Edges,
+    index_start: usize,
+    count: usize,
+    base: usize,
+) -> bool {
+    let Some(first_index) = entity_index_offset(bytes, index_start, 0) else {
+        return false;
+    };
+    if first_index != 0 {
+        return false;
+    }
+    let Some(first) = entity_index_offset(bytes, index_start, 1) else {
+        return false;
+    };
+    if first == 0 {
+        return false;
+    }
+    let Some(index_end) = count
+        .checked_add(1)
+        .and_then(|count| count.checked_mul(4))
+        .and_then(|length| index_start.checked_add(length))
+    else {
+        return false;
+    };
+    if !descending_u32_edges.is_nondecreasing(index_start, index_end) {
+        return false;
+    }
+    let Some(last) = View::u32_le_at(bytes, index_end.saturating_sub(4)) else {
+        return false;
+    };
+    base.checked_add(last as usize)
+        .is_some_and(|end| end <= bytes.len())
+}
+
+fn offset_only_index_is_valid(
+    bytes: &[u8],
+    descending_u32_edges: &DescendingU32Edges,
+    index_start: usize,
+    offset_count: usize,
+    count_offset: usize,
+) -> bool {
+    let Some(first) = entity_index_offset(bytes, index_start, 0) else {
+        return false;
+    };
+    if first < count_offset.saturating_add(4) {
+        return false;
+    }
+    let Some(index_end) = offset_count
+        .checked_mul(4)
+        .and_then(|length| index_start.checked_add(length))
+    else {
+        return false;
+    };
+    if index_end != count_offset || !descending_u32_edges.is_nondecreasing(index_start, index_end) {
+        return false;
+    }
+    let Some(last) = View::u32_le_at(bytes, index_end.saturating_sub(4)) else {
+        return false;
+    };
+    usize::try_from(last).is_ok_and(|last| last <= bytes.len())
+}
+
+/// Parse indexed sections once and retain only their source ranges.
+pub(crate) fn indexed_section_layouts(bytes: &[u8]) -> Vec<IndexedSectionLayout> {
+    indexed_sections(bytes)
+        .iter()
+        .map(IndexedSectionLayout::from_section)
+        .collect()
 }
 
 /// Decode the first self-framed NX product/version marker in `bytes`.
@@ -5907,26 +9560,54 @@ pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
     Some(values[..boundary].to_vec())
 }
 
-fn offset_store_product_anchored_form(bytes: &[u8]) -> Option<OffsetStoreControlForm> {
-    let matches = (0..bytes.len())
-        .filter(|offset| is_product_record(&bytes[*offset..]))
-        .collect::<Vec<_>>();
-    let [product_offset] = matches.as_slice() else {
-        return None;
-    };
-    let leading_width = *product_offset % 4;
-    (*product_offset > leading_width).then_some(())?;
+fn joined_control_byte(control: &[u8], first_record: &[u8], offset: usize) -> Option<u8> {
+    if offset < control.len() {
+        control.get(offset).copied()
+    } else {
+        first_record.get(offset - control.len()).copied()
+    }
+}
+
+fn joined_control_u32_le(control: &[u8], first_record: &[u8], offset: usize) -> Option<u32> {
+    Some(
+        u32::from(joined_control_byte(control, first_record, offset)?)
+            | (u32::from(joined_control_byte(control, first_record, offset + 1)?) << 8)
+            | (u32::from(joined_control_byte(control, first_record, offset + 2)?) << 16)
+            | (u32::from(joined_control_byte(control, first_record, offset + 3)?) << 24),
+    )
+}
+
+fn offset_store_product_anchored_form(
+    control: &[u8],
+    first_record: &[u8],
+) -> Option<OffsetStoreControlForm> {
+    let product_offset = unique_candidate(
+        (0..control.len())
+            .filter(|offset| is_product_record(&control[*offset..]))
+            .chain(
+                (0..first_record.len())
+                    .filter(|offset| is_product_record(&first_record[*offset..]))
+                    .map(|offset| control.len() + offset),
+            ),
+    )?;
+    let leading_width = product_offset % 4;
+    (product_offset > leading_width).then_some(())?;
+    if product_offset >= control.len() {
+        let control_array_bytes = control.len().checked_sub(leading_width)?;
+        (!control_array_bytes.is_multiple_of(4)).then_some(())?;
+    }
     let leading_value = (leading_width != 0).then(|| {
-        bytes[..leading_width]
-            .iter()
-            .enumerate()
-            .fold(0u32, |value, (shift, byte)| {
-                value | (u32::from(*byte) << (shift * 8))
-            })
+        (0..leading_width).fold(0u32, |value, shift| {
+            value
+                | (u32::from(
+                    joined_control_byte(control, first_record, shift)
+                        .expect("leading byte precedes the validated product offset"),
+                ) << (shift * 8))
+        })
     });
-    let values = (0..(*product_offset - leading_width) / 4)
-        .map(|index| View::u32_le_at(bytes, leading_width + index * 4).expect("four-byte chunk"))
-        .collect();
+    let values = (0..(product_offset - leading_width) / 4)
+        .map(|index| joined_control_u32_le(control, first_record, leading_width + index * 4))
+        .collect::<Option<Vec<_>>>()?;
     Some(OffsetStoreControlForm::ProductAnchored {
         leading_value: leading_value.map(|value| (leading_width, value)),
         values,
@@ -5951,113 +9632,22 @@ pub enum OffsetStoreControlForm {
     },
 }
 
-/// Classify one complete offset-only store control block atomically.
+/// Classify one complete offset-only store control lane atomically.
 ///
-/// Exactly one admitted grammar must accept the complete control envelope.
-pub fn offset_store_control_form(bytes: &[u8]) -> Option<OffsetStoreControlForm> {
-    match (
-        offset_store_control_values(bytes),
-        offset_store_product_anchored_form(bytes),
-    ) {
+/// Product-anchored storage may cross the physical boundary between the
+/// control block and the first column block. Exactly one admitted grammar must
+/// accept the complete control envelope.
+pub fn offset_store_control_form(
+    control: &[u8],
+    first_record: Option<&[u8]>,
+) -> Option<OffsetStoreControlForm> {
+    let zero = offset_store_control_values(control);
+    let product = offset_store_product_anchored_form(control, first_record.unwrap_or_default());
+    match (zero, product) {
         (Some(values), None) => Some(OffsetStoreControlForm::ZeroPrefixed { values }),
-        (None, Some(form)) => Some(form),
-        _ => None,
+        (_, Some(form)) => Some(form),
+        (None, None) => None,
     }
-}
-
-fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {
-    let mut out = Vec::new();
-    let mut at = start;
-    while at < end {
-        let declared = usize::from(bytes[at]);
-        let Some(length) = declared.checked_sub(1) else {
-            at += 1;
-            continue;
-        };
-        let name_start = at + 1;
-        let name_end = name_start.saturating_add(length);
-        let Some(raw) = bytes.get(name_start..name_end) else {
-            at += 1;
-            continue;
-        };
-        let valid = raw.starts_with(b"UGS::")
-            && raw.iter().all(|byte| (0x20..0x7f).contains(byte))
-            && name_end < end;
-        if valid {
-            let name = std::str::from_utf8(raw)
-                .expect("invariant: validated printable ASCII is valid UTF-8");
-            out.push(TypeDefinition {
-                offset: at,
-                name,
-                trailing_code: bytes[name_end],
-                registry_suffix: &[],
-            });
-            at = name_end + 1;
-        } else {
-            at += 1;
-        }
-    }
-    for index in 0..out.len().saturating_sub(1) {
-        let suffix_start = out[index].offset + out[index].name.len() + 2;
-        let suffix_end = out[index + 1].offset;
-        out[index].registry_suffix = &bytes[suffix_start..suffix_end];
-    }
-    out
-}
-
-fn field_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<FieldDefinition<'_>> {
-    let mut out = Vec::new();
-    let mut search = start;
-    let mut limit = start.saturating_add(256).min(end);
-    while let Some((definition, at)) = (search..limit)
-        .find_map(|at| field_definition_at(bytes, at, end).map(|definition| (definition, at)))
-    {
-        let next = at + definition.name.len() + 2;
-        search = next;
-        limit = search.saturating_add(256).min(end);
-        out.push(definition);
-    }
-    bound_field_registry_suffixes(bytes, &mut out);
-    out
-}
-
-fn all_field_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<FieldDefinition<'_>> {
-    let mut out = Vec::new();
-    let mut at = start;
-    while at < end {
-        if let Some(definition) = field_definition_at(bytes, at, end) {
-            at += definition.name.len() + 2;
-            out.push(definition);
-        } else {
-            at += 1;
-        }
-    }
-    bound_field_registry_suffixes(bytes, &mut out);
-    out
-}
-
-fn bound_field_registry_suffixes<'a>(bytes: &'a [u8], definitions: &mut [FieldDefinition<'a>]) {
-    for index in 0..definitions.len().saturating_sub(1) {
-        let suffix_start = definitions[index].offset + definitions[index].name.len() + 2;
-        let suffix_end = definitions[index + 1].offset;
-        definitions[index].registry_suffix = &bytes[suffix_start..suffix_end];
-    }
-}
-
-fn field_definition_at(bytes: &[u8], at: usize, end: usize) -> Option<FieldDefinition<'_>> {
-    let declared = usize::from(*bytes.get(at)?);
-    let length = declared.checked_sub(1)?;
-    let name_start = at.checked_add(1)?;
-    let name_end = name_start.checked_add(length)?;
-    (name_end < end).then_some(())?;
-    let raw = bytes.get(name_start..name_end)?;
-    (raw.starts_with(b"m_") && raw.iter().all(|byte| (0x20..0x7f).contains(byte))).then_some(())?;
-    Some(FieldDefinition {
-        offset: at,
-        name: std::str::from_utf8(raw).ok()?,
-        trailing_code: bytes[name_end],
-        registry_suffix: &[],
-    })
 }
 
 fn numeric_expression_at(
@@ -6077,14 +9667,9 @@ fn numeric_expression_at(
     let text_end = relative.checked_add(text_len)?;
     (bytes.get(text_end) == Some(&0)).then_some(())?;
     let text = std::str::from_utf8(bytes.get(relative..text_end)?).ok()?;
-    text.ends_with("; ").then_some(())?;
     let text = text.strip_prefix("(Number [")?;
     let (unit, rest) = text.split_once("]) ")?;
-    let unit = match unit {
-        "mm" => ExpressionUnit::Millimeter,
-        "degrees" => ExpressionUnit::Degree,
-        _ => return None,
-    };
+    let unit = crate::om_tokens::unit_for(unit)?;
     let (name, value_tail) = rest.split_once(": ")?;
     if name.is_empty()
         || !name
@@ -6093,7 +9678,10 @@ fn numeric_expression_at(
     {
         return None;
     }
-    let value_text = value_tail.strip_suffix("; ")?;
+    let (value_text, comment) = value_tail.split_once("; ")?;
+    if !comment.is_empty() && !numeric_expression_comment_is_valid(comment) {
+        return None;
+    }
     let (parameter_index, qualifier) = parameter_name_parts(name)
         .map_or((None, None), |(index, qualifier)| (Some(index), qualifier));
     let value = evaluate_constant_expression(value_text);
@@ -6109,83 +9697,56 @@ fn numeric_expression_at(
     })
 }
 
+fn numeric_expression_comment_is_valid(comment: &str) -> bool {
+    comment.starts_with("//")
+        && comment
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || matches!(byte, b' ' | b'\t' | b'\r' | b'\n'))
+}
+
 /// Evaluate the context-free arithmetic subset of NX numeric formulas.
 /// Names and function calls fail; they need the parameter graph.
 pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
+    // This is the expression grammar's explicit operator stack. Do not turn
+    // nested parentheses or unary signs back into recursive descent: formula
+    // text is untrusted input, and a valid bounded record must not consume the
+    // decoder stack merely because its nesting is deep.
+    #[derive(Debug, Clone, Copy)]
+    enum Operator {
+        OpenParen,
+        Unary(u8),
+        Binary(u8),
+    }
+
+    impl Operator {
+        fn precedence(self) -> u8 {
+            match self {
+                Self::OpenParen => 0,
+                Self::Binary(b'+' | b'-') => 1,
+                Self::Binary(b'*' | b'/') => 2,
+                Self::Unary(_) => 3,
+                Self::Binary(b'^') => 4,
+                Self::Binary(_) => 0,
+            }
+        }
+
+        fn is_right_associative(self) -> bool {
+            matches!(self, Self::Unary(_) | Self::Binary(b'^'))
+        }
+    }
+
     struct Parser<'a> {
         bytes: &'a [u8],
         at: usize,
+        values: Vec<f64>,
+        operators: Vec<Operator>,
+        expect_operand: bool,
     }
 
     impl Parser<'_> {
         fn spaces(&mut self) {
             while self.bytes.get(self.at).is_some_and(u8::is_ascii_whitespace) {
                 self.at += 1;
-            }
-        }
-
-        fn take(&mut self, byte: u8) -> bool {
-            self.spaces();
-            if self.bytes.get(self.at) == Some(&byte) {
-                self.at += 1;
-                true
-            } else {
-                false
-            }
-        }
-
-        fn sum(&mut self) -> Option<f64> {
-            let mut value = self.product()?;
-            loop {
-                if self.take(b'+') {
-                    value += self.product()?;
-                } else if self.take(b'-') {
-                    value -= self.product()?;
-                } else {
-                    return value.is_finite().then_some(value);
-                }
-            }
-        }
-
-        fn product(&mut self) -> Option<f64> {
-            let mut value = self.unary()?;
-            loop {
-                if self.take(b'*') {
-                    value *= self.unary()?;
-                } else if self.take(b'/') {
-                    value /= self.unary()?;
-                } else {
-                    return value.is_finite().then_some(value);
-                }
-            }
-        }
-
-        fn power(&mut self) -> Option<f64> {
-            let value = self.primary()?;
-            if self.take(b'^') {
-                let result = value.powf(self.unary()?);
-                result.is_finite().then_some(result)
-            } else {
-                Some(value)
-            }
-        }
-
-        fn unary(&mut self) -> Option<f64> {
-            if self.take(b'+') {
-                self.unary()
-            } else if self.take(b'-') {
-                Some(-self.unary()?)
-            } else {
-                self.power()
-            }
-        }
-
-        fn primary(&mut self) -> Option<f64> {
-            if self.take(b'(') {
-                let value = self.sum()?;
-                self.take(b')').then_some(value)
-            } else {
-                self.number()
             }
         }
 
@@ -6219,20 +9780,125 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
                 (self.at > exponent).then_some(())?;
             }
             (self.at > start).then_some(())?;
-            std::str::from_utf8(&self.bytes[start..self.at])
+            let value: f64 = std::str::from_utf8(&self.bytes[start..self.at])
                 .ok()?
                 .parse()
-                .ok()
+                .ok()?;
+            value.is_finite().then_some(value)
+        }
+
+        fn apply_top(&mut self) -> Option<()> {
+            let operator = self.operators.pop()?;
+            let value = match operator {
+                Operator::OpenParen => return None,
+                Operator::Unary(operator) => {
+                    let value = self.values.pop()?;
+                    match operator {
+                        b'+' => value,
+                        b'-' => -value,
+                        _ => return None,
+                    }
+                }
+                Operator::Binary(operator) => {
+                    let right = self.values.pop()?;
+                    let left = self.values.pop()?;
+                    match operator {
+                        b'+' => left + right,
+                        b'-' => left - right,
+                        b'*' => left * right,
+                        b'/' => left / right,
+                        b'^' => left.powf(right),
+                        _ => return None,
+                    }
+                }
+            };
+            value.is_finite().then(|| self.values.push(value))
+        }
+
+        fn push_binary(&mut self, operator: u8) -> Option<()> {
+            let incoming = Operator::Binary(operator);
+            while self.operators.last().is_some_and(|top| {
+                !matches!(top, Operator::OpenParen)
+                    && (top.precedence() > incoming.precedence()
+                        || (top.precedence() == incoming.precedence()
+                            && !incoming.is_right_associative()))
+            }) {
+                self.apply_top()?;
+            }
+            self.operators.push(incoming);
+            self.expect_operand = true;
+            Some(())
+        }
+
+        fn close_group(&mut self) -> Option<()> {
+            while self
+                .operators
+                .last()
+                .is_some_and(|operator| !matches!(operator, Operator::OpenParen))
+            {
+                self.apply_top()?;
+            }
+            matches!(self.operators.pop(), Some(Operator::OpenParen)).then_some(())
+        }
+
+        fn parse(mut self) -> Option<f64> {
+            while self.at < self.bytes.len() {
+                self.spaces();
+                if self.at == self.bytes.len() {
+                    break;
+                }
+                let byte = *self.bytes.get(self.at)?;
+                if self.expect_operand {
+                    match byte {
+                        b'+' | b'-' => {
+                            self.operators.push(Operator::Unary(byte));
+                            self.at += 1;
+                        }
+                        b'(' => {
+                            self.operators.push(Operator::OpenParen);
+                            self.at += 1;
+                        }
+                        _ => {
+                            let value = self.number()?;
+                            self.values.push(value);
+                            self.expect_operand = false;
+                        }
+                    }
+                } else {
+                    match byte {
+                        b'+' | b'-' | b'*' | b'/' | b'^' => {
+                            self.push_binary(byte)?;
+                            self.at += 1;
+                        }
+                        b')' => {
+                            self.close_group()?;
+                            self.at += 1;
+                        }
+                        _ => return None,
+                    }
+                }
+            }
+            if self.expect_operand {
+                return None;
+            }
+            while let Some(operator) = self.operators.last() {
+                if matches!(operator, Operator::OpenParen) {
+                    return None;
+                }
+                self.apply_top()?;
+            }
+            (self.values.len() == 1).then(|| self.values[0])
         }
     }
 
-    let mut parser = Parser {
+    Parser {
         bytes: text.as_bytes(),
         at: 0,
-    };
-    let value = parser.sum()?;
-    parser.spaces();
-    (parser.at == parser.bytes.len() && value.is_finite()).then_some(value)
+        values: Vec::new(),
+        operators: Vec::new(),
+        expect_operand: true,
+    }
+    .parse()
 }
 
 /// Parse one complete canonical `p<decimal>[_qualifier]` parameter name.

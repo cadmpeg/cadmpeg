@@ -38,16 +38,17 @@ geometry in the cumulative L0–L6 gates.
 | L1   | Pass in the current envelope | Representative release and layout fixtures with closed logical ledgers for every classified stream family.                                              |
 | L2   | Pass                         | The declared geometry carriers, parameterization rules, and witnessed terminal branches pass the current envelope.                                      |
 | L3   | Pass                         | Connected topology, revision replay, active-body selection, and the available terminal lineage pass the current envelope.                               |
-| L4   | Incomplete                   | Resolve suppression, sketch placement and entities, complete operands and outputs, configuration body state, and every admitted operation construction. |
+| L4   | Incomplete                   | Resolve suppression, sketch placement and neutral geometry, complete operands and outputs, configuration body state, and every admitted operation construction. |
 | L5   | Incomplete                   | Body/face appearance evidence passes; the cumulative gate remains pending until the lower L4 design-domain gate closes.                                 |
 | L6   | Incomplete                   | Close sketch constraints and dimensions, all expression forms, every feature construction, inactive configurations, and re-derivation coherence.        |
 
 The codec public score is L2. The selected-body and terminal-lineage
 validation profile passes cumulatively through L3 and shows as extras.
-Profile version 10 records saved-body re-derivation as separate L6 evidence,
-identifies the first unsupported feature family and history ordinal,
-aggregates exact loss messages and re-derivation boundaries, discovers nested
-fixtures, and bounds each worker decode independently. Body and face appearance evidence accepts a valid direct
+Profile version 11 records saved-body re-derivation as separate L6 evidence, marks external-only
+assemblies inapplicable to single-part design gates, identifies the first unsupported
+feature family and history ordinal, aggregates exact loss messages and re-derivation
+boundaries, discovers nested fixtures, and bounds each worker decode independently.
+Body and face appearance evidence accepts a valid direct
 color or one unambiguous topology-targeted binding to an appearance with a
 normalized base color. When both sources exist, their colors must agree;
 source-carrier bindings and ambiguous assignments do not satisfy the gate.

@@ -17,13 +17,16 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
 use crate::geometry::{
-    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
-    ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry, SurfaceParameterAxis,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, OffsetSupportExtension,
+    PcurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+    SurfaceParameterAxis,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::transform::Transform;
 use crate::CadIr;
-use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::decode::{alloc_filled, WorkBudget};
+
+const DEFAULT_NURBS_SURFACE_INVERSION_WORK: usize = 1_000_000;
 
 /// Test whether two model-space points are reflections across a line carrier.
 ///
@@ -287,11 +290,27 @@ fn homogeneous_bezier_spans(
 }
 
 fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezierSurfacePatch>> {
+    let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
+    rational_surface_patches_with_budget(surface, &budget)
+}
+
+fn rational_surface_patches_with_budget(
+    surface: &NurbsSurface,
+    budget: &WorkBudget<'_>,
+) -> Option<Vec<RationalBezierSurfacePatch>> {
     let u_degree = usize::try_from(surface.u_degree).ok()?;
     let v_degree = usize::try_from(surface.v_degree).ok()?;
     let u_count = usize::try_from(surface.u_count).ok()?;
     let v_count = usize::try_from(surface.v_count).ok()?;
     let control_count = u_count.checked_mul(v_count)?;
+    let patch_control_count = (u_degree + 1).checked_mul(v_degree + 1)?;
+    budget
+        .charge_by(
+            control_count
+                .checked_add(surface.u_knots.len())?
+                .checked_add(surface.v_knots.len())?,
+        )
+        .then_some(())?;
     if u_degree >= u_count
         || v_degree >= v_count
         || surface.control_points.len() != control_count
@@ -389,6 +408,7 @@ fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezier
             {
                 return None;
             }
+            budget.charge_by(patch_control_count).then_some(())?;
             patches.push(RationalBezierSurfacePatch {
                 u_domain,
                 v_domain,
@@ -406,11 +426,16 @@ fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezier
 fn rational_surface_residual_patches(
     surface: &NurbsSurface,
     point: Point3,
+    budget: &WorkBudget<'_>,
 ) -> Option<Vec<RationalBezierSurfacePatch>> {
     if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
         return None;
     }
-    let mut patches = rational_surface_patches(surface)?;
+    let mut patches = rational_surface_patches_with_budget(surface, budget)?;
+    let residual_work = patches
+        .iter()
+        .try_fold(0usize, |work, patch| work.checked_add(patch.controls.len()))?;
+    budget.charge_by(residual_work).then_some(())?;
     for patch in &mut patches {
         for control in &mut patch.controls {
             for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
@@ -669,7 +694,11 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
     })
 }
 
-fn rational_patch_distance_bounds(patch: &RationalBezierSurfacePatch) -> Option<(f64, f64)> {
+fn rational_patch_distance_bounds_with_budget(
+    patch: &RationalBezierSurfacePatch,
+    budget: &WorkBudget<'_>,
+) -> Option<(f64, f64)> {
+    budget.charge_by(patch.controls.len()).then_some(())?;
     let mut minimum = [f64::INFINITY; 3];
     let mut maximum = [f64::NEG_INFINITY; 3];
     for control in &patch.controls {
@@ -705,12 +734,16 @@ fn rational_patch_distance_bounds(patch: &RationalBezierSurfacePatch) -> Option<
 fn split_rational_surface_patch(
     patch: &RationalBezierSurfacePatch,
     split_u: bool,
+    budget: &WorkBudget<'_>,
 ) -> Option<[RationalBezierSurfacePatch; 2]> {
     let (degree, line_count) = if split_u {
         (patch.u_degree, patch.v_degree + 1)
     } else {
         (patch.v_degree, patch.u_degree + 1)
     };
+    budget
+        .charge_by(patch.controls.len().checked_mul(degree + 1)?)
+        .then_some(())?;
     let mut first_lines = Vec::with_capacity(line_count);
     let mut second_lines = Vec::with_capacity(line_count);
     for line in 0..line_count {
@@ -800,6 +833,7 @@ fn refine_nurbs_surface_parameters(
     mut parameters: Point2,
     u_domain: [f64; 2],
     v_domain: [f64; 2],
+    budget: &WorkBudget<'_>,
 ) -> Option<Point2> {
     let squared_distance = |position: Point3| {
         (position.x - point.x).powi(2)
@@ -809,13 +843,14 @@ fn refine_nurbs_surface_parameters(
     parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
     parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
     for _ in 0..32 {
-        let position = nurbs_surface_point(surface, parameters.u, parameters.v)?;
+        let position = budgeted_nurbs_surface_point(surface, parameters.u, parameters.v, budget)?;
         let residual = Vector3::new(
             position.x - point.x,
             position.y - point.y,
             position.z - point.z,
         );
-        let partials = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
+        let partials =
+            budgeted_nurbs_surface_partials(surface, parameters.u, parameters.v, budget)?;
         let (du, dv) = (partials.du, partials.dv);
         let du_squared = du.dot(du);
         let mixed = du.dot(dv);
@@ -840,7 +875,8 @@ fn refine_nurbs_surface_parameters(
                 (parameters.u - scale * step.u).clamp(u_domain[0], u_domain[1]),
                 (parameters.v - scale * step.v).clamp(v_domain[0], v_domain[1]),
             );
-            let candidate_position = nurbs_surface_point(surface, candidate.u, candidate.v)?;
+            let candidate_position =
+                budgeted_nurbs_surface_point(surface, candidate.u, candidate.v, budget)?;
             if squared_distance(candidate_position) <= current_distance {
                 accepted = Some(candidate);
                 break;
@@ -860,15 +896,42 @@ fn refine_nurbs_surface_parameters(
     Some(parameters)
 }
 
+fn nurbs_surface_evaluation_cost(surface: &NurbsSurface) -> Option<usize> {
+    let (u_support, v_support) = nurbs_surface_support_sizes(surface)?;
+    let control_work = u_support.checked_mul(v_support)?;
+    control_work
+        .checked_add(u_support.checked_mul(u_support)?)?
+        .checked_add(v_support.checked_mul(v_support)?)
+}
+
+fn budgeted_nurbs_surface_point(
+    surface: &NurbsSurface,
+    u: f64,
+    v: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Point3> {
+    nurbs_surface_point_with_budget(surface, u, v, budget)
+}
+
+fn budgeted_nurbs_surface_partials(
+    surface: &NurbsSurface,
+    u: f64,
+    v: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<SurfacePartials> {
+    nurbs_surface_partials_with_budget(surface, u, v, budget)
+}
+
 fn complete_nurbs_surface_starts(
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
+    budget: &WorkBudget<'_>,
 ) -> Option<Vec<Point2>> {
     const MAX_PATCHES: usize = 1_000_000;
 
-    let patches = rational_surface_residual_patches(surface, point)?;
+    let patches = rational_surface_residual_patches(surface, point, budget)?;
     let coordinate_scale =
         patches
             .iter()
@@ -891,7 +954,7 @@ fn complete_nurbs_surface_starts(
     let distance_tolerance = requested_tolerance.max(256.0 * f64::EPSILON * coordinate_scale);
     let squared_tolerance = distance_tolerance * distance_tolerance;
     let squared_distance = |parameters: Point2| {
-        let position = nurbs_surface_point(surface, parameters.u, parameters.v)?;
+        let position = budgeted_nurbs_surface_point(surface, parameters.u, parameters.v, budget)?;
         let distance = (position.x - point.x)
             .hypot(position.y - point.y)
             .hypot(position.z - point.z);
@@ -920,8 +983,9 @@ fn complete_nurbs_surface_starts(
             .get(usize::try_from(surface.v_count).ok()?)?,
     ];
     let refined_upper = |start, u_domain, v_domain| {
-        let parameters = refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain)
-            .unwrap_or(start);
+        let parameters =
+            refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain, budget)
+                .unwrap_or(start);
         Some((parameters, squared_distance(parameters)?))
     };
     let mut best_distance = f64::INFINITY;
@@ -969,7 +1033,7 @@ fn complete_nurbs_surface_starts(
     let mut queue = BinaryHeap::new();
     let mut sequence = 0usize;
     for patch in patches {
-        let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+        let (lower_bound, diameter) = rational_patch_distance_bounds_with_budget(&patch, budget)?;
         queue.push(SurfacePatchQueueEntry {
             lower_bound,
             diameter,
@@ -982,7 +1046,7 @@ fn complete_nurbs_surface_starts(
     let mut examined = 0usize;
     while let Some(entry) = queue.pop() {
         examined += 1;
-        if examined > MAX_PATCHES {
+        if examined > MAX_PATCHES || !budget.charge() {
             return None;
         }
         let SurfacePatchQueueEntry {
@@ -1030,6 +1094,7 @@ fn complete_nurbs_surface_starts(
             terminal.push((upper_parameters, lower_bound));
             continue;
         }
+        budget.charge_by(patch.controls.len()).then_some(())?;
         let control = |u: usize, v: usize| {
             let homogeneous = patch.controls[u * (patch.v_degree + 1) + v];
             [
@@ -1058,9 +1123,10 @@ fn complete_nurbs_surface_starts(
                     .sum::<f64>()
             })
             .fold(0.0_f64, f64::max);
-        let children = split_rational_surface_patch(&patch, u_variation >= v_variation)?;
+        let children = split_rational_surface_patch(&patch, u_variation >= v_variation, budget)?;
         for patch in children {
-            let (lower_bound, diameter) = rational_patch_distance_bounds(&patch)?;
+            let (lower_bound, diameter) =
+                rational_patch_distance_bounds_with_budget(&patch, budget)?;
             queue.push(SurfacePatchQueueEntry {
                 lower_bound,
                 diameter,
@@ -1086,6 +1152,7 @@ fn solve_nurbs_surface_parameter(
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
+    budget: &WorkBudget<'_>,
 ) -> Option<(Point2, f64)> {
     let seed = seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite());
     let u_degree = usize::try_from(surface.u_degree).ok()?;
@@ -1103,17 +1170,43 @@ fn solve_nurbs_surface_parameter(
     if u_domain[0] >= u_domain[1] || v_domain[0] >= v_domain[1] {
         return None;
     }
-    let starts = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance)?;
+    if let (Some(seed), Some(tolerance)) = (seed, fit_tolerance) {
+        let parameters = Point2::new(
+            seed.u.clamp(u_domain[0], u_domain[1]),
+            seed.v.clamp(v_domain[0], v_domain[1]),
+        );
+        let position = budgeted_nurbs_surface_point(surface, parameters.u, parameters.v, budget)?;
+        let distance = (position.x - point.x)
+            .hypot(position.y - point.y)
+            .hypot(position.z - point.z);
+        if distance.is_finite() && distance <= tolerance {
+            return Some((parameters, distance));
+        }
+        if let Some(refined) =
+            refine_nurbs_surface_parameters(surface, point, parameters, u_domain, v_domain, budget)
+        {
+            let position = budgeted_nurbs_surface_point(surface, refined.u, refined.v, budget)?;
+            let distance = (position.x - point.x)
+                .hypot(position.y - point.y)
+                .hypot(position.z - point.z);
+            if distance.is_finite() && distance <= tolerance {
+                return Some((refined, distance));
+            }
+        }
+    }
+    let starts = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance, budget)?;
     let mut best = None;
     let mut best_distance = f64::INFINITY;
     let mut best_seed_distance = f64::INFINITY;
     for start in starts {
         let Some(parameters) =
-            refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain)
+            refine_nurbs_surface_parameters(surface, point, start, u_domain, v_domain, budget)
         else {
             continue;
         };
-        let Some(position) = nurbs_surface_point(surface, parameters.u, parameters.v) else {
+        let Some(position) =
+            budgeted_nurbs_surface_point(surface, parameters.u, parameters.v, budget)
+        else {
             continue;
         };
         let distance = (position.x - point.x)
@@ -1144,7 +1237,21 @@ pub fn nurbs_surface_closest_parameter(
     point: Point3,
     seed: Option<Point2>,
 ) -> Option<Point2> {
-    solve_nurbs_surface_parameter(surface, point, seed, None).map(|(parameters, _)| parameters)
+    let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
+    solve_nurbs_surface_parameter(surface, point, seed, None, &budget)
+        .map(|(parameters, _)| parameters)
+}
+
+/// Find a globally closest parameter pair on a finite NURBS surface within a
+/// caller-owned work slice.
+pub fn nurbs_surface_closest_parameter_with_budget(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+    budget: &WorkBudget<'_>,
+) -> Option<Point2> {
+    solve_nurbs_surface_parameter(surface, point, seed, None, budget)
+        .map(|(parameters, _)| parameters)
 }
 
 /// Find a bounded local parameter candidate on a finite NURBS surface.
@@ -1271,11 +1378,24 @@ pub fn nurbs_surface_parameter_within_tolerance(
     seed: Option<Point2>,
     tolerance: f64,
 ) -> Option<Point2> {
+    let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
+    nurbs_surface_parameter_within_tolerance_with_budget(surface, point, seed, tolerance, &budget)
+}
+
+/// Find a NURBS surface parameter pair within `tolerance` using a
+/// caller-owned work slice.
+pub fn nurbs_surface_parameter_within_tolerance_with_budget(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+    tolerance: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Point2> {
     if !tolerance.is_finite() || tolerance < 0.0 {
         return None;
     }
     let (parameters, distance) =
-        solve_nurbs_surface_parameter(surface, point, seed, Some(tolerance))?;
+        solve_nurbs_surface_parameter(surface, point, seed, Some(tolerance), budget)?;
     (distance.is_finite() && distance <= tolerance).then_some(parameters)
 }
 
@@ -2242,6 +2362,20 @@ pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Opti
     (weight_sum != 0.0).then(|| Point3::new(x / weight_sum, y / weight_sum, z / weight_sum))
 }
 
+/// Evaluate a tensor-product NURBS surface at `(u, v)` within a caller-owned
+/// work slice.
+pub fn nurbs_surface_point_with_budget(
+    surface: &NurbsSurface,
+    u_at: f64,
+    v_at: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Point3> {
+    budget
+        .charge_by(nurbs_surface_evaluation_cost(surface)?)
+        .then_some(())?;
+    nurbs_surface_point(surface, u_at, v_at)
+}
+
 /// The parametric direction a surface isoline holds fixed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IsolineDirection {
@@ -2404,6 +2538,20 @@ pub fn nurbs_surface_partials(
     })
 }
 
+/// Evaluate a tensor-product NURBS surface and its exact first partials within
+/// a caller-owned work slice.
+pub fn nurbs_surface_partials_with_budget(
+    surface: &NurbsSurface,
+    u_at: f64,
+    v_at: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<SurfacePartials> {
+    budget
+        .charge_by(nurbs_surface_partials_evaluation_cost(surface)?)
+        .then_some(())?;
+    nurbs_surface_partials(surface, u_at, v_at)
+}
+
 /// Evaluate a tensor-product NURBS surface and its exact rational first and
 /// second partials at `(u, v)`.
 pub fn nurbs_surface_second_partials(
@@ -2532,6 +2680,37 @@ pub fn nurbs_surface_second_partials(
     })
 }
 
+/// Evaluate a tensor-product NURBS surface and its exact first and second
+/// partials within a caller-owned work slice.
+pub fn nurbs_surface_second_partials_with_budget(
+    surface: &NurbsSurface,
+    u_at: f64,
+    v_at: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<SurfaceSecondPartials> {
+    budget
+        .charge_by(nurbs_surface_partials_evaluation_cost(surface)?)
+        .then_some(())?;
+    nurbs_surface_second_partials(surface, u_at, v_at)
+}
+
+fn nurbs_surface_partials_evaluation_cost(surface: &NurbsSurface) -> Option<usize> {
+    let (u_support, v_support) = nurbs_surface_support_sizes(surface)?;
+    let control_work = u_support.checked_mul(v_support)?;
+    let u_basis_work = u_support.checked_mul(u_support)?.checked_mul(3)?;
+    let v_basis_work = v_support.checked_mul(v_support)?.checked_mul(3)?;
+    control_work
+        .checked_add(u_basis_work)?
+        .checked_add(v_basis_work)
+}
+
+fn nurbs_surface_support_sizes(surface: &NurbsSurface) -> Option<(usize, usize)> {
+    Some((
+        usize::try_from(surface.u_degree).ok()?.checked_add(1)?,
+        usize::try_from(surface.v_degree).ok()?.checked_add(1)?,
+    ))
+}
+
 fn periodic_parameter(
     knots: &[f64],
     degree: usize,
@@ -2571,6 +2750,135 @@ pub fn curve_second_derivative(geometry: &CurveGeometry, t: f64) -> Option<Vecto
     curve_second_derivative_inner(geometry, t, 0).filter(|derivative| {
         derivative.x.is_finite() && derivative.y.is_finite() && derivative.z.is_finite()
     })
+}
+
+/// Evaluate a directly stored curve at `t` within a caller-owned work slice.
+/// Analytic curves are constant-cost; transformed, polyline, and NURBS curves
+/// charge the work performed by their representation.
+pub fn curve_point_with_budget(
+    geometry: &CurveGeometry,
+    t: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Point3> {
+    fn evaluate(
+        geometry: &CurveGeometry,
+        t: f64,
+        depth: usize,
+        budget: &WorkBudget<'_>,
+    ) -> Option<Point3> {
+        if depth > 256 {
+            return None;
+        }
+        match geometry {
+            CurveGeometry::Nurbs(nurbs) => {
+                budget
+                    .charge_by(nurbs_curve_evaluation_cost(nurbs)?)
+                    .then_some(())?;
+                curve_point(geometry, t)
+            }
+            CurveGeometry::Polyline { points, .. } => {
+                budget.charge_by(points.len().max(1)).then_some(())?;
+                curve_point(geometry, t)
+            }
+            CurveGeometry::Transformed { basis, transform } => {
+                budget.charge().then_some(())?;
+                evaluate(basis, t, depth + 1, budget).map(|point| affine_point(*transform, point))
+            }
+            _ => curve_point(geometry, t),
+        }
+    }
+
+    evaluate(geometry, t, 0, budget)
+}
+
+/// Evaluate the exact first derivative of a directly stored curve within a
+/// caller-owned work slice.
+pub fn curve_tangent_with_budget(
+    geometry: &CurveGeometry,
+    t: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Vector3> {
+    fn evaluate(
+        geometry: &CurveGeometry,
+        t: f64,
+        depth: usize,
+        budget: &WorkBudget<'_>,
+    ) -> Option<Vector3> {
+        if depth > 256 {
+            return None;
+        }
+        match geometry {
+            CurveGeometry::Nurbs(nurbs) => {
+                budget
+                    .charge_by(nurbs_curve_derivative_evaluation_cost(nurbs, 2)?)
+                    .then_some(())?;
+                curve_tangent(geometry, t)
+            }
+            CurveGeometry::Polyline { points, .. } => {
+                budget.charge_by(points.len().max(1)).then_some(())?;
+                curve_tangent(geometry, t)
+            }
+            CurveGeometry::Transformed { basis, transform } => {
+                budget.charge().then_some(())?;
+                evaluate(basis, t, depth + 1, budget)
+                    .map(|tangent| affine_vector(*transform, tangent))
+            }
+            _ => curve_tangent(geometry, t),
+        }
+    }
+
+    evaluate(geometry, t, 0, budget)
+}
+
+/// Evaluate the exact second derivative of a directly stored curve within a
+/// caller-owned work slice.
+pub fn curve_second_derivative_with_budget(
+    geometry: &CurveGeometry,
+    t: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Vector3> {
+    fn evaluate(
+        geometry: &CurveGeometry,
+        t: f64,
+        depth: usize,
+        budget: &WorkBudget<'_>,
+    ) -> Option<Vector3> {
+        if depth > 256 {
+            return None;
+        }
+        match geometry {
+            CurveGeometry::Nurbs(nurbs) => {
+                budget
+                    .charge_by(nurbs_curve_derivative_evaluation_cost(nurbs, 3)?)
+                    .then_some(())?;
+                curve_second_derivative(geometry, t)
+            }
+            CurveGeometry::Polyline { points, .. } => {
+                budget.charge_by(points.len().max(1)).then_some(())?;
+                curve_second_derivative(geometry, t)
+            }
+            CurveGeometry::Transformed { basis, transform } => {
+                budget.charge().then_some(())?;
+                evaluate(basis, t, depth + 1, budget)
+                    .map(|derivative| affine_vector(*transform, derivative))
+            }
+            _ => curve_second_derivative(geometry, t),
+        }
+    }
+
+    evaluate(geometry, t, 0, budget)
+}
+
+fn nurbs_curve_evaluation_cost(curve: &NurbsCurve) -> Option<usize> {
+    let support = usize::try_from(curve.degree).ok()?.checked_add(1)?;
+    support.checked_mul(support).filter(|cost| *cost > 0)
+}
+
+fn nurbs_curve_derivative_evaluation_cost(
+    curve: &NurbsCurve,
+    basis_levels: usize,
+) -> Option<usize> {
+    nurbs_curve_evaluation_cost(curve)?.checked_mul(basis_levels)
 }
 
 fn curve_tangent_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<Vector3> {
@@ -2815,7 +3123,19 @@ pub fn model_curve_point_by_id(
     curve_id: &crate::ids::CurveId,
     parameter: f64,
 ) -> Option<Point3> {
-    model_curve_point_by_id_inner(index, curve_id, parameter, 0)
+    model_curve_point_by_id_inner(index, curve_id, parameter, 0, None)
+}
+
+/// Evaluate a model curve carrier within a caller-owned work slice. Carrier
+/// recursion and direct NURBS or polyline work consume the supplied budget.
+pub fn model_curve_point_by_id_with_budget(
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    parameter: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Point3> {
+    let _guard = budget.recursion_guard()?;
+    model_curve_point_by_id_inner(index, curve_id, parameter, 0, Some(budget))
 }
 
 #[derive(Clone, Copy)]
@@ -2830,7 +3150,16 @@ fn model_curve_differential_by_id(
     curve_id: &crate::ids::CurveId,
     parameter: f64,
 ) -> Option<ModelCurveDifferential> {
-    model_curve_differential_by_id_inner(index, curve_id, parameter, 0)
+    model_curve_differential_by_id_inner(index, curve_id, parameter, 0, None)
+}
+
+fn model_curve_differential_by_id_with_budget(
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    parameter: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<ModelCurveDifferential> {
+    model_curve_differential_by_id_inner(index, curve_id, parameter, 0, Some(budget))
 }
 
 fn model_curve_differential_by_id_inner(
@@ -2838,11 +3167,15 @@ fn model_curve_differential_by_id_inner(
     curve_id: &crate::ids::CurveId,
     parameter: f64,
     depth: usize,
+    budget: Option<&WorkBudget<'_>>,
 ) -> Option<ModelCurveDifferential> {
     if depth > 256 || !parameter.is_finite() {
         return None;
     }
     let curve = index.curves(&curve_id.0)?;
+    if let Some(budget) = budget {
+        budget.charge().then_some(())?;
+    }
     if let Some(procedural) = index
         .ir()
         .model
@@ -2852,8 +3185,13 @@ fn model_curve_differential_by_id_inner(
     {
         match &procedural.definition {
             ProceduralCurveDefinition::Replica { source, transform } => {
-                let differential =
-                    model_curve_differential_by_id_inner(index, source, parameter, depth + 1)?;
+                let differential = model_curve_differential_by_id_inner(
+                    index,
+                    source,
+                    parameter,
+                    depth + 1,
+                    budget,
+                )?;
                 return Some(ModelCurveDifferential {
                     point: affine_point(*transform, differential.point),
                     tangent: affine_vector(*transform, differential.tangent),
@@ -2879,6 +3217,7 @@ fn model_curve_differential_by_id_inner(
                     source,
                     source_parameter,
                     depth + 1,
+                    budget,
                 )?;
                 let parameter_scale = if *sense { 1.0 } else { -1.0 };
                 return Some(ModelCurveDifferential {
@@ -2892,6 +3231,13 @@ fn model_curve_differential_by_id_inner(
     }
     if matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
         return None;
+    }
+    if let Some(budget) = budget {
+        return Some(ModelCurveDifferential {
+            point: curve_point_with_budget(&curve.geometry, parameter, budget)?,
+            tangent: curve_tangent_with_budget(&curve.geometry, parameter, budget)?,
+            acceleration: curve_second_derivative_with_budget(&curve.geometry, parameter, budget)?,
+        });
     }
     Some(ModelCurveDifferential {
         point: curve_point(&curve.geometry, parameter)?,
@@ -2922,12 +3268,16 @@ fn model_axis_revolution_point(
     axis_direction: Vector3,
     angle: f64,
     parameter: f64,
+    budget: Option<&WorkBudget<'_>>,
 ) -> Option<Point3> {
     if !angle.is_finite() {
         return None;
     }
     let axis = unit_axis(axis_direction)?;
-    let point = model_curve_point_by_id(index, directrix, parameter)?;
+    let point = budget.map_or_else(
+        || model_curve_point_by_id(index, directrix, parameter),
+        |budget| model_curve_point_by_id_with_budget(index, directrix, parameter, budget),
+    )?;
     let relative = Vector3::new(
         point.x - axis_origin.x,
         point.y - axis_origin.y,
@@ -2946,12 +3296,16 @@ fn model_axis_revolution_partials(
     axis_direction: Vector3,
     angle: f64,
     parameter: f64,
+    budget: Option<&WorkBudget<'_>>,
 ) -> Option<SurfaceSecondPartials> {
     if !angle.is_finite() {
         return None;
     }
     let axis = unit_axis(axis_direction)?;
-    let differential = model_curve_differential_by_id(index, directrix, parameter)?;
+    let differential = budget.map_or_else(
+        || model_curve_differential_by_id(index, directrix, parameter),
+        |budget| model_curve_differential_by_id_with_budget(index, directrix, parameter, budget),
+    )?;
     let relative = Vector3::new(
         differential.point.x - axis_origin.x,
         differential.point.y - axis_origin.y,
@@ -3088,6 +3442,9 @@ fn construction_curve_parameter(
     Some((curve_start + fraction * curve_width, derivative))
 }
 
+// The native and carrier parameter intervals are independent serialized semantics;
+// the optional budget must remain explicit across recursive evaluation.
+#[allow(clippy::too_many_arguments)]
 fn model_native_extrusion_partials(
     index: &crate::index::ModelIndex<'_>,
     directrix: &crate::ids::CurveId,
@@ -3096,13 +3453,17 @@ fn model_native_extrusion_partials(
     carrier_interval: Option<[f64; 2]>,
     u: f64,
     v: f64,
+    budget: Option<&WorkBudget<'_>>,
 ) -> Option<SurfaceSecondPartials> {
     if !v.is_finite() {
         return None;
     }
     let (parameter, derivative) =
         construction_curve_parameter(index, directrix, u, parameter_interval, carrier_interval)?;
-    let differential = model_curve_differential_by_id(index, directrix, parameter)?;
+    let differential = budget.map_or_else(
+        || model_curve_differential_by_id(index, directrix, parameter),
+        |budget| model_curve_differential_by_id_with_budget(index, directrix, parameter, budget),
+    )?;
     let zero = Vector3::new(0.0, 0.0, 0.0);
     Some(SurfaceSecondPartials {
         point: offset(differential.point, &[(v, direction)]),
@@ -3127,6 +3488,7 @@ fn model_native_revolution_partials(
     transposed: bool,
     u: f64,
     v: f64,
+    budget: Option<&WorkBudget<'_>>,
 ) -> Option<SurfaceSecondPartials> {
     if !angular_interval.iter().all(|value| value.is_finite()) {
         return None;
@@ -3165,6 +3527,7 @@ fn model_native_revolution_partials(
         axis_direction,
         angle,
         directrix_parameter,
+        budget,
     )?;
 
     if transposed {
@@ -3193,11 +3556,15 @@ fn model_curve_point_by_id_inner(
     curve_id: &crate::ids::CurveId,
     parameter: f64,
     depth: usize,
+    budget: Option<&WorkBudget<'_>>,
 ) -> Option<Point3> {
     if depth > 256 {
         return None;
     }
     let curve = index.curves(&curve_id.0)?;
+    if let Some(budget) = budget {
+        budget.charge().then_some(())?;
+    }
     let Some(procedural) = index
         .ir()
         .model
@@ -3205,14 +3572,17 @@ fn model_curve_point_by_id_inner(
         .iter()
         .find(|procedural| procedural.curve == *curve_id)
     else {
-        return curve_point(&curve.geometry, parameter);
+        return budget.map_or_else(
+            || curve_point(&curve.geometry, parameter),
+            |budget| curve_point_with_budget(&curve.geometry, parameter, budget),
+        );
     };
     if procedural.curve != *curve_id {
         return None;
     }
     match &procedural.definition {
         ProceduralCurveDefinition::Replica { source, transform } => {
-            model_curve_point_by_id_inner(index, source, parameter, depth + 1)
+            model_curve_point_by_id_inner(index, source, parameter, depth + 1, budget)
                 .map(|point| affine_point(*transform, point))
         }
         ProceduralCurveDefinition::Subset {
@@ -3234,7 +3604,7 @@ fn model_curve_point_by_id_inner(
             } else {
                 end - parameter
             };
-            model_curve_point_by_id_inner(index, source, source_parameter, depth + 1)
+            model_curve_point_by_id_inner(index, source, source_parameter, depth + 1, budget)
         }
         ProceduralCurveDefinition::TolerantIntersection {
             supports,
@@ -3251,7 +3621,18 @@ fn model_curve_point_by_id_inner(
             }
             let points = std::array::from_fn(|side| {
                 let uv = pcurve_uv(&parameterization.pcurves[side], parameter)?;
-                model_surface_point_by_id(index, &supports[side], uv.u, uv.v)
+                budget.map_or_else(
+                    || model_surface_point_by_id(index, &supports[side], uv.u, uv.v),
+                    |budget| {
+                        model_surface_point_by_id_with_budget(
+                            index,
+                            &supports[side],
+                            uv.u,
+                            uv.v,
+                            budget,
+                        )
+                    },
+                )
             });
             let [Some(first), Some(second)] = points else {
                 return None;
@@ -3265,6 +3646,8 @@ fn model_curve_point_by_id_inner(
         _ => {
             if matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
                 None
+            } else if let Some(budget) = budget {
+                curve_point_with_budget(&curve.geometry, parameter, budget)
             } else {
                 curve_point(&curve.geometry, parameter)
             }
@@ -3850,6 +4233,131 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
     surface_second_partials_inner(geometry, u, v, 0).map(|partials| partials.point)
 }
 
+/// Evaluate a directly stored surface at `(u, v)` within a caller-owned work
+/// slice. Analytic surfaces are constant-cost; transformed carriers charge
+/// each transform layer and NURBS carriers charge their local basis work.
+pub fn surface_point_with_budget(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Point3> {
+    surface_point_with_budget_inner(geometry, u, v, 0, budget)
+}
+
+fn surface_point_with_budget_inner(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    depth: usize,
+    budget: &WorkBudget<'_>,
+) -> Option<Point3> {
+    if depth > 256 {
+        return None;
+    }
+    match geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            let v_axis = normal.cross(*u_axis);
+            Some(offset(*origin, &[(u, *u_axis), (v, v_axis)]))
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            let transverse = axis.cross(*ref_direction);
+            let cosine = u.cos();
+            let sine = u.sin();
+            Some(offset(
+                *origin,
+                &[
+                    (radius * cosine, *ref_direction),
+                    (radius * sine, transverse),
+                    (v, *axis),
+                ],
+            ))
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } => {
+            let transverse = axis.cross(*ref_direction);
+            let cosine = u.cos();
+            let sine = u.sin();
+            let radial_slope = half_angle.tan();
+            let local_radius = radius + v * radial_slope;
+            Some(offset(
+                *origin,
+                &[
+                    (local_radius * cosine, *ref_direction),
+                    (local_radius * ratio * sine, transverse),
+                    (v, *axis),
+                ],
+            ))
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            let transverse = axis.cross(*ref_direction);
+            let u_cosine = u.cos();
+            let u_sine = u.sin();
+            let v_cosine = v.cos();
+            let v_sine = v.sin();
+            Some(offset(
+                *center,
+                &[
+                    (radius * v_cosine * u_cosine, *ref_direction),
+                    (radius * v_cosine * u_sine, transverse),
+                    (radius * v_sine, *axis),
+                ],
+            ))
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            let transverse = axis.cross(*ref_direction);
+            let u_cosine = u.cos();
+            let u_sine = u.sin();
+            let v_cosine = v.cos();
+            let v_sine = v.sin();
+            let ring = major_radius + minor_radius * v_cosine;
+            Some(offset(
+                *center,
+                &[
+                    (ring * u_cosine, *ref_direction),
+                    (ring * u_sine, transverse),
+                    (minor_radius * v_sine, *axis),
+                ],
+            ))
+        }
+        SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point_with_budget(nurbs, u, v, budget),
+        SurfaceGeometry::Transformed { basis, transform } => {
+            budget.charge().then_some(())?;
+            surface_point_with_budget_inner(basis, u, v, depth + 1, budget)
+                .map(|point| affine_point(*transform, point))
+        }
+        SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
 const ROLLING_BALL_JET_RADIUS_TOLERANCE: f64 = 1e-8;
 
 /// Evaluate a quintic rolling-ball jet at spine parameter `t` and arc
@@ -4343,6 +4851,7 @@ pub fn model_surface_point(
             carrier_interval,
             u,
             v,
+            None,
         )
         .map(|partials| partials.point),
         ProceduralSurfaceDefinition::LinearSweep {
@@ -4371,17 +4880,129 @@ pub fn model_surface_point(
             *transposed,
             u,
             v,
+            None,
         )
         .map(|partials| partials.point),
         ProceduralSurfaceDefinition::AxisRevolution {
             directrix,
             axis_origin,
             axis_direction,
-        } => model_axis_revolution_point(&index, directrix, *axis_origin, *axis_direction, u, v),
+        } => model_axis_revolution_point(
+            &index,
+            directrix,
+            *axis_origin,
+            *axis_direction,
+            u,
+            v,
+            None,
+        ),
         ProceduralSurfaceDefinition::RollingBallJet { .. } => {
             rolling_ball_jet_point(&procedural.definition, u, v)
         }
         _ => None,
+    }
+}
+
+fn model_surface_point_with_budget(
+    ir: &CadIr,
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+    depth: usize,
+) -> Option<Point3> {
+    if depth > 256 {
+        return None;
+    }
+    match (geometry, budget) {
+        (SurfaceGeometry::Nurbs(nurbs), Some(budget)) => {
+            nurbs_surface_point_with_budget(nurbs, u, v, budget)
+        }
+        (SurfaceGeometry::Transformed { basis, transform }, Some(budget)) => {
+            budget.charge().then_some(())?;
+            model_surface_point_with_budget(ir, basis, u, v, Some(budget), depth + 1)
+                .map(|point| affine_point(*transform, point))
+        }
+        _ => model_surface_point(ir, geometry, u, v),
+    }
+}
+
+fn surface_partials_with_budget(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<SurfacePartials> {
+    fn evaluate(
+        geometry: &SurfaceGeometry,
+        u: f64,
+        v: f64,
+        depth: usize,
+        budget: &WorkBudget<'_>,
+    ) -> Option<SurfacePartials> {
+        if depth > 256 {
+            return None;
+        }
+        match geometry {
+            SurfaceGeometry::Nurbs(nurbs) => {
+                nurbs_surface_partials_with_budget(nurbs, u, v, budget)
+            }
+            SurfaceGeometry::Transformed { basis, transform } => {
+                budget.charge().then_some(())?;
+                evaluate(basis, u, v, depth + 1, budget).map(|partials| SurfacePartials {
+                    point: affine_point(*transform, partials.point),
+                    du: affine_vector(*transform, partials.du),
+                    dv: affine_vector(*transform, partials.dv),
+                })
+            }
+            _ => surface_partials(geometry, u, v),
+        }
+    }
+
+    match (geometry, budget) {
+        (_, Some(budget)) => evaluate(geometry, u, v, 0, budget),
+        _ => surface_partials(geometry, u, v),
+    }
+}
+
+fn surface_second_partials_with_budget(
+    geometry: &SurfaceGeometry,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<SurfaceSecondPartials> {
+    fn evaluate(
+        geometry: &SurfaceGeometry,
+        u: f64,
+        v: f64,
+        depth: usize,
+        budget: &WorkBudget<'_>,
+    ) -> Option<SurfaceSecondPartials> {
+        if depth > 256 {
+            return None;
+        }
+        match geometry {
+            SurfaceGeometry::Nurbs(nurbs) => {
+                nurbs_surface_second_partials_with_budget(nurbs, u, v, budget)
+            }
+            SurfaceGeometry::Transformed { basis, transform } => {
+                budget.charge().then_some(())?;
+                evaluate(basis, u, v, depth + 1, budget).map(|partials| SurfaceSecondPartials {
+                    point: affine_point(*transform, partials.point),
+                    du: affine_vector(*transform, partials.du),
+                    dv: affine_vector(*transform, partials.dv),
+                    duu: affine_vector(*transform, partials.duu),
+                    duv: affine_vector(*transform, partials.duv),
+                    dvv: affine_vector(*transform, partials.dvv),
+                })
+            }
+            _ => surface_second_partials(geometry, u, v),
+        }
+    }
+
+    match (geometry, budget) {
+        (_, Some(budget)) => evaluate(geometry, u, v, 0, budget),
+        _ => surface_second_partials(geometry, u, v),
     }
 }
 
@@ -4392,9 +5013,83 @@ pub fn model_surface_point_by_id(
     u: f64,
     v: f64,
 ) -> Option<Point3> {
+    model_surface_point_by_id_inner(index, surface, u, v, None)
+}
+
+/// Evaluate a surface carrier selected by arena id within a caller-owned work
+/// slice. Surface-carrier recursion and NURBS evaluation both consume the
+/// supplied budget.
+pub fn model_surface_point_by_id_with_budget(
+    index: &crate::index::ModelIndex<'_>,
+    surface: &crate::ids::SurfaceId,
+    u: f64,
+    v: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<Point3> {
+    let _guard = budget.recursion_guard()?;
+    model_surface_point_by_id_inner(index, surface, u, v, Some(budget))
+}
+
+fn model_surface_point_by_id_inner(
+    index: &crate::index::ModelIndex<'_>,
+    surface: &crate::ids::SurfaceId,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<Point3> {
     struct SurfaceEvaluation {
         point: Point3,
         oriented_normal: Option<Vector3>,
+    }
+
+    fn linear_nurbs_support_extension(
+        index: &crate::index::ModelIndex<'_>,
+        support: &crate::ids::SurfaceId,
+        u: f64,
+        v: f64,
+        budget: Option<&WorkBudget<'_>>,
+    ) -> Option<SurfaceEvaluation> {
+        let support = index.surfaces(&support.0)?;
+        let SurfaceGeometry::Nurbs(nurbs) = &support.geometry else {
+            return None;
+        };
+        let u_degree = usize::try_from(nurbs.u_degree).ok()?;
+        let v_degree = usize::try_from(nurbs.v_degree).ok()?;
+        let u_count = usize::try_from(nurbs.u_count).ok()?;
+        let v_count = usize::try_from(nurbs.v_count).ok()?;
+        let u_domain = [*nurbs.u_knots.get(u_degree)?, *nurbs.u_knots.get(u_count)?];
+        let v_domain = [*nurbs.v_knots.get(v_degree)?, *nurbs.v_knots.get(v_count)?];
+        let boundary_u = u.clamp(u_domain[0], u_domain[1]);
+        let boundary_v = v.clamp(v_domain[0], v_domain[1]);
+        if boundary_u == u && boundary_v == v {
+            return None;
+        }
+        let partials =
+            surface_partials_with_budget(&support.geometry, boundary_u, boundary_v, budget)?;
+        let normal = partials.du.cross(partials.dv);
+        let normal = if nurbs.normal_reversed {
+            scale_vector(normal, -1.0)
+        } else {
+            normal
+        };
+        let magnitude = normal.norm();
+        let oriented_normal = (magnitude.is_finite() && magnitude > 0.0).then(|| {
+            Vector3::new(
+                normal.x / magnitude,
+                normal.y / magnitude,
+                normal.z / magnitude,
+            )
+        })?;
+        let du = u - boundary_u;
+        let dv = v - boundary_v;
+        Some(SurfaceEvaluation {
+            point: Point3::new(
+                partials.point.x + du * partials.du.x + dv * partials.dv.x,
+                partials.point.y + du * partials.du.y + dv * partials.dv.y,
+                partials.point.z + du * partials.du.z + dv * partials.dv.z,
+            ),
+            oriented_normal: Some(oriented_normal),
+        })
     }
 
     fn evaluate(
@@ -4403,7 +5098,11 @@ pub fn model_surface_point_by_id(
         u: f64,
         v: f64,
         visiting: &mut Vec<crate::ids::SurfaceId>,
+        budget: Option<&WorkBudget<'_>>,
     ) -> Option<SurfaceEvaluation> {
+        if let Some(budget) = budget {
+            budget.charge().then_some(())?;
+        }
         if visiting.contains(surface_id) {
             return None;
         }
@@ -4417,13 +5116,19 @@ pub fn model_surface_point_by_id(
                 directrix,
                 axis_origin,
                 axis_direction,
-            }) => {
-                model_axis_revolution_point(index, directrix, *axis_origin, *axis_direction, u, v)
-                    .map(|point| SurfaceEvaluation {
-                        point,
-                        oriented_normal: None,
-                    })
-            }
+            }) => model_axis_revolution_point(
+                index,
+                directrix,
+                *axis_origin,
+                *axis_direction,
+                u,
+                v,
+                budget,
+            )
+            .map(|point| SurfaceEvaluation {
+                point,
+                oriented_normal: None,
+            }),
             Some(ProceduralSurfaceDefinition::Extrusion {
                 directrix,
                 direction,
@@ -4437,6 +5142,7 @@ pub fn model_surface_point_by_id(
                 carrier_interval,
                 u,
                 v,
+                budget,
             )
             .map(|partials| SurfaceEvaluation {
                 point: partials.point,
@@ -4445,10 +5151,15 @@ pub fn model_surface_point_by_id(
             Some(ProceduralSurfaceDefinition::LinearSweep {
                 directrix,
                 direction,
-            }) => model_curve_point_by_id(index, directrix, u).map(|point| SurfaceEvaluation {
-                point: offset(point, &[(v, *direction)]),
-                oriented_normal: None,
-            }),
+            }) => budget
+                .map_or_else(
+                    || model_curve_point_by_id(index, directrix, u),
+                    |budget| model_curve_point_by_id_with_budget(index, directrix, u, budget),
+                )
+                .map(|point| SurfaceEvaluation {
+                    point: offset(point, &[(v, *direction)]),
+                    oriented_normal: None,
+                }),
             Some(ProceduralSurfaceDefinition::Revolution {
                 directrix,
                 axis_origin,
@@ -4470,6 +5181,7 @@ pub fn model_surface_point_by_id(
                 *transposed,
                 u,
                 v,
+                budget,
             )
             .map(|partials| SurfaceEvaluation {
                 point: partials.point,
@@ -4482,11 +5194,12 @@ pub fn model_surface_point_by_id(
                     oriented_normal: None,
                 }),
             Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
-                evaluate(index, support, u, v, visiting)
+                evaluate(index, support, u, v, visiting, budget)
             }
             Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
-                let mut evaluation = evaluate(index, source, u, v, visiting)?;
-                let partials = model_surface_partials_by_id(index, source, u, v)?;
+                let mut evaluation = evaluate(index, source, u, v, visiting, budget)?;
+                let partials =
+                    model_surface_second_partials_by_id_inner(index, source, u, v, budget)?;
                 let du = affine_vector(*transform, partials.du);
                 let dv = affine_vector(*transform, partials.dv);
                 let normal = du.cross(dv);
@@ -4516,7 +5229,8 @@ pub fn model_surface_point_by_id(
                         *u_sense,
                         *v_sense,
                     )?;
-                let mut evaluation = evaluate(index, support, support_u, support_v, visiting)?;
+                let mut evaluation =
+                    evaluate(index, support, support_u, support_v, visiting, budget)?;
                 if u_derivative * v_derivative < 0.0 {
                     evaluation.oriented_normal = evaluation
                         .oriented_normal
@@ -4527,7 +5241,7 @@ pub fn model_surface_point_by_id(
             Some(ProceduralSurfaceDefinition::ParallelOffset {
                 support, distance, ..
             }) => {
-                let support = evaluate(index, support, u, v, visiting)?;
+                let support = evaluate(index, support, u, v, visiting, budget)?;
                 let normal = support.oriented_normal?;
                 Some(SurfaceEvaluation {
                     point: offset(support.point, &[(*distance, normal)]),
@@ -4535,22 +5249,37 @@ pub fn model_surface_point_by_id(
                 })
             }
             Some(ProceduralSurfaceDefinition::Offset {
-                support, distance, ..
+                support,
+                distance,
+                support_extension,
+                ..
             }) => {
-                let support = evaluate(index, support, u, v, visiting)?;
+                let support = (*support_extension == Some(OffsetSupportExtension::Linear))
+                    .then(|| linear_nurbs_support_extension(index, support, u, v, budget))
+                    .flatten()
+                    .or_else(|| evaluate(index, support, u, v, visiting, budget))?;
                 let normal = support.oriented_normal?;
                 Some(SurfaceEvaluation {
                     point: offset(support.point, &[(*distance, normal)]),
                     oriented_normal: Some(normal),
                 })
             }
-            _ if procedural.is_some() => model_surface_point(index.ir(), &surface.geometry, u, v)
-                .map(|point| SurfaceEvaluation {
-                    point,
-                    oriented_normal: None,
-                }),
-            _ => surface_partials(&surface.geometry, u, v).map(|partials| {
+            _ if procedural.is_some() => {
+                model_surface_point_with_budget(index.ir(), &surface.geometry, u, v, budget, 0).map(
+                    |point| SurfaceEvaluation {
+                        point,
+                        oriented_normal: None,
+                    },
+                )
+            }
+            _ => surface_partials_with_budget(&surface.geometry, u, v, budget).map(|partials| {
                 let normal = partials.du.cross(partials.dv);
+                let normal = match &surface.geometry {
+                    SurfaceGeometry::Nurbs(nurbs) if nurbs.normal_reversed => {
+                        scale_vector(normal, -1.0)
+                    }
+                    _ => normal,
+                };
                 let magnitude = normal.norm();
                 let oriented_normal = (magnitude.is_finite() && magnitude > 0.0).then(|| {
                     Vector3::new(
@@ -4569,7 +5298,15 @@ pub fn model_surface_point_by_id(
         result
     }
 
-    evaluate(index, surface, u, v, &mut Vec::new()).map(|evaluation| evaluation.point)
+    if let Some(budget) = budget {
+        if index.procedural_surface_for_surface(&surface.0).is_none() {
+            budget.charge().then_some(())?;
+            return index
+                .surfaces(&surface.0)
+                .and_then(|surface| surface_point_with_budget(&surface.geometry, u, v, budget));
+        }
+    }
+    evaluate(index, surface, u, v, &mut Vec::new(), budget).map(|evaluation| evaluation.point)
 }
 
 /// Evaluate an arena-selected direct, trimmed, or uniform-offset surface and
@@ -4584,20 +5321,52 @@ pub fn model_surface_partials_by_id(
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
-    model_surface_second_partials_by_id(index, surface, u, v).map(|partials| SurfacePartials {
-        point: partials.point,
-        du: partials.du,
-        dv: partials.dv,
+    model_surface_second_partials_by_id_inner(index, surface, u, v, None).map(|partials| {
+        SurfacePartials {
+            point: partials.point,
+            du: partials.du,
+            dv: partials.dv,
+        }
     })
 }
 
+/// Evaluate an arena-selected surface and its exact first partial derivatives
+/// within a caller-owned work slice.
+pub fn model_surface_partials_by_id_with_budget(
+    index: &crate::index::ModelIndex<'_>,
+    surface: &crate::ids::SurfaceId,
+    u: f64,
+    v: f64,
+    budget: &WorkBudget<'_>,
+) -> Option<SurfacePartials> {
+    let _guard = budget.recursion_guard()?;
+    model_surface_second_partials_by_id_inner(index, surface, u, v, Some(budget)).map(|partials| {
+        SurfacePartials {
+            point: partials.point,
+            du: partials.du,
+            dv: partials.dv,
+        }
+    })
+}
+
+#[cfg(test)]
 fn model_surface_second_partials_by_id(
     index: &crate::index::ModelIndex<'_>,
     surface: &crate::ids::SurfaceId,
     u: f64,
     v: f64,
 ) -> Option<SurfaceSecondPartials> {
-    let mapping = model_surface_mapping(index, surface, u, v, &mut Vec::new())?;
+    model_surface_second_partials_by_id_inner(index, surface, u, v, None)
+}
+
+fn model_surface_second_partials_by_id_inner(
+    index: &crate::index::ModelIndex<'_>,
+    surface: &crate::ids::SurfaceId,
+    u: f64,
+    v: f64,
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<SurfaceSecondPartials> {
+    let mapping = model_surface_mapping(index, surface, u, v, &mut Vec::new(), budget)?;
     let mut partials = if mapping.offset_distance == 0.0 {
         mapping.base
     } else {
@@ -4630,7 +5399,11 @@ fn model_surface_mapping(
     u: f64,
     v: f64,
     visiting: &mut Vec<crate::ids::SurfaceId>,
+    budget: Option<&WorkBudget<'_>>,
 ) -> Option<SurfaceMapping> {
+    if let Some(budget) = budget {
+        budget.charge().then_some(())?;
+    }
     if visiting.contains(surface) {
         return None;
     }
@@ -4652,6 +5425,7 @@ fn model_surface_mapping(
                 *axis_direction,
                 u,
                 v,
+                budget,
             )?,
             offset_distance: 0.0,
             u_scale: 1.0,
@@ -4672,6 +5446,7 @@ fn model_surface_mapping(
                 carrier_interval,
                 u,
                 v,
+                budget,
             )?,
             offset_distance: 0.0,
             u_scale: 1.0,
@@ -4682,7 +5457,10 @@ fn model_surface_mapping(
             directrix,
             direction,
         }) => {
-            let differential = model_curve_differential_by_id(index, directrix, u)?;
+            let differential = budget.map_or_else(
+                || model_curve_differential_by_id(index, directrix, u),
+                |budget| model_curve_differential_by_id_with_budget(index, directrix, u, budget),
+            )?;
             let zero = Vector3::new(0.0, 0.0, 0.0);
             Some(SurfaceMapping {
                 base: SurfaceSecondPartials {
@@ -4721,6 +5499,7 @@ fn model_surface_mapping(
                 *transposed,
                 u,
                 v,
+                budget,
             )?,
             offset_distance: 0.0,
             u_scale: 1.0,
@@ -4728,10 +5507,10 @@ fn model_surface_mapping(
             orientation: 1.0,
         }),
         Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
-            model_surface_mapping(index, support, u, v, visiting)
+            model_surface_mapping(index, support, u, v, visiting, budget)
         }
         Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
-            let source = model_surface_mapping(index, source, u, v, visiting)?;
+            let source = model_surface_mapping(index, source, u, v, visiting, budget)?;
             let base = if source.offset_distance == 0.0 {
                 source.base
             } else {
@@ -4759,7 +5538,8 @@ fn model_surface_mapping(
                     *u_sense,
                     *v_sense,
                 )?;
-            let support = model_surface_mapping(index, support, support_u, support_v, visiting)?;
+            let support =
+                model_surface_mapping(index, support, support_u, support_v, visiting, budget)?;
             Some(SurfaceMapping {
                 base: support.base,
                 offset_distance: support.offset_distance,
@@ -4776,14 +5556,14 @@ fn model_surface_mapping(
                 support, distance, ..
             },
         ) => {
-            let support = model_surface_mapping(index, support, u, v, visiting)?;
+            let support = model_surface_mapping(index, support, u, v, visiting, budget)?;
             Some(SurfaceMapping {
                 offset_distance: support.offset_distance + *distance * support.orientation,
                 ..support
             })
         }
         _ => {
-            let base = surface_second_partials(&carrier.geometry, u, v)?;
+            let base = surface_second_partials_with_budget(&carrier.geometry, u, v, budget)?;
             Some(SurfaceMapping {
                 base,
                 offset_distance: 0.0,

@@ -314,7 +314,22 @@ pub struct WorkBudget<'a> {
     limit: usize,
     remaining: Cell<usize>,
     exhausted: Cell<bool>,
+    recursion_depth: Cell<usize>,
     session: Option<&'a DecodeBudget>,
+}
+
+/// RAII guard for one recursive geometry-evaluation frame.
+#[derive(Debug)]
+pub struct WorkBudgetRecursionGuard<'budget, 'session> {
+    budget: &'budget WorkBudget<'session>,
+}
+
+impl Drop for WorkBudgetRecursionGuard<'_, '_> {
+    fn drop(&mut self) {
+        self.budget
+            .recursion_depth
+            .set(self.budget.recursion_depth.get().saturating_sub(1));
+    }
 }
 
 impl WorkBudget<'static> {
@@ -324,6 +339,7 @@ impl WorkBudget<'static> {
             limit,
             remaining: Cell::new(limit),
             exhausted: Cell::new(false),
+            recursion_depth: Cell::new(0),
             session: None,
         }
     }
@@ -340,6 +356,7 @@ impl<'a> WorkBudget<'a> {
             limit,
             remaining: Cell::new(limit),
             exhausted: Cell::new(false),
+            recursion_depth: Cell::new(0),
             session: Some(session),
         }
     }
@@ -390,6 +407,21 @@ impl<'a> WorkBudget<'a> {
         self.limit.saturating_sub(self.remaining.get())
     }
 
+    /// Enters one recursive geometry-evaluation frame.
+    ///
+    /// The depth is shared by all model curve and surface calls using this
+    /// slice, so cross-carrier cycles cannot reset a local recursion limit.
+    pub fn recursion_guard(&self) -> Option<WorkBudgetRecursionGuard<'_, 'a>> {
+        const MAX_WORK_RECURSION_DEPTH: usize = 256;
+        if self.exhausted.get() || self.recursion_depth.get() >= MAX_WORK_RECURSION_DEPTH {
+            self.exhaust();
+            return None;
+        }
+        self.recursion_depth
+            .set(self.recursion_depth.get().saturating_add(1));
+        Some(WorkBudgetRecursionGuard { budget: self })
+    }
+
     /// Creates an independent child slice capped by this budget's remainder.
     pub fn child_slice(&self, limit: usize) -> WorkBudget<'static> {
         WorkBudget::new(limit.min(self.remaining()))
@@ -401,6 +433,7 @@ impl<'a> WorkBudget<'a> {
             limit: limit.min(self.remaining()),
             remaining: Cell::new(limit.min(self.remaining())),
             exhausted: Cell::new(false),
+            recursion_depth: Cell::new(0),
             session: self.session,
         }
     }
@@ -471,4 +504,23 @@ fn local_limit_error(
             location,
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WorkBudget;
+
+    fn descend(budget: &WorkBudget<'_>, depth: usize) -> usize {
+        let Some(_guard) = budget.recursion_guard() else {
+            return depth;
+        };
+        descend(budget, depth + 1)
+    }
+
+    #[test]
+    fn recursion_guard_is_shared_and_bounded() {
+        let budget = WorkBudget::new(10_000);
+        assert_eq!(descend(&budget, 0), 256);
+        assert!(budget.exhausted());
+    }
 }

@@ -18,7 +18,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::framing::{
-    fixed_len, fixed_record_boundary, fixed_record_candidates, read_sequence_at, FixedRecordFrame,
+    fixed_len, fixed_record_boundary, fixed_record_candidates, skip_sequence_at, FixedRecordFrame,
 };
 use crate::vec3_at::vec3_be_at;
 
@@ -110,15 +110,16 @@ fn analytic_records(stream: &[u8]) -> Vec<AnalyticRecord> {
             continue;
         }
         let frames = fixed_record_candidates(stream, p, kind, len);
-        let candidates = frames
-            .iter()
-            .copied()
-            .filter_map(|frame| analytic_candidate(stream, p, kind, frame))
-            .collect::<Vec<_>>();
+        let mut candidates = [None, None];
+        for (slot, frame) in frames.iter().enumerate() {
+            if let Some(frame) = frame {
+                candidates[slot] = analytic_candidate(stream, p, kind, *frame);
+            }
+        }
         if let Some((record, end)) = select_analytic_candidate(stream, &candidates) {
             out.push(record);
             p = end;
-        } else if let Some(end) = frames.iter().map(|frame| frame.end).max() {
+        } else if let Some(end) = frames.iter().flatten().map(|frame| frame.end).max() {
             // A complete structural frame owns its bytes even when its analytic
             // payload fails validation. Do not rescan those bytes as another
             // carrier; an unresolved or ambiguous frame is skipped atomically.
@@ -149,7 +150,7 @@ fn analytic_candidate(
     let record = match kind {
         0x1d => {
             let mut at = pos + 8 + frame.shift;
-            read_sequence_at(stream, &mut at, 4)?;
+            skip_sequence_at(stream, &mut at, 4)?;
             let xyz = vec3_be_at(stream, at)?;
             xyz.iter()
                 .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
@@ -169,20 +170,21 @@ fn analytic_candidate(
 
 fn select_analytic_candidate(
     stream: &[u8],
-    candidates: &[AnalyticCandidate],
+    candidates: &[Option<AnalyticCandidate>; 2],
 ) -> Option<(AnalyticRecord, usize)> {
-    match candidates {
-        [] => None,
-        [candidate] => Some((candidate.record.clone(), candidate.frame.end)),
-        [direct, escaped] => {
-            let direct_boundary = fixed_record_boundary(stream, direct.frame.end);
-            let escaped_boundary = fixed_record_boundary(stream, escaped.frame.end);
-            match (direct_boundary, escaped_boundary) {
-                (true, false) => Some((direct.record.clone(), direct.frame.end)),
-                (false, true) => Some((escaped.record.clone(), escaped.frame.end)),
-                _ => None,
-            }
-        }
+    let mut valid = candidates.iter().flatten();
+    let first = valid.next()?;
+    let Some(second) = valid.next() else {
+        return Some((first.record.clone(), first.frame.end));
+    };
+    if valid.next().is_some() {
+        return None;
+    }
+    let first_boundary = fixed_record_boundary(stream, first.frame.end);
+    let second_boundary = fixed_record_boundary(stream, second.frame.end);
+    match (first_boundary, second_boundary) {
+        (true, false) => Some((first.record.clone(), first.frame.end)),
+        (false, true) => Some((second.record.clone(), second.frame.end)),
         _ => None,
     }
 }

@@ -539,6 +539,7 @@ fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
                 ),
             ],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         })

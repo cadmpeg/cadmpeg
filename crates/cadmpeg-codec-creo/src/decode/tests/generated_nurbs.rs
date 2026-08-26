@@ -52,6 +52,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
             Point3::new(2.0, 0.0, last_z),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };

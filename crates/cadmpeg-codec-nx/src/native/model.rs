@@ -8,6 +8,8 @@
 use crate::container::Container;
 use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_ir::ids::BodyId;
+use std::collections::BTreeSet;
 
 #[allow(clippy::wildcard_imports)]
 use super::{
@@ -50,6 +52,8 @@ pub(crate) struct DisplayJtRecords {
 /// Records extracted from the `parasolid` domain.
 #[allow(clippy::struct_field_names)]
 pub(crate) struct ParasolidRecords {
+    pub(crate) parasolid_group_records: Vec<ParasolidGroupRecord>,
+    pub(crate) parasolid_group_members: Vec<ParasolidGroupMember>,
     pub(crate) parasolid_deltas_transmit_headers: Vec<ParasolidDeltasTransmitHeader>,
     pub(crate) parasolid_deltas_terminal_null_references:
         Vec<ParasolidDeltasTerminalNullReferences>,
@@ -126,12 +130,24 @@ pub(crate) struct ToggleRecords {
 pub(crate) struct FeatureRecords {
     pub(crate) feature_operation_labels: Vec<FeatureOperationLabel>,
     pub(crate) feature_operation_records: Vec<FeatureOperationRecord>,
-    pub(crate) feature_operation_object_relations: Vec<FeatureOperationObjectRelation>,
+    pub(crate) feature_unlabeled_operation_records: Vec<FeatureUnlabeledOperationRecord>,
+    pub(crate) feature_unlabeled_operation_body_writes: Vec<FeatureUnlabeledOperationBodyWrite>,
+    pub(crate) feature_operation_body_writes: Vec<FeatureOperationBodyWrite>,
+    pub(crate) feature_operation_body_image_segment_uses: Vec<FeatureOperationBodyImageSegmentUse>,
+    pub(crate) feature_operation_body_identity_segment_uses:
+        Vec<FeatureOperationBodyIdentitySegmentUse>,
+    pub(crate) feature_operation_body_partition_uses: Vec<FeatureOperationBodyPartitionUse>,
+    pub(crate) feature_body_write_group_partition_uses: Vec<FeatureBodyWriteGroupPartitionUse>,
+    pub(crate) feature_operation_tagged_references: Vec<FeatureOperationTaggedReference>,
+    pub(crate) feature_operation_data_block_references: Vec<FeatureOperationDataBlockReference>,
     pub(crate) feature_operation_common_frames: Vec<FeatureOperationCommonFrame>,
     pub(crate) feature_operation_terminal_discriminators:
         Vec<FeatureOperationTerminalDiscriminator>,
     pub(crate) feature_operation_terminal_frames: Vec<FeatureOperationTerminalFrame>,
+    pub(crate) feature_operation_state_journal_uses: Vec<FeatureOperationStateJournalUse>,
     pub(crate) feature_payload_strings: Vec<FeaturePayloadString>,
+    pub(crate) feature_symbolic_threads: Vec<FeatureSymbolicThread>,
+    pub(crate) feature_threaded_hole_templates: Vec<FeatureThreadedHoleTemplate>,
     pub(crate) feature_simple_hole_templates: Vec<FeatureSimpleHoleTemplate>,
     pub(crate) feature_simple_hole_repeated_scalar_lanes: Vec<FeatureSimpleHoleRepeatedScalarLane>,
     pub(crate) feature_simple_hole_repeated_scalar_lane_block_references:
@@ -172,6 +188,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_delete_reference_fields: Vec<FeatureDeleteReferenceField>,
     pub(crate) feature_delete_construction_payloads: Vec<FeatureDeleteConstructionPayload>,
     pub(crate) feature_pattern_references: Vec<FeaturePatternReference>,
+    pub(crate) feature_pattern_counted_reference_lanes: Vec<FeaturePatternCountedReferenceLane>,
     pub(crate) feature_pattern_construction_payloads: Vec<FeaturePatternConstructionPayload>,
     pub(crate) feature_pattern_construction_strings: Vec<FeaturePatternConstructionString>,
     pub(crate) feature_pattern_construction_fixed_lanes: Vec<FeaturePatternConstructionFixedLane>,
@@ -195,6 +212,10 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_surface_construction_scalar_pairs: Vec<FeatureSurfaceConstructionScalarPair>,
     pub(crate) feature_surface_construction_strings: Vec<FeatureSurfaceConstructionString>,
     pub(crate) feature_surface_construction_branches: Vec<FeatureSurfaceConstructionBranch>,
+    pub(crate) feature_swp104_leading_branches: Vec<FeatureSwp104LeadingBranch>,
+    pub(crate) feature_thru_curve_construction_branch_groups:
+        Vec<FeatureThruCurveConstructionBranchGroup>,
+    pub(crate) feature_thru_curve_construction_envelopes: Vec<FeatureThruCurveConstructionEnvelope>,
     pub(crate) feature_extrude_profile_references: Vec<FeatureExtrudeProfileReference>,
     pub(crate) feature_extrude_payload_headers: Vec<FeatureExtrudePayloadHeader>,
     pub(crate) feature_operation_body_scalar_triples: Vec<FeatureOperationBodyScalarTriple>,
@@ -220,6 +241,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_sketch_payload_fixed_pairs: Vec<FeatureSketchPayloadFixedPair>,
     pub(crate) feature_sketch_payload_mixed_pairs: Vec<FeatureSketchPayloadMixedPair>,
     pub(crate) feature_sketch_payload_scalars: Vec<FeatureSketchPayloadScalar>,
+    pub(crate) feature_sketch_payload_scalar_lanes: Vec<FeatureSketchPayloadScalarLane>,
     pub(crate) feature_sketch_payload_names: Vec<FeatureSketchPayloadName>,
     pub(crate) feature_sketch_payload_named_records: Vec<FeatureSketchPayloadNamedRecord>,
     pub(crate) feature_sketch_fixed_points: Vec<FeatureSketchFixedPoint>,
@@ -242,6 +264,13 @@ pub(crate) struct FeatureRecords {
 /// Records extracted from the `om` domain.
 pub(crate) struct OmRecords {
     pub(crate) om_record_areas: Vec<OmRecordArea>,
+    pub(crate) audit_trail_rows: Vec<OmAuditTrailRow>,
+    pub(crate) operation_state_journal_groups: Vec<OmOperationStateJournalGroup>,
+    pub(crate) operation_state_counters: Vec<OmOperationStateCounter>,
+    pub(crate) operation_state_groups: Vec<OmRollForwardStateGroup>,
+    pub(crate) operation_state_messages: Vec<OmOperationStateMessage>,
+    pub(crate) operation_state_statuses: Vec<OmOperationStateStatus>,
+    pub(crate) operation_state_slot_lanes: Vec<OmOperationStateSlotLane>,
     pub(crate) expression_declarations: Vec<ExpressionDeclaration>,
     pub(crate) expressions: Vec<Expression>,
     pub(crate) classes: Vec<ClassDefinition>,
@@ -300,6 +329,98 @@ pub(crate) struct NativeModel {
     pub(crate) om: OmRecords,
 }
 
+/// The segment-history subset needed before geometry construction can decide
+/// which body images are current. The full native extraction reuses these
+/// inputs so history selection does not require a second container scan.
+pub(crate) struct SegmentLineage {
+    pub(crate) bindings: Vec<SegmentBodyBinding>,
+    pub(crate) labels: Vec<FeatureOperationLabel>,
+    pub(crate) references: Vec<FeatureBodyReference>,
+    pub(crate) data_blocks: Vec<DataBlock>,
+    pub(crate) inputs: Vec<FeatureInputBlock>,
+    pub(crate) body_data_block_uses: Vec<FeatureBodyDataBlockUse>,
+    pub(crate) body_reference_occurrences: Vec<FeatureBodyReferenceOccurrence>,
+    pub(crate) members: Vec<FeatureOperationBodyMember>,
+    pub(crate) operands: Vec<FeatureOperationBodyOperand>,
+    pub(crate) booleans: Vec<FeatureBooleanOperation>,
+    pub(crate) statuses: Vec<SegmentBodyLineageStatus>,
+}
+
+/// Extract the bounded feature-history inputs used by terminal body lineage.
+pub(crate) fn extract_segment_lineage(container: &Container, streams: &[Stream]) -> SegmentLineage {
+    let bindings = segment_body_bindings(container, streams);
+    let labels = feature_operation_labels(container);
+    let references = feature_body_references(container);
+    let blocks = data_blocks(container);
+    let inputs = feature_input_blocks(container);
+    let body_data_block_uses = feature_body_data_block_uses(&references, &inputs, &blocks);
+    let body_reference_occurrences = feature_body_reference_occurrences(container);
+    let members = feature_operation_body_members(container);
+    let operands = feature_operation_body_operands(
+        &members,
+        &body_reference_occurrences,
+        &inputs,
+        &blocks,
+        &bindings,
+    );
+    let booleans = feature_boolean_operations(container);
+    let statuses = segment_body_lineage_statuses(
+        &labels,
+        &references,
+        &body_data_block_uses,
+        &blocks,
+        &booleans,
+        &operands,
+        &bindings,
+        &inputs,
+    )
+    .unwrap_or_default();
+    SegmentLineage {
+        bindings,
+        labels,
+        references,
+        data_blocks: blocks,
+        inputs,
+        body_data_block_uses,
+        body_reference_occurrences,
+        members,
+        operands,
+        booleans,
+        statuses,
+    }
+}
+
+/// Select emitted body images whose complete segment binding has a terminal
+/// status. The mapping must cover every emitted body image before selection is
+/// admitted; a partial mapping is not a body-selection proof.
+pub(crate) fn terminal_feature_body_ids(
+    emitted: &BTreeSet<BodyId>,
+    bindings: &[SegmentBodyBinding],
+    statuses: &[SegmentBodyLineageStatus],
+) -> Option<BTreeSet<BodyId>> {
+    if statuses.len() != bindings.len() {
+        return None;
+    }
+    let mut mapped = BTreeSet::new();
+    let mut selected = BTreeSet::new();
+    for (binding, status) in bindings.iter().zip(statuses) {
+        let prefix = format!("nx:s{}:", binding.stream_ordinal);
+        let stream_bodies = emitted
+            .iter()
+            .filter(|body| body.0.starts_with(&prefix))
+            .cloned()
+            .collect::<Vec<_>>();
+        if stream_bodies.is_empty() {
+            continue;
+        }
+        mapped.extend(stream_bodies.iter().cloned());
+        if status.terminal {
+            selected.extend(stream_bodies);
+        }
+    }
+    (mapped == *emitted && !selected.is_empty()).then_some(selected)
+}
+
 impl NativeModel {
     pub(crate) fn has_untransferred_parasolid_attribute_fields(&self) -> bool {
         parasolid_topology_attribute_fields_have_untransferred_values(
@@ -317,31 +438,59 @@ impl NativeModel {
         root: View<'_>,
         container: &Container,
         streams: &[Stream],
-        parsed: &ParsedStreams,
+        parsed: &mut ParsedStreams,
+        precomputed_lineage: Option<SegmentLineage>,
     ) -> Self {
+        let SegmentLineage {
+            bindings: segment_body_bindings,
+            labels: feature_operation_labels,
+            references: feature_body_references,
+            data_blocks,
+            inputs: feature_input_blocks,
+            body_data_block_uses: feature_body_data_block_uses,
+            body_reference_occurrences: feature_body_reference_occurrences,
+            members: feature_operation_body_members,
+            operands: feature_operation_body_operands,
+            booleans: feature_boolean_operations,
+            statuses: segment_body_lineage_statuses,
+        } = precomputed_lineage.unwrap_or_else(|| extract_segment_lineage(container, streams));
+        let data_block_object_frames = data_block_object_frames(container);
         let segment_index_rows = segment_index_rows(container);
         let segment_om_links = segment_om_links(container);
         let segment_stream_links = segment_stream_links(container, streams);
-        let segment_body_bindings = segment_body_bindings(container, streams);
-        let deltas_events = parasolid_deltas_events(streams);
+        let linked_deltas = segment_stream_links
+            .iter()
+            .filter(|link| link.stream_kind == "deltas")
+            .map(|link| link.stream_ordinal as usize)
+            .collect::<BTreeSet<_>>();
+        let delta_pairs = pair_stream_indices(
+            streams,
+            (!segment_stream_links.is_empty()).then_some(&linked_deltas),
+        );
+        let deltas_events =
+            parasolid_deltas_events_with_censuses(streams, parsed.take_delta_censuses());
+        let parasolid_group_records =
+            parasolid_group_records(streams, &delta_pairs, &deltas_events.records);
+        let parasolid_group_members = parasolid_group_members(streams, &delta_pairs, parsed);
         let parasolid_blend_surface_records = parasolid_blend_surface_records(parsed);
         let parasolid_blend_bound_records = parasolid_blend_bound_records(streams);
         let parasolid_offset_surface_records = parasolid_offset_surface_records(parsed);
         let parasolid_trimmed_curve_records = parasolid_trimmed_curve_records(parsed);
         let parasolid_surface_curve_records = parasolid_surface_curve_records(parsed);
-        let parasolid_intersection_records = parasolid_intersection_records(streams);
+        let parasolid_intersection_records = parasolid_intersection_records(parsed);
         let parasolid_term_use_records = parasolid_term_use_records(streams);
         let parasolid_support_uv_records = parasolid_support_uv_records(streams);
         let parasolid_chart_records = parasolid_chart_records(streams);
         let parasolid_attribute_definitions = parasolid_attribute_definitions(streams);
         let parasolid_entity_51_records = parasolid_entity_51_records(streams);
-        let parasolid_entity_52_integer_records = parasolid_entity_52_integer_records(streams);
-        let parasolid_entity_53_double_records = parasolid_entity_53_double_records(streams);
-        let parasolid_entity_54_string_records = parasolid_entity_54_string_records(streams);
-        let parasolid_entity_vector_records = parasolid_entity_vector_records(streams);
-        let parasolid_entity_57_axis_records = parasolid_entity_57_axis_records(streams);
-        let parasolid_entity_58_tag_records = parasolid_entity_58_tag_records(streams);
-        let parasolid_entity_62_unicode_records = parasolid_entity_62_unicode_records(streams);
+        let value_records = parasolid_entity_value_records(streams, &deltas_events.records);
+        let parasolid_entity_52_integer_records = value_records.integers;
+        let parasolid_entity_53_double_records = value_records.doubles;
+        let parasolid_entity_54_string_records = value_records.strings;
+        let parasolid_entity_vector_records = value_records.vectors;
+        let parasolid_entity_57_axis_records = value_records.axes;
+        let parasolid_entity_58_tag_records = value_records.tags;
+        let parasolid_entity_62_unicode_records = value_records.unicode;
         let parasolid_field_names_records = parasolid_field_names_records(streams);
         let parasolid_attribute_field_names = parasolid_attribute_field_names(
             &parasolid_attribute_definitions,
@@ -380,18 +529,66 @@ impl NativeModel {
             parasolid_topology_attribute_list_references(parsed, &parasolid_entity_51_records);
         let parasolid_topology_attribute_class_uses = parasolid_topology_attribute_class_uses(
             &parasolid_topology_attribute_list_references,
+            &parasolid_entity_51_records,
             &parasolid_attribute_class_uses,
         );
         let om_record_areas = om_record_areas(container);
-        let feature_operation_labels = feature_operation_labels(container);
+        let audit_trail_rows = audit_trail_rows(container);
+        let operation_state_journal_groups = operation_state_journal_groups(container);
+        let operation_state_counters = operation_state_counters(container);
+        let operation_state_groups = operation_state_groups(container);
+        let operation_state_messages = operation_state_messages(container);
+        let operation_state_statuses = operation_state_statuses(container);
+        let operation_state_slot_lanes = operation_state_slot_lanes(container);
         let feature_operation_records = feature_operation_records(container);
-        let feature_operation_object_relations = feature_operation_object_relations(container);
+        let feature_unlabeled_operation_records = feature_unlabeled_operation_records(container);
+        let feature_unlabeled_operation_body_writes =
+            feature_unlabeled_operation_body_writes(container);
+        let feature_operation_body_writes = feature_operation_body_writes(container);
+        let feature_operation_body_image_segment_uses = feature_operation_body_image_segment_uses(
+            &feature_operation_body_writes,
+            &segment_body_bindings,
+        );
+        let feature_operation_body_identity_segment_uses =
+            feature_operation_body_identity_segment_uses(
+                &feature_operation_body_writes,
+                &segment_body_bindings,
+            );
+        let feature_operation_body_partition_uses = feature_operation_body_partition_uses(
+            &feature_operation_body_writes,
+            &feature_operation_body_image_segment_uses,
+            &segment_body_bindings,
+            streams,
+            &parasolid_group_records,
+            &parasolid_group_members,
+        );
+        let feature_body_write_group_partition_uses = feature_body_write_group_partition_uses(
+            &feature_operation_body_writes,
+            &feature_unlabeled_operation_body_writes,
+            &parasolid_group_records,
+            &parasolid_group_members,
+        );
+        let feature_operation_tagged_references = feature_operation_tagged_references(container);
+        let feature_operation_data_block_references =
+            feature_operation_data_block_references(container);
         let feature_operation_common_frames = feature_operation_common_frames(container);
         let feature_operation_terminal_discriminators =
             feature_operation_terminal_discriminators(container);
         let feature_operation_terminal_frames =
             feature_operation_terminal_frames(container, &feature_operation_common_frames);
+        let feature_operation_state_journal_uses = feature_operation_state_journal_uses(
+            &feature_operation_labels,
+            &feature_operation_records,
+            &feature_operation_terminal_frames,
+            &operation_state_journal_groups,
+        );
         let feature_payload_strings = feature_payload_strings(container);
+        let feature_symbolic_threads = feature_symbolic_threads(container);
+        let feature_threaded_hole_templates = feature_threaded_hole_templates(
+            &feature_operation_labels,
+            &feature_operation_records,
+            &feature_payload_strings,
+        );
         let feature_simple_hole_templates = feature_simple_hole_templates(
             &feature_operation_labels,
             &feature_operation_records,
@@ -413,21 +610,13 @@ impl NativeModel {
                 &feature_hole_package_construction_group_lanes,
                 &feature_simple_hole_construction_groups,
             );
-        let feature_body_references = feature_body_references(container);
-        let data_blocks = data_blocks(container);
-        let feature_body_reference_occurrences = feature_body_reference_occurrences(container);
-        let feature_input_blocks = feature_input_blocks(container);
-        let feature_body_data_block_uses = feature_body_data_block_uses(
-            &feature_body_references,
-            &feature_input_blocks,
-            &data_blocks,
-        );
         let feature_body_segment_uses = feature_body_segment_uses(
             &feature_body_references,
             &feature_body_data_block_uses,
             &feature_input_blocks,
             &data_blocks,
             &segment_body_bindings,
+            &data_block_object_frames,
         );
         let feature_input_block_identity_groups =
             feature_input_block_identity_groups(&feature_input_blocks);
@@ -582,6 +771,8 @@ impl NativeModel {
         let feature_delete_construction_payloads =
             feature_delete_construction_payloads(container, &feature_delete_reference_fields);
         let feature_pattern_references = feature_pattern_references(container);
+        let feature_pattern_counted_reference_lanes =
+            feature_pattern_counted_reference_lanes(container);
         let feature_pattern_construction_payloads = feature_pattern_construction_payloads(
             container,
             &feature_operation_labels,
@@ -643,26 +834,21 @@ impl NativeModel {
             feature_surface_construction_strings(container, &feature_surface_construction_payloads);
         let feature_surface_construction_branches =
             feature_surface_construction_branches(container);
+        let feature_swp104_leading_branches = feature_swp104_leading_branches(container);
+        let feature_thru_curve_construction_branch_groups =
+            feature_thru_curve_construction_branch_groups(container);
+        let feature_thru_curve_construction_envelopes =
+            feature_thru_curve_construction_envelopes(container);
         let feature_extrude_profile_references = feature_extrude_profile_references(container);
         let feature_extrude_payload_headers = feature_extrude_payload_headers(container);
         let feature_operation_body_scalar_triples =
             feature_operation_body_scalar_triples(container);
-        let feature_operation_body_members = feature_operation_body_members(container);
-        let feature_operation_body_operands = feature_operation_body_operands(
-            &feature_operation_body_members,
-            &feature_body_reference_occurrences,
-            &feature_input_blocks,
-            &data_blocks,
-            &segment_body_bindings,
-        );
         let feature_operation_body_11_continuations =
             feature_operation_body_11_continuations(container);
         let feature_operation_body_reference_lanes =
             feature_operation_body_reference_lanes(container);
-        let feature_extrude_construction_profiles = feature_extrude_construction_profiles(
-            &feature_extrude_profile_references,
-            &feature_operation_body_reference_lanes,
-        );
+        let feature_extrude_construction_profiles =
+            feature_extrude_construction_profiles(&feature_extrude_profile_references);
         let feature_extrude_payload_32_branches = feature_extrude_payload_32_branches(container);
         let feature_extrude_32_constructions = feature_extrude_32_constructions(
             &feature_extrude_profile_references,
@@ -710,6 +896,8 @@ impl NativeModel {
             feature_sketch_payload_mixed_pairs(container, &feature_sketch_construction_payloads);
         let feature_sketch_payload_scalars =
             feature_sketch_payload_scalars(container, &feature_sketch_construction_inputs);
+        let feature_sketch_payload_scalar_lanes =
+            feature_sketch_payload_scalar_lanes(container, &feature_sketch_construction_payloads);
         let feature_sketch_payload_names =
             feature_sketch_payload_names(container, &feature_sketch_construction_inputs);
         let feature_sketch_payload_named_records = feature_sketch_payload_named_records(
@@ -751,20 +939,7 @@ impl NativeModel {
             &feature_datum_csys_constructions,
             &feature_datum_csys_payload_scalars,
         );
-        let feature_boolean_operations = feature_boolean_operations(container);
-        let segment_body_lineage_statuses = segment_body_lineage_statuses(
-            &feature_operation_labels,
-            &feature_body_references,
-            &feature_body_data_block_uses,
-            &data_blocks,
-            &feature_boolean_operations,
-            &feature_operation_body_operands,
-            &segment_body_bindings,
-            &feature_input_blocks,
-        )
-        .unwrap_or_default();
         let expression_declarations = expression_declarations(container);
-        let data_block_object_frames = data_block_object_frames(container);
         let expressions = expressions(container);
         let classes = class_definitions(container);
         let fields = field_definitions(container);
@@ -875,7 +1050,6 @@ impl NativeModel {
             &object_uuid_values,
         );
         let (saved_toggle_streams, saved_toggle_entries) = saved_toggle_records(container);
-
         NativeModel {
             display_jt: DisplayJtRecords {
                 display_jt_indices,
@@ -907,6 +1081,8 @@ impl NativeModel {
                 display_jt_tri_strip_shape_nodes,
             },
             parasolid: ParasolidRecords {
+                parasolid_group_records,
+                parasolid_group_members,
                 parasolid_deltas_transmit_headers: deltas_events.transmit_headers,
                 parasolid_deltas_terminal_null_references: deltas_events.terminal_null_references,
                 parasolid_deltas_records: deltas_events.records,
@@ -972,11 +1148,22 @@ impl NativeModel {
             features: FeatureRecords {
                 feature_operation_labels,
                 feature_operation_records,
-                feature_operation_object_relations,
+                feature_unlabeled_operation_records,
+                feature_unlabeled_operation_body_writes,
+                feature_operation_body_writes,
+                feature_operation_body_image_segment_uses,
+                feature_operation_body_identity_segment_uses,
+                feature_operation_body_partition_uses,
+                feature_body_write_group_partition_uses,
+                feature_operation_tagged_references,
+                feature_operation_data_block_references,
                 feature_operation_common_frames,
                 feature_operation_terminal_discriminators,
                 feature_operation_terminal_frames,
+                feature_operation_state_journal_uses,
                 feature_payload_strings,
+                feature_symbolic_threads,
+                feature_threaded_hole_templates,
                 feature_simple_hole_templates,
                 feature_simple_hole_repeated_scalar_lanes,
                 feature_simple_hole_repeated_scalar_lane_block_references,
@@ -1012,6 +1199,7 @@ impl NativeModel {
                 feature_delete_reference_fields,
                 feature_delete_construction_payloads,
                 feature_pattern_references,
+                feature_pattern_counted_reference_lanes,
                 feature_pattern_construction_payloads,
                 feature_pattern_construction_strings,
                 feature_pattern_construction_fixed_lanes,
@@ -1034,6 +1222,9 @@ impl NativeModel {
                 feature_surface_construction_scalar_pairs,
                 feature_surface_construction_strings,
                 feature_surface_construction_branches,
+                feature_swp104_leading_branches,
+                feature_thru_curve_construction_branch_groups,
+                feature_thru_curve_construction_envelopes,
                 feature_extrude_profile_references,
                 feature_extrude_payload_headers,
                 feature_operation_body_scalar_triples,
@@ -1059,6 +1250,7 @@ impl NativeModel {
                 feature_sketch_payload_fixed_pairs,
                 feature_sketch_payload_mixed_pairs,
                 feature_sketch_payload_scalars,
+                feature_sketch_payload_scalar_lanes,
                 feature_sketch_payload_names,
                 feature_sketch_payload_named_records,
                 feature_sketch_fixed_points,
@@ -1079,6 +1271,13 @@ impl NativeModel {
             },
             om: OmRecords {
                 om_record_areas,
+                audit_trail_rows,
+                operation_state_journal_groups,
+                operation_state_counters,
+                operation_state_groups,
+                operation_state_messages,
+                operation_state_statuses,
+                operation_state_slot_lanes,
                 expression_declarations,
                 expressions,
                 classes,

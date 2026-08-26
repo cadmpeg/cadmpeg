@@ -300,6 +300,7 @@ fn emit_carrier_surface(
                     distance,
                     u_sense,
                     v_sense,
+                    support_extension: None,
                     extension_flags,
                     revision_form,
                 }

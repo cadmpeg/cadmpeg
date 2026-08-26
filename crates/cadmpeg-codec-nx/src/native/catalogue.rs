@@ -6,6 +6,8 @@
 //! emission order; `phase` splits semantic islands for [`super::attach`].
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 
+use std::collections::BTreeMap;
+
 use serde::Serialize;
 
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
@@ -290,6 +292,41 @@ impl ContainerNoted for OmRecordArea {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for OmAuditTrailRow {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for OmOperationStateJournalGroup {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for OmOperationStateCounter {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for OmRollForwardStateGroup {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for OmOperationStateMessage {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for OmOperationStateStatus {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for OmOperationStateSlotLane {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for FeatureOperationLabel {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -320,7 +357,27 @@ impl ContainerNoted for FeatureOperationRecord {
         (&self.id, self.source_offset)
     }
 }
-impl ContainerNoted for FeatureOperationObjectRelation {
+impl ContainerNoted for FeatureUnlabeledOperationRecord {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FeatureUnlabeledOperationBodyWrite {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FeatureOperationBodyWrite {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FeatureOperationTaggedReference {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FeatureOperationDataBlockReference {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
     }
@@ -333,6 +390,11 @@ impl ContainerNoted for FeatureOperationCommonFrame {
 impl ContainerNoted for FeatureOperationTerminalFrame {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
+    }
+}
+impl ContainerNoted for FeatureOperationStateJournalUse {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.operation_source_offset)
     }
 }
 impl ContainerNoted for FeaturePayloadString {
@@ -497,6 +559,11 @@ impl StreamNoted for ParasolidDeltasTerminalNullReferences {
     }
 }
 impl StreamNoted for ParasolidDeltasRecord {
+    fn stream_note(&self) -> (&str, u32, u64) {
+        (&self.id, self.stream_ordinal, self.inflated_offset)
+    }
+}
+impl StreamNoted for ParasolidGroupRecord {
     fn stream_note(&self) -> (&str, u32, u64) {
         (&self.id, self.stream_ordinal, self.inflated_offset)
     }
@@ -685,12 +752,15 @@ fn note_parasolid_parasolid_attribute_class_uses(
     _catalogue_row: &CatalogueRow,
     a: &mut AnnotationBuilder,
 ) {
+    let mut entities_by_id: BTreeMap<&str, &ParasolidEntity51Record> = BTreeMap::new();
+    for entity in &m.parasolid.parasolid_entity_51_records {
+        // Preserve slice-find semantics if a malformed input repeats an id.
+        entities_by_id.entry(entity.id.as_str()).or_insert(entity);
+    }
     for class_use in &m.parasolid.parasolid_attribute_class_uses {
-        let entity = m
-            .parasolid
-            .parasolid_entity_51_records
-            .iter()
-            .find(|entity| entity.id == class_use.entity_51_record)
+        let entity = entities_by_id
+            .get(class_use.entity_51_record.as_str())
+            .copied()
             .expect("class use owns a type-81 entity");
         let source_stream = a.stream(format!("nx:s{}", class_use.stream_ordinal));
         a.note(&class_use.id, source_stream, entity.inflated_offset)
@@ -704,19 +774,28 @@ fn note_parasolid_parasolid_topology_attribute_class_uses(
     _catalogue_row: &CatalogueRow,
     a: &mut AnnotationBuilder,
 ) {
+    let mut references_by_id: BTreeMap<&str, &ParasolidTopologyAttributeListReference> =
+        BTreeMap::new();
+    for reference in &m.parasolid.parasolid_topology_attribute_list_references {
+        // Preserve slice-find semantics if a malformed input repeats an id.
+        references_by_id
+            .entry(reference.id.as_str())
+            .or_insert(reference);
+    }
+    let mut entities_by_id: BTreeMap<&str, &ParasolidEntity51Record> = BTreeMap::new();
+    for entity in &m.parasolid.parasolid_entity_51_records {
+        // Preserve slice-find semantics if a malformed input repeats an id.
+        entities_by_id.entry(entity.id.as_str()).or_insert(entity);
+    }
     for class_use in &m.parasolid.parasolid_topology_attribute_class_uses {
-        let reference = m
-            .parasolid
-            .parasolid_topology_attribute_list_references
-            .iter()
-            .find(|reference| reference.id == class_use.topology_attribute_reference)
+        let reference = references_by_id
+            .get(class_use.topology_attribute_reference.as_str())
+            .copied()
             .expect("class use owns a topology attribute reference");
         let source_stream = a.stream(format!("nx:s{}", reference.stream_ordinal));
-        let entity = m
-            .parasolid
-            .parasolid_entity_51_records
-            .iter()
-            .find(|entity| entity.id == class_use.entity_51_record)
+        let entity = entities_by_id
+            .get(class_use.entity_51_record.as_str())
+            .copied()
             .expect("class use owns a type-81 entity");
         a.note(&class_use.id, source_stream, entity.inflated_offset)
             .tag("TOPOLOGY_ATTRIBUTE_CLASS_USE");
@@ -1105,6 +1184,26 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.segments.segment_body_lineage_statuses, r, a)),
         emit: |m, r, ns| emit_arena(&m.segments.segment_body_lineage_statuses, r, ns),
         len: |m| m.segments.segment_body_lineage_statuses.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_group_records",
+        tag: Some("PARASOLID_GROUP_RECORD"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_per_stream(&m.parasolid.parasolid_group_records, r, a)),
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_group_records, r, ns),
+        len: |m| m.parasolid.parasolid_group_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "parasolid_group_members",
+        tag: Some("PARASOLID_GROUP_MEMBER"),
+        exactness: Exactness::Derived,
+        phase: Phase::GroupA,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_group_members, r, ns),
+        len: |m| m.parasolid.parasolid_group_members.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -1732,6 +1831,76 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "om_audit_trail_rows",
+        tag: Some("OM_AUDIT_TRAIL_ROW"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.audit_trail_rows, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.audit_trail_rows, r, ns),
+        len: |m| m.om.audit_trail_rows.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "om_operation_state_journal_groups",
+        tag: Some("OM_OPERATION_STATE_JOURNAL_GROUP"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.operation_state_journal_groups, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.operation_state_journal_groups, r, ns),
+        len: |m| m.om.operation_state_journal_groups.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "om_operation_state_counters",
+        tag: Some("OM_OPERATION_STATE_COUNTER"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.operation_state_counters, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.operation_state_counters, r, ns),
+        len: |m| m.om.operation_state_counters.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "om_roll_forward_state_groups",
+        tag: Some("OM_ROLL_FORWARD_STATE_GROUP"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.operation_state_groups, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.operation_state_groups, r, ns),
+        len: |m| m.om.operation_state_groups.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "om_operation_state_messages",
+        tag: Some("OM_OPERATION_STATE_MESSAGE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.operation_state_messages, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.operation_state_messages, r, ns),
+        len: |m| m.om.operation_state_messages.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "om_operation_state_statuses",
+        tag: Some("OM_OPERATION_STATE_STATUS"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.operation_state_statuses, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.operation_state_statuses, r, ns),
+        len: |m| m.om.operation_state_statuses.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "om_operation_state_slot_lanes",
+        tag: Some("OM_OPERATION_STATE_SLOT_LANE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.operation_state_slot_lanes, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.operation_state_slot_lanes, r, ns),
+        len: |m| m.om.operation_state_slot_lanes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_operation_labels",
         tag: Some("FEATURE_OPERATION_LABEL"),
         exactness: Exactness::ByteExact,
@@ -1792,15 +1961,63 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
-        arena: "feature_operation_object_relations",
-        tag: Some("FEATURE_OPERATION_OBJECT_RELATION"),
+        arena: "feature_unlabeled_operation_records",
+        tag: Some("FEATURE_UNLABELED_OPERATION_RECORD"),
         exactness: Exactness::ByteExact,
         phase: Phase::GroupA,
         note: Some(|m, r, a| {
-            note_container(&m.features.feature_operation_object_relations, r, a);
+            note_container(&m.features.feature_unlabeled_operation_records, r, a);
         }),
-        emit: |m, r, ns| emit_arena(&m.features.feature_operation_object_relations, r, ns),
-        len: |m| m.features.feature_operation_object_relations.len(),
+        emit: |m, r, ns| emit_arena(&m.features.feature_unlabeled_operation_records, r, ns),
+        len: |m| m.features.feature_unlabeled_operation_records.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_unlabeled_operation_body_writes",
+        tag: Some("FEATURE_UNLABELED_OPERATION_BODY_WRITE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_container(&m.features.feature_unlabeled_operation_body_writes, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.features.feature_unlabeled_operation_body_writes, r, ns),
+        len: |m| m.features.feature_unlabeled_operation_body_writes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_operation_body_writes",
+        tag: Some("FEATURE_OPERATION_BODY_WRITE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_container(&m.features.feature_operation_body_writes, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_writes, r, ns),
+        len: |m| m.features.feature_operation_body_writes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_operation_tagged_references",
+        tag: Some("FEATURE_OPERATION_TAGGED_REFERENCE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_container(&m.features.feature_operation_tagged_references, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_tagged_references, r, ns),
+        len: |m| m.features.feature_operation_tagged_references.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_operation_data_block_references",
+        tag: Some("FEATURE_OPERATION_DATA_BLOCK_REFERENCE"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_container(&m.features.feature_operation_data_block_references, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_data_block_references, r, ns),
+        len: |m| m.features.feature_operation_data_block_references.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -1831,6 +2048,18 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.features.feature_operation_terminal_frames, r, a)),
         emit: |m, r, ns| emit_arena(&m.features.feature_operation_terminal_frames, r, ns),
         len: |m| m.features.feature_operation_terminal_frames.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_operation_state_journal_uses",
+        tag: Some("FEATURE_OPERATION_STATE_JOURNAL_USE"),
+        exactness: Exactness::Derived,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| {
+            note_container(&m.features.feature_operation_state_journal_uses, r, a);
+        }),
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_state_journal_uses, r, ns),
+        len: |m| m.features.feature_operation_state_journal_uses.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -2114,6 +2343,56 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: false,
     },
     CatalogueRow {
+        arena: "feature_operation_body_image_segment_uses",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_image_segment_uses, r, ns),
+        len: |m| m.features.feature_operation_body_image_segment_uses.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
+        arena: "feature_operation_body_partition_uses",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_operation_body_partition_uses, r, ns),
+        len: |m| m.features.feature_operation_body_partition_uses.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
+        arena: "feature_operation_body_identity_segment_uses",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| {
+            emit_arena(
+                &m.features.feature_operation_body_identity_segment_uses,
+                r,
+                ns,
+            )
+        },
+        len: |m| {
+            m.features
+                .feature_operation_body_identity_segment_uses
+                .len()
+        },
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
+        arena: "feature_body_write_group_partition_uses",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_body_write_group_partition_uses, r, ns),
+        len: |m| m.features.feature_body_write_group_partition_uses.len(),
+        counts_toward_emptiness: false,
+    },
+    CatalogueRow {
         arena: "feature_body_data_block_uses",
         tag: None,
         exactness: Exactness::ByteExact,
@@ -2122,6 +2401,26 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         emit: |m, r, ns| emit_arena(&m.features.feature_body_data_block_uses, r, ns),
         len: |m| m.features.feature_body_data_block_uses.len(),
         counts_toward_emptiness: false,
+    },
+    CatalogueRow {
+        arena: "feature_symbolic_threads",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_symbolic_threads, r, ns),
+        len: |m| m.features.feature_symbolic_threads.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_threaded_hole_templates",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_threaded_hole_templates, r, ns),
+        len: |m| m.features.feature_threaded_hole_templates.len(),
+        counts_toward_emptiness: true,
     },
     CatalogueRow {
         arena: "feature_simple_hole_templates",
@@ -2465,6 +2764,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         counts_toward_emptiness: true,
     },
     CatalogueRow {
+        arena: "feature_pattern_counted_reference_lanes",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_pattern_counted_reference_lanes, r, ns),
+        len: |m| m.features.feature_pattern_counted_reference_lanes.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
         arena: "feature_pattern_construction_payloads",
         tag: None,
         exactness: Exactness::ByteExact,
@@ -2688,6 +2997,46 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: None,
         emit: |m, r, ns| emit_arena(&m.features.feature_surface_construction_branches, r, ns),
         len: |m| m.features.feature_surface_construction_branches.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_swp104_leading_branches",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_swp104_leading_branches, r, ns),
+        len: |m| m.features.feature_swp104_leading_branches.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_thru_curve_construction_branch_groups",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| {
+            emit_arena(
+                &m.features.feature_thru_curve_construction_branch_groups,
+                r,
+                ns,
+            )
+        },
+        len: |m| {
+            m.features
+                .feature_thru_curve_construction_branch_groups
+                .len()
+        },
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_thru_curve_construction_envelopes",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_thru_curve_construction_envelopes, r, ns),
+        len: |m| m.features.feature_thru_curve_construction_envelopes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {
@@ -2918,6 +3267,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: None,
         emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_scalars, r, ns),
         len: |m| m.features.feature_sketch_payload_scalars.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "feature_sketch_payload_scalar_lanes",
+        tag: None,
+        exactness: Exactness::ByteExact,
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |m, r, ns| emit_arena(&m.features.feature_sketch_payload_scalar_lanes, r, ns),
+        len: |m| m.features.feature_sketch_payload_scalar_lanes.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

@@ -1,25 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parse the SPLMSSTR header and its `HEADER` and `FOOTER` directories.
+//! Parse the modern SPLMSSTR header and legacy Compound File Binary wrapper.
 //!
-//! An NX part begins with the eight-byte `SPLMSSTR` signature. Container integers
-//! are little-endian. Directory entries name `/Root/...` paths and may carry an
-//! in-bounds file offset and size. [`crate::parasolid`] uses the canonical
-//! `/Root/UG_PART/UG_PART` span to bound its compressed-stream scan.
+//! A modern NX part begins with the eight-byte `SPLMSSTR` signature. Legacy NX
+//! parts use a Compound File Binary envelope whose directory contains the
+//! `UG_PART/UG_PART` stream. Modern container integers are little-endian.
+//! Directory entries name `/Root/...` paths and may carry an in-bounds file
+//! offset and size. [`crate::parasolid`] uses the canonical modern
+//! `/Root/UG_PART/UG_PART` span or the opened legacy `UG_PART/UG_PART` stream
+//! to locate Parasolid data.
 
 use std::borrow::Cow;
+use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
+use cadmpeg_container::compound::{CompoundEntry, CompoundPrefixProbe, CompoundSnapshot};
 use cadmpeg_core::bytes::find;
-use cadmpeg_core::decode::{bounded_len, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::directory_entry as dir_entry;
 use crate::layout::directory_file_payload as file_payload;
 use crate::layout::extrefstream_handle_set_record as handle_set;
+use crate::layout::legacy_ugii_payload_prefix;
 use crate::layout::splmsstr_header as splmsstr;
 use crate::layout::ug_part_segment_index_row as index_row;
 
 /// The eight-byte signature used to identify an SPLMSSTR container.
 pub const MAGIC: &[u8; 8] = &splmsstr::MAGIC_VALUE;
+
+const LEGACY_UGII_PREFIX: &[u8; legacy_ugii_payload_prefix::VERSION] = b"\x0d\x01UGII  ";
 
 /// A directory entry from the `HEADER` or `FOOTER` region.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,7 +197,52 @@ impl Region {
     }
 }
 
-impl Container<'_> {
+impl<'a> Container<'a> {
+    /// Return an absolute source span only when it is wholly owned by one
+    /// catalogued directory entry.
+    pub(crate) fn bounded_entry_bytes(&self, offset: u64, byte_len: u64) -> Option<&[u8]> {
+        let offset = usize::try_from(offset).ok()?;
+        let byte_len = usize::try_from(byte_len).ok()?;
+        let end = offset.checked_add(byte_len)?;
+        let owner_end = self
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                let (start, entry_byte_len) = entry.file_span?;
+                let start = usize::try_from(start).ok()?;
+                let entry_byte_len = usize::try_from(entry_byte_len).ok()?;
+                let entry_end = start.checked_add(entry_byte_len)?;
+                (start <= offset && end <= entry_end).then_some(entry_end)
+            })
+            .min()?;
+        (end <= owner_end)
+            .then(|| self.data.get(offset..end))
+            .flatten()
+    }
+
+    /// Return bytes from an absolute offset through the end of its bounded
+    /// directory-entry span.
+    pub(crate) fn bounded_entry_tail(&self, offset: u64) -> Option<&[u8]> {
+        let offset = usize::try_from(offset).ok()?;
+        let end = self
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                let (start, byte_len) = entry.file_span?;
+                let start = usize::try_from(start).ok()?;
+                let byte_len = usize::try_from(byte_len).ok()?;
+                let end = start.checked_add(byte_len)?;
+                (start <= offset && offset < end).then_some(end)
+            })
+            .min()?;
+        self.data.get(offset..end)
+    }
+
+    /// Return whether the source uses the legacy Compound File Binary wrapper.
+    pub(crate) fn is_legacy_cfb(&self) -> bool {
+        self.legacy_cfb
+    }
+
     /// Decode the self-bounded segment index in `/Root/UG_PART/UG_PART`.
     pub fn segment_index(&self) -> Option<(&DirEntry, SegmentIndex<'_>)> {
         let entry = self
@@ -291,47 +345,161 @@ impl Container<'_> {
 
     /// Locate independently size-framed NX object-model sections.
     pub fn om_sections(&self) -> Vec<(&DirEntry, crate::om::Section<'_>)> {
-        let mut out = Vec::new();
-        for entry in &self.entries {
-            let Some((offset, size)) = entry.file_span else {
-                continue;
+        let framed_cache = self.om_section_cache.get_or_init(|| {
+            let (sections, layouts, operation_label_layouts) = match &self.data {
+                Cow::Borrowed(bytes) => {
+                    let bytes: &'a [u8] = bytes;
+                    let (sections, layouts, operation_label_layouts) =
+                        parse_framed_section_cache(bytes, &self.entries, false);
+                    (Some(sections), layouts, operation_label_layouts)
+                }
+                Cow::Owned(bytes) => {
+                    let (sections, layouts, operation_label_layouts) =
+                        parse_framed_section_cache(bytes, &self.entries, true);
+                    drop(sections);
+                    (None, layouts, operation_label_layouts)
+                }
             };
-            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
-                continue;
-            };
-            let Some(payload) = self.data.get(offset..offset.saturating_add(size)) else {
-                continue;
-            };
-            out.extend(
-                crate::om::sections(payload)
-                    .into_iter()
-                    .map(|section| (entry, section)),
-            );
+            let _ = self.om_operation_label_layouts.set(operation_label_layouts);
+            FramedSectionCache { sections, layouts }
+        });
+        if let Some(sections) = framed_cache.sections.as_ref() {
+            return sections
+                .iter()
+                .filter_map(|(entry_index, section)| {
+                    self.entries
+                        .get(*entry_index)
+                        .map(|entry| (entry, section.clone()))
+                })
+                .collect();
         }
-        out
+        framed_cache
+            .layouts
+            .iter()
+            .filter_map(|(entry_index, layout)| {
+                let entry = self.entries.get(*entry_index)?;
+                let (offset, size) = entry.file_span?;
+                let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+                let payload = self.data.get(offset..offset.saturating_add(size))?;
+                Some((entry, layout.materialize(payload)))
+            })
+            .collect()
     }
 
     /// Locate indexed NX object-model sections in catalogued file entries.
     pub fn indexed_om_sections(&self) -> Vec<(&DirEntry, crate::om::IndexedSection<'_>)> {
-        let mut out = Vec::new();
-        let mut seen = std::collections::BTreeSet::new();
-        for entry in &self.entries {
-            let Some((offset, size)) = entry.file_span else {
-                continue;
-            };
-            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
-                continue;
-            };
-            let Some(payload) = self.data.get(offset..offset.saturating_add(size)) else {
-                continue;
-            };
-            for section in crate::om::indexed_sections(payload) {
-                if seen.insert((offset, section.object_id_table_offset)) {
-                    out.push((entry, section));
+        let cache = self.indexed_section_layouts.get_or_init(|| {
+            let mut layouts = Vec::new();
+            let mut seen = std::collections::BTreeSet::new();
+            for (entry_index, entry) in self.entries.iter().enumerate() {
+                let Some((offset, size)) = entry.file_span else {
+                    continue;
+                };
+                let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size))
+                else {
+                    continue;
+                };
+                let Some(payload) = self.data.get(offset..offset.saturating_add(size)) else {
+                    continue;
+                };
+                for layout in crate::om::indexed_section_layouts(payload) {
+                    if seen.insert((offset, layout.object_id_table_offset)) {
+                        layouts.push((entry_index, layout));
+                    }
                 }
             }
+            let materialized: Option<Vec<(usize, crate::om::IndexedSection<'a>)>> =
+                if let Cow::Borrowed(bytes) = &self.data {
+                    let bytes: &'a [u8] = bytes;
+                    Some(
+                        layouts
+                            .iter()
+                            .filter_map(|(entry_index, layout)| {
+                                let entry = self.entries.get(*entry_index)?;
+                                let (offset, size) = entry.file_span?;
+                                let (offset, size) =
+                                    (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+                                let payload = bytes.get(offset..offset.saturating_add(size))?;
+                                Some((*entry_index, layout.materialize(payload)))
+                            })
+                            .collect(),
+                    )
+                } else {
+                    None
+                };
+            let offset_data_block_bytes = materialized.as_ref().map(|sections| {
+                let mut blocks = BTreeMap::new();
+                for (section_ordinal, (entry_index, section)) in sections.iter().enumerate() {
+                    if section
+                        .records
+                        .first()
+                        .is_none_or(|record| record.object_id.is_some())
+                    {
+                        continue;
+                    }
+                    let entry_offset = self
+                        .entries
+                        .get(*entry_index)
+                        .and_then(|entry| entry.file_span)
+                        .map_or(0, |(offset, _)| offset);
+                    let first_record_ordinal = usize::from(section.control.is_some());
+                    if let Some(control) = section.control.as_ref() {
+                        blocks.insert(
+                            format!("nx:om-data-blocks-{section_ordinal}:block#0"),
+                            (control.bytes, entry_offset + control.offset as u64),
+                        );
+                    }
+                    for (record_ordinal, block) in section.records.iter().enumerate() {
+                        blocks.insert(
+                            format!(
+                                "nx:om-data-blocks-{section_ordinal}:block#{}",
+                                record_ordinal + first_record_ordinal
+                            ),
+                            (block.bytes, entry_offset + block.offset as u64),
+                        );
+                    }
+                }
+                blocks
+            });
+            IndexedSectionCache {
+                layouts,
+                materialized,
+                offset_data_block_bytes,
+            }
+        });
+        if let Some(materialized) = cache.materialized.as_ref() {
+            return materialized
+                .iter()
+                .filter_map(|(entry_index, section)| {
+                    self.entries
+                        .get(*entry_index)
+                        .map(|entry| (entry, section.clone()))
+                })
+                .collect();
         }
-        out
+        cache
+            .layouts
+            .iter()
+            .filter_map(|(entry_index, layout)| {
+                let entry = self.entries.get(*entry_index)?;
+                let (offset, size) = entry.file_span?;
+                let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+                let payload = self.data.get(offset..offset.saturating_add(size))?;
+                Some((entry, layout.materialize(payload)))
+            })
+            .collect()
+    }
+
+    /// Return the cached bytes and source offsets of every borrowed offset-store block.
+    ///
+    /// Owned test containers keep the layout-only fallback because their data is
+    /// self-owned and cannot be stored as a borrow in this cache.
+    pub(crate) fn cached_offset_data_block_bytes(
+        &self,
+    ) -> Option<&BTreeMap<String, (&'a [u8], u64)>> {
+        self.indexed_section_layouts
+            .get()
+            .and_then(|cache| cache.offset_data_block_bytes.as_ref())
     }
 
     /// Extract child-part paths from catalogued external-reference payloads.
@@ -369,7 +537,7 @@ impl Container<'_> {
             .collect()
     }
 
-    /// Decode indexed EXTREFSTREAM record prefixes and sorted handle sets.
+    /// Decode indexed EXTREFSTREAM record prefixes and sorted handle lanes.
     pub(crate) fn external_reference_records(&self) -> Vec<(&DirEntry, ExtrefRecord)> {
         self.entries
             .iter()
@@ -543,7 +711,7 @@ pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
         let unique_count = handle_token_count - usize::from(closing_duplicate);
         handles[..unique_count]
             .windows(2)
-            .all(|pair| pair[0] < pair[1])
+            .all(|pair| pair[0] <= pair[1])
             .then_some(())?;
         if closing_duplicate {
             handles.pop();
@@ -642,27 +810,123 @@ pub(crate) fn parse_extref_reference_pairs(bytes: &[u8]) -> Vec<(usize, u32, u32
 /// A parsed SPLMSSTR container and its directory entries.
 #[derive(Debug, Clone)]
 pub struct Container<'a> {
-    /// The whole file image.
+    /// The source image, or the materialized logical stream image for legacy CFB.
     pub data: Cow<'a, [u8]>,
-    /// Version byte at file offset 8.
+    /// Modern version byte at file offset 8, or the legacy UGII payload
+    /// version when the source is a CFB wrapper.
     pub version: u8,
-    /// File-specific 24-bit little-endian value at offset 9.
+    /// Modern file-specific 24-bit little-endian value at offset 9; zero for
+    /// a legacy CFB wrapper.
     pub file_tag: u32,
-    /// Offset of the `FOOTER` region.
+    /// Modern `FOOTER` region offset; zero for a legacy CFB wrapper.
     pub footer_offset: u64,
-    /// Declared HEADER directory entry count.
+    /// Modern declared HEADER entry count, or the CFB entry count for legacy
+    /// input.
     pub header_entry_count: u32,
-    /// Declared FOOTER directory entry count.
+    /// Modern declared FOOTER directory entry count; zero for legacy input.
     pub footer_entry_count: u32,
-    /// Exact four-byte value following the counted FOOTER directory.
+    /// Modern exact four-byte value following the counted FOOTER directory;
+    /// zero for legacy input.
     pub footer_fingerprint: [u8; 4],
-    /// Enumerated directory entries from both regions, in serialized order.
+    /// Physical source-image length before legacy CFB stream materialization.
+    pub physical_size: u64,
+    /// Whether the source uses the legacy CFB wrapper.
+    pub legacy_cfb: bool,
+    /// Modern entries from both regions or legacy CFB paths, in serialized
+    /// order.
     pub entries: Vec<DirEntry>,
+    /// Cached source ranges for indexed object-model sections.
+    pub(crate) indexed_section_layouts: OnceLock<IndexedSectionCache<'a>>,
+    /// Cached operation-label layouts for size-framed object-model sections.
+    pub(crate) om_operation_label_layouts:
+        OnceLock<Vec<(usize, usize, Vec<crate::om::OperationLabelLayout>)>>,
+    /// Cached size-framed object-model sections when the container borrows its input.
+    pub(crate) om_section_cache: OnceLock<FramedSectionCache<'a>>,
+}
+
+/// Parsed indexed sections retained when their source bytes are borrowed from
+/// the container input. Owned test inputs use the layout fallback because
+/// their bytes do not have the container's input lifetime.
+#[derive(Debug, Clone)]
+pub(crate) struct IndexedSectionCache<'a> {
+    layouts: Vec<(usize, crate::om::IndexedSectionLayout)>,
+    materialized: Option<Vec<(usize, crate::om::IndexedSection<'a>)>>,
+    offset_data_block_bytes: Option<BTreeMap<String, (&'a [u8], u64)>>,
+}
+
+/// Parsed size-framed sections retained when their source bytes are borrowed
+/// from the container input, or their ownership-independent layouts when the
+/// container owns its input bytes.
+#[derive(Debug, Clone)]
+pub(crate) struct FramedSectionCache<'a> {
+    sections: Option<Vec<(usize, crate::om::Section<'a>)>>,
+    layouts: Vec<(usize, crate::om::SectionLayout)>,
+}
+
+type FramedSections<'a> = Vec<(usize, crate::om::Section<'a>)>;
+type FramedSectionLayouts = Vec<(usize, crate::om::SectionLayout)>;
+type FramedOperationLabelLayouts = Vec<(usize, usize, Vec<crate::om::OperationLabelLayout>)>;
+
+fn parse_framed_section_cache<'bytes>(
+    bytes: &'bytes [u8],
+    entries: &[DirEntry],
+    retain_layouts: bool,
+) -> (
+    FramedSections<'bytes>,
+    FramedSectionLayouts,
+    FramedOperationLabelLayouts,
+) {
+    let mut sections = Vec::new();
+    let mut layouts = Vec::new();
+    let mut operation_label_layouts = Vec::new();
+    for (entry_index, entry) in entries.iter().enumerate() {
+        let Some((offset, size)) = entry.file_span else {
+            continue;
+        };
+        let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+            continue;
+        };
+        let Some(payload) = bytes.get(offset..offset.saturating_add(size)) else {
+            continue;
+        };
+        for section in crate::om::sections(payload) {
+            if let Some(record_area_offset) = section.record_area_offset {
+                operation_label_layouts.push((
+                    entry_index,
+                    record_area_offset,
+                    section.operation_label_layouts(),
+                ));
+            }
+            if retain_layouts {
+                layouts.push((
+                    entry_index,
+                    crate::om::SectionLayout::from_section(&section),
+                ));
+            }
+            sections.push((entry_index, section));
+        }
+    }
+    (sections, layouts, operation_label_layouts)
 }
 
 /// Return whether `prefix` starts with [`MAGIC`].
 pub fn looks_like_nx(prefix: &[u8]) -> bool {
     prefix.starts_with(MAGIC)
+}
+
+/// Return whether a CFB prefix contains the NX directory evidence required for
+/// legacy detection.
+///
+/// The CFB signature alone is not sufficient: Inventor and other CAD formats
+/// use the same envelope. Requiring the canonical `UG_PART/UG_PART` path keeps
+/// detection tied to the NX payload namespace.
+pub fn looks_like_legacy_nx(prefix: &[u8]) -> bool {
+    let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(prefix) else {
+        return false;
+    };
+    paths
+        .iter()
+        .any(|path| path.eq_ignore_ascii_case("UG_PART/UG_PART"))
 }
 
 fn u24_le(d: &[u8], at: usize) -> u32 {
@@ -744,6 +1008,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
     let footer_fingerprint = data[footer_end..fingerprint_end]
         .try_into()
         .expect("checked four-byte footer fingerprint");
+    let physical_size = data.len() as u64;
 
     Ok(Container {
         data,
@@ -753,8 +1018,101 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> Result<Container<'a>, C
         header_entry_count,
         footer_entry_count,
         footer_fingerprint,
+        physical_size,
+        legacy_cfb: false,
         entries,
+        indexed_section_layouts: OnceLock::new(),
+        om_operation_label_layouts: OnceLock::new(),
+        om_section_cache: OnceLock::new(),
     })
+}
+
+/// Open the legacy NX `UG_PART/UG_PART` stream from a validated CFB source.
+pub fn scan_legacy<'a>(
+    ctx: &DecodeContext<'a>,
+    root: View<'a>,
+) -> Result<(Container<'a>, View<'a>), CodecError> {
+    let snapshot = CompoundSnapshot::new(ctx, root)?;
+    let part = snapshot
+        .stream("UG_PART/UG_PART")
+        .ok_or_else(|| CodecError::WrongFormat("missing legacy UG_PART/UG_PART stream".into()))?;
+    let part_view = snapshot.open(ctx, part)?;
+    let payload_prefix = part_view
+        .window()
+        .get(..legacy_ugii_payload_prefix::LEN)
+        .ok_or_else(|| {
+            CodecError::WrongFormat("legacy UG_PART/UG_PART stream has no UGII prefix".into())
+        })?;
+    if payload_prefix[..legacy_ugii_payload_prefix::VERSION] != LEGACY_UGII_PREFIX[..] {
+        return Err(CodecError::WrongFormat(
+            "legacy UG_PART/UG_PART stream is not a UGII payload".into(),
+        ));
+    }
+    let part_id = part.id();
+    let mut stream_views = Vec::new();
+    let mut stream_spans = BTreeMap::new();
+    let mut logical_offset = 0_u64;
+    for entry in snapshot.entries() {
+        let CompoundEntry::Stream(stream) = entry else {
+            continue;
+        };
+        let view = if stream.id() == part_id {
+            part_view
+        } else {
+            snapshot.open(ctx, stream)?
+        };
+        let byte_len = u64::try_from(view.window().len())
+            .map_err(|_| CodecError::Malformed("legacy CFB stream exceeds u64".into()))?;
+        let span = (logical_offset, byte_len);
+        logical_offset = logical_offset
+            .checked_add(byte_len)
+            .ok_or_else(|| CodecError::Malformed("legacy CFB logical image overflows".into()))?;
+        stream_spans.insert(stream.id(), span);
+        stream_views.push(view);
+    }
+    let logical_data = ctx.concat_views(&stream_views)?;
+    let mut entries = Vec::new();
+    for entry in snapshot.entries() {
+        ctx.charge_collection_items(1, "retain legacy NX directory entry")?;
+        let retained = "/Root/"
+            .len()
+            .checked_add(entry.path().len())
+            .and_then(|length| length.checked_add(std::mem::size_of::<DirEntry>()))
+            .ok_or_else(|| CodecError::Malformed("legacy CFB entry size overflow".into()))?;
+        ctx.charge_retained(
+            retained as u64,
+            "retain legacy NX directory entry",
+            Some(root.location()),
+        )?;
+        let file_span = match entry {
+            CompoundEntry::Stream(stream) => stream_spans.get(&stream.id()).copied(),
+            CompoundEntry::Storage(_) => None,
+        };
+        entries.push(DirEntry {
+            name: format!("/Root/{}", entry.path()),
+            region: Region::Header,
+            file_span,
+        });
+    }
+    let version = payload_prefix[legacy_ugii_payload_prefix::VERSION];
+    let header_entry_count = u32::try_from(entries.len())
+        .map_err(|_| CodecError::Malformed("legacy CFB entry count exceeds u32".into()))?;
+    let container = Container {
+        data: Cow::Borrowed(logical_data.window()),
+        version,
+        file_tag: 0,
+        footer_offset: 0,
+        header_entry_count,
+        footer_entry_count: 0,
+        footer_fingerprint: [0; 4],
+        physical_size: root.window().len() as u64,
+        legacy_cfb: true,
+        entries,
+        indexed_section_layouts: OnceLock::new(),
+        om_operation_label_layouts: OnceLock::new(),
+        om_section_cache: OnceLock::new(),
+    };
+    Ok((container, part_view))
 }
 
 fn directory_region(

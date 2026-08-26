@@ -965,6 +965,7 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
                 v_count: descriptor.v_count as u32,
                 control_points: points,
                 weights,
+                normal_reversed: false,
                 u_periodic: descriptor.u_periodic,
                 v_periodic: descriptor.v_periodic,
             })),

@@ -7,7 +7,11 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::*;
+use crate::topology::{
+    intersection_data_curves, Graph, Node, NodeCandidate, TYPE_38_SCHEMA_HEADER,
+};
 use crate::NxCodec;
+use cadmpeg_core::decode::View;
 
 #[test]
 fn topology_rejects_shell_with_broken_face_ownership_chain() {
@@ -61,6 +65,168 @@ fn topology_retains_shell_body_identity_without_body_record() {
     assert_eq!(result.ir().model.faces.len(), 1);
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn topology_accepts_complete_fixed_nodes_across_the_u32_identifier_domain() {
+    let mut stream = topology_partition_stream();
+    let fixed_nodes = crate::topology::Graph::parse(&stream)
+        .nodes
+        .values()
+        .filter(|node| node.kind != 17)
+        .map(|node| (node.pos, node.shift))
+        .collect::<Vec<_>>();
+    for (ordinal, (pos, shift)) in fixed_nodes.into_iter().enumerate() {
+        let node_id = u32::MAX - u32::try_from(ordinal).unwrap();
+        stream[pos + 4 + shift..pos + 8 + shift].copy_from_slice(&node_id.to_be_bytes());
+    }
+
+    let graph = crate::topology::Graph::parse(&stream);
+
+    assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_face_count(), 1);
+    assert!(graph.has_complete_body_topology());
+    assert!(graph
+        .nodes
+        .values()
+        .filter(|node| node.kind != 17)
+        .all(|node| View::u32_be_at(&node.bytes, 4).is_some_and(|id| id > 1_000_000)));
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn topology_accepts_high_node_identity_among_low_identity_neighbors() {
+    let mut stream = topology_partition_stream();
+    let initial_graph = crate::topology::Graph::parse(&stream);
+    let face = initial_graph.get(14, 4).unwrap();
+    let node_id_offset = face.pos + 4 + face.shift;
+    stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+
+    let graph = crate::topology::Graph::parse(&stream);
+
+    assert_eq!(
+        graph.get(14, 4).and_then(crate::topology::Node::node_id),
+        Some(u32::MAX)
+    );
+    assert_eq!(graph.body_shape_face_count(), 1);
+    assert!(graph.has_complete_body_topology());
+}
+
+#[test]
+fn topology_admits_high_identity_carriers_from_typed_topology_slots() {
+    let mut stream = topology_partition_stream();
+    let initial_graph = Graph::parse(&stream);
+    for (kind, xmt) in [(50, 6), (30, 9), (29, 11)] {
+        let node = initial_graph.get(kind, xmt).unwrap();
+        let node_id_offset = node.pos + 4 + node.shift;
+        stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+    }
+
+    let graph = Graph::parse(&stream);
+
+    for (kind, xmt) in [(50, 6), (30, 9), (29, 11)] {
+        assert_eq!(
+            graph.get(kind, xmt).and_then(|node| node.u32_at(4)),
+            Some(u32::MAX)
+        );
+    }
+    assert!(graph.has_complete_body_topology());
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert_eq!(result.ir().model.points.len(), 1);
+}
+
+#[test]
+fn topology_rejects_unreferenced_high_identity_carrier() {
+    let mut stream = topology_partition_stream();
+    let plane_pos = stream
+        .windows(4)
+        .position(|window| window == [0, 50, 0, 6])
+        .unwrap();
+    let mut unreferenced = stream[plane_pos..plane_pos + 91].to_vec();
+    put_ref(&mut unreferenced, 2, 99);
+    unreferenced[4..8].copy_from_slice(&u32::MAX.to_be_bytes());
+    stream.extend(unreferenced);
+    let line_pos = stream
+        .windows(4)
+        .position(|window| window == [0, 30, 0, 9])
+        .unwrap();
+    let mut successor = stream[line_pos..line_pos + 67].to_vec();
+    put_ref(&mut successor, 2, 100);
+    stream.extend(successor);
+
+    let graph = Graph::parse(&stream);
+
+    assert!(graph.get(50, 99).is_none());
+    assert!(graph.get(30, 100).is_some());
+    assert!(graph.has_complete_body_topology());
+}
+
+#[test]
+fn topology_admits_high_identity_region_from_shell_ownership() {
+    let mut stream = topology_partition_stream();
+    let initial_graph = Graph::parse(&stream);
+    let region = initial_graph.get(19, 12).unwrap();
+    let node_id_offset = region.pos + 4 + region.shift;
+    stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+
+    let graph = Graph::parse(&stream);
+
+    assert_eq!(graph.get(19, 12).and_then(Node::node_id), Some(u32::MAX));
+    assert!(graph.has_complete_body_topology());
+}
+
+#[test]
+fn topology_closes_high_identity_procedural_surface_dependencies() {
+    let mut stream = offset_surface_topology_partition_stream();
+    let initial_graph = Graph::parse(&stream);
+    let offset = initial_graph.get(60, 12).unwrap();
+    let node_id_offset = offset.pos + 4 + offset.shift;
+    stream[node_id_offset..node_id_offset + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+
+    let graph = Graph::parse(&stream);
+
+    assert_eq!(
+        graph.get(60, 12).and_then(|node| node.u32_at(4)),
+        Some(u32::MAX)
+    );
+    assert_eq!(graph.offset_surfaces().len(), 1);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+}
+
+#[test]
+fn topology_resolves_kernel_node_identity_only_within_one_unique_family() {
+    let mut stream = topology_partition_stream();
+    let graph = crate::topology::Graph::parse(&stream);
+    let face = graph.get(14, 4).unwrap();
+    let node_id = face.node_id().unwrap();
+    assert_eq!(graph.unique_xmt_by_node_id(14, node_id), Some(4));
+    assert_eq!(graph.unique_xmt_by_node_id(16, node_id), Some(8));
+
+    let mut duplicate = face.bytes.clone();
+    duplicate[3] = 39;
+    stream.extend(duplicate);
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(graph.get(14, 39).and_then(Node::node_id), Some(node_id));
+    assert_eq!(graph.unique_xmt_by_node_id(14, node_id), None);
 }
 
 #[test]
@@ -249,4 +415,146 @@ fn topology_rejects_duplicate_fixed_record_identity() {
     let graph = crate::topology::Graph::parse(&first);
     assert!(graph.get(29, 11).is_none());
     assert!(graph.of_kind(29).next().is_none());
+}
+
+#[test]
+fn topology_rejects_duplicate_identity_instead_of_preferring_body_shape() {
+    let mut stream = topology_partition_stream();
+    let mut duplicate = record(13, 24);
+    put_ref(&mut duplicate, 2, 3);
+    put_ref(&mut duplicate, 8, 2);
+    put_ref(&mut duplicate, 10, 2);
+    put_ref(&mut duplicate, 12, 2);
+    put_ref(&mut duplicate, 14, 4);
+    put_ref(&mut duplicate, 16, 0);
+    put_ref(&mut duplicate, 18, 0);
+    put_ref(&mut duplicate, 20, 12);
+    put_ref(&mut duplicate, 22, 0);
+    stream.extend(duplicate);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.get(13, 3).is_none());
+}
+
+#[test]
+fn topology_rejects_overlapping_candidates_without_ranking() {
+    let first = NodeCandidate {
+        kind: 29,
+        xmt: 11,
+        pos: 0,
+        shift: 0,
+        end: 24,
+    };
+    let second = NodeCandidate {
+        kind: 29,
+        xmt: 12,
+        pos: 8,
+        shift: 0,
+        end: 32,
+    };
+
+    assert!(Graph::select_non_overlapping_candidates(&[], vec![first, second]).is_empty());
+}
+
+#[test]
+fn topology_ownership_candidate_cannot_suppress_typed_candidate() {
+    let mut face = record(14, 39);
+    put_ref(&mut face, 2, 4);
+    put_f64(&mut face, 10, 0.000_2);
+    put_ref(&mut face, 18, 1);
+    put_ref(&mut face, 20, 1);
+    put_ref(&mut face, 22, 1);
+    put_ref(&mut face, 24, 3);
+    put_ref(&mut face, 26, 6);
+    face[28] = b'+';
+
+    let mut stream = vec![0, 12];
+    stream.extend(face);
+
+    let graph = Graph::parse(&stream);
+    assert!(graph.get(14, 4).is_some());
+    assert!(graph.get(12, 14).is_none());
+}
+
+#[test]
+fn topology_resolves_ownership_overlap_before_duplicate_identity() {
+    let mut outer = record(12, 24);
+    put_ref(&mut outer, 2, 7);
+    outer[8..10].copy_from_slice(&[0, 12]);
+    put_ref(&mut outer, 10, 7);
+    let mut successor = record(12, 24);
+    put_ref(&mut successor, 2, 8);
+
+    let mut stream = outer;
+    stream.extend(successor);
+
+    let graph = Graph::parse(&stream);
+    assert_eq!(graph.get(12, 7).map(|node| node.pos), Some(0));
+    assert_eq!(graph.get(12, 8).map(|node| node.pos), Some(24));
+}
+
+#[test]
+fn topology_retains_non_overlapping_ownership_records() {
+    let graph = Graph::parse(&topology_partition_stream());
+
+    assert!(graph.get(12, 2).is_some());
+    assert!(graph.get(19, 12).is_some());
+}
+
+#[test]
+fn topology_resolves_overlap_before_duplicate_identity() {
+    let stream = vec![0; 40];
+    let outer = NodeCandidate {
+        kind: 29,
+        xmt: 11,
+        pos: 0,
+        shift: 0,
+        end: 40,
+    };
+    let embedded = NodeCandidate {
+        kind: 29,
+        xmt: 11,
+        pos: 8,
+        shift: 0,
+        end: 32,
+    };
+
+    assert!(Graph::select_unique_candidates(vec![outer, embedded]).is_empty());
+    let non_overlapping = Graph::select_non_overlapping_candidates(&stream, vec![outer, embedded]);
+    let selected = Graph::select_unique_candidates(non_overlapping);
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].pos, outer.pos);
+    assert_eq!(selected[0].end(), outer.end());
+}
+
+#[test]
+fn topology_rejects_status_framed_delta_as_fixed_record() {
+    let graph = Graph::parse(&variable_status_framed_deltas_stream());
+
+    assert!(graph.of_kind(15).next().is_none());
+}
+
+#[test]
+fn intersection_data_requires_complete_schema_header() {
+    let source = deltas_intersection_curve_stream();
+    let header_start = source
+        .windows(TYPE_38_SCHEMA_HEADER.len())
+        .position(|window| window == TYPE_38_SCHEMA_HEADER)
+        .expect("schema header");
+    let after_header = header_start + TYPE_38_SCHEMA_HEADER.len();
+    let record_start = source[after_header..]
+        .iter()
+        .position(|byte| *byte == 0x5a)
+        .map(|offset| after_header + offset)
+        .expect("standalone intersection-data record");
+
+    let mut incomplete_header =
+        source[header_start..header_start + TYPE_38_SCHEMA_HEADER.len() - 1].to_vec();
+    incomplete_header.push(0xfe);
+    incomplete_header.extend_from_slice(&source[record_start..]);
+    assert!(intersection_data_curves(&incomplete_header).is_empty());
+    assert!(crate::deltas::walk(&incomplete_header)
+        .records
+        .iter()
+        .all(|record| record.kind != 90));
 }

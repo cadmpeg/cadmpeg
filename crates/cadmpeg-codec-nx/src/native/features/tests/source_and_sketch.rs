@@ -1,13 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io::Cursor;
+use std::sync::Arc;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::container::{DirEntry, Region};
+use crate::om::{EntityRecord, IndexedSection};
 use crate::test_support::*;
 use crate::NxCodec;
 
 use super::*;
+
+#[test]
+fn unique_offset_data_store_rejects_a_second_matching_section() {
+    let entry = DirEntry {
+        name: "section".into(),
+        region: Region::Header,
+        file_span: None,
+    };
+    let section = || IndexedSection {
+        base: 0,
+        entity_index_offset: 0,
+        object_id_table_offset: 0,
+        types: Arc::from([]),
+        fields: Arc::from([]),
+        control: None,
+        column_storage: None,
+        records: Arc::from([EntityRecord {
+            object_id: None,
+            object_id_offset: None,
+            offset: 0,
+            bytes: &[],
+        }]),
+    };
+    let first = section();
+    let second = section();
+    let single = section();
+    assert_eq!(
+        super::unique_offset_data_store(&[(&entry, single)], &[1]),
+        Some(0)
+    );
+    let indexed = [(&entry, first), (&entry, second)];
+
+    assert_eq!(super::unique_offset_data_store(&indexed, &[1]), None);
+}
 
 #[test]
 fn nx_feature_source_content_orders_payload_text() {
@@ -34,6 +71,56 @@ fn nx_feature_source_content_orders_payload_text() {
         &content[1],
         cadmpeg_ir::features::FeatureSourceContent::Text(value) if value == "Later"
     ));
+}
+
+#[test]
+fn nx_symbolic_thread_retains_all_complete_type_three_text_frames() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SYMBOLIC_THREAD",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5\0\x03\x05CUT\0";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 500,
+        payload,
+        label,
+    };
+
+    let frames = super::symbolic_thread_text_frames(record).expect("two text frames");
+    assert_eq!(frames.len(), 3);
+    assert_eq!(frames[0].marker, 0x03);
+    assert_eq!(frames[0].offset, 500);
+    assert_eq!(frames[0].value, "M Profile");
+    assert_eq!(frames[1].offset, 512);
+    assert_eq!(frames[1].value, "M3_x_0.5");
+    assert_eq!(frames[2].offset, 523);
+    assert_eq!(frames[2].value, "CUT");
+}
+
+#[test]
+fn nx_symbolic_thread_requires_two_complete_type_three_text_frames() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SYMBOLIC_THREAD",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x03\x0bM Profile\0\x03\x0aM3_x_0.5";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 500,
+        payload,
+        label,
+    };
+
+    assert!(super::symbolic_thread_text_frames(record).is_none());
 }
 
 #[test]
@@ -120,10 +207,26 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
     expressions[2].source_entry = "section-a".into();
     expressions[2].source_table = "table-a".into();
     assert_eq!(
-        super::feature_block_dimensions(&[construction], &[binding], &declarations, &expressions,)
-            .len(),
+        super::feature_block_dimensions(
+            std::slice::from_ref(&construction),
+            std::slice::from_ref(&binding),
+            &declarations,
+            &expressions,
+        )
+        .len(),
         1
     );
+
+    for expression in &mut expressions {
+        expression.unit = ExpressionUnit::Inch;
+    }
+    let dimensions = super::feature_block_dimensions(
+        std::slice::from_ref(&construction),
+        std::slice::from_ref(&binding),
+        &declarations,
+        &expressions,
+    );
+    assert_eq!(dimensions[0].values, [508.0, 533.4, 558.8]);
 }
 
 #[test]
@@ -190,6 +293,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         value: "SIMPLE HOLE".to_string(),
         object_indices: [None; 4],
         raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        stable_identity: None,
         source_offset: 100,
     };
     let record = FeatureOperationRecord {
@@ -200,6 +304,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         sha256: "a".repeat(64),
         payload_byte_len: 40,
         payload_sha256: "b".repeat(64),
+        stable_identity: None,
         payload_source_offset: 120,
         source_offset: 90,
     };
@@ -246,6 +351,26 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
             SimpleHoleEndTreatment::None,
         ))
     );
+    assert_eq!(
+        super::parse_simple_hole_template("Hole_GeneralHole_Countersunk_Through"),
+        Some((
+            SimpleHoleFamily::GeneralHole,
+            SimpleHoleForm::Countersunk,
+            SimpleHoleExtent::Through,
+            SimpleHoleEndTreatment::None,
+            SimpleHoleEndTreatment::None,
+        ))
+    );
+    assert_eq!(
+        super::parse_simple_hole_template("Hole_GeneralHole_Countersunk_Blind"),
+        Some((
+            SimpleHoleFamily::GeneralHole,
+            SimpleHoleForm::Countersunk,
+            SimpleHoleExtent::Blind,
+            SimpleHoleEndTreatment::None,
+            SimpleHoleEndTreatment::None,
+        ))
+    );
     assert!(super::parse_simple_hole_template("Hole_GeneralHole_Simple_Through").is_none());
     assert!(super::parse_simple_hole_template("Hole_GeneralHole_Counterbored_Blind").is_none());
 
@@ -272,6 +397,30 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     };
     assert_eq!(counterbored_template.form, SimpleHoleForm::Counterbored);
     assert_eq!(counterbored_template.extent, SimpleHoleExtent::Through);
+
+    let mut countersunk_label = label.clone();
+    countersunk_label.id = "operation#5".to_string();
+    countersunk_label.value = "CSUNK_HOLE".to_string();
+    let mut countersunk_record = record.clone();
+    countersunk_record.id = "record#5".to_string();
+    countersunk_record.operation_label = countersunk_label.id.clone();
+    let countersunk_string = FeaturePayloadString {
+        id: "payload-string#5-0".to_string(),
+        operation_record: countersunk_record.id.clone(),
+        ordinal: 0,
+        value: "Hole_GeneralHole_Countersunk_Blind".to_string(),
+        source_offset: 130,
+    };
+    let countersunk_templates = super::feature_simple_hole_templates(
+        &[countersunk_label],
+        &[countersunk_record],
+        &[countersunk_string],
+    );
+    let [countersunk_template] = countersunk_templates.as_slice() else {
+        panic!("countersunk hole template was not admitted");
+    };
+    assert_eq!(countersunk_template.form, SimpleHoleForm::Countersunk);
+    assert_eq!(countersunk_template.extent, SimpleHoleExtent::Blind);
 
     let mut duplicate = string.clone();
     duplicate.id = "payload-string#3-1".to_string();
@@ -304,6 +453,86 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
 }
 
 #[test]
+fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
+    use super::{
+        FeatureOperationLabel, FeatureOperationRecord, FeaturePayloadString, SimpleHoleExtent,
+        ThreadedHoleFamily,
+    };
+
+    let label = FeatureOperationLabel {
+        id: "operation#threaded".to_string(),
+        section_link: "section#0".to_string(),
+        ordinal: 7,
+        value: "SIMPLE HOLE".to_string(),
+        object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        stable_identity: None,
+        source_offset: 100,
+    };
+    let record = FeatureOperationRecord {
+        id: "record#threaded".to_string(),
+        operation_label: label.id.clone(),
+        ordinal: 7,
+        byte_len: 80,
+        sha256: "a".repeat(64),
+        payload_byte_len: 40,
+        payload_sha256: "b".repeat(64),
+        stable_identity: None,
+        payload_source_offset: 120,
+        source_offset: 90,
+    };
+    let string = FeaturePayloadString {
+        id: "payload-string#threaded-0".to_string(),
+        operation_record: record.id.clone(),
+        ordinal: 0,
+        value: "Hole_ThreadedHole_M Profile_Blind".to_string(),
+        source_offset: 130,
+    };
+    let templates = super::feature_threaded_hole_templates(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&string),
+    );
+    let [template] = templates.as_slice() else {
+        panic!("threaded-hole template was not admitted");
+    };
+    assert_eq!(template.payload_string, string.id);
+    assert_eq!(template.family, ThreadedHoleFamily::MProfile);
+    assert_eq!(template.extent, SimpleHoleExtent::Blind);
+    assert_eq!(template.source_offset, string.source_offset);
+    assert_eq!(
+        super::parse_threaded_hole_template("Hole_ThreadedHole_UNC_Blind"),
+        Some((ThreadedHoleFamily::Unc, SimpleHoleExtent::Blind,))
+    );
+    assert!(super::parse_threaded_hole_template("Hole_ThreadedHole_UNF_Blind").is_none());
+    assert!(super::parse_threaded_hole_template("Hole_ThreadedHole_M Profile_Through").is_none());
+
+    let mut non_simple_label = label.clone();
+    non_simple_label.value = "CBORE_HOLE".to_string();
+    assert!(super::feature_threaded_hole_templates(
+        &[non_simple_label],
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&string),
+    )
+    .is_empty());
+
+    let mut duplicate = string.clone();
+    duplicate.id = "payload-string#threaded-1".to_string();
+    duplicate.ordinal = 1;
+    duplicate.source_offset += 64;
+    assert!(super::feature_threaded_hole_templates(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        &[string.clone(), duplicate],
+    )
+    .is_empty());
+
+    let mut unknown = string;
+    unknown.value = "Hole_ThreadedHole_M Profile_Blind_Extra".to_string();
+    assert!(super::feature_threaded_hole_templates(&[label], &[record], &[unknown]).is_empty());
+}
+
+#[test]
 fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     use super::{
         FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord, FeatureSketchReference,
@@ -316,6 +545,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         value: "SKETCH".to_string(),
         object_indices: [Some(45), None, Some(81), None],
         raw_object_indices: [vec![45], vec![0xff], vec![81], vec![0xff]],
+        stable_identity: None,
         source_offset: 700,
     };
     let record = FeatureOperationRecord {
@@ -326,6 +556,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         sha256: "00".repeat(32),
         payload_byte_len: 140,
         payload_sha256: "11".repeat(32),
+        stable_identity: None,
         payload_source_offset: 733,
         source_offset: 700,
     };
@@ -764,6 +995,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         value: value.to_string(),
         object_indices: [None; 4],
         raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        stable_identity: None,
         source_offset: 100 + u64::from(ordinal),
     };
     let labels = [label("csys", "DATUM_CSYS", 0), label("sketch", "SKETCH", 1)];
@@ -994,68 +1226,37 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
 
 #[test]
 fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
-    use super::{
-        FeatureExtrudeProfileReference, FeatureOperationBodyReferenceLane,
-        FeatureOperationBodyReferenceLaneEncoding,
-    };
+    use super::FeatureExtrudeProfileReference;
 
     let references = [10, 11].map(|ordinal| FeatureExtrudeProfileReference {
         id: format!("profile-{ordinal}"),
         operation_label: "operation".to_string(),
         ordinal: ordinal - 10,
-        witnessed: true,
+        field_tag: 0x16,
+        witness_source_offset: Some(u64::from(ordinal + 20)),
         object_index: ordinal + 90,
         raw_object_index: vec![(ordinal + 90) as u8],
         data_block: Some(format!("block-{ordinal}")),
         source_offset: u64::from(ordinal),
     });
-    let lane = FeatureOperationBodyReferenceLane {
-        id: "lane".to_string(),
-        operation_label: "operation".to_string(),
-        body_reference_ordinal: 0,
-        body_object_index: 42,
-        branch: 0x11,
-        encoding: FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex,
-        object_indices: vec![100, 101],
-        raw_object_indices: vec![vec![0xf0, 100], vec![0xf0, 101]],
-        data_blocks: vec![Some("block-10".to_string()), Some("block-11".to_string())],
-        source_offsets: vec![20, 21],
-    };
-    let profiles =
-        super::feature_extrude_construction_profiles(&references, std::slice::from_ref(&lane));
+    let profiles = super::feature_extrude_construction_profiles(&references);
     assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].body_object_index, 42);
     assert_eq!(profiles[0].object_indices, [100, 101]);
     assert_eq!(profiles[0].data_blocks, ["block-10", "block-11"]);
+    assert_eq!(profiles[0].witness_source_offsets, [30, 31]);
 
     for ordinal in [0, 2] {
         let mut malformed = references.clone();
         malformed[1].ordinal = ordinal;
-        assert!(super::feature_extrude_construction_profiles(
-            &malformed,
-            std::slice::from_ref(&lane),
-        )
-        .is_empty());
+        assert!(super::feature_extrude_construction_profiles(&malformed).is_empty());
     }
 
-    let mut mismatched = lane.clone();
-    mismatched.object_indices[1] = 102;
-    assert!(super::feature_extrude_construction_profiles(&references, &[mismatched]).is_empty());
-
-    let mut unresolved = FeatureOperationBodyReferenceLane {
-        id: "lane".to_string(),
-        operation_label: "operation".to_string(),
-        body_reference_ordinal: 0,
-        body_object_index: 42,
-        branch: 0x11,
-        encoding: FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex,
-        object_indices: vec![100, 101],
-        raw_object_indices: vec![vec![0xf0, 100], vec![0xf0, 101]],
-        data_blocks: vec![Some("block-10".to_string()), Some("block-11".to_string())],
-        source_offsets: vec![20, 21],
-    };
-    unresolved.data_blocks[1] = None;
-    assert!(super::feature_extrude_construction_profiles(&references, &[unresolved]).is_empty());
+    let mut unwitnessed = references.clone();
+    unwitnessed[1].witness_source_offset = None;
+    assert!(super::feature_extrude_construction_profiles(&unwitnessed).is_empty());
+    let mut unresolved = references;
+    unresolved[1].data_block = None;
+    assert!(super::feature_extrude_construction_profiles(&unresolved).is_empty());
 }
 
 #[test]
@@ -1131,6 +1332,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         section_offset: 0,
         byte_len: 1,
         sha256: "hash".to_string(),
+        stable_identity: None,
         source_entry: "entry".to_string(),
         source_offset: 0,
     };
@@ -1140,6 +1342,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     ];
     let blocks = [
         block("nx:om-data-blocks-1:block#20", 1),
+        block("nx:om-data-blocks-1:block#30", 1),
         block("nx:om-data-blocks-2:block#20", 2),
     ];
     assert!(super::feature_operation_body_operands(
@@ -1164,12 +1367,34 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         &blocks,
         &bindings,
     );
-    assert_eq!(same_store.len(), 1);
+    assert_eq!(same_store.len(), 2);
     assert_eq!(
         same_store[0].operand_data_block.as_deref(),
         Some("nx:om-data-blocks-1:block#20")
     );
+    assert_eq!(
+        same_store[1].operand_data_block.as_deref(),
+        Some("nx:om-data-blocks-1:block#30")
+    );
     assert!(same_store[0].segment_body_bindings.is_empty());
+
+    let distinct_member = member(0, 30);
+    let distinct_member_operand = super::feature_operation_body_operands(
+        &[distinct_member],
+        &[FeatureBodyReferenceOccurrence {
+            operation_label: "same-store".to_string(),
+            ..references[0].clone()
+        }],
+        &same_store_inputs,
+        &blocks,
+        &bindings,
+    );
+    assert_eq!(distinct_member_operand.len(), 1);
+    assert_eq!(distinct_member_operand[0].operand_object_index, 30);
+    assert_eq!(
+        distinct_member_operand[0].operand_data_block.as_deref(),
+        Some("nx:om-data-blocks-1:block#30")
+    );
     assert!(super::feature_operation_body_operands(
         &members,
         &[FeatureBodyReferenceOccurrence {
@@ -1177,7 +1402,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
             ..references[0].clone()
         }],
         &same_store_inputs,
-        &blocks[1..],
+        &blocks[2..],
         &bindings,
     )
     .is_empty());
@@ -1189,7 +1414,8 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         id: "profile#0".to_string(),
         operation_label: "operation".to_string(),
         ordinal: 0,
-        witnessed: false,
+        field_tag: 0x16,
+        witness_source_offset: None,
         object_index: 100,
         raw_object_index: vec![100],
         data_block: Some("block#100".to_string()),
@@ -1249,7 +1475,8 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
             id: "profile#0".to_string(),
             operation_label: "operation".to_string(),
             ordinal: 0,
-            witnessed: false,
+            field_tag: 0x16,
+            witness_source_offset: None,
             object_index: 100,
             raw_object_index: vec![100],
             data_block: Some("block#100".to_string()),

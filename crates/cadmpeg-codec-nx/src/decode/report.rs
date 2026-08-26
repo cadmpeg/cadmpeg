@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-report losses for NX decode.
 
-use super::build::unmatched_delta_tombstone_counts;
 use super::feature_completeness::{
     active_configuration_state_is_incomplete, body_selection_is_incomplete,
     body_selections_overlap, chamfer_definition_is_incomplete, combine_definition_is_incomplete,
@@ -17,10 +16,18 @@ use super::feature_completeness::{
     positive_feature_length, projected_curve_direction_is_incomplete,
     replace_face_definition_is_incomplete, revolve_definition_is_incomplete,
     rib_definition_is_incomplete, sew_bodies_definition_is_incomplete,
+    shell_definition_is_incomplete, sphere_definition_is_incomplete,
     sweep_definition_is_incomplete, thicken_definition_is_incomplete,
     trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
     valid_feature_direction,
 };
+use super::geometry_work::{
+    MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
+    MAX_PCURVE_COMPLETION_GEOMETRY_WORK, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
+    MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
+};
+use super::pcurves::MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES;
+use super::support_uv::pcurve_requires_completion;
 use super::{summary_notes, Counts, Scan};
 use crate::loss::NxLossCode;
 use crate::parasolid::StreamKind;
@@ -31,14 +38,40 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::report::{DecodeReport, LossNote};
 use std::collections::{BTreeMap, BTreeSet};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+// Each flag is an independent model-wide phase fact surfaced in the loss
+// report; combining them would hide which bounded phase stopped.
+#[allow(clippy::struct_excessive_bools)]
+pub(crate) struct CompletionBudgetStatus {
+    pub(crate) exact_boundary_exhausted: bool,
+    pub(crate) transfer_exhausted: bool,
+    pub(crate) support_uv_validation_exhausted: bool,
+    pub(crate) support_uv_exhausted: bool,
+    pub(crate) coupled_support_uv_exhausted: bool,
+    pub(crate) completion_geometry_exhausted: bool,
+    pub(crate) serialized_support_uv_geometry_exhausted: bool,
+    pub(crate) support_uv_geometry_exhausted: bool,
+    pub(crate) coupled_support_uv_geometry_exhausted: bool,
+    pub(crate) support_uv_lane_geometry_exhausted: bool,
+    pub(crate) transfer_limit: usize,
+    pub(crate) support_uv_validation_limit: usize,
+    pub(crate) support_uv_limit: usize,
+    pub(crate) coupled_support_uv_limit: usize,
+}
+
+// Keep the independent report facts explicit at the decode/report boundary.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_geometry_report(
     scan: &Scan,
+    unmatched_delta_tombstone_counts: &BTreeMap<&'static str, usize>,
     ir: &CadIr,
     counts: &Counts,
     has_topology: bool,
     has_unresolved_sub_bodies: bool,
     tessellation_count: usize,
     model: &crate::native::NativeModel,
+    completion_budget: CompletionBudgetStatus,
+    adaptive_geometry_exhausted: bool,
 ) -> DecodeReport {
     let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
     let mut losses = Vec::new();
@@ -94,10 +127,94 @@ pub(crate) fn build_geometry_report(
         )));
     }
 
+    let unresolved_intersection_lanes = ir
+        .model
+        .procedural_curves
+        .iter()
+        .filter_map(|procedural| {
+            let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+                &procedural.definition
+            else {
+                return None;
+            };
+            Some(
+                context
+                    .sides
+                    .iter()
+                    .filter(|side| pcurve_requires_completion(side.pcurve.as_ref()))
+                    .count(),
+            )
+        })
+        .sum::<usize>();
+    if unresolved_intersection_lanes > 0
+        && (completion_budget.exact_boundary_exhausted
+            || completion_budget.transfer_exhausted
+            || completion_budget.support_uv_validation_exhausted
+            || completion_budget.support_uv_exhausted
+            || completion_budget.coupled_support_uv_exhausted
+            || completion_budget.completion_geometry_exhausted
+            || completion_budget.serialized_support_uv_geometry_exhausted
+            || completion_budget.support_uv_geometry_exhausted
+            || completion_budget.coupled_support_uv_geometry_exhausted
+            || completion_budget.support_uv_lane_geometry_exhausted)
+    {
+        let mut bounded_phases = Vec::new();
+        if completion_budget.exact_boundary_exhausted {
+            bounded_phases.push("exact-boundary transfer");
+        }
+        if completion_budget.transfer_exhausted {
+            bounded_phases.push("opposite-chart transfer");
+        }
+        if completion_budget.support_uv_validation_exhausted {
+            bounded_phases.push("support-UV consistency checks");
+        }
+        if completion_budget.support_uv_exhausted {
+            bounded_phases.push("EXT11 support-UV fitting");
+        }
+        if completion_budget.coupled_support_uv_exhausted {
+            bounded_phases.push("coupled EXT11 support-UV fitting");
+        }
+        if completion_budget.completion_geometry_exhausted {
+            bounded_phases.push("pcurve geometry fitting");
+        }
+        if completion_budget.serialized_support_uv_geometry_exhausted {
+            bounded_phases.push("serialized support-UV geometry fitting");
+        }
+        if completion_budget.support_uv_geometry_exhausted {
+            bounded_phases.push("support-UV geometry fitting");
+        }
+        if completion_budget.coupled_support_uv_geometry_exhausted {
+            bounded_phases.push("coupled support-UV geometry fitting");
+        }
+        if completion_budget.support_uv_lane_geometry_exhausted {
+            bounded_phases.push("support-UV lane geometry slices");
+        }
+        losses.push(NxLossCode::IntersectionPcurveCompletionBounded.note(format!(
+            "Model-wide geometric completion stopped at its bounded work budget for {} ({} exact-boundary transfer samples, {} opposite-chart transfer samples, {} support-UV consistency checks, {} support-UV point fits, {} coupled support-UV point fits, {} pcurve geometry evaluations, {} serialized support-UV geometry evaluations, {} support-UV geometry evaluations, {} coupled support-UV geometry evaluations); {} intersection pcurve lane(s) remain incomplete and were not emitted as completed parameterizations.",
+            bounded_phases.join(" and "),
+            MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
+            completion_budget.transfer_limit,
+            completion_budget.support_uv_validation_limit,
+            completion_budget.support_uv_limit,
+            completion_budget.coupled_support_uv_limit,
+            MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
+            MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
+            MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
+            MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
+            unresolved_intersection_lanes,
+        )));
+    }
+
+    if adaptive_geometry_exhausted {
+        losses.push(NxLossCode::GeometryAdaptiveWorkBounded.note(format!(
+            "Model-wide adaptive geometry certification stopped at its {MAX_ADAPTIVE_GEOMETRY_WORK}-unit work bound; \
+             unresolved adaptive geometry certification results were left untyped.",
+        )));
+    }
+
     if scan.count(StreamKind::Deltas) > 0 {
-        let unmatched_tombstone_counts = unmatched_delta_tombstone_counts(scan);
-        let unmatched_tombstones = unmatched_tombstone_counts.values().sum::<usize>();
-        let unmatched_tombstone_detail = unmatched_tombstone_counts
+        let unmatched_tombstones = unmatched_delta_tombstone_counts.values().sum::<usize>();
+        let unmatched_tombstone_detail = unmatched_delta_tombstone_counts
             .iter()
             .map(|(family, count)| format!("{family} {count}"))
             .collect::<Vec<_>>()
@@ -106,7 +223,7 @@ pub(crate) fn build_geometry_report(
             losses.push(NxLossCode::DeltasApplied.note(format!(
                 "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
-                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
+                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, INTERSECTION, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
                  each key within each current body-sequence interval. Validated partition topology remained authoritative, including any \
                  point, curve, or surface carrier still referenced by surviving topology. Complete \
@@ -177,15 +294,19 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
     // Require a non-BaseFeature writer before treating body-to-history as proven.
-    let active_features = crate::native::history::active_feature_closure(ir, &current_body_ids)
-        .filter(|active| {
-            active.iter().any(|id| {
-                ir.model.features.iter().any(|feature| {
-                    feature.id == *id
-                        && !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
-                })
+    let (active_features, closure_rejection) =
+        match crate::native::history::active_feature_closure(ir, &current_body_ids) {
+            Ok(active) => (Some(active), None),
+            Err(rejection) => (None, Some(rejection.code())),
+        };
+    let active_features = active_features.filter(|active| {
+        active.iter().any(|id| {
+            ir.model.features.iter().any(|feature| {
+                feature.id == *id
+                    && !matches!(&feature.definition, FeatureDefinition::BaseFeature { .. })
             })
-        });
+        })
+    });
     let suppression_scope = active_features.as_ref().map_or("", |_| "active ");
     let feature_in_active_scope = |feature: &Feature| {
         active_features
@@ -204,9 +325,15 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         })
         .count();
     if unresolved_suppression_count != 0 {
+        let closure_detail = closure_rejection
+            .map(|reason| format!(" Active-feature closure rejected with `{reason}`."))
+            .unwrap_or_default();
         losses.push(NxLossCode::FeatureSuppressionUnresolved.note(format!(
             "Suppression state remains unresolved for {unresolved_suppression_count} NX \
-                 {suppression_scope}feature history operation(s)."
+                 {suppression_scope}feature history operation(s): no admitted \
+                 operation-to-state-object-to-typed-value relation is present. Common-frame \
+                 state lanes, saved toggles, OM registry declarations, and topology ObjectState \
+                 values remain non-suppression evidence.{closure_detail}"
         )));
     }
 
@@ -281,12 +408,31 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             continue;
         }
         let family = match feature.definition {
+            FeatureDefinition::BrepUnresolved => "brep",
             FeatureDefinition::DatumPlaneUnresolved => "datum plane",
+            FeatureDefinition::DatumAxisUnresolved => "datum axis",
             FeatureDefinition::DatumPointUnresolved => "datum point",
             FeatureDefinition::DatumCoordinateSystemUnresolved => "datum coordinate system",
+            FeatureDefinition::BridgeCurveUnresolved => "bridge curve",
             FeatureDefinition::LoftUnresolved => "loft",
+            FeatureDefinition::ThroughCurveMeshUnresolved => "through curve mesh",
             FeatureDefinition::FreeformSurfaceUnresolved => "freeform surface",
+            FeatureDefinition::ExtractFaceUnresolved => "extract face",
+            FeatureDefinition::CopyFaceUnresolved => "copy face",
+            FeatureDefinition::LinkedFaceUnresolved => "linked face",
+            FeatureDefinition::FillHoleUnresolved => "fill hole",
+            FeatureDefinition::MoveFaceUnresolved => "move face",
+            FeatureDefinition::MoveObjectUnresolved => "move object",
+            FeatureDefinition::CylinderUnresolved => "cylinder",
+            FeatureDefinition::ConeUnresolved => "cone",
+            FeatureDefinition::SphereUnresolved => "sphere",
+            FeatureDefinition::ThreadUnresolved => "thread",
+            FeatureDefinition::DetailedThreadUnresolved => "detailed thread",
             FeatureDefinition::DraftUnresolved => "draft",
+            FeatureDefinition::DeleteFaceUnresolved => "delete face",
+            FeatureDefinition::MirrorFaceUnresolved => "mirror face",
+            FeatureDefinition::SubdivisionBodyUnresolved => "subdivision body",
+            FeatureDefinition::TopologyOptimizationUnresolved => "topology optimization",
             _ => continue,
         };
         *unresolved_feature_families.entry(family).or_default() += 1;
@@ -368,6 +514,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 || matches!(op, BooleanOp::Unresolved) =>
             {
                 "block"
+            }
+            FeatureDefinition::Sphere { .. } if sphere_definition_is_incomplete(feature) => {
+                "sphere"
             }
             FeatureDefinition::DatumOffsetPlane {
                 reference,
@@ -451,6 +600,13 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "extend surface"
             }
+            FeatureDefinition::CosmeticThread {
+                face,
+                diameter,
+                extent,
+            } if face_selection_is_incomplete(face) || diameter.is_none() || extent.is_none() => {
+                "cosmetic thread"
+            }
             FeatureDefinition::Hole { .. } if hole_definition_is_incomplete(feature) => "hole",
             FeatureDefinition::Rib { .. } if rib_definition_is_incomplete(feature) => "rib",
             FeatureDefinition::Chamfer { .. } if chamfer_definition_is_incomplete(feature) => {
@@ -461,6 +617,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             }
             FeatureDefinition::FaceBlend { .. } if face_blend_definition_is_incomplete(feature) => {
                 "face blend"
+            }
+            FeatureDefinition::Shell { .. }
+                if shell_definition_is_incomplete(&feature.definition) =>
+            {
+                "shell"
             }
             FeatureDefinition::SewBodies { .. } if sew_bodies_definition_is_incomplete(feature) => {
                 "sew bodies"

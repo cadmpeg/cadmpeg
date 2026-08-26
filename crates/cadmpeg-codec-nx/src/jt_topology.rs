@@ -102,7 +102,12 @@ impl Symbols<'_> {
                 return None;
             }
             self.attribute_mask_pos[context] += 1;
-            return Some((0..degree).map(|bit| mask & (1_u64 << bit) != 0).collect());
+            let mut result = Vec::new();
+            result.try_reserve_exact(degree).ok()?;
+            for bit in 0..degree {
+                result.push(mask & (1_u64 << bit) != 0);
+            }
+            return Some(result);
         }
         let word_count = degree.div_ceil(32);
         let end = self.large_mask_pos.checked_add(word_count)?;
@@ -111,7 +116,8 @@ impl Symbols<'_> {
             .large_words
             .get(self.large_mask_pos..end)?;
         self.large_mask_pos = end;
-        let mut mask = Vec::with_capacity(degree);
+        let mut mask = Vec::new();
+        mask.try_reserve_exact(degree).ok()?;
         for bit in 0..degree {
             let word = words[bit / 32] as u32;
             mask.push(word & (1_u32 << (bit % 32)) != 0);
@@ -166,6 +172,7 @@ impl Decoder<'_> {
             return None;
         }
         let index = self.vertices.len();
+        self.vertices.try_reserve(1).ok()?;
         self.vertices.push(Vertex {
             faces: alloc_filled(valence, None, "nx JT vertex face slots").ok()?,
             group,
@@ -284,11 +291,19 @@ impl Decoder<'_> {
             let face_attribute_count =
                 u32::try_from(attribute_mask.iter().filter(|&&bit| bit).count()).ok()?;
             let attribute_end = self.attribute_count.checked_add(face_attribute_count)?;
+            let mut attributes = Vec::new();
+            attributes
+                .try_reserve_exact(usize::try_from(face_attribute_count).ok()?)
+                .ok()?;
+            attributes.extend(self.attribute_count..attribute_end);
+            self.faces.try_reserve(1).ok()?;
+            self.removed.try_reserve(1).ok()?;
+            self.active.try_reserve(1).ok()?;
             self.faces.push(Face {
                 vertices: alloc_filled(degree, None, "nx JT face vertex slots").ok()?,
                 empty: degree,
                 attribute_mask,
-                attributes: (self.attribute_count..attribute_end).collect(),
+                attributes,
             });
             self.attribute_count = attribute_end;
             self.removed.push(false);
@@ -417,43 +432,45 @@ impl Decoder<'_> {
         {
             return None;
         }
-        self.vertices
-            .into_iter()
-            .enumerate()
-            .map(|(vertex_index, vertex)| {
-                let attribute_indices = vertex
-                    .faces
+        let mut polygons = Vec::new();
+        polygons.try_reserve_exact(self.vertices.len()).ok()?;
+        for (vertex_index, vertex) in self.vertices.into_iter().enumerate() {
+            let mut attribute_indices = Vec::new();
+            attribute_indices
+                .try_reserve_exact(vertex.faces.len())
+                .ok()?;
+            for &face in &vertex.faces {
+                let face = self.faces.get(face?)?;
+                if face.attributes.is_empty() {
+                    attribute_indices.push(None);
+                    continue;
+                }
+                let vertex_slot = face
+                    .vertices
                     .iter()
-                    .map(|&face| {
-                        let face = &self.faces[face?];
-                        if face.attributes.is_empty() {
-                            return Some(None);
-                        }
-                        let vertex_slot = face
-                            .vertices
-                            .iter()
-                            .position(|&candidate| candidate == Some(vertex_index))?;
-                        let mut attribute_slot = face.attributes.len() - 1;
-                        for slot in 0..=vertex_slot {
-                            if face.attribute_mask[slot] {
-                                attribute_slot = (attribute_slot + 1) % face.attributes.len();
-                            }
-                        }
-                        Some(Some(face.attributes[attribute_slot]))
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                Some(Polygon {
-                    vertex_indices: vertex
-                        .faces
-                        .into_iter()
-                        .map(|face| u32::try_from(face?).ok())
-                        .collect::<Option<Vec<_>>>()?,
-                    attribute_indices,
-                    group: vertex.group,
-                    flags: vertex.flags,
-                })
-            })
-            .collect()
+                    .position(|&candidate| candidate == Some(vertex_index))?;
+                let mut attribute_slot = face.attributes.len() - 1;
+                for slot in 0..=vertex_slot {
+                    if face.attribute_mask[slot] {
+                        attribute_slot = (attribute_slot + 1) % face.attributes.len();
+                    }
+                }
+                attribute_indices.push(Some(face.attributes[attribute_slot]));
+            }
+
+            let mut vertex_indices = Vec::new();
+            vertex_indices.try_reserve_exact(vertex.faces.len()).ok()?;
+            for face in vertex.faces {
+                vertex_indices.push(u32::try_from(face?).ok()?);
+            }
+            polygons.push(Polygon {
+                vertex_indices,
+                attribute_indices,
+                group: vertex.group,
+                flags: vertex.flags,
+            });
+        }
+        Some(polygons)
     }
 }
 

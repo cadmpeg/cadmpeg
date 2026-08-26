@@ -4,6 +4,7 @@
 
 use cadmpeg_ir::geometry::{PcurveGeometry, ProceduralCurveDefinition};
 use cadmpeg_ir::math::Point2;
+use std::collections::BTreeMap;
 
 use crate::test_support::*;
 
@@ -237,6 +238,82 @@ fn intersection_rejection_census_requires_resolved_supports() {
 }
 
 #[test]
+fn intersection_chart_rejects_unresolved_support_relation() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 19, 998);
+
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
+    assert!(scan.constructions.is_empty());
+    assert!(scan.curves.is_empty());
+    assert_eq!(scan.rejected.missing_support, 1);
+    assert_eq!(scan.rejected.total(), 1);
+}
+
+#[test]
+fn intersection_rejects_cross_form_xmt_collision_atomically() {
+    let construction = |delta_twin, pos| crate::topology::CompositeCurve {
+        xmt: 12,
+        header_references: [1; 5],
+        sense: true,
+        references: [6, 7, 20, 21, 22, 23],
+        delta_twin,
+        pos,
+    };
+    let scan = super::scan_with_auxiliaries(
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &crate::topology::Graph::default(),
+        vec![construction(false, 10), construction(true, 20)],
+        super::CrossFormCollision::Reject,
+    );
+
+    assert!(scan.source_constructions.is_empty());
+    assert!(scan.constructions.is_empty());
+    assert!(scan.curves.is_empty());
+    assert_eq!(scan.rejected.duplicate_identity, 2);
+    assert_eq!(scan.rejected.total(), 2);
+}
+
+#[test]
+fn paired_delta_intersection_replaces_the_partition_form_by_xmt() {
+    let base = charted_intersection_curve_topology_partition_stream();
+    let mut replacement = deltas_intersection_curve_stream();
+    let delta_twin = replacement
+        .iter()
+        .rposition(|byte| *byte == 0x5a)
+        .expect("single-byte intersection replacement");
+    for (ordinal, reference) in [6u16, 7, 20, 21, 22, 23].into_iter().enumerate() {
+        put_ref(&mut replacement, delta_twin + 18 + ordinal * 2, reference);
+    }
+    let mut semantic = base.clone();
+    semantic.extend_from_slice(&crate::deltas::semantic_residual(&replacement));
+
+    let scan =
+        crate::intersection::scan_with_auxiliary_replacements(&semantic, &base, &[&replacement]);
+
+    let [construction] = scan.source_constructions.as_slice() else {
+        panic!("expected one current intersection construction");
+    };
+    assert_eq!(construction.xmt, 12);
+    assert!(construction.delta_twin);
+    let [curve] = scan.curves.as_slice() else {
+        panic!("expected the replacement's charted carrier");
+    };
+    assert_eq!(curve.xmt, 12);
+    assert_eq!(
+        scan.rejected,
+        crate::intersection::RejectionCounts::default()
+    );
+}
+
+#[test]
 fn uncharted_intersection_requires_exact_topology_bounds() {
     let mut stream = two_support_charted_intersection_curve_stream();
     let intersection = stream
@@ -338,6 +415,64 @@ fn intersection_chart_accepts_encoded_count_without_arbitrary_ceiling() {
     assert_eq!(chart.count, count as u32);
     assert_eq!(chart.chart_count, count as u32);
     assert_eq!(chart.points.len(), count);
+}
+
+#[test]
+fn intersection_chart_scan_does_not_admit_nested_counted_candidates() {
+    let mut nested = record(40, 108);
+    nested[2..6].copy_from_slice(&2u32.to_be_bytes());
+    put_ref(&mut nested, 6, 20);
+    put_f64(&mut nested, 8, 0.0);
+    put_f64(&mut nested, 16, 1.0);
+    nested[24..28].copy_from_slice(&2u32.to_be_bytes());
+    put_f64(&mut nested, 28, 0.000_01);
+    put_f64(&mut nested, 36, 0.001);
+    put_f64(&mut nested, 44, -31_415_800_000_000.0);
+    put_f64(&mut nested, 52, -31_415_800_000_000.0);
+    put_vec3(&mut nested, 60, [0.0, 0.0, 0.0]);
+    put_vec3(&mut nested, 84, [0.01, 0.0, 0.0]);
+
+    let count = 5;
+    let mut outer = record(40, 60 + count * 24);
+    outer[2..6].copy_from_slice(&(count as u32).to_be_bytes());
+    put_ref(&mut outer, 6, 21);
+    put_f64(&mut outer, 8, 0.0);
+    put_f64(&mut outer, 16, 1.0);
+    outer[24..28].copy_from_slice(&(count as u32).to_be_bytes());
+    put_f64(&mut outer, 28, 0.000_01);
+    put_f64(&mut outer, 36, 0.001);
+    put_f64(&mut outer, 44, -31_415_800_000_000.0);
+    put_f64(&mut outer, 52, -31_415_800_000_000.0);
+    outer[60..60 + nested.len()].copy_from_slice(&nested);
+
+    let records = crate::intersection::chart_source_records(
+        &outer,
+        crate::intersection::ChartPointLayout::Xyz3,
+    );
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 21);
+    assert_eq!(records[0].points.len(), count);
+}
+
+#[test]
+fn intersection_support_uv_scan_does_not_admit_nested_counted_candidates() {
+    let mut nested = record(204, 25);
+    nested[2..6].copy_from_slice(&2u32.to_be_bytes());
+    put_ref(&mut nested, 6, 24);
+    nested[8] = 2;
+    put_f64(&mut nested, 9, 0.0);
+    put_f64(&mut nested, 17, 0.0);
+
+    let mut outer = record(204, 41);
+    outer[2..6].copy_from_slice(&4u32.to_be_bytes());
+    put_ref(&mut outer, 6, 23);
+    outer[8] = 2;
+    outer[9..9 + nested.len()].copy_from_slice(&nested);
+
+    let records = crate::intersection::support_uv_records(&outer);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].xmt, 23);
+    assert_eq!(records[0].values.len(), 4);
 }
 
 #[test]
