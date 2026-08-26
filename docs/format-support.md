@@ -4,11 +4,11 @@
 
 ### Scoring rules
 
-1. **One score per codec.** Score is the highest level whose requirements pass for every admitted file the codec decodes. Surplus capability in a subset of versions, layouts, or files shows as extras. Refused bands are outside the score.
+1. **A score attaches to declared coverage.** A score states the highest level whose requirements pass for the coverage its profile declares, and the profile names that coverage. Surplus capability in a subset of versions, layouts, or files shows as extras. Refusing a band the codec recognizes is a stated, visible fact in the profile, never an exclusion that raises a score.
 2. **Full pass.** A level passes when its requirements and the proof criteria hold across mainstream files in the declared envelope. One fixture, an entity census, or an opaque record capture does not pass a level.
 3. **Inapplicable levels.** A format definition may mark a level inapplicable when its document kind cannot contain that category. Inapplicable levels pass. Missing fixtures do not establish inapplicability.
-4. **No per-band scores.** Version and layout bands do not receive their own ladder integers. Discontinuous support is extras or a refusal, not a second score.
-5. **Integer levels only.** Scores are whole levels such as L4. Do not use fractional levels, evidence-grade suffixes, or other score variants. A recorded level already means the proof criteria pass for the codec.
+4. **Integer levels only.** Scores are whole levels such as L4. Do not use fractional levels, evidence-grade suffixes, or other score variants. A recorded level already means the proof criteria pass for the codec.
+5. **Refusal is a visible mark.** Refusing a recognized band is a visible mark and can never improve any published number.
 
 ### Proof criteria
 
@@ -38,13 +38,15 @@ A level passes only when every criterion holds for the declared envelope:
 
 ### Current scores
 
+Scores below predate the scoring-subject change and are read as scores of each codec's primary band, named in its profile, pending the generated per-dialect re-cut.
+
 | Codec                                                           | Score  | Extras above score                                                                                                                                                                                  |
 | --------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | FreeCAD `.FCStd` (schema 4, file 1)                             | **L5** | deterministic retained writes, checked edits, source-less typed application graphs                                                                                                                  |
 | Autodesk Fusion `.f3d`                                          | **L4** | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records                                                                                               |
 | Autodesk Inventor `.ipt`/`.iam` (CFB v3, RSe 31, Meta Stream 8) | **L1** | typed part carriers, parameters, planar sketches, and closed extrude, hole, fillet, and chamfer operation branches                                                                                  |
 | SolidWorks `.sldprt`                                            | **L4** | typed features, sketches, parameters, configurations, native replay + bounded generation                                                                                                            |
-| Rhino `.3dm`                                                    | **L0** | L1 open on archive 2/3/4/50/60/70/80/90 and V2–V4; partial typed geometry, topology, presentation, and bounded source-less native writing                                                            |
+| Rhino `.3dm`                                                    | **L1** (archive 2/3/4/50/60/70/80/90 chunked band; V1 decoded through the legacy flat-record path, archive 5 header inspection only) | partial typed geometry, topology, presentation, and bounded source-less native writing                                                            |
 | CATIA V5 `.CATPart`                                             | **L1** | L2 geometry on the standard-nested band; conditionally connected B-rep; closed zero-entity topology lowering                                                                                        |
 | Siemens NX `.prt`                                               | **L2** | L3 connected B-rep on selected or terminal-lineage-resolved body images; feature and history transfer, procedural carriers, topology attributes, external-dependency inspection, named arrangements |
 | Creo Parametric `.prt`                                          | **L1** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features                                                                                               |
@@ -152,7 +154,7 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 
 **Model:** 3DM object graph
 
-**Ladder: L0.** Archive 2/3/4/50/60/70/80/90 and V2–V4 open at L1 and show as extras. Partial typed geometry, topology, presentation, and bounded source-less native writing show as extras above that L1 subset. V1 and archive 5 keep the codec at L0.
+**Ladder: L1 for the archive 2/3/4/50/60/70/80/90 chunked band, including V2–V4.** Partial typed geometry, topology, presentation, and bounded source-less native writing show as extras above that L1 band. V1 decodes through the legacy flat-record path and archive 5 has bounded header inspection only; neither reaches L1, and both are stated here rather than excluded from the score.
 
 ### Read profile
 
