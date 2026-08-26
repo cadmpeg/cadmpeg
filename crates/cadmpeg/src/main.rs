@@ -450,7 +450,7 @@ enum Command {
         /// Write output even if no geometry was decoded.
         #[arg(long)]
         allow_empty: bool,
-        /// Do not write if decoding reported any loss.
+        /// Do not write if decoding or export planning reported any loss.
         #[arg(long)]
         reject_lossy: bool,
         /// Target Rhino archive version; valid only for Rhino output.
