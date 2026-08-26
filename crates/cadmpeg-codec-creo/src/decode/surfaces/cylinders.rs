@@ -639,6 +639,104 @@ fn unique_tangent_axial_interval_corner_frame(
     best.next().is_none().then_some(candidate)
 }
 
+fn unique_support_tangent_cylinder_frame(
+    stored: crate::surface::PositionalCylinderFrame,
+    support_planes: &[PlaneEquation],
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    let axis = normalized(stored.axis)?;
+    let mut origins = vec![stored.origin];
+    let mut witnessed_axis = [false; 3];
+    let mut witnessed_planes = Vec::new();
+    for plane in support_planes {
+        let normal = normalized(plane.normal)?;
+        if dot(axis, normal).abs() > EPS_ROUND_EDGE_RELATIVE {
+            return None;
+        }
+        let [axis_index] = (0..3)
+            .filter(|index| {
+                normal[*index].abs() > 1.0 - EPS_ROUND_EDGE_RELATIVE
+                    && (0..3)
+                        .filter(|other| *other != *index)
+                        .all(|other| normal[other].abs() <= EPS_ROUND_EDGE_RELATIVE)
+            })
+            .collect::<Vec<_>>()
+            .as_slice()
+            .try_into()
+            .ok()?;
+        let plane_offset = dot(normal, plane.origin);
+        let candidates = [
+            (plane_offset - stored.radius) / normal[axis_index],
+            (plane_offset + stored.radius) / normal[axis_index],
+        ]
+        .into_iter()
+        .filter(|coordinate| coordinate.is_finite())
+        .filter(|coordinate| {
+            let scale = coordinate
+                .abs()
+                .max(stored.origin[axis_index].abs())
+                .max(stored.radius)
+                .max(1.0);
+            (coordinate.abs() - stored.origin[axis_index].abs()).abs()
+                <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+        })
+        .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            continue;
+        }
+        witnessed_axis[axis_index] = true;
+        witnessed_planes.push(PlaneEquation {
+            origin: plane.origin,
+            normal,
+        });
+        let mut next = Vec::new();
+        for origin in &origins {
+            for coordinate in &candidates {
+                let mut candidate = *origin;
+                candidate[axis_index] = *coordinate;
+                if !next.iter().any(|known: &[f64; 3]| {
+                    known.iter().zip(candidate).all(|(left, right)| {
+                        (left - right).abs()
+                            <= EPS_ROUND_EDGE_PLANE_RESIDUAL * left.abs().max(right.abs()).max(1.0)
+                    })
+                }) {
+                    next.push(candidate);
+                }
+            }
+        }
+        origins = next;
+    }
+    witnessed_axis
+        .into_iter()
+        .any(|witnessed| witnessed)
+        .then_some(())?;
+    let mut frames = Vec::new();
+    for origin in origins {
+        let tangent_to_all = witnessed_planes.iter().all(|plane| {
+            let normal = plane.normal;
+            let distance = (dot(normal, origin) - dot(normal, plane.origin)).abs();
+            let scale = distance.max(stored.radius).max(1.0);
+            (distance - stored.radius).abs() <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+        });
+        if !tangent_to_all {
+            continue;
+        }
+        let candidate = crate::surface::PositionalCylinderFrame { origin, ..stored };
+        if candidate.is_valid()
+            && !frames
+                .iter()
+                .any(|known: &crate::surface::PositionalCylinderFrame| {
+                    crate::surface::positional_cylinder_frames_agree(*known, candidate)
+                })
+        {
+            frames.push(candidate);
+        }
+    }
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    Some(*frame)
+}
+
 fn perpendicular_round_edge_cylinder_frame(
     envelope: crate::surface::Type24RoundEdgeEnvelope,
     support_planes: &[PlaneEquation],
@@ -795,11 +893,9 @@ pub(in super::super) fn transfer_positional_cylinders(
             } else {
                 Vec::new()
             };
-        let round_edge_envelope = (feature_class == Some(913)
-            && !inline_non_plane
-            && axial_interval_corner_candidates.is_empty())
-        .then(|| record.type24_round_edge_envelope(row.type_byte))
-        .flatten();
+        let round_edge_envelope = (feature_class == Some(913) && !selector_corner_interval)
+            .then(|| record.type24_round_edge_envelope(row.type_byte))
+            .flatten();
         if round_edge_envelope.is_some() {
             summary.round_edge_complete_envelopes += 1;
         }
@@ -810,6 +906,13 @@ pub(in super::super) fn transfer_positional_cylinders(
                 round_support_envelope_cylinder(scan, ir, row.feature_id, envelope)
             });
         let support_planes = round_edge_support_planes.get(&row.id);
+        let support_tangent_frame = (!selector_corner_interval)
+            .then(|| {
+                let stored = record.positional_cylinder_frame?;
+                let support_planes = support_planes?;
+                unique_support_tangent_cylinder_frame(stored, support_planes)
+            })
+            .flatten();
         if !axial_interval_corner_candidates.is_empty() {
             summary.axial_interval_corner_envelopes += 1;
         }
@@ -891,6 +994,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                     && !constant_round_radii.contains_key(&row.feature_id)
                     && round_support_frame.is_none()
                     && round_edge_frame.is_none()
+                    && support_tangent_frame.is_none()
                     && axial_interval_corner_frame.is_none())
         {
             continue;
@@ -927,43 +1031,47 @@ pub(in super::super) fn transfer_positional_cylinders(
             reference_cap_bound_round_frame(envelope, &circles)
                 .map(|frame| (frame, "round_reference_cap_cylinder_frame"))
         };
-        let (frame, mechanism) = if inline_non_plane || selector_corner_interval {
+        let (frame, mechanism) = if selector_corner_interval {
             let Some(frame) = record.positional_cylinder_frame else {
                 continue;
             };
-            let mechanism = if selector_corner_interval {
-                "selector_corner_interval_cylinder"
-            } else {
-                "inline_positional_surface_row"
+            (frame, "selector_corner_interval_cylinder")
+        } else if let Some(frame) = round_edge_frame {
+            (frame, "round_edge_endpoint_cylinder")
+        } else if let Some(frame) = support_tangent_frame {
+            (frame, "support_tangent_cylinder")
+        } else if inline_non_plane {
+            let Some(frame) = record.positional_cylinder_frame else {
+                continue;
             };
-            (frame, mechanism)
+            (frame, "inline_positional_surface_row")
+        } else if let Some(frame) = round_support_frame {
+            (frame, "round_support_envelope_cylinder")
+        } else if let Some(frame) = axial_interval_corner_frame {
+            (frame, "axial_interval_corner_cylinder")
+        } else if let Some(frame) = record.positional_cylinder_frame {
+            (frame, "positional_cylinder_frame")
         } else {
-            match round_support_frame {
-                Some(frame) => (frame, "round_support_envelope_cylinder"),
-                None => match round_edge_frame {
-                    Some(frame) => (frame, "round_edge_endpoint_cylinder"),
-                    None => match axial_interval_corner_frame {
-                        Some(frame) => (frame, "axial_interval_corner_cylinder"),
-                        None => match record.positional_cylinder_frame {
-                            Some(frame) => (frame, "positional_cylinder_frame"),
-                            None => {
-                                let Some(frame) = reference_bound_frame() else {
-                                    continue;
-                                };
-                                frame
-                            }
-                        },
-                    },
-                },
-            }
+            let Some(frame) = reference_bound_frame() else {
+                continue;
+            };
+            frame
         };
-        let row_local_frame_selected = record
+        let stored_frame_agrees = record
             .positional_cylinder_frame
-            .is_some_and(|stored| crate::surface::positional_cylinder_frames_agree(stored, frame))
+            .is_some_and(|stored| crate::surface::positional_cylinder_frames_agree(stored, frame));
+        let witnessed_frame_replaces_stored = matches!(
+            mechanism,
+            "round_edge_endpoint_cylinder" | "support_tangent_cylinder"
+        );
+        let row_local_frame_selected = (stored_frame_agrees || witnessed_frame_replaces_stored)
             && (feature_class != Some(913)
                 || matches!(
                     mechanism,
-                    "inline_positional_surface_row" | "selector_corner_interval_cylinder"
+                    "inline_positional_surface_row"
+                        | "selector_corner_interval_cylinder"
+                        | "round_edge_endpoint_cylinder"
+                        | "support_tangent_cylinder"
                 ));
         if feature_class == Some(911)
             && counterbore_dimensions(scan, ir, row.feature_id).is_some_and(|dimensions| {

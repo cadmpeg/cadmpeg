@@ -76,6 +76,7 @@ pub(super) use planes::{
 #[allow(unused_imports)]
 pub(super) use planes::{
     plane_candidate_pcurve_lies_on_carrier, stored_parameter_normal_candidates,
+    unique_round_edge_origin_candidate,
 };
 #[allow(unused_imports)]
 pub(super) use vertices::{

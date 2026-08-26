@@ -290,7 +290,7 @@ pub fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, Carrie
             .iter()
             .filter(|row| row_counts.get(&row.id) == Some(&1))
         {
-            if let Some(carrier) = positional_cylinder_carrier(scan, row, parameters) {
+            if let Some(carrier) = positional_cylinder_carrier(scan, row, parameters, ir) {
                 carriers.insert(row.id, carrier);
                 continue;
             }
@@ -379,6 +379,7 @@ fn positional_cylinder_carrier(
     scan: &ContainerScan,
     row: &crate::surface::SurfaceRow,
     parameters: &[crate::surface::SurfaceParameterRecord],
+    ir: &CadIr,
 ) -> Option<CarrierEquation> {
     (row.kind == crate::surface::SurfaceKind::Cylinder).then_some(())?;
     let record = crate::surface::unique_surface_parameter(parameters, row.id)?;
@@ -391,6 +392,22 @@ fn positional_cylinder_carrier(
         && !inline
     {
         return None;
+    }
+    if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id) == Some(913)
+        && inline
+    {
+        let id = native_surface_id(scan, row.id);
+        let model_surfaces = ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| surface.id == id)
+            .collect::<Vec<_>>();
+        if let [surface] = model_surfaces.as_slice() {
+            if let Some(carrier) = surface_carrier(&surface.geometry) {
+                return Some(carrier);
+            }
+        }
     }
     let frame = record.positional_cylinder_frame?;
     frame

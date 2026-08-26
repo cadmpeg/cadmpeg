@@ -3,8 +3,9 @@ use crate::decode::analytic::{
     analytic_curve_plane, dot, envelope_reconciled_plane_candidate, fc05_cylinder_model_witness,
     frame_bound_outline_plane_candidate, held_coordinate_plane,
     plane_candidate_pcurve_lies_on_carrier, plane_candidates, stored_parameter_normal_candidates,
-    topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes, BoundaryLine,
-    CylinderEquation, PlaneCandidate, PlaneChart, PlaneEquation,
+    topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes,
+    unique_round_edge_origin_candidate, BoundaryLine, CylinderEquation, PlaneCandidate, PlaneChart,
+    PlaneEquation,
 };
 use crate::decode::surfaces::fc05_cap_pair_model_frame;
 use crate::surface::{
@@ -1166,4 +1167,46 @@ fn stored_parameter_normal_branch_keeps_existing_frame_without_witness() {
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].equation.normal, [0.8, 0.0, -0.6]);
     assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, 0.8]);
+}
+
+#[test]
+fn round_edge_origin_witness_selects_the_plane_with_an_incident_endpoint() {
+    let positive = PlaneCandidate {
+        equation: PlaneEquation {
+            origin: [0.0, 5.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
+        chart: Some(PlaneChart {
+            origin: [0.0, 5.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+        }),
+        offset: 0,
+    };
+    let negative = PlaneCandidate {
+        equation: PlaneEquation {
+            origin: [0.0, -5.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
+        chart: Some(PlaneChart {
+            origin: [0.0, -5.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+        }),
+        offset: 0,
+    };
+    let envelope = crate::surface::Type24RoundEdgeEnvelope {
+        parameter_interval: [0.0, 1.0],
+        vertices: [[-30.0, -5.7, 0.0], [-29.8, -5.5, 1.0]],
+        generated_entity_reference: None,
+    };
+
+    assert_eq!(
+        unique_round_edge_origin_candidate(&[positive, negative], &[envelope])
+            .expect("incident plane candidate")
+            .equation
+            .origin,
+        [0.0, -5.5, 0.0]
+    );
+    assert!(unique_round_edge_origin_candidate(&[positive, negative], &[]).is_none());
 }

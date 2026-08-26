@@ -508,6 +508,45 @@ fn stored_parameter_normal_candidate(
     })
 }
 
+fn stored_parameter_origin_sign_candidates(base: PlaneCandidate) -> Vec<PlaneCandidate> {
+    let nonzero_axes = base
+        .equation
+        .origin
+        .into_iter()
+        .enumerate()
+        .filter_map(|(axis, value)| {
+            (value.abs() > EPS_STORED_FRAME_NONZERO
+                && base.equation.normal[axis].abs() > EPS_STORED_FRAME_NONZERO)
+                .then_some(axis)
+        })
+        .collect::<Vec<_>>();
+    if nonzero_axes.is_empty() {
+        return vec![base];
+    }
+    let mut candidates = Vec::with_capacity(1usize << nonzero_axes.len());
+    for mask in 0..(1usize << nonzero_axes.len()) {
+        let mut candidate = base;
+        for (bit, axis) in nonzero_axes.iter().copied().enumerate() {
+            if mask & (1usize << bit) == 0 {
+                continue;
+            }
+            candidate.equation.origin[axis] = -candidate.equation.origin[axis];
+            if let Some(chart) = &mut candidate.chart {
+                chart.origin[axis] = -chart.origin[axis];
+            }
+        }
+        if candidate
+            .equation
+            .origin
+            .iter()
+            .all(|value| value.is_finite())
+        {
+            candidates.push(candidate);
+        }
+    }
+    candidates
+}
+
 fn stored_parameter_normal_candidates_with_origin_branches(
     frame: &crate::surface::PlaneLocalSystem,
     include_origin_z_branches: bool,
@@ -1237,6 +1276,119 @@ fn select_stored_frame_branches(
     }
 }
 
+fn round_edge_endpoint_plane_score(
+    candidate: PlaneCandidate,
+    envelopes: &[crate::surface::Type24RoundEdgeEnvelope],
+) -> usize {
+    envelopes
+        .iter()
+        .filter(|envelope| {
+            envelope.vertices.into_iter().any(|point| {
+                let scale = point
+                    .into_iter()
+                    .chain(candidate.equation.origin)
+                    .map(f64::abs)
+                    .fold(1.0, f64::max);
+                (dot(candidate.equation.normal, point)
+                    - dot(candidate.equation.normal, candidate.equation.origin))
+                .abs()
+                    <= EPS_ON_CARRIER * scale
+            })
+        })
+        .count()
+}
+
+pub(crate) fn unique_round_edge_origin_candidate(
+    candidates: &[PlaneCandidate],
+    envelopes: &[crate::surface::Type24RoundEdgeEnvelope],
+) -> Option<PlaneCandidate> {
+    let scores = candidates
+        .iter()
+        .copied()
+        .map(|candidate| {
+            (
+                candidate,
+                round_edge_endpoint_plane_score(candidate, envelopes),
+            )
+        })
+        .collect::<Vec<_>>();
+    let maximum = scores.iter().map(|(_, score)| *score).max()?;
+    (maximum > 0).then_some(())?;
+    let mut best = scores
+        .into_iter()
+        .filter_map(|(candidate, score)| (score == maximum).then_some(candidate));
+    let candidate = best.next()?;
+    best.next().is_none().then_some(candidate)
+}
+
+fn round_edge_envelopes_for_plane(
+    scan: &ContainerScan,
+    plane_id: u32,
+) -> Vec<crate::surface::Type24RoundEdgeEnvelope> {
+    let rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
+        .into_iter()
+        .map(|row| (row.id, row))
+        .collect::<BTreeMap<_, _>>();
+    crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
+        .into_iter()
+        .filter_map(|topology| {
+            let cylinder_id = topology.faces.into_iter().find(|face_id| {
+                *face_id != plane_id
+                    && rows.get(face_id).is_some_and(|row| {
+                        row.kind == crate::surface::SurfaceKind::Cylinder
+                            && row.type_byte == 0x24
+                            && crate::decode::sketch_transfer::feature_schema_class(
+                                scan,
+                                row.feature_id,
+                            ) == Some(913)
+                    })
+            })?;
+            if !topology.faces.contains(&plane_id) {
+                return None;
+            }
+            let record =
+                crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?;
+            record.type24_round_edge_envelope(0x24)
+        })
+        .collect()
+}
+
+fn select_round_edge_origin_branches(
+    scan: &ContainerScan,
+    candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
+) {
+    for frame in &scan.planes.local_systems {
+        if frame.classification != crate::surface::LocalSystemClassification::Simple {
+            continue;
+        }
+        let Some(existing) = candidates.get(&frame.surface_id) else {
+            continue;
+        };
+        let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
+        else {
+            continue;
+        };
+        let base = PlaneCandidate {
+            equation: PlaneEquation { origin, normal },
+            chart: Some(PlaneChart {
+                origin,
+                normal,
+                u_axis,
+            }),
+            offset: frame.offset,
+        };
+        if existing.len() != 1 || !plane_candidates_equivalent(existing[0], base) {
+            continue;
+        }
+        let envelopes = round_edge_envelopes_for_plane(scan, frame.surface_id);
+        let options = stored_parameter_origin_sign_candidates(base);
+        let Some(selected) = unique_round_edge_origin_candidate(&options, &envelopes) else {
+            continue;
+        };
+        candidates.insert(frame.surface_id, vec![selected]);
+    }
+}
+
 pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
     let matrix_frame_ids = scan
         .planes
@@ -1376,6 +1528,7 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
         );
     }
     select_stored_frame_branches(scan, &mut candidates);
+    select_round_edge_origin_branches(scan, &mut candidates);
     candidates
         .into_iter()
         .filter(|(id, _)| {

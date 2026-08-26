@@ -2,7 +2,7 @@
 
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
-use super::unique_tangent_axial_interval_corner_frame;
+use super::{unique_support_tangent_cylinder_frame, unique_tangent_axial_interval_corner_frame};
 use crate::decode::analytic::PlaneEquation;
 
 const EPS_TEST_GEOMETRY: f64 = 1.0e-12;
@@ -43,6 +43,45 @@ fn axial_interval_corner_frame_requires_a_unique_tangent_maximum() {
         Some(candidates[0])
     );
     assert!(unique_tangent_axial_interval_corner_frame(&candidates, &[y_support]).is_none());
+}
+
+#[test]
+fn support_tangent_frame_selects_the_uniquely_witnessed_origin_sign() {
+    let stored = crate::surface::PositionalCylinderFrame {
+        origin: [-29.8, 5.25, 6.76],
+        axis: [1.0, 0.0, 0.0],
+        ref_direction: [0.0, -1.0, 0.0],
+        radius: 0.25,
+        length: None,
+    };
+    let tangent = PlaneEquation {
+        origin: [0.0, -5.5, 0.0],
+        normal: [0.0, 1.0, 0.0],
+    };
+    let unrelated_parallel = PlaneEquation {
+        origin: [0.0, 6.51, 0.0],
+        normal: [0.0, 1.0, 0.0],
+    };
+
+    let selected = unique_support_tangent_cylinder_frame(stored, &[tangent, unrelated_parallel])
+        .expect("unique tangent origin");
+    assert_eq!(selected.origin, [-29.8, -5.25, 6.76]);
+}
+
+#[test]
+fn support_tangent_frame_requires_a_matching_axis_aligned_support() {
+    let stored = axial_interval_candidate([10.0, 7.0, 9.0]);
+    let unmatched = PlaneEquation {
+        origin: [0.0, 20.0, 0.0],
+        normal: [0.0, 1.0, 0.0],
+    };
+    let oblique = PlaneEquation {
+        origin: [0.0, 3.0, 0.0],
+        normal: [0.0, 1.0, 1.0],
+    };
+
+    assert!(unique_support_tangent_cylinder_frame(stored, &[unmatched]).is_none());
+    assert!(unique_support_tangent_cylinder_frame(stored, &[oblique]).is_none());
 }
 
 fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
