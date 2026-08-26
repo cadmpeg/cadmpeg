@@ -96,7 +96,8 @@ MOD_DECL = re.compile(
 FILTER_DESCRIPTION = (
     "legacy metrics: production .rs under crates/**/src via is_production_rs; "
     "exclude tests/ and benches/ path segments; exclude files named tests.rs or "
-    "*test*.rs; strip cfg(test)-attributed items with blank-preserving elision. "
+    "*test*.rs; lexically mask Rust comments and literals, then strip "
+    "cfg(test)-attributed items with blank-preserving elision. "
     "bare tolerance literals count at use sites; named const/static numeric "
     "initializers are declarations and are excluded. "
     "from_endian_bytes uses that same crates/**/src glob (not codec crates only). "
@@ -203,10 +204,38 @@ def iter_src_files(glob: str) -> list[Path]:
     return sorted(p for p in ROOT.glob(glob) if is_production_rs(p))
 
 
+RUST_NON_CODE = re.compile(
+    r"//[^\r\n]*"
+    r"|/\*(?:[^*]|\*(?!/))*\*/"
+    r'|(?:br|r)(?P<raw_hashes>#+)"(?:(?!"(?P=raw_hashes)).)*"(?P=raw_hashes)'
+    r'|(?:br|r)"(?:\\.|[^"\\])*"'
+    r'|"(?:\\.|[^"\\])*"'
+    r"|'(?:\\.|[^'\\\r\n])*'",
+    re.DOTALL,
+)
+
+
+def mask_rust_non_code(text: str) -> str:
+    """Blank comments and literals while preserving positions and newlines."""
+
+    def blank(match: re.Match[str]) -> str:
+        return "".join(
+            character if character in "\r\n" else " " for character in match.group(0)
+        )
+
+    return RUST_NON_CODE.sub(blank, text)
+
+
+def metric_source_text(path: Path) -> str:
+    """Return production Rust code with test-only items and non-code masked."""
+    masked = mask_rust_non_code(path.read_text(encoding="utf-8", errors="replace"))
+    return strip_cfg_test_items(masked)
+
+
 def count_from_endian_bytes() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        text = metric_source_text(path)
         total += len(FROM_ENDIAN.findall(text))
     return total
 
@@ -214,7 +243,7 @@ def count_from_endian_bytes() -> int:
 def count_malformed_format() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        text = metric_source_text(path)
         total += len(MALFORMED_FORMAT.findall(text))
     return total
 
@@ -222,7 +251,7 @@ def count_malformed_format() -> int:
 def count_loss_note_literals() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        text = metric_source_text(path)
         for line in text.splitlines():
             code = line.split("//", 1)[0]
             if not LOSS_NOTE_LIT.search(code):
@@ -240,7 +269,7 @@ def count_loss_note_literals() -> int:
 def count_bare_tolerances() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        text = metric_source_text(path)
         total += count_bare_tolerance_literals(text)
     return total
 
@@ -358,7 +387,7 @@ def iter_vec_repeat_counts(text: str):
 def count_nonliteral_vec_repeat() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        text = metric_source_text(path)
         for count_expr in iter_vec_repeat_counts(text):
             if VEC_REPEAT_LITERAL.fullmatch(count_expr):
                 continue
@@ -504,7 +533,43 @@ def resolve_module_target(
 
 
 def empty_contributors() -> dict[str, list[dict[str, object]]]:
-    return {key: [] for key in PLACEMENT_KEYS}
+    return {key: [] for key in METRIC_KEYS}
+
+
+def collect_legacy_contributors() -> dict[str, list[dict[str, object]]]:
+    """Return per-file counts for each source-pattern metric."""
+    contributors = {key: [] for key in LEGACY_METRIC_KEYS}
+    for path in iter_src_files("crates/**/src/**/*.rs"):
+        text = metric_source_text(path)
+        counts = {
+            "from_endian_bytes": len(FROM_ENDIAN.findall(text)),
+            "codec_error_malformed_format": len(MALFORMED_FORMAT.findall(text)),
+            "bare_tolerance_literals": count_bare_tolerance_literals(text),
+            "nonliteral_vec_repeat": sum(
+                not VEC_REPEAT_LITERAL.fullmatch(count)
+                for count in iter_vec_repeat_counts(text)
+            ),
+        }
+        loss_literals = 0
+        for line in text.splitlines():
+            if not LOSS_NOTE_LIT.search(line):
+                continue
+            if (
+                LOSS_NOTE_RETURN.search(line)
+                or LOSS_NOTE_STRUCT.search(line)
+                or LOSS_NOTE_IMPL.search(line)
+            ):
+                continue
+            loss_literals += 1
+        counts["loss_note_struct_literals"] = loss_literals
+        for key, count in counts.items():
+            if count:
+                contributors[key].append(
+                    {"path": relative_path(path), "debt": count}
+                )
+    for values in contributors.values():
+        values.sort(key=lambda item: (-int(item["debt"]), str(item["path"])))
+    return contributors
 
 
 def scan_block(
@@ -727,6 +792,7 @@ def measure_all() -> tuple[dict[str, int], dict[str, list[dict[str, object]]]]:
         "nonliteral_vec_repeat": count_nonliteral_vec_repeat(),
     }
     contributors = collect_placement_contributors()
+    contributors.update(collect_legacy_contributors())
     counts.update(
         {
             "crate_root_tests_rs": len(contributors["crate_root_tests_rs"]),
@@ -880,6 +946,41 @@ def git_head() -> str:
     )
 
 
+def git_object_exists(revision: str) -> bool:
+    """Return whether ``revision`` names a commit in this repository."""
+    result = subprocess.run(
+        ["git", "cat-file", "-e", f"{revision}^{{commit}}"],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def git_is_ancestor(revision: str, descendant: str = "HEAD") -> bool:
+    """Return whether ``revision`` is an ancestor of ``descendant``."""
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", revision, descendant],
+        cwd=ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def check_measured_commit(measured_at: object | None) -> list[str]:
+    """Validate that the measurement provenance is a reachable commit."""
+    if not (isinstance(measured_at, str) and MEASURED_AT_SHA.fullmatch(measured_at)):
+        return ["ledger measured_at is not a 40-char git SHA"]
+    if not git_object_exists(measured_at):
+        return ["ledger measured_at does not identify an existing commit"]
+    if not git_is_ancestor(measured_at):
+        return ["ledger measured_at is not an ancestor of HEAD"]
+    return []
+
+
 def check(
     counts: dict[str, int],
     ceilings: dict[str, int],
@@ -985,6 +1086,7 @@ def main(argv: list[str] | None = None) -> int:
         previous_ceilings=previous_ceilings,
         measured_at=ledger.get("measured_at"),
     )
+    failures.extend(check_measured_commit(ledger.get("measured_at")))
 
     if args.update:
         if failures:
@@ -1035,6 +1137,8 @@ def main(argv: list[str] | None = None) -> int:
                     prev = ceilings.get(key)
                     marker = "" if prev == counts[key] else f" (was {prev})"
                     print(f"{key}\t{counts[key]}{marker}")
+                    for item in contributors[key]:
+                        print(f"  {item['path']}\tdebt {item['debt']}")
                     continue
                 prev = ceilings.get(key)
                 marker = "" if prev == counts[key] else f" (was {prev})"
@@ -1074,6 +1178,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for key in LEGACY_METRIC_KEYS:
             print(f"{key}\t{counts[key]}\t(ceiling {ceilings.get(key, '?')})")
+            for item in contributors[key]:
+                print(f"  {item['path']}\tdebt {item['debt']}")
         for key in PLACEMENT_KEYS:
             print(
                 f"{key}\t{counts[key]}\t(ceiling {ceilings.get(key, '?')}, target {targets.get(key, '?')})"

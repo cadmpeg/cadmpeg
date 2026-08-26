@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).with_name("convergence-ratchet.py")
 SPEC = importlib.util.spec_from_file_location("convergence_ratchet", SCRIPT)
@@ -148,6 +149,18 @@ class PatternFilters(unittest.TestCase):
                 "1.00E-10",
             ],
         )
+
+    def test_metric_source_masks_comments_and_literals(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "source.rs"
+            path.write_text(
+                '// from_le_bytes 1e-9\nconst NOTE: &str = "from_be_bytes 1e-8";\n'
+                "fn actual() { from_le_bytes(); let _ = 1e-7; }\n",
+                encoding="utf-8",
+            )
+            source = ratchet.metric_source_text(path)
+        self.assertEqual(ratchet.FROM_ENDIAN.findall(source), ["from_le_bytes"])
+        self.assertEqual(ratchet.count_bare_tolerance_literals(source), 1)
 
     def test_bare_tolerance_excludes_named_threshold_initializers(self) -> None:
         text = (
@@ -496,6 +509,27 @@ class LedgerRoundTrip(unittest.TestCase):
             measured_at="0123456789abcdef0123456789abcdef01234567",
         )
         self.assertEqual(failures, [])
+
+    def test_measured_commit_must_exist_and_be_reachable(self) -> None:
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        with patch.object(ratchet, "git_object_exists", return_value=False):
+            self.assertEqual(
+                ratchet.check_measured_commit(sha),
+                ["ledger measured_at does not identify an existing commit"],
+            )
+        with (
+            patch.object(ratchet, "git_object_exists", return_value=True),
+            patch.object(ratchet, "git_is_ancestor", return_value=False),
+        ):
+            self.assertEqual(
+                ratchet.check_measured_commit(sha),
+                ["ledger measured_at is not an ancestor of HEAD"],
+            )
+        with (
+            patch.object(ratchet, "git_object_exists", return_value=True),
+            patch.object(ratchet, "git_is_ancestor", return_value=True),
+        ):
+            self.assertEqual(ratchet.check_measured_commit(sha), [])
 
     def test_raise_without_reason_fails(self) -> None:
         failures = ratchet.check(
