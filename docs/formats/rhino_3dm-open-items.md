@@ -668,3 +668,266 @@ with a valid source layer index. First-record UUID ownership also does not give
 the later record a distinct source identity. The answer preserves each
 serialized identity and represents the collision explicitly, or withholds the
 ambiguous archive-reference binding without manufacturing a replacement index.
+
+### QA-13. Instance-definition record CRC coverage
+
+**Question.** Which direct byte ranges does a
+`TCODE_INSTANCE_DEFINITION_RECORD` CRC cover?
+
+**Known.** The record is a CRC-bearing table record whose body contains a
+complete nested OpenNURBS class chunk. OpenNURBS writes that child between
+`BeginWrite3dmChunk(TCODE_INSTANCE_DEFINITION_RECORD, 0)` and
+`EndWrite3dmChunk()` at `opennurbs_archive.cpp:11778-11791`. Section 4.1
+excludes complete nested chunks from a container CRC. The general table-record
+branch in `container.rs:200-211` supplies an empty direct range for the other
+class-owning table records, but it omits `TCODE_INSTANCE_DEFINITION_RECORD`.
+The fallback at `container.rs:271` therefore hashes the complete nested class
+chunk. A stored zero CRC is reported as an integrity failure even though the
+record has no direct body bytes.
+
+**Need.** Add the instance-definition record to the class-owning table-record
+CRC rule and add a witness whose nested class chunk is nonempty and whose
+record CRC is the CRC of its empty direct range.
+
+### QA-14. Failed candidate admission leaves native-record links behind
+
+**Question.** What state can a failed Rhino candidate admission change?
+
+**Known.** `decode.rs:602-666` checkpoints appended arena lengths and
+annotations, then replaces the complete Rhino native-unknown arena before it
+runs `admit_with_annotations`. The error branch truncates model arenas and
+rolls back annotations, but it does not restore the native-unknown arena. A
+rejected history projection can therefore leave an object record linked to a
+procedural surface that was rolled back. Final validation then reports a
+`native_links` error for the unresolved target.
+
+**Need.** Candidate admission must be atomic across the model, annotations,
+and native unknown records. A failure witness must assert that both the staged
+entity and every link to it are absent after rollback.
+
+### QA-15. Error-severity decode losses do not fail `cadmpeg check`
+
+**Question.** Can `cadmpeg check` return success when decoding reports an
+integrity failure at error severity?
+
+**Known.** `commands.rs:288-294` passes decode losses into the validation
+report and bases the check verdict on `ValidationReport::is_ok`.
+`report.rs:997-1016` counts only validation findings; it does not inspect the
+report's losses. `loss.rs:193` assigns `container.integrity-failure` error
+severity, but a document with that loss and no error finding receives a
+successful check verdict.
+
+**Need.** Define one verdict rule for error-severity losses and error-severity
+findings. If an integrity loss is recoverable enough for a successful check,
+its severity and strict consequence must say so instead of placing an ignored
+error in a successful report.
+
+### TP-01. Decoder output fails geometric-consistency validation
+
+**Question.** Which topology and geometry can the decoder return as a
+successful Rhino decode?
+
+**Known.** The V1 path appends legacy Breps directly at
+`legacy.rs:2107-2444` and never applies the Rhino candidate-admission gate.
+The object path commits Brep drafts at `decode.rs:3320-3405`. Returned models
+from both paths can fail final geometric consistency: edge curves miss their
+declared vertex positions, and pcurves mapped through their face surfaces miss
+the same vertices. The observed displacement reaches `190.716486` model
+units. The same defect is present in archive-2 and current class-table Breps,
+so it is not confined to V1 framing.
+
+**Need.** Every Brep transfer path must establish edge/vertex and
+pcurve/surface consistency before commit. A failing candidate must remain
+opaque or retain only independently valid carriers; a successful decode must
+pass the same geometric checks used by `cadmpeg check`.
+
+### TP-02. Legacy Breps emit equal senses in two-member radial rings
+
+**Question.** Which orientation relation must the two coedges of a shared V1
+edge have in neutral topology?
+
+**Known.** `legacy.rs:1382-1770` builds V1 edges, coedges, and radial rings.
+Final validation at `validate/topology.rs:6374-6385` reports
+`two-member radial ring has equal coedge senses` when both incident coedges
+carry the same sense. The condition occurs across many decoded V1 Breps and
+produces thousands of warnings, rather than an isolated degenerate edge.
+
+**Need.** Establish whether the V1 trim-reversal mapping or the neutral
+validator's sense invariant is wrong, then make the decoder and invariant
+agree. Add a two-face shared-edge witness that checks face reversal, trim
+reversal, coedge sense, and radial order together.
+
+### BR-02. Invalid face surface slots discard complete Brep topology
+
+**Question.** What can transfer when a Brep face references a surface slot
+that the current reader does not admit?
+
+**Known.** `brep.rs:496-503` rejects the complete raw topology when
+`face.surface` does not identify a typed surface slot. `decode.rs:3406-3428`
+then retains decoded child curves, surfaces, or mesh caches but discards the
+body, regions, shells, faces, loops, edges, coedges, vertices, points, and
+pcurves. The resulting `topology.brep-fallback` loss has occurred repeatedly
+for otherwise readable Breps.
+
+**Need.** Determine whether the rejected indexes use an unhandled serialized
+slot form or genuinely reference absent data. Admit the correct slot grammar
+when present. When the source reference is absent, retain the complete Brep
+record and expose only carriers whose identity does not imply discarded
+topology.
+
+### BR-03. Valid Brep not-solid cache value is reported as invalid
+
+**Question.** Which values are valid for the serialized Brep `m_is_solid`
+cache?
+
+**Known.** OpenNURBS defines `0` as unset, `1` as outward solid, `2` as inward
+solid, and `3` as not solid at `opennurbs_brep.cpp:6977-6996`.
+`brep.rs:647-657` accepts only `0..=2` and reports value `3` as an invalid
+enumeration. Valid non-solid Breps therefore receive
+`container.enumeration-value-degraded` warnings.
+
+**Need.** Accept all four source-defined values and map value `3` to the
+documented non-solid result. Add a witness for each cache value and for a value
+outside the source-defined range.
+
+### OF-01. Built-in object families remain opaque
+
+**Question.** Which current built-in Rhino object classes must have a typed
+geometry or annotation transfer?
+
+**Known.** `decode.rs:789-843` dispatches classes through the current family
+predicates, while `decode.rs:2404-2415` groups every object that remains in the
+retained state under `object.family-not-transferred`. Current built-in records
+that reach that state include
+`ON_Text`, `ON_TextDot`, obsolete V2 text dots and annotation arrows, obsolete
+V5 text and leaders, instance references, the legacy `TL_Brep` alias, and
+ordinary `ON_Point`, `ON_LineCurve`, and `ON_ArcCurve` records. The V1 path
+also retains flat geometry typecodes `0x80400025`, `0x02000014`, `0x02000013`,
+`0x00400020`, `0x00200001`, `0x0200000f`, `0x00400010`, and `0x00800001`
+without neutral geometry. Some nonempty documents consequently produce no
+neutral geometry.
+
+**Need.** Inventory each listed UUID and V1 typecode against its source class,
+then distinguish an unsupported dispatch from a failed supported decode and
+add the missing typed reader or repair the failing reader. Ordinary point,
+line, arc, and Brep aliases must reach their owning geometry decoder and leave
+the retained state for every valid versioned payload.
+
+### AN-01. Annotation transfer loses text and style binding
+
+**Question.** Which typed annotation state survives for text objects, text
+dots, leaders, arrows, and dimensions?
+
+**Known.** The text, text-dot, leader, and arrow classes listed in OF-01 remain
+opaque. Separately, `dimensions.rs:1618-1628` admits a dimension while emitting
+`dimension.style-unresolved` when its style UUID does not resolve to a decoded
+dimension-style record. The neutral annotation then lacks the source style
+binding.
+
+**Need.** Add typed transfers for the built-in annotation families and close
+dimension-style references against every versioned dimension-style table
+grammar. If a style cannot resolve, retain the serialized reference explicitly
+and do not present the annotation as fully styled neutral PMI.
+
+### MS-01. Mesh face topology is reduced during decode
+
+**Question.** How can Rhino quadrilateral and n-gon face identity survive in
+neutral tessellation?
+
+**Known.** `decode.rs:3220-3260` always emits triangles with an empty
+`triangle_groups` array. It reports every quad through
+`mesh.quad-topology-triangulated` and every n-gon through
+`mesh.ngon-grouping-dropped`. A mesh with many quads produces one loss per
+mesh and no machine-readable relation from the emitted triangles back to the
+serialized face. Section 14 currently documents this reduction as the chosen
+transfer.
+
+**Need.** Preserve source face grouping for both quads and n-gons, including
+the selected quad diagonal, or add a neutral mesh-face carrier that keeps the
+original face topology. The loss report alone cannot reconstruct which
+triangles belonged to one source face.
+
+### PR-01. Presentation and viewport records have no typed owner
+
+**Question.** Which V1 presentation records and viewport userdata fields can
+enter typed CADIR presentation?
+
+**Known.** `legacy.rs:2413-2425` retains V1 presentation typecodes
+`0x02000005` and `0x02000006` as opaque records. `views.rs:1008-1055` frames
+viewport userdata and reports `viewport.userdata-dropped` when its content has
+no typed CADIR owner. Current documents therefore lose view- and
+presentation-specific behavior even when the records are bounded and readable.
+
+**Need.** Identify the fields owned by these records and map each field to a
+typed presentation or view carrier. Keep only genuinely application-owned
+suffixes opaque, with a field-specific loss rather than dropping the complete
+readable record semantically.
+
+### SD-01. SubD cache, texture, symmetry, and packing metadata is untyped
+
+**Question.** Which serialized SubD metadata must remain associated with a
+typed neutral SubD surface?
+
+**Known.** `decode.rs:2256-2276` commits the SubD surface but reduces cache,
+texture, symmetry, or packing state to an `object.decode-diagnostic` warning.
+The neutral SubD has no typed representation of those fields and the generic
+diagnostic does not identify which individual metadata channels were omitted.
+
+**Need.** Map each source-defined SubD metadata channel to a typed neutral or
+native field and emit a field-specific loss for any channel that still has no
+owner. Cache data that is only derived acceleration state must be distinguished
+from symmetry and packing data that changes editing or parameterization.
+
+### CT-01. Hatch fill and detail-view construction state is passthrough only
+
+**Question.** Which hatch and detail-view semantics are represented by the
+neutral model?
+
+**Known.** `decode.rs:1260-1304` transfers hatch boundary curves but records
+the fill as native passthrough. `decode.rs:1424-1473` transfers a detail
+boundary and a native feature but records the detail view itself as not
+transferred. The resulting neutral geometry cannot reproduce hatch fill
+appearance or the detail's model-to-page view behavior.
+
+**Need.** Add typed hatch pattern, scale, rotation, base point, gradient, and
+loop-role state, and add a typed detail viewport with projection, clipping,
+display, and page/model ratio. The boundary curves alone are not equivalent to
+either source object.
+
+### IN-01. Instance references are retained when expansion is incomplete
+
+**Question.** What neutral occurrence survives when an instance transform,
+definition, or definition member cannot be expanded?
+
+**Known.** Instance diagnostics include non-affine transforms, missing
+definitions, undecoded definition members, and transformed procedural
+definitions that are omitted while a solved carrier is retained.
+`decode.rs:1966-2200` then leaves the instance-reference class in
+`object.family-not-transferred`. The document can lose occurrence structure
+even when the definition and exact untransformed carriers remain available.
+
+**Need.** Preserve a typed occurrence and its serialized transform and
+definition reference independently of geometry expansion. Expansion failures
+must affect only derived placed geometry, not erase the source assembly
+relationship.
+
+### PF-01. Rhino decode repeatedly validates the full accumulated model
+
+**Question.** What validation work may one object commit perform as the Rhino
+model grows?
+
+**Known.** `decode.rs:595-666` calls `admit_with_annotations` for individual
+candidate commits. `validate/admit.rs:81-90` implements admission by running
+full neutral validation and filtering its findings afterward. The decoder
+repeats this full-document walk for successive candidates, and `cadmpeg check`
+runs full validation again after decode. On one 26,176,187-byte archive with
+69 object records and 27 decoded objects, full check takes 8.36 seconds,
+including 8.31 seconds of user CPU time, and reaches about 125 MiB resident
+memory. Container-only check takes about 0.02 seconds; checking the emitted
+49 MiB CADIR alone takes about 4.7 seconds and reaches about 186 MiB resident
+memory. This performance is not acceptable for an interactive check.
+
+**Need.** Make candidate admission proportional to the staged delta and its
+affected references, or batch candidates and validate once before commit.
+Add a scaling benchmark that varies accumulated entity count and object count,
+with a regression ceiling for a document of this size and topology density.
