@@ -2096,6 +2096,123 @@ Unstated regions:
 - `290..317` (27 B): The post-ordinal scope tail precedes the previous history-state identity.
 - `321..363` (42 B): The fixed class-377 tail closes the primary frame before its paired header.
 
+## `base_feature_class_452_262_compact`
+
+Spec §3.1 · layout: byte offsets · size: 348 B
+
+Offsets are relative to the primary indexed header. This exact form has one output body and 64-bit references in its legacy lanes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | bytes 11 through 18 are zero |
+| 19 | 1 | `body_count_marker` | `u8` | little | spec | byte 19 is `0x01` · value `1` |
+| 20 | 4 | `body_count` | `u32` | little | spec | offset 20 stores u32 `1` · value `1` |
+| 24 | 1 | `body_entity_reference_marker` | `u8` | little | spec | marked 15-byte body entity element at offset 24 · value `1` |
+| 25 | 8 | `body_entity_suffix` | `u64` | little | spec | one u64 Design body entity suffix |
+| 33 | 6 | `body_entity_reference_field` | `bytes[6]` | little | spec | six-byte source field |
+| 39 | 1 | `tag_body_based_on_faces_marker` | `u8` | little | spec | property block at offset 39 · value `1` |
+| 40 | 4 | `tag_body_based_on_faces_count` | `u32` | little | spec | one `TagBodyBasedOnFaces` entry · value `1` |
+| 44 | 4 | `tag_body_based_on_faces_key_length` | `u32` | little | spec | TagBodyBasedOnFaces · value `19` |
+| 48 | 19 | `tag_body_based_on_faces_key` | `bytes[19]` | little | spec | TagBodyBasedOnFaces |
+| 67 | 4 | `tag_body_based_on_faces_type_length` | `u32` | little | spec | type `IntrinsicMetaTypebool` · value `21` |
+| 71 | 21 | `tag_body_based_on_faces_type` | `bytes[21]` | little | spec | type `IntrinsicMetaTypebool` |
+| 92 | 2 | `tag_body_based_on_faces_value` | `u16` | little | spec | u16 value `1` · value `1` |
+| 94 | 1 | `mode` | `u8` | little | spec | mode byte at offset 94 |
+| 95 | 1 | `parameter_body_count` | `u8` | little | spec | u8 count `1` at offset 95 · value `1` |
+| 96 | 3 | `parameter_body_zero_run` | `bytes[3]` | little | spec | three zero bytes |
+| 99 | 1 | `parameter_body_reference_marker` | `u8` | little | spec | marked u64 PM body-reference record at offset 99 · value `1` |
+| 100 | 8 | `parameter_body_record` | `u64` | little | spec | marked u64 PM body-reference record at offset 99 |
+| 108 | 3 | `parameter_body_reference_field` | `bytes[3]` | little | spec | three zero bytes |
+| 111 | 1 | `scope_reference_marker` | `u8` | little | spec | marked u64 copy of the scope reference starts at offset 111 · value `1` |
+| 112 | 8 | `scope_reference` | `u64` | little | spec | marked u64 copy of the scope reference starts at offset 111 |
+| 120 | 2 | `scope_reference_field` | `bytes[2]` | little | spec | two zero bytes |
+| 122 | 1 | `auxiliary_group_marker` | `u8` | little | spec | auxiliary group starts at offset 122 · value `1` |
+| 123 | 3 | `auxiliary_group_zero_run` | `bytes[3]` | little | spec | three zero bytes |
+| 126 | 1 | `auxiliary_reference_marker` | `u8` | little | spec | marked u64 DM body-reference record at offset 126 · value `1` |
+| 127 | 8 | `auxiliary_record` | `u64` | little | spec | marked u64 DM body-reference record at offset 126 |
+| 135 | 10 | `auxiliary_reference_field` | `bytes[10]` | little | spec | ten zero bytes |
+| 145 | 4 | `envelope_guid_code_unit_count` | `u32` | little | spec | 36-code-unit LP-UTF16 envelope GUID starts at offset 145 · value `36` |
+| 149 | 72 | `envelope_guid` | `bytes[72]` | little | spec | envelope GUID starts at offset 145 |
+| 221 | 3 | `zero_run_after_guid` | `bytes[3]` | little | spec | three zero bytes at offsets 221 through 223 |
+| 224 | 4 | `reference_count` | `u32` | little | spec | reference count is at offset 224 · value `1` |
+| 228 | 1 | `generic_scope_reference_marker` | `u8` | little | spec | marked u32 scope reference at offset 228 · value `1` |
+| 229 | 4 | `generic_scope_reference_record` | `u32` | little | spec | marked u32 scope reference |
+| 233 | 6 | `generic_scope_reference_field` | `bytes[6]` | little | spec | six zero bytes |
+| 239 | 4 | `history_state_id` | `u32` | little | spec | current history-state identity at offset 239 |
+| 243 | 4 | `kind_length` | `u32` | little | spec | kind at offset 247 · value `12` |
+| 247 | 24 | `kind` | `bytes[24]` | little | spec | kind at offset 247 |
+| 271 | 4 | `feature_ordinal` | `u32` | little | spec | feature ordinal at offset 271 |
+| 302 | 4 | `previous_history_state_id` | `u32` | little | spec | previous history-state identity at offset 302 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes the class-452 envelope payload.
+- `275..302` (27 B): The post-ordinal scope tail precedes the previous history-state identity.
+- `306..348` (42 B): The fixed compact tail closes the primary frame before its paired header.
+
+## `base_feature_class_452_262_expanded`
+
+Spec §3.1 · layout: byte offsets · size: 395 B
+
+Offsets are relative to the primary indexed header. This exact form has two output bodies and counted 32-bit PM and DM reference runs.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | bytes 11 through 18 are zero |
+| 19 | 1 | `body_count_marker` | `u8` | little | spec | byte 19 is `0x01` · value `1` |
+| 20 | 4 | `body_count` | `u32` | little | spec | offset 20 stores u32 `2` · value `2` |
+| 24 | 1 | `body_entity_one_marker` | `u8` | little | spec | Marked 15-byte body entity elements at offsets 24 and 39 · value `1` |
+| 25 | 8 | `body_entity_one_suffix` | `u64` | little | spec | two ordered u64 body entity suffixes |
+| 33 | 6 | `body_entity_one_field` | `bytes[6]` | little | spec | six-byte source fields |
+| 39 | 1 | `body_entity_two_marker` | `u8` | little | spec | Marked 15-byte body entity elements at offsets 24 and 39 · value `1` |
+| 40 | 8 | `body_entity_two_suffix` | `u64` | little | spec | two ordered u64 body entity suffixes |
+| 48 | 6 | `body_entity_two_field` | `bytes[6]` | little | spec | six-byte source fields |
+| 54 | 1 | `tag_body_based_on_faces_marker` | `u8` | little | spec | property block starts at offset 54 · value `1` |
+| 55 | 4 | `tag_body_based_on_faces_count` | `u32` | little | spec | one `TagBodyBasedOnFaces` entry · value `1` |
+| 59 | 4 | `tag_body_based_on_faces_key_length` | `u32` | little | spec | TagBodyBasedOnFaces · value `19` |
+| 63 | 19 | `tag_body_based_on_faces_key` | `bytes[19]` | little | spec | TagBodyBasedOnFaces |
+| 82 | 4 | `tag_body_based_on_faces_type_length` | `u32` | little | spec | type `IntrinsicMetaTypebool` · value `21` |
+| 86 | 21 | `tag_body_based_on_faces_type` | `bytes[21]` | little | spec | type `IntrinsicMetaTypebool` |
+| 107 | 2 | `tag_body_based_on_faces_value` | `u16` | little | spec | u16 value `1` · value `1` |
+| 109 | 1 | `parameter_body_group_marker` | `u8` | little | spec | counted PM group starts at offset 109 · value `1` |
+| 110 | 4 | `parameter_body_count` | `u32` | little | spec | u32 count `2` · value `2` |
+| 114 | 1 | `parameter_body_one_marker` | `u8` | little | spec | eleven-byte members start at offsets 114 and 125 · value `1` |
+| 115 | 4 | `parameter_body_one_record` | `u32` | little | spec | eleven-byte members start at offsets 114 and 125 |
+| 119 | 6 | `parameter_body_one_field` | `bytes[6]` | little | spec | eleven-byte members start at offsets 114 and 125 |
+| 125 | 1 | `parameter_body_two_marker` | `u8` | little | spec | eleven-byte members start at offsets 114 and 125 · value `1` |
+| 126 | 4 | `parameter_body_two_record` | `u32` | little | spec | eleven-byte members start at offsets 114 and 125 |
+| 130 | 6 | `parameter_body_two_field` | `bytes[6]` | little | spec | eleven-byte members start at offsets 114 and 125 |
+| 136 | 1 | `parameter_body_separator` | `u8` | little | spec | zero separator is at offset 136 · value `0` |
+| 137 | 1 | `scope_reference_marker` | `u8` | little | spec | marked explicit scope-reference member starts at offset 137 · value `1` |
+| 138 | 4 | `scope_reference` | `u32` | little | spec | marked explicit scope-reference member starts at offset 137 |
+| 142 | 6 | `scope_reference_field` | `bytes[6]` | little | spec | six zero bytes |
+| 148 | 4 | `auxiliary_body_count` | `u32` | little | spec | counted DM group has u32 count `2` at offset 148 · value `2` |
+| 152 | 1 | `auxiliary_body_one_marker` | `u8` | little | spec | eleven-byte members start at offsets 152 and 163 · value `1` |
+| 153 | 4 | `auxiliary_body_one_record` | `u32` | little | spec | eleven-byte members start at offsets 152 and 163 |
+| 157 | 6 | `auxiliary_body_one_field` | `bytes[6]` | little | spec | eleven-byte members start at offsets 152 and 163 |
+| 163 | 1 | `auxiliary_body_two_marker` | `u8` | little | spec | eleven-byte members start at offsets 152 and 163 · value `1` |
+| 164 | 4 | `auxiliary_body_two_record` | `u32` | little | spec | eleven-byte members start at offsets 152 and 163 |
+| 168 | 6 | `auxiliary_body_two_field` | `bytes[6]` | little | spec | eleven-byte members start at offsets 152 and 163 |
+| 174 | 8 | `auxiliary_body_zero_run` | `bytes[8]` | little | spec | Eight zero bytes at offsets 174 through 181 |
+| 182 | 4 | `envelope_guid_code_unit_count` | `u32` | little | spec | 36-code-unit LP-UTF16 envelope GUID at offset 186 · value `36` |
+| 186 | 72 | `envelope_guid` | `bytes[72]` | little | spec | envelope GUID at offset 186 |
+| 258 | 3 | `zero_run_after_guid` | `bytes[3]` | little | spec | Three zero bytes at offsets 258 through 260 |
+| 261 | 4 | `reference_count` | `u32` | little | spec | reference count is at offset 261 · value `1` |
+| 265 | 1 | `generic_scope_reference_marker` | `u8` | little | spec | marked scope reference at offset 265 · value `1` |
+| 266 | 4 | `generic_scope_reference_record` | `u32` | little | spec | marked scope reference |
+| 270 | 6 | `generic_scope_reference_field` | `bytes[6]` | little | spec | six zero bytes |
+| 276 | 4 | `history_state_id` | `u32` | little | spec | current history-state identity at offset 276 |
+| 280 | 4 | `kind_length` | `u32` | little | spec | kind at offset 284 · value `12` |
+| 284 | 24 | `kind` | `bytes[24]` | little | spec | kind at offset 284 |
+| 308 | 4 | `feature_ordinal` | `u32` | little | spec | feature ordinal at offset 308 |
+| 349 | 4 | `previous_history_state_id` | `u32` | little | spec | previous history-state identity at offset 349 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes the class-452 envelope payload.
+- `312..349` (37 B): The post-ordinal scope tail precedes the previous history-state identity.
+- `353..395` (42 B): The fixed expanded tail closes the primary frame before its paired header.
+
 ## `base_feature_result_body_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 24 B

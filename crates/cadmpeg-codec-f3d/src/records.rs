@@ -3679,6 +3679,18 @@ pub struct DesignCopyPasteBodiesOperation {
     pub copied_body_entity_suffix_offsets: Vec<u64>,
 }
 
+/// Wire form of the legacy class-452/class-262 Base Feature body-reference
+/// envelope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DesignBaseFeatureBodyReferenceForm {
+    /// One output body with 64-bit references in the legacy compact lanes.
+    CompactOneBody,
+    /// Two output bodies with counted 32-bit reference runs.
+    ExpandedTwoBody,
+}
+
 /// Typed construction data carried by a Fusion direct-modeling Base Feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3742,6 +3754,47 @@ pub enum DesignBaseFeatureConstruction {
         /// Byte offset of `tag_body_based_on_faces`.
         tag_body_based_on_faces_offset: u64,
     },
+    /// Legacy body-reference envelope used by the class-452/class-262 forms.
+    LegacyBodyBasedOnFaces {
+        /// Compact one-body or expanded two-body source envelope form.
+        form: DesignBaseFeatureBodyReferenceForm,
+        /// Compact-form mode byte. The expanded form has no mode byte.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mode: Option<u8>,
+        /// Byte offset of the compact-form mode byte.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mode_offset: Option<u64>,
+        /// Ordered Design body entity suffixes exposed by the envelope.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_entity_suffixes`.
+        body_entity_fields: Vec<[u8; 6]>,
+        /// Body suffixes used by history-to-BREP resolution for this form.
+        body_reference_records: Vec<u32>,
+        /// Byte offsets parallel to `body_reference_records`.
+        body_reference_record_offsets: Vec<u64>,
+        /// Ordered PM body-reference records carried by the envelope.
+        parameter_body_records: Vec<u64>,
+        /// Byte offsets parallel to `parameter_body_records`.
+        parameter_body_record_offsets: Vec<u64>,
+        /// Ordered DM body-reference records carried by the envelope.
+        auxiliary_records: Vec<u64>,
+        /// Byte offsets parallel to `auxiliary_records`.
+        auxiliary_record_offsets: Vec<u64>,
+        /// Scope record repeated by the envelope's explicit scope-reference lane.
+        scope_reference: u64,
+        /// Byte offset of `scope_reference`.
+        scope_reference_offset: u64,
+        /// LP-UTF-16 GUID carried by the envelope.
+        envelope_guid: String,
+        /// Byte offset of the first code unit of `envelope_guid`.
+        envelope_guid_offset: u64,
+        /// Stored body-source property value.
+        tag_body_based_on_faces: bool,
+        /// Byte offset of `tag_body_based_on_faces`.
+        tag_body_based_on_faces_offset: u64,
+    },
     /// Body snapshot form used by the class-314/class-259 scope pair.
     BodySnapshot {
         /// Ordered Design body entity suffixes exposed by the snapshot.
@@ -3780,6 +3833,10 @@ impl DesignBaseFeatureConstruction {
             | Self::BodyBasedOnFaces {
                 body_entity_suffixes,
                 ..
+            }
+            | Self::LegacyBodyBasedOnFaces {
+                body_entity_suffixes,
+                ..
             } => body_entity_suffixes,
         }
     }
@@ -3792,6 +3849,10 @@ impl DesignBaseFeatureConstruction {
                 ..
             }
             | Self::BodyBasedOnFaces {
+                body_reference_records,
+                ..
+            }
+            | Self::LegacyBodyBasedOnFaces {
                 body_reference_records,
                 ..
             } => body_reference_records,

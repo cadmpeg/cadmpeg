@@ -6622,6 +6622,700 @@ size = 42
 note = "The fixed class-377 tail closes the primary frame before its paired header."
 
 [[record]]
+name = "base_feature_class_452_262_compact"
+kind = "byte"
+section = "3.1"
+anchor = "The class-452 primary paired with class-262 has two legacy body-reference envelope forms."
+size = 348
+note = "Offsets are relative to the primary indexed header. This exact form has one output body and 64-bit references in its legacy lanes."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes the class-452 envelope payload."
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "bytes 11 through 18 are zero"
+
+[[record.field]]
+name = "body_count_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "byte 19 is `0x01`"
+value = 1
+
+[[record.field]]
+name = "body_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "offset 20 stores u32 `1`"
+value = 1
+
+[[record.field]]
+name = "body_entity_reference_marker"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "marked 15-byte body entity element at offset 24"
+value = 1
+
+[[record.field]]
+name = "body_entity_suffix"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "one u64 Design body entity suffix"
+
+[[record.field]]
+name = "body_entity_reference_field"
+offset = 33
+type = "bytes[6]"
+source = "spec"
+anchor = "six-byte source field"
+
+[[record.field]]
+name = "tag_body_based_on_faces_marker"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "property block at offset 39"
+value = 1
+
+[[record.field]]
+name = "tag_body_based_on_faces_count"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "one `TagBodyBasedOnFaces` entry"
+value = 1
+
+[[record.field]]
+name = "tag_body_based_on_faces_key_length"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "TagBodyBasedOnFaces"
+value = 19
+
+[[record.field]]
+name = "tag_body_based_on_faces_key"
+offset = 48
+type = "bytes[19]"
+source = "spec"
+anchor = "TagBodyBasedOnFaces"
+
+[[record.field]]
+name = "tag_body_based_on_faces_type_length"
+offset = 67
+type = "u32"
+source = "spec"
+anchor = "type `IntrinsicMetaTypebool`"
+value = 21
+
+[[record.field]]
+name = "tag_body_based_on_faces_type"
+offset = 71
+type = "bytes[21]"
+source = "spec"
+anchor = "type `IntrinsicMetaTypebool`"
+
+[[record.field]]
+name = "tag_body_based_on_faces_value"
+offset = 92
+type = "u16"
+source = "spec"
+anchor = "u16 value `1`"
+value = 1
+
+[[record.field]]
+name = "mode"
+offset = 94
+type = "u8"
+source = "spec"
+anchor = "mode byte at offset 94"
+
+[[record.field]]
+name = "parameter_body_count"
+offset = 95
+type = "u8"
+source = "spec"
+anchor = "u8 count `1` at offset 95"
+value = 1
+
+[[record.field]]
+name = "parameter_body_zero_run"
+offset = 96
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes"
+
+[[record.field]]
+name = "parameter_body_reference_marker"
+offset = 99
+type = "u8"
+source = "spec"
+anchor = "marked u64 PM body-reference record at offset 99"
+value = 1
+
+[[record.field]]
+name = "parameter_body_record"
+offset = 100
+type = "u64"
+source = "spec"
+anchor = "marked u64 PM body-reference record at offset 99"
+
+[[record.field]]
+name = "parameter_body_reference_field"
+offset = 108
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes"
+
+[[record.field]]
+name = "scope_reference_marker"
+offset = 111
+type = "u8"
+source = "spec"
+anchor = "marked u64 copy of the scope reference starts at offset 111"
+value = 1
+
+[[record.field]]
+name = "scope_reference"
+offset = 112
+type = "u64"
+source = "spec"
+anchor = "marked u64 copy of the scope reference starts at offset 111"
+
+[[record.field]]
+name = "scope_reference_field"
+offset = 120
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes"
+
+[[record.field]]
+name = "auxiliary_group_marker"
+offset = 122
+type = "u8"
+source = "spec"
+anchor = "auxiliary group starts at offset 122"
+value = 1
+
+[[record.field]]
+name = "auxiliary_group_zero_run"
+offset = 123
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes"
+
+[[record.field]]
+name = "auxiliary_reference_marker"
+offset = 126
+type = "u8"
+source = "spec"
+anchor = "marked u64 DM body-reference record at offset 126"
+value = 1
+
+[[record.field]]
+name = "auxiliary_record"
+offset = 127
+type = "u64"
+source = "spec"
+anchor = "marked u64 DM body-reference record at offset 126"
+
+[[record.field]]
+name = "auxiliary_reference_field"
+offset = 135
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes"
+
+[[record.field]]
+name = "envelope_guid_code_unit_count"
+offset = 145
+type = "u32"
+source = "spec"
+anchor = "36-code-unit LP-UTF16 envelope GUID starts at offset 145"
+value = 36
+
+[[record.field]]
+name = "envelope_guid"
+offset = 149
+type = "bytes[72]"
+source = "spec"
+anchor = "envelope GUID starts at offset 145"
+
+[[record.field]]
+name = "zero_run_after_guid"
+offset = 221
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes at offsets 221 through 223"
+
+[[record.field]]
+name = "reference_count"
+offset = 224
+type = "u32"
+source = "spec"
+anchor = "reference count is at offset 224"
+value = 1
+
+[[record.field]]
+name = "generic_scope_reference_marker"
+offset = 228
+type = "u8"
+source = "spec"
+anchor = "marked u32 scope reference at offset 228"
+value = 1
+
+[[record.field]]
+name = "generic_scope_reference_record"
+offset = 229
+type = "u32"
+source = "spec"
+anchor = "marked u32 scope reference"
+
+[[record.field]]
+name = "generic_scope_reference_field"
+offset = 233
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "history_state_id"
+offset = 239
+type = "u32"
+source = "spec"
+anchor = "current history-state identity at offset 239"
+
+[[record.field]]
+name = "kind_length"
+offset = 243
+type = "u32"
+source = "spec"
+anchor = "kind at offset 247"
+value = 12
+
+[[record.field]]
+name = "kind"
+offset = 247
+type = "bytes[24]"
+source = "spec"
+anchor = "kind at offset 247"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 271
+type = "u32"
+source = "spec"
+anchor = "feature ordinal at offset 271"
+
+[[record.gap]]
+offset = 275
+size = 27
+note = "The post-ordinal scope tail precedes the previous history-state identity."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 302
+type = "u32"
+source = "spec"
+anchor = "previous history-state identity at offset 302"
+
+[[record.gap]]
+offset = 306
+size = 42
+note = "The fixed compact tail closes the primary frame before its paired header."
+
+[[record]]
+name = "base_feature_class_452_262_expanded"
+kind = "byte"
+section = "3.1"
+anchor = "The class-452 primary paired with class-262 has two legacy body-reference envelope forms."
+size = 395
+note = "Offsets are relative to the primary indexed header. This exact form has two output bodies and counted 32-bit PM and DM reference runs."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes the class-452 envelope payload."
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "bytes 11 through 18 are zero"
+
+[[record.field]]
+name = "body_count_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "byte 19 is `0x01`"
+value = 1
+
+[[record.field]]
+name = "body_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "offset 20 stores u32 `2`"
+value = 2
+
+[[record.field]]
+name = "body_entity_one_marker"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "Marked 15-byte body entity elements at offsets 24 and 39"
+value = 1
+
+[[record.field]]
+name = "body_entity_one_suffix"
+offset = 25
+type = "u64"
+source = "spec"
+anchor = "two ordered u64 body entity suffixes"
+
+[[record.field]]
+name = "body_entity_one_field"
+offset = 33
+type = "bytes[6]"
+source = "spec"
+anchor = "six-byte source fields"
+
+[[record.field]]
+name = "body_entity_two_marker"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "Marked 15-byte body entity elements at offsets 24 and 39"
+value = 1
+
+[[record.field]]
+name = "body_entity_two_suffix"
+offset = 40
+type = "u64"
+source = "spec"
+anchor = "two ordered u64 body entity suffixes"
+
+[[record.field]]
+name = "body_entity_two_field"
+offset = 48
+type = "bytes[6]"
+source = "spec"
+anchor = "six-byte source fields"
+
+[[record.field]]
+name = "tag_body_based_on_faces_marker"
+offset = 54
+type = "u8"
+source = "spec"
+anchor = "property block starts at offset 54"
+value = 1
+
+[[record.field]]
+name = "tag_body_based_on_faces_count"
+offset = 55
+type = "u32"
+source = "spec"
+anchor = "one `TagBodyBasedOnFaces` entry"
+value = 1
+
+[[record.field]]
+name = "tag_body_based_on_faces_key_length"
+offset = 59
+type = "u32"
+source = "spec"
+anchor = "TagBodyBasedOnFaces"
+value = 19
+
+[[record.field]]
+name = "tag_body_based_on_faces_key"
+offset = 63
+type = "bytes[19]"
+source = "spec"
+anchor = "TagBodyBasedOnFaces"
+
+[[record.field]]
+name = "tag_body_based_on_faces_type_length"
+offset = 82
+type = "u32"
+source = "spec"
+anchor = "type `IntrinsicMetaTypebool`"
+value = 21
+
+[[record.field]]
+name = "tag_body_based_on_faces_type"
+offset = 86
+type = "bytes[21]"
+source = "spec"
+anchor = "type `IntrinsicMetaTypebool`"
+
+[[record.field]]
+name = "tag_body_based_on_faces_value"
+offset = 107
+type = "u16"
+source = "spec"
+anchor = "u16 value `1`"
+value = 1
+
+[[record.field]]
+name = "parameter_body_group_marker"
+offset = 109
+type = "u8"
+source = "spec"
+anchor = "counted PM group starts at offset 109"
+value = 1
+
+[[record.field]]
+name = "parameter_body_count"
+offset = 110
+type = "u32"
+source = "spec"
+anchor = "u32 count `2`"
+value = 2
+
+[[record.field]]
+name = "parameter_body_one_marker"
+offset = 114
+type = "u8"
+source = "spec"
+anchor = "eleven-byte members start at offsets 114 and 125"
+value = 1
+
+[[record.field]]
+name = "parameter_body_one_record"
+offset = 115
+type = "u32"
+source = "spec"
+anchor = "eleven-byte members start at offsets 114 and 125"
+
+[[record.field]]
+name = "parameter_body_one_field"
+offset = 119
+type = "bytes[6]"
+source = "spec"
+anchor = "eleven-byte members start at offsets 114 and 125"
+
+[[record.field]]
+name = "parameter_body_two_marker"
+offset = 125
+type = "u8"
+source = "spec"
+anchor = "eleven-byte members start at offsets 114 and 125"
+value = 1
+
+[[record.field]]
+name = "parameter_body_two_record"
+offset = 126
+type = "u32"
+source = "spec"
+anchor = "eleven-byte members start at offsets 114 and 125"
+
+[[record.field]]
+name = "parameter_body_two_field"
+offset = 130
+type = "bytes[6]"
+source = "spec"
+anchor = "eleven-byte members start at offsets 114 and 125"
+
+[[record.field]]
+name = "parameter_body_separator"
+offset = 136
+type = "u8"
+source = "spec"
+anchor = "zero separator is at offset 136"
+value = 0
+
+[[record.field]]
+name = "scope_reference_marker"
+offset = 137
+type = "u8"
+source = "spec"
+anchor = "marked explicit scope-reference member starts at offset 137"
+value = 1
+
+[[record.field]]
+name = "scope_reference"
+offset = 138
+type = "u32"
+source = "spec"
+anchor = "marked explicit scope-reference member starts at offset 137"
+
+[[record.field]]
+name = "scope_reference_field"
+offset = 142
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "auxiliary_body_count"
+offset = 148
+type = "u32"
+source = "spec"
+anchor = "counted DM group has u32 count `2` at offset 148"
+value = 2
+
+[[record.field]]
+name = "auxiliary_body_one_marker"
+offset = 152
+type = "u8"
+source = "spec"
+anchor = "eleven-byte members start at offsets 152 and 163"
+value = 1
+
+[[record.field]]
+name = "auxiliary_body_one_record"
+offset = 153
+type = "u32"
+source = "spec"
+anchor = "eleven-byte members start at offsets 152 and 163"
+
+[[record.field]]
+name = "auxiliary_body_one_field"
+offset = 157
+type = "bytes[6]"
+source = "spec"
+anchor = "eleven-byte members start at offsets 152 and 163"
+
+[[record.field]]
+name = "auxiliary_body_two_marker"
+offset = 163
+type = "u8"
+source = "spec"
+anchor = "eleven-byte members start at offsets 152 and 163"
+value = 1
+
+[[record.field]]
+name = "auxiliary_body_two_record"
+offset = 164
+type = "u32"
+source = "spec"
+anchor = "eleven-byte members start at offsets 152 and 163"
+
+[[record.field]]
+name = "auxiliary_body_two_field"
+offset = 168
+type = "bytes[6]"
+source = "spec"
+anchor = "eleven-byte members start at offsets 152 and 163"
+
+[[record.field]]
+name = "auxiliary_body_zero_run"
+offset = 174
+type = "bytes[8]"
+source = "spec"
+anchor = "Eight zero bytes at offsets 174 through 181"
+
+[[record.field]]
+name = "envelope_guid_code_unit_count"
+offset = 182
+type = "u32"
+source = "spec"
+anchor = "36-code-unit LP-UTF16 envelope GUID at offset 186"
+value = 36
+
+[[record.field]]
+name = "envelope_guid"
+offset = 186
+type = "bytes[72]"
+source = "spec"
+anchor = "envelope GUID at offset 186"
+
+[[record.field]]
+name = "zero_run_after_guid"
+offset = 258
+type = "bytes[3]"
+source = "spec"
+anchor = "Three zero bytes at offsets 258 through 260"
+
+[[record.field]]
+name = "reference_count"
+offset = 261
+type = "u32"
+source = "spec"
+anchor = "reference count is at offset 261"
+value = 1
+
+[[record.field]]
+name = "generic_scope_reference_marker"
+offset = 265
+type = "u8"
+source = "spec"
+anchor = "marked scope reference at offset 265"
+value = 1
+
+[[record.field]]
+name = "generic_scope_reference_record"
+offset = 266
+type = "u32"
+source = "spec"
+anchor = "marked scope reference"
+
+[[record.field]]
+name = "generic_scope_reference_field"
+offset = 270
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "history_state_id"
+offset = 276
+type = "u32"
+source = "spec"
+anchor = "current history-state identity at offset 276"
+
+[[record.field]]
+name = "kind_length"
+offset = 280
+type = "u32"
+source = "spec"
+anchor = "kind at offset 284"
+value = 12
+
+[[record.field]]
+name = "kind"
+offset = 284
+type = "bytes[24]"
+source = "spec"
+anchor = "kind at offset 284"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 308
+type = "u32"
+source = "spec"
+anchor = "feature ordinal at offset 308"
+
+[[record.gap]]
+offset = 312
+size = 37
+note = "The post-ordinal scope tail precedes the previous history-state identity."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 349
+type = "u32"
+source = "spec"
+anchor = "previous history-state identity at offset 349"
+
+[[record.gap]]
+offset = 353
+size = 42
+note = "The fixed expanded tail closes the primary frame before its paired header."
+
+[[record]]
 name = "base_feature_result_body_prefix"
 kind = "byte"
 section = "3.1"
