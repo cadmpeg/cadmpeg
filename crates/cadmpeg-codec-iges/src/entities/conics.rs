@@ -14,7 +14,10 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
-const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = 1.0e-12;
+const EPS_CONIC_DEGENERATE: f64 = 1.0e-10;
+const EPS_CONIC_EXACT_GEOMETRY: f64 = 1.0e-12;
+
+const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = EPS_CONIC_EXACT_GEOMETRY;
 
 fn add_bounded_curve(
     ir: &mut CadIr,
@@ -174,7 +177,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "conic placement collapses the y axis"));
             continue;
         };
-        if basis_x.dot(basis_y).abs() > 1.0e-10 {
+        if basis_x.dot(basis_y).abs() > EPS_CONIC_DEGENERATE {
             losses.push(entity_loss(
                 entry,
                 "conic placement produces non-orthogonal principal axes",

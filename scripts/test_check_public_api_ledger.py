@@ -47,6 +47,15 @@ class ShapeChecks(unittest.TestCase):
         failures = ledger.check_shape(data)
         self.assertEqual(failures, ["change[0] unknown kind 'rename'"])
 
+    def test_variant_kind_is_valid(self) -> None:
+        data = {
+            "baseline_commit": "0123456789abcdef0123456789abcdef01234567",
+            "api_baseline_dir": "docs/api-baseline",
+            "measured_at": "0123456789abcdef0123456789abcdef01234567",
+            "change": [_row(kind="variant")],
+        }
+        self.assertEqual(ledger.check_shape(data), [])
+
     def test_short_sha(self) -> None:
         data = {
             "baseline_commit": "abc",

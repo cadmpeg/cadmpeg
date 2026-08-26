@@ -8,6 +8,15 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
+use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
+use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
+use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
+use crate::layout::work_plane_legacy_337_matrix_frame as work_plane_337;
+use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
+use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
+use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
+use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
 
 #[test]
 fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
@@ -415,7 +424,13 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(construction.displacement, [0.0, -3.0, 4.0]);
     assert_eq!(construction.origin_offset, 25);
     assert_eq!(construction.displacement_offset, 49);
-    assert_eq!(construction.point_record_indices, [102, 104]);
+    assert!(matches!(
+        construction.source,
+        crate::records::DesignWorkAxisSource::TwoPoint {
+            point_record_indices: [102, 104],
+            ..
+        }
+    ));
     axis_scope.work_axis_construction = Some(construction);
     let (axis_features, _) = project_parameter_design(
         &[],
@@ -704,6 +719,51 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     );
     assert_eq!(decoded.reference, None);
 
+    let legacy_joint_origin_at = bytes.len();
+    let mut legacy_joint_origin = vec![0; joint_origin_class_337_266::LEN];
+    legacy_joint_origin[0..4].copy_from_slice(&3u32.to_le_bytes());
+    legacy_joint_origin[4..7].copy_from_slice(b"337");
+    legacy_joint_origin[7..11].copy_from_slice(&72u32.to_le_bytes());
+    legacy_joint_origin
+        [joint_origin_class_337_266::MATRIX_PREFIX..joint_origin_class_337_266::MATRIX]
+        .copy_from_slice(&joint_origin_class_337_266::MATRIX_PREFIX_VALUE);
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = joint_origin_class_337_266::MATRIX + ordinal * 8;
+        legacy_joint_origin[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    legacy_joint_origin.extend_from_slice(&3u32.to_le_bytes());
+    legacy_joint_origin.extend_from_slice(b"266");
+    legacy_joint_origin.extend_from_slice(&72u32.to_le_bytes());
+    bytes.extend_from_slice(&legacy_joint_origin);
+    let mut legacy_joint_origin_scope = scope.clone();
+    legacy_joint_origin_scope.kind = "JointOrigin".into();
+    legacy_joint_origin_scope.reference_members = vec![72];
+    let decoded = exact_joint_origin_frame(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &legacy_joint_origin_scope,
+    )
+    .expect("exact class-337/266 JointOrigin frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(
+        decoded.transform_offset,
+        (legacy_joint_origin_at + joint_origin_class_337_266::MATRIX) as u64
+    );
+    assert_eq!(decoded.reference, None);
+
+    let mut invalid_legacy_joint_origin = legacy_joint_origin.clone();
+    invalid_legacy_joint_origin[joint_origin_class_337_266::MATRIX_PREFIX] = 0;
+    let mut invalid_bytes = bytes[..legacy_joint_origin_at].to_vec();
+    invalid_bytes.extend_from_slice(&invalid_legacy_joint_origin);
+    assert_eq!(
+        exact_joint_origin_frame(
+            &invalid_bytes,
+            &IndexedRecordOffsets::build(&invalid_bytes),
+            &legacy_joint_origin_scope,
+        ),
+        None
+    );
+
     let move_at = bytes.len();
     let mut move_frame = vec![0; 254];
     move_frame[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -817,11 +877,14 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     scale_scope.kind = "Maßstab".into();
     scale_scope.frame_length = 317;
     scale_scope.reference_members = vec![101, 102, 103, 104, 105];
+    let scale_records = IndexedRecordOffsets::build(&bytes);
     assert_eq!(
-        exact_scale_operation(&bytes, &scale_scope),
+        exact_scale_operation(&bytes, &scale_records, &scale_scope, &HashMap::new()),
         Some(DesignScaleOperation {
             body_group_record_index: 102,
-            center_record_index: 101,
+            center_record_index: 105,
+            center_position: None,
+            center_position_offset: None,
             uniform_factor: 1.5,
             uniform_factor_offset: (scale_at + 25) as u64,
         })
@@ -1313,7 +1376,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_extrude_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &extrude_scope
+            &extrude_scope,
+            &[],
+            &[],
         ),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
@@ -1335,7 +1400,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_extrude_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &extrude_scope
+            &extrude_scope,
+            &[],
+            &[],
         ),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(
@@ -1354,7 +1421,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_extrude_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &extrude_scope
+            &extrude_scope,
+            &[],
+            &[],
         ),
         None
     );
@@ -1640,7 +1709,9 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_extrude_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &extrude_scope
+            &extrude_scope,
+            &[],
+            &[],
         ),
         Some(DesignFixedExtrudeParameters {
             along_distance: Some(DesignFixedExtrudeDistance::DistanceConstruction(
@@ -1662,10 +1733,192 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         exact_fixed_extrude_parameters(
             &bytes,
             &IndexedRecordOffsets::build(&bytes),
-            &extrude_scope
+            &extrude_scope,
+            &[],
+            &[],
         ),
         None
     );
 
     super::fixed_kind_operations::continue_fixed_kind_operations(bytes, scope, &thicken_group);
+}
+
+#[test]
+fn generated_copy_paste_bodies_scope_matches_operation_layout() {
+    let (bytes, _) = crate::test_support::generated_design_copy_paste_bodies_bulkstream();
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let headers =
+        crate::design::decode::scopes::parameter_scope_candidate_headers(&bytes, &records)
+            .into_iter()
+            .filter(|header| header.record_index == 1_400)
+            .collect::<Vec<_>>();
+    assert_eq!(headers.len(), 1);
+    let scope = crate::design::decode::scopes::parse_parameter_scope(&bytes, &records, &headers[0])
+        .expect("scope");
+    assert_eq!(scope.kind, "CopyPasteBodies");
+    assert_eq!(scope.reference_members, [1_500, 1_600]);
+    assert_eq!(scope.frame_length, 225);
+    let operation =
+        crate::design::decode::scopes::exact_copy_paste_bodies_operation(&bytes, &records, &scope)
+            .expect("CopyPasteBodies operation");
+    assert_eq!(operation.body_group_record_index, 1_500);
+    assert_eq!(operation.relation_record_index, 1_700);
+    assert_eq!(operation.source_body_entity_suffixes, [985]);
+    assert_eq!(operation.copied_body_entity_suffixes, [8_422]);
+}
+
+#[test]
+fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
+    let mut bytes = vec![0; 325];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"380");
+    bytes[7..11].copy_from_slice(&71u32.to_le_bytes());
+    let transform = identity_matrix();
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = 49 + ordinal * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"262");
+    bytes.extend_from_slice(&71u32.to_le_bytes());
+
+    let scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
+    let mut scope = scope;
+    scope.reference_members = vec![71];
+    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+        .expect("class-380 WorkPlane frame");
+    assert_eq!(decoded.transform, transform);
+    assert_eq!(decoded.transform_offset, 49);
+    assert_eq!(decoded.reference, None);
+}
+
+#[test]
+fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
+    let transform: [[f64; 4]; 4] = [
+        [0.0, -1.0, 0.0, 2.0],
+        [1.0, 0.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for opaque_u16 in [[0, 0], [0x9b, 0xdc]] {
+        let mut bytes = vec![0; work_plane_class_256::LEN];
+        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(b"256");
+        bytes[7..11].copy_from_slice(&71u32.to_le_bytes());
+        bytes
+            [work_plane_class_256::OPAQUE_U16..work_plane_class_256::OPAQUE_U16 + opaque_u16.len()]
+            .copy_from_slice(&opaque_u16);
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            let at = work_plane_class_256::MATRIX + ordinal * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"262");
+        bytes.extend_from_slice(&71u32.to_le_bytes());
+
+        let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "WorkPlane", 1);
+        scope.reference_members = vec![71];
+        let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+            .expect("class-256 WorkPlane frame");
+        assert_eq!(decoded.transform, transform);
+        assert_eq!(
+            decoded.transform_offset,
+            work_plane_class_256::MATRIX as u64
+        );
+        assert_eq!(decoded.reference, None);
+    }
+
+    let mut invalid = vec![0; work_plane_class_256::LEN];
+    invalid[0..4].copy_from_slice(&3u32.to_le_bytes());
+    invalid[4..7].copy_from_slice(b"256");
+    invalid[7..11].copy_from_slice(&71u32.to_le_bytes());
+    invalid[work_plane_class_256::ZERO_PAIR] = 1;
+    invalid.extend_from_slice(&3u32.to_le_bytes());
+    invalid.extend_from_slice(b"262");
+    invalid.extend_from_slice(&71u32.to_le_bytes());
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#2", "WorkPlane", 2);
+    scope.reference_members = vec![71];
+    assert_eq!(
+        exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),
+        None
+    );
+}
+
+#[test]
+fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
+    type WorkPlaneOpaqueCase = (&'static [u8; 3], &'static [u8; 3], usize, [u8; 2], u32);
+
+    let transform: [[f64; 4]; 4] = [
+        [0.0, -1.0, 0.0, 2.0],
+        [1.0, 0.0, 0.0, 3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let cases: [WorkPlaneOpaqueCase; 3] = [
+        (b"341", b"261", work_plane_321_opaque::LEN, [0xea, 0x20], 81),
+        (b"346", b"262", work_plane_321_opaque::LEN, [0xae, 0x70], 82),
+        (
+            b"337",
+            b"266",
+            work_plane_class_337_325::LEN,
+            [0x6d, 0x00],
+            83,
+        ),
+    ];
+
+    for (class_tag, paired_class_tag, frame_length, opaque_u16, record_index) in cases {
+        let matrix = if frame_length == work_plane_321_opaque::LEN {
+            work_plane_321_opaque::MATRIX
+        } else {
+            work_plane_class_337_325::MATRIX
+        };
+        let opaque = if frame_length == work_plane_321_opaque::LEN {
+            work_plane_321_opaque::OPAQUE_U16
+        } else {
+            work_plane_class_337_325::OPAQUE_U16
+        };
+        let zero_pair = if frame_length == work_plane_321_opaque::LEN {
+            work_plane_321_opaque::ZERO_PAIR
+        } else {
+            work_plane_class_337_325::ZERO_PAIR
+        };
+        let mut bytes = vec![0; frame_length];
+        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(class_tag);
+        bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
+        bytes[opaque..opaque + opaque_u16.len()].copy_from_slice(&opaque_u16);
+        assert_eq!(&bytes[zero_pair..zero_pair + 2], &[0, 0]);
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            let at = matrix + ordinal * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(paired_class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+
+        let mut scope = DesignParameterScope::empty("f3d:test:scope#opaque", "WorkPlane", 1);
+        scope.reference_members = vec![record_index];
+        let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
+            .expect("opaque-prefix WorkPlane frame");
+        assert_eq!(decoded.transform, transform);
+        assert_eq!(decoded.transform_offset, matrix as u64);
+        assert_eq!(decoded.reference, None);
+    }
+
+    let mut invalid = vec![0; work_plane_321_opaque::LEN];
+    invalid[0..4].copy_from_slice(&3u32.to_le_bytes());
+    invalid[4..7].copy_from_slice(b"341");
+    invalid[7..11].copy_from_slice(&84u32.to_le_bytes());
+    invalid[work_plane_321_opaque::OPAQUE_U16..work_plane_321_opaque::OPAQUE_U16 + 2]
+        .copy_from_slice(&[0xea, 0x20]);
+    invalid[work_plane_321_opaque::ZERO_PAIR] = 1;
+    invalid.extend_from_slice(&3u32.to_le_bytes());
+    invalid.extend_from_slice(b"262");
+    invalid.extend_from_slice(&84u32.to_le_bytes());
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#invalid", "WorkPlane", 2);
+    scope.reference_members = vec![84];
+    assert_eq!(
+        exact_work_plane_frame(&invalid, &IndexedRecordOffsets::build(&invalid), &scope),
+        None
+    );
 }

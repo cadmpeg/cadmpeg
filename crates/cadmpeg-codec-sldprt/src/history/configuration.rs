@@ -16,6 +16,8 @@ use crate::history::parameters::{
 };
 use crate::history::project::project_features;
 
+const EPS_CONFIGURATION_ALIGN_CONFIGURATION_PARAMETER_KINDS_E9: f64 = 1.0e-9;
+
 /// Which side of the codec drives the history-enrichment prefix.
 ///
 /// The read (decode) path and the write-side reprojections run the same ordered
@@ -1180,7 +1182,8 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
                 exact_integer_f64(*expected)
                     .filter(|expected_value| {
                         (candidate - expected_value).abs()
-                            <= 1.0e-9 * candidate.abs().max(expected_value.abs()).max(1.0)
+                            <= EPS_CONFIGURATION_ALIGN_CONFIGURATION_PARAMETER_KINDS_E9
+                                * candidate.abs().max(expected_value.abs()).max(1.0)
                     })
                     .map(|_| ParameterValue::Integer(*expected))
             }

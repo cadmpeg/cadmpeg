@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::design::decode::operands::parse_loft_legacy_body_carrier;
 
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {
@@ -99,6 +100,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
@@ -227,6 +229,37 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(start_face.role, 0x0000_0005_0000_0000);
     assert_eq!(
         start_face.extrude_role,
+        Some(DesignExtrudeOperandRole::Faces)
+    );
+
+    let mut to_face_scope = from_face_scope.clone();
+    to_face_scope.extrude_prologue = Some(DesignExtrudePrologue::ReferenceAware {
+        reference: None,
+        operation: DesignExtrudeOperation::Cut,
+        operation_offset: 1028,
+        direction_face_extend_values: [1, 2],
+        side_extent_discriminators: [2, 0],
+        side_extent_discriminator_offsets: [1077, 1090],
+        first_side_target_ordinal: None,
+        extent: DesignExtrudeExtent::OneSidedToFace,
+        direction_face_extend_offsets: [1032, 1036],
+        direction_reversed: false,
+        direction_reversed_offset: 1040,
+        solid_operation: true,
+        solid_operation_offset: 1041,
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: 1042,
+    });
+    let mut to_face_bytes = bytes.clone();
+    to_face_bytes[group.role_offset as usize..group.role_offset as usize + 8]
+        .copy_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
+    let legacy_to_face =
+        parse_construction_operand_group(&to_face_bytes, &to_face_scope, 0, &record)
+            .complete()
+            .expect("counted Extrude legacy to-face group");
+    assert_eq!(legacy_to_face.role, 0x0000_0012_0000_0000);
+    assert_eq!(
+        legacy_to_face.extrude_role,
         Some(DesignExtrudeOperandRole::Faces)
     );
 
@@ -451,12 +484,15 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             fillet_radius_groups: &[],
             edge_operands: &[],
             edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
             entity_selection_operands: &plane_selections,
             curve_identities: &[],
             face_operands: &[],
             body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -538,6 +574,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
         next_record_index: 204,
         next_byte_offset: 1411,
     };
@@ -552,6 +589,34 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             targets: cadmpeg_ir::features::BodySelection::Native(ref targets),
             tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
         }) if targets.ends_with("#400") && tool.ends_with("#200")
+    ));
+
+    let mut historical_split_scope = split_body_scope.clone();
+    historical_split_scope.previous_history_state_id = Some(7);
+    let mut historical_split_tool = split_tool.clone();
+    historical_split_tool.preceding_candidate_faces = vec![FaceId(crate::ids::brep_entity_id(7))];
+    historical_split_tool.recipe_references = vec![DesignRecipeReference {
+        selector: 1,
+        selector_offset: 0,
+        token: "23".into(),
+        token_offset: 0,
+        design_reference: 332,
+        design_reference_offset: 0,
+        candidate_faces: Vec::new(),
+        candidate_edges: Vec::new(),
+        alternate_selector_faces: vec![FaceId(crate::ids::brep_entity_id(7))],
+        alternate_selector_edges: Vec::new(),
+    }];
+    assert!(matches!(
+        project_split(
+            &historical_split_scope,
+            &split_groups,
+            std::slice::from_ref(&historical_split_tool)
+        ),
+        Some(FeatureDefinition::SplitBody {
+            tools: FaceSelection::Historical { faces, native, .. },
+            ..
+        }) if faces.len() == 1 && native == historical_split_tool.id
     ));
 
     let mut multiple_targets_scope = split_body_scope.clone();
@@ -793,6 +858,94 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         FeatureDefinition::Native { ref kind, .. } if kind == "SurfaceDeleteFace"
     ));
 
+    for (class_tag, paired_class_tag, base_frame, base_kind) in [
+        ("287", "270", 245_u64, 135_u64),
+        ("287", "270", 256, 146),
+        ("327", "257", 250, 139),
+        ("414", "263", 250, 140),
+        ("497", "259", 257, 146),
+        ("545", "257", 246, 135),
+        ("545", "257", 250, 139),
+        ("545", "257", 257, 146),
+    ] {
+        surface_scope.class_tag = class_tag.into();
+        surface_scope.paired_class_tag = paired_class_tag.into();
+        surface_scope.frame_length = base_frame + reference_bytes;
+        surface_scope.kind_offset = surface_scope.byte_offset + base_kind + reference_bytes;
+        let (features, _) = project_parameter_design(
+            &[],
+            &[],
+            std::slice::from_ref(&surface_scope),
+            std::slice::from_ref(&delete_group),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::DeleteFace { heal: false, .. }
+        ));
+    }
+
+    surface_scope.class_tag = "327".into();
+    surface_scope.paired_class_tag = "258".into();
+    surface_scope.frame_length = 250 + reference_bytes;
+    surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&surface_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Native { ref kind, .. } if kind == "SurfaceDeleteFace"
+    ));
+
+    for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {
+        delete_scope.kind = "DeleteFace".into();
+        delete_scope.class_tag = class_tag.into();
+        delete_scope.paired_class_tag = paired_class_tag.into();
+        delete_scope.frame_length = 232 + reference_bytes;
+        delete_scope.kind_offset = delete_scope.byte_offset + 135 + reference_bytes;
+        let (features, _) = project_parameter_design(
+            &[],
+            &[],
+            std::slice::from_ref(&delete_scope),
+            std::slice::from_ref(&delete_group),
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::DeleteFace { heal: true, .. }
+        ));
+    }
+
+    delete_scope.class_tag = "264".into();
+    delete_scope.paired_class_tag = "263".into();
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        features[0].definition,
+        FeatureDefinition::Native { ref kind, .. } if kind == "DeleteFace"
+    ));
+
     let mut remove_scope = scope.clone();
     remove_scope.kind = "RemoveBody".into();
     let mut remove_group = group;
@@ -833,6 +986,191 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             gap_tolerance: Some(cadmpeg_ir::features::Length(0.1)),
         })
     );
+}
+
+#[test]
+fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
+    fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn reference(bytes: &mut Vec<u8>, record_index: u32) {
+        bytes.push(1);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+
+    for (ordinal, (class_tag, scope_kind)) in [
+        ("323", "Move"),
+        ("328", "Move"),
+        ("257", "Move"),
+        ("338", "RemoveBody"),
+        ("282", "Move"),
+        ("302", "Move"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let scope_record_index = 12 + u32::try_from(ordinal).expect("small test ordinal");
+        let group_record_index = 100 + 4 * u32::try_from(ordinal).expect("small test ordinal");
+        let frame_at = 0;
+        let mut bytes = Vec::new();
+        header(
+            &mut bytes,
+            class_tag.as_bytes().try_into().expect("three-digit class"),
+            group_record_index,
+        );
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        reference(&mut bytes, group_record_index + 3);
+        if class_tag == "328" {
+            bytes.push(0);
+            reference(&mut bytes, group_record_index + 13);
+        } else {
+            bytes.extend_from_slice(&[0; 2]);
+        }
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        if class_tag == "328" {
+            bytes.push(0);
+        }
+        bytes.extend_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&180u32.to_le_bytes());
+        bytes.extend_from_slice(&0.125f64.to_le_bytes());
+        bytes.extend_from_slice(&180u32.to_le_bytes());
+        reference(&mut bytes, group_record_index + 2);
+        let flag_pair = matches!(class_tag, "282" | "302")
+            .then_some([0, 1])
+            .unwrap_or([1, 1]);
+        if class_tag == "328" {
+            bytes.push(0);
+        }
+        bytes.extend_from_slice(&flag_pair);
+        if class_tag == "328" {
+            bytes.extend_from_slice(&u64::from(group_record_index + 1).to_le_bytes());
+            bytes.extend_from_slice(&[0; 3]);
+        } else {
+            reference(&mut bytes, group_record_index + 1);
+            bytes.push(0);
+        }
+        reference(&mut bytes, scope_record_index);
+        let paired_at = bytes.len();
+        header(
+            &mut bytes,
+            if class_tag == "328" { *b"263" } else { *b"262" },
+            group_record_index,
+        );
+
+        let mut scope = DesignParameterScope::empty(
+            &format!("f3d:test:legacy-body-group#{scope_record_index}"),
+            scope_kind,
+            scope_record_index,
+        );
+        scope.reference_members = vec![group_record_index];
+        let record = DesignRecordHeader {
+            id: format!("f3d:test:legacy-body-record#{group_record_index}"),
+            byte_offset: frame_at,
+            class_tag: class_tag.to_owned(),
+            record_index: group_record_index,
+        };
+        let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
+            .complete()
+            .expect("legacy body construction group");
+
+        assert_eq!(group.members, [group_record_index + 3]);
+        assert_eq!(group.role, 0x0000_0004_0000_0000);
+        assert_eq!(group.frame.variant, flag_pair == [1, 1]);
+        assert_eq!(group.paired_byte_offset, paired_at as u64);
+    }
+}
+
+#[test]
+fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scope() {
+    let mut scope =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#296536", "Extrude", 296_536);
+    scope.byte_offset = 1000;
+    scope.class_tag = "296".into();
+    scope.paired_class_tag = "261".into();
+    scope.frame_length = 536;
+    scope.reference_count_offset = 1291;
+    scope.reference_members = (0..13).map(|index| 296_500 + index).collect();
+    scope.extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker: None,
+        operation_prefix_marker_offset: None,
+        operation: DesignExtrudeOperation::Join,
+        operation_offset: 1026,
+        direction_face_extend_values: [2, 2],
+        side_extent_discriminators: [2, 0],
+        side_extent_discriminator_offsets: [1115, 1287],
+        extent: Some(DesignExtrudeExtent::TwoSidedToFaces),
+        direction_face_extend_offsets: [1030, 1034],
+        direction_reversed: false,
+        direction_reversed_offset: 1038,
+        solid_operation: true,
+        solid_operation_offset: 1039,
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: 1040,
+    });
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"323");
+    bytes.extend_from_slice(&296_501_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&91u32.to_le_bytes());
+    bytes.extend_from_slice(&0.125f64.to_le_bytes());
+    bytes.extend_from_slice(&91u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&296_503_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&[1, 1, 0]);
+    bytes.push(1);
+    bytes.extend_from_slice(&296_502_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.push(0);
+    bytes.push(1);
+    bytes.extend_from_slice(&scope.record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"261");
+    bytes.extend_from_slice(&296_501_u32.to_le_bytes());
+
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:group#296501".into(),
+        byte_offset: 0,
+        class_tag: "323".into(),
+        record_index: 296_501,
+    };
+    let group = parse_construction_operand_group(&bytes, &scope, 0, &header)
+        .complete()
+        .expect("class-296 two-sided-to-faces construction group");
+    assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Faces));
+
+    let mut wrong_length = scope.clone();
+    wrong_length.frame_length = 537;
+    let group = parse_construction_operand_group(&bytes, &wrong_length, 0, &header)
+        .complete()
+        .expect("construction group with otherwise valid frame");
+    assert_eq!(group.extrude_role, None);
+
+    let mut wrong_extent = scope;
+    let Some(DesignExtrudePrologue::LegacyShifted { extent, .. }) =
+        wrong_extent.extrude_prologue.as_mut()
+    else {
+        panic!("synthetic class-296 two-sided-to-faces prologue");
+    };
+    *extent = Some(DesignExtrudeExtent::SymmetricDistance);
+    let group = parse_construction_operand_group(&bytes, &wrong_extent, 0, &header)
+        .complete()
+        .expect("construction group with otherwise valid frame");
+    assert_eq!(group.extrude_role, None);
 }
 
 #[test]
@@ -1061,4 +1399,143 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     assert_eq!(present.second_related_identity, Some(119));
     assert_eq!(present.second_related_identity_offset, Some(122));
     assert_eq!(present.following_byte_offset, 130);
+}
+
+#[test]
+fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
+    fn header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn reference(bytes: &mut Vec<u8>, record_index: u32) {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+    }
+
+    fn carrier(
+        primary_class: &[u8; 3],
+        paired_class: &[u8; 3],
+        scope_record_index: u32,
+        record_index: u32,
+        with_scope_tail: bool,
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        header(&mut bytes, primary_class, record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&scope_record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        reference(&mut bytes, 900);
+        bytes.extend_from_slice(&89u32.to_le_bytes());
+        bytes.extend_from_slice(&1.25f64.to_le_bytes());
+        bytes.extend_from_slice(&89u32.to_le_bytes());
+        reference(&mut bytes, record_index + 2);
+        bytes.extend_from_slice(&[0, 0]);
+        reference(&mut bytes, record_index + 1);
+        if with_scope_tail {
+            bytes.push(0);
+            reference(&mut bytes, scope_record_index);
+        }
+        header(&mut bytes, paired_class, record_index);
+        bytes
+    }
+
+    let mut scope =
+        crate::records::DesignParameterScope::empty("f3d:Design/BulkStream.dat", "Loft", 12);
+    scope.path_feature_construction = Some(crate::records::DesignPathFeatureConstruction::Loft {
+        operation: crate::records::DesignExtrudeOperation::Cut,
+        operation_offset: 0,
+    });
+
+    let class_322 = carrier(b"322", b"262", 12, 100, false);
+    let parsed_322 = parse_loft_legacy_body_carrier(
+        &class_322,
+        &scope,
+        0,
+        &crate::records::DesignRecordHeader {
+            id: "header-322".into(),
+            record_index: 100,
+            class_tag: "322".into(),
+            byte_offset: 0,
+        },
+    )
+    .expect("class-322 legacy Loft carrier");
+    assert_eq!(parsed_322.paired_class_tag, "262");
+    assert_eq!(parsed_322.paired_byte_offset, 87);
+    assert_eq!(parsed_322.members, vec![900]);
+    assert_eq!(parsed_322.member_offsets, vec![36]);
+    assert_eq!(parsed_322.opaque_index, 89);
+    assert_eq!(parsed_322.opaque_scalar, 1.25);
+    assert_eq!(parsed_322.next_next_record_index, 102);
+    assert_eq!(parsed_322.next_record_index, 101);
+    assert_eq!(parsed_322.trailing_scope_record_index, None);
+
+    let class_322_tail = carrier(b"322", b"262", 12, 200, true);
+    let parsed_322_tail = parse_loft_legacy_body_carrier(
+        &class_322_tail,
+        &scope,
+        0,
+        &crate::records::DesignRecordHeader {
+            id: "header-322-tail".into(),
+            record_index: 200,
+            class_tag: "322".into(),
+            byte_offset: 0,
+        },
+    )
+    .expect("class-322 legacy Loft carrier with scope tail");
+    assert_eq!(parsed_322_tail.paired_class_tag, "262");
+    assert_eq!(parsed_322_tail.paired_byte_offset, 99);
+    assert_eq!(parsed_322_tail.trailing_scope_record_index, Some(12));
+    assert_eq!(parsed_322_tail.trailing_scope_reference_offset, Some(88));
+
+    let class_411 = carrier(b"411", b"266", 12, 300, true);
+    let parsed_411 = parse_loft_legacy_body_carrier(
+        &class_411,
+        &scope,
+        0,
+        &crate::records::DesignRecordHeader {
+            id: "header-411".into(),
+            record_index: 300,
+            class_tag: "411".into(),
+            byte_offset: 0,
+        },
+    )
+    .expect("class-411 legacy Loft carrier");
+    assert_eq!(parsed_411.paired_class_tag, "266");
+    assert_eq!(parsed_411.paired_byte_offset, 99);
+    assert_eq!(parsed_411.trailing_scope_record_index, Some(12));
+    assert_eq!(parsed_411.trailing_scope_reference_offset, Some(88));
+
+    let mut wrong_presence = class_322.clone();
+    wrong_presence[21] = 0;
+    assert!(parse_loft_legacy_body_carrier(
+        &wrong_presence,
+        &scope,
+        0,
+        &crate::records::DesignRecordHeader {
+            id: "header-322".into(),
+            record_index: 100,
+            class_tag: "322".into(),
+            byte_offset: 0,
+        },
+    )
+    .is_none());
+
+    let wrong_pair = carrier(b"322", b"266", 12, 400, false);
+    assert!(parse_loft_legacy_body_carrier(
+        &wrong_pair,
+        &scope,
+        0,
+        &crate::records::DesignRecordHeader {
+            id: "header-322".into(),
+            record_index: 400,
+            class_tag: "322".into(),
+            byte_offset: 0,
+        },
+    )
+    .is_none());
 }

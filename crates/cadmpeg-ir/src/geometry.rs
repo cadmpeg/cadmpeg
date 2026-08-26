@@ -862,6 +862,31 @@ pub enum DeformableSurfaceData {
         /// Native trailing selector.
         selector: i64,
     },
+    /// Revision-gated mode-3 deformation payload.
+    RevisionMode3 {
+        /// Four leading deformation vectors.
+        leading_vectors: [Vector3; 4],
+        /// Scalar following the leading vectors.
+        leading_parameter: f64,
+        /// Three flags following the leading scalar.
+        leading_flags: [bool; 3],
+        /// Position anchoring the trailing frame.
+        trailing_point: Point3,
+        /// Two vectors following the trailing point.
+        trailing_vectors: [Vector3; 2],
+        /// Scalar following the trailing vectors.
+        frame_parameter: f64,
+        /// Two flags following the trailing frame scalar.
+        frame_flags: [bool; 2],
+        /// Three ordered scalar parameters following the trailing frame.
+        parameters: [f64; 3],
+        /// Five flags following the ordered scalar parameters.
+        trailing_flags: [bool; 5],
+        /// Scalar preceding the payload's final integer.
+        trailing_parameter: f64,
+        /// Integer closing the revision mode-3 payload.
+        trailing_value: i64,
+    },
 }
 
 /// Four-vector frame used by full deformable surfaces.
@@ -906,6 +931,9 @@ pub struct DeformableSurfaceConstruction {
     pub support: SurfaceId,
     /// Discriminator-selected deformation data.
     pub data: DeformableSurfaceData,
+    /// Revision-gated fields surrounding the support and shared surface tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_form: Option<RevisionSurfaceForm>,
     /// Six ordered solved-surface discontinuity arrays.
     pub discontinuities: [Vec<f64>; 6],
     /// Native discontinuity tail flag.
@@ -1741,7 +1769,7 @@ pub enum VariableBlendValuePayload {
         parameter: f64,
         /// Leading length in document units.
         radius: f64,
-        /// Parametric `(u, radius)` function.
+        /// Scalar function whose first coordinate is radius in document units.
         function: PcurveGeometry,
         /// Numeric or symbolic terminal value.
         terminal: LoftBridgeToken,
@@ -1765,7 +1793,7 @@ pub enum VariableBlendValuePayload {
         parameter: f64,
         /// Leading radius in document length units.
         radius: f64,
-        /// Parametric support curve.
+        /// Scalar function whose first coordinate is radius in document units.
         function: PcurveGeometry,
         /// Native extension enum, stored ahead of the radius-point count. It
         /// gates nothing; the payload ends at the last radius point.
@@ -2412,6 +2440,11 @@ pub enum LawSurfaceTail {
 pub enum LawExpression {
     /// Zero-payload `null_law` sentinel.
     Null,
+    /// Serializer-preserved textual law expression.
+    Text {
+        /// Exact text stored in the native law slot.
+        value: String,
+    },
     /// Tagged integer constant.
     Integer {
         /// Stored integer value.
@@ -2733,6 +2766,10 @@ pub struct SweepRevisionForm {
     pub path_endpoints: [Option<f64>; 2],
     /// Enum opening the shared revision-gated surface tail.
     pub tail_enum: i64,
+    /// Parameterization stored by tail-enum form `2` in place of a solved
+    /// cache. Absent for form `0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tail_parameterization: Option<RevisionSurfaceParameterization>,
 }
 
 /// Complete native `sweep_spl_sur` construction graph.

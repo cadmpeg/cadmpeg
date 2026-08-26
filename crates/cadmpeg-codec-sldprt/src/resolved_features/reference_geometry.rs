@@ -34,6 +34,19 @@ use crate::layout::coordinate_system_xy_tail as xy_tail;
 use crate::layout::reference_point_long_solved_cache as pt_long;
 use crate::layout::reference_point_short_solved_cache as pt_short;
 
+const EPS_REFERENCE_GEOMETRY_RECONCILE_REFERENCE_PLANE_FRAME_WITH_SOURCE_E9: f64 = 1e-9;
+const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_TWO_POINT_FRAME_E9: f64 = 1e-9;
+const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12: f64 = 1e-12;
+const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E9: f64 = 1e-9;
+const EPS_REFERENCE_GEOMETRY_OFFSET_PLANE_REFERENCE_FRAME_MATCHES_E9: f64 = 1e-9;
+const EPS_REFERENCE_GEOMETRY_OFFSET_PLANE_REFERENCE_FRAME_MATCHES_E8: f64 = 1e-8;
+const EPS_REFERENCE_GEOMETRY_COMPLETE_REFERENCE_AXIS_TRIAD_E12: f64 = 1e-12;
+const EPS_REFERENCE_GEOMETRY_EXPLICIT_REFERENCE_AXIS_FRAME_E12: f64 = 1e-12;
+const EPS_REFERENCE_GEOMETRY_CONSTRAINT_MIDPLANE_FRAME_E9: f64 = 1e-9;
+const EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9: f64 = 1e-9;
+const EPS_REFERENCE_GEOMETRY_MATRIX_REFERENCE_PLANE_FRAME_CANDIDATES_E9: f64 = 1e-9;
+const EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9: f64 = 1e-9;
+
 pub(super) fn reconcile_reference_plane_frame_with_source(
     explicit: Option<(Point3, Vector3, Vector3)>,
     constraint: Option<(Point3, Vector3, Vector3)>,
@@ -53,8 +66,10 @@ pub(super) fn reconcile_reference_plane_frame_with_source(
     let constraint_distance = constraint.1.x * constraint.0.x
         + constraint.1.y * constraint.0.y
         + constraint.1.z * constraint.0.z;
-    if (alignment.abs() - 1.0).abs() <= 1.0e-9
-        && (explicit_distance - alignment.signum() * constraint_distance).abs() <= 1.0e-9
+    if (alignment.abs() - 1.0).abs()
+        <= EPS_REFERENCE_GEOMETRY_RECONCILE_REFERENCE_PLANE_FRAME_WITH_SOURCE_E9
+        && (explicit_distance - alignment.signum() * constraint_distance).abs()
+            <= EPS_REFERENCE_GEOMETRY_RECONCILE_REFERENCE_PLANE_FRAME_WITH_SOURCE_E9
     {
         Some((explicit, SketchPlaneUAxisSource::Native))
     } else {
@@ -1096,7 +1111,10 @@ fn coordinate_system_two_point_frame(record: &[u8]) -> Option<(Point3, Vector3, 
         finite_f64(tail, two_pt_tail::REPEATED_X_DIRECTION + 8)?,
         finite_f64(tail, two_pt_tail::REPEATED_X_DIRECTION + 16)?,
     );
-    if (x_axis.dot(x_axis) - 1.0).abs() > 1.0e-9 || x_axis != repeated {
+    if (x_axis.dot(x_axis) - 1.0).abs()
+        > EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_TWO_POINT_FRAME_E9
+        || x_axis != repeated
+    {
         return None;
     }
     let y_source = Vector3::new(
@@ -1210,10 +1228,16 @@ fn coordinate_system_line_axes(
                 finite_f64(record, prefix + line_axis::REPEATED_DIRECTION + 8)?,
                 finite_f64(record, prefix + line_axis::REPEATED_DIRECTION + 16)?,
             );
-            let repeated_matches = (direction.x - repeated.x).abs() <= 1.0e-12
-                && (direction.y - repeated.y).abs() <= 1.0e-12
-                && (direction.z - repeated.z).abs() <= 1.0e-12;
-            (scalar > 0.0 && (direction.norm() - 1.0).abs() <= 1.0e-9 && repeated_matches)
+            let repeated_matches = (direction.x - repeated.x).abs()
+                <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12
+                && (direction.y - repeated.y).abs()
+                    <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12
+                && (direction.z - repeated.z).abs()
+                    <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12;
+            (scalar > 0.0
+                && (direction.norm() - 1.0).abs()
+                    <= EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E9
+                && repeated_matches)
                 .then_some((prefix, point, direction))
         })
         .collect()
@@ -1275,9 +1299,11 @@ pub(super) fn offset_plane_reference_frame_matches(
         delta.z - axial * reference_normal.z,
     );
     let tangential_length = tangential.norm();
-    (reference_normal.dot(offset_normal).abs() - 1.0).abs() <= 1.0e-9
-        && tangential_length <= 1.0e-8
-        && (axial.abs() - distance.abs()).abs() <= 1.0e-8
+    (reference_normal.dot(offset_normal).abs() - 1.0).abs()
+        <= EPS_REFERENCE_GEOMETRY_OFFSET_PLANE_REFERENCE_FRAME_MATCHES_E9
+        && tangential_length <= EPS_REFERENCE_GEOMETRY_OFFSET_PLANE_REFERENCE_FRAME_MATCHES_E8
+        && (axial.abs() - distance.abs()).abs()
+            <= EPS_REFERENCE_GEOMETRY_OFFSET_PLANE_REFERENCE_FRAME_MATCHES_E8
 }
 
 /// Resolve sketch-block definition ownership and placement from typed object records.
@@ -1726,8 +1752,8 @@ pub(crate) fn enrich_history_reference_axes(
 pub(super) fn complete_reference_axis_triad(
     frames: [Option<(Point3, Vector3)>; 3],
 ) -> Option<(usize, (Point3, Vector3))> {
-    const ANGULAR_TOLERANCE: f64 = 1.0e-9;
-    const POSITION_TOLERANCE_MM: f64 = 1.0e-8;
+    const ANGULAR_TOLERANCE: f64 = 1e-9;
+    const POSITION_TOLERANCE_MM: f64 = 1e-8;
 
     let missing = frames.iter().position(Option::is_none)?;
     if frames.iter().filter(|frame| frame.is_none()).count() != 1 {
@@ -1743,13 +1769,14 @@ pub(super) fn complete_reference_axis_triad(
     };
     let normalize = |direction: Vector3| {
         let length = direction.norm();
-        (length.is_finite() && length > 1.0e-12).then(|| {
-            Vector3::new(
-                direction.x / length,
-                direction.y / length,
-                direction.z / length,
-            )
-        })
+        (length.is_finite() && length > EPS_REFERENCE_GEOMETRY_COMPLETE_REFERENCE_AXIS_TRIAD_E12)
+            .then(|| {
+                Vector3::new(
+                    direction.x / length,
+                    direction.y / length,
+                    direction.z / length,
+                )
+            })
     };
     let first_direction = normalize(*first_direction)?;
     let second_direction = normalize(*second_direction)?;
@@ -1809,9 +1836,9 @@ pub(super) fn complete_reference_axis_triad(
 
 pub(super) fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const UNIT_TOLERANCE: f64 = 1.0e-9;
-    const ORIGIN_ZERO_TOLERANCE_MM: f64 = 1.0e-9;
-    const DIRECTION_ZERO_TOLERANCE: f64 = 1.0e-12;
+    const UNIT_TOLERANCE: f64 = 1e-9;
+    const ORIGIN_ZERO_TOLERANCE_MM: f64 = 1e-9;
+    const DIRECTION_ZERO_TOLERANCE: f64 = 1e-12;
 
     let scalar = |bytes: &[u8], offset: usize| {
         let value = View::f64_le_at(bytes, offset)?;
@@ -1832,7 +1859,7 @@ pub(super) fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, V
                 + stored_direction.y * stored_direction.y
                 + stored_direction.z * stored_direction.z)
                 .sqrt();
-            if delta_length <= 1.0e-12
+            if delta_length <= EPS_REFERENCE_GEOMETRY_EXPLICIT_REFERENCE_AXIS_FRAME_E12
                 || (direction_length - 1.0).abs() > UNIT_TOLERANCE
                 || [first.x, first.y, first.z, second.x, second.y, second.z]
                     .into_iter()
@@ -2501,13 +2528,13 @@ pub(super) fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vecto
                 value.is_finite().then_some(value)
             };
             let tolerance = scalar(8)?;
-            if tolerance.abs() > 1.0e-9 {
+            if tolerance.abs() > EPS_REFERENCE_GEOMETRY_CONSTRAINT_MIDPLANE_FRAME_E9 {
                 return None;
             }
             let distance = scalar(16)?;
             let normal = Vector3::new(scalar(24)?, scalar(32)?, scalar(40)?);
             let squared_norm = normal.x * normal.x + normal.y * normal.y + normal.z * normal.z;
-            if (squared_norm - 1.0).abs() > 1.0e-9 {
+            if (squared_norm - 1.0).abs() > EPS_REFERENCE_GEOMETRY_CONSTRAINT_MIDPLANE_FRAME_E9 {
                 return None;
             }
             let reference = if normal.x.abs() <= normal.y.abs() && normal.x.abs() <= normal.z.abs()
@@ -2601,12 +2628,13 @@ fn angled_reference_plane_frame_candidates(
             if normal.x != 0.0
                 || scalar(bytes, 0)?.to_bits() != normal.z.to_bits()
                 || scalar(bytes, 8)?.to_bits() != normal.y.to_bits()
-                || [u_axis, normal, v_axis]
-                    .into_iter()
-                    .any(|vector| (vector.norm() - 1.0).abs() > 1.0e-9)
-                || u_axis.dot(normal).abs() > 1.0e-9
-                || u_axis.dot(v_axis).abs() > 1.0e-9
-                || normal.dot(v_axis).abs() > 1.0e-9
+                || [u_axis, normal, v_axis].into_iter().any(|vector| {
+                    (vector.norm() - 1.0).abs()
+                        > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
+                })
+                || u_axis.dot(normal).abs() > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
+                || u_axis.dot(v_axis).abs() > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
+                || normal.dot(v_axis).abs() > EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9
             {
                 return None;
             }
@@ -2681,12 +2709,20 @@ fn matrix_reference_plane_frame_candidates(payload: &[u8]) -> Vec<(usize, Refere
             let matrix_normal = Vector3::new(rows[0].z, rows[1].z, rows[2].z);
             if [normal, u_axis, v_axis, matrix_normal]
                 .into_iter()
-                .any(|vector| (vector.norm() - 1.0).abs() > 1.0e-9)
-                || u_axis.dot(v_axis).abs() > 1.0e-9
-                || u_axis.dot(matrix_normal).abs() > 1.0e-9
-                || v_axis.dot(matrix_normal).abs() > 1.0e-9
-                || normal.dot(matrix_normal) < 1.0 - 1.0e-9
-                || u_axis.cross(v_axis).dot(matrix_normal) < 1.0 - 1.0e-9
+                .any(|vector| {
+                    (vector.norm() - 1.0).abs()
+                        > EPS_REFERENCE_GEOMETRY_MATRIX_REFERENCE_PLANE_FRAME_CANDIDATES_E9
+                })
+                || u_axis.dot(v_axis).abs()
+                    > EPS_REFERENCE_GEOMETRY_MATRIX_REFERENCE_PLANE_FRAME_CANDIDATES_E9
+                || u_axis.dot(matrix_normal).abs()
+                    > EPS_REFERENCE_GEOMETRY_MATRIX_REFERENCE_PLANE_FRAME_CANDIDATES_E9
+                || v_axis.dot(matrix_normal).abs()
+                    > EPS_REFERENCE_GEOMETRY_MATRIX_REFERENCE_PLANE_FRAME_CANDIDATES_E9
+                || normal.dot(matrix_normal)
+                    < 1.0 - EPS_REFERENCE_GEOMETRY_MATRIX_REFERENCE_PLANE_FRAME_CANDIDATES_E9
+                || u_axis.cross(v_axis).dot(matrix_normal)
+                    < 1.0 - EPS_REFERENCE_GEOMETRY_MATRIX_REFERENCE_PLANE_FRAME_CANDIDATES_E9
             {
                 return None;
             }
@@ -2786,11 +2822,13 @@ fn compact_reference_plane_frame_candidates(
             let Some(v_xy) = scalar(bytes, 65).zip(scalar(bytes, 73)) else {
                 return Vec::new();
             };
-            if (u_axis.dot(u_axis) - 1.0).abs() > 1.0e-9 {
+            if (u_axis.dot(u_axis) - 1.0).abs()
+                > EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9
+            {
                 return Vec::new();
             }
             let remaining = 1.0 - v_xy.0 * v_xy.0 - v_xy.1 * v_xy.1;
-            if remaining < -1.0e-9 {
+            if remaining < -EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9 {
                 return Vec::new();
             }
             let omitted = remaining.max(0.0).sqrt();
@@ -2799,10 +2837,14 @@ fn compact_reference_plane_frame_candidates(
                 .filter_map(|v_z| {
                     let v_axis = Vector3::new(v_xy.0, v_xy.1, v_z);
                     let normal = u_axis.cross(v_axis);
-                    (u_axis.dot(v_axis).abs() <= 1.0e-9
-                        && (normal.dot(normal) - 1.0).abs() <= 1.0e-9
-                        && (normal.x - normal_xy.0).abs() <= 1.0e-9
-                        && (normal.y - normal_xy.1).abs() <= 1.0e-9)
+                    (u_axis.dot(v_axis).abs()
+                        <= EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9
+                        && (normal.dot(normal) - 1.0).abs()
+                            <= EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9
+                        && (normal.x - normal_xy.0).abs()
+                            <= EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9
+                        && (normal.y - normal_xy.1).abs()
+                            <= EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9)
                         .then_some((offset, (origin, normal, u_axis)))
                 })
                 .collect::<Vec<_>>()

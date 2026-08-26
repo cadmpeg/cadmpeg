@@ -17,7 +17,7 @@
 
 use crate::native::{F3dNative, F3D_NATIVE_VERSION};
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
-use cadmpeg_core::decode::{alloc_filled, DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::DecodeResult;
@@ -225,6 +225,16 @@ fn report_unretained_act_component_links(report: &mut DecodeReport, count: usize
     }
 }
 
+fn report_untyped_material_distances(report: &mut DecodeReport, count: usize) {
+    if count != 0 {
+        report
+            .losses
+            .push(F3dLossCode::MaterialDistanceUnitUntyped.note(format!(
+                "{count} Protein texture Distance property value(s) retain an untyped unit tag; their typed texture carriers were omitted."
+            )));
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DesignProjectionGaps {
     unresolved_body_bindings: usize,
@@ -250,6 +260,7 @@ struct DesignProjectionGaps {
     profile_selections: usize,
     path_selections: usize,
     face_selections: usize,
+    active_face_substitutions: usize,
     body_selections: usize,
     partially_resolved_face_members: usize,
     native_edge_selections: usize,
@@ -273,6 +284,21 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
         } => !faces.is_empty() && unresolved.is_empty(),
         FaceSelection::Unresolved | FaceSelection::Native(_) => false,
     }
+}
+
+fn draft_neutral_plane_is_resolved(
+    selection: &cadmpeg_ir::features::FaceSelection,
+    pull_plane: Option<&cadmpeg_ir::features::FeatureId>,
+    pull_direction: Option<&cadmpeg_ir::math::Vector3>,
+) -> bool {
+    face_selection_is_resolved(selection)
+        || match selection {
+            cadmpeg_ir::features::FaceSelection::Native(native) => {
+                pull_plane.is_some_and(|plane| plane.0 == *native)
+                    && pull_direction.is_some_and(|direction| direction.unit().is_some())
+            }
+            _ => false,
+        }
 }
 
 fn edge_selection_is_resolved(selection: &cadmpeg_ir::features::EdgeSelection) -> bool {
@@ -304,7 +330,7 @@ fn datum_plane_reference_is_resolved(
 fn datum_point_construction_is_resolved(
     construction: &cadmpeg_ir::features::DatumPointConstruction,
 ) -> bool {
-    use cadmpeg_ir::features::{DatumPointConstruction, VertexSelection};
+    use cadmpeg_ir::features::{DatumPointConstruction, SketchPointSelection, VertexSelection};
 
     match construction {
         DatumPointConstruction::CircleCenter { edge } => edge_selection_is_resolved(edge),
@@ -317,6 +343,10 @@ fn datum_point_construction_is_resolved(
         DatumPointConstruction::Vertex { vertex } => matches!(
             vertex,
             VertexSelection::Generated { .. } | VertexSelection::Historical { .. }
+        ),
+        DatumPointConstruction::SketchPoint { point } => matches!(
+            point,
+            SketchPointSelection::Planar { .. } | SketchPointSelection::Spatial { .. }
         ),
         DatumPointConstruction::EdgePlaneIntersection { edge, plane } => {
             edge_selection_is_resolved(edge) && datum_plane_reference_is_resolved(plane)
@@ -342,6 +372,95 @@ fn body_selection_is_resolved(selection: &cadmpeg_ir::features::BodySelection) -
         BodySelection::Generated { bodies, .. } => !bodies.is_empty(),
         BodySelection::Local { bodies, .. } => !bodies.is_empty(),
         BodySelection::Unresolved | BodySelection::Native(_) | BodySelection::NativeSet(_) => false,
+    }
+}
+
+fn base_feature_body_selection_is_resolved(
+    selection: &cadmpeg_ir::features::BodySelection,
+) -> bool {
+    body_selection_is_resolved(selection)
+        || matches!(
+            selection,
+            cadmpeg_ir::features::BodySelection::Resolved { bodies, .. } if bodies.is_empty()
+        )
+}
+
+fn point_is_finite(point: &cadmpeg_ir::math::Point3) -> bool {
+    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+}
+
+fn vector_is_finite(vector: &cadmpeg_ir::math::Vector3) -> bool {
+    [vector.x, vector.y, vector.z]
+        .into_iter()
+        .all(f64::is_finite)
+}
+
+fn datum_plane_frame_is_resolved(
+    origin: &cadmpeg_ir::math::Point3,
+    normal: &cadmpeg_ir::math::Vector3,
+    u_axis: &cadmpeg_ir::math::Vector3,
+) -> bool {
+    const EPS_DATUM_PLANE_ORTHOGONAL: f64 = 1.0e-10;
+
+    let (Some(normal), Some(u_axis)) = (normal.unit(), u_axis.unit()) else {
+        return false;
+    };
+    point_is_finite(origin)
+        && vector_is_finite(&normal)
+        && vector_is_finite(&u_axis)
+        && normal.dot(u_axis).abs() <= EPS_DATUM_PLANE_ORTHOGONAL
+}
+
+fn datum_coordinate_system_is_resolved(
+    origin: &cadmpeg_ir::math::Point3,
+    x_axis: &cadmpeg_ir::math::Vector3,
+    y_axis: &cadmpeg_ir::math::Vector3,
+    z_axis: &cadmpeg_ir::math::Vector3,
+) -> bool {
+    const EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL: f64 = 1.0e-9;
+
+    let axes = [*x_axis, *y_axis, *z_axis];
+    point_is_finite(origin)
+        && axes.iter().all(|axis| {
+            vector_is_finite(axis)
+                && (axis.norm() - 1.0).abs() <= EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL
+        })
+        && x_axis.dot(*y_axis).abs() <= EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL
+        && x_axis.dot(*z_axis).abs() <= EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL
+        && y_axis.dot(*z_axis).abs() <= EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL
+        && x_axis.cross(*y_axis).dot(*z_axis) >= 1.0 - EPS_DATUM_COORDINATE_SYSTEM_ORTHONORMAL
+}
+
+fn positive_finite(value: f64) -> bool {
+    value.is_finite() && value > 0.0
+}
+
+fn axis_angle_is_resolved(axis_angle: &cadmpeg_ir::features::AxisAngle) -> bool {
+    point_is_finite(&axis_angle.origin)
+        && vector_is_finite(&axis_angle.direction)
+        && axis_angle.direction.unit().is_some()
+        && axis_angle.angle.0.is_finite()
+}
+
+fn face_motion_is_resolved(motion: &cadmpeg_ir::features::FaceMotion) -> bool {
+    use cadmpeg_ir::features::FaceMotion;
+
+    match motion {
+        FaceMotion::Offset { distance } => distance.0.is_finite(),
+        FaceMotion::Translate {
+            direction,
+            distance,
+        } => vector_is_finite(direction) && direction.unit().is_some() && distance.0.is_finite(),
+        FaceMotion::Rotate {
+            axis_origin,
+            axis_dir,
+            angle,
+        } => {
+            point_is_finite(axis_origin)
+                && vector_is_finite(axis_dir)
+                && axis_dir.unit().is_some()
+                && angle.0.is_finite()
+        }
     }
 }
 
@@ -409,6 +528,22 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         | FeatureDefinition::DatumPrincipalPlane { .. } => false,
         FeatureDefinition::MeshImport { tessellations } => tessellations.is_empty(),
         FeatureDefinition::Decal { faces, .. } => !face_selection_is_resolved(faces),
+        FeatureDefinition::TrimSurface {
+            faces,
+            tool,
+            keep,
+            cell_selection,
+        } => {
+            !face_selection_is_resolved(faces)
+                || !loft_path_is_resolved(tool)
+                || match cell_selection {
+                    Some(selection) => {
+                        !selection.is_valid()
+                            || !matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved)
+                    }
+                    None => matches!(keep, cadmpeg_ir::features::TrimRegion::Unresolved),
+                }
+        }
         FeatureDefinition::CosmeticThread {
             face,
             diameter,
@@ -421,19 +556,57 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         | FeatureDefinition::FreeformSurfaceUnresolved
         | FeatureDefinition::BoundarySurfaceUnresolved
         | FeatureDefinition::DraftUnresolved => true,
-        // F3D WorkPlane projection currently retains only the solved frame.
-        // Its construction rule and operands are required for replay.
-        FeatureDefinition::DatumPlane { .. } => true,
-        FeatureDefinition::DatumThreePointPlane { points, .. } => !points.iter().all(|point| {
-            matches!(
-                point,
-                cadmpeg_ir::features::VertexSelection::Generated { .. }
-                    | cadmpeg_ir::features::VertexSelection::Historical { .. }
-            )
-        }),
+        FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        } => !datum_plane_frame_is_resolved(origin, normal, u_axis),
+        FeatureDefinition::DatumAxis { origin, direction } => {
+            !point_is_finite(origin) || !vector_is_finite(direction) || direction.unit().is_none()
+        }
+        FeatureDefinition::DatumCoordinateSystem {
+            origin,
+            x_axis,
+            y_axis,
+            z_axis,
+        } => !datum_coordinate_system_is_resolved(origin, x_axis, y_axis, z_axis),
+        FeatureDefinition::DatumThreePointPlane {
+            origin,
+            normal,
+            u_axis,
+            points,
+        } => {
+            !datum_plane_frame_is_resolved(origin, normal, u_axis)
+                || !points.iter().all(|point| {
+                    matches!(
+                        point,
+                        cadmpeg_ir::features::VertexSelection::Generated { .. }
+                            | cadmpeg_ir::features::VertexSelection::Historical { .. }
+                    )
+                })
+        }
         FeatureDefinition::DatumOffsetPlane { reference, .. } => reference
             .as_ref()
             .is_none_or(|reference| !datum_plane_reference_is_resolved(reference)),
+        FeatureDefinition::Sphere { center, radius, op } => {
+            !point_is_finite(center)
+                || !positive_finite(radius.0)
+                || *op == cadmpeg_ir::features::BooleanOp::Unresolved
+        }
+        FeatureDefinition::Torus {
+            center,
+            axis,
+            major_radius,
+            minor_radius,
+            op,
+        } => {
+            !point_is_finite(center)
+                || !vector_is_finite(axis)
+                || axis.unit().is_none()
+                || !positive_finite(major_radius.0)
+                || !positive_finite(minor_radius.0)
+                || *op == cadmpeg_ir::features::BooleanOp::Unresolved
+        }
         FeatureDefinition::Extrude {
             profile,
             start,
@@ -457,6 +630,93 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 }
             };
             !profile_ref_is_resolved(profile) || !start_is_resolved || !extent_is_resolved
+        }
+        FeatureDefinition::Revolve { construction, op } => {
+            let profile_is_resolved = construction
+                .profile
+                .as_ref()
+                .is_some_and(profile_ref_is_resolved);
+            let axis_is_resolved = construction
+                .axis
+                .as_ref()
+                .is_some_and(|axis| axis.direction.unit().is_some());
+            let revolve_termination_is_resolved =
+                |termination: &cadmpeg_ir::features::Termination| match termination {
+                    cadmpeg_ir::features::Termination::Angle { angle } => angle.0.is_finite(),
+                    termination => termination_is_resolved(termination),
+                };
+            let extent_is_resolved = construction.extent.as_ref().is_some_and(|extent| {
+                use cadmpeg_ir::features::RevolveExtent;
+
+                match extent {
+                    RevolveExtent::OneSided { termination }
+                    | RevolveExtent::Symmetric { termination } => {
+                        revolve_termination_is_resolved(termination)
+                    }
+                    RevolveExtent::TwoSided { first, second } => {
+                        revolve_termination_is_resolved(first)
+                            && revolve_termination_is_resolved(second)
+                    }
+                }
+            });
+
+            !profile_is_resolved
+                || !axis_is_resolved
+                || !extent_is_resolved
+                || *op == cadmpeg_ir::features::BooleanOp::Unresolved
+        }
+        FeatureDefinition::Sweep {
+            section,
+            sections,
+            path,
+            mode,
+            orientation,
+            path_extent,
+            guide_rail,
+            ..
+        } => {
+            use cadmpeg_ir::features::{SweepMode, SweepOrientation, SweepSection};
+
+            let section_is_resolved = |section: &SweepSection| match section {
+                SweepSection::Unresolved(_) => false,
+                SweepSection::Profile(profile) => profile_ref_is_resolved(profile),
+                SweepSection::Generated(_) => true,
+            };
+            let mode_is_resolved = match mode {
+                SweepMode::Unresolved => false,
+                SweepMode::Solid { op } => *op != cadmpeg_ir::features::BooleanOp::Unresolved,
+                SweepMode::Surface => true,
+            };
+            let orientation_is_resolved = match orientation {
+                Some(SweepOrientation::Auxiliary { path, .. }) => loft_path_is_resolved(path),
+                Some(SweepOrientation::GuideSurface { faces }) => face_selection_is_resolved(faces),
+                Some(SweepOrientation::Binormal { direction }) => direction.unit().is_some(),
+                None
+                | Some(
+                    SweepOrientation::CorrectedFrenet
+                    | SweepOrientation::Fixed
+                    | SweepOrientation::Frenet,
+                ) => true,
+            };
+            let extent_is_resolved = |extent: &cadmpeg_ir::features::SweepPathExtent| {
+                extent.along_fraction.is_finite()
+                    && extent.against_fraction.is_finite()
+                    && (0.0..=1.0).contains(&extent.along_fraction)
+                    && (0.0..=1.0).contains(&extent.against_fraction)
+            };
+            let guide_is_resolved = guide_rail.as_ref().is_none_or(|guide| {
+                loft_path_is_resolved(&guide.path) && extent_is_resolved(&guide.extent)
+            });
+
+            !section_is_resolved(section)
+                || sections.iter().any(|section| !section_is_resolved(section))
+                || !path.as_ref().is_some_and(loft_path_is_resolved)
+                || !mode_is_resolved
+                || !orientation_is_resolved
+                || path_extent
+                    .as_ref()
+                    .is_some_and(|extent| !extent_is_resolved(extent))
+                || !guide_is_resolved
         }
         FeatureDefinition::Hole {
             profile,
@@ -528,7 +788,11 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                             || pull_direction.is_some_and(|direction| direction.unit().is_none())
                             || pull_plane.is_none()
                     }
-                    None => !face_selection_is_resolved(neutral_plane),
+                    None => !draft_neutral_plane_is_resolved(
+                        neutral_plane,
+                        pull_plane.as_ref(),
+                        pull_direction.as_ref(),
+                    ),
                 }
         }
         FeatureDefinition::Sketch { space, sketch } => {
@@ -541,6 +805,54 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::SketchBlockDefinition { sketch } => sketch.is_none(),
         FeatureDefinition::SketchBlockInstance { block, .. } => block.is_none(),
         FeatureDefinition::Form { cages } => cages.is_empty(),
+        FeatureDefinition::BaseFeature { bodies } => {
+            !base_feature_body_selection_is_resolved(bodies)
+        }
+        FeatureDefinition::InsertBodies { bodies } => !body_selection_is_resolved(bodies),
+        FeatureDefinition::DeleteBody { bodies, mode } => {
+            !body_selection_is_resolved(bodies)
+                || *mode == cadmpeg_ir::features::BodyRetentionMode::Unresolved
+        }
+        FeatureDefinition::InsertComponent { occurrence } => occurrence.0.is_empty(),
+        FeatureDefinition::AssemblyJoint { joint } => joint.0.is_empty(),
+        FeatureDefinition::Shell {
+            bodies,
+            removed_faces,
+            thickness,
+            outward,
+            ..
+        } => {
+            let bodies_are_resolved = bodies.as_ref().is_none_or(body_selection_is_resolved);
+            let empty_removed_faces_are_resolved =
+                matches!(
+                    removed_faces,
+                    cadmpeg_ir::features::FaceSelection::Faces(faces) if faces.is_empty()
+                ) && bodies.as_ref().is_some_and(body_selection_is_resolved);
+            !bodies_are_resolved
+                || (!face_selection_is_resolved(removed_faces) && !empty_removed_faces_are_resolved)
+                || !thickness.is_some_and(|thickness| positive_finite(thickness.0))
+                || outward.is_none()
+        }
+        FeatureDefinition::Thicken {
+            faces,
+            thickness,
+            side,
+        } => {
+            !face_selection_is_resolved(faces)
+                || !thickness.is_some_and(|thickness| positive_finite(thickness.0))
+                || side.is_none()
+        }
+        FeatureDefinition::KnitSurface {
+            faces,
+            merge_entities,
+            create_solid,
+            gap_tolerance,
+        } => {
+            !face_selection_is_resolved(faces)
+                || merge_entities.is_none()
+                || create_solid.is_none()
+                || !gap_tolerance.is_some_and(|tolerance| positive_finite(tolerance.0))
+        }
         FeatureDefinition::Block {
             dimensions,
             placement,
@@ -553,8 +865,55 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Primitive { op, .. } => {
             *op == cadmpeg_ir::features::BooleanOp::Unresolved
         }
+        FeatureDefinition::MoveFace { faces, motion } => {
+            !face_selection_is_resolved(faces) || !face_motion_is_resolved(motion)
+        }
+        FeatureDefinition::MoveBody {
+            bodies,
+            translation,
+            rotation,
+            ..
+        } => {
+            !body_selection_is_resolved(bodies)
+                || !vector_is_finite(translation)
+                || rotation
+                    .as_ref()
+                    .is_some_and(|rotation| !axis_angle_is_resolved(rotation))
+        }
+        FeatureDefinition::Scale {
+            bodies,
+            center,
+            factors,
+        } => {
+            !body_selection_is_resolved(bodies)
+                || center.is_none()
+                || center.as_ref().is_some_and(|center| {
+                    matches!(center, cadmpeg_ir::features::ScaleCenter::Native(_))
+                        || matches!(
+                            center,
+                            cadmpeg_ir::features::ScaleCenter::Point(point)
+                                if !point_is_finite(point)
+                        )
+                })
+                || factors.resolved().is_none_or(|factors| {
+                    !vector_is_finite(&factors)
+                        || factors.x == 0.0
+                        || factors.y == 0.0
+                        || factors.z == 0.0
+                })
+        }
         FeatureDefinition::Pattern { seeds, pattern } => {
             seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. })
+        }
+        FeatureDefinition::Chamfer { groups, .. } => {
+            groups.is_empty()
+                || groups.iter().any(|group| {
+                    !edge_selection_is_resolved(&group.edges)
+                        || matches!(
+                            group.spec,
+                            cadmpeg_ir::features::ChamferSpec::Unresolved { .. }
+                        )
+                })
         }
         FeatureDefinition::Fillet { groups } => {
             groups.is_empty()
@@ -563,6 +922,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     .any(|group| !edge_selection_is_resolved(&group.edges))
         }
         FeatureDefinition::DeleteFace { faces, .. } => !face_selection_is_resolved(faces),
+        FeatureDefinition::ReplaceFace {
+            targets,
+            replacements,
+        } => !face_selection_is_resolved(targets) || !face_selection_is_resolved(replacements),
+        FeatureDefinition::SplitBody { targets, tools } => {
+            !body_selection_is_resolved(targets) || !face_selection_is_resolved(tools)
+        }
         FeatureDefinition::OffsetSurface {
             faces, distance, ..
         } => !face_selection_is_resolved(faces) || distance.is_none(),
@@ -685,6 +1051,17 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         )
                 })
         }
+        FeatureDefinition::Combine {
+            target, tools, op, ..
+        } => {
+            !body_selection_is_resolved(target)
+                || !body_selection_is_resolved(tools)
+                || matches!(
+                    op,
+                    cadmpeg_ir::features::BooleanOp::Unresolved
+                        | cadmpeg_ir::features::BooleanOp::NewBody
+                )
+        }
         // A typed family is not replayable until this match states and checks
         // its complete construction invariants.
         _ => true,
@@ -785,6 +1162,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         &native.design_parameter_scopes,
         &native.design_body_bindings,
         &native.design_body_recipe_operands,
+        &native.design_component_naming_spaces,
         &native.asm_histories,
     );
     for scope in &native.design_parameter_scopes {
@@ -1108,6 +1486,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 })
                 .count()
         },
+        active_face_substitutions: native
+            .design_face_operands
+            .iter()
+            .filter(|operand| operand.resolved_active_face.is_some())
+            .count(),
         ..DesignProjectionGaps::default()
     };
     let mut edge_selection = |selection: &EdgeSelection| match selection {
@@ -1285,7 +1668,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     DatumPointConstruction::ThreePlaneIntersection { planes } => {
                         planes.iter().for_each(&mut plane);
                     }
-                    DatumPointConstruction::Vertex { .. } => {}
+                    DatumPointConstruction::Vertex { .. }
+                    | DatumPointConstruction::SketchPoint { .. } => {}
                     DatumPointConstruction::EdgePlaneIntersection {
                         edge,
                         plane: reference,
@@ -1344,6 +1728,13 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             FeatureDefinition::Decal { faces, .. } => face_selection(faces),
             FeatureDefinition::DeleteFace { faces, .. }
             | FeatureDefinition::OffsetSurface { faces, .. } => face_selection(faces),
+            FeatureDefinition::ReplaceFace {
+                targets,
+                replacements,
+            } => {
+                face_selection(targets);
+                face_selection(replacements);
+            }
             FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
                 gaps.profile_selections += usize::from(!profile_ref_is_resolved(profile));
             }
@@ -1590,6 +1981,14 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        F3dLossCode::FeatureFaceSelectionActiveSubstituted,
+        gaps.active_face_substitutions,
+        format!(
+            "{} legacy face operand(s) use a current active-BREP face because no unique preceding-state face slot resolved.",
+            gaps.active_face_substitutions
+        ),
+    );
+    push(
         F3dLossCode::FeatureBodySelectionNative,
         gaps.body_selections,
         format!(
@@ -1633,47 +2032,25 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
 
 fn model_brep_candidates(
     scan: &ContainerScan,
-    bindings: &[crate::records::DesignBodyBinding],
+    blob_names: &[String],
 ) -> Result<Vec<BrepFacts>, CodecError> {
     let mut candidates = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for binding in bindings {
-        if !seen.insert(binding.blob_name.as_str()) {
-            continue;
-        }
+    for blob_name in blob_names {
         let matches = container::design_breps(scan)
-            .filter(|brep| brep.name.rsplit('/').next() == Some(binding.blob_name.as_str()))
+            .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()))
             .collect::<Vec<_>>();
         match matches.as_slice() {
             [brep] => candidates.push((**brep).clone()),
             [] => {
                 return Err(CodecError::malformed(format_args!(
-                    "Design body map references missing BREP entry {}",
-                    binding.blob_name
+                    "Design body map references missing BREP entry {blob_name}"
                 )))
             }
             _ => {
                 return Err(CodecError::malformed(format_args!(
-                    "Design body map BREP basename is ambiguous: {}",
-                    binding.blob_name
+                    "Design body map BREP basename is ambiguous: {blob_name}"
                 )))
             }
-        }
-    }
-    if candidates.is_empty() {
-        let legacy = if bindings.is_empty() {
-            container::legacy_design_model_breps(scan)
-        } else {
-            None
-        };
-        if let Some(legacy) = legacy {
-            candidates.extend(legacy.into_iter().cloned());
-        } else if let Some(fallback) = container::select_fallback_brep(scan) {
-            candidates.push((*fallback).clone());
-        } else if container::design_breps(scan).next().is_some() {
-            return Err(CodecError::Malformed(
-                "Design body map is absent and BREP selection is ambiguous".to_string(),
-            ));
         }
     }
     Ok(candidates)
@@ -1944,6 +2321,14 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.native.sketch_surfaces,
             &mut self.native.sketch_relations,
         )?;
+        crate::design::decode::operands::bind_work_point_input_carriers(
+            scan,
+            &mut self.native.design_parameter_scopes,
+            &self.native.design_record_headers,
+            &self.native.construction_recipes,
+            &self.native.design_edge_operands,
+            &self.native.sketch_points,
+        )?;
         crate::design::decode::operands::bind_extrude_selection_geometry(
             &mut self.native.design_extrude_selection_members,
             &self.native.design_extrude_selection_groups,
@@ -1953,6 +2338,7 @@ impl<'a> F3dDecodeSession<'a> {
         );
         let dimension_inputs = crate::design::decode::dimension_frames::DimensionDecodeInputs {
             scan,
+            placements: &self.native.design_sketch_placements,
             parameters: &self.native.design_parameters,
             owners: &self.native.design_parameter_owners,
             companions: &self.native.design_parameter_companions,
@@ -1967,6 +2353,11 @@ impl<'a> F3dDecodeSession<'a> {
             )?;
         self.native.design_dimension_annotation_frames =
             crate::design::decode::dimension_frames::decode_dimension_annotation_frames(
+                &dimension_inputs,
+                &self.native.design_entity_headers,
+            )?;
+        self.native.design_dimension_presentation_frames =
+            crate::design::decode::dimension_frames::decode_dimension_presentation_frames(
                 &dimension_inputs,
                 &self.native.design_entity_headers,
             )?;
@@ -2002,7 +2393,7 @@ impl<'a> F3dDecodeSession<'a> {
             self.native.design_body_bindings =
                 crate::design::decode::body::decode_design_body_bindings(
                     scan,
-                    container::select_fallback_brep(scan).map(|entry| entry.name.as_str()),
+                    None,
                     &self.native.body_native_keys,
                 )?;
         }
@@ -2030,15 +2421,25 @@ impl<'a> F3dDecodeSession<'a> {
                     fillet_radius_groups: &self.native.design_fillet_radius_groups,
                     edge_operands: &self.native.design_edge_operands,
                     edge_identity_operands: &self.native.design_edge_identity_operands,
+                    edge_treatment_vertex_operands: &self
+                        .native
+                        .design_edge_treatment_vertex_operands,
                     entity_selection_operands: &self.native.design_entity_selection_operands,
                     curve_identities: &self.native.sketch_curve_identities,
                     face_operands: &self.native.design_face_operands,
                     body_recipe_operands: &self.native.design_body_recipe_operands,
+                    legacy_loft_body_carriers: &self.native.design_loft_legacy_body_carriers,
                     placements: &self.native.design_sketch_placements,
                     body_bindings: &self.native.design_body_bindings,
+                    component_naming_spaces: &self.native.design_component_naming_spaces,
                     histories: &self.native.asm_histories,
                 },
             )?;
+        crate::design::feature_project::bind_surface_trim_cell_selections(
+            &mut self.ir.model.features,
+            &self.native.design_parameter_scopes,
+            &self.native.design_surface_trim_operations,
+        );
         if let Some(geometry) = &self.geometry {
             bind_mesh_feature_definitions(
                 &mut self.ir.model.features,
@@ -2133,6 +2534,7 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.design_sketch_placements,
                 &self.native.sketch_points,
                 &self.native.sketch_curve_identities,
+                &self.native.sketch_relations,
                 &self.native.sketch_texts,
                 self.ir.tolerances.linear,
             );
@@ -2146,6 +2548,12 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.sketch_surfaces,
             &self.native.sketch_relations,
             self.ir.tolerances.linear,
+        );
+        crate::design::feature_project::bind_work_point_sketch_point_constructions(
+            &mut self.ir.model.features,
+            &self.native.design_parameter_scopes,
+            &self.ir.model.sketch_entities,
+            &self.ir.model.spatial_sketch_entities,
         );
         let arrangement_budget =
             ctx.work_budget(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK as u64);
@@ -2177,11 +2585,25 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
         );
-        crate::design::profile_select::bind_loft_sketch_selections(
+        crate::design::profile_select::bind_surface_trim_sketch_selections(
+            &mut self.ir.model.features,
+            &crate::design::profile_select::SketchCurveSelectionResolution {
+                scopes: &self.native.design_parameter_scopes,
+                groups: &self.native.design_construction_operand_groups,
+                operands: &self.native.design_entity_selection_operands,
+                placements: &self.native.design_sketch_placements,
+                curve_identities: &self.native.sketch_curve_identities,
+                sketches: &self.ir.model.sketches,
+                sketch_entities: &self.ir.model.sketch_entities,
+                spatial_sketches: &self.ir.model.spatial_sketches,
+                spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
+            },
+        );
+        crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
             scan,
             &self.native.design_construction_operand_groups,
             &self.native.design_record_headers,
-            &crate::design::profile_select::LoftSketchResolution {
+            &crate::design::profile_select::SketchProfileResolution {
                 entities: &self.native.design_entity_headers,
                 entity_selection_operands: &self.native.design_entity_selection_operands,
                 placements: &self.native.design_sketch_placements,
@@ -2211,6 +2633,12 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.native.sketch_surfaces,
                 &self.ir.model.spatial_sketch_entities,
             );
+        let scope_histories = crate::history::bind_scope_histories(
+            &self.native.design_parameter_scopes,
+            &self.native.design_body_bindings,
+            &self.native.design_body_recipe_operands,
+            &self.native.asm_histories,
+        );
         crate::design::profile_select::bind_extrude_profile_selections(
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
@@ -2233,6 +2661,7 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_entities: &self.ir.model.spatial_sketch_entities,
                 histories: &self.native.asm_histories,
+                scope_histories: &scope_histories,
                 linear_tolerance: self.ir.tolerances.linear,
                 angular_tolerance: self.ir.tolerances.angular,
                 arrangement_budget: &arrangement_budget,
@@ -2241,17 +2670,23 @@ impl<'a> F3dDecodeSession<'a> {
         if self.geometry.is_some() {
             crate::history::discard_projection_caches(&mut self.native.asm_histories);
         }
+        let mut extrude_face_resolution = crate::design::face_resolve::ExtrudeFaceResolution {
+            faces: &self.ir.model.faces,
+            surfaces: &self.ir.model.surfaces,
+            groups: &self.native.design_construction_operand_groups,
+            operands: &mut self.native.design_face_operands,
+            linear_tolerance: self.ir.tolerances.linear,
+            angular_tolerance: self.ir.tolerances.angular,
+        };
         crate::design::face_resolve::bind_extrude_start_planes(
             &mut self.ir.model.features,
             &self.ir.model.sketches,
-            &mut crate::design::face_resolve::ExtrudeStartPlaneResolution {
-                faces: &self.ir.model.faces,
-                surfaces: &self.ir.model.surfaces,
-                groups: &self.native.design_construction_operand_groups,
-                operands: &mut self.native.design_face_operands,
-                linear_tolerance: self.ir.tolerances.linear,
-                angular_tolerance: self.ir.tolerances.angular,
-            },
+            &mut extrude_face_resolution,
+        );
+        crate::design::face_resolve::bind_extrude_target_faces(
+            &mut self.ir.model.features,
+            &self.ir.model.sketches,
+            &mut extrude_face_resolution,
         );
         self.ir.model.sketch_constraints = crate::design::constraints::project_sketch_constraints(
             &self.native.design_sketch_placements,
@@ -2276,13 +2711,24 @@ impl<'a> F3dDecodeSession<'a> {
             curves: &self.native.sketch_curve_identities,
             entities: &self.ir.model.sketch_entities,
         };
-        self.ir.model.sketch_constraints.extend(
+        let dimension_constraints = if self.native.design_dimension_presentation_frames.is_empty() {
             crate::design::dimensions::project_dimension_constraints(
                 &constraint_inputs,
                 &self.ir.model.spatial_sketches,
                 self.ir.tolerances.linear,
-            ),
-        );
+            )
+        } else {
+            crate::design::dimensions::project_dimension_constraints_with_presentations(
+                &constraint_inputs,
+                &self.native.design_dimension_presentation_frames,
+                &self.ir.model.spatial_sketches,
+                self.ir.tolerances.linear,
+            )
+        };
+        self.ir
+            .model
+            .sketch_constraints
+            .extend(dimension_constraints);
         self.ir.model.spatial_sketch_constraints.extend(
             crate::design::dimensions::project_spatial_dimension_constraints(
                 &constraint_inputs,
@@ -2298,11 +2744,11 @@ impl<'a> F3dDecodeSession<'a> {
         self.ir
             .model
             .sketch_constraints
-            .sort_by_key(|constraint| constraint.id.clone());
+            .sort_by(|a, b| a.id.cmp(&b.id));
         self.ir
             .model
             .spatial_sketch_constraints
-            .sort_by_key(|constraint| constraint.id.clone());
+            .sort_by(|a, b| a.id.cmp(&b.id));
         Ok(())
     }
 
@@ -2324,6 +2770,10 @@ impl<'a> F3dDecodeSession<'a> {
                 .geometry_materials
                 .take()
                 .expect("geometry-path materials");
+            report_untyped_material_distances(
+                &mut self.report,
+                materials.untyped_distance_properties,
+            );
             self.ir.model.appearances = materials.appearances;
             self.ir.model.appearance_bindings = materials.bindings;
             resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
@@ -2338,8 +2788,10 @@ impl<'a> F3dDecodeSession<'a> {
                 materials.has_topology_assignments,
             );
             annotate_docstruct(&mut self.ir, scan);
-            match crate::xref::decode(scan) {
+            match crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes) {
                 Ok(Some(table)) => {
+                    report_xref_placement_failures(&mut self.report, &table);
+                    report_xref_placement_overrides(&mut self.report, &table);
                     self.ir.model.occurrences = crate::xref::project_occurrences(&table);
                     crate::xref::bind_component_insert_features(
                         &mut self.ir.model.features,
@@ -2354,12 +2806,19 @@ impl<'a> F3dDecodeSession<'a> {
             }
         } else {
             let decoded_materials = materials::decode(self.ctx, scan)?;
+            report_untyped_material_distances(
+                &mut self.report,
+                decoded_materials.untyped_distance_properties,
+            );
             self.deferred_has_appearance = Some(decoded_materials.has_topology_assignments);
             self.ir.model.appearances = decoded_materials.appearances;
             self.ir.model.appearance_bindings = decoded_materials.bindings;
             annotate_docstruct(&mut self.ir, scan);
-            let xref_table = crate::xref::decode(scan);
+            let xref_table =
+                crate::xref::decode_with_scopes(scan, &self.native.design_parameter_scopes);
             if let Ok(Some(table)) = &xref_table {
+                report_xref_placement_failures(&mut self.report, table);
+                report_xref_placement_overrides(&mut self.report, table);
                 self.ir.model.occurrences = crate::xref::project_occurrences(table);
                 crate::xref::bind_component_insert_features(
                     &mut self.ir.model.features,
@@ -2379,6 +2838,10 @@ impl<'a> F3dDecodeSession<'a> {
         );
         self.ir.model.product_definitions.extend(components);
         self.ir.model.occurrences.extend(occurrences);
+        crate::design::components::project_derived_instance_features(
+            &mut self.ir.model.features,
+            &self.native.design_parameter_scopes,
+        );
         let unresolved_component_inserts =
             crate::design::components::project_unresolved_component_insert_occurrences(
                 &mut self.ir.model.features,
@@ -2520,9 +2983,10 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         );
     }
 
+    let model_blob_names = crate::design::decode::body::design_model_blob_names(&scan)?;
     let unbound_body_bindings =
         crate::design::decode::body::decode_design_body_bindings(&scan, None, &[])?;
-    let model_breps = model_brep_candidates(&scan, &unbound_body_bindings)?;
+    let model_breps = model_brep_candidates(&scan, &model_blob_names)?;
 
     // Every Design body-map pair names its owning BREP blob. Decode the
     // complete referenced set; a document-level model is not confined to one
@@ -2858,10 +3322,10 @@ fn mesh_texture_assignments(
             "F3D mesh texture-id count differs from the triangle count".into(),
         ));
     }
-    let mut triangles = alloc_filled(
+    let mut triangles = cadmpeg_core::decode::alloc_filled(
         textures.len(),
         Vec::new(),
-        "f3d mesh texture triangle lists",
+        "f3d mesh texture assignments",
     )?;
     for (triangle, texture_id) in texture_ids.iter().enumerate() {
         if *texture_id == 0 {
@@ -3050,6 +3514,47 @@ fn annotate_docstruct(ir: &mut CadIr, scan: &ContainerScan) {
 fn xref_parse_loss(error: &CodecError) -> LossNote {
     F3dLossCode::XrefTableUndecoded
         .note(format!("external-reference table was not decoded: {error}"))
+}
+
+/// Report typed occurrence placements whose role path was readable but whose
+/// generation-specific payload did not close and had no valid carrier.
+fn report_xref_placement_failures(report: &mut DecodeReport, table: &crate::xref::XrefTable) {
+    for ordinal in &table.placement_failures {
+        let Some(reference) = table
+            .references
+            .iter()
+            .find(|reference| reference.ordinal == *ordinal)
+        else {
+            continue;
+        };
+        report
+            .losses
+            .push(F3dLossCode::XrefPlacementUndecoded.note(format!(
+                "external occurrence {} for role {} has a typed placement record that did not \
+                 decode under its generation grammar; no valid placement carrier was available",
+                reference.relative_path, reference.neutron_role
+            )));
+    }
+}
+
+/// Report structured placements that were ignored because a scope-bound
+/// Component Insert carrier supplied the occurrence transform for the role.
+fn report_xref_placement_overrides(report: &mut DecodeReport, table: &crate::xref::XrefTable) {
+    for (ordinal, count) in &table.placement_overrides {
+        let Some(reference) = table
+            .references
+            .iter()
+            .find(|reference| reference.ordinal == *ordinal)
+        else {
+            continue;
+        };
+        report
+            .losses
+            .push(F3dLossCode::XrefPlacementSuperseded.note(format!(
+                "{count} structured placement record(s) for external occurrence {} and role {} were superseded by scope-bound Component Insert carrier(s)",
+                reference.relative_path, reference.neutron_role
+            )));
+    }
 }
 
 /// Classify a mesh-body document.
@@ -3314,6 +3819,22 @@ fn populate_annotations(
                 note(projected, "sketch_constraint");
             }
         }
+        for entity in &native.design_dimension_presentation_frames {
+            note(&entity.id, "design_dimension_presentation_frame");
+            let projected = native
+                .design_parameter_companions
+                .iter()
+                .find_map(|companion| {
+                    (crate::ids::native_stream(&companion.id)
+                        == crate::ids::native_stream(&entity.id)
+                        && companion.record_index == entity.governing_companion_record_index)
+                        .then(|| constraints_by_native.get(companion.id.as_str()))
+                        .flatten()
+                });
+            if let Some(projected) = projected {
+                note(projected, "sketch_constraint");
+            }
+        }
         for entity in &native.design_dimension_locus_groups {
             note(&entity.id, "design_dimension_locus_group");
             if let Some(projected) = constraints_by_native.get(entity.id.as_str()) {
@@ -3337,6 +3858,9 @@ fn populate_annotations(
         }
         for entity in &native.design_face_operands {
             note(&entity.id, "design_face_operand");
+        }
+        for entity in &native.design_face_source_groups {
+            note(&entity.id, "design_face_source_group");
         }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
@@ -3523,9 +4047,7 @@ fn extend_related_design_records(
                 })
             }),
     );
-    native
-        .design_record_headers
-        .sort_by_key(|record| record.id.clone());
+    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     native.design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
         scan,
         &native.design_parameters,
@@ -3565,9 +4087,7 @@ fn extend_related_design_records(
                 })
             }),
     );
-    native
-        .design_record_headers
-        .sort_by_key(|record| record.id.clone());
+    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     native.design_parameter_companions =
         crate::design::decode::parameters::decode_parameter_companions(
             scan,
@@ -3585,7 +4105,22 @@ fn extend_related_design_records(
         &native.design_component_occurrences,
         &native.construction_recipes,
     )?;
+    native.design_surface_trim_operations =
+        crate::design::decode::surface_trim::decode_surface_trim_operations(
+            scan,
+            &native.design_parameter_scopes,
+        )?;
+    crate::design::decode::scopes::admit_history_bound_scope_variants(
+        &mut native.design_parameter_scopes,
+        &native.asm_histories,
+    )?;
+    native.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
+        scan,
+        &native.design_parameter_scopes,
+    )?;
     native.design_feature_timelines = crate::design::decode::meta::decode_feature_timelines(scan)?;
+    native.design_component_naming_spaces =
+        crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     native.design_canvas_images =
         crate::design::decode::canvas::decode_canvas_images(scan, &native.design_parameter_scopes)?;
     native.design_decal_images =
@@ -3666,9 +4201,7 @@ fn extend_related_design_records(
                 })
             }),
     );
-    native
-        .design_record_headers
-        .sort_by_key(|record| record.id.clone());
+    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut native.design_parameter_scopes,
@@ -3681,12 +4214,19 @@ fn extend_related_design_records(
             &mut native.design_parameter_scopes,
             &native.design_record_headers,
         )?;
+    native.design_loft_legacy_body_carriers =
+        crate::design::decode::operands::decode_loft_legacy_body_carriers(
+            scan,
+            &native.design_parameter_scopes,
+            &native.design_record_headers,
+        )?;
     crate::design::decode::scopes::bind_mirror_constructions(
         scan,
         &mut native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.design_record_headers,
         &native.design_parameter_owners,
+        &native.construction_recipes,
     )?;
     native.design_extrude_selection_groups =
         crate::design::decode::operands::decode_extrude_selection_groups(
@@ -3764,9 +4304,7 @@ fn extend_related_design_records(
                 })
             }),
     );
-    native
-        .design_record_headers
-        .sort_by_key(|record| record.id.clone());
+    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     crate::design::decode::operands::bind_construction_operand_trailing_records(
         scan,
         &mut native.design_construction_operand_groups,
@@ -3862,6 +4400,22 @@ fn extend_related_design_records(
                 .chain(std::iter::once(identity.following_record_index))
                 .map(move |record_index| (stream.clone(), record_index))
         })
+        .chain(
+            native
+                .design_construction_operand_groups
+                .iter()
+                .filter_map(|group| {
+                    let stream = crate::ids::native_stream(&group.id)?.to_owned();
+                    Some(
+                        group
+                            .members
+                            .iter()
+                            .copied()
+                            .map(move |record_index| (stream.clone(), record_index)),
+                    )
+                })
+                .flatten(),
+        )
         .collect::<Vec<_>>();
     let existing = native
         .design_record_headers
@@ -3882,9 +4436,7 @@ fn extend_related_design_records(
                 })
             }),
     );
-    native
-        .design_record_headers
-        .sort_by_key(|record| record.id.clone());
+    native.design_record_headers.sort_by(|a, b| a.id.cmp(&b.id));
     native.design_extrude_selection_members =
         crate::design::decode::operands::decode_extrude_selection_members(
             scan,
@@ -3902,11 +4454,8 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
         &native.asm_histories,
     );
-    crate::history::bind_mirror_selection_planes(
+    crate::history::bind_hole_selection_history(
         &mut native.design_parameter_scopes,
-        &native.design_construction_operand_groups,
-        &native.design_entity_selection_operands,
-        &native.design_construction_operand_identities,
         &native.asm_histories,
     );
     native.design_body_recipe_operands =
@@ -3935,6 +4484,8 @@ fn extend_related_design_records(
     );
     crate::history::bind_extrude_selection_history(
         &mut native.design_extrude_selection_members,
+        &native.design_component_naming_spaces,
+        &native.design_body_bindings,
         &native.asm_histories,
     );
     let scope_histories = crate::history::bind_scope_histories(
@@ -3970,16 +4521,28 @@ fn extend_related_design_records(
     crate::history::bind_edge_operand_history_candidates(
         &mut native.design_edge_operands,
         &native.design_parameter_scopes,
+        &native.construction_recipes,
         &native.asm_histories,
         &scope_histories,
     );
-    crate::design::decode::operands::bind_work_point_input_carriers(
-        scan,
-        &mut native.design_parameter_scopes,
-        &native.design_record_headers,
-        &native.construction_recipes,
-        &native.design_edge_operands,
-    )?;
+    native.design_edge_treatment_vertex_operands =
+        crate::design::decode::operands::decode_edge_treatment_vertex_operands(
+            scan,
+            &native.design_parameter_scopes,
+            &native.design_construction_operand_groups,
+            &native.design_record_headers,
+            &native.construction_recipes,
+        )?;
+    crate::design::decode::operands::bind_edge_treatment_vertex_candidates(
+        &mut native.design_edge_treatment_vertex_operands,
+        &native.persistent_subentity_tags,
+    );
+    crate::history::bind_edge_treatment_vertex_history(
+        &mut native.design_edge_treatment_vertex_operands,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+        &scope_histories,
+    );
     crate::design::decode::operands::bind_work_plane_constructions(
         scan,
         &mut native.design_parameter_scopes,
@@ -4013,6 +4576,16 @@ fn extend_related_design_records(
         &mut native.design_face_operands,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
+        &native.construction_recipes,
+        &native.asm_histories,
+        &scope_histories,
+    );
+    crate::history::bind_mirror_selection_planes(
+        &mut native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_entity_selection_operands,
+        &native.design_face_operands,
+        &native.design_construction_operand_identities,
         &native.asm_histories,
     );
     crate::history::bind_edge_identity_bounded_face_rules(

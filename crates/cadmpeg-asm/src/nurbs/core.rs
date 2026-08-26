@@ -8,8 +8,9 @@
 //! by nature.
 
 use crate::nurbs::reader::{
-    is_periodic, marker_at, marker_positions, owned_marker_positions, read_control_points,
-    read_knots, take_tagged_int, KnotLayout, INT_WIDTHS, LEN_TO_MM,
+    construction_marker_positions, is_periodic, marker_at, marker_positions,
+    owned_marker_positions, read_control_points, read_knots, take_tagged_int, KnotLayout,
+    INT_WIDTHS, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
 use crate::nurbs::toks;
@@ -154,10 +155,11 @@ pub(crate) fn curve_block(toks: &[Token], marker_pos: usize) -> Option<(NurbsCur
 /// earlier blocks are support surfaces or 2D pcurves), except in a
 /// `comp_spl_sur` compound, whose own cache comes first.
 pub(crate) fn surface_cache(toks: &[Token]) -> Option<NurbsSurface> {
-    let mut caches = toks::marker_positions(toks)
+    let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
+    let mut caches = toks::owned_marker_positions(scope)
         .into_iter()
-        .filter_map(|pos| surface_block(toks, pos).map(|(surface, _)| surface));
-    let compound = toks.iter().any(|token| {
+        .filter_map(|pos| surface_block(scope, pos).map(|(surface, _)| surface));
+    let compound = scope.iter().any(|token| {
         matches!(token, Token::Ident(name) | Token::SubIdent(name) if name == "comp_spl_sur")
     });
     if compound {
@@ -179,9 +181,10 @@ pub(crate) fn owned_surface_cache(scope: &[Token]) -> Option<NurbsSurface> {
 /// tokens: the FIRST valid curve block (surface and 2D pcurve blocks do not
 /// parse as a 3D curve block).
 pub(crate) fn curve_cache(toks: &[Token]) -> Option<NurbsCurve> {
-    toks::marker_positions(toks)
+    let scope = toks::owned_cache_scope(toks).unwrap_or(toks);
+    toks::owned_marker_positions(scope)
         .into_iter()
-        .find_map(|pos| curve_block(toks, pos).map(|(curve, _)| curve))
+        .find_map(|pos| curve_block(scope, pos).map(|(curve, _)| curve))
 }
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve
@@ -399,14 +402,13 @@ impl From<KnotLayout> for KnotPatchLayout {
     }
 }
 
-/// Locate the final valid `nubs`/`nurbs` surface block in a carrier record.
-pub fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLayout> {
-    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
-        marker_positions(record)
-            .into_iter()
-            .filter_map(|position| decode_surface_block(record, position, int_width))
-            .next_back()
-    })?;
+/// Locate the final valid `nubs`/`nurbs` surface block at the stream's known
+/// integer width.
+pub fn final_surface_patch_layout(record: &[u8], int_width: usize) -> Option<SurfacePatchLayout> {
+    let decoded = construction_marker_positions(record, int_width)
+        .into_iter()
+        .filter_map(|position| decode_surface_block(record, position, int_width))
+        .next_back()?;
     Some(SurfacePatchLayout {
         int_width: decoded.int_width,
         control_value_offsets: decoded.control_value_offsets,
@@ -421,14 +423,17 @@ pub fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLayout> {
     })
 }
 
-/// Locate the surface block at `ordinal` among valid surface caches in a carrier record.
-pub fn surface_patch_layout_at(record: &[u8], ordinal: usize) -> Option<SurfacePatchLayout> {
-    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
-        marker_positions(record)
-            .into_iter()
-            .filter_map(|position| decode_surface_block(record, position, int_width))
-            .nth(ordinal)
-    })?;
+/// Locate the surface block at `ordinal` among valid surface caches at the
+/// stream's known integer width.
+pub fn surface_patch_layout_at(
+    record: &[u8],
+    ordinal: usize,
+    int_width: usize,
+) -> Option<SurfacePatchLayout> {
+    let decoded = construction_marker_positions(record, int_width)
+        .into_iter()
+        .filter_map(|position| decode_surface_block(record, position, int_width))
+        .nth(ordinal)?;
     Some(SurfacePatchLayout {
         int_width: decoded.int_width,
         control_value_offsets: decoded.control_value_offsets,
@@ -521,13 +526,11 @@ pub struct CurvePatchLayout {
     pub degree_value_offset: usize,
 }
 
-/// Locate the first valid 3D curve cache in a carrier record.
-pub fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
-    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
-        marker_positions(record)
-            .into_iter()
-            .find_map(|position| decode_curve_block(record, position, int_width))
-    })?;
+/// Locate the first valid 3D curve cache at the stream's known integer width.
+pub fn first_curve_patch_layout(record: &[u8], int_width: usize) -> Option<CurvePatchLayout> {
+    let decoded = construction_marker_positions(record, int_width)
+        .into_iter()
+        .find_map(|position| decode_curve_block(record, position, int_width))?;
     Some(CurvePatchLayout {
         int_width: decoded.int_width,
         control_count: decoded.curve.control_points.len(),
@@ -540,14 +543,12 @@ pub fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
     })
 }
 
-/// Locate the final valid 3D curve cache in a carrier record.
-pub fn final_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
-    let decoded = INT_WIDTHS.into_iter().find_map(|int_width| {
-        marker_positions(record)
-            .into_iter()
-            .filter_map(|position| decode_curve_block(record, position, int_width))
-            .next_back()
-    })?;
+/// Locate the final valid 3D curve cache at the stream's known integer width.
+pub fn final_curve_patch_layout(record: &[u8], int_width: usize) -> Option<CurvePatchLayout> {
+    let decoded = construction_marker_positions(record, int_width)
+        .into_iter()
+        .filter_map(|position| decode_curve_block(record, position, int_width))
+        .next_back()?;
     Some(CurvePatchLayout {
         int_width: decoded.int_width,
         control_count: decoded.curve.control_points.len(),
@@ -560,29 +561,24 @@ pub fn final_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout> {
     })
 }
 
-/// Decode the face-surface cache of a spline surface record: the LAST valid
-/// surface block in the record (the final `setSurfaceShape` cache; earlier
-/// blocks are support surfaces or 2D pcurves). Returns `None` when no surface
-/// block is present or parseable.
+/// Decode the unique well-formed surface cache across both integer widths.
+///
+/// This generic entry point has no stream-width, owning-scope, or family-role
+/// witness. It therefore withholds when more than one `(width, marker)`
+/// candidate decodes.
 pub fn decode_surface_cache(record_bytes: &[u8]) -> Option<NurbsSurface> {
-    INT_WIDTHS
-        .into_iter()
-        .find_map(|int_width| decode_surface_cache_at(record_bytes, int_width))
-}
-
-fn decode_surface_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsSurface> {
-    let caches = marker_positions(record_bytes)
-        .into_iter()
-        .filter_map(|pos| decode_surface_block(record_bytes, pos, int_width))
-        .map(|decoded| decoded.surface);
-    if record_bytes
-        .windows(b"comp_spl_sur".len())
-        .any(|window| window == b"comp_spl_sur")
-    {
-        caches.into_iter().next()
-    } else {
-        caches.into_iter().next_back()
+    let mut decoded = None;
+    for int_width in INT_WIDTHS {
+        for position in marker_positions(record_bytes) {
+            if let Some(candidate) = decode_surface_block(record_bytes, position, int_width) {
+                if decoded.is_some() {
+                    return None;
+                }
+                decoded = Some(candidate.surface);
+            }
+        }
     }
+    decoded
 }
 
 /// Decode the surface cache a subtype scope itself owns: the first surface
@@ -618,19 +614,23 @@ pub(crate) fn decode_owned_surface_cache_resolving_refs_at(
     )
 }
 
-/// Decode the 3D curve cache of a procedural curve record: the FIRST valid curve
-/// block (surface and 2D pcurve blocks in the record are skipped because they do
-/// not parse as a 3D curve block). Returns `None` when none is present.
+/// Decode the unique well-formed 3D curve cache across both integer widths.
+///
+/// This generic entry point has no stream-width or owning-scope witness. It
+/// therefore withholds when more than one `(width, marker)` candidate decodes.
 pub fn decode_curve_cache(record_bytes: &[u8]) -> Option<NurbsCurve> {
-    INT_WIDTHS
-        .into_iter()
-        .find_map(|int_width| decode_curve_cache_at(record_bytes, int_width))
-}
-
-pub(crate) fn decode_curve_cache_at(record_bytes: &[u8], int_width: usize) -> Option<NurbsCurve> {
-    marker_positions(record_bytes).into_iter().find_map(|pos| {
-        decode_curve_block(record_bytes, pos, int_width).map(|decoded| decoded.curve)
-    })
+    let mut decoded = None;
+    for int_width in INT_WIDTHS {
+        for position in marker_positions(record_bytes) {
+            if let Some(candidate) = decode_curve_block(record_bytes, position, int_width) {
+                if decoded.is_some() {
+                    return None;
+                }
+                decoded = Some(candidate.curve);
+            }
+        }
+    }
+    decoded
 }
 
 /// Decode the 3D curve cache a subtype scope itself owns: the first curve block

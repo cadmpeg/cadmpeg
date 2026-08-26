@@ -207,6 +207,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
@@ -500,4 +501,909 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
     let mut nonzero_prefix = bytes;
     nonzero_prefix[11] = 1;
     assert!(exact_base_feature_construction(&nonzero_prefix, &scope).is_none());
+}
+
+#[test]
+fn base_feature_scope_decodes_class_409_262_result_body_variants() {
+    fn frame(body_count: usize) -> (Vec<u8>, DesignParameterScope) {
+        let frame_length = 262 + 52 * body_count;
+        let mut bytes = vec![0u8; frame_length];
+        bytes[19] = 1;
+        bytes[20..24].copy_from_slice(&(2 * body_count as u32).to_le_bytes());
+        let mut cursor = 24;
+        for ordinal in 0..body_count {
+            let value = 101 + ordinal as u64;
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
+            cursor += 15;
+        }
+        for ordinal in 0..body_count {
+            let value = 201 + ordinal as u64;
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
+            cursor += 15;
+        }
+        bytes[cursor] = 1;
+        bytes[cursor + 7..cursor + 11].copy_from_slice(&(body_count as u32).to_le_bytes());
+        cursor += 11;
+        for ordinal in 0..body_count {
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 5].copy_from_slice(&(201 + ordinal as u32).to_le_bytes());
+            cursor += 11;
+        }
+        bytes[cursor] = 0;
+        cursor += 1;
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
+        cursor += 11;
+        bytes[cursor..cursor + 4].copy_from_slice(&(body_count as u32).to_le_bytes());
+        cursor += 4;
+        for ordinal in 0..body_count {
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + ordinal as u32).to_le_bytes());
+            cursor += 11;
+        }
+        let mut scope =
+            DesignParameterScope::empty("f3d:scope#base-feature-409-262", "Base Feature", 70);
+        scope.class_tag = "409".into();
+        scope.paired_class_tag = "262".into();
+        scope.frame_length = frame_length as u64;
+        scope.kind_offset = (frame_length + 102) as u64;
+        scope.paired_byte_offset = frame_length as u64;
+        scope.reference_members = vec![301];
+        assert!(cursor <= frame_length);
+        (bytes, scope)
+    }
+
+    for body_count in [1, 3, 4] {
+        let (bytes, scope) = frame(body_count);
+        let construction = exact_base_feature_construction(&bytes, &scope)
+            .expect("class-409/class-262 result-body frame is canonical");
+        let DesignBaseFeatureConstruction::ResultBodies {
+            body_entity_suffixes,
+            body_reference_records,
+            metadata_record,
+            result_records,
+            ..
+        } = construction
+        else {
+            panic!("class-409/class-262 frame selected the wrong form");
+        };
+        assert_eq!(body_entity_suffixes.len(), body_count);
+        assert_eq!(body_reference_records.len(), body_count);
+        assert_eq!(metadata_record, 301);
+        assert_eq!(result_records.len(), body_count);
+
+        let mut class_360_scope = scope.clone();
+        class_360_scope.class_tag = "360".into();
+        class_360_scope.paired_class_tag = "258".into();
+        let construction = exact_base_feature_construction(&bytes, &class_360_scope)
+            .expect("class-360/class-258 result-body frame is canonical");
+        let DesignBaseFeatureConstruction::ResultBodies {
+            body_entity_suffixes,
+            body_reference_records,
+            metadata_record,
+            result_records,
+            ..
+        } = construction
+        else {
+            panic!("class-360/class-258 frame selected the wrong form");
+        };
+        assert_eq!(body_entity_suffixes.len(), body_count);
+        assert_eq!(body_reference_records.len(), body_count);
+        assert_eq!(metadata_record, 301);
+        assert_eq!(result_records.len(), body_count);
+    }
+
+    let prefix = 17;
+    let mut zero_body = vec![0u8; prefix + 258];
+    zero_body[prefix + 20] = 1;
+    zero_body[prefix + 32] = 1;
+    zero_body[prefix + 33..prefix + 41].copy_from_slice(&701u64.to_le_bytes());
+    let mut zero_scope =
+        DesignParameterScope::empty("f3d:scope#base-feature-409-262-zero", "Base Feature", 71);
+    zero_scope.class_tag = "409".into();
+    zero_scope.paired_class_tag = "262".into();
+    zero_scope.byte_offset = prefix as u64;
+    zero_scope.frame_length = 258;
+    zero_scope.kind_offset = (prefix + 157) as u64;
+    zero_scope.paired_byte_offset = (prefix + 258) as u64;
+    zero_scope.reference_members = vec![701];
+    let construction = exact_base_feature_construction(&zero_body, &zero_scope)
+        .expect("class-409/class-262 zero-body frame is canonical");
+    let DesignBaseFeatureConstruction::ResultBodies {
+        body_entity_suffixes,
+        metadata_record,
+        metadata_record_offset,
+        metadata_field,
+        ..
+    } = construction
+    else {
+        panic!("class-409/class-262 zero-body frame selected the wrong form");
+    };
+    assert!(body_entity_suffixes.is_empty());
+    assert_eq!(metadata_record, 701);
+    assert_eq!(metadata_record_offset, (prefix + 33) as u64);
+    assert_eq!(metadata_field, [0; 6]);
+
+    let mut nonzero_padding = zero_body.clone();
+    nonzero_padding[prefix + 47] = 1;
+    assert!(exact_base_feature_construction(&nonzero_padding, &zero_scope).is_none());
+
+    let mut mismatched_pair = zero_scope;
+    mismatched_pair.paired_byte_offset -= 1;
+    assert!(exact_base_feature_construction(&zero_body, &mismatched_pair).is_none());
+}
+
+#[test]
+fn base_feature_scope_decodes_class_290_261_result_body_variant() {
+    let body_count = 2;
+    let frame_length = 261 + 52 * body_count;
+    let mut bytes = vec![0u8; frame_length];
+    bytes[19] = 1;
+    bytes[20..24].copy_from_slice(&(2 * body_count as u32).to_le_bytes());
+    let mut cursor = 24;
+    for value in [101u64, 102] {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
+        cursor += 15;
+    }
+    for value in [201u64, 202] {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
+        cursor += 15;
+    }
+    bytes[cursor] = 1;
+    bytes[cursor + 7..cursor + 11].copy_from_slice(&(body_count as u32).to_le_bytes());
+    cursor += 11;
+    for value in [201u32, 202] {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 5].copy_from_slice(&value.to_le_bytes());
+        cursor += 11;
+    }
+    bytes[cursor] = 0;
+    cursor += 1;
+    bytes[cursor] = 1;
+    bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
+    cursor += 11;
+    bytes[cursor..cursor + 4].copy_from_slice(&(body_count as u32).to_le_bytes());
+    cursor += 4;
+    for value in [401u32, 402] {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 5].copy_from_slice(&value.to_le_bytes());
+        cursor += 11;
+    }
+    let mut scope =
+        DesignParameterScope::empty("f3d:scope#base-feature-290-261", "Base Feature", 74);
+    scope.class_tag = "290".into();
+    scope.paired_class_tag = "261".into();
+    scope.frame_length = frame_length as u64;
+    scope.kind_offset = (frame_length + 102) as u64;
+    scope.paired_byte_offset = frame_length as u64;
+    scope.reference_members = vec![301];
+    assert_eq!(cursor, 155);
+
+    let construction = exact_base_feature_construction(&bytes, &scope)
+        .expect("class-290/class-261 result-body frame is canonical");
+    let DesignBaseFeatureConstruction::ResultBodies {
+        body_entity_suffixes,
+        body_reference_records,
+        metadata_record,
+        result_records,
+        metadata_field,
+        ..
+    } = construction
+    else {
+        panic!("class-290/class-261 frame selected the wrong form");
+    };
+    assert_eq!(body_entity_suffixes, [101, 102]);
+    assert_eq!(body_reference_records, [201, 202]);
+    assert_eq!(metadata_record, 301);
+    assert_eq!(result_records, [401, 402]);
+    assert_eq!(metadata_field, [0, 0]);
+}
+
+#[test]
+fn base_feature_scope_decodes_class_444_263_result_body_variants() {
+    fn frame(body_count: usize) -> (Vec<u8>, DesignParameterScope) {
+        let frame_length = 262 + 52 * body_count;
+        let mut bytes = vec![0u8; frame_length];
+        bytes[19] = 1;
+        bytes[20..24].copy_from_slice(&(2 * body_count as u32).to_le_bytes());
+        let mut cursor = 24;
+        for ordinal in 0..body_count {
+            let value = 101 + ordinal as u64;
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
+            cursor += 15;
+        }
+        for ordinal in 0..body_count {
+            let value = 201 + ordinal as u64;
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
+            cursor += 15;
+        }
+        bytes[cursor] = 1;
+        bytes[cursor + 7..cursor + 11].copy_from_slice(&(body_count as u32).to_le_bytes());
+        cursor += 11;
+        for ordinal in 0..body_count {
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 5].copy_from_slice(&(201 + ordinal as u32).to_le_bytes());
+            cursor += 11;
+        }
+        bytes[cursor] = 0;
+        cursor += 1;
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
+        cursor += 11;
+        bytes[cursor..cursor + 4].copy_from_slice(&(body_count as u32).to_le_bytes());
+        cursor += 4;
+        for ordinal in 0..body_count {
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + ordinal as u32).to_le_bytes());
+            cursor += 11;
+        }
+        let mut scope =
+            DesignParameterScope::empty("f3d:scope#base-feature-444-263", "Base Feature", 72);
+        scope.class_tag = "444".into();
+        scope.paired_class_tag = "263".into();
+        scope.frame_length = frame_length as u64;
+        scope.kind_offset = (frame_length + 102) as u64;
+        scope.paired_byte_offset = frame_length as u64;
+        scope.reference_members = vec![301];
+        assert!(cursor <= frame_length);
+        (bytes, scope)
+    }
+
+    for body_count in [1, 3, 4] {
+        let (bytes, scope) = frame(body_count);
+        let construction = exact_base_feature_construction(&bytes, &scope)
+            .expect("class-444/class-263 result-body frame is canonical");
+        let DesignBaseFeatureConstruction::ResultBodies {
+            body_entity_suffixes,
+            body_reference_records,
+            metadata_record,
+            result_records,
+            ..
+        } = construction
+        else {
+            panic!("class-444/class-263 frame selected the wrong form");
+        };
+        assert_eq!(body_entity_suffixes.len(), body_count);
+        assert_eq!(body_reference_records.len(), body_count);
+        assert_eq!(metadata_record, 301);
+        assert_eq!(result_records.len(), body_count);
+    }
+
+    let (mut bytes, scope) = frame(1);
+    bytes[24 + 30 + 6] = 1;
+    assert!(exact_base_feature_construction(&bytes, &scope).is_none());
+
+    let prefix = 17;
+    let mut zero_body = vec![0u8; prefix + 258];
+    zero_body[prefix + 20] = 1;
+    zero_body[prefix + 32] = 1;
+    zero_body[prefix + 33..prefix + 41].copy_from_slice(&701u64.to_le_bytes());
+    zero_body[prefix + 55..prefix + 59].copy_from_slice(&36u32.to_le_bytes());
+    let guid = "00000000-0000-0000-0000-000000000000";
+    let guid_utf16 = guid.encode_utf16().collect::<Vec<_>>();
+    for (ordinal, code_unit) in guid_utf16.into_iter().enumerate() {
+        zero_body[prefix + 59 + ordinal * 2..prefix + 61 + ordinal * 2]
+            .copy_from_slice(&code_unit.to_le_bytes());
+    }
+    zero_body[prefix + 134..prefix + 138].copy_from_slice(&1u32.to_le_bytes());
+    zero_body[prefix + 138] = 1;
+    zero_body[prefix + 139..prefix + 143].copy_from_slice(&701u32.to_le_bytes());
+    zero_body[prefix + 149..prefix + 153].copy_from_slice(&17u32.to_le_bytes());
+    zero_body[prefix + 153..prefix + 157].copy_from_slice(&12u32.to_le_bytes());
+    for (ordinal, code_unit) in "Base Feature".encode_utf16().enumerate() {
+        zero_body[prefix + 157 + ordinal * 2..prefix + 159 + ordinal * 2]
+            .copy_from_slice(&code_unit.to_le_bytes());
+    }
+    zero_body[prefix + 181..prefix + 185].copy_from_slice(&1u32.to_le_bytes());
+    zero_body[prefix + 212..prefix + 216].copy_from_slice(&2u32.to_le_bytes());
+    let mut zero_scope =
+        DesignParameterScope::empty("f3d:scope#base-feature-444-263-zero", "Base Feature", 73);
+    zero_scope.class_tag = "444".into();
+    zero_scope.paired_class_tag = "263".into();
+    zero_scope.byte_offset = prefix as u64;
+    zero_scope.frame_length = 258;
+    zero_scope.kind_offset = (prefix + 157) as u64;
+    zero_scope.paired_byte_offset = (prefix + 258) as u64;
+    zero_scope.reference_count_offset = (prefix + 134) as u64;
+    zero_scope.reference_members = vec![701];
+    zero_scope.reference_member_offsets = vec![(prefix + 139) as u64];
+    let construction = exact_base_feature_construction(&zero_body, &zero_scope)
+        .expect("class-444/class-263 zero-body frame is canonical");
+    let DesignBaseFeatureConstruction::ResultBodies {
+        body_entity_suffixes,
+        metadata_record,
+        metadata_record_offset,
+        metadata_field,
+        ..
+    } = construction
+    else {
+        panic!("class-444/class-263 zero-body frame selected the wrong form");
+    };
+    assert!(body_entity_suffixes.is_empty());
+    assert_eq!(metadata_record, 701);
+    assert_eq!(metadata_record_offset, (prefix + 33) as u64);
+    assert_eq!(metadata_field, [0; 14]);
+
+    let mut nonzero_tail = zero_body.clone();
+    nonzero_tail[prefix + 41] = 1;
+    assert!(exact_base_feature_construction(&nonzero_tail, &zero_scope).is_none());
+
+    let mut mismatched_reference = zero_body.clone();
+    mismatched_reference[prefix + 139] = 1;
+    assert!(exact_base_feature_construction(&mismatched_reference, &zero_scope).is_none());
+
+    let mut mismatched_pair = zero_scope;
+    mismatched_pair.paired_byte_offset -= 1;
+    assert!(exact_base_feature_construction(&zero_body, &mismatched_pair).is_none());
+}
+
+#[test]
+fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
+    use crate::layout::base_feature_class_377_prefix as class_377;
+
+    let mut bytes = vec![0u8; class_377::LEN];
+    bytes[class_377::BODY_REFERENCE_COUNT_MARKER] = class_377::BODY_REFERENCE_COUNT_MARKER_VALUE;
+    bytes[class_377::BODY_REFERENCE_COUNT..class_377::PARAMETER_BODY_REFERENCE_MARKER]
+        .copy_from_slice(&class_377::BODY_REFERENCE_COUNT_VALUE.to_le_bytes());
+    for (offset, record) in [
+        (class_377::PARAMETER_BODY_REFERENCE_MARKER, 198u32),
+        (class_377::BODY_ENTITY_REFERENCE_MARKER, 201),
+    ] {
+        bytes[offset] = 1;
+        bytes[offset + 1..offset + 5].copy_from_slice(&record.to_le_bytes());
+    }
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_MARKER] =
+        class_377::TAG_BODY_BASED_ON_FACES_MARKER_VALUE;
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_COUNT..class_377::TAG_BODY_BASED_ON_FACES_KEY_LENGTH]
+        .copy_from_slice(&class_377::TAG_BODY_BASED_ON_FACES_COUNT_VALUE.to_le_bytes());
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_KEY_LENGTH..class_377::TAG_BODY_BASED_ON_FACES_KEY]
+        .copy_from_slice(&class_377::TAG_BODY_BASED_ON_FACES_KEY_LENGTH_VALUE.to_le_bytes());
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_KEY..class_377::TAG_BODY_BASED_ON_FACES_TYPE_LENGTH]
+        .copy_from_slice(b"TagBodyBasedOnFaces");
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_TYPE_LENGTH..class_377::TAG_BODY_BASED_ON_FACES_TYPE]
+        .copy_from_slice(&class_377::TAG_BODY_BASED_ON_FACES_TYPE_LENGTH_VALUE.to_le_bytes());
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_TYPE..class_377::TAG_BODY_BASED_ON_FACES_VALUE]
+        .copy_from_slice(b"IntrinsicMetaTypebool");
+    bytes[class_377::TAG_BODY_BASED_ON_FACES_VALUE..class_377::PARAMETER_REFERENCE_GROUP_MARKER]
+        .copy_from_slice(&class_377::TAG_BODY_BASED_ON_FACES_VALUE_VALUE.to_le_bytes());
+    bytes[class_377::PARAMETER_REFERENCE_GROUP_MARKER] =
+        class_377::PARAMETER_REFERENCE_GROUP_MARKER_VALUE;
+    bytes[class_377::PARAMETER_REFERENCE_GROUP_COUNT..class_377::PARAMETER_REFERENCE_MARKER]
+        .copy_from_slice(&class_377::PARAMETER_REFERENCE_GROUP_COUNT_VALUE.to_le_bytes());
+    bytes[class_377::PARAMETER_REFERENCE_MARKER] = class_377::PARAMETER_REFERENCE_MARKER_VALUE;
+    bytes[class_377::PARAMETER_REFERENCE_RECORD..class_377::PARAMETER_REFERENCE_FIELD]
+        .copy_from_slice(&198u32.to_le_bytes());
+    bytes[class_377::SCOPE_REFERENCE_MEMBER_MARKER] =
+        class_377::SCOPE_REFERENCE_MEMBER_MARKER_VALUE;
+    bytes[class_377::SCOPE_REFERENCE_MEMBER_RECORD..class_377::SCOPE_REFERENCE_MEMBER_FIELD]
+        .copy_from_slice(&196u32.to_le_bytes());
+    bytes[class_377::AUXILIARY_GROUP_MARKER] = class_377::AUXILIARY_GROUP_MARKER_VALUE;
+    bytes[class_377::AUXILIARY_REFERENCE_MARKER] = class_377::AUXILIARY_REFERENCE_MARKER_VALUE;
+    bytes[class_377::AUXILIARY_RECORD..class_377::AUXILIARY_REFERENCE_FIELD]
+        .copy_from_slice(&202u32.to_le_bytes());
+    let guid = crate::bytes::lp_utf16_bytes("fcec56e3-832f-4468-88a4-d710e62e629f");
+    bytes[class_377::ENVELOPE_GUID_CODE_UNIT_COUNT..class_377::ZERO_RUN_3].copy_from_slice(&guid);
+    bytes[class_377::REFERENCE_COUNT..class_377::GENERIC_SCOPE_REFERENCE_MARKER]
+        .copy_from_slice(&class_377::REFERENCE_COUNT_VALUE.to_le_bytes());
+    bytes[class_377::GENERIC_SCOPE_REFERENCE_MARKER] =
+        class_377::GENERIC_SCOPE_REFERENCE_MARKER_VALUE;
+    bytes[class_377::GENERIC_SCOPE_REFERENCE_RECORD..class_377::GENERIC_SCOPE_REFERENCE_FIELD]
+        .copy_from_slice(&196u32.to_le_bytes());
+    bytes[class_377::HISTORY_STATE_ID..class_377::KIND_LENGTH]
+        .copy_from_slice(&20u32.to_le_bytes());
+    bytes[class_377::KIND_LENGTH..class_377::KIND]
+        .copy_from_slice(&class_377::KIND_LENGTH_VALUE.to_le_bytes());
+    bytes[class_377::KIND..class_377::FEATURE_ORDINAL]
+        .copy_from_slice(&crate::bytes::lp_utf16_bytes("Base Feature")[4..]);
+    bytes[class_377::FEATURE_ORDINAL..class_377::FEATURE_ORDINAL + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    bytes[class_377::PREVIOUS_HISTORY_STATE_ID..class_377::PREVIOUS_HISTORY_STATE_ID + 4]
+        .copy_from_slice(&19u32.to_le_bytes());
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#193",
+        "Base Feature",
+        193,
+    );
+    scope.byte_offset = 0;
+    scope.class_tag = "377".into();
+    scope.paired_class_tag = "259".into();
+    scope.paired_byte_offset = class_377::LEN as u64;
+    scope.frame_length = class_377::LEN as u64;
+    scope.kind_offset = class_377::KIND as u64;
+    scope.feature_ordinal = 1;
+    scope.feature_ordinal_offset = class_377::FEATURE_ORDINAL as u64;
+    scope.history_state_id = Some(20);
+    scope.history_state_id_offset = class_377::HISTORY_STATE_ID as u64;
+    scope.previous_history_state_id = Some(19);
+    scope.previous_history_state_id_offset = class_377::PREVIOUS_HISTORY_STATE_ID as u64;
+    scope.reference_count_offset = class_377::REFERENCE_COUNT as u64;
+    scope.reference_members = vec![196];
+    scope.reference_member_offsets = vec![class_377::GENERIC_SCOPE_REFERENCE_RECORD as u64];
+
+    let construction = exact_base_feature_construction(&bytes, &scope)
+        .expect("class-377/class-259 Base Feature frame is canonical");
+    let DesignBaseFeatureConstruction::BodyBasedOnFaces {
+        body_entity_suffixes,
+        body_entity_suffix_offsets,
+        body_reference_records,
+        parameter_body_record,
+        parameter_body_record_offset,
+        auxiliary_record,
+        auxiliary_record_offset,
+        envelope_guid,
+        envelope_guid_offset,
+        tag_body_based_on_faces,
+        tag_body_based_on_faces_offset,
+        ..
+    } = &construction
+    else {
+        panic!("class-377/class-259 frame selected the wrong form");
+    };
+    assert_eq!(body_entity_suffixes, &[201]);
+    assert_eq!(
+        body_entity_suffix_offsets,
+        &[class_377::BODY_ENTITY_SUFFIX as u64]
+    );
+    assert_eq!(body_reference_records, &[201]);
+    assert_eq!(*parameter_body_record, 198);
+    assert_eq!(
+        *parameter_body_record_offset,
+        class_377::PARAMETER_BODY_RECORD as u64
+    );
+    assert_eq!(*auxiliary_record, 202);
+    assert_eq!(*auxiliary_record_offset, class_377::AUXILIARY_RECORD as u64);
+    assert_eq!(envelope_guid, "fcec56e3-832f-4468-88a4-d710e62e629f");
+    assert_eq!(*envelope_guid_offset, class_377::ENVELOPE_GUID as u64);
+    assert!(*tag_body_based_on_faces);
+    assert_eq!(
+        *tag_body_based_on_faces_offset,
+        class_377::TAG_BODY_BASED_ON_FACES_VALUE as u64
+    );
+
+    let mut class_365_scope = scope.clone();
+    class_365_scope.class_tag = "365".into();
+    class_365_scope.paired_class_tag = "262".into();
+    let class_365_construction = exact_base_feature_construction(&bytes, &class_365_scope)
+        .expect("class-365/class-262 Base Feature frame is canonical");
+    assert_eq!(class_365_construction, construction);
+
+    let serialized = serde_json::to_value(&construction).expect("serialize body-reference form");
+    assert_eq!(
+        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
+            .expect("deserialize body-reference form"),
+        construction
+    );
+
+    let mut nonzero_field = bytes.clone();
+    nonzero_field[class_377::PARAMETER_REFERENCE_FIELD] = 1;
+    assert!(exact_base_feature_construction(&nonzero_field, &scope).is_none());
+
+    let mut mismatched_previous = scope.clone();
+    mismatched_previous.previous_history_state_id = Some(18);
+    assert!(exact_base_feature_construction(&bytes, &mismatched_previous).is_none());
+
+    let mut mismatched_pair = scope;
+    mismatched_pair.paired_class_tag = "263".into();
+    assert!(exact_base_feature_construction(&bytes, &mismatched_pair).is_none());
+}
+
+#[test]
+fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
+    use crate::layout::base_feature_class_452_262_compact as compact;
+    use crate::layout::base_feature_class_452_262_expanded as expanded;
+    use crate::records::DesignBaseFeatureBodyReferenceForm;
+
+    fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
+        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn put_u64(bytes: &mut [u8], offset: usize, value: u64) {
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn put_u64_reference(bytes: &mut [u8], marker: usize, value: u64) {
+        bytes[marker] = compact::BODY_ENTITY_REFERENCE_MARKER_VALUE;
+        put_u64(bytes, marker + 1, value);
+    }
+
+    fn put_u32_reference(bytes: &mut [u8], marker: usize, value: u32) {
+        bytes[marker] = expanded::BODY_ENTITY_ONE_MARKER_VALUE;
+        put_u32(bytes, marker + 1, value);
+    }
+
+    fn put_property(bytes: &mut [u8], marker: usize) {
+        bytes[marker] = compact::TAG_BODY_BASED_ON_FACES_MARKER_VALUE;
+        put_u32(
+            bytes,
+            marker + 1,
+            crate::layout::base_feature_class_377_prefix::TAG_BODY_BASED_ON_FACES_COUNT_VALUE,
+        );
+        put_u32(
+            bytes,
+            marker + 5,
+            crate::layout::base_feature_class_377_prefix::TAG_BODY_BASED_ON_FACES_KEY_LENGTH_VALUE,
+        );
+        bytes[marker + 9..marker + 28].copy_from_slice(b"TagBodyBasedOnFaces");
+        put_u32(
+            bytes,
+            marker + 28,
+            crate::layout::base_feature_class_377_prefix::TAG_BODY_BASED_ON_FACES_TYPE_LENGTH_VALUE,
+        );
+        bytes[marker + 32..marker + 53].copy_from_slice(b"IntrinsicMetaTypebool");
+        bytes[marker + 53..marker + 55].copy_from_slice(
+            &crate::layout::base_feature_class_377_prefix::TAG_BODY_BASED_ON_FACES_VALUE_VALUE
+                .to_le_bytes(),
+        );
+    }
+
+    fn put_kind_tail(
+        bytes: &mut [u8],
+        layout: (usize, usize, usize, usize, usize, usize, usize, usize),
+        scope_reference: u32,
+        current_state: u32,
+        previous_state: u32,
+        ordinal: u32,
+    ) -> DesignParameterScope {
+        let (
+            reference_count,
+            generic_marker,
+            generic_record,
+            _generic_field,
+            history_state_id,
+            kind_length,
+            kind,
+            feature_ordinal,
+        ) = layout;
+        put_u32(bytes, reference_count, 1);
+        put_u32_reference(bytes, generic_marker, scope_reference);
+        put_u32(bytes, history_state_id, current_state);
+        put_u32(
+            bytes,
+            kind_length,
+            crate::layout::base_feature_class_377_prefix::KIND_LENGTH_VALUE,
+        );
+        bytes[kind..feature_ordinal]
+            .copy_from_slice(&crate::bytes::lp_utf16_bytes("Base Feature")[4..]);
+        put_u32(bytes, feature_ordinal, ordinal);
+
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#452",
+            "Base Feature",
+            452,
+        );
+        scope.byte_offset = 0;
+        scope.class_tag = "452".into();
+        scope.paired_class_tag = "262".into();
+        scope.reference_members = vec![scope_reference];
+        scope.reference_count_offset = reference_count as u64;
+        scope.reference_member_offsets = vec![generic_record as u64];
+        scope.history_state_id = Some(i64::from(current_state));
+        scope.history_state_id_offset = history_state_id as u64;
+        scope.previous_history_state_id = Some(i64::from(previous_state));
+        scope.previous_history_state_id_offset = 0;
+        scope.kind_offset = kind as u64;
+        scope.feature_ordinal = ordinal;
+        scope.feature_ordinal_offset = feature_ordinal as u64;
+        scope
+    }
+
+    let compact_frame = |mode: u8| {
+        let mut bytes = vec![0_u8; compact::LEN];
+        bytes[compact::BODY_COUNT_MARKER] = compact::BODY_COUNT_MARKER_VALUE;
+        put_u32(&mut bytes, compact::BODY_COUNT, compact::BODY_COUNT_VALUE);
+        put_u64_reference(&mut bytes, compact::BODY_ENTITY_REFERENCE_MARKER, 201);
+        bytes[compact::BODY_ENTITY_REFERENCE_FIELD..compact::TAG_BODY_BASED_ON_FACES_MARKER]
+            .copy_from_slice(&[0, 0, 1, 0, 0, 0]);
+        put_property(&mut bytes, compact::TAG_BODY_BASED_ON_FACES_MARKER);
+        bytes[compact::MODE] = mode;
+        bytes[compact::PARAMETER_BODY_COUNT] = compact::PARAMETER_BODY_COUNT_VALUE;
+        put_u64_reference(&mut bytes, compact::PARAMETER_BODY_REFERENCE_MARKER, 198);
+        put_u64_reference(&mut bytes, compact::SCOPE_REFERENCE_MARKER, 196);
+        bytes[compact::AUXILIARY_GROUP_MARKER] = 1;
+        put_u64_reference(&mut bytes, compact::AUXILIARY_REFERENCE_MARKER, 202);
+        bytes[compact::ENVELOPE_GUID_CODE_UNIT_COUNT..compact::ZERO_RUN_AFTER_GUID]
+            .copy_from_slice(&crate::bytes::lp_utf16_bytes(
+                "fcec56e3-832f-4468-88a4-d710e62e629f",
+            ));
+        let _ = put_kind_tail(
+            &mut bytes,
+            (
+                compact::REFERENCE_COUNT,
+                compact::GENERIC_SCOPE_REFERENCE_MARKER,
+                compact::GENERIC_SCOPE_REFERENCE_RECORD,
+                compact::GENERIC_SCOPE_REFERENCE_FIELD,
+                compact::HISTORY_STATE_ID,
+                compact::KIND_LENGTH,
+                compact::KIND,
+                compact::FEATURE_ORDINAL,
+            ),
+            196,
+            20,
+            19,
+            1,
+        );
+        put_u32(&mut bytes, compact::PREVIOUS_HISTORY_STATE_ID, 19);
+        bytes
+    };
+
+    let mut compact_bytes = compact_frame(0);
+    let mut compact_scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#452",
+        "Base Feature",
+        452,
+    );
+    compact_scope.class_tag = "452".into();
+    compact_scope.paired_class_tag = "262".into();
+    compact_scope.frame_length = compact::LEN as u64;
+    compact_scope.paired_byte_offset = compact::LEN as u64;
+    compact_scope.reference_members = vec![196];
+    compact_scope.reference_count_offset = compact::REFERENCE_COUNT as u64;
+    compact_scope.reference_member_offsets = vec![compact::GENERIC_SCOPE_REFERENCE_RECORD as u64];
+    compact_scope.history_state_id = Some(20);
+    compact_scope.history_state_id_offset = compact::HISTORY_STATE_ID as u64;
+    compact_scope.previous_history_state_id = Some(19);
+    compact_scope.previous_history_state_id_offset = compact::PREVIOUS_HISTORY_STATE_ID as u64;
+    compact_scope.kind_offset = compact::KIND as u64;
+    compact_scope.feature_ordinal = 1;
+    compact_scope.feature_ordinal_offset = compact::FEATURE_ORDINAL as u64;
+    let compact_construction = exact_base_feature_construction(&compact_bytes, &compact_scope)
+        .expect("class-452 compact Base Feature frame is canonical");
+    let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
+        form,
+        mode,
+        body_entity_suffixes,
+        body_entity_suffix_offsets,
+        body_entity_fields,
+        body_reference_records,
+        parameter_body_records,
+        parameter_body_record_offsets,
+        auxiliary_records,
+        auxiliary_record_offsets,
+        scope_reference,
+        scope_reference_offset,
+        envelope_guid,
+        envelope_guid_offset,
+        tag_body_based_on_faces,
+        tag_body_based_on_faces_offset,
+        ..
+    } = &compact_construction
+    else {
+        panic!("class-452 compact frame selected the wrong form");
+    };
+    assert_eq!(*form, DesignBaseFeatureBodyReferenceForm::CompactOneBody);
+    assert_eq!(*mode, Some(0));
+    assert_eq!(body_entity_suffixes, &[201]);
+    assert_eq!(
+        body_entity_suffix_offsets,
+        &[compact::BODY_ENTITY_SUFFIX as u64]
+    );
+    assert_eq!(body_entity_fields, &[[0, 0, 1, 0, 0, 0]]);
+    assert_eq!(body_reference_records, &[201]);
+    assert_eq!(parameter_body_records, &[198]);
+    assert_eq!(
+        parameter_body_record_offsets,
+        &[compact::PARAMETER_BODY_RECORD as u64]
+    );
+    assert_eq!(auxiliary_records, &[202]);
+    assert_eq!(
+        auxiliary_record_offsets,
+        &[compact::AUXILIARY_RECORD as u64]
+    );
+    assert_eq!(*scope_reference, 196);
+    assert_eq!(*scope_reference_offset, compact::SCOPE_REFERENCE as u64);
+    assert_eq!(envelope_guid, "fcec56e3-832f-4468-88a4-d710e62e629f");
+    assert_eq!(*envelope_guid_offset, compact::ENVELOPE_GUID as u64);
+    assert!(*tag_body_based_on_faces);
+    assert_eq!(
+        *tag_body_based_on_faces_offset,
+        compact::TAG_BODY_BASED_ON_FACES_VALUE as u64
+    );
+    let serialized = serde_json::to_value(&compact_construction).expect("serialize compact form");
+    assert_eq!(
+        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
+            .expect("deserialize compact form"),
+        compact_construction
+    );
+
+    compact_bytes[compact::MODE] = 1;
+    let mode_one = exact_base_feature_construction(&compact_bytes, &compact_scope)
+        .expect("mode-one class-452 compact frame is canonical");
+    let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { mode, .. } = mode_one else {
+        panic!("class-452 compact mode-one frame selected the wrong form");
+    };
+    assert_eq!(mode, Some(1));
+
+    let mut expanded_bytes = vec![0_u8; expanded::LEN];
+    expanded_bytes[expanded::BODY_COUNT_MARKER] = expanded::BODY_COUNT_MARKER_VALUE;
+    put_u32(
+        &mut expanded_bytes,
+        expanded::BODY_COUNT,
+        expanded::BODY_COUNT_VALUE,
+    );
+    put_u64_reference(&mut expanded_bytes, expanded::BODY_ENTITY_ONE_MARKER, 401);
+    put_u64_reference(&mut expanded_bytes, expanded::BODY_ENTITY_TWO_MARKER, 402);
+    put_property(
+        &mut expanded_bytes,
+        expanded::TAG_BODY_BASED_ON_FACES_MARKER,
+    );
+    expanded_bytes[expanded::PARAMETER_BODY_GROUP_MARKER] =
+        expanded::PARAMETER_BODY_GROUP_MARKER_VALUE;
+    put_u32(
+        &mut expanded_bytes,
+        expanded::PARAMETER_BODY_COUNT,
+        expanded::PARAMETER_BODY_COUNT_VALUE,
+    );
+    put_u32_reference(
+        &mut expanded_bytes,
+        expanded::PARAMETER_BODY_ONE_MARKER,
+        301,
+    );
+    put_u32_reference(
+        &mut expanded_bytes,
+        expanded::PARAMETER_BODY_TWO_MARKER,
+        302,
+    );
+    put_u32_reference(&mut expanded_bytes, expanded::SCOPE_REFERENCE_MARKER, 300);
+    put_u32(
+        &mut expanded_bytes,
+        expanded::AUXILIARY_BODY_COUNT,
+        expanded::AUXILIARY_BODY_COUNT_VALUE,
+    );
+    put_u32_reference(
+        &mut expanded_bytes,
+        expanded::AUXILIARY_BODY_ONE_MARKER,
+        303,
+    );
+    put_u32_reference(
+        &mut expanded_bytes,
+        expanded::AUXILIARY_BODY_TWO_MARKER,
+        304,
+    );
+    expanded_bytes[expanded::ENVELOPE_GUID_CODE_UNIT_COUNT..expanded::ZERO_RUN_AFTER_GUID]
+        .copy_from_slice(&crate::bytes::lp_utf16_bytes(
+            "00000000-0000-0000-0000-000000000000",
+        ));
+    let mut expanded_scope = put_kind_tail(
+        &mut expanded_bytes,
+        (
+            expanded::REFERENCE_COUNT,
+            expanded::GENERIC_SCOPE_REFERENCE_MARKER,
+            expanded::GENERIC_SCOPE_REFERENCE_RECORD,
+            expanded::GENERIC_SCOPE_REFERENCE_FIELD,
+            expanded::HISTORY_STATE_ID,
+            expanded::KIND_LENGTH,
+            expanded::KIND,
+            expanded::FEATURE_ORDINAL,
+        ),
+        300,
+        55,
+        54,
+        2,
+    );
+    put_u32(&mut expanded_bytes, expanded::PREVIOUS_HISTORY_STATE_ID, 54);
+    expanded_scope.frame_length = expanded::LEN as u64;
+    expanded_scope.paired_byte_offset = expanded::LEN as u64;
+    expanded_scope.reference_count_offset = expanded::REFERENCE_COUNT as u64;
+    expanded_scope.reference_member_offsets = vec![expanded::GENERIC_SCOPE_REFERENCE_RECORD as u64];
+    expanded_scope.history_state_id_offset = expanded::HISTORY_STATE_ID as u64;
+    expanded_scope.previous_history_state_id_offset = expanded::PREVIOUS_HISTORY_STATE_ID as u64;
+    expanded_scope.kind_offset = expanded::KIND as u64;
+    expanded_scope.feature_ordinal_offset = expanded::FEATURE_ORDINAL as u64;
+    let expanded_construction = exact_base_feature_construction(&expanded_bytes, &expanded_scope)
+        .expect("class-452 expanded Base Feature frame is canonical");
+    let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
+        form,
+        mode,
+        body_entity_suffixes,
+        body_entity_fields,
+        parameter_body_records,
+        auxiliary_records,
+        scope_reference,
+        ..
+    } = &expanded_construction
+    else {
+        panic!("class-452 expanded frame selected the wrong form");
+    };
+    assert_eq!(*form, DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody);
+    assert_eq!(*mode, None);
+    assert_eq!(body_entity_suffixes, &[401, 402]);
+    assert_eq!(body_entity_fields, &[[0; 6], [0; 6]]);
+    assert_eq!(parameter_body_records, &[301, 302]);
+    assert_eq!(auxiliary_records, &[303, 304]);
+    assert_eq!(*scope_reference, 300);
+    let serialized = serde_json::to_value(&expanded_construction).expect("serialize expanded form");
+    assert_eq!(
+        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
+            .expect("deserialize expanded form"),
+        expanded_construction
+    );
+
+    let mut invalid_mode = compact_bytes;
+    invalid_mode[compact::MODE] = 2;
+    assert!(exact_base_feature_construction(&invalid_mode, &compact_scope).is_none());
+
+    let mut invalid_count = expanded_bytes.clone();
+    put_u32(&mut invalid_count, expanded::BODY_COUNT, 1);
+    assert!(exact_base_feature_construction(&invalid_count, &expanded_scope).is_none());
+
+    let mut invalid_scope_reference = expanded_bytes;
+    put_u32_reference(
+        &mut invalid_scope_reference,
+        expanded::SCOPE_REFERENCE_MARKER,
+        999,
+    );
+    assert!(exact_base_feature_construction(&invalid_scope_reference, &expanded_scope).is_none());
+}
+
+#[test]
+fn surface_patch_boundary_settings_decode_the_fixed_payload() {
+    use crate::design::decode::patch::surface_patch_boundaries;
+    use crate::records::{DesignPatchContinuity, DesignSurfacePatchBoundary};
+
+    let mut bytes = vec![0_u8; 49];
+    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"999");
+    bytes[7..11].copy_from_slice(&42_u32.to_le_bytes());
+    bytes[21] = 1;
+    bytes[22..26].copy_from_slice(&2_u32.to_le_bytes());
+    bytes[26..30].copy_from_slice(&2_u32.to_le_bytes());
+    bytes[30..38].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    bytes[38] = 1;
+    bytes[39..43].copy_from_slice(&100_u32.to_le_bytes());
+
+    let records = IndexedRecordOffsets::build(&bytes);
+    let mut expected = DesignSurfacePatchBoundary {
+        scope_reference_ordinal: 0,
+        record_index: 42,
+        is_seed_selection: true,
+        continuity: DesignPatchContinuity::Curvature,
+        flip: 2,
+        scale: -1.0,
+        model_reference: 100,
+    };
+    assert_eq!(
+        surface_patch_boundaries(&bytes, &records, &[42]),
+        vec![expected.clone()]
+    );
+
+    bytes[26..30].copy_from_slice(&0_u32.to_le_bytes());
+    expected.flip = 0;
+    assert_eq!(
+        surface_patch_boundaries(&bytes, &records, &[42]),
+        vec![expected]
+    );
+}
+
+#[test]
+fn surface_patch_boundary_settings_reject_invalid_fixed_fields() {
+    use crate::design::decode::patch::surface_patch_boundaries;
+
+    let mut bytes = vec![0_u8; 49];
+    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"999");
+    bytes[7..11].copy_from_slice(&42_u32.to_le_bytes());
+    bytes[22..26].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[26..30].copy_from_slice(&2_u32.to_le_bytes());
+    bytes[30..38].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    bytes[38] = 1;
+    bytes[39..43].copy_from_slice(&100_u32.to_le_bytes());
+
+    let records = IndexedRecordOffsets::build(&bytes);
+    bytes[21] = 2;
+    assert!(surface_patch_boundaries(&bytes, &records, &[42]).is_empty());
+
+    bytes[21] = 0;
+    bytes[30..38].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(surface_patch_boundaries(&bytes, &records, &[42]).is_empty());
+
+    bytes[30..38].copy_from_slice(&(-1.0_f64).to_le_bytes());
+    bytes[38] = 0;
+    assert!(surface_patch_boundaries(&bytes, &records, &[42]).is_empty());
 }

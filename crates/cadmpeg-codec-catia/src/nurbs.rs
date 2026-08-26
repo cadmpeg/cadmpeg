@@ -12,12 +12,15 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-const EPS_PERIODIC_SWEEP: f64 = 1.0e-9;
-const EPS_HELIX_FRAME: f64 = 1.0e-9;
-const EPS_HELIX_RADIUS: f64 = 1.0e-9;
-const EPS_HELIX_ORTHO: f64 = 1.0e-9;
-const EPS_HELIX_PITCH_ALIGNMENT: f64 = 1.0e-9;
-const EPS_RELATIVE_TOLERANCE: f64 = 1.0e-6;
+const EPS_NURBS_COARSE_GEOMETRY: f64 = 1.0e-6;
+const EPS_NURBS_GEOMETRY: f64 = 1.0e-9;
+
+const EPS_PERIODIC_SWEEP: f64 = EPS_NURBS_GEOMETRY;
+const EPS_HELIX_FRAME: f64 = EPS_NURBS_GEOMETRY;
+const EPS_HELIX_RADIUS: f64 = EPS_NURBS_GEOMETRY;
+const EPS_HELIX_ORTHO: f64 = EPS_NURBS_GEOMETRY;
+const EPS_HELIX_PITCH_ALIGNMENT: f64 = EPS_NURBS_GEOMETRY;
+const EPS_RELATIVE_TOLERANCE: f64 = EPS_NURBS_COARSE_GEOMETRY;
 
 fn finite_point2(point: Point2) -> bool {
     [point.u, point.v].into_iter().all(f64::is_finite)
@@ -280,7 +283,7 @@ pub(crate) fn canonical_model_curve_range(
         }
         CurveGeometry::Nurbs(nurbs) => {
             let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
-            let tolerance = 1.0e-9_f64.max((upper - lower).abs() * 1.0e-9);
+            let tolerance = 1.0e-9_f64.max((upper - lower).abs() * EPS_NURBS_GEOMETRY);
             if nurbs.periodic {
                 (range[1] - range[0] <= upper - lower + tolerance).then_some(range)
             } else if range[0] >= lower && range[1] <= upper {
@@ -844,8 +847,8 @@ mod tests {
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
             let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
             let expected = pcurve_uv(&geometry, source_parameter).expect("source evaluation");
-            assert!((actual.u - expected.u).abs() < 1e-12);
-            assert!((actual.v - expected.v).abs() < 1e-12);
+            assert!((actual.u - expected.u).abs() < 1.0e-12);
+            assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
     }
 
@@ -869,7 +872,7 @@ mod tests {
             {
                 let actual = curve_point(&reversed, parameter).expect("reversed endpoint");
                 let expected = curve_point(&geometry, source_parameter).expect("source endpoint");
-                assert!(actual.distance(expected) < 1e-12);
+                assert!(actual.distance(expected) < 1.0e-12);
             }
         }
     }
@@ -890,7 +893,7 @@ mod tests {
             let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
             let expected = curve_point(&geometry, range[0] + range[1] - parameter)
                 .expect("source NURBS point");
-            assert!(actual.distance(expected) < 1e-12);
+            assert!(actual.distance(expected) < 1.0e-12);
         }
         assert_eq!(reversed_range, range);
     }
@@ -932,7 +935,7 @@ mod tests {
         for angle in [range[0], 0.75, range[1]] {
             let actual = evaluate(&reversed, angle);
             let expected = evaluate(&definition, range[0] + range[1] - angle);
-            assert!(actual.distance(expected) < 1e-12);
+            assert!(actual.distance(expected) < 1.0e-12);
         }
         assert_eq!(reversed_range, range);
     }

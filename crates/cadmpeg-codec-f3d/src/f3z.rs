@@ -2,10 +2,10 @@
 //! Decode a multi-document `.f3z` archive
 //! ([spec §1.5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#15-multi-document-archives-f3z)).
 //!
-//! A `.f3z` holds `Manifest.json` (naming the root `.f3d` member),
-//! `DesignDescription.json`, and one `.f3d` member per document. [`decode`]
-//! decodes the root member, recursively resolves each member's outgoing XREFs,
-//! and merges the component models into the root document with every
+//! A `.f3z` holds `Manifest.json` (naming its root document),
+//! `DesignDescription.json`, and one member per document. [`decode`] decodes a
+//! 3D root or the sole derived 3D model of a drawing root, recursively resolves
+//! each 3D member's outgoing XREFs, and merges the component models with every
 //! occurrence-local Design placement applied from child to ancestor.
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -39,6 +39,41 @@ struct ManifestJson {
     root: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignDescriptionJson {
+    design_description: DesignDescription,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignDescription {
+    design_graphs: Vec<DesignGraph>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignGraph {
+    root_ids: Vec<u64>,
+    design_objects: Vec<DesignObject>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesignObject {
+    id: u64,
+    relative_path: String,
+    content_type: String,
+    references: Vec<DesignObjectReference>,
+}
+
+#[derive(Deserialize)]
+struct DesignObjectReference {
+    #[serde(rename = "type")]
+    reference_type: String,
+    ids: Vec<u64>,
+}
+
 /// Whether a scanned archive is a `.f3z`: it carries the two archive-level
 /// JSON members and at least one `.f3d` document member.
 pub fn is_f3z(scan: &ContainerScan) -> bool {
@@ -54,28 +89,34 @@ pub fn decode(
         .map_err(|error| {
             CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
         })?;
-    let root_view = scan.entry_view(&manifest.root).ok_or_else(|| {
+    let (model_root, omitted_drawing_root) = model_root_member(scan, &manifest.root)?;
+    let root_view = scan.entry_view(&model_root).ok_or_else(|| {
         CodecError::malformed(format_args!(
-            "f3z root member {} is not present in the archive",
-            manifest.root
+            "f3z root member {model_root} is not present in the archive"
         ))
     })?;
     let mut root = crate::decode::decode(ctx, root_view)?;
+    if let Some(drawing_root) = omitted_drawing_root {
+        root.report_mut()
+            .losses
+            .push(F3dLossCode::DrawingDocumentOmitted.note(format!(
+                "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
+            )));
+    }
     let member_count = scan
         .entries
         .iter()
         .filter(|entry| is_f3d_member(&entry.name))
         .count();
     root.report_mut().notes.push(format!(
-        "f3z archive: {member_count} document member(s); root {}",
-        manifest.root
+        "f3z archive: {member_count} document member(s); root {model_root}"
     ));
     if ctx.container_only() {
         return Ok(root);
     }
 
     let table = xref_table_from_ir(root.ir())?;
-    let mut stack = vec![manifest.root.clone()];
+    let mut stack = vec![model_root];
     let merged = merge_references(ctx, &mut root, scan, &table, &mut stack)?;
     if merged > 0 {
         root.source_fidelity_mut()
@@ -99,6 +140,54 @@ pub fn decode(
     }
     let (ir, report, fidelity) = root.into_parts();
     Ok(DecodeResult::new(ir, report, fidelity))
+}
+
+fn model_root_member(
+    scan: &ContainerScan<'_>,
+    archive_root: &str,
+) -> Result<(String, Option<String>), CodecError> {
+    if is_f3d_member(archive_root) {
+        return Ok((archive_root.to_owned(), None));
+    }
+
+    let description: DesignDescriptionJson =
+        serde_json::from_slice(scan.entry_bytes(DESIGN_DESCRIPTION_ENTRY)?).map_err(|error| {
+            CodecError::malformed(format_args!(
+                "{DESIGN_DESCRIPTION_ENTRY} is not valid JSON: {error}"
+            ))
+        })?;
+    let mut candidates = Vec::new();
+    for graph in description.design_description.design_graphs {
+        let Some(root) = graph.design_objects.iter().find(|object| {
+            graph.root_ids.contains(&object.id) && object.relative_path == archive_root
+        }) else {
+            continue;
+        };
+        let derived_ids = root
+            .references
+            .iter()
+            .filter(|reference| reference.reference_type == "DERIVED")
+            .flat_map(|reference| reference.ids.iter().copied())
+            .collect::<Vec<_>>();
+        for object in &graph.design_objects {
+            if derived_ids.contains(&object.id)
+                && object.content_type.eq_ignore_ascii_case("f3d")
+                && is_f3d_member(&object.relative_path)
+                && scan.entry_view(&object.relative_path).is_some()
+            {
+                candidates.push(object.relative_path.clone());
+            }
+        }
+    }
+    candidates.sort();
+    candidates.dedup();
+    match candidates.as_slice() {
+        [model_root] => Ok((model_root.clone(), Some(archive_root.to_owned()))),
+        _ => Err(CodecError::malformed(format_args!(
+            "f3z root member {archive_root} is not an f3d document and has {} unambiguous derived f3d model members",
+            candidates.len()
+        ))),
+    }
 }
 
 fn make_sibling_ordinals_unique(occurrences: &mut [cadmpeg_ir::products::Occurrence]) {
@@ -135,6 +224,8 @@ fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
     Ok(XrefTable {
         designs: namespace.arena_as("xref_designs").map_err(invalid)?,
         references: namespace.arena_as("xref_references").map_err(invalid)?,
+        placement_failures: Vec::new(),
+        placement_overrides: Vec::new(),
     })
 }
 

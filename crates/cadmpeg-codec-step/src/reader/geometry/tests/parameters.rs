@@ -411,9 +411,9 @@ fn every_iso_si_prefix_resolves_to_its_exact_factor() {
         ("DECI", 1e-1),
         ("CENTI", 1e-2),
         ("MILLI", 1e-3),
-        ("MICRO", 1e-6),
-        ("NANO", 1e-9),
-        ("PICO", 1e-12),
+        ("MICRO", 1.0e-6),
+        ("NANO", 1.0e-9),
+        ("PICO", 1.0e-12),
         ("FEMTO", 1e-15),
         ("ATTO", 1e-18),
     ];

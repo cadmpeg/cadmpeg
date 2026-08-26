@@ -20,6 +20,8 @@ use cadmpeg_ir::features::FeatureDefinition;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
+const EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9: f64 = 1.0e-9;
+
 /// Add semantic termination forms carried by compact extrusion end-spec children.
 #[derive(Clone)]
 pub(super) struct TerminationVote {
@@ -69,7 +71,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         .get(name.value.as_str())
                         .is_some_and(|value| {
                             crate::history::parse_dimension_length_mm(value).is_some_and(|value| {
-                                (value - scalar.value * 1000.0).abs() <= 1.0e-9
+                                (value - scalar.value * 1000.0).abs()
+                                    <= EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9
                             })
                         })
                 })

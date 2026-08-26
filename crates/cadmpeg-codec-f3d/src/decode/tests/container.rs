@@ -164,7 +164,7 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
         panic!("sphere carrier expected, got {:?}", surface.geometry);
     };
     // 25 stream units at scale 1 (millimetres per unit) are 25 mm.
-    assert!((radius - 25.0).abs() < 1e-9);
+    assert!((radius - 25.0).abs() < 1.0e-9);
 }
 
 /// Several BREP streams with no Design body map leave the selection ambiguous.

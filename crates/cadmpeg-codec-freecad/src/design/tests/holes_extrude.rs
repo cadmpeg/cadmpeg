@@ -102,7 +102,7 @@ pub(crate) fn transfers_branch_complete_threaded_counterdrill_hole() {
             entry_diameter: None,
             depth: cadmpeg_ir::features::Length(2.0),
             angle: cadmpeg_ir::features::Angle(angle),
-        } if (*angle - std::f64::consts::FRAC_PI_2).abs() < 1e-12
+        } if (*angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
     assert!(matches!(
         extent,
@@ -920,7 +920,7 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
                 }
             },
             ..
-        } if direction.z == -1.0 && length.0 == 12.0 && (*draft - 5_f64.to_radians()).abs() < 1e-12
+        } if direction.z == -1.0 && length.0 == 12.0 && (*draft - 5_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("PartExtrusion"),
@@ -946,8 +946,8 @@ pub(crate) fn transfers_non_default_extrusion_termination_branches() {
             op: BooleanOp::NewBody,
             ..
         } if direction.y == 1.0 && first.0 == 7.0 && second.0 == 3.0
-            && (*draft - 2_f64.to_radians()).abs() < 1e-12
-            && (*reverse_draft - 4_f64.to_radians()).abs() < 1e-12
+            && (*draft - 2_f64.to_radians()).abs() < 1.0e-12
+            && (*reverse_draft - 4_f64.to_radians()).abs() < 1.0e-12
             && reference.ends_with(":DirLink")
             && face_maker.class == "Part::FaceMakerUnified" && face_maker.mode == Some(4)
     ));
@@ -1065,7 +1065,7 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
             direction_source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal),
             solid: Some(false),
             ..
-        } if length.0 == 12.0 && (*draft - 3_f64.to_radians()).abs() < 1e-12
+        } if length.0 == 12.0 && (*draft - 3_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(result.report().losses.is_empty());
 }
@@ -1310,8 +1310,8 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
             ..
         } if direction.y == 1.0
             && reference.ends_with(":ReferenceAxis")
-            && (*first_draft - 2_f64.to_radians()).abs() < 1e-12
-            && (*second_draft + 3_f64.to_radians()).abs() < 1e-12
+            && (*first_draft - 2_f64.to_radians()).abs() < 1.0e-12
+            && (*second_draft + 3_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("Symmetric"),
@@ -1775,7 +1775,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .resolved_placement()
         .expect("resolved sketch placement");
     assert_eq!(origin.x, 1.0);
-    assert!((normal.y + 1.0).abs() < 1e-12);
+    assert!((normal.y + 1.0).abs() < 1.0e-12);
     assert_eq!(result.ir().model.features.len(), 4);
     assert_eq!(result.ir().model.sketch_constraints.len(), 2);
     assert_eq!(result.ir().model.parameters.len(), 3);

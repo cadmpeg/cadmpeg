@@ -120,8 +120,8 @@ pub(crate) fn push_generated_plane_row(
         u_axis[0] * v_axis[1] - u_axis[1] * v_axis[0],
     ];
     let held_axis = (0..3).find(|axis| {
-        normal[*axis].abs() > 1e-9
-            && (0..3).all(|other| other == *axis || normal[other].abs() <= 1e-9)
+        normal[*axis].abs() > 1.0e-9
+            && (0..3).all(|other| other == *axis || normal[other].abs() <= 1.0e-9)
     });
     let corners = held_axis.map_or([[0.0; 3]; 2], |axis| {
         let mut corners = [[-1.0, -1.0, -1.0], [1.0, 2.0, 2.0]];

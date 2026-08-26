@@ -24,6 +24,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+const EPS_PROFILE_SELECT_TRANSITION_PROFILE_SELECTION_E7: f64 = 1.0e-7;
+const EPS_PROFILE_SELECT_TRANSITION_SPATIAL_PROFILE_SELECTION_E7: f64 = 1.0e-7;
+const EPS_PROFILE_SELECT_HISTORICAL_SELECTION_REGIONS_E7: f64 = 1.0e-7;
+
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
 /// native selection together with the known sketch.
@@ -33,9 +37,49 @@ pub(crate) struct ExtrudeProfileResolution<'a> {
     pub spatial_sketches: &'a [cadmpeg_ir::sketches::SpatialSketch],
     pub spatial_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
     pub histories: &'a [crate::history_records::AsmHistory],
+    pub scope_histories: &'a HashMap<String, String>,
     pub linear_tolerance: f64,
     pub angular_tolerance: f64,
     pub arrangement_budget: &'a WorkBudget<'a>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ScopedExtrudeProfileResolution<'a> {
+    entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+    spatial_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
+    histories: &'a [crate::history_records::AsmHistory],
+    linear_tolerance: f64,
+    angular_tolerance: f64,
+    arrangement_budget: &'a WorkBudget<'a>,
+}
+
+impl<'a> ExtrudeProfileResolution<'a> {
+    pub(crate) fn scoped(
+        self,
+        histories: &'a [crate::history_records::AsmHistory],
+    ) -> ScopedExtrudeProfileResolution<'a> {
+        ScopedExtrudeProfileResolution {
+            entities: self.entities,
+            spatial_entities: self.spatial_entities,
+            histories,
+            linear_tolerance: self.linear_tolerance,
+            angular_tolerance: self.angular_tolerance,
+            arrangement_budget: self.arrangement_budget,
+        }
+    }
+}
+
+fn histories_for_scope<'a>(
+    scope_id: &str,
+    scope_histories: &HashMap<String, String>,
+    histories: &'a [crate::history_records::AsmHistory],
+) -> &'a [crate::history_records::AsmHistory] {
+    if scope_histories.contains_key(scope_id) {
+        crate::history::bound_scope_history(scope_id, scope_histories, histories)
+            .map_or(&[], std::slice::from_ref)
+    } else {
+        histories
+    }
 }
 
 /// Native and neutral arenas required to resolve curve selections in sketches.
@@ -276,6 +320,38 @@ pub(crate) fn bind_split_face_sketch_selections(
     }
 }
 
+/// Resolve `SurfaceTrim` curve-tool groups to ordered curves in one sketch.
+pub(crate) fn bind_surface_trim_sketch_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    resolution: &SketchCurveSelectionResolution<'_>,
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, PathRef};
+
+    let path_resolution = resolution.path_resolution();
+    for feature in features {
+        let FeatureDefinition::TrimSurface { tool, .. } = &mut feature.definition else {
+            continue;
+        };
+        let PathRef::Native(group_id) = tool else {
+            continue;
+        };
+        let mut matching_groups = resolution.groups.iter().filter(|group| {
+            group.id == *group_id
+                && group.role == 0x0000_0021_0000_0000
+                && !group.members.is_empty()
+        });
+        let Some(group) = matching_groups.next() else {
+            continue;
+        };
+        if matching_groups.next().is_some() {
+            continue;
+        }
+        if let Some(path) = resolve_entity_selection_path(group, &path_resolution) {
+            *tool = path;
+        }
+    }
+}
+
 pub(crate) fn bind_extrude_profile_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
@@ -294,8 +370,11 @@ pub(crate) fn bind_extrude_profile_selections(
         let Some(scope) = scopes.iter().find(|candidate| candidate.id == scope) else {
             continue;
         };
+        let scoped_histories =
+            histories_for_scope(&scope.id, resolution.scope_histories, resolution.histories);
+        let scoped_resolution = resolution.scoped(scoped_histories);
         let effective_previous_history_state_id =
-            crate::history::effective_scope_previous_history_state_id(scope, resolution.histories);
+            crate::history::effective_scope_previous_history_state_id(scope, scoped_histories);
         let mut matching_groups = groups
             .iter()
             .filter(|group| {
@@ -324,21 +403,21 @@ pub(crate) fn bind_extrude_profile_selections(
             if let Some(selection) = historical_face_profile_selection(
                 &matching_groups,
                 members,
-                resolution.histories,
                 effective_previous_history_state_id,
                 &feature.id,
+                scoped_histories,
             ) {
                 *profile = selection;
             }
-            continue;
-        }
-        if matching_groups.is_empty() {
             continue;
         }
         let ProfileRef::Sketch(sketch_id) = profile else {
             continue;
         };
         let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
+            if matching_groups.is_empty() {
+                continue;
+            }
             let spatial_id = cadmpeg_ir::sketches::SpatialSketchId(sketch_id.0.replacen(
                 "f3d:model:sketch#",
                 "f3d:model:spatial-sketch#",
@@ -356,8 +435,8 @@ pub(crate) fn bind_extrude_profile_selections(
                             group,
                             members,
                             spatial_sketch,
-                            resolution.spatial_entities,
-                            resolution,
+                            scoped_resolution.spatial_entities,
+                            scoped_resolution,
                             scope.history_state_id,
                             effective_previous_history_state_id,
                         )
@@ -395,6 +474,26 @@ pub(crate) fn bind_extrude_profile_selections(
             });
             continue;
         };
+        if let (Some(profile_operand), Some(stream)) =
+            (scope.extrude_profile.as_ref(), native_stream(&scope.id))
+        {
+            if let Some(profiles) = resolved_sketch_profile_regions(
+                stream,
+                profile_operand,
+                sketch,
+                curve_resolution.curve_identities,
+                curve_resolution.sketch_entities,
+            ) {
+                *profile = ProfileRef::SketchProfiles {
+                    sketch: sketch_id.clone(),
+                    profiles,
+                };
+                continue;
+            }
+        }
+        if matching_groups.is_empty() {
+            continue;
+        }
         let selections = matching_groups
             .iter()
             .map(|group| {
@@ -403,7 +502,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     group,
                     members,
                     sketch,
-                    resolution,
+                    scoped_resolution,
                     scope.history_state_id,
                     effective_previous_history_state_id,
                 )
@@ -436,16 +535,37 @@ fn resolve_entity_selection_profile(
                 .sketches
                 .iter()
                 .find(|source| source.id == sketch)?;
-            let profiles = selected_profile_indices(
-                curves.iter(),
-                source.profiles.iter().map(|profile| {
-                    profile
-                        .iter()
-                        .map(|use_| &use_.entity)
-                        .collect::<HashSet<_>>()
-                }),
-            )?;
-            Some(ProfileRef::SketchProfiles { sketch, profiles })
+            let mut selected_profiles = Vec::new();
+            let mut has_unprofiled_entity = false;
+            for curve in &curves {
+                let mut matches = source
+                    .profiles
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == *curve));
+                let Some((profile_index, _)) = matches.next() else {
+                    has_unprofiled_entity = true;
+                    continue;
+                };
+                if matches.next().is_some() {
+                    return None;
+                }
+                let profile_index = u32::try_from(profile_index).ok()?;
+                if !selected_profiles.contains(&profile_index) {
+                    selected_profiles.push(profile_index);
+                }
+            }
+            if has_unprofiled_entity {
+                Some(ProfileRef::SketchEntities {
+                    sketch,
+                    entities: curves,
+                })
+            } else {
+                Some(ProfileRef::SketchProfiles {
+                    sketch,
+                    profiles: selected_profiles,
+                })
+            }
         }
         PathRef::SpatialSketchCurves { sketch, curves } => {
             let source = resolution
@@ -494,14 +614,14 @@ fn selected_profile_indices<'a, Id: Eq + std::hash::Hash + 'a>(
 fn historical_face_profile_selection(
     groups: &[&DesignExtrudeSelectionGroup],
     members: &[DesignExtrudeSelectionMember],
-    histories: &[crate::history_records::AsmHistory],
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
+    scoped_histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     use cadmpeg_ir::features::ProfileRef;
 
     let previous_state_id = previous_state_id?;
-    let mut states = histories
+    let mut states = scoped_histories
         .iter()
         .flat_map(|history| &history.states)
         .filter(|state| state.state_id == previous_state_id);
@@ -738,7 +858,7 @@ pub(crate) fn resolved_extrude_profile_selection(
     group: &DesignExtrudeSelectionGroup,
     members: &[DesignExtrudeSelectionMember],
     sketch: &cadmpeg_ir::sketches::Sketch,
-    resolution: ExtrudeProfileResolution<'_>,
+    resolution: ScopedExtrudeProfileResolution<'_>,
     history_state_id: Option<i64>,
     previous_history_state_id: Option<i64>,
 ) -> cadmpeg_ir::features::ProfileRef {
@@ -828,14 +948,14 @@ pub(crate) fn resolved_extrude_profile_selection(
 
 fn transition_profile_selection(
     sketch: &cadmpeg_ir::sketches::Sketch,
-    resolution: ExtrudeProfileResolution<'_>,
+    resolution: ScopedExtrudeProfileResolution<'_>,
     state_id: i64,
     previous_state_id: i64,
 ) -> Option<ResolvedProfileSelection> {
     let entities = resolution.entities;
-    let histories = resolution.histories;
     let arrangement_budget = resolution.arrangement_budget;
-    let mut states = histories
+    let mut states = resolution
+        .histories
         .iter()
         .flat_map(|history| &history.states)
         .filter(|state| state.state_id == state_id);
@@ -851,7 +971,9 @@ fn transition_profile_selection(
     }
     let topology = state.topology.as_ref()?;
     let inserted_faces = &state.transition.as_ref()?.topology.faces.inserted;
-    let tolerance = resolution.linear_tolerance.max(1.0e-7);
+    let tolerance = resolution
+        .linear_tolerance
+        .max(EPS_PROFILE_SELECT_TRANSITION_PROFILE_SELECTION_E7);
     let inserted = transition_inserted_profile_selection(
         sketch,
         entities,
@@ -876,7 +998,8 @@ fn transition_profile_selection(
     })) {
         return Some(selection);
     }
-    let mut previous_states = histories
+    let mut previous_states = resolution
+        .histories
         .iter()
         .flat_map(|history| &history.states)
         .filter(|state| state.state_id == previous_state_id);
@@ -981,7 +1104,7 @@ fn resolved_spatial_extrude_profile_selection(
     members: &[DesignExtrudeSelectionMember],
     sketch: &cadmpeg_ir::sketches::SpatialSketch,
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
-    resolution: ExtrudeProfileResolution<'_>,
+    resolution: ScopedExtrudeProfileResolution<'_>,
     history_state_id: Option<i64>,
     previous_history_state_id: Option<i64>,
 ) -> Option<u32> {
@@ -1084,7 +1207,8 @@ fn transition_spatial_profile_selection(
         return None;
     }
     let topology = state.topology.as_ref()?;
-    let tolerance = linear_tolerance.max(1.0e-7);
+    let tolerance =
+        linear_tolerance.max(EPS_PROFILE_SELECT_TRANSITION_SPATIAL_PROFILE_SELECTION_E7);
     let unique = |faces: &[i64], topology: &crate::history_records::AsmHistoricalTopology| {
         let mut indices = faces
             .iter()
@@ -1346,7 +1470,7 @@ fn historical_selection_regions(
     linear_tolerance: f64,
     arrangement_budget: &WorkBudget<'_>,
 ) -> Option<ResolvedProfileSelection> {
-    let tolerance = linear_tolerance.max(1.0e-7);
+    let tolerance = linear_tolerance.max(EPS_PROFILE_SELECT_HISTORICAL_SELECTION_REGIONS_E7);
     let mut states = HashMap::new();
     for state in histories.iter().flat_map(|history| &history.states) {
         states
@@ -1658,8 +1782,9 @@ pub(crate) fn selection_containing_points(
         .map(|region| ResolvedProfileSelection::Regions(vec![region]))
 }
 
-/// Solved sketch records used to bind Loft section and guide selections.
-pub(crate) struct LoftSketchResolution<'a> {
+/// Solved sketch records used to bind Loft and Revolve profile operands and
+/// Loft guide selections.
+pub(crate) struct SketchProfileResolution<'a> {
     pub(crate) entities: &'a [DesignEntityHeader],
     pub(crate) entity_selection_operands: &'a [DesignEntitySelectionOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
@@ -1672,7 +1797,7 @@ pub(crate) struct LoftSketchResolution<'a> {
     pub(crate) angular_tolerance: f64,
 }
 
-impl<'a> LoftSketchResolution<'a> {
+impl<'a> SketchProfileResolution<'a> {
     fn path_resolution(&self) -> EntitySelectionPathResolution<'a> {
         EntitySelectionPathResolution {
             operands: self.entity_selection_operands,
@@ -1838,7 +1963,7 @@ fn resolve_entity_selection_path(
 /// curves from a Sketch.
 fn resolved_loft_entity_selection_path(
     group: &DesignConstructionOperandGroup,
-    resolution: &LoftSketchResolution<'_>,
+    resolution: &SketchProfileResolution<'_>,
 ) -> Option<cadmpeg_ir::features::PathRef> {
     if !matches!(group.role, 0x5_0000_0000 | 0x7_0000_0000) {
         return None;
@@ -1871,6 +1996,84 @@ fn spatial_profile_member_entity<'a>(
         .filter(|entity| entity.sketch == spatial_sketch.id && entity.id == entity_id);
     let entity = entities.next()?;
     entities.next().is_none().then_some(entity)
+}
+
+fn sketch_profile_member_entity(
+    stream: &str,
+    owner_reference: u32,
+    member: &DesignSketchProfileRegionMember,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    curve_identities: &[SketchCurveIdentity],
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Option<cadmpeg_ir::sketches::SketchEntityId> {
+    let mut curves = curve_identities.iter().filter(|curve| {
+        native_stream(&curve.id) == Some(stream)
+            && curve.owner_reference == Some(owner_reference)
+            && curve.primary_id == member.curve_primary_id
+    });
+    let curve = curves.next()?;
+    if curves.next().is_some() {
+        return None;
+    }
+    let entity_id = neutral_sketch_curve_id(&sketch.id, curve.primary_id, curve.secondary_id);
+    let mut entities = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id && entity.id == entity_id);
+    let entity = entities.next()?;
+    if entities.next().is_some() {
+        return None;
+    }
+    Some(entity.id.clone())
+}
+
+fn resolved_sketch_profile_regions(
+    stream: &str,
+    profile: &DesignSketchProfileOperand,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    curve_identities: &[SketchCurveIdentity],
+    sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Option<Vec<u32>> {
+    let selection = profile.region_selection.as_ref()?;
+    let owner_reference = u32::try_from(profile.entity_suffix).ok()?;
+    let mut resolved = Vec::with_capacity(selection.regions.len());
+    for region in &selection.regions {
+        let first = sketch_profile_member_entity(
+            stream,
+            owner_reference,
+            region.members.first()?,
+            sketch,
+            curve_identities,
+            sketch_entities,
+        )?;
+        let mut matching_profiles = sketch
+            .profiles
+            .iter()
+            .enumerate()
+            .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == first));
+        let (profile_index, selected_profile) = matching_profiles.next()?;
+        if matching_profiles.next().is_some() {
+            return None;
+        }
+        for member in &region.members[1..] {
+            let entity = sketch_profile_member_entity(
+                stream,
+                owner_reference,
+                member,
+                sketch,
+                curve_identities,
+                sketch_entities,
+            )?;
+            if !selected_profile.iter().any(|use_| use_.entity == entity) {
+                return None;
+            }
+        }
+        let profile_index = u32::try_from(profile_index).ok()?;
+        if resolved.contains(&profile_index) {
+            return None;
+        }
+        resolved.push(profile_index);
+    }
+    (!resolved.is_empty()).then_some(resolved)
 }
 
 fn coincident_spatial_profile_geometry(
@@ -1926,7 +2129,7 @@ fn resolved_spatial_sketch_profile_regions(
     stream: &str,
     profile: &DesignSketchProfileOperand,
     spatial_sketch: &cadmpeg_ir::sketches::SpatialSketch,
-    resolution: &LoftSketchResolution<'_>,
+    resolution: &SketchProfileResolution<'_>,
 ) -> Option<Vec<u32>> {
     let Some(selection) = profile.region_selection.as_ref() else {
         if spatial_sketch.profiles.is_empty() {
@@ -2024,11 +2227,11 @@ fn spatial_profile_containing_entity(
     u32::try_from(index).ok()
 }
 
-pub(crate) fn bind_loft_sketch_selections(
+pub(crate) fn bind_loft_and_revolve_sketch_selections(
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
-    resolution: &LoftSketchResolution<'_>,
+    resolution: &SketchProfileResolution<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, LoftSection, PathRef, ProfileRef};
@@ -2044,10 +2247,7 @@ pub(crate) fn bind_loft_sketch_selections(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
-        let Some(entry) = scan.entries.iter().find(|entry| {
-            scan.is_design_stream(entry, role::BULKSTREAM)
-                && stream == ids::native_scope(&entry.name)
-        }) else {
+        let Some(entry) = scan.design_stream_entry_for_scope(role::BULKSTREAM, stream) else {
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -2218,6 +2418,18 @@ pub(crate) fn bind_loft_sketch_selections(
                 *centerline = Some(path.clone());
             }
         }
+    }
+    for feature in features.iter_mut() {
+        let FeatureDefinition::Revolve { construction, .. } = &mut feature.definition else {
+            continue;
+        };
+        let Some(ProfileRef::Native(native)) = construction.profile.as_ref() else {
+            continue;
+        };
+        let Some(profile) = resolved_profiles.get(native) else {
+            continue;
+        };
+        construction.profile = Some(profile.clone());
     }
     Ok(())
 }

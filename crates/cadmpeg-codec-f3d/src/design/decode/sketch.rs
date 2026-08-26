@@ -28,6 +28,12 @@ use super::meta::{
     decode_types, design_primary_frames, metadata_for_bulk_stream, stream_types_by_class_tag,
 };
 
+const EPS_SKETCH_DECODE_PATTERN_DEFINITION_E6: f64 = 1.0e-6;
+const EPS_SKETCH_DECODE_CIRCULAR_ARC_E9: f64 = 1.0e-9;
+const EPS_SKETCH_DECODE_CIRCULAR_ARC_E12: f64 = 1.0e-12;
+const EPS_SKETCH_DECODE_LINE_COMPONENTS_E9: f64 = 1.0e-9;
+const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
+
 /// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
 /// the record index carried at header offset seven.
 pub(crate) struct IndexedRecordOffsets {
@@ -237,7 +243,7 @@ pub fn decode_sketch_placements(
             .get(&(stream.to_owned(), placement.entity_suffix))
             .cloned();
     }
-    out.sort_by_key(|placement| placement.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -276,7 +282,8 @@ fn decode_sketch_visibilities_in_stream(
             )));
         }
         let Some((entity_suffix, _, _, header_end)) =
-            parse_genesis_entity_header(&bytes[..frame.end], frame.start)
+            parse_settled_entity_header(&bytes[..frame.end], frame.start)
+                .or_else(|| parse_genesis_entity_header(&bytes[..frame.end], frame.start))
         else {
             return Err(CodecError::malformed(format_args!(
                 "F3D sketch container {} has an invalid entity header",
@@ -1144,7 +1151,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             });
         }
     }
-    out.sort_by_key(|entity| entity.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -1218,7 +1225,7 @@ fn decode_headers_for_indices(
             }
         }
     }
-    out.sort_by_key(|record| record.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -1384,7 +1391,7 @@ pub(crate) fn decode_pattern_definition(
                 f64_at(direction_at + 16)?,
             ];
             let length = direction.iter().map(|axis| axis * axis).sum::<f64>();
-            if (length - 1.0).abs() > 1.0e-6 {
+            if (length - 1.0).abs() > EPS_SKETCH_DECODE_PATTERN_DEFINITION_E6 {
                 return None;
             }
             directions.push(SketchPatternDirection {
@@ -1553,7 +1560,11 @@ pub(crate) fn decode_sketch_points_from_stream(
                     &bytes[companion_frame.start..companion_frame.end],
                     record_index,
                     companion_encoding,
-                    matches!(decoded.record_form, SketchPointRecordForm::Version11 { .. }),
+                    matches!(
+                        decoded.record_form,
+                        SketchPointRecordForm::Version11 { .. }
+                            | SketchPointRecordForm::Version11InlineTyped { .. }
+                    ),
                     &types_by_entity,
                 )
             })
@@ -2344,7 +2355,8 @@ struct DecodedSketchPoint {
 impl DecodedSketchPoint {
     fn trailing_reference(&self) -> Option<u32> {
         match self.record_form {
-            SketchPointRecordForm::Version10InlineTyped { trailing_reference } => {
+            SketchPointRecordForm::Version10InlineTyped { trailing_reference }
+            | SketchPointRecordForm::Version11InlineTyped { trailing_reference } => {
                 Some(trailing_reference)
             }
             _ => self.owner_reference,
@@ -2448,7 +2460,9 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
     let (paired_reference, paired_type_guid) = take_local_sketch_reference(payload, &mut cursor)?;
     let inline_typed = match (class_version, paired_type_guid.as_deref()) {
         (8 | 10 | 11, None) => false,
-        (10, Some(type_guid)) if type_guid.eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0) => {
+        (10 | 11, Some(type_guid))
+            if type_guid.eq_ignore_ascii_case(SKETCH_POINT_COMPANION_TYPE.0) =>
+        {
             true
         }
         _ => return None,
@@ -2496,48 +2510,61 @@ fn decode_sketch_point_record(payload: &[u8], class_version: u32) -> Option<Deco
         return None;
     }
     let closure = SketchPointClosure { selector, state };
-    let (record_form, owner_reference) = match (class_version, inline_typed) {
-        (8, false) => {
-            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
-            (SketchPointRecordForm::Version8, Some(owner))
-        }
-        (10, false) => {
-            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
-            (SketchPointRecordForm::Version10, Some(owner))
-        }
-        (10, true) => {
-            let (trailing_reference, type_guid) =
-                take_local_sketch_reference(payload, &mut cursor)?;
-            if type_guid
-                .as_deref()
-                .is_none_or(|type_guid| !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID))
-            {
-                return None;
+    let (record_form, owner_reference) =
+        match (class_version, inline_typed) {
+            (8, false) => {
+                let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+                (SketchPointRecordForm::Version8, Some(owner))
             }
-            (
-                SketchPointRecordForm::Version10InlineTyped { trailing_reference },
-                None,
-            )
-        }
-        (11, false) => {
-            let padded_paired_reference = match payload.len().checked_sub(cursor)? {
-                11 => false,
-                15 if payload.get(cursor..cursor + 4) == Some(&[0; 4][..]) => {
-                    cursor += 4;
-                    true
+            (10, false) => {
+                let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+                (SketchPointRecordForm::Version10, Some(owner))
+            }
+            (10, true) => {
+                let (trailing_reference, type_guid) =
+                    take_local_sketch_reference(payload, &mut cursor)?;
+                if type_guid.as_deref().is_none_or(|type_guid| {
+                    !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID)
+                }) {
+                    return None;
                 }
-                _ => return None,
-            };
-            let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
-            (
-                SketchPointRecordForm::Version11 {
-                    padded_paired_reference,
-                },
-                Some(owner),
-            )
-        }
-        _ => return None,
-    };
+                (
+                    SketchPointRecordForm::Version10InlineTyped { trailing_reference },
+                    None,
+                )
+            }
+            (11, true) => {
+                let (trailing_reference, type_guid) =
+                    take_local_sketch_reference(payload, &mut cursor)?;
+                if type_guid.as_deref().is_none_or(|type_guid| {
+                    !type_guid.eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID)
+                }) {
+                    return None;
+                }
+                (
+                    SketchPointRecordForm::Version11InlineTyped { trailing_reference },
+                    None,
+                )
+            }
+            (11, false) => {
+                let padded_paired_reference = match payload.len().checked_sub(cursor)? {
+                    11 => false,
+                    15 if payload.get(cursor..cursor + 4) == Some(&[0; 4][..]) => {
+                        cursor += 4;
+                        true
+                    }
+                    _ => return None,
+                };
+                let owner = take_same_segment_sketch_reference(payload, &mut cursor)?;
+                (
+                    SketchPointRecordForm::Version11 {
+                        padded_paired_reference,
+                    },
+                    Some(owner),
+                )
+            }
+            _ => return None,
+        };
     if cursor != payload.len() || !record_form.closure_is_valid(Some(&closure)) {
         return None;
     }
@@ -2882,7 +2909,7 @@ pub fn decode_sketch_surfaces(scan: &ContainerScan) -> Result<Vec<SketchSurface>
             });
         }
     }
-    out.sort_by_key(|surface| surface.id.clone());
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -3171,13 +3198,13 @@ fn decode_circular_arc(payload: &[u8]) -> Option<SketchCurveGeometry> {
     let dot = normal.x * reference_direction.x
         + normal.y * reference_direction.y
         + normal.z * reference_direction.z;
-    if (normal.norm() - 1.0).abs() > 1.0e-9
-        || (reference_direction.norm() - 1.0).abs() > 1.0e-9
-        || dot.abs() > 1.0e-9
+    if (normal.norm() - 1.0).abs() > EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
+        || (reference_direction.norm() - 1.0).abs() > EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
+        || dot.abs() > EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
         || values[9] <= 0.0
-        || values[10].abs() > std::f64::consts::TAU + 1.0e-9
-        || values[11].abs() > std::f64::consts::TAU + 1.0e-9
-        || (values[11] - values[10]).abs() < 1.0e-12
+        || values[10].abs() > std::f64::consts::TAU + EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
+        || values[11].abs() > std::f64::consts::TAU + EPS_SKETCH_DECODE_CIRCULAR_ARC_E9
+        || (values[11] - values[10]).abs() < EPS_SKETCH_DECODE_CIRCULAR_ARC_E12
     {
         return None;
     }
@@ -3446,7 +3473,9 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
         return None;
     }
     let displacement_direction = displacement.scale(1.0 / length);
-    if (direction.norm() - 1.0).abs() > 1.0e-9 || (stored_normal.norm() - 1.0).abs() > 1.0e-9 {
+    if (direction.norm() - 1.0).abs() > EPS_SKETCH_DECODE_LINE_COMPONENTS_E9
+        || (stored_normal.norm() - 1.0).abs() > EPS_SKETCH_DECODE_LINE_COMPONENTS_E9
+    {
         return None;
     }
     // Start plus displacement carries the bounded line and is corroborated by
@@ -3461,7 +3490,9 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
     let dot = direction.dot(stored_normal);
     let projected_normal = stored_normal - direction.scale(dot);
     let projected_length = projected_normal.norm();
-    let normal = if projected_length.is_finite() && projected_length > 1.0e-12 {
+    let normal = if projected_length.is_finite()
+        && projected_length > EPS_SKETCH_DECODE_LINE_COMPONENTS_E12
+    {
         projected_normal.scale(1.0 / projected_length)
     } else {
         // Spatial line carriers can store a unit auxiliary vector parallel to

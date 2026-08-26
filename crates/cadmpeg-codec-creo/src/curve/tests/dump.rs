@@ -911,7 +911,7 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     let Some(cadmpeg_ir::features::ParameterValue::Length(copy)) = &parameters[1].value else {
         panic!("dimensioned copy");
     };
-    assert!((copy.0 - 76.2).abs() < 1e-12);
+    assert!((copy.0 - 76.2).abs() < 1.0e-12);
     let native = &result.ir().native.namespace("creo").unwrap().arenas["curve_expressions"][0];
     assert_eq!(native.fields()["assignments"][0]["target"]["name"], "span");
     assert_eq!(
@@ -936,7 +936,7 @@ fn decode_transfers_new_relation_parameter_unit_declarations() {
     let Some(cadmpeg_ir::features::ParameterValue::Angle(angle)) = &parameters[3].value else {
         panic!("angle parameter");
     };
-    assert!((angle.0 - 2.0f64.atan()).abs() < 1e-12);
+    assert!((angle.0 - 2.0f64.atan()).abs() < 1.0e-12);
     assert_eq!(parameters[4].properties["declared_unit"], "C");
     assert_eq!(
         parameters[4].properties["evaluated_dimension"],

@@ -16,18 +16,22 @@ fn subd_round_trip_and_directed_ring_validation() {
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:subd:surface#0".into()),
         scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
         vertices: vec![
             SubdVertex {
                 point: Point3::new(0.0, 0.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
             SubdVertex {
                 point: Point3::new(1.0, 0.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
             SubdVertex {
                 point: Point3::new(0.0, 1.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
         ],
         edges: vec![
@@ -35,18 +39,21 @@ fn subd_round_trip_and_directed_ring_validation() {
                 vertices: [0, 1],
                 sharpness: [0.0, 0.25],
                 tag: SubdEdgeTag::Smooth,
+                knot_interval: None,
                 sector_coefficients: [1.0, 1.0],
             },
             SubdEdge {
                 vertices: [1, 2],
                 sharpness: [0.25, 0.0],
                 tag: SubdEdgeTag::SmoothX,
+                knot_interval: None,
                 sector_coefficients: [1.0, 1.0],
             },
             SubdEdge {
                 vertices: [2, 0],
                 sharpness: [0.0, 0.0],
                 tag: SubdEdgeTag::Smooth,
+                knot_interval: None,
                 sector_coefficients: [1.0, 1.0],
             },
         ],

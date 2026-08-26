@@ -844,7 +844,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
                 radius: cadmpeg_ir::features::Length(radius),
             }, ..
-        }] if (radius - 0.249_999_999_951_747_04).abs() < 1e-12)
+        }] if (radius - 0.249_999_999_951_747_04).abs() < 1.0e-12)
     ));
 
     let cylinder_panel = [

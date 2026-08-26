@@ -2326,10 +2326,10 @@ mod tests {
 
         let revolution_fraction = angle_range[1] / std::f64::consts::TAU;
         let end_radius = start_radius * (1.0 + apex_factor * revolution_fraction);
-        assert!((end_radius - (2.0 + 2.0 * half_angle.sin())).abs() < 1e-12);
+        assert!((end_radius - (2.0 + 2.0 * half_angle.sin())).abs() < 1.0e-12);
         assert!(
             (center.z + pitch.z * revolution_fraction - (3.0 + 2.0 * half_angle.cos())).abs()
-                < 1e-12
+                < 1.0e-12
         );
         for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
             let angle = angle_range[0] + fraction * (angle_range[1] - angle_range[0]);
@@ -2348,9 +2348,9 @@ mod tests {
             );
             let surface_point = zero_entity_surface_point(&surface, [angle, 1.0 + fraction])
                 .expect("finite cone point");
-            assert!((construction_point.x - surface_point.x).abs() < 1e-12);
-            assert!((construction_point.y - surface_point.y).abs() < 1e-12);
-            assert!((construction_point.z - surface_point.z).abs() < 1e-12);
+            assert!((construction_point.x - surface_point.x).abs() < 1.0e-12);
+            assert!((construction_point.y - surface_point.y).abs() < 1.0e-12);
+            assert!((construction_point.z - surface_point.z).abs() < 1.0e-12);
         }
     }
 
@@ -2384,9 +2384,9 @@ mod tests {
             let curve_point = curve_point(&curve, parameters[index]).expect("circle point");
             let surface_point =
                 zero_entity_surface_point(&surface, endpoints[index]).expect("cone point");
-            assert!((curve_point.x - surface_point.x).abs() < 1e-12);
-            assert!((curve_point.y - surface_point.y).abs() < 1e-12);
-            assert!((curve_point.z - surface_point.z).abs() < 1e-12);
+            assert!((curve_point.x - surface_point.x).abs() < 1.0e-12);
+            assert!((curve_point.y - surface_point.y).abs() < 1.0e-12);
+            assert!((curve_point.z - surface_point.z).abs() < 1.0e-12);
         }
     }
 
@@ -2427,14 +2427,14 @@ mod tests {
             zero_entity_surface_point(&torus, [2.0 * std::f64::consts::PI, std::f64::consts::PI])
                 .expect("torus");
 
-        assert!(cylinder_point.x.abs() < 1e-12);
-        assert!((cylinder_point.y - 2.0).abs() < 1e-12);
+        assert!(cylinder_point.x.abs() < 1.0e-12);
+        assert!((cylinder_point.y - 2.0).abs() < 1.0e-12);
         assert_eq!(cylinder_point.z, 3.0);
-        assert!(cone_point.x.abs() < 1e-12);
-        assert!((cone_point.y - (2.0 + 3.0 / 2.0_f64.sqrt())).abs() < 1e-12);
-        assert!((cone_point.z - 3.0 / 2.0_f64.sqrt()).abs() < 1e-12);
-        assert!(torus_point.x.abs() < 1e-12);
-        assert!((torus_point.y - 4.0).abs() < 1e-12);
+        assert!(cone_point.x.abs() < 1.0e-12);
+        assert!((cone_point.y - (2.0 + 3.0 / 2.0_f64.sqrt())).abs() < 1.0e-12);
+        assert!((cone_point.z - 3.0 / 2.0_f64.sqrt()).abs() < 1.0e-12);
+        assert!(torus_point.x.abs() < 1.0e-12);
+        assert!((torus_point.y - 4.0).abs() < 1.0e-12);
         assert_eq!(torus_point.z, 2.0);
     }
 

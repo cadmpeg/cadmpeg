@@ -272,7 +272,10 @@ pub fn record_frames(bytes: &[u8]) -> Option<Vec<RecordFrame>> {
                 .extend_from_slice(&page[continuation_page::BODY..]);
         } else if page.get(terminal_page::MARKER..terminal_page::USED) == Some(TERMINAL_MARKER) {
             let used = View::u16_le_at(page, terminal_page::USED)? as usize;
-            let mut frame = current.take()?;
+            let mut frame = current.take().unwrap_or_else(|| RecordFrame {
+                logical_offset,
+                bytes: RECORD_MARKER.to_vec(),
+            });
             frame
                 .bytes
                 .extend_from_slice(page.get(terminal_page::BODY..terminal_page::BODY + used)?);
@@ -570,16 +573,28 @@ fn read_texture_uri(bytes: &[u8], at: &mut usize, id: &str) -> Result<PropertyVa
 }
 
 fn read_count(bytes: &[u8], at: &mut usize, id: &str) -> Result<usize, CodecError> {
-    let raw = take(bytes, at)
-        .ok_or_else(|| CodecError::malformed(format_args!("Protein property {id} is truncated")))?;
-    let count = usize::try_from(u32::from_le_bytes(raw))
-        .map_err(|_| CodecError::Malformed("Protein value count exceeds usize".into()))?;
+    let count = usize::try_from(read_u32_le(bytes, at).ok_or_else(|| {
+        CodecError::malformed(format_args!("Protein property {id} is truncated"))
+    })?)
+    .map_err(|_| CodecError::Malformed("Protein value count exceeds usize".into()))?;
     if count > 1_024 {
         return Err(CodecError::malformed(format_args!(
             "Protein property {id} has implausible value count {count}"
         )));
     }
     Ok(count)
+}
+
+fn read_u32_le(bytes: &[u8], at: &mut usize) -> Option<u32> {
+    let value = View::u32_le_at(bytes, *at)?;
+    *at = (*at).checked_add(4)?;
+    Some(value)
+}
+
+fn read_f64_le(bytes: &[u8], at: &mut usize) -> Option<f64> {
+    let value = View::f64_le_at(bytes, *at)?;
+    *at = (*at).checked_add(8)?;
+    Some(value)
 }
 
 fn read_value(
@@ -594,25 +609,22 @@ fn read_value(
             PropertyValue::Boolean(take::<1>(bytes, at).ok_or_else(malformed)?[0] != 0)
         }
         Carrier::Integer | Carrier::Choice => {
-            PropertyValue::Integer(u32::from_le_bytes(take(bytes, at).ok_or_else(malformed)?))
+            PropertyValue::Integer(read_u32_le(bytes, at).ok_or_else(malformed)?)
         }
         Carrier::Float => PropertyValue::Float(finite_value(
-            f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
+            read_f64_le(bytes, at).ok_or_else(malformed)?,
             id,
         )?),
         Carrier::UnitFloat => {
             take::<4>(bytes, at).ok_or_else(malformed)?;
             PropertyValue::Float(finite_value(
-                f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
+                read_f64_le(bytes, at).ok_or_else(malformed)?,
                 id,
             )?)
         }
         Carrier::Distance => PropertyValue::Distance {
-            unit: u32::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
-            value: finite_value(
-                f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
-                id,
-            )?,
+            unit: read_u32_le(bytes, at).ok_or_else(malformed)?,
+            value: finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?,
         },
         Carrier::String | Carrier::Uuid | Carrier::Url => {
             PropertyValue::String(take_lp_utf8_capped(bytes, at, 1_048_576).ok_or_else(malformed)?)
@@ -620,10 +632,7 @@ fn read_value(
         Carrier::Color => {
             let mut rgba = [0.0; 4];
             for value in &mut rgba {
-                *value = finite_value(
-                    f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?),
-                    id,
-                )?;
+                *value = finite_value(read_f64_le(bytes, at).ok_or_else(malformed)?, id)?;
             }
             PropertyValue::Color(rgba)
         }
@@ -986,6 +995,26 @@ mod tests {
         let mut truncated = stream.clone();
         truncated.truncate(16 + PAGE_SIZE + 1);
         assert!(record_frames(&truncated).is_none());
+    }
+
+    #[test]
+    fn standalone_terminal_page_carries_one_short_record() {
+        let mut record = Vec::new();
+        for value in ["S", "guid", "base", "library"] {
+            push_lp(&mut record, value);
+        }
+        let mut stream = (PAGE_SIZE as u32).to_le_bytes().to_vec();
+        stream.resize(STREAM_HEADER_LEN, 0);
+        stream.extend_from_slice(TERMINAL_MARKER);
+        stream.extend_from_slice(&(record.len() as u16).to_le_bytes());
+        stream.extend_from_slice(&[1, 0]);
+        stream.extend_from_slice(&record);
+        stream.resize(STREAM_HEADER_LEN + PAGE_SIZE, 0);
+
+        let frames = record_frames(&stream).expect("standalone terminal page");
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].logical_offset, 0);
+        assert_eq!(frames[0].bytes, [RECORD_MARKER, &record].concat());
     }
 
     /// Lay records out as `InstanceProperties.bin` does: a 16-byte stream header,

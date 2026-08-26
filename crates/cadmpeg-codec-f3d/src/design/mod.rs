@@ -35,6 +35,7 @@ pub(crate) enum DesignFeatureFamily {
     Chamfer,
     Combine,
     Draft,
+    ReplaceFace,
     CircularPattern,
     RectangularPattern,
     Mirror,
@@ -51,6 +52,7 @@ pub(crate) enum DesignFeatureFamily {
     SurfaceExtend,
     SurfaceOffset,
     SurfaceRuled,
+    SurfaceTrim,
     BoundaryFill,
     Hole,
     Split,
@@ -71,6 +73,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),
         "Combine" => Some(DesignFeatureFamily::Combine),
         "Draft" => Some(DesignFeatureFamily::Draft),
+        "ReplaceFace" => Some(DesignFeatureFamily::ReplaceFace),
         "C-Pattern" | "Circular Pattern" | "Réseau C" => {
             Some(DesignFeatureFamily::CircularPattern)
         }
@@ -89,6 +92,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "SurfaceExtend" => Some(DesignFeatureFamily::SurfaceExtend),
         "SurfaceOffset" => Some(DesignFeatureFamily::SurfaceOffset),
         "SurfaceRuled" => Some(DesignFeatureFamily::SurfaceRuled),
+        "SurfaceTrim" => Some(DesignFeatureFamily::SurfaceTrim),
         "BoundaryFill" => Some(DesignFeatureFamily::BoundaryFill),
         "Hole" => Some(DesignFeatureFamily::Hole),
         "Split" => Some(DesignFeatureFamily::Split),

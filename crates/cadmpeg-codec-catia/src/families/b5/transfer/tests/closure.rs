@@ -160,7 +160,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
                 object_id: 80,
                 supports: [(90, 91, [0.0, 1.0]), (100, 101, [0.0, 1.0])],
                 parameter_range: [0.0, 1.0],
-                cache_fit_tolerance: 1e-6,
+                cache_fit_tolerance: 1.0e-6,
             },
         },
     )]);
@@ -1065,6 +1065,6 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
     let supports = HashMap::from([(3, vec![(4, 2, [0.25, 0.75])])]);
 
     let tolerances = transfer_vertex_tolerances(&graph, &supports, &surfaces, &pcurves);
-    assert!((tolerances[&0] - (1e-4 + 1e-9)).abs() < 1e-12);
+    assert!((tolerances[&0] - (1e-4 + 1.0e-9)).abs() < 1.0e-12);
     assert!(!tolerances.contains_key(&1));
 }

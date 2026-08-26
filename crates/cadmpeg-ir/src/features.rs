@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral construction-feature taxonomy.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::assets::AssetId;
 use crate::ids::{
@@ -554,6 +554,36 @@ pub enum DatumPlaneReference {
     },
 }
 
+/// Sketch point operand resolved by a datum-point construction or retained in
+/// native form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SketchPointSelection {
+    /// Selection exists semantically but its sketch entity is not resolved.
+    Unresolved,
+    /// Point in a planar sketch.
+    Planar {
+        /// Owning planar sketch.
+        sketch: crate::sketches::SketchId,
+        /// Selected point entity.
+        point: crate::sketches::SketchEntityId,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
+    /// Point in a model-space sketch.
+    Spatial {
+        /// Owning model-space sketch.
+        sketch: crate::sketches::SpatialSketchId,
+        /// Selected point entity.
+        point: crate::sketches::SpatialSketchEntityId,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
+    /// Format-native selection reference.
+    Native(String),
+}
+
 /// Construction rule used to derive one datum point.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -578,6 +608,11 @@ pub enum DatumPointConstruction {
     Vertex {
         /// Selected vertex.
         vertex: VertexSelection,
+    },
+    /// One selected point from a planar or model-space sketch.
+    SketchPoint {
+        /// Selected sketch point.
+        point: SketchPointSelection,
     },
     /// Intersection of one selected edge and one selected plane.
     EdgePlaneIntersection {
@@ -625,6 +660,7 @@ impl DatumPointConstruction {
             Self::CircleCenter { .. }
             | Self::TwoEdgeIntersection { .. }
             | Self::Vertex { .. }
+            | Self::SketchPoint { .. }
             | Self::EdgePlaneIntersection { .. }
             | Self::DistanceOnEdge { .. } => Vec::new(),
         }
@@ -1463,6 +1499,10 @@ pub enum FeatureDefinition {
         tool: PathRef,
         /// Region retained after trimming.
         keep: TrimRegion,
+        /// Explicit source cell selection when the operation removes a set of
+        /// partition cells rather than one canonical inside/outside region.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cell_selection: Option<TrimCellSelection>,
     },
     /// Extends selected surface boundaries by a fixed distance.
     ExtendSurface {
@@ -2326,6 +2366,35 @@ pub enum TrimRegion {
     Outside,
 }
 
+/// Cells removed by a trim operation from its partition of the target faces.
+///
+/// Cell ordinals are one-based within the operation's source partition. The
+/// total is part of the semantic value because the complement is the retained
+/// result and a selected set can contain neither all nor only the first cells.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct TrimCellSelection {
+    /// One-based ordinals of cells removed by the operation.
+    pub removed: Vec<u64>,
+    /// Number of cells in the operation's partition.
+    pub total: u64,
+}
+
+impl TrimCellSelection {
+    /// Whether the cell selection is a nonempty, in-range set.
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        let mut seen = HashSet::with_capacity(self.removed.len());
+        self.total > 0
+            && !self.removed.is_empty()
+            && self
+                .removed
+                .iter()
+                .all(|ordinal| *ordinal > 0 && *ordinal <= self.total)
+            && self.removed.iter().all(|ordinal| seen.insert(*ordinal))
+    }
+}
+
 /// Geometric law used to extend a surface boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2337,6 +2406,8 @@ pub enum SurfaceExtension {
     Natural,
     /// Extend boundary tangents as ruled linear strips.
     Linear,
+    /// Extend boundary faces perpendicular to the source faces.
+    Perpendicular,
 }
 
 /// Direction law for a ruled-surface operation.
@@ -2563,6 +2634,25 @@ pub enum SheetMetalFlangeWidth {
         /// Distance measured from the edge's second end.
         second: Length,
     },
+    /// Independent two-sided extents for each selected edge.
+    ///
+    /// The entries are in the same order as the operation's selected-edge
+    /// groups. Each pair is local to its edge and is not an operation-wide
+    /// pair shared by all edges.
+    TwoSidesPerEdge {
+        /// One first-end/second-end pair for each selected edge.
+        widths: Vec<SheetMetalFlangeTwoSidedWidth>,
+    },
+}
+
+/// Two-sided extent assigned to one selected sheet-metal flange edge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SheetMetalFlangeTwoSidedWidth {
+    /// Distance measured from the edge's first end.
+    pub first: Length,
+    /// Distance measured from the edge's second end.
+    pub second: Length,
 }
 
 /// Distribution of sheet thickness relative to its construction plane.

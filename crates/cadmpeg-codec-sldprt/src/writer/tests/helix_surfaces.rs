@@ -437,7 +437,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
             start_angle: Angle(value),
             clockwise: true,
             ..
-        } if (value - std::f64::consts::FRAC_PI_2).abs() < 1e-12
+        } if (value - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
 }
 
@@ -1083,13 +1083,15 @@ fn semantic_writer_round_trips_trim_surface() {
             faces: FaceSelection::Resolved { faces, native },
             tool: PathRef::Edges(edges),
             keep: TrimRegion::Inside,
+            ..
         } if faces == std::slice::from_ref(&face_id) && native == &face && edges == std::slice::from_ref(&edge_id)
     ));
 
     {
         let mut ir_edit = decoded.ir_mut();
-        let FeatureDefinition::TrimSurface { faces, tool, keep } =
-            &mut ir_edit.model.features[0].definition
+        let FeatureDefinition::TrimSurface {
+            faces, tool, keep, ..
+        } = &mut ir_edit.model.features[0].definition
         else {
             panic!("typed trim surface");
         };
@@ -1467,7 +1469,7 @@ fn semantic_writer_round_trips_typed_revolution() {
                 ..
             },
             op: BooleanOp::Join,
-        } if (*value - std::f64::consts::PI).abs() < 1e-12
+        } if (*value - std::f64::consts::PI).abs() < 1.0e-12
     ));
 
     {
@@ -1610,7 +1612,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
                 ..
             },
             op: BooleanOp::Join,
-        } if profile == &profile_feature && (*value - 90f64.to_radians()).abs() < 1e-12
+        } if profile == &profile_feature && (*value - 90f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         decoded.ir().model.features[2].definition,
@@ -1622,7 +1624,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
                 ..
             },
             op: BooleanOp::NewBody,
-        } if (value - std::f64::consts::PI).abs() < 1e-12
+        } if (value - std::f64::consts::PI).abs() < 1.0e-12
     ));
     assert!(matches!(
         decoded.ir().model.features[3].definition,
@@ -1635,8 +1637,8 @@ fn semantic_writer_round_trips_all_revolution_extents() {
                 ..
             },
             op: BooleanOp::Cut,
-        } if (first - 30f64.to_radians()).abs() < 1e-12
-            && (second - 60f64.to_radians()).abs() < 1e-12
+        } if (first - 30f64.to_radians()).abs() < 1.0e-12
+            && (second - 60f64.to_radians()).abs() < 1.0e-12
     ));
 
     {

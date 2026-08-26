@@ -442,7 +442,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
         assert!(evaluated
             .into_iter()
             .zip([end.x, end.y, end.z])
-            .all(|(evaluated, expected)| (evaluated - expected).abs() < 1e-10));
+            .all(|(evaluated, expected)| (evaluated - expected).abs() < 1.0e-10));
     }
     assert_eq!(model.faces.len(), 4);
     assert_eq!(

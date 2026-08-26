@@ -52,6 +52,8 @@ use crate::layout::legacy_wide_112_profile_roster_curve as legacy_wide_112_roste
 // Curve endpoint-index decoders, one per record layout. Their guards may
 // overlap, so the caller resolves every accepted pair through the
 // feature-local marker roster before selecting an endpoint pair.
+const EPS_ENDPOINTS_CURRENT_WIDE_ARC_DIRECT_MARKERS_E9: f64 = 1e-9;
+
 type CurveEndpointDecoder = fn(&[u8], usize) -> Option<[u32; 2]>;
 
 const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
@@ -1057,7 +1059,7 @@ pub(super) fn current_wide_arc_direct_markers<'a>(
             Point2::new(start_u, start_v),
             Point2::new(end_u, end_v),
             &candidates,
-            1.0e-9,
+            EPS_ENDPOINTS_CURRENT_WIDE_ARC_DIRECT_MARKERS_E9,
         )
     };
     let direct = resolve(raw)?;

@@ -614,7 +614,7 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
         panic!("terminal circle did not resolve");
     };
     assert_eq!(center, [0.03, 0.005]);
-    assert!((radius - 0.0098).abs() < 1e-12);
+    assert!((radius - 0.0098).abs() < 1.0e-12);
 
     payload[circle_offset + 44..circle_offset + 46].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(

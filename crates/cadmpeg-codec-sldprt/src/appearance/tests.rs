@@ -289,9 +289,9 @@ fn decode_retains_visual_property_without_fabricating_body_ownership() {
 
     assert!(result.ir().model.bodies[0].color.is_none());
     let color = result.ir().model.appearances[0].base_color.unwrap();
-    assert!((color.r - 32.0 / 255.0).abs() < 1e-6);
-    assert!((color.g - 64.0 / 255.0).abs() < 1e-6);
-    assert!((color.b - 128.0 / 255.0).abs() < 1e-6);
+    assert!((color.r - 32.0 / 255.0).abs() < 1.0e-6);
+    assert!((color.g - 64.0 / 255.0).abs() < 1.0e-6);
+    assert!((color.b - 128.0 / 255.0).abs() < 1.0e-6);
     assert_eq!(result.ir().model.appearances.len(), 1);
     assert!(result.ir().model.appearance_bindings.is_empty());
     assert_eq!(

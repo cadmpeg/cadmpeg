@@ -2044,7 +2044,7 @@ pub(crate) mod tests {
         assert_eq!(semantic["kind"], "dimension");
         assert_eq!(semantic["runtime_type"], "linear_dimension");
         assert!(
-            (semantic["value"].as_f64().expect("required invariant") - 60.0).abs() < 1e-12,
+            (semantic["value"].as_f64().expect("required invariant") - 60.0).abs() < 1.0e-12,
             "{semantic:?}"
         );
 

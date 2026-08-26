@@ -20,6 +20,11 @@ use crate::records::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+const EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9: f64 = 1.0e-9;
+const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9: f64 = 1.0e-9;
+const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9: f64 = 1.0e-9;
+const EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12: f64 = 1.0e-12;
+
 fn sketch_text_horizontal_alignment(
     code: Option<u32>,
 ) -> Option<cadmpeg_ir::sketches::SketchTextHorizontalAlignment> {
@@ -42,11 +47,71 @@ fn sketch_text_vertical_alignment(
     })
 }
 
+fn text_frame_curve_records(
+    relations: &[SketchRelation],
+    curves: &[SketchCurveIdentity],
+    texts: &[SketchText],
+) -> HashSet<(String, u32)> {
+    let curve_owners = curves
+        .iter()
+        .filter_map(|curve| {
+            Some((
+                (native_stream(&curve.id)?.to_owned(), curve.record_index),
+                curve.owner_reference?,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let text_owners = texts
+        .iter()
+        .filter_map(|text| {
+            Some((
+                (native_stream(&text.id)?.to_owned(), text.record_index),
+                text.owner_reference,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    relations
+        .iter()
+        .filter_map(|relation| {
+            let crate::records::SketchPatternDefinition::TextFrame { text_reference } =
+                relation.pattern.as_ref()?
+            else {
+                return None;
+            };
+            let scope = native_stream(&relation.id)?.to_owned();
+            if relation.unknown_constraint_bits != 0
+                || relation.constraint_kinds != [SketchConstraintKind::TextFrame]
+                || relation.members.first() != Some(text_reference)
+                || relation.auxiliary_references != [*text_reference]
+                || relation.members.len() < 2
+                || relation.return_members != relation.members[1..]
+                || text_owners.get(&(scope.clone(), *text_reference))
+                    != Some(&relation.owner_reference)
+            {
+                return None;
+            }
+            if !relation.return_members.iter().all(|record_index| {
+                curve_owners.get(&(scope.clone(), *record_index)) == Some(&relation.owner_reference)
+            }) {
+                return None;
+            }
+            Some(
+                relation
+                    .return_members
+                    .iter()
+                    .map(move |record_index| (scope.clone(), *record_index)),
+            )
+        })
+        .flatten()
+        .collect()
+}
+
 /// Project placed Design sketches and their exact planar point/curve records.
 pub fn project_sketch_design(
     placements: &[DesignSketchPlacement],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
+    relations: &[SketchRelation],
     texts: &[SketchText],
     linear_tolerance: f64,
 ) -> (
@@ -56,6 +121,7 @@ pub fn project_sketch_design(
     use cadmpeg_ir::features::{Angle, Length};
     use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry};
 
+    let text_frame_curves = text_frame_curve_records(relations, curves, texts);
     let placements_by_suffix = placements
         .iter()
         .filter_map(|placement| {
@@ -73,7 +139,7 @@ pub fn project_sketch_design(
         .filter(|curve| sketch_curve_is_spatial(curve))
         .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
         .chain(points.iter().filter_map(|point| {
-            (sketch_point_depth(point)?.abs() > 1.0e-9)
+            (sketch_point_depth(point)?.abs() > EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9)
                 .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
         }))
         .collect::<HashSet<_>>();
@@ -114,7 +180,7 @@ pub fn project_sketch_design(
             native_ref: Some(placement.id.clone()),
         })
         .collect::<Vec<_>>();
-    sketches.sort_by_key(|sketch| sketch.id.clone());
+    sketches.sort_by(|a, b| a.id.cmp(&b.id));
 
     let mut entities = points
         .iter()
@@ -169,12 +235,17 @@ pub fn project_sketch_design(
                 radius,
                 start_angle,
                 end_angle,
-            } if planar_point(center) && reference_direction.z.abs() <= 1.0e-9 && *radius > 0.0 => {
+            } if planar_point(center)
+                && reference_direction.z.abs() <= EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9
+                && *radius > 0.0 =>
+            {
                 let orientation = sketch_normal_sign(normal)?;
                 let phase = reference_direction.y.atan2(reference_direction.x);
                 let start_angle = phase + orientation * start_angle;
                 let end_angle = phase + orientation * end_angle;
-                if (end_angle - start_angle).abs() >= std::f64::consts::TAU - 1.0e-9 {
+                if (end_angle - start_angle).abs()
+                    >= std::f64::consts::TAU - EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9
+                {
                     SketchGeometry::Circle {
                         center: Point2::new(center.x, center.y),
                         radius: Length(*radius),
@@ -215,7 +286,7 @@ pub fn project_sketch_design(
         Some(SketchEntity {
             id: neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
             sketch,
-            construction: false,
+            construction: text_frame_curves.contains(&(scope.to_owned(), curve.record_index)),
             native_ref: Some(curve.id.clone()),
             geometry_ref: None,
             endpoint_refs: Vec::new(),
@@ -252,7 +323,7 @@ pub fn project_sketch_design(
             },
         })
     }));
-    entities.sort_by_key(|entity| entity.id.clone());
+    entities.sort_by(|a, b| a.id.cmp(&b.id));
     for sketch in &mut sketches {
         sketch.profiles = closed_sketch_profiles(&sketch.id, &entities, linear_tolerance);
     }
@@ -291,7 +362,7 @@ pub fn project_spatial_sketch_design(
         .filter(|curve| sketch_curve_is_spatial(curve))
         .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
         .chain(points.iter().filter_map(|point| {
-            (sketch_point_depth(point)?.abs() > 1.0e-9)
+            (sketch_point_depth(point)?.abs() > EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9)
                 .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
         }))
         .chain(surfaces.iter().filter_map(|surface| {
@@ -433,7 +504,10 @@ pub fn project_spatial_sketch_design(
                         let center = transform_point(placement, center);
                         let normal = transform_vector(placement, normal);
                         let reference_direction = transform_vector(placement, reference_direction);
-                        if (end_angle - start_angle).abs() >= std::f64::consts::TAU - 1.0e-9 {
+                        if (end_angle - start_angle).abs()
+                            >= std::f64::consts::TAU
+                                - EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_DESIGN_E9
+                        {
                             SpatialSketchGeometry::Circle {
                                 center,
                                 normal,
@@ -543,7 +617,7 @@ pub fn project_spatial_sketch_design(
             },
         })
     }));
-    entities.sort_by_key(|entity| entity.id.clone());
+    entities.sort_by(|a, b| a.id.cmp(&b.id));
     let spatial_ids = entities
         .iter()
         .map(|entity| entity.sketch.clone())
@@ -566,7 +640,7 @@ pub fn project_spatial_sketch_design(
             }
         })
         .collect::<Vec<_>>();
-    sketches.sort_by_key(|sketch| sketch.id.clone());
+    sketches.sort_by(|a, b| a.id.cmp(&b.id));
     (sketches, entities)
 }
 
@@ -691,9 +765,12 @@ pub fn project_spatial_sketch_constraints(
                                 .max(second_position.x.abs())
                                 .max(second_position.y.abs())
                                 .max(second_position.z.abs());
-                        if (first_position.x - second_position.x).abs() > scale * 1.0e-9
-                            || (first_position.y - second_position.y).abs() > scale * 1.0e-9
-                            || (first_position.z - second_position.z).abs() > scale * 1.0e-9
+                        if (first_position.x - second_position.x).abs()
+                            > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                            || (first_position.y - second_position.y).abs()
+                                > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                            || (first_position.z - second_position.z).abs()
+                                > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
                         {
                             return None;
                         }
@@ -749,9 +826,12 @@ pub fn project_spatial_sketch_constraints(
                         (start.z + end.z) * 0.5,
                     );
                     let scale = 1.0 + midpoint.x.abs().max(midpoint.y.abs()).max(midpoint.z.abs());
-                    if (position.x - midpoint.x).abs() > scale * 1.0e-9
-                        || (position.y - midpoint.y).abs() > scale * 1.0e-9
-                        || (position.z - midpoint.z).abs() > scale * 1.0e-9
+                    if (position.x - midpoint.x).abs()
+                        > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                        || (position.y - midpoint.y).abs()
+                            > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
+                        || (position.z - midpoint.z).abs()
+                            > scale * EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9
                     {
                         return None;
                     }
@@ -782,7 +862,10 @@ pub fn project_spatial_sketch_constraints(
                     };
                     let line = end.vector_from(start);
                     let cross = line.cross(direction);
-                    if line.norm() <= 1.0e-12 || cross.norm() > 1.0e-9 * line.norm() {
+                    if line.norm() <= EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E12
+                        || cross.norm()
+                            > EPS_SKETCH_PROJECT_PROJECT_SPATIAL_SKETCH_CONSTRAINTS_E9 * line.norm()
+                    {
                         return None;
                     }
                     Definition::ParallelToDirection {
@@ -800,7 +883,7 @@ pub fn project_spatial_sketch_constraints(
             })
         })
         .collect::<Vec<_>>();
-    constraints.sort_by_key(|constraint| constraint.id.clone());
+    constraints.sort_by(|a, b| a.id.cmp(&b.id));
     constraints
 }
 

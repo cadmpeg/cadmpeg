@@ -958,7 +958,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             },
             op: BooleanOp::NewBody,
             ..
-        } if (value - 5f64.to_radians()).abs() < 1e-12
+        } if (value - 5f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         decoded.ir().model.features[3].definition,
@@ -1328,7 +1328,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
                 distance: Length(0.3),
                 angle: Angle(angle),
             },
-        }] if (angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12)
+        }] if (angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12)
     ));
     assert_eq!(
         decoded.ir().model.parameters[1].value,
@@ -1391,7 +1391,7 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
                 angle: Angle(angle),
             },
             ..
-        }] if (angle - 30.0_f64.to_radians()).abs() < 1e-12)
+        }] if (angle - 30.0_f64.to_radians()).abs() < 1.0e-12)
     ));
 }
 
@@ -1533,7 +1533,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
                 angle,
             },
             ..
-        }] if (angle.0 - std::f64::consts::FRAC_PI_4).abs() < 1e-12)
+        }] if (angle.0 - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12)
     ));
 
     let replacements = [

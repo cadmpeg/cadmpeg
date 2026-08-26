@@ -33,7 +33,7 @@ pub fn decode_component_occurrences(
             at = start.saturating_add(1);
         }
     }
-    occurrences.sort_by_key(|occurrence| occurrence.id.clone());
+    occurrences.sort_by(|a, b| a.id.cmp(&b.id));
     occurrences.dedup_by(|left, right| left.id == right.id);
     Ok(occurrences)
 }

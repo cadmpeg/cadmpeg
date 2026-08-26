@@ -10,18 +10,29 @@
 use super::prelude::*;
 
 use super::{
-    exact_coil_placement, exact_hole_construction, exact_path_feature_construction,
-    exact_pattern_identity_wrapper, exact_work_point_construction,
-    named_parameter_scope_tail_is_valid, parse_parameter_scope, HOLE_POINT_DATA_TYPE_GUID,
-    POINT_DATA_TYPE_GUID,
+    exact_coil_placement, exact_hole_construction, exact_hole_face_selection,
+    exact_path_feature_construction, exact_pattern_identity_wrapper, exact_work_point_construction,
+    named_parameter_scope_tail_is_valid, parse_parameter_scope, HOLE_FACE_SELECTION_TYPE_GUID,
+    HOLE_POINT_DATA_TYPE_GUID, POINT_DATA_TYPE_GUID,
 };
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_selection;
+use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
+use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSelection,
     DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
     DesignRecordHeader, DesignWorkPointInputCarrier, DesignWorkPointRule,
 };
 use std::collections::HashMap;
+
+const EPS_HOLE_TEST_VALUE: f64 = 1.0e-12;
+
+fn assert_f64_array<const N: usize>(actual: [f64; N], expected: [f64; N]) {
+    for (actual, expected) in actual.into_iter().zip(expected) {
+        assert!((actual - expected).abs() < EPS_HOLE_TEST_VALUE);
+    }
+}
 
 fn lp_utf16(bytes: &mut Vec<u8>, value: &str) {
     let units = value.encode_utf16().collect::<Vec<_>>();
@@ -198,6 +209,90 @@ fn compact_coil_placement_fixture(
     (bytes, scope, transform_start)
 }
 
+fn modern_coil_matrix_placement_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
+    fn marked(bytes: &mut [u8], offset: usize, record_index: u32) {
+        bytes[offset] = 1;
+        bytes[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
+        bytes[offset + 5..offset + 11].fill(0);
+    }
+
+    fn u64_at(bytes: &mut [u8], offset: usize, value: u64) {
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    let (mut bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
+    bytes.insert(coil_persist_selection::NESTED_SELECTION_MARKER, 0);
+    let transform_start = transform_start + 1;
+    bytes[4..7].copy_from_slice(b"286");
+    bytes.truncate(transform_start);
+    indexed_header(&mut bytes, *b"450", 200);
+    bytes.resize(transform_start + coil_modern_matrix::LEN, 0);
+    let transform: [[f64; 4]; 4] = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let offset = transform_start + coil_modern_matrix::MATRIX + ordinal * 8;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    bytes[transform_start + coil_modern_matrix::CONSTANT_512
+        ..transform_start + coil_modern_matrix::CONSTANT_512 + 4]
+        .copy_from_slice(&512u32.to_le_bytes());
+    bytes[transform_start + coil_modern_matrix::CONSTANT_256
+        ..transform_start + coil_modern_matrix::CONSTANT_256 + 4]
+        .copy_from_slice(&256u32.to_le_bytes());
+    marked(
+        &mut bytes,
+        transform_start + coil_modern_matrix::SELECTION_REFERENCE,
+        100,
+    );
+    bytes[transform_start + coil_modern_matrix::SELECTION_FLAG
+        ..transform_start + coil_modern_matrix::SELECTION_FLAG + 4]
+        .copy_from_slice(&1u32.to_le_bytes());
+    marked(
+        &mut bytes,
+        transform_start + coil_modern_matrix::AUXILIARY_REFERENCE,
+        225,
+    );
+    u64_at(
+        &mut bytes,
+        transform_start + coil_modern_matrix::CONSTANT_1024,
+        1024,
+    );
+    u64_at(
+        &mut bytes,
+        transform_start + coil_modern_matrix::IDENTITY_LANE_PREFIX,
+        0x7000_0000_0000_0000,
+    );
+    u64_at(
+        &mut bytes,
+        transform_start + coil_modern_matrix::IDENTITY_LANE,
+        0x703e_0000_0000_0001,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_modern_matrix::SUCCESSOR_REFERENCE,
+        202,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_modern_matrix::PREDECESSOR_REFERENCE,
+        201,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_modern_matrix::OWNER_REFERENCE,
+        scope.record_index,
+    );
+    indexed_header(&mut bytes, *b"259", 200);
+    scope.class_tag = "353".into();
+    scope.paired_class_tag = "259".into();
+    scope.frame_length = 427;
+    (bytes, scope, transform_start)
+}
+
 fn compact_coil_owner_identity_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
     let (mut bytes, scope, transform_start) = compact_coil_placement_fixture(None);
     let paired_start = transform_start + 213;
@@ -207,6 +302,91 @@ fn compact_coil_owner_identity_fixture() -> (Vec<u8>, DesignParameterScope, usiz
     bytes.extend_from_slice(&scope.record_index.to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
     bytes.extend_from_slice(&paired);
+    (bytes, scope, transform_start)
+}
+
+fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
+    fn marked(bytes: &mut [u8], offset: usize, record_index: u32) {
+        bytes[offset] = 1;
+        bytes[offset + 1..offset + 5].copy_from_slice(&record_index.to_le_bytes());
+        bytes[offset + 5..offset + 11].fill(0);
+    }
+
+    fn u32_at(bytes: &mut [u8], offset: usize, value: u32) {
+        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    let (mut bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
+    bytes.truncate(transform_start);
+    indexed_header(&mut bytes, *b"395", 200);
+    bytes.resize(transform_start + coil_legacy_identity::LEN, 0);
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::LEADING_REFERENCE_MARKER,
+        0,
+    );
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::PROLOGUE_VALUE,
+        2,
+    );
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::PROLOGUE_FLAG,
+        1,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::SELECTION_REFERENCE_MARKER,
+        100,
+    );
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::SELECTION_FLAG,
+        1,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::AUXILIARY_REFERENCE_MARKER,
+        350,
+    );
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::TAIL_VALUE,
+        4,
+    );
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::INTERMEDIATE_SELECTOR,
+        109,
+    );
+    bytes[transform_start + coil_legacy_identity::CARRIER_SCALAR
+        ..transform_start + coil_legacy_identity::CARRIER_SCALAR + 8]
+        .copy_from_slice(&6.64e-5f64.to_le_bytes());
+    u32_at(
+        &mut bytes,
+        transform_start + coil_legacy_identity::TAIL_SELECTOR,
+        109,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::SUCCESSOR_REFERENCE_MARKER,
+        202,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::PREDECESSOR_REFERENCE_MARKER,
+        201,
+    );
+    marked(
+        &mut bytes,
+        transform_start + coil_legacy_identity::OWNER_REFERENCE_MARKER,
+        scope.record_index,
+    );
+    indexed_header(&mut bytes, *b"258", 200);
+    scope.class_tag = "393".into();
+    scope.paired_class_tag = "258".into();
+    scope.frame_length = 427;
     (bytes, scope, transform_start)
 }
 
@@ -339,6 +519,54 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
 }
 
 #[test]
+fn modern_coil_placement_accepts_class_450_matrix_frame() {
+    let (bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
+    let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
+        .expect("modern Coil matrix placement");
+    assert_eq!(placement.selection_record_index, 100);
+    assert_eq!(placement.selection_class_tag, "286");
+    assert_eq!(placement.transform_record_index, 200);
+    assert_eq!(placement.transform_class_tag, "450");
+    assert_eq!(
+        placement.transform,
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0, 0.0],
+            [0.0, 0.0, -1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
+    assert_eq!(
+        placement.transform_offset,
+        Some((transform_start + coil_modern_matrix::MATRIX) as u64)
+    );
+}
+
+#[test]
+fn modern_coil_placement_requires_exact_class_450_matrix_carrier() {
+    let (mut bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
+    bytes[transform_start + coil_modern_matrix::CONSTANT_512 + 1] = 0;
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
+    );
+
+    let (mut bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
+    bytes[transform_start + coil_modern_matrix::IDENTITY_LANE + 7] = 0;
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
+    );
+
+    let (mut bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
+    bytes[transform_start + coil_modern_matrix::OWNER_REFERENCE + 1] = 0;
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
+    );
+}
+
+#[test]
 fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
     let (bytes, scope, transform_start) = compact_coil_owner_identity_fixture();
     let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
@@ -356,6 +584,53 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
     assert_eq!(
         placement.transform_record_byte_offset,
         transform_start as u64
+    );
+}
+
+#[test]
+fn legacy_coil_placement_accepts_identity_frame() {
+    let (bytes, scope, transform_start) = legacy_coil_placement_identity_fixture();
+    let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
+        .expect("legacy Coil placement");
+    assert_eq!(placement.selection_record_index, 100);
+    assert_eq!(placement.transform_record_index, 200);
+    assert_eq!(placement.transform_offset, None);
+    assert_eq!(
+        placement.transform_record_byte_offset,
+        transform_start as u64
+    );
+    assert_eq!(
+        placement.transform,
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
+}
+
+#[test]
+fn legacy_coil_placement_requires_exact_identity_carrier() {
+    let (mut bytes, scope, transform_start) = legacy_coil_placement_identity_fixture();
+    bytes[transform_start + coil_legacy_identity::TAIL_VALUE] = 5;
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
+    );
+
+    let (bytes, mut scope, _) = legacy_coil_placement_identity_fixture();
+    scope.class_tag = "432".into();
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
+    );
+
+    let (mut bytes, scope, transform_start) = legacy_coil_placement_identity_fixture();
+    bytes[transform_start + coil_legacy_identity::SUCCESSOR_RECORD_INDEX] = 203;
+    assert_eq!(
+        exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+        None
     );
 }
 
@@ -578,6 +853,10 @@ fn work_point_stream(
 }
 
 fn hole_point_stream() -> (Vec<u8>, DesignParameterScope, usize, usize) {
+    hole_point_stream_version(4)
+}
+
+fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, usize, usize) {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"282");
@@ -596,15 +875,20 @@ fn hole_point_stream() -> (Vec<u8>, DesignParameterScope, usize, usize) {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.extend_from_slice(&19u32.to_le_bytes());
-    bytes.push(0x7f);
-    for value in [-1.0_f64, -1.0, -1.0] {
-        bytes.extend_from_slice(&value.to_le_bytes());
+    if version == 4 {
+        bytes.push(0x7f);
+        for value in [-1.0_f64, -1.0, -1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
     }
     bytes.extend_from_slice(&1u32.to_le_bytes());
     let input_reference_at = bytes.len();
     bytes.push(1);
     bytes.extend_from_slice(&378u64.to_le_bytes());
     bytes.extend_from_slice(&[0; 2]);
+    if version == 1 {
+        bytes.extend_from_slice(&[0x55; 13]);
+    }
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"259");
     bytes.extend_from_slice(&55u32.to_le_bytes());
@@ -628,19 +912,104 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
 
     assert_eq!(construction.point_record_index, 55);
     assert_eq!(construction.point_record_byte_offset, 0);
-    assert_eq!(construction.position, [1.25, -2.5, 3.75]);
+    assert_f64_array(construction.position, [1.25, -2.5, 3.75]);
     assert_eq!(construction.position_offset, position_at as u64);
-    assert_eq!(construction.direction, [0.0, 0.0, 1.0]);
+    assert_f64_array(construction.direction, [0.0, 0.0, 1.0]);
     assert_eq!(construction.direction_offset, (position_at + 24) as u64);
-    assert_eq!(construction.point_parameters, [0.125, -0.25]);
+    assert_f64_array(construction.point_parameters, [0.125, -0.25]);
     assert_eq!(construction.reference_type, 19);
-    assert_eq!(construction.tangent_point_data_prefix, 0x7f);
-    assert_eq!(construction.tangent_point_data, [-1.0, -1.0, -1.0]);
+    assert_eq!(construction.tangent_point_data_prefix, Some(0x7f));
+    assert_f64_array(
+        construction
+            .tangent_point_data
+            .as_ref()
+            .copied()
+            .expect("version-four tangent point data"),
+        [-1.0, -1.0, -1.0],
+    );
     assert_eq!(construction.input_record_indices, [378]);
     assert_eq!(
         construction.input_record_offsets,
         [(input_reference_at + 1) as u64]
     );
+}
+
+#[test]
+fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangent_data() {
+    let (bytes, scope, position_at, input_reference_at) = hole_point_stream_version(1);
+    let records = IndexedRecordOffsets::build(&bytes);
+    let construction = exact_hole_construction(
+        &bytes,
+        &records,
+        &scope,
+        &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 1))]),
+    )
+    .expect("legacy hole point carrier");
+
+    assert_eq!(construction.point_record_index, 55);
+    assert_f64_array(construction.position, [1.25, -2.5, 3.75]);
+    assert_eq!(construction.position_offset, position_at as u64);
+    assert_f64_array(construction.direction, [0.0, 0.0, 1.0]);
+    assert_f64_array(construction.point_parameters, [0.125, -0.25]);
+    assert_eq!(construction.reference_type, 19);
+    assert_eq!(construction.tangent_point_data_prefix, None);
+    assert_eq!(construction.tangent_point_data, None);
+    assert_eq!(construction.tangent_point_data_offset, None);
+    assert_eq!(construction.input_record_indices, [378]);
+    assert_eq!(
+        construction.input_record_offsets,
+        [(input_reference_at + 1) as u64]
+    );
+}
+
+#[test]
+fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"333", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.push(1);
+    bytes.extend_from_slice(&103u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    lp_utf16(&mut bytes, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
+    lp_utf16(&mut bytes, "8e685642-4d68-4909-96d0-0dd4437491b6");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 7]);
+    indexed_header(&mut bytes, *b"265", 100);
+    indexed_header(&mut bytes, *b"301", 101);
+    indexed_header(&mut bytes, *b"446", 102);
+    let identity_at = bytes.len();
+    indexed_header(&mut bytes, *b"429", 103);
+    bytes.extend_from_slice(&[0; 10]);
+    let primary_identity_at = bytes.len();
+    bytes.extend_from_slice(&246u64.to_le_bytes());
+    let next_at = bytes.len();
+    indexed_header(&mut bytes, *b"311", 104);
+
+    let mut scope = DesignParameterScope::empty("generated:hole#0", "Hole", 12);
+    scope.reference_members.push(100);
+    let selection = exact_hole_face_selection(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &HashMap::from([(100_u64, (HOLE_FACE_SELECTION_TYPE_GUID, 1))]),
+    )
+    .expect("direct Hole face selection");
+
+    assert_eq!(selection.record_index, 100);
+    assert_eq!(selection.class_tag, "333");
+    assert_eq!(selection.asset_id, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
+    assert_eq!(selection.context_id, "8e685642-4d68-4909-96d0-0dd4437491b6");
+    assert_eq!(selection.identity_record_index, 103);
+    assert_eq!(selection.identity_record_offset, identity_at as u64);
+    assert_eq!(selection.primary_identity, 246);
+    assert_eq!(
+        selection.primary_identity_offset,
+        primary_identity_at as u64
+    );
+    assert_eq!(selection.next_record_index, 104);
+    assert_eq!(selection.next_byte_offset, next_at as u64);
+    assert!(selection.historical_face_candidates.is_empty());
 }
 
 #[test]

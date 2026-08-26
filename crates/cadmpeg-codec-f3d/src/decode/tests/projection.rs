@@ -15,9 +15,10 @@ use super::super::{
     apply_appearance_base_colors, bind_mesh_feature_definitions,
     container_only_dimension_parameters, design_projection_gaps, face_selection_is_resolved,
     feature_definition_is_incomplete, incomplete_feature_families, mesh_attribute_channels,
-    mesh_texture_assignments, unresolved_dimension_companion_count, DesignProjectionGaps,
-    MeshProjection,
+    mesh_texture_assignments, report_design_projection_gaps, unresolved_dimension_companion_count,
+    DesignProjectionGaps, MeshProjection,
 };
+use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use crate::records::{
     DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
@@ -25,6 +26,57 @@ use crate::records::{
     DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
     LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
 };
+
+#[test]
+fn active_face_substitutions_have_a_distinct_loss_note() {
+    let ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+    let mut native = F3dNative::default();
+    native.design_face_operands.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:face-operand#200",
+            "scope_record_index": 100,
+            "scope_reference_ordinal": 0,
+            "record_index": 200,
+            "byte_offset": 0,
+            "class_tag": "346",
+            "paired_byte_offset": 325,
+            "paired_class_tag": "262",
+            "recipe_record_index": 201,
+            "recipe_record_byte_offset": 0,
+            "recipe_id": "f3d:test:recipe#201",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "bounded_face",
+            "recipe_program_offset": 0,
+            "recipe_program": [],
+            "recipe_node_offsets": [],
+            "recipe_nodes": [],
+            "resolved_active_face": "f3d:brep:entity#30",
+            "next_record_index": 202,
+            "next_byte_offset": 100
+        }))
+        .expect("active face operand"),
+    );
+    let mut report = cadmpeg_ir::report::DecodeReport {
+        format: "f3d".into(),
+        container_only: false,
+        geometry_transferred: true,
+        coverage: std::collections::BTreeMap::new(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+
+    report_design_projection_gaps(&mut report, &ir, &native);
+
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::FeatureFaceSelectionActiveSubstituted.kind())
+        .expect("active-face substitution loss");
+    assert_eq!(loss.message, "1 legacy face operand(s) use a current active-BREP face because no unique preceding-state face slot resolved.");
+}
 
 #[test]
 fn mesh_feature_binds_tessellations_in_design_body_order() {
@@ -524,6 +576,104 @@ fn form_and_primitive_completeness_requires_construction_payloads() {
 }
 
 #[test]
+fn profile_and_boolean_features_require_resolved_operation_inputs() {
+    let definition = |value| {
+        serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
+            .expect("profile or Boolean definition")
+    };
+
+    let sweep = definition(serde_json::json!({
+        "definition": "sweep",
+        "section": {
+            "kind": "profile",
+            "value": {"kind": "sketch", "value": "sketch:section"}
+        },
+        "path": {"kind": "edges", "value": ["edge:path"]},
+        "mode": {"mode": "solid", "op": "join"}
+    }));
+    assert!(!feature_definition_is_incomplete(&sweep));
+    assert!(feature_definition_is_incomplete(&definition(
+        serde_json::json!({
+            "definition": "sweep",
+            "section": {
+                "kind": "profile",
+                "value": {"kind": "native", "value": "native:section"}
+            },
+            "path": {"kind": "edges", "value": ["edge:path"]},
+            "mode": {"mode": "solid", "op": "join"}
+        }),
+    )));
+
+    let chamfer = definition(serde_json::json!({
+        "definition": "chamfer",
+        "groups": [{
+            "edges": {"kind": "edges", "value": ["edge:1"]},
+            "spec": {"kind": "distance", "distance": 2.0}
+        }]
+    }));
+    assert!(!feature_definition_is_incomplete(&chamfer));
+    assert!(feature_definition_is_incomplete(&definition(
+        serde_json::json!({
+            "definition": "chamfer",
+            "groups": [{
+                "edges": {"kind": "native", "value": "native:edges"},
+                "spec": {"kind": "distance", "distance": 2.0}
+            }]
+        }),
+    )));
+
+    let combine = definition(serde_json::json!({
+        "definition": "combine",
+        "target": {"kind": "bodies", "value": ["body:target"]},
+        "tools": {"kind": "bodies", "value": ["body:tool"]},
+        "op": "cut"
+    }));
+    assert!(!feature_definition_is_incomplete(&combine));
+    assert!(feature_definition_is_incomplete(&definition(
+        serde_json::json!({
+            "definition": "combine",
+            "target": {"kind": "native", "value": "native:target"},
+            "tools": {"kind": "bodies", "value": ["body:tool"]},
+            "op": "cut"
+        }),
+    )));
+
+    let revolve = definition(serde_json::json!({
+        "definition": "revolve",
+        "construction": {
+            "profile": {"kind": "sketch", "value": "sketch:profile"},
+            "axis": {
+                "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+            },
+            "extent": {
+                "kind": "one_sided",
+                "termination": {"kind": "angle", "angle": std::f64::consts::PI}
+            }
+        },
+        "op": "new_body"
+    }));
+    assert!(!feature_definition_is_incomplete(&revolve));
+    assert!(feature_definition_is_incomplete(&definition(
+        serde_json::json!({
+            "definition": "revolve",
+            "construction": {
+                "profile": {"kind": "native", "value": "native:profile"},
+                "axis": {
+                    "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
+                    "direction": {"x": 0.0, "y": 0.0, "z": 1.0}
+                },
+                "extent": {
+                    "kind": "one_sided",
+                    "termination": {"kind": "angle", "angle": std::f64::consts::PI}
+                }
+            },
+            "op": "new_body"
+        }),
+    )));
+}
+
+#[test]
 fn datum_point_completeness_requires_a_resolved_construction_rule() {
     let definition = |construction: Option<serde_json::Value>| {
         let mut value = serde_json::json!({
@@ -557,13 +707,13 @@ fn datum_point_completeness_requires_a_resolved_construction_rule() {
 }
 
 #[test]
-fn datum_plane_completeness_distinguishes_frames_from_construction_rules() {
+fn datum_plane_completeness_accepts_direct_frames_and_resolved_construction() {
     let definition = |value| {
         serde_json::from_value::<cadmpeg_ir::features::FeatureDefinition>(value)
             .expect("datum-plane definition")
     };
 
-    assert!(feature_definition_is_incomplete(&definition(
+    assert!(!feature_definition_is_incomplete(&definition(
         serde_json::json!({
             "definition": "datum_plane",
             "origin": {"x": 0.0, "y": 0.0, "z": 5.0},
@@ -822,6 +972,66 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
         incomplete_feature_families(&ir),
         std::collections::BTreeMap::from([("EdgeFlange", 2), ("Hem", 1)])
     );
+}
+
+#[test]
+fn body_copy_features_require_resolved_body_selection() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+    use cadmpeg_ir::ids::BodyId;
+
+    let resolved = BodySelection::Resolved {
+        bodies: vec![BodyId("body:result".into())],
+        native: "native:body-selection".into(),
+    };
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::BaseFeature {
+            bodies: resolved.clone(),
+        }
+    ));
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::InsertBodies { bodies: resolved }
+    ));
+
+    let unresolved = BodySelection::Native("native:body-selection".into());
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::BaseFeature { bodies: unresolved }
+    ));
+}
+
+#[test]
+fn split_body_requires_resolved_target_and_tool_selections() {
+    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::ids::{BodyId, FaceId};
+
+    let resolved_target = BodySelection::Resolved {
+        bodies: vec![BodyId("body:target".into())],
+        native: "native:target".into(),
+    };
+    let resolved_tool = FaceSelection::Resolved {
+        faces: vec![FaceId("face:tool".into())],
+        native: "native:tool".into(),
+    };
+    assert!(!feature_definition_is_incomplete(
+        &FeatureDefinition::SplitBody {
+            targets: resolved_target.clone(),
+            tools: resolved_tool,
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::SplitBody {
+            targets: resolved_target.clone(),
+            tools: FaceSelection::Native("native:tool".into()),
+        }
+    ));
+    assert!(feature_definition_is_incomplete(
+        &FeatureDefinition::SplitBody {
+            targets: BodySelection::Native("native:target".into()),
+            tools: FaceSelection::Resolved {
+                faces: vec![FaceId("face:tool".into())],
+                native: "native:tool".into(),
+            },
+        }
+    ));
 }
 
 #[test]
@@ -1217,6 +1427,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
@@ -1252,6 +1463,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             profile_selections: 2,
             path_selections: 1,
             face_selections: 1,
+            active_face_substitutions: 0,
             body_selections: 0,
             partially_resolved_face_members: 0,
             native_edge_selections: 2,
@@ -1432,6 +1644,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
@@ -1529,12 +1742,15 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
                 fillet_radius_groups: &[],
                 edge_operands: &[],
                 edge_identity_operands: &[],
+                edge_treatment_vertex_operands: &[],
                 entity_selection_operands: &[],
                 curve_identities: &[],
                 face_operands: &[],
                 body_recipe_operands: &[],
+                legacy_loft_body_carriers: &[],
                 placements: &[],
                 body_bindings: &[],
+                component_naming_spaces: &[],
                 histories: &[],
             },
         )

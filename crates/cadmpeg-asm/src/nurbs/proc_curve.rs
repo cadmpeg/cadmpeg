@@ -655,19 +655,20 @@ fn procedural_curve_recursive(
     // intcurve opens with its cache — the first block, followed by the fit
     // tolerance; later blocks belong to nested construction machinery
     // (support surfaces, blend spines, progenitors) and are not the carrier.
-    let positions = crate::nurbs::toks::marker_positions(toks);
+    let cache_scope = crate::nurbs::toks::owned_cache_scope(toks).unwrap_or(toks);
+    let positions = crate::nurbs::toks::owned_marker_positions(cache_scope);
     let solved = if vector_offset.is_some() || subset.is_some() || compound.is_some() {
         positions
             .into_iter()
             .rev()
-            .find_map(|position| curve_block(toks, position))
+            .find_map(|position| curve_block(cache_scope, position))
     } else {
         positions
             .into_iter()
-            .find_map(|position| curve_block(toks, position))
+            .find_map(|position| curve_block(cache_scope, position))
     };
     if let Some((curve, end)) = solved {
-        let cache_fit_tolerance = match toks.get(end) {
+        let cache_fit_tolerance = match cache_scope.get(end) {
             Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
             _ => None,
         };
@@ -2887,11 +2888,11 @@ pub(crate) fn optional_embedded_surface_with_bounds(
         }
         return Some((Some(surface), bounds));
     }
-    // Inline `spline { <subtype> }` support scope whose construction grammar
-    // the embedded decoder does not type, including nested revision-gated
-    // subtypes: resolve the scope's solved surface cache (following nested
-    // subtype-table references) and consume the scope, then read the four
-    // optional bound fields.
+    // Inline `spline { <subtype> }` support scope: resolve a solved surface
+    // cache when present, or validate the procedural surface construction when
+    // the support is cacheless. A cacheless procedural support has no neutral
+    // SurfaceGeometry carrier, but it still makes its paired native pcurve
+    // slot eligible.
     cur.set_pos(saved);
     if kind == Some("spline") {
         cur.take_ident()?;
@@ -2900,13 +2901,21 @@ pub(crate) fn optional_embedded_surface_with_bounds(
         }
         if matches!(cur.peek(), Some(Token::SubtypeOpen)) {
             let scope = crate::nurbs::toks::subtype_span(toks, cur.pos())?;
-            let surface = owned_surface_cache_resolving_refs(scope, table)?;
+            let surface = if let Some(surface) = owned_surface_cache_resolving_refs(scope, table) {
+                Some(SurfaceGeometry::Nurbs(surface))
+            } else if crate::nurbs::proc_surface::procedural_surface_resolving_refs(scope, table)
+                .is_some()
+            {
+                None
+            } else {
+                return None;
+            };
             cur.set_pos(cur.pos() + scope.len());
             let mut bounds = [None; 4];
             for bound in &mut bounds {
                 *bound = cur.take_optional_range_value()?;
             }
-            return Some((Some(SurfaceGeometry::Nurbs(surface)), bounds));
+            return Some((surface, bounds));
         }
     }
     cur.set_pos(saved);
@@ -2977,11 +2986,7 @@ fn compound_definition(toks: &[Token]) -> Option<CompoundDefinition> {
     cur.bump();
     let mut components = Vec::with_capacity(count);
     for _ in 0..count {
-        let position = cur.pos();
-        let relative = crate::nurbs::toks::marker_positions(toks.get(position..)?)
-            .into_iter()
-            .next()?;
-        let (curve, end) = curve_block(toks, position + relative)?;
+        let (curve, end) = curve_block(toks, cur.pos())?;
         components.push(curve);
         cur.set_pos(end);
     }
@@ -2990,26 +2995,19 @@ fn compound_definition(toks: &[Token]) -> Option<CompoundDefinition> {
 
 fn subset_definition(toks: &[Token]) -> Option<SubsetDefinition> {
     let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "subset_int_cur")?;
-    let start = marker + 2;
-    let source_marker = crate::nurbs::toks::marker_positions(toks.get(start..)?)
-        .into_iter()
-        .next()?
-        + start;
-    let (source, source_end) = curve_block(toks, source_marker)?;
-    let mut cur = Cur::at(toks, source_end);
+    let mut cur = Cur::at(toks, marker + 2);
+    let (source, source_end) = curve_block(toks, cur.pos())?;
+    cur.set_pos(source_end);
     let range = [cur.take_range_value()?, cur.take_range_value()?];
     Some((source, range))
 }
 
 fn vector_offset_definition(toks: &[Token]) -> Option<VectorOffsetDefinition> {
     let marker = crate::nurbs::toks::find_owned_intcurve_subtype(toks, "offset_int_cur")?;
-    let start = marker + 2;
-    let source_marker = crate::nurbs::toks::marker_positions(toks.get(start..)?)
-        .into_iter()
-        .next()?
-        + start;
-    let (source, source_end) = curve_block(toks, source_marker)?;
-    let mut cur = Cur::at(toks, source_end);
+    let mut cur = Cur::at(toks, marker + 2);
+    cur.take_bool()?;
+    let (source, source_end) = curve_block(toks, cur.pos())?;
+    cur.set_pos(source_end);
     if !matches!(toks.get(cur.pos()), Some(Token::Double(_)))
         || !matches!(toks.get(cur.pos() + 1), Some(Token::Double(_)))
     {

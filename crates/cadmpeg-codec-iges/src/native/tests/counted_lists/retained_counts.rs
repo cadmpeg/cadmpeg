@@ -620,7 +620,7 @@ fn decode_drawing_reads_both_lists_and_retains_both_declared_counts() {
     assert_eq!(fields["declared_annotation_count"], 1);
     assert_eq!(views.len(), 1);
     assert_eq!(views[0]["view"], "iges:presentation:view#D1");
-    assert!((views[0]["rotation"].as_f64().unwrap() - 0.5).abs() < 1e-12);
+    assert!((views[0]["rotation"].as_f64().unwrap() - 0.5).abs() < 1.0e-12);
     assert_eq!(annotations.len(), 1);
     assert_eq!(annotations[0], "iges:entity:directory#5");
     assert_no_count_loss(&result);

@@ -54,6 +54,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `parse_revisions` treats every nonzero `kind == u16::MAX` payload selector as the short form and zero as the long form. It does not establish whether other selector values are valid or whether the selector has this polarity.
 
+### RS-05. Registry object and node-count ownership
+
+**Question.** Which registry object owns the count of node records that follow an entry, and what consistency rule applies when an entry contains more than one object?
+
+**Known.** Each registry object stores a `node_count`. The current grammar uses the last object's value minus one as the entry's following node-record count. It does not require the object values to agree or identify the count-owning object.
+
+**Need.** The count owner, bias, and multi-object consistency rule must be exact before the value can frame the following node records.
+
 ## 2. Kernel ownership
 
 ### KE-01. Multiple part carriers
@@ -114,6 +122,8 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 **Need.** Additional code pages, typed variants, and preview encodings require exact decoding, range validation, and neutral/native mapping rules before transfer.
 
+**Note.** When a property section has no code-page property, LPSTR and dictionary strings are decoded as Windows-1252. The format model does not establish that an absent code page selects Windows-1252.
+
 ### PR-02. Metadata property identity and conflict precedence
 
 **Question.** Which OLE property-set identity and precedence rule select title, author, description, part number, and document kind when multiple sections expose matching names or built-in IDs?
@@ -134,11 +144,13 @@ The schema-15 representation/model-state branch and its occurrence table are fra
 
 ### MA-02. Protein material-property identity and precedence
 
-**Question.** Which schema-qualified Protein property owns each material scalar, bitmap URI, bitmap URN, and base-color channel when more than one property matches a suffix or fallback name?
+**Question.** Which schema-qualified Protein property owns each material scalar, bitmap URI, bitmap URN, base-color channel, and texture-mapping value, and what value does each schema define when a property is absent?
 
 **Known.** Material projection scans matching property IDs and accepts the first match for texture mapping values, bitmap paths, bitmap URNs, and normalized color candidates. It also maps `generic_refraction_index` and `transparent_refraction_index` to one neutral key, so a later map insertion replaces the earlier value.
 
-**Need.** Schema declarations or a controlled multi-match record must establish property ownership, channel precedence, and ambiguity behavior before material values can be transferred.
+**Need.** Schema declarations must establish property ownership, channel precedence, ambiguity behavior, and omission semantics before material values can be transferred.
+
+**Note.** The current projection supplies schema-independent values when mapping properties are absent: map channel 1, UVW source 0, zero offsets and rotation, unit scale, enabled repeat, zero real-world mapping values and bump depth, and unit normal scale. These values are not yet established as the omission semantics of each Protein schema.
 
 ### DE-01. Feature and history record graph
 

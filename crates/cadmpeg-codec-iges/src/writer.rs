@@ -28,6 +28,10 @@ use std::f64::consts::TAU;
 use std::fmt::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+const EPS_WRITE_COARSE_GEOMETRY: f64 = 1.0e-6;
+const EPS_WRITE_POSITION: f64 = 1.0e-8;
+const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
+
 const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "boundary_vertex_sewing",
     "cards",
@@ -44,12 +48,12 @@ const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "quarantined_parameter_records",
     "transformations",
 ];
-const FRAME_REPAIR_DOT_LIMIT: f64 = 1.0e-6;
-const NURBS_CLOSEDNESS_TOLERANCE: f64 = 1.0e-10;
+const FRAME_REPAIR_DOT_LIMIT: f64 = EPS_WRITE_COARSE_GEOMETRY;
+const NURBS_CLOSEDNESS_TOLERANCE: f64 = EPS_WRITE_DEGENERATE;
 // Roundoff guard for geometric plane classification. This is not serialized
 // as an IGES tolerance and never supplies a normal for a non-unique plane.
 const NURBS_PLANE_COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
-const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = 1.0e-8;
+const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = EPS_WRITE_POSITION;
 const PHYSICALLY_DEPENDENT_STATUS: &str = "00010000";
 const PHYSICALLY_DEPENDENT_EDGE_LIST_STATUS: &str = "00010001";
 const PARAMETER_CURVE_STATUS: &str = "00010500";
@@ -1979,7 +1983,7 @@ fn curve_matches_pcurve(curve: &CurveGeometry, range: [f64; 2], pcurve: &Pcurve)
 }
 
 fn same_float(left: f64, right: f64) -> bool {
-    (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10
+    (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * EPS_WRITE_DEGENERATE
 }
 
 fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>, CodecError> {
@@ -3631,9 +3635,9 @@ fn resolve_entity_references(entities: &mut [Entity]) -> Result<(), CodecError> 
 }
 
 fn same_range(left: [f64; 2], right: [f64; 2]) -> bool {
-    left.into_iter()
-        .zip(right)
-        .all(|(left, right)| (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10)
+    left.into_iter().zip(right).all(|(left, right)| {
+        (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * EPS_WRITE_DEGENERATE
+    })
 }
 
 fn isoparametric_flag(pcurve_use: &PcurveUse, owner: &str) -> Result<i32, CodecError> {

@@ -15,15 +15,18 @@ use crate::surface::{
 use crate::vecmath::{add, cross, dot, normalize, scale};
 use std::collections::BTreeSet;
 
-const EPS_FRAME_AGREEMENT: f64 = 1.0e-9;
-const EPS_VECTOR_NONZERO: f64 = 1.0e-12;
-const EPS_FRAME_DETERMINANT: f64 = 1.0e-9;
-const EPS_FRAME_ORTHO: f64 = 1.0e-12;
-const EPS_PLANE_SEPARATION: f64 = 1.0e-12;
-const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
-const EPS_SPAN_AGREEMENT: f64 = 1.0e-9;
-const EPS_AXIS_ALIGNMENT: f64 = 1.0e-12;
-const EPS_FRAME_DENOMINATOR: f64 = 1.0e-12;
+const EPS_PLACEMENT_GEOMETRY: f64 = 1.0e-9;
+const EPS_PLACEMENT_EXACT_GEOMETRY: f64 = 1.0e-12;
+
+const EPS_FRAME_AGREEMENT: f64 = EPS_PLACEMENT_GEOMETRY;
+const EPS_VECTOR_NONZERO: f64 = EPS_PLACEMENT_EXACT_GEOMETRY;
+const EPS_FRAME_DETERMINANT: f64 = EPS_PLACEMENT_GEOMETRY;
+const EPS_FRAME_ORTHO: f64 = EPS_PLACEMENT_EXACT_GEOMETRY;
+const EPS_PLANE_SEPARATION: f64 = EPS_PLACEMENT_EXACT_GEOMETRY;
+const EPS_RADIUS_NONZERO: f64 = EPS_PLACEMENT_EXACT_GEOMETRY;
+const EPS_SPAN_AGREEMENT: f64 = EPS_PLACEMENT_GEOMETRY;
+const EPS_AXIS_ALIGNMENT: f64 = EPS_PLACEMENT_EXACT_GEOMETRY;
+const EPS_FRAME_DENOMINATOR: f64 = EPS_PLACEMENT_EXACT_GEOMETRY;
 
 /// A feature's right-handed section-to-model rigid frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -272,12 +275,12 @@ fn generated_planar_section_transform(
         let end = point(segment.point_ids[1])?;
         let direction = [end[0] - start[0], end[1] - start[1]];
         let length = direction[0].hypot(direction[1]);
-        (length.is_finite() && length > 1.0e-12).then_some(())?;
+        (length.is_finite() && length > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
         let local_normal = [direction[1] / length, -direction[0] / length];
         let local_offset = local_normal[0].mul_add(start[0], local_normal[1] * start[1]);
         let (model_normal, model_offset) = model_plane;
         let magnitude = dot(model_normal, model_normal).sqrt();
-        (magnitude.is_finite() && magnitude > 1.0e-12).then_some(())?;
+        (magnitude.is_finite() && magnitude > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
         sides.push((
             local_normal,
             local_offset,
@@ -579,7 +582,7 @@ fn definition_local_frame_transform(
     let values = unique_complete_local_system(definition)?;
     let mut u_axis = normalize(values[0..3].try_into().ok()?)?;
     let raw_normal = normalize(values[6..9].try_into().ok()?)?;
-    (dot(u_axis, raw_normal).abs() <= 1.0e-12).then_some(())?;
+    (dot(u_axis, raw_normal).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
     let mut normal = raw_normal;
     let origin: [f64; 3] = values[9..12].try_into().ok()?;
     if section.sketch_plane_flip == Some(BinaryFlag::Set) {
@@ -592,15 +595,17 @@ fn definition_local_frame_transform(
         u_axis = scale(u_axis, -1.0);
     }
     let v_axis = cross(normal, u_axis);
-    ((dot(v_axis, v_axis) - 1.0).abs() <= 1.0e-12).then_some(FeatureSectionTransform {
-        definition_id: definition.id,
-        feature_id: Some(feature_id),
-        origin,
-        u_axis,
-        v_axis,
-        normal,
-        offset: section.offset,
-    })
+    ((dot(v_axis, v_axis) - 1.0).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY).then_some(
+        FeatureSectionTransform {
+            definition_id: definition.id,
+            feature_id: Some(feature_id),
+            origin,
+            u_axis,
+            v_axis,
+            normal,
+            offset: section.offset,
+        },
+    )
 }
 
 fn generated_datum_plane_equation(

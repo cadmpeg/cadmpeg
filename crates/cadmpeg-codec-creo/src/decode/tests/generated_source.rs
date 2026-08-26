@@ -1181,7 +1181,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
             matches!(geometry, SurfaceGeometry::Cylinder { origin, axis, radius, .. }
                 if *origin == Point3::new(1.0, 2.0, 3.0)
                     && *axis == Vector3::new(0.0, 0.0, 1.0)
-                    && (*radius - 0.098).abs() < 1e-12)
+                    && (*radius - 0.098).abs() < 1.0e-12)
         }));
     assert_eq!(
         counterbore_axis_placement_from_sources(&sources, &existing, 0.625),
@@ -1808,12 +1808,12 @@ fn extrusion_arc_pcurve_is_exact_in_both_directions() {
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("first endpoint");
         let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("arc midpoint");
         let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("last endpoint");
-        assert!((first.u - (2.0 + 3.0 * start.cos())).abs() < 1e-12);
-        assert!((first.v - (2.0 + 3.0 * start.sin())).abs() < 1e-12);
-        assert!((middle.u - expected_middle.u).abs() < 1e-12);
-        assert!((middle.v - expected_middle.v).abs() < 1e-12);
-        assert!((last.u - (2.0 + 3.0 * end.cos())).abs() < 1e-12);
-        assert!((last.v - (2.0 + 3.0 * end.sin())).abs() < 1e-12);
+        assert!((first.u - (2.0 + 3.0 * start.cos())).abs() < 1.0e-12);
+        assert!((first.v - (2.0 + 3.0 * start.sin())).abs() < 1.0e-12);
+        assert!((middle.u - expected_middle.u).abs() < 1.0e-12);
+        assert!((middle.v - expected_middle.v).abs() < 1.0e-12);
+        assert!((last.u - (2.0 + 3.0 * end.cos())).abs() < 1.0e-12);
+        assert!((last.v - (2.0 + 3.0 * end.sin())).abs() < 1.0e-12);
     }
 }
 
@@ -1841,13 +1841,13 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
         (extrusion_profile_signed_area(&counterclockwise).expect("positive area")
             - std::f64::consts::FRAC_PI_2)
             .abs()
-            < 1e-12
+            < 1.0e-12
     );
     assert!(
         (extrusion_profile_signed_area(&clockwise).expect("negative area")
             + std::f64::consts::FRAC_PI_2)
             .abs()
-            < 1e-12
+            < 1.0e-12
     );
 }
 
@@ -1867,7 +1867,7 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
     let (profiles, area) = ordered_extrusion_profiles(vec![profile.clone()])
         .expect("a full-turn arc is a closed profile");
     assert_eq!(profiles, vec![profile]);
-    assert!((area - 4.0 * std::f64::consts::PI).abs() < 1e-12);
+    assert!((area - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
     assert_eq!(
         oriented_arc_parameterization(false, 0.0, std::f64::consts::TAU).1,
         [0.0, std::f64::consts::TAU]
@@ -1914,19 +1914,19 @@ fn circle_remains_a_closed_extrusion_profile() {
     assert_eq!(profiles, vec![vec![(circle.clone(), false, seam, seam)]]);
     let (ordered, area) = ordered_extrusion_profiles(profiles.clone()).expect("closed circle");
     assert_eq!(ordered, profiles);
-    assert!((area - 9.0 * std::f64::consts::PI).abs() < 1e-12);
+    assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     for reversed in [false, true] {
         let pcurve = extrusion_cap_pcurve(&circle, reversed, seam, seam);
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("circle seam");
         let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("circle midpoint");
         let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("circle seam");
-        assert!((first.u - seam[0]).abs() < 1e-12);
-        assert!((first.v - seam[1]).abs() < 1e-12);
-        assert!((middle.u - (1.0 - 3.0)).abs() < 1e-12);
-        assert!((middle.v + 2.0).abs() < 1e-12);
-        assert!((last.u - seam[0]).abs() < 1e-12);
-        assert!((last.v - seam[1]).abs() < 1e-12);
+        assert!((first.u - seam[0]).abs() < 1.0e-12);
+        assert!((first.v - seam[1]).abs() < 1.0e-12);
+        assert!((middle.u - (1.0 - 3.0)).abs() < 1.0e-12);
+        assert!((middle.v + 2.0).abs() < 1.0e-12);
+        assert!((last.u - seam[0]).abs() < 1.0e-12);
+        assert!((last.v - seam[1]).abs() < 1.0e-12);
         assert_eq!(
             extrusion_side_uvs(
                 &circle,
@@ -1960,7 +1960,7 @@ fn circle_remains_a_closed_extrusion_profile() {
     assert!(point_on_profile_arc(
         seam,
         profile_arc(&(circle, false, seam, seam)).expect("circle arc"),
-        1e-9,
+        1.0e-9,
     ));
     assert_eq!(
         oriented_full_turn_angles(false),

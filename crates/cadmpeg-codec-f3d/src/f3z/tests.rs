@@ -16,7 +16,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
 
 use crate::test_support::*;
-use crate::F3dCodec;
+use crate::{F3dCodec, F3dLossCode};
 
 use crate::records::DesignSketchPlacement;
 use cadmpeg_ir::document::Model;
@@ -363,6 +363,51 @@ fn f3z_archive_merges_identity_occurrences() {
         .notes
         .iter()
         .any(|note| note == "source container regenerated from IR"));
+}
+
+#[test]
+fn f3z_drawing_root_decodes_its_unambiguous_derived_model() {
+    let model = f3d_with_smbh(&synthetic_geometry_smbh());
+    let drawing = b"synthetic drawing payload";
+    let description = br#"{"designDescription":{"designGraphs":[{"rootIds":[10],"designObjects":[{"id":10,"relativePath":"drawing.f2d","contentType":"f2d","references":[{"type":"DERIVED","ids":[11]}]},{"id":11,"relativePath":"model.f3d","contentType":"f3d","references":[]}]}]}}"#;
+    let archive = f3z_archive_with_design_description(
+        "drawing.f2d",
+        &[("drawing.f2d", drawing), ("model.f3d", model.as_slice())],
+        description,
+    );
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(decoded.report().geometry_transferred);
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::DrawingDocumentOmitted.kind()));
+}
+
+#[test]
+fn f3z_drawing_root_rejects_ambiguous_derived_models() {
+    let model = f3d_with_smbh(&synthetic_geometry_smbh());
+    let description = br#"{"designDescription":{"designGraphs":[{"rootIds":[10],"designObjects":[{"id":10,"relativePath":"drawing.f2d","contentType":"f2d","references":[{"type":"DERIVED","ids":[11,12]}]},{"id":11,"relativePath":"first.f3d","contentType":"f3d","references":[]},{"id":12,"relativePath":"second.f3d","contentType":"f3d","references":[]}]}]}}"#;
+    let archive = f3z_archive_with_design_description(
+        "drawing.f2d",
+        &[
+            ("drawing.f2d", b"synthetic drawing payload"),
+            ("first.f3d", model.as_slice()),
+            ("second.f3d", model.as_slice()),
+        ],
+        description,
+    );
+
+    let result = F3dCodec.decode(&mut Cursor::new(archive), &DecodeOptions::default());
+
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }
 
 #[test]

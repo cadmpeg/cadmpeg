@@ -707,9 +707,9 @@ fn encoder_bakes_rigid_body_transform() {
         .unwrap();
 
     assert!(decoded.ir().model.points.iter().any(|point| {
-        (point.position.x - expected_point.x).abs() < 1e-9
-            && (point.position.y - expected_point.y).abs() < 1e-9
-            && (point.position.z - expected_point.z).abs() < 1e-9
+        (point.position.x - expected_point.x).abs() < 1.0e-9
+            && (point.position.y - expected_point.y).abs() < 1.0e-9
+            && (point.position.z - expected_point.z).abs() < 1.0e-9
     }));
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         matches!(surface.geometry, SurfaceGeometry::Plane { normal, .. } if normal == expected_normal)
@@ -960,6 +960,7 @@ pub(crate) fn semantic_writer_rejects_subds() {
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
+        symmetries: Vec::new(),
         source_object: None,
     });
 
@@ -1291,9 +1292,9 @@ fn semantic_writer_preserves_unbound_material_definition() {
         .find(|appearance| appearance.name.as_deref() == Some("Steel"))
         .unwrap();
     let color = appearance.base_color.unwrap();
-    assert!((color.r - 32.0 / 255.0).abs() < 1e-6);
-    assert!((color.g - 64.0 / 255.0).abs() < 1e-6);
-    assert!((color.b - 128.0 / 255.0).abs() < 1e-6);
+    assert!((color.r - 32.0 / 255.0).abs() < 1.0e-6);
+    assert!((color.g - 64.0 / 255.0).abs() < 1.0e-6);
+    assert!((color.b - 128.0 / 255.0).abs() < 1.0e-6);
 }
 
 #[test]

@@ -604,8 +604,8 @@ mod tests {
         assert_eq!(curve.control_points.len(), 3);
         assert_eq!(curve.control_points[1], Point3::new(10.0, 0.0, 0.0));
         assert_eq!(curve.knots.len(), 5);
-        assert!((curve.knots[2] - 0.01).abs() < 1e-12);
-        assert!((curve.knots[3] - 0.02).abs() < 1e-12);
+        assert!((curve.knots[2] - 0.01).abs() < 1.0e-12);
+        assert!((curve.knots[3] - 0.02).abs() < 1.0e-12);
         let support_data = &carrier.support_data;
         assert_eq!(support_data.supports, [2, 3]);
         let support_uv = support_data

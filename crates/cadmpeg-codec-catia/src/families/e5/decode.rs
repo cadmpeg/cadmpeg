@@ -31,11 +31,17 @@ use crate::families::FamilyOutput;
 use crate::loss::CatiaLossCode;
 use crate::solve::UnionFind;
 
+const EPS_E5_DECODE_COARSE_GEOMETRY: f64 = 1.0e-6;
+const EPS_E5_DECODE_POSITION: f64 = 1.0e-8;
+const EPS_E5_DECODE_GEOMETRY: f64 = 1.0e-9;
+const EPS_E5_DECODE_DEGENERATE: f64 = 1.0e-10;
+const EPS_E5_DECODE_EXACT_GEOMETRY: f64 = 1.0e-12;
+
 const E5_ENDPOINT_MATCH_TOLERANCE: f64 = 2e-3;
-const EPS_AXIS_ALIGN: f64 = 1e-8;
-const E5_ISOPARAMETRIC_DIRECTION_TOLERANCE: f64 = 1e-8;
-const E5_PARAMETER_RELATIVE_TOLERANCE: f64 = 1e-9;
-const E5_CARRIER_AXIS_COSINE_TOLERANCE: f64 = 1e-9;
+const EPS_AXIS_ALIGN: f64 = EPS_E5_DECODE_POSITION;
+const E5_ISOPARAMETRIC_DIRECTION_TOLERANCE: f64 = EPS_E5_DECODE_POSITION;
+const E5_PARAMETER_RELATIVE_TOLERANCE: f64 = EPS_E5_DECODE_GEOMETRY;
+const E5_CARRIER_AXIS_COSINE_TOLERANCE: f64 = EPS_E5_DECODE_GEOMETRY;
 
 #[derive(Clone, Copy)]
 enum E5IsoparametricDirection {
@@ -372,7 +378,9 @@ pub(crate) fn append_e5_planes(
                         else {
                             continue;
                         };
-                        if direction[0].abs() <= 1e-9 || direction[1].abs() > 1e-9 {
+                        if direction[0].abs() <= EPS_E5_DECODE_GEOMETRY
+                            || direction[1].abs() > EPS_E5_DECODE_GEOMETRY
+                        {
                             continue;
                         }
                         let Some(&candidate) = carrier_axes.get(surface) else {
@@ -381,7 +389,7 @@ pub(crate) fn append_e5_planes(
                         let candidate = canonical_direction(candidate);
                         if normal.is_some_and(|value| {
                             value.x * candidate.x + value.y * candidate.y + value.z * candidate.z
-                                < 1.0 - 1e-10
+                                < 1.0 - EPS_E5_DECODE_DEGENERATE
                         }) {
                             consistent = false;
                         } else {
@@ -421,7 +429,7 @@ pub(crate) fn append_e5_planes(
 /// second rank would send plane fitting through an ill-conditioned 2D solve;
 /// the known geometric normal must select the rank-one path instead.
 fn e5_uv_vectors_are_independent(left: [f64; 2], right: [f64; 2]) -> bool {
-    const RANK_TOLERANCE: f64 = 1e-12;
+    const RANK_TOLERANCE: f64 = EPS_E5_DECODE_EXACT_GEOMETRY;
     let scale = left
         .into_iter()
         .chain(right)
@@ -605,7 +613,7 @@ pub(crate) fn solve_e5_plane_frame(
             || !residual.is_finite()
             || !orthogonality.is_finite()
             || residual > 2e-3
-            || orthogonality.abs() > 1e-6
+            || orthogonality.abs() > EPS_E5_DECODE_COARSE_GEOMETRY
         {
             continue;
         }
@@ -624,7 +632,7 @@ pub(crate) fn solve_e5_plane_frame(
         }
         if expected_normal.is_some_and(|expected| {
             let alignment = normal.dot(expected);
-            !alignment.is_finite() || alignment.abs() < 1.0 - 1e-6
+            !alignment.is_finite() || alignment.abs() < 1.0 - EPS_E5_DECODE_COARSE_GEOMETRY
         }) {
             continue;
         }
@@ -642,7 +650,7 @@ pub(crate) fn solve_e5_plane_frame(
     for (normal, mut u_axis) in candidates {
         let first = [u_axis.x, u_axis.y, u_axis.z]
             .into_iter()
-            .find(|value| value.abs() > 1e-12)?;
+            .find(|value| value.abs() > EPS_E5_DECODE_EXACT_GEOMETRY)?;
         let uv_scale = if first < 0.0 {
             u_axis = Vector3::new(-u_axis.x, -u_axis.y, -u_axis.z);
             [-1.0, -1.0]
@@ -887,7 +895,7 @@ pub(crate) fn plane_frame_residual(
 pub(crate) fn canonical_direction(mut direction: Vector3) -> Vector3 {
     let first = [direction.x, direction.y, direction.z]
         .into_iter()
-        .find(|value| value.abs() > 1e-12)
+        .find(|value| value.abs() > EPS_E5_DECODE_EXACT_GEOMETRY)
         .unwrap_or(1.0);
     if first < 0.0 {
         direction = Vector3::new(-direction.x, -direction.y, -direction.z);
@@ -2557,7 +2565,7 @@ pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGe
             },
         ) => {
             (*left_origin).distance(*right_origin) <= 2e-3
-                && (*left_direction).dot(*right_direction) >= 1.0 - 1e-9
+                && (*left_direction).dot(*right_direction) >= 1.0 - EPS_E5_DECODE_GEOMETRY
         }
         (
             CurveGeometry::Circle {
@@ -2575,8 +2583,8 @@ pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGe
         ) => {
             (*left_center).distance(*right_center) <= 2e-3
                 && (left_radius - right_radius).abs() <= 2e-3
-                && (*left_axis).dot(*right_axis) >= 1.0 - 1e-9
-                && (*left_ref_direction).dot(*right_ref_direction) >= 1.0 - 1e-9
+                && (*left_axis).dot(*right_axis) >= 1.0 - EPS_E5_DECODE_GEOMETRY
+                && (*left_ref_direction).dot(*right_ref_direction) >= 1.0 - EPS_E5_DECODE_GEOMETRY
         }
         (CurveGeometry::Nurbs(left), CurveGeometry::Nurbs(right)) => left == right,
         _ => false,
@@ -2786,7 +2794,7 @@ mod route_tests {
         e5_support_occurrence_intersection_context, equivalent_e5_curve_carriers,
         fit_e5_plane_axes, fit_rank_one_e5_plane_axes, parameter_range_agreement_tolerance,
         parameter_ranges_reversed, plan_e5_boundary, solve_e5_plane_frame,
-        E5OccurrenceIntersectionSide,
+        E5OccurrenceIntersectionSide, EPS_E5_DECODE_EXACT_GEOMETRY, EPS_E5_DECODE_POSITION,
     };
 
     use crate::families::e5::graph::{
@@ -2922,8 +2930,8 @@ mod route_tests {
         let (normal, u_axis, uv_scale) =
             solve_e5_plane_frame(100, [0.0, 0.0, 0.0], &topology, &points, None)
                 .expect("17-segment plane frame");
-        assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - 1e-8);
-        assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - 1e-8);
+        assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_POSITION);
+        assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - EPS_E5_DECODE_POSITION);
         assert_eq!(uv_scale, [1.0, 1.0]);
         assert!(solve_e5_plane_frame(
             100,
@@ -3013,8 +3021,8 @@ mod route_tests {
         let (normal, u_axis, uv_scale) =
             solve_e5_plane_frame(100, [0.0, 0.0, 0.0], &topology, &points, None)
                 .expect("negative native chart frame");
-        assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - 1e-12);
-        assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - 1e-12);
+        assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
+        assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
         assert_eq!(uv_scale, [-1.0, -1.0]);
 
         let surface = E5Surface {
@@ -3624,8 +3632,8 @@ mod route_tests {
             (std::f64::consts::PI, [-2.0, -3.0]),
         ] {
             let point = pcurve_uv(&arc, parameter).expect("arc evaluation");
-            assert!((point.u - expected[0]).abs() < 1e-12);
-            assert!((point.v - expected[1]).abs() < 1e-12);
+            assert!((point.u - expected[0]).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
+            assert!((point.v - expected[1]).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         }
     }
 
@@ -3669,7 +3677,10 @@ mod route_tests {
                 ..
             } if center == Point3::new(0.0, 0.0, 3.0) && radius == 2.0
         ));
-        assert!((range[1] - range[0] - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+        assert!(
+            (range[1] - range[0] - std::f64::consts::FRAC_PI_2).abs()
+                < EPS_E5_DECODE_EXACT_GEOMETRY
+        );
     }
 
     #[test]
@@ -4111,8 +4122,8 @@ mod route_tests {
                 3.0
             ))
         );
-        assert!(endpoints[0].distance(Point3::new(2.0, 0.0, 3.0)) < 1e-12);
-        assert!(endpoints[1].distance(Point3::new(0.0, 2.0, 3.0)) < 1e-12);
+        assert!(endpoints[0].distance(Point3::new(2.0, 0.0, 3.0)) < EPS_E5_DECODE_EXACT_GEOMETRY);
+        assert!(endpoints[1].distance(Point3::new(0.0, 2.0, 3.0)) < EPS_E5_DECODE_EXACT_GEOMETRY);
     }
 
     #[test]
@@ -4211,11 +4222,16 @@ mod route_tests {
             Some(&Point2::new(std::f64::consts::FRAC_PI_2, half_angle.cos()))
         );
         let first_control = control_points.get(1).expect("first derivative control");
-        assert!((first_control.u - std::f64::consts::PI / 10.0).abs() < 1e-12);
-        assert!((first_control.v - half_angle.cos() * 1.2).abs() < 1e-12);
+        assert!(
+            (first_control.u - std::f64::consts::PI / 10.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY
+        );
+        assert!((first_control.v - half_angle.cos() * 1.2).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         let last_control = control_points.get(4).expect("last derivative control");
-        assert!((last_control.u - 2.0 * std::f64::consts::PI / 5.0).abs() < 1e-12);
-        assert!((last_control.v - half_angle.cos() * 0.8).abs() < 1e-12);
+        assert!(
+            (last_control.u - 2.0 * std::f64::consts::PI / 5.0).abs()
+                < EPS_E5_DECODE_EXACT_GEOMETRY
+        );
+        assert!((last_control.v - half_angle.cos() * 0.8).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         let expected = [
             Point3::new(
                 2.0 + half_angle.tan() * half_angle.cos(),
@@ -4228,8 +4244,8 @@ mod route_tests {
                 half_angle.cos(),
             ),
         ];
-        assert!(endpoints[0].distance(expected[0]) < 1e-12);
-        assert!(endpoints[1].distance(expected[1]) < 1e-12);
+        assert!(endpoints[0].distance(expected[0]) < EPS_E5_DECODE_EXACT_GEOMETRY);
+        assert!(endpoints[1].distance(expected[1]) < EPS_E5_DECODE_EXACT_GEOMETRY);
     }
 
     #[test]
@@ -4362,13 +4378,19 @@ mod route_tests {
         };
         let first = control_points.first().expect("first control");
         let last = control_points.last().expect("last control");
-        assert!((first.u - 2.4).abs() < 1e-12 && (first.v - 2.0).abs() < 1e-12);
-        assert!((last.u - 2.0).abs() < 1e-12 && (last.v - 3.0).abs() < 1e-12);
+        assert!(
+            (first.u - 2.4).abs() < EPS_E5_DECODE_EXACT_GEOMETRY
+                && (first.v - 2.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY
+        );
+        assert!(
+            (last.u - 2.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY
+                && (last.v - 3.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY
+        );
         let expected = [Point2::new(2.4, 2.0), Point2::new(2.0, 3.0)].map(|uv| {
             cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v).expect("torus point")
         });
-        assert!(endpoints[0].distance(expected[0]) < 1e-12);
-        assert!(endpoints[1].distance(expected[1]) < 1e-12);
+        assert!(endpoints[0].distance(expected[0]) < EPS_E5_DECODE_EXACT_GEOMETRY);
+        assert!(endpoints[1].distance(expected[1]) < EPS_E5_DECODE_EXACT_GEOMETRY);
     }
 
     #[test]
@@ -4552,8 +4574,8 @@ mod route_tests {
         .expect("linear quintic segment");
         for parameter in [0.0, 0.5, 1.0, 2.0] {
             let point = pcurve_uv(&curve, parameter).expect("jet evaluation");
-            assert!((point.u - parameter).abs() < 1e-12);
-            assert!(point.v.abs() < 1e-12);
+            assert!((point.u - parameter).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
+            assert!(point.v.abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         }
     }
 
@@ -4567,13 +4589,13 @@ mod route_tests {
             ];
             let (u_axis, v_axis, residual) =
                 fit_e5_plane_axes([0.0; 3], &pairs).expect("full-rank frame");
-            assert!(residual <= scale * 1e-12);
-            assert!((u_axis.x - 1.0).abs() < 1e-12);
-            assert!(u_axis.y.abs() < 1e-12);
-            assert!(u_axis.z.abs() < 1e-12);
-            assert!(v_axis.x.abs() < 1e-12);
-            assert!((v_axis.y - 1.0).abs() < 1e-12);
-            assert!(v_axis.z.abs() < 1e-12);
+            assert!(residual <= scale * EPS_E5_DECODE_EXACT_GEOMETRY);
+            assert!((u_axis.x - 1.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
+            assert!(u_axis.y.abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
+            assert!(u_axis.z.abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
+            assert!(v_axis.x.abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
+            assert!((v_axis.y - 1.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
+            assert!(v_axis.z.abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         }
     }
 
@@ -4587,9 +4609,9 @@ mod route_tests {
             let (u_axis, v_axis, residual) =
                 fit_rank_one_e5_plane_axes([0.0; 3], &pairs, Vector3::new(0.0, 1.0, 0.0))
                     .expect("rank-one frame");
-            assert!(residual <= scale * 1e-12);
-            assert!((v_axis.x - 1.0).abs() < 1e-12);
-            assert!((u_axis.z - 1.0).abs() < 1e-12);
+            assert!(residual <= scale * EPS_E5_DECODE_EXACT_GEOMETRY);
+            assert!((v_axis.x - 1.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
+            assert!((u_axis.z - 1.0).abs() < EPS_E5_DECODE_EXACT_GEOMETRY);
         }
     }
 
@@ -4606,7 +4628,7 @@ mod route_tests {
         let (_, _, residual) =
             fit_rank_one_e5_plane_axes([0.0; 3], &pairs, Vector3::new(0.0, 1.0, 0.0))
                 .expect("rank-one frame");
-        assert!(residual < 1e-12);
+        assert!(residual < EPS_E5_DECODE_EXACT_GEOMETRY);
     }
 
     #[test]
@@ -4691,8 +4713,8 @@ mod route_tests {
             Some(Vector3::new(0.0, 1.0, 0.0)),
         )
         .expect("rank-one plane frame");
-        assert!(normal.dot(Vector3::new(0.0, 1.0, 0.0)) > 1.0 - 1e-12);
-        assert!(u_axis.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - 1e-12);
+        assert!(normal.dot(Vector3::new(0.0, 1.0, 0.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
+        assert!(u_axis.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - EPS_E5_DECODE_EXACT_GEOMETRY);
         assert_eq!(uv_scale, [-1.0, -1.0]);
     }
 

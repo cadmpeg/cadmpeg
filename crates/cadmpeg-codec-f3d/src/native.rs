@@ -34,15 +34,17 @@ use crate::history_records::{
 use crate::records::{
     ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference, BodyVisibility,
     ConstructionRecipe, CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
-    DesignBodyRecipeOperand, DesignCanvasImage, DesignComponentOccurrence, DesignConfiguration,
-    DesignConstructionOperandGroup, DesignConstructionOperandIdentity, DesignDecalImage,
-    DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
-    DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
-    DesignFeatureTimeline, DesignFilletRadiusGroup, DesignMaterialAssignment, DesignMeshFeature,
-    DesignParameter, DesignParameterCompanion, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentDesignLink,
+    DesignBodyRecipeOperand, DesignCanvasImage, DesignComponentNamingSpace,
+    DesignComponentOccurrence, DesignConfiguration, DesignConstructionOperandGroup,
+    DesignConstructionOperandIdentity, DesignDecalImage, DesignDimensionAnnotationFrame,
+    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
+    DesignDimensionPresentationFrame, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
+    DesignEdgeOperand, DesignEdgeTreatmentVertexOperand, DesignEntityHeader,
+    DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+    DesignFaceOperand, DesignFaceSourceGroup, DesignFeatureTimeline, DesignFilletRadiusGroup,
+    DesignLoftLegacyBodyCarrier, DesignMaterialAssignment, DesignMeshFeature, DesignParameter,
+    DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    DesignSketchPlacement, DesignSurfaceTrimOperation, LostEdgeReference, PersistentDesignLink,
     PersistentReference, PersistentSubentityTag, SegmentType, SketchCurveIdentity, SketchCurveLink,
     SketchPoint, SketchRelation, SketchSurface, SketchText, XrefDesign, XrefReference,
 };
@@ -99,6 +101,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_body_members",
     "design_body_recipe_operands",
     "design_canvas_images",
+    "design_component_naming_spaces",
     "design_component_occurrences",
     "design_configurations",
     "design_construction_operand_groups",
@@ -108,16 +111,20 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_dimension_locus_groups",
     "design_dimension_locus_pairs",
     "design_dimension_null_locus_pairs",
+    "design_dimension_presentation_frames",
     "design_dimension_recipe_records",
     "design_edge_identity_operands",
     "design_edge_operands",
+    "design_edge_treatment_vertex_operands",
     "design_entity_headers",
     "design_entity_selection_operands",
     "design_extrude_selection_groups",
     "design_extrude_selection_members",
     "design_face_operands",
+    "design_face_source_groups",
     "design_feature_timelines",
     "design_fillet_radius_groups",
+    "design_loft_legacy_body_carriers",
     "design_material_assignments",
     "design_mesh_features",
     "design_parameter_companions",
@@ -126,6 +133,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_parameters",
     "design_record_headers",
     "design_sketch_placements",
+    "design_surface_trim_operations",
     "design_types",
     "edge_continuities",
     "edge_ownerships",
@@ -455,6 +463,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "design_component_naming_spaces",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_component_naming_spaces)
+        },
+        len: |model| model.design_component_naming_spaces.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "design_body_recipe_operands",
         tag: None,
         exactness: (),
@@ -464,6 +484,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(row.arena, &model.design_body_recipe_operands)
         },
         len: |model| model.design_body_recipe_operands.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_loft_legacy_body_carriers",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_loft_legacy_body_carriers)
+        },
+        len: |model| model.design_loft_legacy_body_carriers.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -515,6 +547,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "design_dimension_presentation_frames",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_dimension_presentation_frames)
+        },
+        len: |model| model.design_dimension_presentation_frames.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "design_dimension_recipe_records",
         tag: None,
         exactness: (),
@@ -534,6 +578,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         note: None,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_edge_operands),
         len: |model| model.design_edge_operands.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_edge_treatment_vertex_operands",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_edge_treatment_vertex_operands)
+        },
+        len: |model| model.design_edge_treatment_vertex_operands.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -568,6 +624,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         note: None,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.design_face_operands),
         len: |model| model.design_face_operands.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_face_source_groups",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_face_source_groups)
+        },
+        len: |model| model.design_face_source_groups.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -676,6 +744,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(row.arena, &model.design_parameter_scopes)
         },
         len: |model| model.design_parameter_scopes.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_surface_trim_operations",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_surface_trim_operations)
+        },
+        len: |model| model.design_surface_trim_operations.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1152,6 +1232,9 @@ pub struct F3dNative {
     /// Whole-body operands joined to persistent body construction recipes.
     #[serde(default)]
     pub design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,
+    /// Exact role-less body carriers paired with legacy Boolean-Loft groups.
+    #[serde(default)]
+    pub design_loft_legacy_body_carriers: Vec<DesignLoftLegacyBodyCarrier>,
     /// Exact image-plane bindings owned by Canvas timeline objects.
     #[serde(default)]
     pub design_canvas_images: Vec<DesignCanvasImage>,
@@ -1164,9 +1247,15 @@ pub struct F3dNative {
     /// Exact local component-definition and placed-occurrence carriers.
     #[serde(default)]
     pub design_component_occurrences: Vec<DesignComponentOccurrence>,
+    /// Component-local entity naming spaces selected by context UUID.
+    #[serde(default)]
+    pub design_component_naming_spaces: Vec<DesignComponentNamingSpace>,
     /// Annotated paired dimension frames governing parameter companions.
     #[serde(default)]
     pub design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
+    /// Fusion presentation frames governing parameter companions.
+    #[serde(default)]
+    pub design_dimension_presentation_frames: Vec<DesignDimensionPresentationFrame>,
     /// Typed paired loci recovered from dimensional companion graphs.
     #[serde(default)]
     pub design_dimension_locus_pairs: Vec<DesignDimensionLocusPair>,
@@ -1182,12 +1271,18 @@ pub struct F3dNative {
     /// Edge-selection operands recovered from Fillet and Chamfer scopes.
     #[serde(default)]
     pub design_edge_operands: Vec<DesignEdgeOperand>,
+    /// Corner-vertex operands recovered from edge-treatment groups.
+    #[serde(default)]
+    pub design_edge_treatment_vertex_operands: Vec<DesignEdgeTreatmentVertexOperand>,
     /// Persistent selection identities recovered from Fillet and Chamfer groups.
     #[serde(default)]
     pub design_edge_identity_operands: Vec<DesignEdgeIdentityOperand>,
     /// Face-selection operands recovered from Extrude construction groups.
     #[serde(default)]
     pub design_face_operands: Vec<DesignFaceOperand>,
+    /// Ordered persistent source identities recovered from Face operations.
+    #[serde(default)]
+    pub design_face_source_groups: Vec<DesignFaceSourceGroup>,
     /// Counted Design scope lists in authored feature order.
     #[serde(default)]
     pub design_feature_timelines: Vec<DesignFeatureTimeline>,
@@ -1218,6 +1313,9 @@ pub struct F3dNative {
     /// Sketch and construction-operation records that scope parameters.
     #[serde(default)]
     pub design_parameter_scopes: Vec<DesignParameterScope>,
+    /// Exact BRep-cell carriers owned by `SurfaceTrim` operations.
+    #[serde(default)]
+    pub design_surface_trim_operations: Vec<DesignSurfaceTrimOperation>,
     /// Indexed Design parameter and expression records.
     #[serde(default)]
     pub design_parameters: Vec<DesignParameter>,
@@ -1340,18 +1438,23 @@ impl Default for F3dNative {
             body_visibilities: Vec::new(),
             design_types: Vec::new(),
             design_body_recipe_operands: Vec::new(),
+            design_loft_legacy_body_carriers: Vec::new(),
             design_canvas_images: Vec::new(),
             design_decal_images: Vec::new(),
             design_mesh_features: Vec::new(),
             design_component_occurrences: Vec::new(),
+            design_component_naming_spaces: Vec::new(),
             design_dimension_annotation_frames: Vec::new(),
+            design_dimension_presentation_frames: Vec::new(),
             design_dimension_locus_pairs: Vec::new(),
             design_dimension_locus_groups: Vec::new(),
             design_dimension_null_locus_pairs: Vec::new(),
             design_dimension_recipe_records: Vec::new(),
             design_edge_operands: Vec::new(),
+            design_edge_treatment_vertex_operands: Vec::new(),
             design_edge_identity_operands: Vec::new(),
             design_face_operands: Vec::new(),
+            design_face_source_groups: Vec::new(),
             design_feature_timelines: Vec::new(),
             design_construction_operand_groups: Vec::new(),
             design_construction_operand_identities: Vec::new(),
@@ -1362,6 +1465,7 @@ impl Default for F3dNative {
             design_parameter_companions: Vec::new(),
             design_parameter_owners: Vec::new(),
             design_parameter_scopes: Vec::new(),
+            design_surface_trim_operations: Vec::new(),
             design_parameters: Vec::new(),
             design_sketch_placements: Vec::new(),
             design_entity_headers: Vec::new(),
@@ -1421,9 +1525,14 @@ impl F3dNative {
             design_decal_images: namespace.arena_as("design_decal_images")?,
             design_mesh_features: namespace.arena_as("design_mesh_features")?,
             design_component_occurrences: namespace.arena_as("design_component_occurrences")?,
+            design_component_naming_spaces: namespace.arena_as("design_component_naming_spaces")?,
             design_body_recipe_operands: namespace.arena_as("design_body_recipe_operands")?,
+            design_loft_legacy_body_carriers: namespace
+                .arena_as("design_loft_legacy_body_carriers")?,
             design_dimension_annotation_frames: namespace
                 .arena_as("design_dimension_annotation_frames")?,
+            design_dimension_presentation_frames: namespace
+                .arena_as("design_dimension_presentation_frames")?,
             design_dimension_locus_groups: namespace.arena_as("design_dimension_locus_groups")?,
             design_dimension_locus_pairs: namespace.arena_as("design_dimension_locus_pairs")?,
             design_dimension_null_locus_pairs: namespace
@@ -1431,10 +1540,13 @@ impl F3dNative {
             design_dimension_recipe_records: namespace
                 .arena_as("design_dimension_recipe_records")?,
             design_edge_operands: namespace.arena_as("design_edge_operands")?,
+            design_edge_treatment_vertex_operands: namespace
+                .arena_as("design_edge_treatment_vertex_operands")?,
             design_edge_identity_operands: namespace.arena_as("design_edge_identity_operands")?,
             design_entity_selection_operands: namespace
                 .arena_as("design_entity_selection_operands")?,
             design_face_operands: namespace.arena_as("design_face_operands")?,
+            design_face_source_groups: namespace.arena_as("design_face_source_groups")?,
             design_feature_timelines: namespace.arena_as("design_feature_timelines")?,
             design_construction_operand_groups: namespace
                 .arena_as("design_construction_operand_groups")?,
@@ -1448,6 +1560,7 @@ impl F3dNative {
             design_parameter_companions: namespace.arena_as("design_parameter_companions")?,
             design_parameter_owners: namespace.arena_as("design_parameter_owners")?,
             design_parameter_scopes: namespace.arena_as("design_parameter_scopes")?,
+            design_surface_trim_operations: namespace.arena_as("design_surface_trim_operations")?,
             design_parameters: namespace.arena_as("design_parameters")?,
             design_entity_headers: namespace.arena_as("design_entity_headers")?,
             design_record_headers: namespace.arena_as("design_record_headers")?,

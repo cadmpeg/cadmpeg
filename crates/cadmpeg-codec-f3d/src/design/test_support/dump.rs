@@ -35,6 +35,9 @@ pub(crate) use crate::design::decode::operands::{
 pub(crate) use crate::design::decode::parameters::{
     bind_parameter_companion_payloads, parse_design_parameter, parse_parameter_owner,
 };
+pub(crate) use crate::design::decode::scopes::extrude_sheet_metal::{
+    exact_ruled_surface_operation, exact_surface_stitch_operation,
+};
 pub(crate) use crate::design::decode::scopes::{
     bind_axial_assembly_operand_targets, bind_joint_origin_frames_from_assemblies,
     exact_assembly_alignment, exact_base_feature_construction,
@@ -42,9 +45,8 @@ pub(crate) use crate::design::decode::scopes::{
     exact_component_insert_construction, exact_direct_face_operation,
     exact_draft_operation_with_owners, exact_fixed_chamfer_parameters,
     exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_joint_origin_frame,
-    exact_path_feature_construction, exact_rectangular_pattern_construction,
-    exact_ruled_surface_operation, exact_scale_operation, exact_solid_primitive,
-    exact_surface_extend_operation, exact_surface_offset_operation, exact_surface_stitch_operation,
+    exact_path_feature_construction, exact_rectangular_pattern_construction, exact_scale_operation,
+    exact_solid_primitive, exact_surface_extend_operation, exact_surface_offset_operation,
     exact_thread_construction, exact_work_axis_construction, exact_work_plane_frame,
     exact_work_point_construction, parse_parameter_scope, parse_thread_payload,
     select_circular_pattern_axis,
@@ -72,7 +74,7 @@ pub(crate) use crate::design::dimensions::{
 };
 pub(crate) use crate::design::edge_resolve::{
     feature_input_topology_id, partial_historical_edge_selection,
-    resolved_edge_candidate_intersection, resolved_edge_candidate_intersection_with_deleted_proofs,
+    resolved_edge_candidate_intersection,
 };
 pub(crate) use crate::design::face_resolve::{
     resolved_body_recipe_shape, resolved_face_group, resolved_historical_split_face_target_group,
@@ -101,10 +103,10 @@ pub(crate) use crate::ids::{
 };
 pub(crate) use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignAssemblyAlignment,
-    DesignAssemblyAxialOperandTarget, DesignAssemblyOperandFrame, DesignBaseFeatureConstruction,
-    DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
-    DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignCombineBodySelection, DesignCombineForm,
+    DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandFrame,
+    DesignBaseFeatureConstruction, DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner,
+    DesignBodyRecipeReference, DesignCircularPatternConstruction, DesignCoilExtent,
+    DesignCoilSection, DesignCoilSectionPlacement, DesignCombineBodySelection, DesignCombineForm,
     DesignCombineOperation, DesignComponentInsertConstruction, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
     DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,

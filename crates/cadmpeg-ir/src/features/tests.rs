@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::examples::unit_cube;
+use crate::features::TrimCellSelection;
 use crate::math::{Point3, Vector3};
 use crate::validate::validate_neutral;
 use crate::CadIr;
@@ -854,4 +855,23 @@ fn combine_omits_the_default_keep_tools_flag_from_json() {
     };
     let json = serde_json::to_value(definition).unwrap();
     assert_eq!(json.get("keep_tools"), None);
+}
+
+#[test]
+fn trim_cell_selection_requires_unique_in_range_ordinals() {
+    let valid = TrimCellSelection {
+        removed: vec![1, 4],
+        total: 5,
+    };
+    assert!(valid.is_valid());
+    assert!(!TrimCellSelection {
+        removed: vec![1, 1],
+        total: 5,
+    }
+    .is_valid());
+    assert!(!TrimCellSelection {
+        removed: vec![6],
+        total: 5,
+    }
+    .is_valid());
 }

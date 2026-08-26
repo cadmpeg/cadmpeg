@@ -106,8 +106,16 @@ pub(crate) fn generated_definition_catalog_for(schema: &str) -> Vec<u8> {
         out.extend_from_slice(value.as_bytes());
     }
     let mut out = RECORD_MARKER.to_vec();
-    for value in [schema, "Prism-001", "Default", "Plastic/Thermoplastic"] {
+    lp(&mut out, schema);
+    out.push(0);
+    lp(&mut out, "Prism-001");
+    lp(&mut out, "Prism-001");
+    out.extend_from_slice(&2_u32.to_le_bytes());
+    for value in ["Plastic/Thermoplastic", "Default", "Generated appearance"] {
         lp(&mut out, value);
     }
-    out
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&1_u32.to_le_bytes());
+    lp(&mut out, "");
+    paged_instance_properties(&out)
 }

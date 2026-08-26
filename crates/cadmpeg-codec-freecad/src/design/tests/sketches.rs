@@ -547,7 +547,7 @@ pub(crate) fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_
             start_angle: None,
             end_angle: None,
             ..
-        } if (angle - std::f64::consts::FRAC_PI_2).abs() < 1e-12
+        } if (angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
     assert!(matches!(
         entities[2].geometry,
@@ -634,7 +634,7 @@ pub(crate) fn transfers_full_and_bounded_sketch_conics() {
             start_angle: cadmpeg_ir::features::Angle(start),
             end_angle: cadmpeg_ir::features::Angle(end),
             ..
-        } if (start - 0.8).abs() < 1e-12 && (end - 1.8).abs() < 1e-12
+        } if (start - 0.8).abs() < 1.0e-12 && (end - 1.8).abs() < 1.0e-12
     ));
     assert!(matches!(
         entities[5].geometry,
@@ -770,7 +770,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .find(|parameter| parameter.id.0.ends_with(":constraint:4"))
             .expect("Snell parameter")
             .value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 1.33).abs() < 1e-12
+        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 1.33).abs() < 1.0e-12
     ));
     assert!(matches!(
         result
@@ -781,7 +781,7 @@ pub(crate) fn neutralizes_symmetric_locus_distance_and_point_on_object_constrain
             .find(|parameter| parameter.id.0.ends_with(":constraint:5"))
             .expect("weight parameter")
             .value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 0.75).abs() < 1e-12
+        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 0.75).abs() < 1.0e-12
     ));
     assert!(matches!(
         constraint(6).definition,

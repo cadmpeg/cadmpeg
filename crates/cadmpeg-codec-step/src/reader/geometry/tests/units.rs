@@ -427,7 +427,7 @@ pub(crate) fn decode_resolves_conversion_units_and_linear_uncertainty() {
 
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(result.ir().model.points[0].position.x, 50.8);
-    assert!((result.ir().tolerances.linear - 0.0254).abs() < 1e-12);
+    assert!((result.ir().tolerances.linear - 0.0254).abs() < 1.0e-12);
 }
 
 #[test]
@@ -437,7 +437,7 @@ fn decode_selects_a_length_uncertainty_after_an_angular_measure() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode mixed uncertainty units");
 
-    assert!((result.ir().tolerances.linear - 0.0508).abs() < 1e-12);
+    assert!((result.ir().tolerances.linear - 0.0508).abs() < 1.0e-12);
     assert!(!result
         .report()
         .losses
@@ -452,7 +452,7 @@ fn decode_prefers_named_length_uncertainty_when_several_lengths_are_present() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode named uncertainty");
 
-    assert!((result.ir().tolerances.linear - 0.2).abs() < 1e-12);
+    assert!((result.ir().tolerances.linear - 0.2).abs() < 1.0e-12);
     assert!(!result
         .report()
         .losses
@@ -637,8 +637,8 @@ fn decode_scales_geometry_by_its_representation_context() {
         .iter()
         .find(|point| point.id.as_str() == "step:data:point#8")
         .expect("inch point");
-    assert!((metric.position.x - 10.0).abs() < 1e-12);
-    assert!((inch.position.x - 25.4).abs() < 1e-12);
+    assert!((metric.position.x - 10.0).abs() < 1.0e-12);
+    assert!((inch.position.x - 25.4).abs() < 1.0e-12);
     assert!(!result
         .report()
         .losses

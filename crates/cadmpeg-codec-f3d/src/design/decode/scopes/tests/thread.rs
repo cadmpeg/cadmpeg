@@ -43,11 +43,24 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         minor_diameter: 2.5732,
         pitch: 0.35,
         pitch_diameter: 2.7568,
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
         face_group_record_indices: vec![988],
     };
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, DesignThreadForm::Standard, vec![988]),
         &expected,
+    );
+    let mut invalid_standard_pitch_marker = bytes.clone();
+    invalid_standard_pitch_marker[129] = 0;
+    assert_eq!(
+        parse_thread_payload(
+            &invalid_standard_pitch_marker,
+            38,
+            DesignThreadForm::Standard,
+            vec![988],
+        ),
+        None
     );
 
     let mut scope = DesignParameterScope::empty("f3d:scope#standard-thread", "Thread", 987);
@@ -80,6 +93,57 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     );
 }
 
+#[test]
+fn thread_scope_decodes_class_334_legacy_standard_tail() {
+    let mut bytes = vec![0; 148];
+    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes[29..34].copy_from_slice(&[1, 2, 0, 0, 0]);
+    bytes[34..38].copy_from_slice(&[0x36, 0, 0x67, 0]);
+    let mut payload = Vec::new();
+    lp_utf16(&mut payload, "M7x1");
+    lp_utf16(&mut payload, "7.0");
+    lp_utf16(&mut payload, "ISO Metric profile");
+    assert_eq!(payload.len(), 62);
+    bytes[38..100].copy_from_slice(&payload);
+    bytes[100..105].copy_from_slice(&[1, 1, 0, 0, 0]);
+    bytes[105..113].copy_from_slice(&0.71472f64.to_le_bytes());
+    bytes[113..121].copy_from_slice(&0.60355f64.to_le_bytes());
+    bytes[121] = 0;
+    bytes[122..130].copy_from_slice(&0.1f64.to_le_bytes());
+    bytes[130..138].copy_from_slice(&0.64255f64.to_le_bytes());
+    bytes[138..142].copy_from_slice(&[0, 0, 0, 1]);
+
+    let expected = DesignThreadConstruction {
+        form: DesignThreadForm::StandardLegacy,
+        designation_offset: 38,
+        designation: "M7x1".into(),
+        nominal_size_text: "7.0".into(),
+        nominal_size: 7.0,
+        profile: "ISO Metric profile".into(),
+        major_diameter: 0.71472,
+        minor_diameter: 0.60355,
+        pitch: 0.1,
+        pitch_diameter: 0.64255,
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
+        face_group_record_indices: vec![988],
+    };
+    assert_thread_construction(
+        parse_thread_payload(&bytes, 38, DesignThreadForm::Standard, vec![988]),
+        &expected,
+    );
+
+    let mut scope = DesignParameterScope::empty("f3d:scope#legacy-thread", "Thread", 987);
+    scope.class_tag = "334".into();
+    scope.paired_class_tag = "262".into();
+    scope.reference_members = vec![988, 991];
+    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+
+    scope.class_tag = "335".into();
+    scope.paired_class_tag = "258".into();
+    assert_eq!(exact_thread_construction(&bytes, &scope), None);
+}
+
 fn assert_thread_construction(
     actual: Option<DesignThreadConstruction>,
     expected: &DesignThreadConstruction,
@@ -90,6 +154,14 @@ fn assert_thread_construction(
     assert_eq!(actual.designation, expected.designation);
     assert_eq!(actual.nominal_size_text, expected.nominal_size_text);
     assert_eq!(actual.profile, expected.profile);
+    assert_eq!(
+        actual.trailing_reference_record_index,
+        expected.trailing_reference_record_index
+    );
+    assert_eq!(
+        actual.trailing_reference_offset,
+        expected.trailing_reference_offset
+    );
     assert_eq!(
         actual.face_group_record_indices,
         expected.face_group_record_indices
@@ -137,11 +209,24 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         minor_diameter: 0.293,
         pitch: 0.06,
         pitch_diameter: 0.3166,
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
         face_group_record_indices: vec![988],
     };
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, DesignThreadForm::Compact, vec![988]),
         &expected,
+    );
+    let mut referenced = bytes.clone();
+    referenced[after_profile + 38] = 1;
+    referenced[after_profile + 39..after_profile + 43].copy_from_slice(&2075u32.to_le_bytes());
+    referenced[after_profile + 43..after_profile + 49].fill(0);
+    let mut referenced_expected = expected.clone();
+    referenced_expected.trailing_reference_record_index = Some(2075);
+    referenced_expected.trailing_reference_offset = Some((after_profile + 39) as u64);
+    assert_thread_construction(
+        parse_thread_payload(&referenced, 38, DesignThreadForm::Compact, vec![988]),
+        &referenced_expected,
     );
 
     let mut scope = DesignParameterScope::empty("f3d:scope#compact-thread", "Thread", 987);
@@ -170,6 +255,58 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
 
     scope.reference_members.push(994);
     assert_eq!(exact_thread_construction(&owner_marked, &scope), None);
+}
+
+#[test]
+fn thread_scope_decodes_class_414_legacy_compact_tail() {
+    let mut bytes = vec![0; 160];
+    let mut payload = Vec::new();
+    lp_utf16(&mut payload, "M190x8");
+    lp_utf16(&mut payload, "190.0");
+    lp_utf16(&mut payload, "ISO Metric profile");
+    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes[29..34].copy_from_slice(&[0, 2, 0, 0, 0]);
+    bytes[34..38].copy_from_slice(&[0x36, 0, 0x48, 0]);
+    bytes[38..38 + payload.len()].copy_from_slice(&payload);
+    let after_profile = 38 + payload.len();
+    bytes[after_profile..after_profile + 5].copy_from_slice(&[1, 1, 0, 0, 0]);
+    bytes[after_profile + 5..after_profile + 13].copy_from_slice(&19.08149f64.to_le_bytes());
+    bytes[after_profile + 13..after_profile + 21].copy_from_slice(&18.18397f64.to_le_bytes());
+    bytes[after_profile + 21] = 0;
+    bytes[after_profile + 22..after_profile + 30].copy_from_slice(&0.8f64.to_le_bytes());
+    bytes[after_profile + 30..after_profile + 38].copy_from_slice(&18.50413f64.to_le_bytes());
+    bytes[after_profile + 38..after_profile + 42].copy_from_slice(&[0, 0, 0, 1]);
+
+    let expected = DesignThreadConstruction {
+        form: DesignThreadForm::CompactLegacy,
+        designation_offset: 38,
+        designation: "M190x8".into(),
+        nominal_size_text: "190.0".into(),
+        nominal_size: 190.0,
+        profile: "ISO Metric profile".into(),
+        major_diameter: 19.08149,
+        minor_diameter: 18.18397,
+        pitch: 0.8,
+        pitch_diameter: 18.50413,
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
+        face_group_record_indices: vec![988],
+    };
+    assert_thread_construction(
+        parse_thread_payload(&bytes, 38, DesignThreadForm::Compact, vec![988]),
+        &expected,
+    );
+
+    let mut scope = DesignParameterScope::empty("f3d:scope#legacy-compact-thread", "Thread", 987);
+    scope.class_tag = "414".into();
+    scope.paired_class_tag = "263".into();
+    scope.frame_length = 19;
+    scope.reference_members = vec![988, 989];
+    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+
+    scope.class_tag = "334".into();
+    scope.paired_class_tag = "262".into();
+    assert_eq!(exact_thread_construction(&bytes, &scope), None);
 }
 
 #[test]

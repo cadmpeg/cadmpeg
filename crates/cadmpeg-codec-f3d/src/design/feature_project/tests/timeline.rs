@@ -8,6 +8,81 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::design::feature_project::ScopeHistoryGraph;
+
+#[test]
+fn work_point_history_state_keys_are_history_qualified() {
+    let scope_a = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#a", "Extrude", 1);
+    let scope_b = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#b", "Fillet", 2);
+    let graph = ScopeHistoryGraph {
+        histories_present: true,
+        bound_histories: HashMap::from([
+            (scope_a.id.clone(), "f3d:history#a".to_owned()),
+            (scope_b.id.clone(), "f3d:history#b".to_owned()),
+        ]),
+        component_namespaces: HashMap::from([
+            (
+                scope_a.id.clone(),
+                crate::design::feature_project::ComponentHistoryNamespace::Aggregate,
+            ),
+            (
+                scope_b.id.clone(),
+                crate::design::feature_project::ComponentHistoryNamespace::Aggregate,
+            ),
+        ]),
+        scopes_by_state: HashMap::new(),
+    };
+
+    assert_ne!(graph.state_key(&scope_a, 7), graph.state_key(&scope_b, 7));
+}
+
+#[test]
+fn history_state_predecessors_are_component_qualified() {
+    let bulk_stream = "Design/BulkStream.dat";
+    let stream = format!("f3d:{bulk_stream}");
+    let mut first = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#15"),
+        "Extrude",
+        15,
+    );
+    first.history_state_id = Some(7);
+    let mut local_predecessor = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#22"),
+        "Extrude",
+        22,
+    );
+    local_predecessor.history_state_id = Some(7);
+    let mut second =
+        DesignParameterScope::empty(&format!("{stream}:design-parameter-scope#25"), "Fillet", 25);
+    second.history_state_id = Some(8);
+    second.previous_history_state_id = Some(7);
+    let scopes = vec![first, local_predecessor.clone(), second.clone()];
+    let naming_space =
+        |component_record_index, context_uuid: &str| crate::records::DesignComponentNamingSpace {
+            id: crate::ids::native_design_component_naming_space_id(
+                bulk_stream,
+                component_record_index,
+            ),
+            byte_offset: component_record_index,
+            component_record_index,
+            context_uuid: context_uuid.into(),
+            context_uuid_offset: component_record_index + 12,
+        };
+    let naming_spaces = [
+        naming_space(10, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
+        naming_space(20, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"),
+    ];
+    let graph = ScopeHistoryGraph::new(&scopes, &[], &[], &naming_spaces, &[]);
+
+    let predecessor = graph
+        .predecessor(&second, |_| true)
+        .expect("component-qualified state chain");
+    let crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor) = predecessor
+    else {
+        panic!("component-local predecessor");
+    };
+    assert_eq!(predecessor.id, local_predecessor.id);
+}
 
 #[test]
 fn feature_projection_uses_timeline_items_not_scope_byte_order() {
@@ -26,7 +101,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     );
     later.byte_offset = 100;
     later.previous_history_state_id = Some(7);
-    let scopes = [later.clone(), earlier.clone()];
+    let scopes = vec![later.clone(), earlier.clone()];
     let timeline = |items| DesignFeatureTimeline {
         id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
         byte_offset: 10,
@@ -52,12 +127,15 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
                 fillet_radius_groups: &[],
                 edge_operands: &[],
                 edge_identity_operands: &[],
+                edge_treatment_vertex_operands: &[],
                 entity_selection_operands: &[],
                 curve_identities: &[],
                 face_operands: &[],
                 body_recipe_operands: &[],
+                legacy_loft_body_carriers: &[],
                 placements: &[],
                 body_bindings: &[],
+                component_naming_spaces: &[],
                 histories: &[],
             },
         )
@@ -113,12 +191,15 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
             fillet_radius_groups: &[],
             edge_operands: &[],
             edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
             entity_selection_operands: &[],
             curve_identities: &[],
             face_operands: &[],
             body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -202,12 +283,15 @@ fn feature_projection_collapses_internal_scope_history_chains() {
             fillet_radius_groups: &[],
             edge_operands: &[],
             edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
             entity_selection_operands: &[],
             curve_identities: &[],
             face_operands: &[],
             body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -251,8 +335,10 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         owner_record_indices: Vec::new(),
         value_offsets: Vec::new(),
         operand_frames: None,
-        operand_paths: None,
-        axial_operand_targets: None,
+        legacy_operand_carriers: None,
+        solved_frame: None,
+        operand_qualifiers: None,
+        limits: None,
         joint_origin_scope_record_index: Some(20),
     });
     let mut origin = DesignParameterScope::empty(
@@ -291,12 +377,15 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
             fillet_radius_groups: &[],
             edge_operands: &[],
             edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
             entity_selection_operands: &[],
             curve_identities: &[],
             face_operands: &[],
             body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -331,12 +420,15 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
             fillet_radius_groups: &[],
             edge_operands: &[],
             edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
             entity_selection_operands: &[],
             curve_identities: &[],
             face_operands: &[],
             body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -362,8 +454,10 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
             owner_record_indices: Vec::new(),
             value_offsets: Vec::new(),
             operand_frames: None,
-            operand_paths: None,
-            axial_operand_targets: None,
+            legacy_operand_carriers: None,
+            solved_frame: None,
+            operand_qualifiers: None,
+            limits: None,
             joint_origin_scope_record_index: Some(20),
         });
         scope
@@ -443,12 +537,15 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
             fillet_radius_groups: &[],
             edge_operands: &[],
             edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
             entity_selection_operands: &[],
             curve_identities: &[],
             face_operands: &[],
             body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     );
@@ -508,12 +605,15 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
             fillet_radius_groups: &[],
             edge_operands: &[],
             edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
             entity_selection_operands: &[],
             curve_identities: &[],
             face_operands: &[],
             body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -541,7 +641,7 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
         200,
     );
     second.feature_ordinal = 2;
-    let scopes = [second.clone(), first.clone()];
+    let scopes = vec![second.clone(), first.clone()];
     let ordinals = crate::design::feature_project::authored_scope_ordinals(&scopes, &[])
         .expect("complete family ordinals carry exact order");
     assert_eq!(ordinals[&(stream, first.record_index)], 0);
@@ -549,7 +649,8 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
 
     let mut mixed = second;
     mixed.kind = "Fillet".into();
-    let error = crate::design::feature_project::authored_scope_ordinals(&[first, mixed], &[])
+    let mixed_scopes = vec![first, mixed];
+    let error = crate::design::feature_project::authored_scope_ordinals(&mixed_scopes, &[])
         .expect_err("mixed families have no timeline-independent total order");
     assert!(error
         .to_string()
@@ -570,7 +671,7 @@ fn authored_scope_validation_orders_independent_streams_separately() {
         10,
     );
     second.feature_ordinal = 1;
-    let scopes = [first, second];
+    let scopes = vec![first, second];
 
     let ordinals = crate::design::feature_project::authored_scope_ordinals_per_stream(&scopes, &[])
         .expect("independent stream-local orders");
@@ -677,6 +778,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
@@ -723,7 +825,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         parameter(54, 55, "Width / 2", "Depth"),
     ];
     let owners = [owner(44, 45, 12), owner(54, 55, 22)];
-    let scopes = [successor, predecessor];
+    let scopes = vec![successor, predecessor];
     let timeline = DesignFeatureTimeline {
         id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
         byte_offset: 0,
@@ -747,12 +849,15 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
             fillet_radius_groups: &[],
             edge_operands: &[],
             edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
             entity_selection_operands: &[],
             curve_identities: &[],
             face_operands: &[],
             body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )

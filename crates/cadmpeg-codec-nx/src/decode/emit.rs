@@ -15,6 +15,7 @@ use super::pcurves::{
 use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{Graph, Node};
+use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -33,6 +34,8 @@ use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense,
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
+
+const EPS_EMIT_CANONICAL_TRIM_RANGE_E6: f64 = 1.0e-6;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn emit_topology(
@@ -957,7 +960,8 @@ pub(crate) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> O
         }
         CurveGeometry::Nurbs(nurbs) => {
             let domain = [*nurbs.knots.first()?, *nurbs.knots.last()?];
-            let epsilon = 1.0e-6 * (1.0 + domain[0].abs().max(domain[1].abs()));
+            let epsilon =
+                EPS_EMIT_CANONICAL_TRIM_RANGE_E6 * (1.0 + domain[0].abs().max(domain[1].abs()));
             if raw
                 .iter()
                 .any(|value| *value < domain[0] - epsilon || *value > domain[1] + epsilon)
@@ -1207,10 +1211,7 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
         );
         attributes.insert(
             "footer_fingerprint".to_string(),
-            format!(
-                "{:08x}",
-                u32::from_be_bytes(scan.container.footer_fingerprint)
-            ),
+            format!("{:08x}", assemble_u32_be(scan.container.footer_fingerprint)),
         );
     }
     let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);

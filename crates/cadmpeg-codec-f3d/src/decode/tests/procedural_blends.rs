@@ -13,6 +13,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::report::Severity;
 
 use crate::test_support::*;
 use crate::F3dCodec;
@@ -411,6 +412,64 @@ fn parameterized_tail_form_decodes_in_every_blend_carrier() {
     assert!(!form.tail_flag);
 }
 
+#[test]
+fn stale_variable_blend_cache_yields_to_the_construction_carrier() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+
+    let current = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_variable_blend_smbh_with_cache_state("var_blend_spl_sur", 1),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("current variable-blend cache");
+    let current_procedural = &current.ir().model.procedural_surfaces[0];
+    let current_carrier = current
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == current_procedural.surface)
+        .expect("current variable-blend carrier");
+    assert!(matches!(
+        current_carrier.geometry,
+        SurfaceGeometry::Nurbs(_)
+    ));
+    assert!(current_procedural.cache_fit_tolerance.is_some());
+
+    let stale = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_variable_blend_smbh_with_cache_state("var_blend_spl_sur", 0),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("stale variable-blend cache");
+    let stale_procedural = &stale.ir().model.procedural_surfaces[0];
+    let stale_carrier = stale
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == stale_procedural.surface)
+        .expect("stale variable-blend carrier");
+    assert!(matches!(
+        stale_carrier.geometry,
+        SurfaceGeometry::Procedural { .. }
+    ));
+    assert_eq!(stale_procedural.cache_fit_tolerance, None);
+    assert!(matches!(
+        &stale_procedural.definition,
+        ProceduralSurfaceDefinition::VariableBlend { construction }
+            if construction.shape_prefix == 0 && construction.tail_enum == 0
+    ));
+    assert!(!cadmpeg_ir::validate_neutral(stale.ir(), Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.severity == Severity::Error));
+}
+
 /// Tail form `2` stores no solved cache, so a blend record carrying it owns
 /// every surface block it holds as a construction support and rests on its
 /// procedural carrier. Source-less generation writes the construction back from
@@ -534,12 +593,18 @@ fn generated_interp_radius_law_leaves_the_cross_section_enum_unconsumed() {
         else {
             panic!("expected variable blend")
         };
-        let VariableBlendValuePayload::Interpolated { points, .. } =
-            &construction.first_value.payload
+        let VariableBlendValuePayload::Interpolated {
+            function, points, ..
+        } = &construction.first_value.payload
         else {
             panic!("expected interpolated radius law")
         };
         assert_eq!(points.len(), 1);
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = function else {
+            panic!("expected NURBS radius function")
+        };
+        assert_eq!(control_points[0], cadmpeg_ir::math::Point2::new(2.5, 0.5));
+        assert_eq!(control_points[1], cadmpeg_ir::math::Point2::new(7.5, 1.5));
         assert_eq!(construction.cross_section, expected);
 
         assert_revision_surface_round_trip(smbh, "variable_blend");

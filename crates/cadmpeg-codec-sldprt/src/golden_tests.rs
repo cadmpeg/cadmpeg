@@ -384,7 +384,7 @@ fn an_edited_depth_survives_the_semantic_write_path() {
                     );
                     for (index, (returned, moved)) in returned.iter().zip(&moved).enumerate() {
                         assert!(
-                            (returned - moved).abs() <= 1e-9,
+                            (returned - moved).abs() <= 1.0e-9,
                             "fixture `{name}`: blind depth {index} came back as {returned} rather than \
                              {moved}; the edit was dropped"
                         );

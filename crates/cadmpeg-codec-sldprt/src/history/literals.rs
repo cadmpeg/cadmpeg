@@ -7,6 +7,12 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
+const EPS_LITERALS_VALID_PLANE_FRAME_E9: f64 = 1.0e-9;
+const EPS_LITERALS_VALID_COORDINATE_FRAME_E9: f64 = 1.0e-9;
+const EPS_LITERALS_PARSE_LENGTH_MM_E6: f64 = 1.0e-6;
+const EPS_LITERALS_PARSE_LENGTH_MM_E7: f64 = 1.0e-7;
+const EPS_LITERALS_FORMAT_F64_LITERAL_E6: f64 = 1.0e-6;
+
 pub(crate) fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
     let normal_length = normal.norm();
     let u_length = u_axis.norm();
@@ -14,7 +20,7 @@ pub(crate) fn valid_plane_frame(normal: Vector3, u_axis: Vector3) -> bool {
         && u_length.is_finite()
         && normal_length > f64::EPSILON
         && u_length > f64::EPSILON
-        && normal.dot(u_axis).abs() <= 1.0e-9 * normal_length * u_length
+        && normal.dot(u_axis).abs() <= EPS_LITERALS_VALID_PLANE_FRAME_E9 * normal_length * u_length
 }
 
 pub(crate) fn valid_coordinate_frame(
@@ -26,16 +32,16 @@ pub(crate) fn valid_coordinate_frame(
     let finite_origin = [origin.x, origin.y, origin.z]
         .into_iter()
         .all(f64::is_finite);
-    let unit = |axis: Vector3| (axis.norm() - 1.0).abs() <= 1.0e-9;
+    let unit = |axis: Vector3| (axis.norm() - 1.0).abs() <= EPS_LITERALS_VALID_COORDINATE_FRAME_E9;
     let cross = x_axis.cross(y_axis);
     finite_origin
         && unit(x_axis)
         && unit(y_axis)
         && unit(z_axis)
-        && x_axis.dot(y_axis).abs() <= 1.0e-9
-        && x_axis.dot(z_axis).abs() <= 1.0e-9
-        && y_axis.dot(z_axis).abs() <= 1.0e-9
-        && cross.dot(z_axis) >= 1.0 - 1.0e-9
+        && x_axis.dot(y_axis).abs() <= EPS_LITERALS_VALID_COORDINATE_FRAME_E9
+        && x_axis.dot(z_axis).abs() <= EPS_LITERALS_VALID_COORDINATE_FRAME_E9
+        && y_axis.dot(z_axis).abs() <= EPS_LITERALS_VALID_COORDINATE_FRAME_E9
+        && cross.dot(z_axis) >= 1.0 - EPS_LITERALS_VALID_COORDINATE_FRAME_E9
 }
 
 pub(crate) fn valid_direction(direction: Vector3) -> bool {
@@ -54,12 +60,12 @@ pub(crate) fn parse_length_mm(value: &str) -> Option<f64> {
         ("cm", 10.0),
         ("in", 25.4),
         ("ft", 304.8),
-        ("nm", 1.0e-6),
+        ("nm", EPS_LITERALS_PARSE_LENGTH_MM_E6),
         ("um", 1.0e-3),
         ("µm", 1.0e-3),
         ("μm", 1.0e-3),
-        ("Å", 1.0e-7),
-        ("A", 1.0e-7),
+        ("Å", EPS_LITERALS_PARSE_LENGTH_MM_E7),
+        ("A", EPS_LITERALS_PARSE_LENGTH_MM_E7),
         ("m", 1000.0),
     ] {
         if let Some(number) = value.strip_suffix(suffix) {
@@ -138,7 +144,7 @@ pub(crate) fn format_angle_rad(value: f64) -> String {
 
 pub(crate) fn format_f64_literal(value: f64) -> String {
     let magnitude = value.abs();
-    if magnitude != 0.0 && !(1.0e-6..1.0e15).contains(&magnitude) {
+    if magnitude != 0.0 && !(EPS_LITERALS_FORMAT_F64_LITERAL_E6..1.0e15).contains(&magnitude) {
         format!("{value:e}")
     } else {
         value.to_string()

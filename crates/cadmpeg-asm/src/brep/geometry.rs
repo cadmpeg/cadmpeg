@@ -16,6 +16,15 @@ use cadmpeg_ir::topology::Sense;
 use std::collections::{HashMap, HashSet};
 
 use super::AsmBrep;
+const EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9: f64 = 1.0e-9;
+const EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10: f64 = 1.0e-10;
+const EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10: f64 = 1.0e-10;
+const EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10: f64 = 1.0e-10;
+const EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12: f64 = 1.0e-12;
+const EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10: f64 = 1.0e-10;
+const EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10: f64 = 1.0e-10;
+const EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9: f64 = 1.0e-9;
+
 /// Ordered typed values pulled from a carrier record's payload.
 pub(crate) struct Carrier {
     pub(crate) positions: Vec<[f64; 3]>,
@@ -73,10 +82,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         "plane" => {
             let normal = *c.vectors.first()?;
             let normal = unit(normal);
-            let u_axis = c
-                .vectors
-                .get(1)
-                .map_or_else(|| deterministic_ref_direction(normal), |axis| unit(*axis));
+            let u_axis = unit(*c.vectors.get(1)?);
             Some((
                 SurfaceGeometry::Plane {
                     origin: scale_point(origin),
@@ -90,7 +96,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             let ratio = *c.doubles.first().unwrap_or(&1.0);
             let axis = *c.vectors.first()?;
             let axis = unit(axis);
-            let major = c.vectors.get(1).copied();
+            let major = *c.vectors.get(1)?;
             // Doubles are (ratio, sine, cosine, u_scale). `ratio` is the
             // minor/major radius ratio. `sine` selects cylinder vs cone. The
             // base radius is the major-axis vector's
@@ -101,12 +107,9 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
             // points the surface normal toward the axis.
             let sine = *c.doubles.get(1).unwrap_or(&0.0);
             let cosine = *c.doubles.get(2).unwrap_or(&1.0);
-            let u_scale = c.doubles.get(3).copied();
-            let radius = major
-                .map(|vector| norm3(vector) * LEN_TO_MM)
-                .filter(|radius| *radius > f64::EPSILON)
-                .or_else(|| u_scale.map(|r| r * LEN_TO_MM))?;
-            let ref_direction = major.map_or_else(|| deterministic_ref_direction(axis), unit);
+            let radius = norm3(major) * LEN_TO_MM;
+            (radius > f64::EPSILON).then_some(())?;
+            let ref_direction = unit(major);
             if sine.abs() <= f64::EPSILON && ratio == 1.0 {
                 Some((
                     SurfaceGeometry::Cylinder {
@@ -145,16 +148,8 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         }
         "sphere" => {
             let signed = *c.doubles.first()?;
-            let polar_axis = c.vectors.get(1).or_else(|| c.vectors.first()).copied()?;
-            let polar_axis = unit(polar_axis);
-            let equator = c
-                .vectors
-                .first()
-                .filter(|_| c.vectors.len() > 1)
-                .map_or_else(
-                    || deterministic_ref_direction(polar_axis),
-                    |direction| unit(*direction),
-                );
+            let equator = unit(*c.vectors.first()?);
+            let polar_axis = unit(*c.vectors.get(1)?);
             Some((
                 SurfaceGeometry::Sphere {
                     center: scale_point(origin),
@@ -168,10 +163,7 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         "torus" => {
             let axis = *c.vectors.first()?;
             let axis = unit(axis);
-            let ref_direction = c.vectors.get(1).map_or_else(
-                || deterministic_ref_direction(axis),
-                |direction| unit(*direction),
-            );
+            let ref_direction = unit(*c.vectors.get(1)?);
             let major = *c.doubles.first()?;
             let minor = *c.doubles.get(1)?;
             Some((
@@ -187,20 +179,6 @@ pub fn decode_surface(rec: &Record) -> Option<(SurfaceGeometry, bool)> {
         }
         _ => None,
     }
-}
-
-fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
-    let candidates = [
-        Vector3::new(1.0, 0.0, 0.0),
-        Vector3::new(0.0, 1.0, 0.0),
-        Vector3::new(0.0, 0.0, 1.0),
-    ];
-    let basis = candidates
-        .into_iter()
-        .min_by(|a, b| a.dot(axis).abs().total_cmp(&b.dot(axis).abs()))
-        .expect("fixed candidate set is non-empty");
-    let projected = basis - axis.scale(basis.dot(axis));
-    projected.scale(1.0 / projected.norm())
 }
 
 /// The vertex record's point reference. The modern layout stores the
@@ -368,7 +346,7 @@ pub(crate) fn pcurve_ranges_on_domain(
     edge: Option<&Record>,
 ) -> Option<Vec<[f64; 2]>> {
     let (&first, &last) = (candidate.knots.first()?, candidate.knots.last()?);
-    let tolerance = 1.0e-9 * (last - first).abs().max(1.0);
+    let tolerance = EPS_GEOMETRY_PCURVE_RANGES_ON_DOMAIN_E9 * (last - first).abs().max(1.0);
     let mut ranges = edge
         .and_then(edge_pcurve_parameter_ranges)
         .into_iter()
@@ -578,6 +556,10 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
         | DecodedProceduralSurfaceDefinition::Sum { .. }
         | DecodedProceduralSurfaceDefinition::VertexBlend(_)
         | DecodedProceduralSurfaceDefinition::SubSurface { .. } => true,
+        DecodedProceduralSurfaceDefinition::Sweep(construction) => construction
+            .revision_form
+            .as_ref()
+            .is_some_and(|form| form.tail_enum == 2),
         DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(
             construction.tail,
             cadmpeg_ir::geometry::LawSurfaceTail::Full
@@ -593,7 +575,7 @@ pub(crate) fn procedural_surface_definition_is_exact_carrier(
             ..
         } => construction.tail_enum == 2,
         DecodedProceduralSurfaceDefinition::VariableBlend(construction) => {
-            construction.tail_enum == 2
+            construction.tail_enum == 2 || construction.shape_prefix == 0
         }
         _ => false,
     }
@@ -610,7 +592,7 @@ pub(crate) fn analytic_procedural_surface(
         } => {
             let (center, normal, ref_direction, radius) = rational_four_arc_circle(directrix)?;
             let axis = direction.unit()?;
-            if 1.0 - axis.dot(normal).abs() > 1.0e-10 {
+            if 1.0 - axis.dot(normal).abs() > EPS_GEOMETRY_ANALYTIC_PROCEDURAL_SURFACE_E10 {
                 return None;
             }
             Some(SurfaceGeometry::Cylinder {
@@ -663,7 +645,7 @@ fn analytic_rolling_ball_surface(
     ) = (first, second)
     {
         let (origin, axis) = linear_nurbs_spine(spine)?;
-        let tolerance = 1.0e-10
+        let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
             * radius
                 .max(point_vector(*first_origin, *second_origin).norm())
                 .max(1.0);
@@ -671,12 +653,12 @@ fn analytic_rolling_ball_surface(
         let second_normal = second_normal.unit()?;
         let support_intersection = first_normal.cross(second_normal);
         let support_intersection_norm = support_intersection.norm();
-        if support_intersection_norm <= 1.0e-10
+        if support_intersection_norm <= EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
             || 1.0
                 - axis
                     .dot(support_intersection.scale(1.0 / support_intersection_norm))
                     .abs()
-                > 1.0e-10
+                > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
         {
             return None;
         }
@@ -684,7 +666,7 @@ fn analytic_rolling_ball_surface(
             (*first_origin, first_normal),
             (*second_origin, second_normal),
         ] {
-            if axis.dot(plane_normal).abs() > 1.0e-10
+            if axis.dot(plane_normal).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
                 || (point_vector(plane_origin, origin).dot(plane_normal).abs() - radius).abs()
                     > tolerance
             {
@@ -726,12 +708,12 @@ fn analytic_rolling_ball_surface(
     let plane_normal = plane_normal.unit()?;
     let cylinder_axis = cylinder_axis.unit()?;
     let scale = major_radius.max(radius).max(cylinder_radius.abs()).max(1.0);
-    let tolerance = 1.0e-10 * scale;
+    let tolerance = EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10 * scale;
     let center_offset = point_vector(*cylinder_origin, center);
     let axial_offset = center_offset.dot(cylinder_axis);
     let radial_offset = center_offset - cylinder_axis.scale(axial_offset);
-    if 1.0 - axis.dot(plane_normal).abs() > 1.0e-10
-        || 1.0 - axis.dot(cylinder_axis).abs() > 1.0e-10
+    if 1.0 - axis.dot(plane_normal).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
+        || 1.0 - axis.dot(cylinder_axis).abs() > EPS_GEOMETRY_ANALYTIC_ROLLING_BALL_SURFACE_E10
         || (point_vector(*plane_origin, center).dot(plane_normal).abs() - radius).abs() > tolerance
         || radial_offset.norm() > tolerance
         || ((major_radius - cylinder_radius.abs()).abs() - radius).abs() > tolerance
@@ -784,7 +766,7 @@ fn linear_nurbs_spine(curve: &cadmpeg_ir::geometry::NurbsCurve) -> Option<(Point
         return None;
     }
     let axis = point_vector(origin, farthest).unit()?;
-    let tolerance = 1.0e-10 * extent.max(1.0);
+    let tolerance = EPS_GEOMETRY_LINEAR_NURBS_SPINE_E10 * extent.max(1.0);
     if curve
         .control_points
         .iter()
@@ -809,7 +791,7 @@ pub(crate) fn rational_four_arc_circle(
     {
         return None;
     }
-    let knot_tolerance = 1.0e-12
+    let knot_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E12
         * (curve.knots[curve.knots.len() - 1] - curve.knots[0])
             .abs()
             .max(1.0);
@@ -867,7 +849,7 @@ pub(crate) fn rational_four_arc_circle(
         .collect::<Option<Vec<_>>>()?;
     let base_weight = quadratics[0][0][3];
     let weight_scale = base_weight.abs().max(1.0);
-    let weight_tolerance = 1.0e-10 * weight_scale;
+    let weight_tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10 * weight_scale;
     if !base_weight.is_finite()
         || base_weight == 0.0
         || quadratics.iter().any(|span| {
@@ -898,7 +880,7 @@ pub(crate) fn rational_four_arc_circle(
         .map(|pair| point_distance(pair[0], pair[1]))
         .fold(0.0_f64, f64::max)
         .max(1.0);
-    let tolerance = 1.0e-10 * scale;
+    let tolerance = EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10 * scale;
     if point_distance(quadratic_points[0][0], quadratic_points[3][2]) > tolerance
         || quadratic_points
             .windows(2)
@@ -937,7 +919,9 @@ pub(crate) fn rational_four_arc_circle(
             return None;
         }
         let span_normal = span_normal.scale(1.0 / span_normal_norm);
-        if normal.is_some_and(|normal: Vector3| normal.dot(span_normal) < 1.0 - 1.0e-10) {
+        if normal.is_some_and(|normal: Vector3| {
+            normal.dot(span_normal) < 1.0 - EPS_GEOMETRY_RATIONAL_FOUR_ARC_CIRCLE_E10
+        }) {
             return None;
         }
         normal.get_or_insert(span_normal);
@@ -970,7 +954,8 @@ fn reduce_homogeneous_bezier_to_quadratic(mut control: Vec<[f64; 4]>) -> Option<
             .flatten()
             .fold(1.0_f64, |scale, value| scale.max(value.abs()));
         if (0..4).any(|coordinate| {
-            (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs() > 1.0e-10 * scale
+            (reduced[degree - 1][coordinate] - control[degree][coordinate]).abs()
+                > EPS_GEOMETRY_REDUCE_HOMOGENEOUS_BEZIER_TO_QUADRATIC_E10 * scale
         }) {
             return None;
         }
@@ -1018,7 +1003,8 @@ pub(crate) fn clamp_edge_ranges_to_carrier_domains(out: &mut AsmBrep) {
         else {
             continue;
         };
-        let tolerance = 1.0e-9 * (last - first).abs().max(1.0);
+        let tolerance =
+            EPS_GEOMETRY_CLAMP_EDGE_RANGES_TO_CARRIER_DOMAINS_E9 * (last - first).abs().max(1.0);
         if *start < *first && *first - *start <= tolerance {
             *start = *first;
         }
@@ -1097,5 +1083,68 @@ pub(crate) fn classify_body_kinds(out: &mut AsmBrep) {
         } else {
             cadmpeg_ir::topology::BodyKind::Sheet
         };
+    }
+}
+
+#[cfg(test)]
+mod analytic_surface_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn surface_record(head: &str, tokens: Vec<Token>) -> Record {
+        Record {
+            index: 1,
+            name: format!("{head}-surface"),
+            head: head.into(),
+            tokens: Arc::from(tokens),
+            offset: 0,
+            len: 0,
+        }
+    }
+
+    #[test]
+    fn analytic_surfaces_require_complete_serialized_frames() {
+        let origin = Token::Position([0.0, 0.0, 0.0]);
+        let axis = Token::Vector3([0.0, 0.0, 1.0]);
+
+        let plane = surface_record("plane", vec![origin.clone(), axis.clone()]);
+        let cone_without_major = surface_record(
+            "cone",
+            vec![
+                origin.clone(),
+                axis.clone(),
+                Token::Double(1.0),
+                Token::Double(0.0),
+                Token::Double(1.0),
+                Token::Double(7.0),
+            ],
+        );
+        let cone_with_zero_major = surface_record(
+            "cone",
+            vec![
+                origin.clone(),
+                axis.clone(),
+                Token::Vector3([0.0, 0.0, 0.0]),
+                Token::Double(1.0),
+            ],
+        );
+        let sphere = surface_record(
+            "sphere",
+            vec![origin.clone(), Token::Double(2.0), axis.clone()],
+        );
+        let torus = surface_record(
+            "torus",
+            vec![origin, axis, Token::Double(3.0), Token::Double(1.0)],
+        );
+
+        for record in [
+            plane,
+            cone_without_major,
+            cone_with_zero_major,
+            sphere,
+            torus,
+        ] {
+            assert!(decode_surface(&record).is_none());
+        }
     }
 }

@@ -1097,6 +1097,34 @@ fn feature_operand_roles_must_be_disjoint() {
 }
 
 #[test]
+fn trim_surface_cell_selection_cannot_coexist_with_a_canonical_region() {
+    use crate::features::{
+        FaceSelection, Feature, FeatureDefinition, FeatureId, PathRef, TrimRegion,
+    };
+
+    let mut ir = unit_cube();
+    let face = ir.model.faces[0].id.clone();
+    ir.model.features.push(Feature::new(
+        FeatureId("synthetic:test:feature#trim-cell-conflict".into()),
+        0,
+        FeatureDefinition::TrimSurface {
+            faces: FaceSelection::Faces(vec![face]),
+            tool: PathRef::Unresolved("synthetic:trim-tool".into()),
+            keep: TrimRegion::Inside,
+            cell_selection: Some(crate::features::TrimCellSelection {
+                removed: vec![1],
+                total: 2,
+            }),
+        },
+    ));
+
+    let findings = validate_neutral(&ir, Vec::new()).findings;
+    assert!(findings.iter().any(|finding| {
+        finding.message == "surface trim cell selection is invalid or conflicts with keep"
+    }));
+}
+
+#[test]
 fn pattern_feature_seeds_must_be_declared_dependencies() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed};
 

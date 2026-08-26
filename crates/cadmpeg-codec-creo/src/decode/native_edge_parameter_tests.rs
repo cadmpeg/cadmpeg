@@ -271,8 +271,8 @@ fn closed_periodic_conic_uses_one_full_period_from_its_seam() {
     let circle = circle();
     let range = full_periodic_conic_edge_parameter_range(&circle, [0.0, 2.0, 0.0])
         .expect("full circle range");
-    assert!((range[0] - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
-    assert!((range[1] - (std::f64::consts::FRAC_PI_2 + std::f64::consts::TAU)).abs() < 1e-12);
+    assert!((range[0] - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((range[1] - (std::f64::consts::FRAC_PI_2 + std::f64::consts::TAU)).abs() < 1.0e-12);
 
     let ellipse = CurveGeometry::Ellipse {
         center: Point3::new(0.0, 0.0, 0.0),
@@ -319,8 +319,8 @@ fn nonperiodic_conics_recover_their_native_parameters() {
     let hyperbola_points = [evaluated(&hyperbola, 2.0), evaluated(&hyperbola, -1.0)];
     let range = nonperiodic_conic_edge_parameter_range(&hyperbola, hyperbola_points)
         .expect("hyperbola range");
-    assert!((range[0] + 1.0).abs() <= 1e-12);
-    assert!((range[1] - 2.0).abs() <= 1e-12);
+    assert!((range[0] + 1.0).abs() <= 1.0e-12);
+    assert!((range[1] - 2.0).abs() <= 1.0e-12);
     assert_eq!(
         nonperiodic_conic_parameter(&hyperbola, [-2.0, 2.0, 3.0]),
         None
@@ -365,8 +365,8 @@ fn surface_pcurve_midpoint_retains_periodic_path() {
         [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
     )
     .expect("periodic midpoint");
-    assert!((midpoint[0] + std::f64::consts::SQRT_2).abs() <= 1e-12);
-    assert!((midpoint[1] + std::f64::consts::SQRT_2).abs() <= 1e-12);
+    assert!((midpoint[0] + std::f64::consts::SQRT_2).abs() <= 1.0e-12);
+    assert!((midpoint[1] + std::f64::consts::SQRT_2).abs() <= 1.0e-12);
 }
 
 #[test]

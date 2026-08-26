@@ -1481,7 +1481,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || continuity.is_none()
                     || merge_result.is_none()
             }
-            FeatureDefinition::TrimSurface { faces, tool, keep } => {
+            FeatureDefinition::TrimSurface {
+                faces,
+                tool,
+                keep,
+                ..
+            } => {
                 incomplete_face_selection(faces)
                     || incomplete_path(tool)
                     || *keep == cadmpeg_ir::features::TrimRegion::Unresolved

@@ -23,7 +23,8 @@ pub(crate) struct AsmHistory {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub record_table_binding_budget_exceeded: bool,
     /// Historical projection consumers finished and any temporary complete
-    /// topology snapshots were released.
+    /// topology snapshots were released. A compact plane-selection topology can
+    /// remain for late feature projection.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub projection_finalized: bool,
     pub states: Vec<AsmDeltaState>,
@@ -50,8 +51,9 @@ pub(crate) struct AsmDeltaState {
     pub bulletin_boards: Vec<AsmBulletinBoard>,
     #[serde(default)]
     pub records: Vec<AsmHistoryRecord>,
-    /// Complete entity-slot to record-revision map at this state. Empty when
-    /// the history does not form a complete reversible chain.
+    /// Topology-entity slot to record-revision map at this state. The decoder
+    /// retains this compact map for late persistent-selection binding after
+    /// projection caches are finalized.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entity_versions: Vec<AsmEntityVersion>,
     /// Every selected record frames and every entity reference resolves after
@@ -106,6 +108,9 @@ pub(crate) struct AsmHistoricalTopology {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub curve_axes: Vec<AsmHistoricalCurveAxis>,
     pub pcurves: Vec<i64>,
+    /// Persistent tag groups attached to face and edge revisions in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub persistent_subentity_tags: Vec<AsmHistoricalPersistentSubentityTag>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub body_regions: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -135,6 +140,18 @@ pub(crate) struct AsmHistoricalTopology {
     /// Model-space values of the point carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub point_positions: Vec<AsmHistoricalPoint>,
+}
+
+/// One persistent tag group attached to a historical face or edge revision.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub(crate) struct AsmHistoricalPersistentSubentityTag {
+    pub entity_kind: crate::records::AsmHistoricalEntityKind,
+    pub entity_ref: i64,
+    pub selector: i64,
+    pub token: String,
+    pub design_references: Vec<i64>,
+    pub ordinal: u32,
 }
 
 /// Stable axis-bearing curve carrier value in one historical B-rep state.

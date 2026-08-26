@@ -121,6 +121,10 @@ impl Brep {
         selected_keys: &HashSet<u64>,
     ) -> Result<(), cadmpeg_core::CodecError> {
         let annotations = std::mem::take(&mut self.asm.annotation_records);
+        let sketch_curve_links = std::mem::take(&mut self.sketch_curve_links);
+        let persistent_design_links = std::mem::take(&mut self.persistent_design_links);
+        let persistent_subentity_tags = std::mem::take(&mut self.persistent_subentity_tags);
+        let creation_timestamps = std::mem::take(&mut self.creation_timestamps);
         let mut value = serde_value::to_value(&*self).map_err(|error| {
             cadmpeg_core::CodecError::malformed(format_args!("BREP serialization failed: {error}"))
         })?;
@@ -171,6 +175,22 @@ impl Brep {
         retained.asm.annotation_records = annotations
             .into_iter()
             .filter(|annotation| reachable.contains(&annotation.id))
+            .collect();
+        retained.sketch_curve_links = sketch_curve_links
+            .into_iter()
+            .filter(|link| retained_attribute_target(&link.target, &reachable))
+            .collect();
+        retained.persistent_design_links = persistent_design_links
+            .into_iter()
+            .filter(|link| retained_attribute_target(&link.target, &reachable))
+            .collect();
+        retained.persistent_subentity_tags = persistent_subentity_tags
+            .into_iter()
+            .filter(|tag| retained_attribute_target(&tag.target, &reachable))
+            .collect();
+        retained.creation_timestamps = creation_timestamps
+            .into_iter()
+            .filter(|timestamp| retained_attribute_target(&timestamp.target, &reachable))
             .collect();
         *self = retained;
         Ok(())
@@ -400,36 +420,38 @@ pub(crate) fn persistent_design_links(attribute: &SourceAttribute) -> Vec<Persis
     let AttributeTarget::Body(_) = &attribute.target else {
         return Vec::new();
     };
-    let Some(family) = attribute.values.iter().position(
-        |value| matches!(value, AttributeValue::String(name) if name == "generic_tag_attrib_def"),
-    ) else {
+    let Some((version, group_count, rest)) = generic_tag_payload(attribute) else {
         return Vec::new();
     };
-    let values = &attribute.values[family + 1..];
-    let [AttributeValue::Integer(3), AttributeValue::Integer(3), AttributeValue::Integer(-1), AttributeValue::String(marker), AttributeValue::Integer(group_count), rest @ ..] =
-        values
-    else {
-        return Vec::new();
+    let group_width = match version {
+        GenericTagVersion::V2 => 4,
+        GenericTagVersion::V3 => 5,
     };
-    if marker != "generic_tag_attrib_def " || *group_count < 0 {
-        return Vec::new();
-    }
-    let Ok(group_count) = usize::try_from(*group_count) else {
-        return Vec::new();
-    };
-    if rest.len() != group_count.saturating_mul(5) {
+    if rest.len() != group_count.saturating_mul(group_width) {
         return Vec::new();
     }
     let groups = rest
-        .chunks_exact(5)
+        .chunks_exact(group_width)
         .filter_map(|values| match values {
             [
                 AttributeValue::Integer(entity_kind),
                 AttributeValue::String(design_id),
                 AttributeValue::Integer(design_reference),
                 AttributeValue::Integer(0),
+            ] if matches!(version, GenericTagVersion::V2)
+                && !design_id.is_empty()
+                && design_id.bytes().all(|byte| byte.is_ascii_digit()) =>
+            {
+                Some((*entity_kind, design_id.clone(), *design_reference))
+            }
+            [
+                AttributeValue::Integer(entity_kind),
+                AttributeValue::String(design_id),
+                AttributeValue::Integer(design_reference),
                 AttributeValue::Integer(0),
-            ] if !design_id.is_empty()
+                AttributeValue::Integer(0),
+            ] if matches!(version, GenericTagVersion::V3)
+                && !design_id.is_empty()
                 && design_id.bytes().all(|byte| byte.is_ascii_digit()) =>
             {
                 Some((*entity_kind, design_id.clone(), *design_reference))
@@ -474,21 +496,7 @@ pub(crate) fn persistent_subentity_tags(
     ) {
         return Vec::new();
     }
-    let Some(family) = attribute.values.iter().position(
-        |value| matches!(value, AttributeValue::String(name) if name == "generic_tag_attrib_def"),
-    ) else {
-        return Vec::new();
-    };
-    let values = &attribute.values[family + 1..];
-    let [AttributeValue::Integer(3), AttributeValue::Integer(3), AttributeValue::Integer(-1), AttributeValue::String(marker), AttributeValue::Integer(group_count), rest @ ..] =
-        values
-    else {
-        return Vec::new();
-    };
-    if marker != "generic_tag_attrib_def " || *group_count < 0 {
-        return Vec::new();
-    }
-    let Ok(group_count) = usize::try_from(*group_count) else {
+    let Some((version, group_count, rest)) = generic_tag_payload(attribute) else {
         return Vec::new();
     };
     // Each group consumes at least four leading attribute values from `rest`.
@@ -525,8 +533,13 @@ pub(crate) fn persistent_subentity_tags(
         let Some(design_references) = references else {
             return Vec::new();
         };
-        if !matches!(rest.get(reference_end), Some(AttributeValue::Integer(0))) {
-            return Vec::new();
+        if matches!(version, GenericTagVersion::V3) {
+            if !matches!(rest.get(reference_end), Some(AttributeValue::Integer(0))) {
+                return Vec::new();
+            }
+            position = reference_end + 1;
+        } else {
+            position = reference_end;
         }
         groups.push(PersistentSubentityTag {
             id: format!(
@@ -539,12 +552,58 @@ pub(crate) fn persistent_subentity_tags(
             design_references,
             ordinal: ordinal as u32,
         });
-        position = reference_end + 1;
     }
     if position != rest.len() {
         return Vec::new();
     }
     groups
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GenericTagVersion {
+    V2,
+    V3,
+}
+
+/// Return the common generic-tag version, group count, and payload.
+///
+/// The two leading integers are an equal envelope version. Versions two and
+/// three select distinct, bounded group envelopes; a mixed or unsupported
+/// pair is not a generic-tag envelope.
+fn generic_tag_payload(
+    attribute: &SourceAttribute,
+) -> Option<(GenericTagVersion, usize, &[AttributeValue])> {
+    let family = attribute.values.iter().position(
+        |value| matches!(value, AttributeValue::String(name) if name == "generic_tag_attrib_def"),
+    )?;
+    let values = attribute.values.get(family + 1..)?;
+    let [AttributeValue::Integer(left_version), AttributeValue::Integer(right_version), AttributeValue::Integer(-1), AttributeValue::String(marker), AttributeValue::Integer(group_count), rest @ ..] =
+        values
+    else {
+        return None;
+    };
+    if left_version != right_version || marker != "generic_tag_attrib_def " || *group_count < 0 {
+        return None;
+    }
+    let version = match *left_version {
+        2 => GenericTagVersion::V2,
+        3 => GenericTagVersion::V3,
+        _ => return None,
+    };
+    Some((version, usize::try_from(*group_count).ok()?, rest))
+}
+
+fn retained_attribute_target(target: &AttributeTarget, reachable: &HashSet<String>) -> bool {
+    match target {
+        AttributeTarget::Document => true,
+        AttributeTarget::Body(id) => reachable.contains(&id.0),
+        AttributeTarget::Face(id) => reachable.contains(&id.0),
+        AttributeTarget::Shell(id) => reachable.contains(&id.0),
+        AttributeTarget::Loop(id) => reachable.contains(&id.0),
+        AttributeTarget::Coedge(id) => reachable.contains(&id.0),
+        AttributeTarget::Edge(id) => reachable.contains(&id.0),
+        AttributeTarget::Vertex(id) => reachable.contains(&id.0),
+    }
 }
 
 pub(crate) fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> {
@@ -573,8 +632,127 @@ pub(crate) fn creation_timestamp(attribute: &SourceAttribute) -> Option<Creation
 mod tests {
     use super::*;
     use cadmpeg_asm::brep::AnnotationRecord;
-    use cadmpeg_ir::ids::RegionId;
+    use cadmpeg_ir::ids::{FaceId, RegionId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
+
+    fn generic_tag_attribute(
+        target: AttributeTarget,
+        versions: (i64, i64),
+        group_count: i64,
+        groups: Vec<AttributeValue>,
+    ) -> SourceAttribute {
+        SourceAttribute {
+            id: "f3d:brep:attribute#1".into(),
+            target,
+            name: "ATTRIB_CUSTOM-attrib".into(),
+            values: [
+                AttributeValue::String("generic_tag_attrib_def".into()),
+                AttributeValue::Integer(versions.0),
+                AttributeValue::Integer(versions.1),
+                AttributeValue::Integer(-1),
+                AttributeValue::String("generic_tag_attrib_def ".into()),
+                AttributeValue::Integer(group_count),
+            ]
+            .into_iter()
+            .chain(groups)
+            .collect(),
+        }
+    }
+
+    #[test]
+    fn generic_tag_payload_accepts_both_equal_envelope_versions() {
+        for (version, groups) in [
+            (
+                2,
+                vec![
+                    AttributeValue::Integer(7),
+                    AttributeValue::String("97".into()),
+                    AttributeValue::Integer(0),
+                    AttributeValue::Integer(1),
+                    AttributeValue::Integer(302),
+                ],
+            ),
+            (
+                3,
+                vec![
+                    AttributeValue::Integer(7),
+                    AttributeValue::String("97".into()),
+                    AttributeValue::Integer(0),
+                    AttributeValue::Integer(1),
+                    AttributeValue::Integer(302),
+                    AttributeValue::Integer(0),
+                ],
+            ),
+        ] {
+            let attribute = generic_tag_attribute(
+                AttributeTarget::Face(FaceId("f3d:face#1".into())),
+                (version, version),
+                1,
+                groups,
+            );
+            assert_eq!(persistent_subentity_tags(&attribute).len(), 1);
+            assert_eq!(
+                persistent_subentity_tags(&attribute)[0].design_references,
+                [302]
+            );
+        }
+    }
+
+    #[test]
+    fn generic_tag_payload_rejects_mixed_or_unsupported_envelope_versions() {
+        let groups = vec![
+            AttributeValue::Integer(7),
+            AttributeValue::String("97".into()),
+            AttributeValue::Integer(0),
+            AttributeValue::Integer(0),
+            AttributeValue::Integer(0),
+        ];
+        for versions in [(2, 3), (1, 1), (4, 4)] {
+            let attribute = generic_tag_attribute(
+                AttributeTarget::Face(FaceId("f3d:face#1".into())),
+                versions,
+                1,
+                groups.clone(),
+            );
+            assert!(persistent_subentity_tags(&attribute).is_empty());
+        }
+    }
+
+    #[test]
+    fn generic_tag_payload_binds_modern_body_design_links() {
+        let attribute = generic_tag_attribute(
+            AttributeTarget::Body(BodyId("f3d:body#1".into())),
+            (2, 2),
+            1,
+            vec![
+                AttributeValue::Integer(3),
+                AttributeValue::String("301".into()),
+                AttributeValue::Integer(1),
+                AttributeValue::Integer(0),
+            ],
+        );
+        let links = persistent_design_links(&attribute);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].design_id, "301");
+        assert_eq!(links[0].design_reference, 1);
+    }
+
+    #[test]
+    fn generic_tag_payload_binds_legacy_body_design_links() {
+        let attribute = generic_tag_attribute(
+            AttributeTarget::Body(BodyId("f3d:body#1".into())),
+            (3, 3),
+            1,
+            vec![
+                AttributeValue::Integer(3),
+                AttributeValue::String("301".into()),
+                AttributeValue::Integer(1),
+                AttributeValue::Integer(0),
+                AttributeValue::Integer(0),
+            ],
+        );
+        assert_eq!(persistent_design_links(&attribute).len(), 1);
+    }
 
     #[test]
     fn brep_qualification_rewrites_owned_ids_and_cross_references() {
@@ -685,6 +863,120 @@ mod tests {
         assert_eq!(brep.asm.regions[0].id.0, "f3d:brep:entity#4");
         assert_eq!(brep.asm.body_native_keys.len(), 1);
         assert_eq!(brep.asm.body_keys.len(), 1);
+    }
+
+    #[test]
+    fn body_key_retention_preserves_derived_links_for_reachable_targets() {
+        let body = |index| Body {
+            id: BodyId(format!("f3d:brep:entity#{index}")),
+            kind: BodyKind::default(),
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        };
+        let native_key = |index, key| BodyNativeKey {
+            id: format!("f3d:asm:body-native-key#{index}"),
+            body: BodyId(format!("f3d:brep:entity#{index}")),
+            record_index: index,
+            body_ordinal: index - 1,
+            source_brep: Some("BREP.source.smbh".into()),
+            asm_body_key: Some(key),
+        };
+        let target = |index| AttributeTarget::Body(BodyId(format!("f3d:brep:entity#{index}")));
+        let mut brep = Brep {
+            asm: AsmBrep {
+                bodies: vec![body(1), body(3)],
+                body_keys: HashMap::from([
+                    (BodyId("f3d:brep:entity#1".into()), 10),
+                    (BodyId("f3d:brep:entity#3".into()), 20),
+                ]),
+                body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
+                ..AsmBrep::default()
+            },
+            sketch_curve_links: vec![
+                SketchCurveLink {
+                    id: "link-retained".into(),
+                    target: target(1),
+                    sketch_curve_id: 1,
+                    ref_b: 0,
+                    sense: None,
+                    role: 0,
+                    closure: 0,
+                },
+                SketchCurveLink {
+                    id: "link-dropped".into(),
+                    target: target(3),
+                    sketch_curve_id: 3,
+                    ref_b: 0,
+                    sense: None,
+                    role: 0,
+                    closure: 0,
+                },
+            ],
+            persistent_design_links: vec![
+                PersistentDesignLink {
+                    id: "design-retained".into(),
+                    target: target(1),
+                    design_id: "301".into(),
+                    entity_kind: 3,
+                    design_reference: 1,
+                    ordinal: 0,
+                    is_current: true,
+                },
+                PersistentDesignLink {
+                    id: "design-dropped".into(),
+                    target: target(3),
+                    design_id: "303".into(),
+                    entity_kind: 3,
+                    design_reference: 3,
+                    ordinal: 0,
+                    is_current: true,
+                },
+            ],
+            persistent_subentity_tags: vec![
+                PersistentSubentityTag {
+                    id: "tag-retained".into(),
+                    target: target(1),
+                    selector: 1,
+                    token: "97".into(),
+                    design_references: vec![1],
+                    ordinal: 0,
+                },
+                PersistentSubentityTag {
+                    id: "tag-dropped".into(),
+                    target: target(3),
+                    selector: 1,
+                    token: "97".into(),
+                    design_references: vec![3],
+                    ordinal: 0,
+                },
+            ],
+            creation_timestamps: vec![
+                CreationTimestamp {
+                    id: "time-retained".into(),
+                    target: target(1),
+                    record_index: 1,
+                    unix_microseconds: 1.0,
+                },
+                CreationTimestamp {
+                    id: "time-dropped".into(),
+                    target: target(3),
+                    record_index: 3,
+                    unix_microseconds: 3.0,
+                },
+            ],
+        };
+
+        brep.retain_body_keys(&HashSet::from([10]))
+            .expect("retain body graph");
+
+        assert_eq!(brep.sketch_curve_links.len(), 1);
+        assert_eq!(brep.persistent_design_links.len(), 1);
+        assert_eq!(brep.persistent_subentity_tags.len(), 1);
+        assert_eq!(brep.creation_timestamps.len(), 1);
+        assert_eq!(brep.persistent_subentity_tags[0].id, "tag-retained");
     }
 
     #[test]

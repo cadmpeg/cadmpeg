@@ -54,7 +54,7 @@ fn declares_units_only_on_new_relation_parameters() {
     let Some(CurveExpressionValue::Length(copy)) = &assignments[1].value else {
         panic!("dimensioned copy");
     };
-    assert!((*copy - 76.2).abs() < 1e-12);
+    assert!((*copy - 76.2).abs() < 1.0e-12);
     assert_eq!(
         assignments[2].parameter_target(),
         Some(("span", Some("mm")))
@@ -72,9 +72,9 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
     let assignments = &records[0].assignments;
 
     assert!(assignments[0].dependencies.is_empty());
-    assert!((numeric_value(assignments[0].value.as_ref()) - 0.5).abs() < 1e-12);
+    assert!((numeric_value(assignments[0].value.as_ref()) - 0.5).abs() < 1.0e-12);
     assert_eq!(assignments[1].dependencies, ["a"]);
-    assert!((numeric_value(assignments[1].value.as_ref()) - 3.25).abs() < 1e-12);
+    assert!((numeric_value(assignments[1].value.as_ref()) - 3.25).abs() < 1.0e-12);
     assert!(assignments[2].dependencies.is_empty());
     assert_eq!(
         assignments[2].value,
@@ -133,7 +133,7 @@ fn evaluates_creo_math_functions_without_treating_function_names_as_dependencies
     ];
     for (expression, expected) in cases {
         let actual = evaluate_expression(expression, &values).expect(expression);
-        assert!((actual - expected).abs() < 1e-12, "{expression}");
+        assert!((actual - expected).abs() < 1.0e-12, "{expression}");
     }
     assert_eq!(evaluate_expression("sqrt(-1)", &values), None);
     assert_eq!(evaluate_expression("tan(90)", &values), None);
@@ -712,7 +712,7 @@ fn bracketed_relation_units_are_not_dependencies() {
             (CurveExpressionValue::Number(actual), CurveExpressionValue::Number(expected))
             | (CurveExpressionValue::Length(actual), CurveExpressionValue::Length(expected))
             | (CurveExpressionValue::Angle(actual), CurveExpressionValue::Angle(expected)) => {
-                assert!((actual - expected).abs() < 1e-12, "{expression}");
+                assert!((actual - expected).abs() < 1.0e-12, "{expression}");
             }
             _ => panic!("unexpected value kind for {expression}"),
         }
@@ -764,7 +764,7 @@ fn bracketed_relation_units_are_not_dependencies() {
         else {
             panic!("unexpected value kind for {expression}");
         };
-        assert!((value - 1.0).abs() < 1e-12, "{expression}");
+        assert!((value - 1.0).abs() < 1.0e-12, "{expression}");
     }
     assert_eq!(
         evaluate_relation_expression(
@@ -786,7 +786,7 @@ fn bracketed_relation_units_are_not_dependencies() {
             panic!("unexpected value kind for {expression}");
         };
         assert!(
-            (value.value - expected_kelvin).abs() < 1e-12,
+            (value.value - expected_kelvin).abs() < 1.0e-12,
             "{expression}"
         );
         assert_eq!(value.temperature_power, 1, "{expression}");
@@ -871,7 +871,7 @@ fn bracketed_relation_units_are_not_dependencies() {
     ) else {
         panic!("dimensioned atan2 angle");
     };
-    assert!((angle - 2.0f64.atan().to_degrees()).abs() < 1e-12);
+    assert!((angle - 2.0f64.atan().to_degrees()).abs() < 1.0e-12);
     for incompatible in [
         "if(1,1[mm],1[s])",
         "bound(1[mm],0[s],2[mm])",
@@ -893,7 +893,7 @@ fn bracketed_relation_units_are_not_dependencies() {
     let Some(CurveExpressionValue::Number(force_ratio)) = force_ratio else {
         panic!("force ratio");
     };
-    assert!((force_ratio - 4.448_221_615_260_5).abs() < 1e-12);
+    assert!((force_ratio - 4.448_221_615_260_5).abs() < 1.0e-12);
     for malformed in ["1[N/mm^]", "1[N//mm]", "1[N^128]"] {
         assert_eq!(
             evaluate_relation_expression(malformed, &values, RelationEvaluationContext::default(),),

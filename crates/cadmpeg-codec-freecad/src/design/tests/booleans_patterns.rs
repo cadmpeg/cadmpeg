@@ -7,7 +7,7 @@ use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, Length};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
-const EPS_PATTERN_ANGLE: f64 = 1e-12;
+const EPS_PATTERN_ANGLE: f64 = 1.0e-12;
 
 #[test]
 fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
@@ -347,7 +347,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
             pattern: cadmpeg_ir::features::PatternKind::CircularAngles { angles, .. },
             ..
         } if angles.iter().zip([0.0, 10.0, 30.0, 40.0]).all(|(angle, expected)|
-            (angle.0.to_degrees() - expected).abs() < 1e-12)
+            (angle.0.to_degrees() - expected).abs() < 1.0e-12)
     ));
     assert!(matches!(
         &feature("NativeDirection").definition,
@@ -1164,7 +1164,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
             ..
         } if *axis_origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
             && *axis_dir == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
-            && (*angle - std::f64::consts::TAU).abs() < 1e-12
+            && (*angle - std::f64::consts::TAU).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("Mirror"),

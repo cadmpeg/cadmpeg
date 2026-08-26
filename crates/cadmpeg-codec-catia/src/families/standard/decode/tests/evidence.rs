@@ -289,7 +289,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
     };
     let cone_point = surface_point(&cone, 0.5, 1.0).expect("cone point");
     let cone_uv = analytic_surface_uv(&cone, cone_point).expect("cone parameters");
-    assert!((cone_uv.u - 0.5).abs() < 1e-12);
+    assert!((cone_uv.u - 0.5).abs() < 1.0e-12);
     assert_eq!(cone_uv.v, 1.0);
 
     let sphere = SurfaceGeometry::Sphere {
@@ -301,7 +301,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
     let sphere_point = surface_point(&sphere, 0.5, 0.25).expect("sphere point");
     let sphere_uv = analytic_surface_uv(&sphere, sphere_point).expect("sphere parameters");
     assert!(sphere_uv.u.is_finite());
-    assert!((sphere_uv.v - 0.25).abs() < 1e-12);
+    assert!((sphere_uv.v - 0.25).abs() < 1.0e-12);
 
     let signed_sphere = SurfaceGeometry::Sphere {
         center: Point3::new(0.0, 0.0, 0.0),
@@ -1278,8 +1278,8 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         panic!("one limit-curve candidate");
     };
     assert_eq!((binding.curve, binding.points), (0, [0, 1]));
-    assert!((binding.parameter_range[0] - 0.25).abs() <= 1e-6);
-    assert!((binding.parameter_range[1] - 0.75).abs() <= 1e-6);
+    assert!((binding.parameter_range[0] - 0.25).abs() <= 1.0e-6);
+    assert!((binding.parameter_range[1] - 0.75).abs() <= 1.0e-6);
     let (curve, range) = build_standard_edge_curve(
         &mut ir,
         &mut AnnotationBuilder::new(),
@@ -1597,7 +1597,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
         Point3::new(0.0, 2.0, 3.0),
     )
     .expect("witnessed circle range");
-    assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
 
 #[test]

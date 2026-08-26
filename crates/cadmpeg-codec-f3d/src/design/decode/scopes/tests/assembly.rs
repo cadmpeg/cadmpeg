@@ -9,6 +9,8 @@
 )]
 use super::prelude::*;
 
+const EPS_EXACT_FIXTURE: f64 = f64::EPSILON * 4.0;
+
 #[test]
 fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     let scope_record_index = 10_u32;
@@ -151,7 +153,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified assembly occurrence paths");
     assert_eq!(identity_paths[0].class_tag, "390");
     assert_eq!(identity_paths[0].occurrence_guids.len(), 2);
@@ -165,7 +167,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("compact identity-qualified assembly occurrence paths");
     assert!(compact_identity_paths
         .iter()
@@ -179,7 +181,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified class-329 assembly occurrence paths");
     assert!(extended_class_329_paths.iter().all(|path| {
         path.class_tag == "329"
@@ -201,7 +203,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_paths.is_none()));
+    .is_some_and(|alignment| alignment.operand_paths().is_none()));
 
     let first_locator_at = assembly_bytes.len();
     push_path_locator(&mut assembly_bytes, 64, 66);
@@ -230,7 +232,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("exact assembly occurrence paths");
     assert_eq!(paths[0].link.locator_record_index, 64);
     assert_eq!(paths[0].link.wrapper_record_index, 66);
@@ -262,7 +264,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("scope locator order assigns paths to operand frames");
     assert_eq!(reversed_paths.map(|path| path.record_index), [68, 65]);
 
@@ -274,7 +276,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_paths.is_none()));
+    .is_some_and(|alignment| alignment.operand_paths().is_none()));
 
     for locator_zero_at in [first_locator_at + 32, first_locator_at + 161] {
         let mut invalid_locator = assembly_bytes.clone();
@@ -285,7 +287,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             &scope,
             &rectangular_owners,
         )
-        .is_some_and(|alignment| alignment.operand_paths.is_none()));
+        .is_some_and(|alignment| alignment.operand_paths().is_none()));
     }
     let first_wrapper_at =
         usize::try_from(paths[0].link.wrapper_byte_offset).expect("wrapper offset fits usize");
@@ -298,7 +300,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             &scope,
             &rectangular_owners,
         )
-        .is_some_and(|alignment| alignment.operand_paths.is_none()));
+        .is_some_and(|alignment| alignment.operand_paths().is_none()));
     }
     let first_wrapper_end = first_wrapper_at + 37;
     let mut extended_wrapper = assembly_bytes.clone();
@@ -309,7 +311,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .is_some_and(|alignment| alignment.operand_paths.is_none()));
+    .is_some_and(|alignment| alignment.operand_paths().is_none()));
 
     let push_class_294_path =
         |bytes: &mut Vec<u8>, record_index: u32, occurrence: &str, identities: &[&str; 4]| {
@@ -340,6 +342,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     ];
     let mut class_294_path_bytes = assembly_bytes[..648].to_vec();
     push_path_locator(&mut class_294_path_bytes, 64, 66);
+    let first_class_294_path_at = class_294_path_bytes.len();
     push_class_294_path(
         &mut class_294_path_bytes,
         65,
@@ -348,6 +351,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     );
     push_path_wrapper(&mut class_294_path_bytes, 66, 65);
     push_path_locator(&mut class_294_path_bytes, 67, 69);
+    let second_class_294_path_at = class_294_path_bytes.len();
     push_class_294_path(
         &mut class_294_path_bytes,
         68,
@@ -364,10 +368,30 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         &scope,
         &rectangular_owners,
     )
-    .and_then(|alignment| alignment.operand_paths)
+    .and_then(|alignment| alignment.operand_paths())
     .expect("class-294 identity-qualified assembly occurrence paths");
     assert!(class_294_paths.iter().all(|path| {
         path.class_tag == "294"
+            && path.occurrence_guids.len() == 1
+            && path
+                .identity_guids
+                .iter()
+                .map(String::as_str)
+                .eq(class_294_identities.iter().copied())
+    }));
+    for path_at in [first_class_294_path_at, second_class_294_path_at] {
+        class_294_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"299");
+    }
+    let class_299_paths = exact_assembly_alignment(
+        &class_294_path_bytes,
+        &IndexedRecordOffsets::build(&class_294_path_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_paths())
+    .expect("class-299 identity-qualified assembly occurrence paths");
+    assert!(class_299_paths.iter().all(|path| {
+        path.class_tag == "299"
             && path.occurrence_guids.len() == 1
             && path
                 .identity_guids
@@ -404,6 +428,380 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         ),
         None
     );
+}
+
+#[test]
+fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
+    let scope_record_index = 10_u32;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+        "Assemble",
+        scope_record_index,
+    );
+    scope.class_tag = "383".into();
+    scope.frame_length = crate::layout::assembly_class_383_258_scope_1011::LEN as u64;
+    scope.paired_class_tag = "258".into();
+    scope.paired_byte_offset = scope.frame_length;
+    scope.reference_members = vec![
+        100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 200, 201, 202, 203, 204, 205,
+        206, 207, 112, 113, 114, 115, 300, 210, 211, 212, 213, 214, 215, 216, 217, 116, 117, 118,
+        119, 400,
+    ];
+    let owners = (0_usize..20)
+        .map(|ordinal| DesignParameterOwner {
+            id: format!(
+                "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
+                100 + ordinal
+            ),
+            byte_offset: 0,
+            frame_length: 103,
+            class_tag: "284".into(),
+            record_index: 100 + ordinal as u32,
+            scope_record_index,
+            local_ordinal: ordinal as u32,
+            evaluated_value: match ordinal {
+                8 => 0.25,
+                9 => 1.0,
+                10 => 2.0,
+                11 => 3.0,
+                _ => 0.0,
+            },
+            evaluated_value_offset: 2_000 + ordinal as u64,
+            parameter_record_index: 1_000 + ordinal as u32,
+            owned_ordinal: ordinal as u32,
+            variant: None,
+            companion_record_index: 1_100 + ordinal as u32,
+        })
+        .collect::<Vec<_>>();
+    let bytes = legacy_class_383_258_fixture(scope_record_index, &scope.reference_members);
+    let alignment = exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &owners,
+    )
+    .expect("legacy class-383 alignment");
+
+    assert_eq!(alignment.angle, 0.25);
+    assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
+    assert_eq!(alignment.owner_record_indices, vec![108, 109, 110, 111]);
+    assert_eq!(alignment.value_offsets, vec![2_008, 2_009, 2_010, 2_011]);
+    let frames = alignment
+        .operand_frames
+        .as_ref()
+        .expect("legacy operand frames");
+    assert_eq!(
+        frames.each_ref().map(|frame| frame.reference_record_index),
+        [300, 400]
+    );
+    assert_eq!(
+        frames.each_ref().map(|frame| frame.transform[0][3]),
+        [1.25, -2.5]
+    );
+    let paths = alignment.operand_paths().expect("legacy operand paths");
+    assert!(paths.iter().all(|path| path.class_tag == "386"));
+    assert_eq!(
+        paths.each_ref().map(|path| path.link.locator_record_index),
+        [300, 400]
+    );
+    assert_eq!(
+        paths
+            .each_ref()
+            .map(|path| path.occurrence_guids[0].as_str()),
+        [
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        ]
+    );
+
+    let mut malformed = bytes;
+    let first_carrier_at = malformed
+        .windows(11)
+        .position(|header| header[0..4] == 3_u32.to_le_bytes() && &header[4..7] == b"378")
+        .expect("first carrier header");
+    malformed[first_carrier_at
+        + crate::layout::assembly_class_383_258_frame_378_carrier::SCOPE_REFERENCE
+        ..first_carrier_at
+            + crate::layout::assembly_class_383_258_frame_378_carrier::SCOPE_REFERENCE
+            + 8]
+        .copy_from_slice(&999_u64.to_le_bytes());
+    let malformed_alignment = exact_assembly_alignment(
+        &malformed,
+        &IndexedRecordOffsets::build(&malformed),
+        &scope,
+        &owners,
+    )
+    .expect("alignment scalar grammar remains exact");
+    assert!(malformed_alignment.operand_paths().is_none());
+}
+
+#[test]
+fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
+    let scope_record_index = 700_u32;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#700",
+        "Assemble",
+        scope_record_index,
+    );
+    scope.class_tag = "388".into();
+    scope.paired_class_tag = "266".into();
+    scope.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
+    scope.paired_byte_offset = scope.frame_length;
+    scope.feature_ordinal = 4;
+    scope.reference_members = (0..24)
+        .map(|ordinal| 1_000 + ordinal)
+        .chain([1_200, 1_201, 1_202, 1_203, 1_204, 1_205])
+        .chain((24..28).map(|ordinal| 1_000 + ordinal))
+        .chain([1_034])
+        .collect();
+    let owners = (0..28)
+        .map(|ordinal| DesignParameterOwner {
+            id: format!(
+                "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
+                1_000 + ordinal
+            ),
+            byte_offset: 0,
+            frame_length: 103,
+            class_tag: "282".into(),
+            record_index: 1_000 + ordinal,
+            scope_record_index,
+            local_ordinal: ordinal,
+            evaluated_value: match ordinal {
+                4 => 0.25,
+                5 => 1.0,
+                6 => 2.0,
+                7 => 3.0,
+                _ => 0.0,
+            },
+            evaluated_value_offset: 2_000 + u64::from(ordinal),
+            parameter_record_index: 3_000 + ordinal,
+            owned_ordinal: ordinal,
+            variant: None,
+            companion_record_index: 4_000 + ordinal,
+        })
+        .collect::<Vec<_>>();
+
+    let mut bytes = vec![0; crate::layout::assembly_class_388_266_scope_968::LEN + 11];
+    bytes[20..26]
+        .copy_from_slice(&crate::layout::assembly_class_388_266_scope_968::SCOPE_FLAGS_VALUE);
+    let write_reference = |bytes: &mut [u8], at: usize, record_index: u32| {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+    };
+    write_reference(&mut bytes, 28, 1_034);
+    write_reference(&mut bytes, 168, 2_034);
+    bytes[362..366].copy_from_slice(&2_u32.to_le_bytes());
+    write_reference(&mut bytes, 366, 5_001);
+    write_reference(&mut bytes, 377, 5_002);
+    write_reference(&mut bytes, 388, 5_003);
+    let first_transform: [[f64; 4]; 4] = [
+        [1.0, 0.0, 0.0, 1.25],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let second_transform: [[f64; 4]; 4] = [
+        [1.0, 0.0, 0.0, -2.5],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for (at, transform) in [(40, first_transform), (180, second_transform)] {
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            bytes[at + ordinal * 8..at + ordinal * 8 + 8].copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes[399..403].copy_from_slice(&36_u32.to_le_bytes());
+    for (ordinal, code_unit) in "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        .encode_utf16()
+        .enumerate()
+    {
+        bytes[403 + ordinal * 2..405 + ordinal * 2].copy_from_slice(&code_unit.to_le_bytes());
+    }
+    bytes[478..482].copy_from_slice(&35_u32.to_le_bytes());
+    for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+        write_reference(&mut bytes, 482 + ordinal * 11, record_index);
+    }
+    bytes[867..871].copy_from_slice(&[0xff; 4]);
+    bytes[871..875].copy_from_slice(&8_u32.to_le_bytes());
+    for (ordinal, code_unit) in "Assemble".encode_utf16().enumerate() {
+        bytes[875 + ordinal * 2..877 + ordinal * 2].copy_from_slice(&code_unit.to_le_bytes());
+    }
+    bytes[891..895].copy_from_slice(&scope.feature_ordinal.to_le_bytes());
+
+    let alignment = exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &owners,
+    )
+    .expect("legacy class-388 alignment");
+    assert_eq!(alignment.angle, 0.25);
+    assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
+    assert_eq!(alignment.owner_record_indices, [1_004, 1_005, 1_006, 1_007]);
+    assert_eq!(alignment.value_offsets, [2_004, 2_005, 2_006, 2_007]);
+    let frames = alignment
+        .operand_frames
+        .as_ref()
+        .expect("legacy class-388 operand frames");
+    assert_eq!(
+        frames
+            .each_ref()
+            .map(|frame| (frame.reference_record_index, frame.transform[0][3])),
+        [(1_034, 1.25), (2_034, -2.5)]
+    );
+    assert_eq!(alignment.operand_paths(), None);
+
+    let write_guid = |bytes: &mut [u8], at: usize, guid: &str| {
+        let encoded = guid.encode_utf16().collect::<Vec<_>>();
+        bytes[at..at + 4].copy_from_slice(&(encoded.len() as u32).to_le_bytes());
+        for (ordinal, code_unit) in encoded.into_iter().enumerate() {
+            bytes[at + 4 + ordinal * 2..at + 6 + ordinal * 2]
+                .copy_from_slice(&code_unit.to_le_bytes());
+        }
+    };
+    let append_locator =
+        |bytes: &mut Vec<u8>, locator_record_index: u32, wrapper_record_index: u32| {
+            let start = bytes.len();
+            let mut locator = vec![0_u8; 190];
+            locator[..4].copy_from_slice(&3_u32.to_le_bytes());
+            locator[4..7].copy_from_slice(b"451");
+            locator[7..11].copy_from_slice(&locator_record_index.to_le_bytes());
+            write_reference(&mut locator, 21, 9_001 + locator_record_index);
+            for (ordinal, value) in [
+                1.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                locator[33 + ordinal * 8..41 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
+            }
+            write_reference(&mut locator, 162, scope_record_index);
+            write_reference(&mut locator, 173, wrapper_record_index);
+            locator[184..188].copy_from_slice(&2_u32.to_le_bytes());
+            bytes.extend(locator);
+            start
+        };
+    let append_path = |bytes: &mut Vec<u8>, record_index: u32, occurrence_guid: &str| {
+        let start = bytes.len();
+        let mut path = vec![0_u8; 425];
+        path[..4].copy_from_slice(&3_u32.to_le_bytes());
+        path[4..7].copy_from_slice(b"412");
+        path[7..11].copy_from_slice(&record_index.to_le_bytes());
+        path[21] = 1;
+        write_guid(&mut path, 25, occurrence_guid);
+        for (at, guid) in [
+            (101, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            (177, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            (261, "cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            (337, "dddddddd-dddd-dddd-dddd-dddddddddddd"),
+        ] {
+            write_guid(&mut path, at, guid);
+        }
+        path[253..261].copy_from_slice(&2_u64.to_le_bytes());
+        path[413..417].copy_from_slice(&2_u32.to_le_bytes());
+        bytes.extend(path);
+        start
+    };
+    let append_wrapper =
+        |bytes: &mut Vec<u8>, wrapper_record_index: u32, path_record_indices: &[u32]| {
+            let start = bytes.len();
+            let mut wrapper = vec![0_u8; 37 + (path_record_indices.len() - 1) * 11];
+            wrapper[..4].copy_from_slice(&3_u32.to_le_bytes());
+            wrapper[4..7].copy_from_slice(b"369");
+            wrapper[7..11].copy_from_slice(&wrapper_record_index.to_le_bytes());
+            wrapper[21] = 1;
+            wrapper[22..26].copy_from_slice(&(path_record_indices.len() as u32).to_le_bytes());
+            for (ordinal, path_record_index) in path_record_indices.iter().copied().enumerate() {
+                write_reference(&mut wrapper, 26 + ordinal * 11, path_record_index);
+            }
+            bytes.extend(wrapper);
+            start
+        };
+    let mut path_bytes = bytes.clone();
+    write_reference(&mut path_bytes, 366, 5_001);
+    write_reference(&mut path_bytes, 377, 5_101);
+    let first_locator_at = append_locator(&mut path_bytes, 5_001, 5_004);
+    let first_path_at = append_path(
+        &mut path_bytes,
+        5_002,
+        "11111111-1111-1111-1111-111111111111",
+    );
+    append_path(
+        &mut path_bytes,
+        5_003,
+        "22222222-2222-2222-2222-222222222222",
+    );
+    let first_wrapper_at = append_wrapper(&mut path_bytes, 5_004, &[5_002, 5_003]);
+    append_locator(&mut path_bytes, 5_101, 5_103);
+    append_path(
+        &mut path_bytes,
+        5_102,
+        "33333333-3333-3333-3333-333333333333",
+    );
+    append_wrapper(&mut path_bytes, 5_103, &[5_102]);
+    path_bytes.extend_from_slice(&3_u32.to_le_bytes());
+    path_bytes.extend_from_slice(b"396");
+    path_bytes.extend_from_slice(&5_200_u32.to_le_bytes());
+    let paths = exact_assembly_alignment(
+        &path_bytes,
+        &IndexedRecordOffsets::build(&path_bytes),
+        &scope,
+        &owners,
+    )
+    .and_then(|alignment| alignment.operand_paths())
+    .expect("legacy class-388 occurrence paths");
+    assert_eq!(paths[0].link.locator_record_index, 5_001);
+    assert_eq!(paths[0].link.locator_class_tag, "451");
+    assert_eq!(paths[0].link.locator_byte_offset, first_locator_at as u64);
+    assert_eq!(paths[0].link.wrapper_record_index, 5_004);
+    assert_eq!(paths[0].link.wrapper_class_tag, "369");
+    assert_eq!(paths[0].link.wrapper_byte_offset, first_wrapper_at as u64);
+    assert_eq!(paths[0].record_index, 5_003);
+    assert_eq!(paths[0].class_tag, "412");
+    assert_eq!(paths[0].byte_offset, (first_path_at + 425) as u64);
+    assert_eq!(
+        paths[0].occurrence_guids,
+        [
+            "11111111-1111-1111-1111-111111111111".to_owned(),
+            "22222222-2222-2222-2222-222222222222".to_owned(),
+        ]
+    );
+    assert_eq!(paths[0].identity_guids.len(), 4);
+    assert_eq!(paths[1].link.locator_record_index, 5_101);
+    assert_eq!(paths[1].link.wrapper_record_index, 5_103);
+    assert_eq!(paths[1].record_index, 5_102);
+    assert_eq!(paths[1].occurrence_guids.len(), 1);
+
+    let mut malformed_wrapper = path_bytes.clone();
+    malformed_wrapper[first_wrapper_at + 22..first_wrapper_at + 26]
+        .copy_from_slice(&3_u32.to_le_bytes());
+    assert!(exact_assembly_alignment(
+        &malformed_wrapper,
+        &IndexedRecordOffsets::build(&malformed_wrapper),
+        &scope,
+        &owners,
+    )
+    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+    let mut malformed_path = path_bytes.clone();
+    malformed_path[first_path_at + 417] = 1;
+    assert!(exact_assembly_alignment(
+        &malformed_path,
+        &IndexedRecordOffsets::build(&malformed_path),
+        &scope,
+        &owners,
+    )
+    .is_some_and(|alignment| alignment.operand_paths().is_none()));
+
+    let mut malformed = bytes;
+    malformed[25] = 0;
+    assert!(exact_assembly_alignment(
+        &malformed,
+        &IndexedRecordOffsets::build(&malformed),
+        &scope,
+        &owners,
+    )
+    .is_none());
 }
 
 #[test]
@@ -490,7 +888,10 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
     assert_eq!(alignment.owner_record_indices, [50, 51, 52, 53]);
     assert_eq!(alignment.value_offsets, [501, 502, 503, 504]);
-    let frames = alignment.operand_frames.expect("locator transforms");
+    let frames = alignment
+        .operand_frames
+        .as_ref()
+        .expect("locator transforms");
     assert_eq!(
         frames
             .each_ref()
@@ -504,7 +905,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
             u64::try_from(second_locator_at + 33).expect("fixture offset fits u64"),
         ]
     );
-    let paths = alignment.operand_paths.expect("locator occurrence paths");
+    let paths = alignment.operand_paths().expect("locator occurrence paths");
     assert_eq!(
         paths.each_ref().map(|path| (
             path.link.locator_record_index,
@@ -527,7 +928,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     )
     .expect("alignment scalars remain exact");
     assert_eq!(incomplete.operand_frames, None);
-    assert_eq!(incomplete.operand_paths, None);
+    assert_eq!(incomplete.operand_paths(), None);
 
     let mut duplicate_reference = bytes;
     duplicate_reference[63..67].copy_from_slice(&64_u32.to_le_bytes());
@@ -539,7 +940,197 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     )
     .expect("alignment scalars remain exact");
     assert_eq!(incomplete.operand_frames, None);
-    assert_eq!(incomplete.operand_paths, None);
+    assert_eq!(incomplete.operand_paths(), None);
+}
+
+#[test]
+fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projection() {
+    let owner = |scope_record_index: u32,
+                 record_index: u32,
+                 local_ordinal: u32,
+                 class_tag: &str,
+                 value: f64,
+                 offset: u64| {
+        DesignParameterOwner {
+            id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
+            byte_offset: 0,
+            frame_length: 103,
+            class_tag: class_tag.into(),
+            record_index,
+            scope_record_index,
+            local_ordinal,
+            evaluated_value: value,
+            evaluated_value_offset: offset,
+            parameter_record_index: record_index + 1,
+            owned_ordinal: local_ordinal,
+            variant: None,
+            companion_record_index: record_index + 2,
+        }
+    };
+    for (class_tag, paired_class_tag, owner_class, expected_limit_kind, reverse_limit_order) in [
+        ("364", "272", "293", DesignAssemblyLimitKind::Angular, false),
+        ("420", "262", "378", DesignAssemblyLimitKind::Linear, true),
+        ("417", "263", "318", DesignAssemblyLimitKind::Linear, true),
+        ("457", "258", "418", DesignAssemblyLimitKind::Linear, false),
+    ] {
+        let generation = crate::design::assembly::legacy_as_built_421_generation(
+            421,
+            class_tag,
+            paired_class_tag,
+        )
+        .expect("fixture generation is admitted");
+        assert_eq!(generation.owner_class_tag(), owner_class);
+        assert_eq!(generation.limit_kind(), expected_limit_kind);
+        assert_eq!(generation.reverse_limit_order(), reverse_limit_order);
+        let scope_record_index = 10_u32;
+        let owner_record_indices = [100, 101, 102, 103, 104, 105, 106];
+        let reference_members = [
+            20,
+            21,
+            22,
+            23,
+            owner_record_indices[0],
+            owner_record_indices[1],
+            owner_record_indices[2],
+            owner_record_indices[3],
+            200,
+            owner_record_indices[5],
+            owner_record_indices[6],
+        ];
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+            "As-built",
+            scope_record_index,
+        );
+        scope.class_tag = class_tag.into();
+        scope.paired_class_tag = paired_class_tag.into();
+        scope.frame_length = 421;
+        scope.paired_byte_offset = 421;
+        scope.reference_count_offset = 185;
+        scope.reference_members = reference_members.to_vec();
+        scope.reference_member_offsets = (0..11)
+            .map(|ordinal| u64::try_from(190 + ordinal * 11).expect("offset fits u64"))
+            .collect();
+        scope.feature_ordinal_offset = 334;
+
+        let mut bytes = vec![0_u8; 421];
+        bytes[185..189].copy_from_slice(&11_u32.to_le_bytes());
+        for (ordinal, record_index) in reference_members.into_iter().enumerate() {
+            let at = 189 + ordinal * 11;
+            bytes[at] = 1;
+            bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+        }
+        bytes[310..314].copy_from_slice(&u32::MAX.to_le_bytes());
+        bytes[314..318].copy_from_slice(&8_u32.to_le_bytes());
+        for (ordinal, value) in "As-built".encode_utf16().enumerate() {
+            bytes[318 + ordinal * 2..320 + ordinal * 2].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[334..338].copy_from_slice(&2_u32.to_le_bytes());
+        append_axial_test_header(
+            &mut bytes,
+            paired_class_tag.as_bytes().try_into().unwrap(),
+            scope_record_index,
+        );
+        let frame_start = bytes.len();
+        let frame_class_tag = generation.frame_class_tag();
+        append_axial_test_header(
+            &mut bytes,
+            frame_class_tag.as_bytes().try_into().unwrap(),
+            200,
+        );
+        let matrix_prefix = generation.matrix_prefix();
+        let transform_offset = generation.matrix_offset();
+        let frame_length = generation.frame_length();
+        bytes.resize(frame_start + frame_length, 0);
+        bytes[frame_start + matrix_prefix..frame_start + transform_offset]
+            .copy_from_slice(&[1, 1, 0, 0]);
+        let mut solved_transform = identity_matrix();
+        solved_transform[0][3] = 9.0;
+        solved_transform[1][3] = 8.0;
+        solved_transform[2][3] = 7.0;
+        for (ordinal, value) in solved_transform.into_iter().flatten().enumerate() {
+            let at = frame_start + transform_offset + ordinal * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        append_axial_test_header(
+            &mut bytes,
+            paired_class_tag.as_bytes().try_into().unwrap(),
+            200,
+        );
+
+        let (limit_first_value, limit_second_value) = if reverse_limit_order {
+            (1.5, -1.0)
+        } else {
+            (-1.0, 1.5)
+        };
+        let owners = [
+            owner(scope_record_index, 100, 0, owner_class, 1.0, 1_000),
+            owner(scope_record_index, 101, 1, owner_class, 2.0, 1_001),
+            owner(scope_record_index, 102, 2, owner_class, 3.0, 1_002),
+            owner(scope_record_index, 103, 3, owner_class, 0.25, 1_003),
+            owner(
+                scope_record_index,
+                105,
+                4,
+                owner_class,
+                limit_first_value,
+                1_005,
+            ),
+            owner(
+                scope_record_index,
+                106,
+                5,
+                owner_class,
+                limit_second_value,
+                1_006,
+            ),
+        ];
+        let alignment = exact_assembly_alignment(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &owners,
+        )
+        .expect("exact 421-byte As-built alignment");
+        assert!((alignment.angle - 0.25).abs() <= EPS_EXACT_FIXTURE);
+        for (actual, expected) in alignment.offset.into_iter().zip([1.0, 2.0, 3.0]) {
+            assert!((actual - expected).abs() <= EPS_EXACT_FIXTURE);
+        }
+        assert_eq!(alignment.owner_record_indices, [103, 100, 101, 102]);
+        assert_eq!(alignment.value_offsets, [1_003, 1_000, 1_001, 1_002]);
+        let limits = alignment.limits.as_ref().expect("assembly limits");
+        assert_eq!(limits.kind, expected_limit_kind);
+        assert!((limits.minimum - -1.0).abs() <= EPS_EXACT_FIXTURE);
+        assert!((limits.maximum - 1.5).abs() <= EPS_EXACT_FIXTURE);
+        assert_eq!(
+            limits.owner_record_indices,
+            if reverse_limit_order {
+                [106, 105]
+            } else {
+                [105, 106]
+            }
+        );
+        assert_eq!(
+            limits.value_offsets,
+            if reverse_limit_order {
+                [1_006, 1_005]
+            } else {
+                [1_005, 1_006]
+            }
+        );
+        assert!(alignment.operand_frames.is_none());
+        assert!(alignment.operand_paths().is_none());
+        let solved_frame = alignment.solved_frame.expect("solved frame carrier");
+        assert_eq!(solved_frame.reference_record_index, 200);
+        assert_eq!(solved_frame.reference_offset, 190 + 8 * 11);
+        assert_eq!(solved_frame.record_byte_offset, frame_start as u64);
+        assert_eq!(solved_frame.class_tag, frame_class_tag);
+        assert!((solved_frame.transform[0][3] - 9.0).abs() <= EPS_EXACT_FIXTURE);
+        assert_eq!(
+            solved_frame.transform_offset,
+            (frame_start + transform_offset) as u64
+        );
+    }
 }
 
 #[test]
@@ -588,7 +1179,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     let targets = scopes[0]
         .assembly_alignment
         .as_ref()
-        .and_then(|alignment| alignment.axial_operand_targets.as_ref())
+        .and_then(|alignment| alignment.axial_operand_targets())
         .expect("two exact pathless assembly targets");
     let DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
         component_insert_scope_record_index,
@@ -598,7 +1189,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         construction_paired_byte_offset,
         selectors,
         ..
-    } = &targets[0]
+    } = targets[0]
     else {
         panic!("first operand must select a component insertion");
     };
@@ -623,7 +1214,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         component_insert_scope_record_index,
         selectors: versioned_selectors,
         ..
-    } = &targets[1]
+    } = targets[1]
     else {
         panic!("second operand must select a component insertion");
     };
@@ -647,7 +1238,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     assert!(mismatched_scopes[0]
         .assembly_alignment
         .as_ref()
-        .is_some_and(|alignment| alignment.axial_operand_targets.is_none()));
+        .is_some_and(|alignment| alignment.axial_operand_targets().is_none()));
 }
 
 #[test]
@@ -683,7 +1274,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     let targets = scopes[0]
         .assembly_alignment
         .as_ref()
-        .and_then(|alignment| alignment.axial_operand_targets.as_ref())
+        .and_then(|alignment| alignment.axial_operand_targets())
         .expect("component and root assembly targets");
     assert!(matches!(
         &targets[0],
@@ -694,345 +1285,378 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     ));
     assert_eq!(
         targets[1],
-        DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+        &DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
             scope_record_index: 80
         }
     );
 }
 
-#[test]
-fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
-    let header = |bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32| {
-        bytes.extend_from_slice(&3_u32.to_le_bytes());
-        bytes.extend_from_slice(class_tag);
-        bytes.extend_from_slice(&record_index.to_le_bytes());
-    };
-    let transform: [[f64; 4]; 4] = [
-        [1.0, 0.0, 0.0, -2.1],
+fn legacy_class_383_258_fixture(scope_record_index: u32, members: &[u32]) -> Vec<u8> {
+    let scope_len = crate::layout::assembly_class_383_258_scope_1011::LEN;
+    let mut bytes = vec![0_u8; scope_len + 11];
+    write_legacy_class_383_header(&mut bytes, 0, b"383", scope_record_index);
+    bytes[20] = 1;
+    bytes[25] = 1;
+    write_legacy_class_383_reference(
+        &mut bytes,
+        crate::layout::assembly_class_383_258_scope_1011::FIRST_OPERAND_REFERENCE,
+        members[24],
+    );
+    write_legacy_class_383_transform(&mut bytes, 40, legacy_class_383_transform(1.25));
+    write_legacy_class_383_reference(
+        &mut bytes,
+        crate::layout::assembly_class_383_258_scope_1011::SECOND_OPERAND_REFERENCE,
+        members[37],
+    );
+    write_legacy_class_383_transform(&mut bytes, 180, legacy_class_383_transform(-2.5));
+    write_legacy_class_383_header(&mut bytes, scope_len, b"258", scope_record_index);
+
+    append_legacy_class_383_operand_envelope(
+        &mut bytes,
+        scope_record_index,
+        &[
+            members[12],
+            members[13],
+            members[14],
+            members[15],
+            members[16],
+            members[17],
+            members[18],
+            members[19],
+            members[24],
+            members[20],
+            members[21],
+            members[22],
+            members[23],
+        ],
+        legacy_class_383_transform(1.25),
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    );
+    append_legacy_class_383_operand_envelope(
+        &mut bytes,
+        scope_record_index,
+        &[
+            members[25],
+            members[26],
+            members[27],
+            members[28],
+            members[29],
+            members[30],
+            members[31],
+            members[32],
+            members[37],
+            members[33],
+            members[34],
+            members[35],
+            members[36],
+        ],
+        legacy_class_383_transform(-2.5),
+        "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "dddddddd-dddd-dddd-dddd-dddddddddddd",
+    );
+    bytes
+}
+
+fn append_legacy_class_383_operand_envelope(
+    bytes: &mut Vec<u8>,
+    scope_record_index: u32,
+    members: &[u32],
+    transform: [[f64; 4]; 4],
+    occurrence_guid: &str,
+    identity_guid: &str,
+) {
+    let leading_record_index = members[0];
+    let leading_identity_record_index = members[1];
+    let child_record_index = members[2];
+    let child_identity_record_index = members[3];
+    let first_face_record_index = members[4];
+    let first_face_identity_record_index = members[5];
+    let second_face_record_index = members[6];
+    let second_face_identity_record_index = members[7];
+    let carrier_record_index = members[8];
+    let placement_owners = &members[9..13];
+
+    append_legacy_class_383_frame(
+        bytes,
+        b"387",
+        leading_record_index,
+        crate::layout::assembly_class_383_258_frame_387_leading::LEN,
+        move |frame| {
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_387_leading::IDENTITY_REFERENCE,
+                leading_identity_record_index,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_387_leading::SCOPE_REFERENCE,
+                scope_record_index,
+            );
+        },
+    );
+    append_legacy_class_383_frame(
+        bytes,
+        b"359",
+        leading_identity_record_index,
+        crate::layout::assembly_class_383_258_frame_359_identity::LEN,
+        move |frame| {
+            write_legacy_class_383_guid(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::OCCURRENCE_GUID,
+                occurrence_guid,
+            );
+            write_legacy_class_383_guid(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::IDENTITY_GUID,
+                identity_guid,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::SCOPE_REFERENCE,
+                scope_record_index,
+            );
+        },
+    );
+    append_legacy_class_383_frame(
+        bytes,
+        b"387",
+        child_record_index,
+        crate::layout::assembly_class_383_258_frame_387_child::LEN,
+        move |frame| {
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_387_child::IDENTITY_REFERENCE,
+                child_identity_record_index,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_387_child::LEADING_REFERENCE,
+                leading_record_index,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_387_child::SCOPE_REFERENCE,
+                scope_record_index,
+            );
+        },
+    );
+    append_legacy_class_383_frame(
+        bytes,
+        b"359",
+        child_identity_record_index,
+        crate::layout::assembly_class_383_258_frame_359_identity::LEN,
+        move |frame| {
+            write_legacy_class_383_guid(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::OCCURRENCE_GUID,
+                occurrence_guid,
+            );
+            write_legacy_class_383_guid(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::IDENTITY_GUID,
+                identity_guid,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::SCOPE_REFERENCE,
+                scope_record_index,
+            );
+        },
+    );
+    append_legacy_class_383_frame(
+        bytes,
+        b"394",
+        first_face_record_index,
+        crate::layout::assembly_class_383_258_frame_394::LEN,
+        move |frame| {
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_394::IDENTITY_REFERENCE,
+                first_face_identity_record_index,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_394::SCOPE_REFERENCE,
+                scope_record_index,
+            );
+        },
+    );
+    append_legacy_class_383_frame(
+        bytes,
+        b"359",
+        first_face_identity_record_index,
+        crate::layout::assembly_class_383_258_frame_359_identity::LEN,
+        move |frame| {
+            write_legacy_class_383_guid(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::OCCURRENCE_GUID,
+                occurrence_guid,
+            );
+            write_legacy_class_383_guid(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::IDENTITY_GUID,
+                identity_guid,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::SCOPE_REFERENCE,
+                scope_record_index,
+            );
+        },
+    );
+    append_legacy_class_383_frame(
+        bytes,
+        b"394",
+        second_face_record_index,
+        crate::layout::assembly_class_383_258_frame_394::LEN,
+        move |frame| {
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_394::IDENTITY_REFERENCE,
+                second_face_identity_record_index,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_394::SCOPE_REFERENCE,
+                scope_record_index,
+            );
+        },
+    );
+    append_legacy_class_383_frame(
+        bytes,
+        b"359",
+        second_face_identity_record_index,
+        crate::layout::assembly_class_383_258_frame_359_identity::LEN,
+        move |frame| {
+            write_legacy_class_383_guid(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::OCCURRENCE_GUID,
+                occurrence_guid,
+            );
+            write_legacy_class_383_guid(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::IDENTITY_GUID,
+                identity_guid,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_359_identity::SCOPE_REFERENCE,
+                scope_record_index,
+            );
+        },
+    );
+    append_legacy_class_383_frame(
+        bytes,
+        b"378",
+        carrier_record_index,
+        crate::layout::assembly_class_383_258_frame_378_carrier::LEN,
+        move |frame| {
+            write_legacy_class_383_transform(
+                frame,
+                crate::layout::assembly_class_383_258_frame_378_carrier::TRANSFORM,
+                transform,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_378_carrier::CHILD_REFERENCE,
+                child_record_index,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_378_carrier::SECOND_FACE_REFERENCE,
+                second_face_record_index,
+            );
+            write_legacy_class_383_reference(
+                frame,
+                crate::layout::assembly_class_383_258_frame_378_carrier::FIRST_FACE_REFERENCE,
+                first_face_record_index,
+            );
+            for (ordinal, record_index) in placement_owners.iter().copied().enumerate() {
+                write_legacy_class_383_reference(
+                    frame,
+                    crate::layout::assembly_class_383_258_frame_378_carrier::PLACEMENT_OWNER_REFERENCES
+                        + ordinal * 11,
+                    record_index,
+                );
+            }
+            for (offset, record_index) in [
+                (
+                    crate::layout::assembly_class_383_258_frame_378_carrier::REPEATED_CHILD_REFERENCE,
+                    child_record_index,
+                ),
+                (
+                    crate::layout::assembly_class_383_258_frame_378_carrier::REPEATED_FIRST_FACE_REFERENCE,
+                    first_face_record_index,
+                ),
+                (
+                    crate::layout::assembly_class_383_258_frame_378_carrier::REPEATED_SECOND_FACE_REFERENCE,
+                    second_face_record_index,
+                ),
+                (
+                    crate::layout::assembly_class_383_258_frame_378_carrier::SCOPE_REFERENCE,
+                    scope_record_index,
+                ),
+            ] {
+                write_legacy_class_383_reference(frame, offset, record_index);
+            }
+        },
+    );
+}
+
+fn append_legacy_class_383_frame<F>(
+    bytes: &mut Vec<u8>,
+    class_tag: &[u8; 3],
+    record_index: u32,
+    frame_length: usize,
+    configure: F,
+) where
+    F: FnOnce(&mut [u8]),
+{
+    let start = bytes.len();
+    bytes.resize(start + frame_length + 11, 0);
+    write_legacy_class_383_header(bytes, start, class_tag, record_index);
+    write_legacy_class_383_header(bytes, start + frame_length, b"258", record_index);
+    configure(&mut bytes[start..start + frame_length]);
+}
+
+fn write_legacy_class_383_header(
+    bytes: &mut [u8],
+    at: usize,
+    class_tag: &[u8; 3],
+    record_index: u32,
+) {
+    bytes[at..at + 4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[at + 4..at + 7].copy_from_slice(class_tag);
+    bytes[at + 7..at + 11].copy_from_slice(&record_index.to_le_bytes());
+}
+
+fn write_legacy_class_383_reference(bytes: &mut [u8], at: usize, record_index: u32) {
+    bytes[at] = 1;
+    bytes[at + 1..at + 9].copy_from_slice(&u64::from(record_index).to_le_bytes());
+}
+
+fn write_legacy_class_383_guid(bytes: &mut [u8], at: usize, guid: &str) {
+    let encoded = guid.encode_utf16().collect::<Vec<_>>();
+    bytes[at..at + 4].copy_from_slice(&(encoded.len() as u32).to_le_bytes());
+    for (ordinal, code_unit) in encoded.into_iter().enumerate() {
+        bytes[at + 4 + ordinal * 2..at + 6 + ordinal * 2].copy_from_slice(&code_unit.to_le_bytes());
+    }
+}
+
+fn write_legacy_class_383_transform(bytes: &mut [u8], at: usize, transform: [[f64; 4]; 4]) {
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        bytes[at + ordinal * 8..at + ordinal * 8 + 8].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
+fn legacy_class_383_transform(translation_x: f64) -> [[f64; 4]; 4] {
+    [
+        [1.0, 0.0, 0.0, translation_x],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
-    ];
-    let role = "b2231f72-46dc-40fa-b8e8-10cd208d7df8";
-    let mut bytes = Vec::new();
-    header(&mut bytes, b"256", 10);
-    let role_at = bytes.len();
-    bytes.extend_from_slice(&36_u32.to_le_bytes());
-    bytes.extend(role.encode_utf16().flat_map(u16::to_le_bytes));
-    bytes.extend_from_slice(&[0, 0]);
-    let carrier_transform_at = bytes.len();
-    for value in transform.into_iter().flatten() {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    let relation_at = bytes.len();
-    header(&mut bytes, b"325", 20);
-    bytes.extend_from_slice(&[0; 10]);
-    for (ordinal, reference) in [10_u32, 11, 30].into_iter().enumerate() {
-        bytes.push(1);
-        bytes.extend_from_slice(&reference.to_le_bytes());
-        bytes.extend(std::iter::repeat_n(0, [8, 7, 6][ordinal]));
-    }
-    assert_eq!(bytes.len(), relation_at + 57);
-    header(&mut bytes, b"259", 20);
-    let scope_at = bytes.len();
-    bytes.resize(scope_at + 399, 0);
-    bytes[scope_at..scope_at + 4].copy_from_slice(&3_u32.to_le_bytes());
-    bytes[scope_at + 4..scope_at + 7].copy_from_slice(b"451");
-    bytes[scope_at + 7..scope_at + 11].copy_from_slice(&30_u32.to_le_bytes());
-    bytes[scope_at + 20] = 1;
-    bytes[scope_at + 37] = 1;
-    bytes[scope_at + 38..scope_at + 42].copy_from_slice(&20_u32.to_le_bytes());
-    bytes[scope_at + 48] = 1;
-    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
-        let at = scope_at + 50 + ordinal * 8;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
-    header(&mut bytes, b"259", 30);
-    let scope = DesignParameterScope {
-        id: "f3d:Design/BulkStream.dat:design-parameter-scope#30".into(),
-        byte_offset: scope_at as u64,
-        class_tag: "451".into(),
-        record_index: 30,
-        frame_length: 399,
-        kind: "Component Insert".into(),
-        kind_offset: 0,
-        extrude_prologue: None,
-        coil_operation: None,
-        coil_operation_offset: None,
-        coil_extent: None,
-        coil_extent_offset: None,
-        coil_section: None,
-        coil_section_offset: None,
-        coil_section_placement: None,
-        coil_section_placement_offset: None,
-        coil_clockwise: None,
-        coil_clockwise_offset: None,
-        coil_placement: None,
-        coil_transform: None,
-        feature_ordinal: 1,
-        feature_ordinal_offset: 0,
-        history_state_id: None,
-        history_state_id_offset: 0,
-        previous_history_state_id: None,
-        previous_history_state_id_offset: 0,
-        reference_count_offset: 0,
-        reference_members: vec![20],
-        reference_member_offsets: vec![scope_at as u64 + 38],
-        solid_primitive: None,
-        direct_face_operation: None,
-        move_operation: None,
-        scale_operation: None,
-        surface_stitch_operation: None,
-        surface_extend_operation: None,
-        surface_offset_operation: None,
-        ruled_surface_operation: None,
-        surface_patch_boundaries: Vec::new(),
-        base_flange_operation: None,
-        edge_flange_operation: None,
-        hem_operation: None,
-        fixed_extrude_parameters: None,
-        fixed_fillet_parameters: None,
-        fixed_chamfer_parameters: None,
-        path_feature_construction: None,
-        combine_operation: None,
-        thread_construction: None,
-        draft_operation: None,
-        circular_pattern_construction: None,
-        rectangular_pattern_construction: None,
-        assembly_alignment: None,
-        component_insert_construction: None,
-        copy_paste_component_operation: None,
-        mirror_construction: None,
-        copy_paste_bodies_operation: None,
-        base_feature_construction: None,
-        work_plane_transform: None,
-        work_plane_transform_offset: None,
-        work_plane_reference: None,
-        work_plane_reference_offset: None,
-        work_plane_construction: None,
-        work_axis_construction: None,
-        joint_origin_transform: None,
-        joint_origin_transform_offset: None,
-        joint_origin_reference: None,
-        joint_origin_reference_offset: None,
-        work_point_construction: None,
-        unclosed_construction_operand_groups: Vec::new(),
-        hole_construction: None,
-        extrude_profile: None,
-        sweep_profile: None,
-        base_flange_profile: None,
-        entity_id: None,
-        entity_suffix: None,
-        entity_reference_offset: None,
-        paired_class_tag: "259".into(),
-        paired_byte_offset: (scope_at + 399) as u64,
-    };
-
-    let construction =
-        exact_component_insert_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
-            .expect("component insert construction");
-
-    assert_eq!(construction.relation_record_index, 20);
-    assert_eq!(construction.carrier_record_index, 10);
-    assert_eq!(construction.neutron_role, role);
-    assert_eq!(construction.neutron_role_offset, (role_at + 4) as u64);
-    assert_eq!(construction.transform, transform);
-    assert_eq!(construction.transform_offset, (scope_at + 50) as u64);
-    assert_eq!(
-        construction.carrier_transform_offset,
-        carrier_transform_at as u64
-    );
-
-    for (frame_length, paired_class_tag, transform_at, relation_at, expanded_prologue) in [
-        (381_usize, "261", 49_usize, 38_usize, true),
-        (395, "258", 46, 34, false),
-    ] {
-        let mut legacy = bytes[..scope_at].to_vec();
-        legacy.resize(scope_at + frame_length, 0);
-        legacy[scope_at..scope_at + 4].copy_from_slice(&3_u32.to_le_bytes());
-        legacy[scope_at + 4..scope_at + 7].copy_from_slice(b"451");
-        legacy[scope_at + 7..scope_at + 11].copy_from_slice(&30_u32.to_le_bytes());
-        if expanded_prologue {
-            legacy[scope_at + 20] = 1;
-            legacy[scope_at + 37] = 1;
-            legacy[scope_at + 48] = 1;
-        } else {
-            legacy[scope_at + 33] = 1;
-        }
-        legacy[scope_at + relation_at..scope_at + relation_at + 4]
-            .copy_from_slice(&20_u32.to_le_bytes());
-        if !expanded_prologue {
-            legacy[scope_at + transform_at - 2] = 1;
-        }
-        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
-            let at = scope_at + transform_at + ordinal * 8;
-            legacy[at..at + 8].copy_from_slice(&value.to_le_bytes());
-        }
-        header(
-            &mut legacy,
-            paired_class_tag
-                .as_bytes()
-                .try_into()
-                .expect("three-byte tag"),
-            30,
-        );
-        let legacy_scope = DesignParameterScope {
-            frame_length: frame_length as u64,
-            paired_class_tag: paired_class_tag.into(),
-            paired_byte_offset: (scope_at + frame_length) as u64,
-            ..scope.clone()
-        };
-        let construction = exact_component_insert_construction(
-            &legacy,
-            &IndexedRecordOffsets::build(&legacy),
-            &legacy_scope,
-        )
-        .unwrap_or_else(|| panic!("{frame_length}-byte component insert construction"));
-        assert_eq!(
-            construction.transform_offset,
-            (scope_at + transform_at) as u64
-        );
-        assert_eq!(construction.transform, transform);
-    }
-
-    let mut expanded = Vec::new();
-    header(&mut expanded, b"312", 10);
-    let expanded_carrier_transform_at = expanded.len();
-    for value in transform.into_iter().flatten() {
-        expanded.extend_from_slice(&value.to_le_bytes());
-    }
-    let expanded_role_at = expanded.len();
-    expanded.extend_from_slice(&36_u32.to_le_bytes());
-    expanded.extend(role.encode_utf16().flat_map(u16::to_le_bytes));
-    expanded.extend_from_slice(&[0, 1, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    let expanded_relation_at = expanded.len();
-    header(&mut expanded, b"338", 20);
-    expanded.resize(expanded_relation_at + 58, 0);
-    expanded[expanded_relation_at + 21] = 1;
-    expanded[expanded_relation_at + 22..expanded_relation_at + 26]
-        .copy_from_slice(&10_u32.to_le_bytes());
-    expanded[expanded_relation_at + 32..expanded_relation_at + 35].copy_from_slice(&[1, 0, 0]);
-    expanded[expanded_relation_at + 35] = 1;
-    expanded[expanded_relation_at + 36..expanded_relation_at + 40]
-        .copy_from_slice(&99_u32.to_le_bytes());
-    expanded[expanded_relation_at + 47] = 1;
-    expanded[expanded_relation_at + 48..expanded_relation_at + 52]
-        .copy_from_slice(&30_u32.to_le_bytes());
-    let expanded_scope_at = expanded.len();
-    header(&mut expanded, b"335", 30);
-    expanded.resize(expanded_scope_at + 404, 0);
-    expanded[expanded_scope_at + 20] = 1;
-    let occurrence_identity = 0x0102_0304_0506_0708_u64;
-    expanded[expanded_scope_at + 29..expanded_scope_at + 37]
-        .copy_from_slice(&occurrence_identity.to_le_bytes());
-    expanded[expanded_scope_at + 41] = 1;
-    expanded[expanded_scope_at + 42..expanded_scope_at + 46].copy_from_slice(&20_u32.to_le_bytes());
-    expanded[expanded_scope_at + 52..expanded_scope_at + 54].copy_from_slice(&[1, 0]);
-    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
-        let at = expanded_scope_at + 54 + ordinal * 8;
-        expanded[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
-    header(&mut expanded, b"260", 30);
-    let expanded_scope = DesignParameterScope {
-        byte_offset: expanded_scope_at as u64,
-        class_tag: "335".into(),
-        frame_length: 404,
-        reference_member_offsets: vec![(expanded_scope_at + 42) as u64],
-        paired_class_tag: "260".into(),
-        paired_byte_offset: (expanded_scope_at + 404) as u64,
-        ..scope.clone()
-    };
-    let construction = exact_component_insert_construction(
-        &expanded,
-        &IndexedRecordOffsets::build(&expanded),
-        &expanded_scope,
-    )
-    .expect("404-byte component insert construction");
-    assert_eq!(construction.relation_record_index, 20);
-    assert_eq!(construction.carrier_record_index, 10);
-    assert_eq!(construction.occurrence_identity, Some(occurrence_identity));
-    assert_eq!(construction.neutron_role, role);
-    assert_eq!(
-        construction.neutron_role_offset,
-        (expanded_role_at + 4) as u64
-    );
-    assert_eq!(construction.transform, transform);
-    assert_eq!(
-        construction.transform_offset,
-        (expanded_scope_at + 54) as u64
-    );
-    assert_eq!(
-        construction.carrier_transform_offset,
-        expanded_carrier_transform_at as u64
-    );
-
-    let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
-        bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
-    };
-    let mut legacy = Vec::new();
-    header(&mut legacy, b"288", 10);
-    legacy.resize(30, 0);
-    push_utf16(&mut legacy, "95cc7c78-04aa-4ffc-a36d-a512f02e0dda");
-    let legacy_role_at = legacy.len();
-    push_utf16(&mut legacy, role);
-    legacy.extend_from_slice(&[1, 2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
-    push_utf16(&mut legacy, "96e2c767-721c-4c81-bbbc-8cc143d323fb");
-    legacy.push(0);
-    let asset_identity = "864a8a41-7ed8-4c94-8871-ee9e87ab7648_urn:asset";
-    push_utf16(&mut legacy, asset_identity);
-    legacy.push(0);
-    let legacy_carrier_transform_at = legacy.len();
-    for value in transform.into_iter().flatten() {
-        legacy.extend_from_slice(&value.to_le_bytes());
-    }
-    legacy.extend_from_slice(&[0; 4]);
-    push_utf16(&mut legacy, asset_identity);
-    legacy.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    let legacy_relation_at = legacy.len();
-    header(&mut legacy, b"325", 20);
-    legacy.extend_from_slice(&[0; 10]);
-    for (ordinal, reference) in [10_u32, 11, 30].into_iter().enumerate() {
-        legacy.push(1);
-        legacy.extend_from_slice(&reference.to_le_bytes());
-        legacy.extend(std::iter::repeat_n(0, [8, 7, 6][ordinal]));
-    }
-    let legacy_scope_at = legacy.len();
-    header(&mut legacy, b"346", 30);
-    legacy.resize(legacy_scope_at + 381, 0);
-    legacy[legacy_scope_at + 20] = 1;
-    legacy[legacy_scope_at + 37] = 1;
-    legacy[legacy_scope_at + 38..legacy_scope_at + 42].copy_from_slice(&20_u32.to_le_bytes());
-    legacy[legacy_scope_at + 48] = 1;
-    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
-        let at = legacy_scope_at + 49 + ordinal * 8;
-        legacy[at..at + 8].copy_from_slice(&value.to_le_bytes());
-    }
-    header(&mut legacy, b"261", 30);
-    let legacy_scope = DesignParameterScope {
-        byte_offset: legacy_scope_at as u64,
-        frame_length: 381,
-        paired_class_tag: "261".into(),
-        paired_byte_offset: (legacy_scope_at + 381) as u64,
-        ..scope
-    };
-    let construction = exact_component_insert_construction(
-        &legacy,
-        &IndexedRecordOffsets::build(&legacy),
-        &legacy_scope,
-    )
-    .expect("class-288 legacy component insert construction");
-    assert_eq!(construction.neutron_role, role);
-    assert_eq!(
-        construction.neutron_role_offset,
-        (legacy_role_at + 4) as u64
-    );
-    assert_eq!(
-        construction.carrier_transform_offset,
-        legacy_carrier_transform_at as u64
-    );
-    assert_eq!(construction.relation_record_index, 20);
-    assert_eq!(legacy_relation_at + 57, legacy_scope_at);
+    ]
 }
 
 pub(super) fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8> {
@@ -1303,8 +1927,10 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
                 transform_offset: 4,
             },
         ]),
-        operand_paths: None,
-        axial_operand_targets: None,
+        legacy_operand_carriers: None,
+        solved_frame: None,
+        operand_qualifiers: None,
+        limits: None,
         joint_origin_scope_record_index: None,
     }
 }
@@ -1322,8 +1948,8 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
         neutron_role: role.into(),
         neutron_role_offset: 0,
         transform: identity_matrix(),
-        transform_offset: 0,
-        carrier_transform_offset: 0,
+        transform_offset: Some(0),
+        carrier_transform_offset: Some(0),
     });
     scope
 }

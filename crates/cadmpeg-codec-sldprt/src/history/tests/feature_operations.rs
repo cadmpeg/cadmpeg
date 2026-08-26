@@ -514,7 +514,7 @@ fn decode_projects_generic_revolution_with_explicit_operation() {
                 ..
             },
             op: BooleanOp::Cut,
-        } if (angle.0 - std::f64::consts::PI).abs() < 1e-12
+        } if (angle.0 - std::f64::consts::PI).abs() < 1.0e-12
     ));
 }
 

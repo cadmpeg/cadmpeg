@@ -643,10 +643,10 @@ pub(crate) mod tests {
         assert_eq!(joint.offset_frames[1].rows[0][3], 1.5);
         assert!(joint.suppressed);
         assert_eq!(joint.detached, [true, false]);
-        assert!((joint.angle.expect("angle") - 15_f64.to_radians()).abs() < 1e-12);
+        assert!((joint.angle.expect("angle") - 15_f64.to_radians()).abs() < 1.0e-12);
         let limits = joint.angular_limits.as_ref().expect("angular limits");
-        assert!((limits.minimum.expect("minimum") - (-30_f64).to_radians()).abs() < 1e-12);
-        assert!((limits.maximum.expect("maximum") - 45_f64.to_radians()).abs() < 1e-12);
+        assert!((limits.minimum.expect("minimum") - (-30_f64).to_radians()).abs() < 1.0e-12);
+        assert!((limits.maximum.expect("maximum") - 45_f64.to_radians()).abs() < 1.0e-12);
         assert!(crate::validate_native(result.ir()).is_empty());
         assert_valid_document(result.ir());
         let mut corrupted = result.ir().clone();

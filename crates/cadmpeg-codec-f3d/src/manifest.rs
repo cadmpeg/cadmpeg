@@ -27,7 +27,6 @@ const GENERATED_PHYSICAL_CHANGE_GUID: &str = "00000000-0000-4000-8000-0000000000
 /// Fields from the top-level manifest that govern asset-folder ownership.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TopLevelManifest {
-    asset_folder_guid: String,
     asset_folder_bases: Vec<String>,
 }
 
@@ -35,8 +34,8 @@ pub(crate) struct TopLevelManifest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AssetManifestHeader {
     base_name: String,
-    primary_guid: String,
     asset_type: String,
+    fusion_subtype: Option<String>,
 }
 
 struct Cursor<'a> {
@@ -66,6 +65,17 @@ impl<'a> Cursor<'a> {
 
     fn u8(&mut self, field: &str) -> Result<u8, CodecError> {
         self.view.u8().ok_or_else(|| truncated(field))
+    }
+
+    fn expect_u8(&mut self, field: &str, expected: u8) -> Result<(), CodecError> {
+        let actual = self.u8(field)?;
+        if actual != expected {
+            return Err(malformed(
+                field,
+                format!("expected {expected}, found {actual}"),
+            ));
+        }
+        Ok(())
     }
 
     fn u32(&mut self, field: &str) -> Result<u32, CodecError> {
@@ -107,6 +117,10 @@ impl<'a> Cursor<'a> {
 
     fn utf16(&mut self, field: &str) -> Result<String, CodecError> {
         let count = self.count(field, MAX_MANIFEST_STRING_UNITS)?;
+        self.utf16_with_count(count, field)
+    }
+
+    fn utf16_with_count(&mut self, count: usize, field: &str) -> Result<String, CodecError> {
         let needed = count.checked_mul(2).ok_or_else(|| truncated(field))?;
         if self.view.remaining() < needed {
             return Err(truncated(field));
@@ -239,7 +253,7 @@ fn parse_asset_tail(bytes: &[u8], start: usize) -> Result<TopLevelManifest, Code
 
 fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, CodecError> {
     let mut cursor = Cursor::from_offset(bytes, at)?;
-    let asset_folder_guid = cursor.guid("top-level manifest asset-folder GUID")?;
+    let _active_asset_guid = cursor.guid("top-level manifest active-asset GUID")?;
     let asset_folder_count = bounded_nonzero_count(
         cursor.u32("top-level manifest asset-folder count")?,
         MAX_ASSET_FOLDERS,
@@ -260,10 +274,7 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, Code
     }
     cursor.expect_u32("top-level manifest terminal word", 0)?;
     if cursor.exhausted() {
-        return Ok(TopLevelManifest {
-            asset_folder_guid,
-            asset_folder_bases,
-        });
+        return Ok(TopLevelManifest { asset_folder_bases });
     }
     match cursor.u8("top-level manifest terminal byte")? {
         0 => {
@@ -273,6 +284,19 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, Code
                     "top-level manifest terminal display name",
                     "value is empty",
                 ));
+            }
+            if !cursor.exhausted() {
+                let lineage_urn = cursor.utf16("top-level manifest lineage URN")?;
+                let lineage_urn = lineage_urn.as_bytes();
+                if lineage_urn.len() <= 4
+                    || !lineage_urn[..4].eq_ignore_ascii_case(b"urn:")
+                    || !lineage_urn[4..].iter().all(u8::is_ascii_graphic)
+                {
+                    return Err(malformed(
+                        "top-level manifest lineage URN",
+                        "value is not a nonempty ASCII URN",
+                    ));
+                }
             }
         }
         1 if !cursor.exhausted() => {
@@ -288,10 +312,7 @@ fn parse_asset_tail_at(bytes: &[u8], at: usize) -> Result<TopLevelManifest, Code
     }
     cursor.finish("top-level manifest")?;
 
-    Ok(TopLevelManifest {
-        asset_folder_guid,
-        asset_folder_bases,
-    })
+    Ok(TopLevelManifest { asset_folder_bases })
 }
 
 /// Resolve the unique Design archive folder through the top-level folder run
@@ -348,18 +369,7 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
                 ),
             ));
         }
-        let guid_selects_design = header
-            .primary_guid
-            .eq_ignore_ascii_case(&manifest.asset_folder_guid);
-        if guid_selects_design && header.asset_type != DESIGN_ASSET_TYPE {
-            return Err(malformed(
-                "asset manifest Design identity",
-                format!(
-                    "folder {folder:?} has the selected primary GUID but does not declare {DESIGN_ASSET_TYPE}"
-                ),
-            ));
-        }
-        if guid_selects_design {
+        if header.asset_type == DESIGN_ASSET_TYPE && header.fusion_subtype.is_none() {
             design_folders.push(folder.to_owned());
         }
     }
@@ -381,7 +391,7 @@ fn parse_asset_header(bytes: &[u8]) -> Result<AssetManifestHeader, CodecError> {
     let mut cursor = Cursor::new(bytes);
     let base_name = cursor.utf16("asset manifest base name")?;
     validate_asset_base(&base_name)?;
-    let primary_guid = cursor.guid("asset manifest primary GUID")?;
+    let _primary_guid = cursor.guid("asset manifest primary GUID")?;
     let _secondary_guid = cursor.guid("asset manifest secondary GUID")?;
     let asset_type = cursor.ascii("asset manifest asset type")?;
     if !asset_type.ends_with("AssetType") {
@@ -390,19 +400,129 @@ fn parse_asset_header(bytes: &[u8]) -> Result<AssetManifestHeader, CodecError> {
             format!("invalid asset type {asset_type:?}"),
         ));
     }
+    let fusion_subtype = if asset_type == DESIGN_ASSET_TYPE {
+        let revision = cursor.u32("Fusion asset manifest revision")?;
+        match revision {
+            0 => {
+                parse_revision_zero_design_asset(&mut cursor)?;
+                cursor.finish("revision-0 Fusion asset manifest")?;
+                None
+            }
+            10 => {
+                parse_revision_ten_design_asset(&mut cursor)?;
+                cursor.finish("revision-10 Fusion asset manifest")?;
+                None
+            }
+            11 | 12 | 13 | 14 | 15 | 19 | 20 => parse_current_design_asset(&mut cursor)?,
+            _ => {
+                return Err(malformed(
+                    "Fusion asset manifest revision",
+                    format!("unsupported revision {revision}"),
+                ))
+            }
+        }
+    } else {
+        None
+    };
     Ok(AssetManifestHeader {
         base_name,
-        primary_guid,
         asset_type,
+        fusion_subtype,
     })
+}
+
+fn parse_capability_registry(cursor: &mut Cursor<'_>) -> Result<(), CodecError> {
+    let capability_count = cursor.count(
+        "Fusion asset manifest capability count",
+        MAX_REGISTRY_ENTRIES,
+    )?;
+    let mut capability_names = BTreeSet::new();
+    for ordinal in 0..capability_count {
+        let name = cursor.ascii(&format!("Fusion asset manifest capability name {ordinal}"))?;
+        if name.is_empty() || !capability_names.insert(name.clone()) {
+            return Err(malformed(
+                "Fusion asset manifest capabilities",
+                format!("empty or duplicate name {name:?}"),
+            ));
+        }
+        let _value = cursor.u32(&format!("Fusion asset manifest capability value {ordinal}"))?;
+    }
+    Ok(())
+}
+
+fn parse_current_design_asset(cursor: &mut Cursor<'_>) -> Result<Option<String>, CodecError> {
+    parse_capability_registry(cursor)?;
+    cursor.expect_ascii("Fusion asset manifest kind", "Neutron3DAssetType")?;
+    cursor.expect_u8("Fusion asset manifest subtype mode", 0)?;
+    let subtype = cursor.ascii("Fusion asset manifest subtype")?;
+    Ok((!subtype.is_empty()).then_some(subtype))
+}
+
+fn parse_revision_zero_design_asset(cursor: &mut Cursor<'_>) -> Result<(), CodecError> {
+    cursor.expect_u32("revision-0 Fusion asset schema", 3)?;
+    cursor.expect_u32("revision-0 Fusion asset kind count", 1)?;
+    cursor.expect_ascii("revision-0 Fusion asset kind", "Neutron3DAssetType")?;
+    cursor.expect_u8("revision-0 Fusion asset subtype mode", 0)?;
+    cursor.expect_u32("revision-0 Fusion asset subtype", 0)?;
+    cursor.expect_u32("revision-0 Fusion asset schema revision", 6)?;
+    cursor.expect_u32("revision-0 Fusion asset root marker", 1)?;
+    cursor.expect_u32("revision-0 Fusion asset reserved word", 0)?;
+    cursor.expect_ascii("revision-0 Fusion asset role", "Design")?;
+    cursor.expect_ascii("revision-0 Fusion asset role name", "Design")?;
+    Ok(())
+}
+
+fn parse_revision_ten_design_asset(cursor: &mut Cursor<'_>) -> Result<(), CodecError> {
+    parse_capability_registry(cursor)?;
+    cursor.expect_ascii("revision-10 Fusion asset kind", "Neutron3DAssetType")?;
+    cursor.expect_u8("revision-10 Fusion asset subtype mode", 0)?;
+    let mut link_count = 0_usize;
+    loop {
+        cursor.expect_u32("revision-10 Fusion asset entry marker", 2)?;
+        let locator_units = cursor.count(
+            "revision-10 Fusion asset locator length or root revision",
+            MAX_MANIFEST_STRING_UNITS,
+        )?;
+        if locator_units == 5 {
+            break;
+        }
+        if link_count == MAX_REGISTRY_ENTRIES {
+            return Err(malformed(
+                "revision-10 Fusion asset links",
+                format!("count exceeds the limit {MAX_REGISTRY_ENTRIES}"),
+            ));
+        }
+        let locator = cursor.utf16_with_count(
+            locator_units,
+            &format!("revision-10 Fusion asset link {link_count} locator"),
+        )?;
+        if !locator.contains("urn:") {
+            return Err(malformed(
+                "revision-10 Fusion asset link locator",
+                format!("expected an embedded URN, found {locator:?}"),
+            ));
+        }
+        let _first_guid = cursor.guid(&format!(
+            "revision-10 Fusion asset link {link_count} GUID 1"
+        ))?;
+        let _second_guid = cursor.guid(&format!(
+            "revision-10 Fusion asset link {link_count} GUID 2"
+        ))?;
+        link_count += 1;
+    }
+    cursor.expect_u32("revision-10 Fusion asset root marker", 1)?;
+    cursor.expect_u32("revision-10 Fusion asset reserved word", 0)?;
+    cursor.expect_ascii("revision-10 Fusion asset role", "Design")?;
+    cursor.expect_ascii("revision-10 Fusion asset role name", "Design")?;
+    Ok(())
 }
 
 /// Encode the current top-level manifest form for a counted asset-folder run.
 pub(crate) fn encode_top_level(
-    asset_folder_guid: &str,
+    active_asset_guid: &str,
     asset_folder_bases: &[&str],
 ) -> Result<Vec<u8>, CodecError> {
-    validate_guid(asset_folder_guid, "top-level manifest asset-folder GUID")?;
+    validate_guid(active_asset_guid, "top-level manifest active-asset GUID")?;
     if asset_folder_bases.is_empty() || asset_folder_bases.len() > MAX_ASSET_FOLDERS {
         return Err(malformed(
             "top-level manifest asset-folder count",
@@ -452,7 +572,7 @@ pub(crate) fn encode_top_level(
     }
     push_u32(&mut out, 0);
     out.push(0);
-    push_utf16(&mut out, asset_folder_guid)?;
+    push_utf16(&mut out, active_asset_guid)?;
     push_count(
         &mut out,
         asset_folder_bases.len(),
@@ -491,8 +611,8 @@ pub(crate) fn encode_design_asset(
         push_u32(&mut out, value);
     }
     push_ascii(&mut out, "Neutron3DAssetType")?;
-    push_u32(&mut out, 0);
     out.push(0);
+    push_ascii(&mut out, "")?;
     push_u32(&mut out, 1);
     push_ascii(&mut out, "physicalChangeGuid")?;
     push_utf16(&mut out, GENERATED_PHYSICAL_CHANGE_GUID)?;
@@ -648,7 +768,6 @@ mod tests {
     fn current_top_level_manifest_round_trips() {
         let bytes = encode_top_level(DESIGN_GUID, &["Design Base", "Simulation"]).unwrap();
         let manifest = parse_top_level(&bytes).unwrap();
-        assert_eq!(manifest.asset_folder_guid, DESIGN_GUID);
         assert_eq!(manifest.asset_folder_bases, ["Design Base", "Simulation"]);
     }
 
@@ -681,6 +800,13 @@ mod tests {
 
         let manifest = parse_top_level(&bytes).unwrap();
         assert_eq!(manifest.asset_folder_bases, ["Simulation", "Design Base"]);
+
+        push_utf16(&mut bytes, "urn:synthetic:lineage").unwrap();
+        let with_lineage = parse_top_level(&bytes).unwrap();
+        assert_eq!(
+            with_lineage.asset_folder_bases,
+            ["Simulation", "Design Base"]
+        );
     }
 
     #[test]
@@ -696,27 +822,19 @@ mod tests {
     }
 
     #[test]
-    fn design_folder_uses_asset_guid_and_type_not_run_order() {
-        let manifest = parse_top_level(
-            &encode_top_level(DESIGN_GUID, &["Simulation", "Design Base"]).unwrap(),
-        )
-        .unwrap();
+    fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
+        let manifest =
+            parse_top_level(&encode_top_level(OTHER_GUID, &["Simulation", "Design Base"]).unwrap())
+                .unwrap();
         let mut entries = BTreeMap::new();
         entries.insert(
             "Simulation/Manifest.dat".to_string(),
-            encode_asset_header("Simulation", OTHER_GUID, SECONDARY_GUID, DESIGN_ASSET_TYPE)
-                .unwrap(),
+            encode_fusion_subtype_asset("Simulation", OTHER_GUID, "Simulation").unwrap(),
         );
         entries.insert("Simulation/Breps.BlobParts/decoy.smbh".to_string(), vec![0]);
         entries.insert(
             "Design Base[Active]/Manifest.dat".to_string(),
-            encode_asset_header(
-                "Design Base",
-                DESIGN_GUID,
-                SECONDARY_GUID,
-                DESIGN_ASSET_TYPE,
-            )
-            .unwrap(),
+            encode_design_asset("Design Base", DESIGN_GUID).unwrap(),
         );
         entries.insert(
             "Design Base[Active]/Design1/BulkStream.dat".to_string(),
@@ -731,27 +849,33 @@ mod tests {
     }
 
     #[test]
-    fn selected_design_guid_requires_the_design_asset_type() {
-        let manifest =
-            parse_top_level(&encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap()).unwrap();
+    fn active_guid_can_be_shared_by_a_non_design_asset() {
+        let manifest = parse_top_level(
+            &encode_top_level(DESIGN_GUID, &["Simulation", "Design Base"]).unwrap(),
+        )
+        .unwrap();
         let entries = BTreeMap::from([
             (
-                "Design Base/Manifest.dat".to_string(),
+                "Simulation/Manifest.dat".to_string(),
                 encode_asset_header(
-                    "Design Base",
+                    "Simulation",
                     DESIGN_GUID,
                     SECONDARY_GUID,
                     "SimulationAssetType",
                 )
                 .unwrap(),
             ),
+            (
+                "Design Base/Manifest.dat".to_string(),
+                encode_design_asset("Design Base", DESIGN_GUID).unwrap(),
+            ),
             ("Design Base/Design1/BulkStream.dat".to_string(), vec![1]),
         ]);
-        let error = resolve_design_folder(&manifest, entries.keys().map(String::as_str), |name| {
+        let folder = resolve_design_folder(&manifest, entries.keys().map(String::as_str), |name| {
             entries.get(name).map(Vec::as_slice)
         })
-        .unwrap_err();
-        assert!(error.to_string().contains("does not declare"));
+        .unwrap();
+        assert_eq!(folder, "Design Base");
     }
 
     #[test]
@@ -766,7 +890,119 @@ mod tests {
         let bytes = generated_design_asset().unwrap();
         let header = parse_asset_header(&bytes).unwrap();
         assert_eq!(header.base_name, GENERATED_DESIGN_ASSET_BASE);
-        assert_eq!(header.primary_guid, GENERATED_ASSET_FOLDER_GUID);
         assert_eq!(header.asset_type, DESIGN_ASSET_TYPE);
+        assert_eq!(header.fusion_subtype, None);
+    }
+
+    #[test]
+    fn revision_zero_design_asset_has_no_named_capability_registry() {
+        let mut bytes = encode_asset_header(
+            "Legacy Design",
+            DESIGN_GUID,
+            SECONDARY_GUID,
+            DESIGN_ASSET_TYPE,
+        )
+        .unwrap();
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 3);
+        push_u32(&mut bytes, 1);
+        push_ascii(&mut bytes, "Neutron3DAssetType").unwrap();
+        bytes.push(0);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 6);
+        push_u32(&mut bytes, 1);
+        push_u32(&mut bytes, 0);
+        push_ascii(&mut bytes, "Design").unwrap();
+        push_ascii(&mut bytes, "Design").unwrap();
+
+        let header = parse_asset_header(&bytes).unwrap();
+        assert_eq!(header.base_name, "Legacy Design");
+        assert_eq!(header.fusion_subtype, None);
+    }
+
+    #[test]
+    fn revision_ten_design_asset_carries_linked_document_triples() {
+        let mut bytes = encode_asset_header(
+            "Linked Design",
+            DESIGN_GUID,
+            SECONDARY_GUID,
+            DESIGN_ASSET_TYPE,
+        )
+        .unwrap();
+        push_u32(&mut bytes, 10);
+        push_u32(&mut bytes, 1);
+        push_ascii(&mut bytes, "Application").unwrap();
+        push_u32(&mut bytes, 52);
+        push_ascii(&mut bytes, "Neutron3DAssetType").unwrap();
+        bytes.push(0);
+        push_u32(&mut bytes, 2);
+        push_utf16(&mut bytes, "synthetic_urn:synthetic:version:1").unwrap();
+        push_utf16(&mut bytes, DESIGN_GUID).unwrap();
+        push_utf16(&mut bytes, OTHER_GUID).unwrap();
+        push_u32(&mut bytes, 2);
+        push_u32(&mut bytes, 5);
+        push_u32(&mut bytes, 1);
+        push_u32(&mut bytes, 0);
+        push_ascii(&mut bytes, "Design").unwrap();
+        push_ascii(&mut bytes, "Design").unwrap();
+
+        let header = parse_asset_header(&bytes).unwrap();
+        assert_eq!(header.base_name, "Linked Design");
+        assert_eq!(header.fusion_subtype, None);
+    }
+
+    #[test]
+    fn revision_fourteen_uses_the_ascii_subtype_header() {
+        let mut bytes =
+            encode_asset_header("Design 14", DESIGN_GUID, SECONDARY_GUID, DESIGN_ASSET_TYPE)
+                .unwrap();
+        push_u32(&mut bytes, 14);
+        push_u32(&mut bytes, 0);
+        push_ascii(&mut bytes, "Neutron3DAssetType").unwrap();
+        bytes.push(0);
+        push_ascii(&mut bytes, "").unwrap();
+
+        let header = parse_asset_header(&bytes).unwrap();
+        assert_eq!(header.base_name, "Design 14");
+        assert_eq!(header.fusion_subtype, None);
+    }
+
+    #[test]
+    fn current_revisions_use_the_current_asset_header() {
+        for revision in [11, 12, 13, 14, 15, 19, 20] {
+            let mut bytes = encode_asset_header(
+                "Intermediate Design",
+                DESIGN_GUID,
+                SECONDARY_GUID,
+                DESIGN_ASSET_TYPE,
+            )
+            .unwrap();
+            push_u32(&mut bytes, revision);
+            push_u32(&mut bytes, 1);
+            push_ascii(&mut bytes, "Application").unwrap();
+            push_u32(&mut bytes, 139);
+            push_ascii(&mut bytes, "Neutron3DAssetType").unwrap();
+            bytes.push(0);
+            push_ascii(&mut bytes, "").unwrap();
+
+            let header = parse_asset_header(&bytes).unwrap();
+            assert_eq!(header.base_name, "Intermediate Design");
+            assert_eq!(header.fusion_subtype, None);
+        }
+    }
+
+    fn encode_fusion_subtype_asset(
+        base_name: &str,
+        primary_guid: &str,
+        subtype: &str,
+    ) -> Result<Vec<u8>, CodecError> {
+        let mut bytes =
+            encode_asset_header(base_name, primary_guid, SECONDARY_GUID, DESIGN_ASSET_TYPE)?;
+        push_u32(&mut bytes, 20);
+        push_u32(&mut bytes, 0);
+        push_ascii(&mut bytes, "Neutron3DAssetType")?;
+        bytes.push(0);
+        push_ascii(&mut bytes, subtype)?;
+        Ok(bytes)
     }
 }

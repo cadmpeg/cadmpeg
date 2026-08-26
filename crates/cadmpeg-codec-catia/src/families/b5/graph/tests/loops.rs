@@ -976,7 +976,7 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
     assert_eq!(mismatched.refs, vec![10, 11]);
     assert_eq!(mismatched.points, [endpoints[1], endpoints[1]]);
     assert_eq!(mismatched.tolerances.len(), 1);
-    assert!((mismatched.tolerances[&0] - (5.0 + 1e-9)).abs() < f64::EPSILON);
+    assert!((mismatched.tolerances[&0] - (5.0 + 1.0e-9)).abs() < f64::EPSILON);
 }
 
 #[test]

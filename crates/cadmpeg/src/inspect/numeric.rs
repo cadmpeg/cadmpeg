@@ -3,6 +3,8 @@
 
 use clap::{Args, ValueEnum};
 
+use cadmpeg_core::bytes::assemble_u64_le;
+
 /// Parses a byte count or file offset written in hexadecimal or decimal.
 ///
 /// `0x`/`0X` selects hexadecimal, anything else is decimal. Underscores
@@ -225,7 +227,7 @@ impl ScalarType {
         if endian == Endian::Big {
             raw[..bytes.len()].reverse();
         }
-        let bits = u64::from_le_bytes(raw);
+        let bits = assemble_u64_le(raw);
         match self {
             Self::U8 | Self::U16 | Self::U32 | Self::U64 => ScalarValue::Unsigned(bits),
             Self::I8 | Self::I16 | Self::I32 | Self::I64 => {

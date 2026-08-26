@@ -267,11 +267,6 @@ enum Lexed {
     Terminator,
 }
 
-fn read_string(bytes: &[u8], start: usize, len: usize) -> Option<String> {
-    let slice = bytes.get(start..start + len)?;
-    Some(String::from_utf8_lossy(slice).into_owned())
-}
-
 fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), FrameError> {
     let err = |reason: &str| FrameError {
         offset: pos,
@@ -282,6 +277,16 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
     let truncated = || FrameError {
         offset: pos,
         reason: format!("truncated payload for tag {tag:#04x}"),
+    };
+    let string = |start: usize, len: usize| {
+        let end = start.checked_add(len).ok_or_else(truncated)?;
+        let slice = bytes.get(start..end).ok_or_else(truncated)?;
+        std::str::from_utf8(slice)
+            .map_err(|error| FrameError {
+                offset: start + error.valid_up_to(),
+                reason: format!("payload for tag {tag:#04x} is not valid UTF-8"),
+            })
+            .map(str::to_owned)
     };
     let out = match tag {
         0x02 => (
@@ -312,29 +317,17 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
         ),
         0x07 => {
             let len = *bytes.get(p).ok_or_else(truncated)? as usize;
-            (
-                Lexed::Value(Token::Str(
-                    read_string(bytes, p + 1, len).ok_or_else(truncated)?,
-                )),
-                p + 1 + len,
-            )
+            (Lexed::Value(Token::Str(string(p + 1, len)?)), p + 1 + len)
         }
         0x08 => {
             let len = usize::from(View::u16_le_at(bytes, p).ok_or_else(truncated)?);
-            (
-                Lexed::Value(Token::Str(
-                    read_string(bytes, p + 2, len).ok_or_else(truncated)?,
-                )),
-                p + 2 + len,
-            )
+            (Lexed::Value(Token::Str(string(p + 2, len)?)), p + 2 + len)
         }
         0x09 | 0x12 => {
             let len = int_le_at(bytes, p, ref_width).ok_or_else(truncated)?;
             let len = usize::try_from(len).map_err(|_| err("negative string length"))?;
             (
-                Lexed::Value(Token::Str(
-                    read_string(bytes, p + ref_width, len).ok_or_else(truncated)?,
-                )),
+                Lexed::Value(Token::Str(string(p + ref_width, len)?)),
                 p + ref_width + len,
             )
         }
@@ -346,17 +339,11 @@ fn lex(bytes: &[u8], pos: usize, ref_width: usize) -> Result<(Lexed, usize), Fra
         }
         0x0d => {
             let len = *bytes.get(p).ok_or_else(truncated)? as usize;
-            (
-                Lexed::Ident(read_string(bytes, p + 1, len).ok_or_else(truncated)?),
-                p + 1 + len,
-            )
+            (Lexed::Ident(string(p + 1, len)?), p + 1 + len)
         }
         0x0e => {
             let len = *bytes.get(p).ok_or_else(truncated)? as usize;
-            (
-                Lexed::SubIdent(read_string(bytes, p + 1, len).ok_or_else(truncated)?),
-                p + 1 + len,
-            )
+            (Lexed::SubIdent(string(p + 1, len)?), p + 1 + len)
         }
         0x0f => (Lexed::Value(Token::SubtypeOpen), p),
         0x10 => (Lexed::Value(Token::SubtypeClose), p),
@@ -457,7 +444,7 @@ fn frame_impl(
         let rec_start = pos;
         let mut name_parts: Vec<String> = Vec::new();
         let mut tokens: Vec<Token> = Vec::new();
-        let mut depth = 0i32;
+        let mut depth = 0usize;
         let mut name_done = false;
         let mut is_delta = false;
         let mut embedded_history_entity = None;
@@ -467,13 +454,16 @@ fn frame_impl(
             if eof_terminates_final_record && pos == limit && depth == 0 && !name_parts.is_empty() {
                 break;
             }
+            let token_offset = pos;
             let (lexed, next) = lex(bytes, pos, ref_width)?;
             pos = next;
             match lexed {
                 Lexed::Terminator if depth == 0 => break,
                 Lexed::Terminator => {
-                    // A terminator inside a subtype scope closes that scope.
-                    // Keep scanning the record.
+                    return Err(FrameError {
+                        offset: token_offset,
+                        reason: "record terminates inside a subtype scope".to_string(),
+                    });
                 }
                 Lexed::SubIdent(s) if !name_done => name_parts.push(s),
                 Lexed::Ident(s) if !name_done => {
@@ -514,6 +504,12 @@ fn frame_impl(
                 }
                 Lexed::Value(Token::SubtypeClose) => {
                     payload_start = false;
+                    if depth == 0 {
+                        return Err(FrameError {
+                            offset: token_offset,
+                            reason: "record closes an unopened subtype scope".to_string(),
+                        });
+                    }
                     depth -= 1;
                     tokens.push(Token::SubtypeClose);
                 }
@@ -641,6 +637,18 @@ mod tests {
     }
 
     #[test]
+    fn subtype_delimiters_fail_at_the_unbalanced_token() {
+        for (tail, bad_token_index) in [([0x10, 0x11], 0), ([0x0f, 0x11], 1)] {
+            let mut bytes = vec![0x0d, 4, b'e', b'd', b'g', b'e'];
+            let tail_offset = bytes.len();
+            bytes.extend_from_slice(&tail);
+
+            let error = frame(&bytes, 0, bytes.len(), 8).expect_err("unbalanced subtype scope");
+            assert_eq!(error.offset, tail_offset + bad_token_index);
+        }
+    }
+
+    #[test]
     fn wide_string_length_prefix_uses_the_stream_ref_width() {
         for ref_width in [4usize, 8] {
             let text = "subtransform program text";
@@ -661,6 +669,52 @@ mod tests {
                 Some(&super::Token::Str(text.to_string()))
             );
             assert_eq!(records[0].chunk(1), Some(&super::Token::Long(7)));
+        }
+    }
+
+    #[test]
+    fn binary_strings_reject_invalid_utf8_at_the_source_byte() {
+        let mut cases = vec![
+            vec![0x0d, 1, 0xff, 0x11],
+            vec![0x0e, 1, 0xff, 0x0d, 4, b'e', b'd', b'g', b'e', 0x11],
+        ];
+        for tag in [0x07, 0x08, 0x09, 0x12] {
+            let mut bytes = vec![0x0d, 4, b'e', b'd', b'g', b'e', tag];
+            match tag {
+                0x07 => bytes.push(1),
+                0x08 => bytes.extend_from_slice(&1_u16.to_le_bytes()),
+                0x09 | 0x12 => bytes.extend_from_slice(&1_i64.to_le_bytes()),
+                _ => unreachable!("string tag is exhaustive"),
+            }
+            bytes.extend_from_slice(&[0xff, 0x11]);
+            cases.push(bytes);
+        }
+
+        for bytes in cases {
+            let invalid_offset = bytes
+                .iter()
+                .position(|byte| *byte == 0xff)
+                .expect("invalid byte offset");
+            let error = frame(&bytes, 0, bytes.len(), 8).expect_err("invalid UTF-8 must fail");
+            assert_eq!(error.offset, invalid_offset);
+        }
+    }
+
+    #[test]
+    fn binary_string_lengths_count_utf8_bytes() {
+        for tag in [0x07, 0x08, 0x09, 0x12] {
+            let mut bytes = vec![0x0d, 4, b'e', b'd', b'g', b'e', tag];
+            match tag {
+                0x07 => bytes.push(2),
+                0x08 => bytes.extend_from_slice(&2_u16.to_le_bytes()),
+                0x09 | 0x12 => bytes.extend_from_slice(&2_i64.to_le_bytes()),
+                _ => unreachable!("string tag is exhaustive"),
+            }
+            bytes.extend_from_slice("é".as_bytes());
+            bytes.push(0x11);
+
+            let records = frame(&bytes, 0, bytes.len(), 8).expect("multibyte UTF-8 string");
+            assert_eq!(records[0].chunk(0), Some(&super::Token::Str("é".into())));
         }
     }
 

@@ -27,6 +27,10 @@ use crate::parse::{Exchange, RawRecord, Value};
 use super::index::{step_instance_id, CarrierIndex};
 use super::{opaque_record_id, StageOutcome};
 
+const EPS_GEOMETRY_READ_COARSE_GEOMETRY: f64 = 1.0e-6;
+const EPS_GEOMETRY_READ_GEOMETRY: f64 = 1.0e-9;
+const EPS_GEOMETRY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
+
 const RANGE_INFERENCE_WORK_UNITS: u64 = 4_096;
 
 pub(super) struct GeometryData {
@@ -176,7 +180,7 @@ fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Optio
         return None;
     }
     let sweep = (end - start).rem_euclid(period);
-    let tolerance = 1.0e-9_f64.max(period.abs() * 1.0e-9);
+    let tolerance = 1.0e-9_f64.max(period.abs() * EPS_GEOMETRY_READ_GEOMETRY);
     if sweep <= 0.0 || sweep > period + tolerance {
         return None;
     }
@@ -3012,7 +3016,7 @@ fn unique_scale(values: &[f64]) -> Option<f64> {
 }
 
 fn same_scale(left: f64, right: f64) -> bool {
-    let tolerance = 1.0e-12 * left.abs().max(right.abs()).max(1.0);
+    let tolerance = EPS_GEOMETRY_READ_EXACT_GEOMETRY * left.abs().max(right.abs()).max(1.0);
     (left - right).abs() <= tolerance
 }
 
@@ -3299,9 +3303,9 @@ fn unit_scale_mm_inner(
     result.filter(|scale| scale.is_finite() && *scale > 0.0)
 }
 
-const SI_MICRO: f64 = 1.0e-6;
-const SI_NANO: f64 = 1.0e-9;
-const SI_PICO: f64 = 1.0e-12;
+const SI_MICRO: f64 = EPS_GEOMETRY_READ_COARSE_GEOMETRY;
+const SI_NANO: f64 = EPS_GEOMETRY_READ_GEOMETRY;
+const SI_PICO: f64 = EPS_GEOMETRY_READ_EXACT_GEOMETRY;
 
 fn si_prefix(prefix: &str) -> Option<f64> {
     Some(match prefix {
@@ -5233,7 +5237,7 @@ fn base_axis_3d(
     Some([x_axis, y_axis, z_axis])
 }
 
-const AXIS_PARALLEL_TOLERANCE: f64 = 1.0e-12;
+const AXIS_PARALLEL_TOLERANCE: f64 = EPS_GEOMETRY_READ_EXACT_GEOMETRY;
 
 fn default_reference_axis(axis: Vector3) -> Vector3 {
     if axis.x.abs() >= 1.0 - AXIS_PARALLEL_TOLERANCE {

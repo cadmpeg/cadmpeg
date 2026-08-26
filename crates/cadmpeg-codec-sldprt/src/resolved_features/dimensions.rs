@@ -31,6 +31,8 @@ use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry};
 use std::collections::{HashMap, HashSet};
 
+const EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8: f64 = 1.0e-8;
+
 #[derive(Debug, Clone)]
 struct DimensionedArcNative {
     center: [f64; 2],
@@ -934,7 +936,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             if entities.iter().any(|entity| {
                 entity.sketch == **sketch
                     && matches!(&entity.geometry, SketchGeometry::Circle { center: existing, radius: existing_radius }
-                        if quantize(*existing, 1.0e-8) == quantize(center, 1.0e-8)
+                        if quantize(*existing, EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8) == quantize(center, EPS_DIMENSIONS_PROJECT_RELATION_POINT_DIMENSIONED_CIRCLES_E8)
                             && same_dimension_length(existing_radius.0, radius))
             }) {
                 continue;

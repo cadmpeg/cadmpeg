@@ -1142,6 +1142,7 @@ fn materialize(
                         .ok_or_else(|| malformed(0, "scaled SubD vertex is invalid"))?,
                 ),
                 tag,
+                secondary_grips: None,
             })
         })
         .collect::<Result<Vec<_>, SubdError>>()?;
@@ -1166,6 +1167,7 @@ fn materialize(
                 ],
                 sharpness: edge.sharpness,
                 tag,
+                knot_interval: None,
                 sector_coefficients: edge.sector_coefficients,
             })
         })
@@ -1196,6 +1198,7 @@ fn materialize(
         vertices,
         edges,
         faces,
+        symmetries: Vec::new(),
         source_object: None,
     })
 }

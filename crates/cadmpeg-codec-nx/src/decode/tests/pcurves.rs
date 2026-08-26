@@ -1312,8 +1312,8 @@ fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
         for parameter in [-1.5, -0.75, 0.0, 0.75, 1.5] {
             let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, -parameter).unwrap();
             let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
-            assert!((actual.u - expected.u).abs() < 1e-12);
-            assert!((actual.v - expected.v).abs() < 1e-12);
+            assert!((actual.u - expected.u).abs() < 1.0e-12);
+            assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
     }
 }
@@ -1354,8 +1354,8 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
             let expected =
                 cadmpeg_ir::eval::pcurve_uv(&carrier, range[0] + range[1] - parameter).unwrap();
             let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
-            assert!((actual.u - expected.u).abs() < 1e-12);
-            assert!((actual.v - expected.v).abs() < 1e-12);
+            assert!((actual.u - expected.u).abs() < 1.0e-12);
+            assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
 
         let reflected_twice = super::reverse_pcurve_over_range(&reversed, range)
@@ -1363,8 +1363,8 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
         for parameter in [0.25, 0.75, 1.25, 1.75] {
             let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, parameter).unwrap();
             let actual = cadmpeg_ir::eval::pcurve_uv(&reflected_twice, parameter).unwrap();
-            assert!((actual.u - expected.u).abs() < 1e-12);
-            assert!((actual.v - expected.v).abs() < 1e-12);
+            assert!((actual.u - expected.u).abs() < 1.0e-12);
+            assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
     }
 }
@@ -1393,8 +1393,8 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
         let expected =
             cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
         let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
-        assert!((actual.u - expected.u).abs() < 1e-12);
-        assert!((actual.v - expected.v).abs() < 1e-12);
+        assert!((actual.u - expected.u).abs() < 1.0e-12);
+        assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
 
     let offset = PcurveGeometry::Offset {
@@ -1412,8 +1412,8 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
         let expected =
             cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
         let actual = cadmpeg_ir::eval::pcurve_uv(&basis, parameter).unwrap();
-        assert!((actual.u - expected.u).abs() < 1e-12);
-        assert!((actual.v - expected.v).abs() < 1e-12);
+        assert!((actual.u - expected.u).abs() < 1.0e-12);
+        assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
 }
 
@@ -1445,8 +1445,8 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
         assert_eq!(actual, expected_basis);
         let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, 8.0 - parameter).unwrap();
         let actual = cadmpeg_ir::eval::pcurve_uv(&reversed, parameter).unwrap();
-        assert!((actual.u - expected.u).abs() < 1e-12);
-        assert!((actual.v - expected.v).abs() < 1e-12);
+        assert!((actual.u - expected.u).abs() < 1.0e-12);
+        assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
 
     let support = SurfaceId("nx:test:offset-orientation-support".into());
@@ -1472,14 +1472,14 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
             Point3::new(second.u, second.v, 0.0),
             Point3::new(first.u, first.v, 0.0),
         ],
-        1e-12,
+        1.0e-12,
     )
     .expect("offset endpoints select the reversed terminal branch");
     for parameter in [2.0, 3.0, 5.0, 6.0] {
         let expected = cadmpeg_ir::eval::pcurve_uv(&pcurve, 8.0 - parameter).unwrap();
         let actual = cadmpeg_ir::eval::pcurve_uv(&oriented, parameter).unwrap();
-        assert!((actual.u - expected.u).abs() < 1e-12);
-        assert!((actual.v - expected.v).abs() < 1e-12);
+        assert!((actual.u - expected.u).abs() < 1.0e-12);
+        assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
 }
 

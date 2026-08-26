@@ -6,10 +6,18 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{lp_ascii_filtered, take_reference, Reference};
+use crate::bytes::{
+    is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference,
+};
 use crate::container::{role, ContainerScan};
 use crate::ids::{self, native_stream};
-use crate::records::{DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION};
+use crate::records::{
+    DesignComponentNamingSpace, DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION,
+};
+
+const COMPONENT_MODULE: &str = "Component";
+const COMPONENT_NAMING_SPACE_BASE_TYPE_GUID: &str = "21F379C8-CAFD-4985-B461-767673A4C502";
+const COMPONENT_UUID_RESERVED_LENGTHS: [usize; 2] = [2, 3];
 
 /// Stable Design type identity of the record that owns the ordered feature
 /// scope list.
@@ -36,12 +44,155 @@ pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError
         .iter()
         .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
     {
-        let meta = crate::metastream::parse(scan.entry_bytes(&entry.name)?, &entry.name)?;
-        out.extend(meta.types.into_iter().map(|mut design_type| {
+        let meta = scan.parsed_metastream(&entry.name)?;
+        out.extend(meta.types.iter().cloned().map(|mut design_type| {
             design_type.id = ids::native_design_type_id(&entry.name, design_type.byte_offset);
             design_type
         }));
     }
+    Ok(out)
+}
+
+fn insert_component_naming_space(
+    by_component: &mut HashMap<u64, DesignComponentNamingSpace>,
+    bulk_name: &str,
+    marker: usize,
+    component_record_index: u64,
+    context_uuid: String,
+    context_uuid_offset: usize,
+) -> Result<(), CodecError> {
+    let binding = DesignComponentNamingSpace {
+        id: ids::native_design_component_naming_space_id(bulk_name, marker),
+        byte_offset: marker as u64,
+        component_record_index,
+        context_uuid,
+        context_uuid_offset: context_uuid_offset as u64,
+    };
+    if let Some(existing) = by_component.insert(component_record_index, binding.clone()) {
+        if existing.context_uuid != binding.context_uuid {
+            return Err(CodecError::malformed(format_args!(
+                "Design component {component_record_index} has conflicting context UUID bindings"
+            )));
+        }
+        by_component.insert(component_record_index, existing);
+    }
+    Ok(())
+}
+
+/// Decode each component entity's UUID-bound local naming space.
+pub fn decode_component_naming_spaces(
+    scan: &ContainerScan,
+) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
+    let mut out = Vec::new();
+    for meta_entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
+    {
+        let meta = scan.parsed_metastream(&meta_entry.name)?;
+        let component_entities = meta
+            .types
+            .iter()
+            .filter(|design_type| {
+                design_type.module == COMPONENT_MODULE
+                    && design_type.base_type_guid.as_deref().is_some_and(|base| {
+                        base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                    })
+            })
+            .flat_map(|design_type| design_type.entity_ids.iter().copied())
+            .collect::<HashSet<_>>();
+        if component_entities.is_empty() {
+            continue;
+        }
+        let prefix = meta_entry
+            .name
+            .strip_suffix("MetaStream.dat")
+            .expect("filtered MetaStream entry has the expected basename");
+        let bulk_name = format!("{prefix}BulkStream.dat");
+        let bytes = scan.entry_bytes(&bulk_name)?;
+        let mut by_component = HashMap::<u64, DesignComponentNamingSpace>::new();
+        for reserved_len in COMPONENT_UUID_RESERVED_LENGTHS {
+            let prefix_len = 1 + 8 + reserved_len;
+            for uuid_offset in prefix_len..bytes.len().saturating_sub(4) {
+                let marker = uuid_offset - prefix_len;
+                if bytes[marker] != 1
+                    || (marker > 0 && bytes[marker - 1] == 1)
+                    || !bytes[marker + 9..uuid_offset].iter().all(|byte| *byte == 0)
+                {
+                    continue;
+                }
+                let Some(component_record_index) = View::u64_le_at(bytes, marker + 1) else {
+                    continue;
+                };
+                if !component_entities.contains(&component_record_index) {
+                    continue;
+                }
+                let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
+                    continue;
+                };
+                if !is_guid_relaxed(&context_uuid) {
+                    continue;
+                }
+                insert_component_naming_space(
+                    &mut by_component,
+                    &bulk_name,
+                    marker,
+                    component_record_index,
+                    context_uuid,
+                    uuid_offset,
+                )?;
+            }
+        }
+        for marker in 0..bytes.len() {
+            let mut uuid_offset = marker;
+            let Some(reference) = take_reference(bytes, &mut uuid_offset) else {
+                continue;
+            };
+            let (Some(component_record_index), Some(inline_type_guid)) =
+                (reference.target, reference.inline_type_guid.as_deref())
+            else {
+                continue;
+            };
+            if reference.segment.is_some()
+                || reference.link_name.is_some()
+                || !meta.types.iter().any(|design_type| {
+                    design_type.module == COMPONENT_MODULE
+                        && design_type.base_type_guid.as_deref().is_some_and(|base| {
+                            base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                        })
+                        && design_type.type_guid.eq_ignore_ascii_case(inline_type_guid)
+                        && design_type.entity_ids.contains(&component_record_index)
+                })
+            {
+                continue;
+            }
+            let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
+                continue;
+            };
+            if !is_guid_relaxed(&context_uuid) {
+                continue;
+            }
+            insert_component_naming_space(
+                &mut by_component,
+                &bulk_name,
+                marker,
+                component_record_index,
+                context_uuid,
+                uuid_offset,
+            )?;
+        }
+        if let Some(missing) = component_entities
+            .iter()
+            .filter(|entity| !by_component.contains_key(entity))
+            .min()
+        {
+            return Err(CodecError::malformed(format_args!(
+                "Design component {missing} has no context UUID binding"
+            )));
+        }
+        out.extend(by_component.into_values());
+    }
+    out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
 }
 
@@ -57,7 +208,8 @@ pub(crate) fn metadata_for_bulk_stream(
     if !scan.entries.iter().any(|entry| entry.name == meta_name) {
         return Ok(None);
     }
-    crate::metastream::parse(scan.entry_bytes(&meta_name)?, &meta_name).map(Some)
+    scan.parsed_metastream(&meta_name)
+        .map(|meta| Some((*meta).clone()))
 }
 
 /// One live Design record selected by the primary index and resolved through

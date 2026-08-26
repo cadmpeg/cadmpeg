@@ -7,6 +7,9 @@ use cadmpeg_core::CodecError;
 use crate::bytes::{is_guid_hyphenated, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
 use crate::records::SegmentType;
 
+/// Serializer magic that selects the modern `MetaStream` header group.
+pub(crate) const MODERN_SERIALIZER_MAGIC: u32 = 1234;
+
 /// One record-index entry locating a header in the sibling `BulkStream`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RecordIndexEntry {
@@ -15,6 +18,7 @@ pub(crate) struct RecordIndexEntry {
 }
 
 /// One completely framed `MetaStream` segment.
+#[derive(Clone)]
 pub(crate) struct MetaStream {
     pub(crate) types: Vec<SegmentType>,
     /// Live sibling records, in strictly increasing `BulkStream` order.
@@ -142,69 +146,107 @@ fn require<T>(value: Option<T>, field: &'static str, offset: usize) -> Result<T,
     value.ok_or(ParseFailure { field, offset })
 }
 
+fn take_version_guid(
+    bytes: &[u8],
+    at: &mut usize,
+    field: &'static str,
+    allow_zero_prefix: bool,
+) -> Result<(), ParseFailure> {
+    let initial = *at;
+    for prefix_len in [0, 4] {
+        if prefix_len != 0 && (!allow_zero_prefix || View::u32_le_at(bytes, initial) != Some(0)) {
+            continue;
+        }
+        let Some(guid_at) = initial.checked_add(prefix_len) else {
+            continue;
+        };
+        let Some((guid, next)) = lp_utf16_bounded(bytes, guid_at, 36..=36) else {
+            continue;
+        };
+        if is_guid_hyphenated(&guid) {
+            *at = next;
+            return Ok(());
+        }
+    }
+    Err(ParseFailure {
+        field,
+        offset: initial,
+    })
+}
+
+fn take_version_urn(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
+    let initial = *at;
+    for prefix_len in [0, 4] {
+        if prefix_len != 0 && View::u32_le_at(bytes, initial) != Some(0) {
+            continue;
+        }
+        let Some(urn_at) = initial.checked_add(prefix_len) else {
+            continue;
+        };
+        let Some((urn, next)) = lp_utf16_bounded(bytes, urn_at, 1..=1024) else {
+            continue;
+        };
+        let urn = urn.as_bytes();
+        if urn.len() > 4
+            && urn[..4].eq_ignore_ascii_case(b"urn:")
+            && urn[4..].iter().all(u8::is_ascii_graphic)
+        {
+            *at = next;
+            return Ok(());
+        }
+    }
+    Err(ParseFailure {
+        field: "version-context version URN",
+        offset: initial,
+    })
+}
+
 fn take_version_context(bytes: &[u8], at: &mut usize) -> Result<(), ParseFailure> {
-    let present_at = *at;
-    let present = require(View::u32_le_at(bytes, *at), "version-context presence", *at)?;
-    *at = require(at.checked_add(4), "version-context presence", *at)?;
-    match present {
-        0 => Ok(()),
-        1 => {
-            let token_end = require(at.checked_add(8), "version-context token", *at)?;
-            require(bytes.get(*at..token_end), "version-context token", *at)?;
-            *at = token_end;
-            for field in [
-                "version-context asset GUID",
-                "version-context revision GUID",
-            ] {
-                let (guid, next) = require(lp_utf16_bounded(bytes, *at, 36..=36), field, *at)?;
-                if !is_guid_hyphenated(&guid) {
-                    return Err(ParseFailure { field, offset: *at });
-                }
-                *at = next;
-            }
-            let (version_urn, next) = require(
-                lp_utf16_bounded(bytes, *at, 1..=1024),
-                "version-context version URN",
-                *at,
-            )?;
-            let version_urn = version_urn.as_bytes();
-            if version_urn.len() <= 4
-                || !version_urn[..4].eq_ignore_ascii_case(b"urn:")
-                || !version_urn[4..].iter().all(u8::is_ascii_graphic)
-            {
-                return Err(ParseFailure {
-                    field: "version-context version URN",
-                    offset: *at,
-                });
-            }
-            *at = next;
-            let (guid, next) = require(
-                lp_utf16_bounded(bytes, *at, 36..=36),
-                "version-context asset revision GUID",
-                *at,
-            )?;
-            if !is_guid_hyphenated(&guid) {
-                return Err(ParseFailure {
-                    field: "version-context asset revision GUID",
-                    offset: *at,
-                });
-            }
-            *at = next;
+    let count_at = *at;
+    let count = require(View::u32_le_at(bytes, *at), "version-context count", *at)?;
+    *at = require(at.checked_add(4), "version-context count", *at)?;
+    if count > 64 {
+        return Err(ParseFailure {
+            field: "version-context count",
+            offset: count_at,
+        });
+    }
+    for _ in 0..count {
+        let token_end = require(at.checked_add(8), "version-context token", *at)?;
+        require(bytes.get(*at..token_end), "version-context token", *at)?;
+        *at = token_end;
+        take_version_guid(bytes, at, "version-context asset GUID", true)?;
+
+        // Legacy full contexts omit the separate revision GUID and place the
+        // version URN directly after the asset GUID.
+        let legacy_full_at = *at;
+        if take_version_urn(bytes, at).is_ok() {
+            take_version_guid(bytes, at, "version-context asset revision GUID", true)?;
+            require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
+            *at = require(at.checked_add(4), "version-context revision", *at)?;
+            continue;
+        }
+        *at = legacy_full_at;
+        take_version_guid(bytes, at, "version-context revision GUID", true)?;
+
+        let full_at = *at;
+        let full: Result<(), ParseFailure> = (|| {
+            take_version_urn(bytes, at)?;
+            take_version_guid(bytes, at, "version-context asset revision GUID", true)?;
             require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
             *at = require(at.checked_add(4), "version-context revision", *at)?;
             Ok(())
+        })();
+        if full.is_err() {
+            *at = full_at;
+            require(View::u32_le_at(bytes, *at), "version-context revision", *at)?;
+            *at = require(at.checked_add(4), "version-context revision", *at)?;
         }
-        _ => Err(ParseFailure {
-            field: "version-context presence",
-            offset: present_at,
-        }),
     }
+    Ok(())
 }
 
-fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
-    // Header: short segment type name, segment id, asset GUID, serializer
-    // magic and its magic-gated integer group, full segment type name, add-in
-    // name, and the segment type code.
+fn parse_segment_header(bytes: &[u8]) -> Result<(u32, usize), ParseFailure> {
     let (_, at) = require(
         lp_ascii_filtered(bytes, 0, 1..=256, u8::is_ascii_graphic),
         "short segment type name",
@@ -214,7 +256,11 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     let (_, at) = require(lp_utf16_bounded(bytes, at, 0..=256), "asset GUID", at)?;
     let magic = require(View::u32_le_at(bytes, at), "serializer magic", at)?;
     let at = require(
-        at.checked_add(if magic == 1234 { 16 } else { 8 }),
+        at.checked_add(if magic == MODERN_SERIALIZER_MAGIC {
+            16
+        } else {
+            8
+        }),
         "serializer integer group",
         at,
     )?;
@@ -223,6 +269,28 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
         "serializer integer group",
         at.min(bytes.len()),
     )?;
+    Ok((magic, at))
+}
+
+fn parse_error(failure: ParseFailure, stream: &str) -> CodecError {
+    CodecError::malformed(format_args!(
+        "invalid F3D MetaStream {} at byte {}: {stream}",
+        failure.field, failure.offset
+    ))
+}
+
+/// Read the serializer magic from a `MetaStream` header.
+pub(crate) fn serializer_magic(bytes: &[u8], stream: &str) -> Result<u32, CodecError> {
+    parse_segment_header(bytes)
+        .map(|(magic, _)| magic)
+        .map_err(|failure| parse_error(failure, stream))
+}
+
+fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
+    // Header: short segment type name, segment id, asset GUID, serializer
+    // magic and its magic-gated integer group, full segment type name, add-in
+    // name, and the segment type code.
+    let (_, at) = parse_segment_header(bytes)?;
     let (_, at) = require(
         lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic),
         "full segment type name",
@@ -339,16 +407,18 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
     }
     if at < bytes.len() {
         take_version_context(bytes, &mut at)?;
-        let properties = require(View::u32_le_at(bytes, at), "property count", at)?;
-        at = require(at.checked_add(4), "property count", at)?;
-        for _ in 0..properties {
-            let (_, next) = require(
-                lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic),
-                "property name",
-                at,
-            )?;
-            at = require(next.checked_add(4), "property value", next)?;
-            require(bytes.get(..at), "property value", at.min(bytes.len()))?;
+        if at < bytes.len() {
+            let properties = require(View::u32_le_at(bytes, at), "property count", at)?;
+            at = require(at.checked_add(4), "property count", at)?;
+            for _ in 0..properties {
+                let (_, next) = require(
+                    lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic),
+                    "property name",
+                    at,
+                )?;
+                at = require(next.checked_add(4), "property value", next)?;
+                require(bytes.get(..at), "property value", at.min(bytes.len()))?;
+            }
         }
     }
     if at != bytes.len() {
@@ -366,12 +436,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
 
 /// Parse one complete `MetaStream` segment and reject any unframed remainder.
 pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError> {
-    parse_inner(bytes).map_err(|failure| {
-        CodecError::malformed(format_args!(
-            "invalid F3D MetaStream {} at byte {}: {stream}",
-            failure.field, failure.offset
-        ))
-    })
+    parse_inner(bytes).map_err(|failure| parse_error(failure, stream))
 }
 
 #[cfg(test)]
@@ -415,8 +480,11 @@ mod tests {
     fn parses_present_version_context_before_properties() {
         let mut bytes = stream_prefix();
         bytes.extend_from_slice(&15u64.to_le_bytes());
+        let presence_at = bytes.len();
         bytes.extend_from_slice(&1u32.to_le_bytes());
+        let context_at = bytes.len();
         bytes.extend_from_slice(&0x1122_3344_5566_7788u64.to_le_bytes());
+        let asset_guid_at = bytes.len();
         for value in [
             "11111111-2222-3333-4444-555555555555",
             "66666666-7777-8888-9999-aaaaaaaaaaaa",
@@ -426,6 +494,7 @@ mod tests {
         lp_utf16(&mut bytes, "urn:synthetic:version:2");
         lp_utf16(&mut bytes, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
         bytes.extend_from_slice(&2u32.to_le_bytes());
+        let properties_at = bytes.len();
         bytes.extend_from_slice(&2u32.to_le_bytes());
         for (name, value) in [("Application", 1u32), ("Server", 1)] {
             lp_ascii(&mut bytes, name);
@@ -436,9 +505,48 @@ mod tests {
         assert!(parsed.types.is_empty());
         assert!(parsed.records.is_empty());
 
+        let mut padded = bytes.clone();
+        padded.splice(asset_guid_at..asset_guid_at, [0; 4]);
+        parse(&padded, "padded-version-context").expect("zero-padded version context");
+
+        let mut alternate_presence = bytes.clone();
+        alternate_presence[presence_at..presence_at + 4].copy_from_slice(&4u32.to_le_bytes());
+        let context = bytes[context_at..properties_at].to_vec();
+        for _ in 0..3 {
+            alternate_presence.splice(properties_at..properties_at, context.iter().copied());
+        }
+        parse(&alternate_presence, "alternate-version-context").expect("four version contexts");
+
+        let mut short = stream_prefix();
+        short.extend_from_slice(&15u64.to_le_bytes());
+        short.extend_from_slice(&1u32.to_le_bytes());
+        short.extend_from_slice(&0x8877_6655_4433_2211u64.to_le_bytes());
+        for guid in [
+            "11111111-2222-3333-4444-555555555555",
+            "66666666-7777-8888-9999-aaaaaaaaaaaa",
+        ] {
+            short.extend_from_slice(&0u32.to_le_bytes());
+            lp_utf16(&mut short, guid);
+        }
+        short.extend_from_slice(&0u32.to_le_bytes());
+        parse(&short, "short-version-context").expect("short version context");
+
+        let mut legacy_full = stream_prefix();
+        legacy_full.extend_from_slice(&15u64.to_le_bytes());
+        legacy_full.extend_from_slice(&1u32.to_le_bytes());
+        legacy_full.extend_from_slice(&0x7766_5544_3322_1100u64.to_le_bytes());
+        legacy_full.extend_from_slice(&0u32.to_le_bytes());
+        lp_utf16(&mut legacy_full, "11111111-2222-3333-4444-555555555555");
+        lp_utf16(&mut legacy_full, "urn:synthetic:legacy-version:3");
+        lp_utf16(&mut legacy_full, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
+        legacy_full.extend_from_slice(&3u32.to_le_bytes());
+        legacy_full.extend_from_slice(&0u32.to_le_bytes());
+        parse(&legacy_full, "legacy-full-version-context")
+            .expect("legacy full version context without a revision GUID");
+
         let mut invalid_presence = stream_prefix();
         invalid_presence.extend_from_slice(&15u64.to_le_bytes());
-        invalid_presence.extend_from_slice(&2u32.to_le_bytes());
+        invalid_presence.extend_from_slice(&65u32.to_le_bytes());
         assert!(parse(&invalid_presence, "invalid-version-context").is_err());
         assert!(parse(&bytes[..bytes.len() - 1], "truncated-version-context").is_err());
     }
@@ -645,6 +753,6 @@ mod tests {
         trailing.push(0);
         assert!(parse(&trailing, "trailing MetaStream").is_err());
         assert!(parse(&bytes[..bytes.len() - 1], "truncated MetaStream").is_err());
-        assert!(parse(&bytes[..bytes.len() - 4], "flag-only MetaStream").is_err());
+        assert!(parse(&bytes[..bytes.len() - 4], "property-free MetaStream").is_ok());
     }
 }

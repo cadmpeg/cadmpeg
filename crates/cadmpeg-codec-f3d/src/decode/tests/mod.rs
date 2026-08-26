@@ -3,6 +3,7 @@
 
 mod bodyless;
 mod codec;
+mod completeness;
 mod container;
 mod curves;
 mod pcurves;
@@ -13,3 +14,4 @@ mod projection;
 mod surfaces;
 mod surfaces_deform;
 mod topology;
+mod xref;

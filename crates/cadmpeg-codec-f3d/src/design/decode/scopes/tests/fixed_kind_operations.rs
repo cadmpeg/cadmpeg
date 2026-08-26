@@ -8,6 +8,9 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::layout::fixed_pipe_operation_prefix as fixed_pipe_layout;
+use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
+use crate::records::DesignLoftLegacyBodyCarrier;
 
 pub(super) fn continue_fixed_kind_operations(
     mut bytes: Vec<u8>,
@@ -402,6 +405,65 @@ pub(super) fn continue_fixed_kind_operations(
             opposite_angle_offset: None,
         })
     );
+
+    let class403_start = bytes.len();
+    let mut class403_revolve = vec![0; 387];
+    class403_revolve[21..25].copy_from_slice(&2u32.to_le_bytes());
+    class403_revolve[25..29].copy_from_slice(&2u32.to_le_bytes());
+    class403_revolve[29..31].copy_from_slice(&[0, 1]);
+    class403_revolve[34] = 1;
+    class403_revolve[35..39].copy_from_slice(&indexed_angle_record_index.to_le_bytes());
+    let mut class403_guid = Vec::new();
+    lp_utf16(&mut class403_guid, "00000000-0000-0000-0000-000000000000");
+    class403_revolve[107..183].copy_from_slice(&class403_guid);
+    bytes.extend_from_slice(&class403_revolve);
+    let mut class403_scope = revolve_scope.clone();
+    class403_scope.class_tag = "403".into();
+    class403_scope.paired_class_tag = "258".into();
+    class403_scope.byte_offset = class403_start as u64;
+    class403_scope.frame_length = 387;
+    class403_scope.reference_members = vec![
+        200,
+        201,
+        202,
+        203,
+        204,
+        205,
+        206,
+        indexed_angle_record_index,
+    ];
+    let mut class403_angle = indexed_angle.clone();
+    class403_angle.scope_record_index = class403_scope.record_index;
+    class403_angle.evaluated_value_offset = (class403_start + 40) as u64;
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &class403_scope,
+            std::slice::from_ref(&class403_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve {
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: (class403_start + 21) as u64,
+            angle: std::f64::consts::TAU,
+            angle_record_index: indexed_angle_record_index,
+            angle_offset: (class403_start + 40) as u64,
+            opposite_angle_record_index: None,
+            opposite_angle_offset: None,
+        })
+    );
+    bytes[class403_start + 34] = 0;
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &class403_scope,
+            std::slice::from_ref(&class403_angle),
+        ),
+        None
+    );
+    bytes[class403_start + 34] = 1;
+
     let legacy_revolve_start = bytes.len();
     let legacy_angle_record_index = 1_800u32;
     let mut legacy_revolve = vec![0; 359];
@@ -735,6 +797,7 @@ pub(super) fn continue_fixed_kind_operations(
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
         next_record_index: 905,
         next_byte_offset: 0,
     };
@@ -882,7 +945,14 @@ pub(super) fn continue_fixed_kind_operations(
     };
     let role_41 = [loft_group(0, 0x41_0000_0000), loft_group(1, 0x41_0000_0000)];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(&loft_scope, &role_41, &[], &[], &[]),
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &role_41,
+            &[],
+            &[],
+            &[],
+            &[],
+        ),
         Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
             if sections.len() == 2 && guides.is_empty()
     ));
@@ -896,6 +966,7 @@ pub(super) fn continue_fixed_kind_operations(
         crate::design::feature_project::project_fixed_loft(
             &loft_scope,
             &guided_role_41,
+            &[],
             &[],
             &[],
             &[],
@@ -923,7 +994,14 @@ pub(super) fn continue_fixed_kind_operations(
         loft_group(2, 0x43_0000_0000),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(&loft_scope, &cut, &[], &[], &[]),
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &cut,
+            &[],
+            &[],
+            &[],
+            &[],
+        ),
         Some(cadmpeg_ir::features::FeatureDefinition::Loft {
             sections,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -934,6 +1012,67 @@ pub(super) fn continue_fixed_kind_operations(
         DesignExtrudeOperation::Cut,
         &role_shape(&cut),
     ));
+    let legacy_carrier = DesignLoftLegacyBodyCarrier {
+        id: "stream:legacy-loft-carrier".into(),
+        scope_record_index: loft_scope.record_index,
+        scope_reference_ordinal: 0,
+        record_index: 500,
+        byte_offset: 0,
+        class_tag: "322".into(),
+        owner_scope_record_index: loft_scope.record_index,
+        owner_scope_record_index_offset: 22,
+        members: vec![900],
+        member_offsets: vec![36],
+        member_count: 1,
+        member_count_offset: 32,
+        opaque_index: 89,
+        opaque_index_offset: 47,
+        opaque_scalar: 1.25,
+        opaque_scalar_offset: 51,
+        repeated_opaque_index: 89,
+        repeated_opaque_index_offset: 59,
+        next_next_record_index: 502,
+        next_next_reference_offset: 63,
+        flags: [0, 0],
+        flags_offset: 74,
+        next_record_index: 501,
+        next_reference_offset: 76,
+        trailing_scope_record_index: None,
+        trailing_scope_reference_offset: None,
+        paired_class_tag: "262".into(),
+        paired_byte_offset: 87,
+    };
+    let legacy_cut = [
+        loft_group(1, 0x8_0000_0000),
+        loft_group(2, 0x41_0000_0000),
+        loft_group(3, 0x43_0000_0000),
+    ];
+    assert!(matches!(
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &legacy_cut,
+            std::slice::from_ref(&legacy_carrier),
+            &[],
+            &[],
+            &[],
+        ),
+        Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+            sections,
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        }) if sections.len() == 2
+    ));
+    assert_eq!(
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &legacy_cut,
+            &[],
+            &[],
+            &[],
+            &[],
+        ),
+        None
+    );
     loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
         operation: DesignExtrudeOperation::NewBody,
         operation_offset: (loft_start + 29) as u64,
@@ -944,7 +1083,14 @@ pub(super) fn continue_fixed_kind_operations(
         loft_group(2, 0x5_0000_0000),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(&loft_scope, &role_5, &[], &[], &[]),
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &role_5,
+            &[],
+            &[],
+            &[],
+            &[],
+        ),
         Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
             if sections.len() == 3 && guides.is_empty()
     ));
@@ -954,7 +1100,14 @@ pub(super) fn continue_fixed_kind_operations(
         loft_group(2, 0x7_0000_0000),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(&loft_scope, &centered, &[], &[], &[]),
+        crate::design::feature_project::project_fixed_loft(
+            &loft_scope,
+            &centered,
+            &[],
+            &[],
+            &[],
+            &[],
+        ),
         Some(cadmpeg_ir::features::FeatureDefinition::Loft {
             sections,
             guides,
@@ -969,7 +1122,7 @@ pub(super) fn continue_fixed_kind_operations(
         loft_group(3, 0x7_0000_0000),
     ];
     assert_eq!(
-        crate::design::feature_project::project_fixed_loft(&loft_scope, &mixed, &[], &[], &[]),
+        crate::design::feature_project::project_fixed_loft(&loft_scope, &mixed, &[], &[], &[], &[],),
         None
     );
     assert!(!crate::validate::loft_operand_roles_are_valid(
@@ -985,6 +1138,7 @@ pub(super) fn continue_fixed_kind_operations(
         crate::design::feature_project::project_fixed_loft(
             &loft_scope,
             &[point.clone(), profile.clone(), boundary.clone()],
+            &[],
             &[],
             &[],
             &[],
@@ -1303,6 +1457,146 @@ pub(super) fn continue_fixed_kind_operations(
             }),
         })
     );
+
+    let owner_pipe_start = bytes.len();
+    let mut owner_pipe = vec![0; fixed_pipe_layout::FILLED + 1];
+    owner_pipe[fixed_pipe_layout::OPERATION..fixed_pipe_layout::OPERATION + 4]
+        .copy_from_slice(&4u32.to_le_bytes());
+    owner_pipe[fixed_pipe_layout::SECTION_SHAPE] = 1;
+    owner_pipe[fixed_pipe_layout::FILLED] = 1;
+    bytes.extend_from_slice(&owner_pipe);
+    let owner_pipe_values: [f64; 4] = [1.0, 0.0, 0.175, 0.0438];
+    let owner_pipe_record_indexes = [210, 211, 212, 213];
+    let owner_pipe_owners = owner_pipe_values
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, value)| DesignParameterOwner {
+            id: format!(
+                "f3d:Design/BulkStream.dat:parameter-owner#{}",
+                owner_pipe_record_indexes[ordinal]
+            ),
+            byte_offset: 0,
+            frame_length: 103,
+            class_tag: "342".into(),
+            record_index: owner_pipe_record_indexes[ordinal],
+            scope_record_index: scope.record_index,
+            local_ordinal: ordinal as u32,
+            evaluated_value: value,
+            evaluated_value_offset: 10_000 + ordinal as u64,
+            parameter_record_index: owner_pipe_record_indexes[ordinal] + 1,
+            owned_ordinal: ordinal as u32,
+            variant: None,
+            companion_record_index: owner_pipe_record_indexes[ordinal] + 2,
+        })
+        .collect::<Vec<_>>();
+    let mut owner_pipe_scope = scope.clone();
+    owner_pipe_scope.id = "f3d:Design/BulkStream.dat:scope#12".into();
+    owner_pipe_scope.byte_offset = owner_pipe_start as u64;
+    owner_pipe_scope.class_tag = "421".into();
+    owner_pipe_scope.paired_class_tag = "257".into();
+    owner_pipe_scope.kind = "Pipe".into();
+    owner_pipe_scope.frame_length = 405;
+    owner_pipe_scope.reference_members = owner_pipe_record_indexes.into();
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &owner_pipe_scope,
+            &owner_pipe_owners,
+        ),
+        Some(DesignPathFeatureConstruction::Pipe {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (owner_pipe_start + fixed_pipe_layout::OPERATION) as u64,
+            section_shape: 1,
+            section_shape_offset: (owner_pipe_start + fixed_pipe_layout::SECTION_SHAPE) as u64,
+            filled: true,
+            filled_offset: (owner_pipe_start + fixed_pipe_layout::FILLED) as u64,
+            values: owner_pipe_values,
+            record_indexes: owner_pipe_record_indexes,
+            value_offsets: [10_000, 10_001, 10_002, 10_003],
+        })
+    );
+    let mut wrong_owner_class = owner_pipe_owners.clone();
+    wrong_owner_class[0].class_tag = "341".into();
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &owner_pipe_scope,
+            &wrong_owner_class,
+        ),
+        None
+    );
+
+    for (pair_ordinal, (class_tag, paired_class_tag)) in
+        [("405", "259"), ("475", "260")].into_iter().enumerate()
+    {
+        let legacy_pipe_start = bytes.len();
+        let mut legacy_pipe = vec![0; 383];
+        legacy_pipe[legacy_pipe_layout::ZERO_RUN_9..legacy_pipe_layout::PREFIX_MARKER]
+            .copy_from_slice(&[0; 9]);
+        legacy_pipe[legacy_pipe_layout::PREFIX_MARKER] = legacy_pipe_layout::PREFIX_MARKER_VALUE;
+        legacy_pipe[legacy_pipe_layout::ZERO_RUN_5..legacy_pipe_layout::OPERATION]
+            .copy_from_slice(&[0; 5]);
+        legacy_pipe[legacy_pipe_layout::OPERATION..legacy_pipe_layout::SECTION_SHAPE]
+            .copy_from_slice(&4u32.to_le_bytes());
+        legacy_pipe[legacy_pipe_layout::SECTION_SHAPE] = 1;
+        legacy_pipe[legacy_pipe_layout::FILLED] = 1;
+        bytes.extend_from_slice(&legacy_pipe);
+        let legacy_scalar_start = bytes.len();
+        let legacy_values: [f64; 4] = [1.0, 1.0, 0.6, 0.15];
+        let first_record_index = 180 + pair_ordinal as u32 * 4;
+        for (ordinal, value) in legacy_values.into_iter().enumerate() {
+            let record_index = first_record_index + ordinal as u32;
+            let mut scalar = vec![0; 100];
+            scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+            scalar[4..7].copy_from_slice(b"277");
+            scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+            scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+            scalar[24] = 1;
+            scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+            scalar[35] = ordinal as u8;
+            scalar[40..48].copy_from_slice(&value.to_le_bytes());
+            scalar.extend_from_slice(&3u32.to_le_bytes());
+            scalar.extend_from_slice(b"261");
+            scalar.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&scalar);
+        }
+        let mut legacy_scope = scope.clone();
+        legacy_scope.byte_offset = legacy_pipe_start as u64;
+        legacy_scope.class_tag = class_tag.into();
+        legacy_scope.paired_class_tag = paired_class_tag.into();
+        legacy_scope.kind = "Pipe".into();
+        legacy_scope.frame_length = 383;
+        legacy_scope.reference_members = (first_record_index..first_record_index + 4).collect();
+        assert_eq!(
+            exact_path_feature_construction(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &legacy_scope,
+                &[],
+            ),
+            Some(DesignPathFeatureConstruction::Pipe {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (legacy_pipe_start + legacy_pipe_layout::OPERATION) as u64,
+                section_shape: 1,
+                section_shape_offset: (legacy_pipe_start + legacy_pipe_layout::SECTION_SHAPE)
+                    as u64,
+                filled: true,
+                filled_offset: (legacy_pipe_start + legacy_pipe_layout::FILLED) as u64,
+                values: legacy_values,
+                record_indexes: [
+                    first_record_index,
+                    first_record_index + 1,
+                    first_record_index + 2,
+                    first_record_index + 3,
+                ],
+                value_offsets: std::array::from_fn(|ordinal| {
+                    (legacy_scalar_start + ordinal * 111 + 40) as u64
+                }),
+            })
+        );
+    }
 
     let mut companion = DesignParameterCompanion {
         id: "f3d:native:parameter-companion#11".into(),

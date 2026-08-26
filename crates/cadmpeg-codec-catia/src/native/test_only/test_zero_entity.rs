@@ -355,20 +355,20 @@ fn validate_zero_entity_model_curve_construction(
                 && [pitch.x, pitch.y, pitch.z].into_iter().all(f64::is_finite)
                 && apex_factor.is_finite()
                 && finite_vector(axis)
-                && (norm(axis) - 1.0).abs() <= 1e-9
-                && (norm(major) - norm(minor)).abs() <= 1e-9 * norm(major).max(norm(minor))
-                && normalized_dot(major, minor).abs() <= 1e-9
-                && normalized_dot(major, axis).abs() <= 1e-9
-                && normalized_dot(minor, axis).abs() <= 1e-9
+                && (norm(axis) - 1.0).abs() <= 1.0e-9
+                && (norm(major) - norm(minor)).abs() <= 1.0e-9 * norm(major).max(norm(minor))
+                && normalized_dot(major, minor).abs() <= 1.0e-9
+                && normalized_dot(major, axis).abs() <= 1.0e-9
+                && normalized_dot(minor, axis).abs() <= 1.0e-9
                 && (pitch.x == 0.0 && pitch.y == 0.0 && pitch.z == 0.0
-                    || normalized_dot(pitch, axis).abs() >= 1.0 - 1e-9)
+                    || normalized_dot(pitch, axis).abs() >= 1.0 - 1.0e-9)
                 && {
                     let handed_minor = cadmpeg_ir::math::Vector3::new(
                         axis.y * major.z - axis.z * major.y,
                         axis.z * major.x - axis.x * major.z,
                         axis.x * major.y - axis.y * major.x,
                     );
-                    normalized_dot(&handed_minor, minor) >= 1.0 - 1e-9
+                    normalized_dot(&handed_minor, minor) >= 1.0 - 1.0e-9
                 }
         }
         (_, Some(_), None)

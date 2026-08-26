@@ -14,7 +14,7 @@ use super::{
     following_dimension_companion_record_index, indexed_record_containing,
     is_grouped_recipe_reference_frame, is_paired_recipe_reference_frame,
     parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
-    parse_dimension_null_locus_pair, recipe_record_prefix,
+    parse_dimension_null_locus_pair, parse_dimension_presentation_frame, recipe_record_prefix,
 };
 use crate::design::decode::parameters::parse_design_parameter;
 use crate::design::dimensions::{
@@ -33,6 +33,8 @@ use cadmpeg_ir::sketches::{
     SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
 };
 use std::collections::{HashMap, HashSet};
+
+const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
 #[test]
 fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
@@ -473,6 +475,51 @@ fn face_recipe_decodes_five_group_reference_sequence() {
 }
 
 #[test]
+fn face_recipe_decodes_dynamic_group_reference_sequence() {
+    fn operand(prefix: &mut Vec<u8>, selector: u32, token: &str, reference: u32) {
+        prefix.extend_from_slice(&selector.to_le_bytes());
+        prefix.extend_from_slice(token.as_bytes());
+        prefix.extend_from_slice(&[0; 4]);
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&reference.to_le_bytes());
+    }
+
+    let mut prefix = vec![0; 10];
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&4u32.to_le_bytes());
+    for (selector, token, reference) in [
+        (1, "97", 302),
+        (2, "88", 302),
+        (3, "10", 302),
+        (1, "8", 302),
+    ] {
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        operand(&mut prefix, selector, token, reference);
+    }
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+
+    let references =
+        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+    assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
+    assert_eq!(
+        references
+            .iter()
+            .map(|reference| (
+                reference.selector,
+                reference.token.as_str(),
+                reference.design_reference
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (1, "97", 302),
+            (2, "88", 302),
+            (3, "10", 302),
+            (1, "8", 302)
+        ]
+    );
+}
+
+#[test]
 fn dimension_recipe_rejects_non_decimal_reference_tokens() {
     for token in [b"-".as_slice(), b"+1", b"1-"] {
         let mut prefix = vec![0; 10];
@@ -641,7 +688,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     assert_eq!(nested.byte_offset, 11);
     assert_eq!(nested.paired_byte_offset, 85);
 
-    let mut axis_pair = pair;
+    let mut axis_pair = pair.clone();
     axis_pair.null_role = 14;
     axis_pair.geometry_role = 3;
     let entity = SketchEntity {
@@ -664,6 +711,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             "Angular Dimension-2",
             std::f64::consts::FRAC_PI_4,
             parameter.clone(),
+            TEST_LINEAR_TOLERANCE,
         ),
         Some(SketchConstraintDefinition::AngleToAxis {
             entity: ref actual_entity,
@@ -677,6 +725,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         "Angular Dimension-2",
         0.5,
         parameter.clone(),
+        TEST_LINEAR_TOLERANCE,
     )
     .is_none());
     axis_pair.null_role = 13;
@@ -685,7 +734,44 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         &entity,
         "Angular Dimension-2",
         std::f64::consts::FRAC_PI_4,
+        parameter.clone(),
+        TEST_LINEAR_TOLERANCE,
+    )
+    .is_none());
+
+    let radial_entity = SketchEntity {
+        id: SketchEntityId("f3d:model:sketch-entity:circle".into()),
+        sketch: SketchId("f3d:model:sketch#radial".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: cadmpeg_ir::features::Length(1.000_000_014_901_161_2),
+        },
+    };
+    assert!(matches!(
+        null_locus_dimension_definition(
+            &pair,
+            &radial_entity,
+            "Diameter Dimension-2",
+            0.2,
+            parameter.clone(),
+            TEST_LINEAR_TOLERANCE,
+        ),
+        Some(SketchConstraintDefinition::Diameter {
+            entity: ref actual_entity,
+            parameter: ref actual_parameter,
+        }) if actual_entity == &radial_entity.id && actual_parameter == &parameter
+    ));
+    assert!(null_locus_dimension_definition(
+        &pair,
+        &radial_entity,
+        "Diameter Dimension-2",
+        0.2,
         parameter,
+        0.0,
     )
     .is_none());
 }
@@ -858,4 +944,59 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     .expect("scope-prefix dimension frame");
     assert_eq!(leading.companion_record_index, None);
     assert_eq!(leading.governing_owner_record_index, 390);
+}
+
+#[test]
+fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_header() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"314");
+    bytes.extend_from_slice(&332u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for (reference, role) in [(306u32, 1u32), (331, 0)] {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&role.to_le_bytes());
+    }
+    let presentation_offset = bytes.len();
+    bytes.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+    let paired_offset = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"281");
+    bytes.extend_from_slice(&332u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&270u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 35]);
+
+    let frame = parse_dimension_presentation_frame(
+        &bytes,
+        0,
+        "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
+        &HashSet::from([306, 331]),
+        &HashSet::from([270]),
+        &HashSet::from([String::from("281")]),
+    )
+    .expect("direct dimension presentation frame");
+    assert_eq!(frame.class_tag, "314");
+    assert_eq!(frame.record_index, 332);
+    assert_eq!(frame.frame_length, paired_offset as u64);
+    assert_eq!(frame.presentation_byte_offset, presentation_offset as u64);
+    assert_eq!(frame.presentation_bytes, [0xaa, 0xbb, 0xcc]);
+    assert_eq!(frame.operands[0].geometry_record_index, 306);
+    assert_eq!(frame.operands[1].geometry_record_index, 331);
+    assert_eq!(frame.owner_reference, 270);
+
+    assert!(parse_dimension_presentation_frame(
+        &bytes,
+        0,
+        "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
+        &HashSet::from([306]),
+        &HashSet::from([270]),
+        &HashSet::from([String::from("281")]),
+    )
+    .is_none());
 }

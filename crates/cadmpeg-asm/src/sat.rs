@@ -162,17 +162,22 @@ impl FieldReader<'_> {
     /// Read one raw whitespace-delimited field. Returns `None` at end of
     /// input. An `@N` field consumes one separator byte and exactly `N` raw
     /// bytes, which may include whitespace and newlines.
-    fn next_field(&mut self) -> Option<(usize, String)> {
+    fn next_field(&mut self) -> Result<Option<(usize, String)>, SatError> {
         self.skip_ws();
         if self.pos >= self.bytes.len() {
-            return None;
+            return Ok(None);
         }
         let start = self.pos;
         while self.pos < self.bytes.len() && !is_ws(self.bytes[self.pos]) {
             self.pos += 1;
         }
-        let word = String::from_utf8_lossy(&self.bytes[start..self.pos]).into_owned();
-        Some((start, word))
+        let word = std::str::from_utf8(&self.bytes[start..self.pos])
+            .map_err(|error| SatError {
+                offset: start + error.valid_up_to(),
+                reason: "field is not valid UTF-8".to_string(),
+            })?
+            .to_owned();
+        Ok(Some((start, word)))
     }
 
     /// Consume the `@N` payload after its length field: one separator byte,
@@ -189,7 +194,12 @@ impl FieldReader<'_> {
                 reason: format!("truncated @{len} string"),
             });
         };
-        let payload = String::from_utf8_lossy(&self.bytes[self.pos..end]).into_owned();
+        let payload = std::str::from_utf8(&self.bytes[self.pos..end])
+            .map_err(|error| SatError {
+                offset: self.pos + error.valid_up_to(),
+                reason: format!("@{len} string is not valid UTF-8"),
+            })?
+            .to_owned();
         self.pos = end;
         Ok(payload)
     }
@@ -258,7 +268,13 @@ fn counted_string(line: &[u8], pos: &mut usize, at: usize, what: &str) -> Result
             offset: at,
             reason: format!("header line has no {what} count"),
         })?;
-    *pos += 1; // one separator byte
+    if line.get(*pos).is_none_or(|byte| !is_ws(*byte)) {
+        return Err(SatError {
+            offset: at,
+            reason: format!("header {what} count has no separator"),
+        });
+    }
+    *pos += 1;
     let end = pos
         .checked_add(len)
         .filter(|end| *end <= line.len())
@@ -266,7 +282,12 @@ fn counted_string(line: &[u8], pos: &mut usize, at: usize, what: &str) -> Result
             offset: at,
             reason: format!("truncated {what} string"),
         })?;
-    let value = String::from_utf8_lossy(&line[*pos..end]).into_owned();
+    let value = std::str::from_utf8(&line[*pos..end])
+        .map_err(|error| SatError {
+            offset: at + *pos + error.valid_up_to(),
+            reason: format!("header {what} string is not valid UTF-8"),
+        })?
+        .to_owned();
     *pos = end;
     Ok(value)
 }
@@ -274,6 +295,12 @@ fn counted_string(line: &[u8], pos: &mut usize, at: usize, what: &str) -> Result
 fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
     let at = *pos;
     let line1 = header_line(bytes, pos, "save-format")?;
+    if line1.len() != 4 {
+        return Err(SatError {
+            offset: at,
+            reason: "save-format header line must contain four fields".to_string(),
+        });
+    }
     let save_format_version = header_int(line1.first(), at, "save format")?;
     let record_count = header_int(line1.get(1), at, "record count")?;
     let entity_count = header_int(line1.get(2), at, "entity count")?;
@@ -295,9 +322,21 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
     let product_family = counted_string(line2, &mut cursor, at, "product family")?;
     let product_version = counted_string(line2, &mut cursor, at, "product version")?;
     let save_date = counted_string(line2, &mut cursor, at, "save date")?;
+    if line2[cursor..].iter().any(|byte| !is_ws(*byte)) {
+        return Err(SatError {
+            offset: at,
+            reason: "product header line must contain three counted strings".to_string(),
+        });
+    }
 
     let at = *pos;
     let line3 = header_line(bytes, pos, "tolerance")?;
+    if line3.len() != 3 {
+        return Err(SatError {
+            offset: at,
+            reason: "tolerance header line must contain three fields".to_string(),
+        });
+    }
     let float = |field: Option<&&[u8]>, what: &str| -> Result<f64, SatError> {
         field
             .and_then(|field| std::str::from_utf8(field).ok())
@@ -308,8 +347,20 @@ fn parse_header(bytes: &[u8], pos: &mut usize) -> Result<TextHeader, SatError> {
             })
     };
     let scale = float(line3.first(), "scale")?;
+    if !scale.is_finite() || scale <= 0.0 {
+        return Err(SatError {
+            offset: at,
+            reason: "header scale must be finite and positive".to_string(),
+        });
+    }
     let resabs = float(line3.get(1), "resabs")?;
     let resnor = float(line3.get(2), "resnor")?;
+    if !resabs.is_finite() || resabs < 0.0 || !resnor.is_finite() || resnor < 0.0 {
+        return Err(SatError {
+            offset: at,
+            reason: "header tolerances must be finite and nonnegative".to_string(),
+        });
+    }
     Ok(TextHeader {
         save_format_version,
         record_count,
@@ -334,17 +385,13 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
     let header = parse_header(bytes, &mut pos)?;
     // Length conversion into the binary centimetre convention: the stream
     // stores lengths in `scale` millimetres per unit.
-    let len_factor = if header.scale > 0.0 {
-        header.scale / 10.0
-    } else {
-        1.0
-    };
+    let len_factor = header.scale / 10.0;
 
     let mut reader = FieldReader { bytes, pos };
     let mut records = Vec::new();
     let mut dialect = None;
     // Record name field, then payload fields until the terminator.
-    'stream: while let Some((rec_start, name)) = reader.next_field() {
+    'stream: while let Some((rec_start, name)) = reader.next_field()? {
         match name.as_str() {
             "End-of-ASM-data" => {
                 dialect = Some(Dialect::Asm);
@@ -358,17 +405,36 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
         }
         // Payload fields until the `#` terminator.
         let mut prims = Vec::new();
+        let mut subtype_depth = 0usize;
         loop {
-            let Some((at, field)) = reader.next_field() else {
+            let Some((at, field)) = reader.next_field()? else {
                 return Err(SatError {
                     offset: rec_start,
                     reason: format!("record `{name}` has no `#` terminator"),
                 });
             };
             if field == "#" {
+                if subtype_depth != 0 {
+                    return Err(SatError {
+                        offset: at,
+                        reason: format!("record `{name}` terminates inside a subtype scope"),
+                    });
+                }
                 break;
             }
-            prims.push(lex_prim(&mut reader, at, field)?);
+            let prim = lex_prim(&mut reader, at, field)?;
+            match prim {
+                Prim::Open => subtype_depth += 1,
+                Prim::Close if subtype_depth == 0 => {
+                    return Err(SatError {
+                        offset: at,
+                        reason: format!("record `{name}` closes an unopened subtype scope"),
+                    });
+                }
+                Prim::Close => subtype_depth -= 1,
+                _ => {}
+            }
+            prims.push(prim);
         }
         let head = name.split('-').next().unwrap_or_default().to_owned();
         let tokens = type_record(&head, &prims, len_factor);
@@ -387,6 +453,13 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
             reason: "stream has no End-of-ASM-data or End-of-ACIS-data line".to_string(),
         });
     };
+    reader.skip_ws();
+    if reader.pos != bytes.len() {
+        return Err(SatError {
+            offset: reader.pos,
+            reason: "non-whitespace data follows the stream terminator".to_string(),
+        });
+    }
     Ok(TextStream {
         header,
         records,
@@ -396,14 +469,18 @@ pub fn parse(bytes: &[u8]) -> Result<TextStream, SatError> {
 
 fn lex_prim(reader: &mut FieldReader<'_>, at: usize, field: String) -> Result<Prim, SatError> {
     if let Some(rest) = field.strip_prefix('$') {
-        if let Ok(index) = rest.parse::<i64>() {
-            return Ok(Prim::Ref(index));
-        }
+        let index = rest.parse::<i64>().map_err(|_| SatError {
+            offset: at,
+            reason: "reference field has no valid decimal index".to_string(),
+        })?;
+        return Ok(Prim::Ref(index));
     }
     if let Some(rest) = field.strip_prefix('@') {
-        if let Ok(len) = rest.parse::<usize>() {
-            return Ok(Prim::Str(reader.read_str_payload(len, at)?));
-        }
+        let len = rest.parse::<usize>().map_err(|_| SatError {
+            offset: at,
+            reason: "string field has no valid decimal byte count".to_string(),
+        })?;
+        return Ok(Prim::Str(reader.read_str_payload(len, at)?));
     }
     if field == "{" {
         return Ok(Prim::Open);
@@ -1382,7 +1459,7 @@ mod tests {
     use super::*;
 
     fn approx(a: f64, b: f64) -> bool {
-        (a - b).abs() <= 1e-12 * a.abs().max(b.abs()).max(1.0)
+        (a - b).abs() <= 1.0e-12 * a.abs().max(b.abs()).max(1.0)
     }
 
     fn asm_stream(body: &str) -> Vec<u8> {
@@ -1390,7 +1467,7 @@ mod tests {
         text.push_str(
             "16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 24 Fri Jul 17 14:46:47 2026 \n",
         );
-        text.push_str("1 1e-06 1e-10 \n");
+        text.push_str("1 1e-06 1.0e-10 \n");
         text.push_str(body);
         text.push_str("End-of-ASM-data \n");
         text.into_bytes()
@@ -1408,8 +1485,8 @@ mod tests {
         assert_eq!(asm.header.product_version, "ASM 232.4.0.65535 OSX");
         assert_eq!(asm.header.save_date, "Fri Jul 17 14:46:47 2026");
         assert!(approx(asm.header.scale, 1.0));
-        assert!(approx(asm.header.resabs, 1e-6));
-        assert!(approx(asm.header.resnor, 1e-10));
+        assert!(approx(asm.header.resabs, 1.0e-6));
+        assert!(approx(asm.header.resnor, 1.0e-10));
         assert_eq!(asm.records.len(), 1);
         assert_eq!(asm.records[0].name, "asmheader");
         assert_eq!(
@@ -1422,7 +1499,7 @@ mod tests {
         );
 
         let text = "700 0 1 0 \n30 Autodesk Translation Framework 21 ASM 232.4.0.65535 OSX 24 Fri \
-                    Jul 17 14:48:06 2026 \n25.4 1e-06 1e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 \
+                    Jul 17 14:48:06 2026 \n25.4 1e-06 1.0e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 \
                     #\nEnd-of-ACIS-data \n";
         let acis = parse(text.as_bytes()).expect("acis stream");
         assert_eq!(acis.dialect, Dialect::Acis);
@@ -1445,6 +1522,93 @@ mod tests {
     }
 
     #[test]
+    fn invalid_header_scales_are_rejected() {
+        for scale in ["0", "-1", "NaN", "inf"] {
+            let mut stream = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+            let scale_start = stream
+                .windows(b"1 1e-06 1.0e-10".len())
+                .position(|window| window == b"1 1e-06 1.0e-10")
+                .expect("tolerance line");
+            stream.splice(scale_start..=scale_start, scale.bytes());
+
+            let error = parse(&stream).expect_err("invalid scale must fail");
+            assert_eq!(error.offset, scale_start);
+            assert_eq!(error.reason, "header scale must be finite and positive");
+        }
+    }
+
+    #[test]
+    fn invalid_header_tolerances_are_rejected() {
+        for (resabs, resnor) in [
+            ("-1", "1.0e-10"),
+            ("NaN", "1.0e-10"),
+            ("inf", "1.0e-10"),
+            ("1.0e-6", "-1"),
+            ("1.0e-6", "NaN"),
+            ("1.0e-6", "inf"),
+        ] {
+            let mut stream = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+            let tolerance_start = stream
+                .windows(b"1 1e-06 1.0e-10".len())
+                .position(|window| window == b"1 1e-06 1.0e-10")
+                .expect("tolerance line");
+            let replacement = format!("1 {resabs} {resnor}");
+            stream.splice(
+                tolerance_start..tolerance_start + b"1 1e-06 1.0e-10".len(),
+                replacement.bytes(),
+            );
+
+            let error = parse(&stream).expect_err("invalid tolerance must fail");
+            assert_eq!(error.offset, tolerance_start);
+            assert_eq!(
+                error.reason,
+                "header tolerances must be finite and nonnegative"
+            );
+        }
+    }
+
+    #[test]
+    fn header_lines_reject_extra_fields() {
+        let valid = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+        let lines = valid
+            .split_inclusive(|byte| *byte == b'\n')
+            .collect::<Vec<_>>();
+        assert!(lines.len() >= 3);
+
+        for (line, extra) in [(0, b" 9".as_slice()), (1, b" extra"), (2, b" 9")] {
+            let mut malformed = Vec::new();
+            for (ordinal, bytes) in lines.iter().enumerate() {
+                if ordinal == line {
+                    malformed.extend_from_slice(&bytes[..bytes.len() - 1]);
+                    malformed.extend_from_slice(extra);
+                    malformed.push(b'\n');
+                } else {
+                    malformed.extend_from_slice(bytes);
+                }
+            }
+            assert!(parse(&malformed).is_err(), "header line {line}");
+        }
+    }
+
+    #[test]
+    fn counted_header_strings_require_a_separator_after_the_count() {
+        let valid = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
+        let mut malformed = valid.clone();
+        let separator = malformed
+            .windows(b"16 Autodesk".len())
+            .position(|window| window == b"16 Autodesk")
+            .map(|start| start + 2)
+            .expect("product-family separator");
+        malformed.remove(separator);
+
+        let error = parse(&malformed).expect_err("missing counted-string separator must fail");
+        assert_eq!(
+            error.offset,
+            valid.iter().position(|byte| *byte == b'\n').unwrap() + 1
+        );
+    }
+
+    #[test]
     fn counted_string_bytes_may_contain_whitespace_and_newlines() {
         let stream = parse(&asm_stream(
             "ATTRIB_CUSTOM-attrib $-1 -1 $-1 $-1 $0 @9 a b\nc d e 1 7 #\n",
@@ -1457,6 +1621,76 @@ mod tests {
         // The tabled ATTRIB_CUSTOM shape types the trailing value as DOUBLE.
         assert_eq!(stream.records[0].tokens[6], Token::Long(1));
         assert!(matches!(stream.records[0].tokens[7], Token::Double(v) if approx(v, 7.0)));
+
+        let stream = parse(&asm_stream("mystery @2 é #\n")).expect("multibyte UTF-8 string");
+        assert_eq!(stream.records[0].tokens[0], Token::Str("é".to_string()));
+    }
+
+    #[test]
+    fn text_fields_reject_invalid_utf8_at_the_source_byte() {
+        let mut header = asm_stream("mystery 1 #\n");
+        let header_offset = header
+            .windows(b"Autodesk".len())
+            .position(|window| window == b"Autodesk")
+            .expect("header string offset");
+        header[header_offset] = 0xff;
+
+        let mut bare = asm_stream("mystery invalid #\n");
+        let bare_offset = bare
+            .windows(b"invalid".len())
+            .position(|window| window == b"invalid")
+            .expect("bare field offset");
+        bare[bare_offset] = 0xff;
+
+        let mut counted = asm_stream("mystery @1 x #\n");
+        let counted_offset = counted
+            .windows(b"@1 x".len())
+            .position(|window| window == b"@1 x")
+            .map(|offset| offset + 3)
+            .expect("counted string offset");
+        counted[counted_offset] = 0xff;
+
+        for (bytes, expected_offset) in [
+            (header, header_offset),
+            (bare, bare_offset),
+            (counted, counted_offset),
+        ] {
+            let error = parse(&bytes).expect_err("invalid UTF-8 must fail");
+            assert_eq!(error.offset, expected_offset);
+        }
+    }
+
+    #[test]
+    fn prefixed_fields_require_decimal_operands() {
+        for malformed_field in [
+            "$record",
+            "@length",
+            "$99999999999999999999999999999999999999999999999999",
+            "@99999999999999999999999999999999999999999999999999",
+        ] {
+            let stream = asm_stream(&format!("mystery {malformed_field} #\n"));
+            let field_offset = stream
+                .windows(malformed_field.len())
+                .position(|window| window == malformed_field.as_bytes())
+                .expect("malformed field offset");
+
+            let error = parse(&stream).expect_err("malformed prefixed field must fail");
+            assert_eq!(error.offset, field_offset);
+        }
+    }
+
+    #[test]
+    fn subtype_scope_delimiters_must_balance() {
+        for (body, error_field) in [("mystery { scope #\n", "#"), ("mystery } #\n", "}")] {
+            let stream = asm_stream(body);
+            let error_offset = stream
+                .iter()
+                .position(|byte| *byte == error_field.as_bytes()[0])
+                .expect("delimiter offset");
+
+            let error = parse(&stream).expect_err("unbalanced subtype scope must fail");
+            assert_eq!(error.offset, error_offset);
+        }
     }
 
     #[test]
@@ -1464,6 +1698,16 @@ mod tests {
         let stream = parse(&asm_stream("point $-1 -1 $-1 1 \n\t2 \n\t3 #\n")).expect("wrapped");
         assert_eq!(stream.records.len(), 1);
         assert_eq!(stream.records[0].tokens.len(), 4);
+    }
+
+    #[test]
+    fn stream_terminator_rejects_trailing_data() {
+        let mut stream = asm_stream("point $-1 -1 $-1 1 2 3 #\n");
+        let trailing_offset = stream.len();
+        stream.extend_from_slice(b"point $-1 -1 $-1 4 5 6 #\n");
+
+        let error = parse(&stream).expect_err("record after stream terminator must fail");
+        assert_eq!(error.offset, trailing_offset);
     }
 
     #[test]
@@ -1571,7 +1815,7 @@ mod tests {
         // Header scale 25.4 (inches): control points convert x2.54, knots and
         // parameters stay unscaled.
         let text = "700 0 1 0 \n30 Autodesk Translation Framework 21 ASM 232.4.0.65535 OSX 24 \
-                    Fri Jul 17 14:48:06 2026 \n25.4 1e-06 1e-10 \nintcurve-curve $-1 -1 $-1 \
+                    Fri Jul 17 14:48:06 2026 \n25.4 1e-06 1.0e-10 \nintcurve-curve $-1 -1 $-1 \
                     forward { exact_int_cur 23100 full nubs 1 open 2 0 1 1 1 1 2 3 4 5 6 0 \
                     null_surface null_surface nullbs nullbs I I 0 0 0 0 F 1 F 0 UNEXTENDED \
                     UNEXTENDED } I I #\nEnd-of-ACIS-data \n";
@@ -1618,7 +1862,7 @@ mod tests {
     #[test]
     fn record_indices_count_file_order_and_resolve_references() {
         let text = "700 0 2 0 \n30 Autodesk Translation Framework 21 ASM 232.4.0.65535 OSX 24 \
-                    Fri Jul 17 14:48:06 2026 \n1 1e-06 1e-10 \nbody $-1 -1 $-1 $2 $-1 $-1 #\nbody \
+                    Fri Jul 17 14:48:06 2026 \n1 1e-06 1.0e-10 \nbody $-1 -1 $-1 $2 $-1 $-1 #\nbody \
                     $-1 -1 $-1 $3 $-1 $-1 #\nlump $-1 -1 $-1 $-1 $-1 $0 #\nlump $-1 -1 $-1 $-1 \
                     $-1 $1 #\nEnd-of-ACIS-data \n";
         let stream = parse(text.as_bytes()).expect("bodies");
@@ -1635,7 +1879,7 @@ mod tests {
     #[test]
     fn a_stream_without_a_terminator_line_is_an_error() {
         let text = "700 0 1 0 \n30 Autodesk Translation Framework 21 ASM 232.4.0.65535 OSX 24 \
-                    Fri Jul 17 14:48:06 2026 \n1 1e-06 1e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 #\n";
+                    Fri Jul 17 14:48:06 2026 \n1 1e-06 1.0e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 #\n";
         assert!(parse(text.as_bytes()).is_err());
     }
 }

@@ -83,7 +83,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
                 ..
             },
             op: cadmpeg_ir::features::BooleanOp::Join
-        } if (angle.0 - std::f64::consts::PI).abs() < 1e-12
+        } if (angle.0 - std::f64::consts::PI).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("Fillet"),
@@ -103,7 +103,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
             flip_direction: true,
         } if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
             spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle { distance: cadmpeg_ir::features::Length(1.5), angle }, ..
-        }] if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12)
+        }] if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12)
     ));
     assert!(matches!(
         definition("LegacyChamfer"),
@@ -878,7 +878,7 @@ fn transfers_non_default_revolution_branches() {
     assert!(matches!(
         definition("TwoAngles"),
         FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { extent: Some(RevolveExtent::TwoSided { first: Termination::Angle { angle: first }, second: Termination::Angle { angle: second } }), .. }, .. }
-            if (first.0 - 120_f64.to_radians()).abs() < 1e-12 && (second.0 - 30_f64.to_radians()).abs() < 1e-12
+            if (first.0 - 120_f64.to_radians()).abs() < 1.0e-12 && (second.0 - 30_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("Midplane"),
@@ -970,7 +970,7 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
                 ..
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
-        } if (angle - std::f64::consts::PI).abs() < 1e-12
+        } if (angle - std::f64::consts::PI).abs() < 1.0e-12
     ));
     assert!(matches!(
         feature("CutCone"),
@@ -1073,7 +1073,7 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
             construction_style: Some(cadmpeg_ir::features::HelixConstructionStyle::Corrected),
             radial_growth: None,
             ..
-        } if (*angle - 12_f64.to_radians()).abs() < 1e-12
+        } if (*angle - 12_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         definition("Spiral"),

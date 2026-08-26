@@ -2,7 +2,7 @@
 //! Subdivision-surface control cages.
 
 use crate::ids::SubdId;
-use crate::math::Point3;
+use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -22,9 +22,91 @@ pub struct SubdSurface {
     pub edges: Vec<SubdEdge>,
     /// Control-cage faces.
     pub faces: Vec<SubdFace>,
+    /// Native editor symmetry blocks projected into control-cage coordinates.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub symmetries: Vec<SubdSymmetry>,
     /// Native source-object identity and effective display metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_object: Option<SourceObjectAssociation>,
+}
+
+/// A symmetry plane frame carried by a T-spline editor block.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SubdPlaneFrame {
+    /// A point on the plane in document length units.
+    pub origin: Point3,
+    /// First unit in-plane axis.
+    pub first_axis: Vector3,
+    /// Second unit in-plane axis.
+    pub second_axis: Vector3,
+}
+
+/// Kind-specific controls for a T-spline symmetry block.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SubdSymmetryKind {
+    /// One-to-one correspondence across the symmetry plane.
+    Correspondence,
+    /// Radial editor symmetry with native segment and sweep controls.
+    Radial {
+        /// Number of radial segments.
+        segments: u32,
+        /// Native radial sweep value.
+        sweep: f64,
+    },
+}
+
+/// Selector of one native radial-symmetry map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SubdRadialMapSelector {
+    /// Native `ef` map.
+    Ef,
+    /// Native `er` map.
+    Er,
+    /// Native `ff` map.
+    Ff,
+    /// Native `fr` map.
+    Fr,
+    /// Native `vf` map.
+    Vf,
+    /// Native `vr` map.
+    Vr,
+}
+
+/// One selector-preserving native radial-symmetry map.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SubdRadialSymmetryMap {
+    /// Native map selector. Its element namespace is format-native.
+    pub selector: SubdRadialMapSelector,
+    /// Native source/target identifier pairs.
+    pub pairs: Vec<[u64; 2]>,
+}
+
+/// Typed editor symmetry state for one subdivision cage.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SubdSymmetry {
+    /// Symmetry mode and its radial controls, when present.
+    pub kind: SubdSymmetryKind,
+    /// Geometric symmetry-plane frame.
+    pub plane: SubdPlaneFrame,
+    /// Forward face correspondences for a topology-addressed symmetry block.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub face_pairs: Vec<[u32; 2]>,
+    /// Forward edge correspondences for a topology-addressed symmetry block.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_pairs: Vec<[u32; 2]>,
+    /// Forward vertex correspondences for a topology-addressed symmetry block.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vertex_pairs: Vec<[u32; 2]>,
+    /// Selector-preserving native maps for radial symmetry blocks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub radial_maps: Vec<SubdRadialSymmetryMap>,
 }
 
 /// Subdivision scheme used by a control cage.
@@ -44,6 +126,63 @@ pub struct SubdVertex {
     pub point: Point3,
     /// Subdivision vertex tag.
     pub tag: SubdVertexTag,
+    /// Optional secondary-grip topology owned by this vertex.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secondary_grips: Option<SubdVertexGripLayout>,
+}
+
+/// Compass direction of the root edge in a control-cage grid frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SubdGripDirection {
+    /// Positive grid-y direction.
+    North,
+    /// Positive grid-x direction.
+    East,
+    /// Negative grid-y direction.
+    South,
+    /// Negative grid-x direction.
+    West,
+}
+
+/// Typed secondary-grip layout for one subdivision vertex.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SubdVertexGripLayout {
+    /// Direction of the native root edge; wedge zero is the north slot.
+    pub direction: SubdGripDirection,
+    /// Wedges in north-anchored order.
+    pub wedges: Vec<SubdGripWedge>,
+}
+
+/// One wedge in a secondary-grip layout.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SubdGripWedge {
+    /// IR edge for this fan slot, or `None` for a phantom boundary slot.
+    pub edge: Option<u32>,
+    /// Face in the sector following this slot, or `None` for a boundary gap.
+    pub sector_face: Option<u32>,
+    /// Whether this slot was inserted to complete a boundary gap.
+    pub phantom: bool,
+    /// Spoke grips ordered nearest-first from the owning vertex.
+    pub spokes: Vec<Option<SubdSecondaryGrip>>,
+    /// Sector-grid grips ordered by the spoke-k position, then the next-spoke
+    /// position, with `S[k] * S[k + 1]` slots.
+    pub sectors: Vec<Option<SubdSecondaryGrip>>,
+}
+
+/// A secondary grip point and its source grip-array identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SubdSecondaryGrip {
+    /// Index in the source cage's `0g` grip array.
+    pub source_index: u32,
+    /// Grip position in document units.
+    pub point: Point3,
+    /// Positive rational grip weight.
+    pub weight: f64,
 }
 
 /// A control-cage vertex tag.
@@ -71,6 +210,9 @@ pub struct SubdEdge {
     pub sharpness: [f64; 2],
     /// Subdivision edge tag.
     pub tag: SubdEdgeTag,
+    /// Parametric knot interval, when the source cage exposes one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knot_interval: Option<f64>,
     /// Sector coefficients at the two endpoints.
     pub sector_coefficients: [f64; 2],
 }

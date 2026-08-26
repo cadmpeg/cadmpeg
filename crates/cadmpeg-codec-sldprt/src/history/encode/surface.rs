@@ -14,7 +14,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     Angle, BodySelection, EdgeSelection, FaceSelection, FeatureId, Length, PathRef,
     RuledSurfaceCorner, RuledSurfaceMode, ShellJoin, ShellMode, SurfaceBoundary, SurfaceContinuity,
-    SurfaceExtension, ThickenSide, TrimRegion,
+    SurfaceExtension, ThickenSide, TrimCellSelection, TrimRegion,
 };
 use cadmpeg_ir::math::Vector3;
 
@@ -41,11 +41,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         faces: &FaceSelection,
         tool: &PathRef,
         keep: &TrimRegion,
+        cell_selection: &Option<TrimCellSelection>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
         let record_sources = self.record_sources;
         let sketch_sources = self.sketch_sources;
+        if cell_selection.is_some() {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} carries a cell-selected trim not representable by its schema",
+                feature.id
+            )));
+        }
         Ok({
             let faces = face_selection_value(faces).ok_or_else(|| {
                 CodecError::malformed(format_args!(
@@ -111,10 +118,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             parameters.insert("Distance".into(), format_length_mm(distance.0));
             let mut properties = feature.source_properties.clone();
             properties.insert("Faces".into(), faces);
-            properties.insert(
-                "Method".into(),
-                crate::feature_schema::surface_extension_token(*method).into(),
-            );
+            let method =
+                crate::feature_schema::surface_extension_token(*method).ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unsupported surface extension method",
+                        feature.id
+                    ))
+                })?;
+            properties.insert("Method".into(), method.into());
             NeutralFeatureEncoding {
                 kind: existing.map_or_else(|| "ExtendSurface".into(), |record| record.kind.clone()),
                 parameters,

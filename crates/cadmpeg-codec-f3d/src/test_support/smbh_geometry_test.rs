@@ -397,12 +397,20 @@ pub(crate) fn synthetic_geometry_with_mesh_surface_smbh() -> Vec<u8> {
 }
 
 pub(crate) fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
+    synthetic_geometry_with_attribute_at(1)
+}
+
+pub(crate) fn synthetic_geometry_with_face_attribute_smbh() -> Vec<u8> {
+    synthetic_geometry_with_attribute_at(4)
+}
+
+fn synthetic_geometry_with_attribute_at(owner_record_index: usize) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
     let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
-    let body = &records[1];
-    let record = &mut bytes[body.offset..body.offset + body.len];
+    let owner = &records[owner_record_index];
+    let record = &mut bytes[owner.offset..owner.offset + owner.len];
     let attribute_ref = record.iter().position(|byte| *byte == 0x0c).unwrap();
     record[attribute_ref + 1..attribute_ref + 9].copy_from_slice(&19i64.to_le_bytes());
 
@@ -421,11 +429,28 @@ pub(crate) fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     }
     push_u8_string(&mut attribute, "generic_tag_attrib_def ");
     t_long(&mut attribute, 3);
-    for (kind, id, reference) in [(3, "311", 6), (4, "900", 42), (3, "322", 7)] {
-        t_long(&mut attribute, kind);
-        push_u8_string(&mut attribute, id);
-        for value in [reference, 0, 0] {
-            t_long(&mut attribute, value);
+    if owner_record_index == 4 {
+        for (selector, token, references) in [
+            (1, "8", &[301, -314, 411][..]),
+            (2, "-1", &[511][..]),
+            (3, "42", &[][..]),
+        ] {
+            t_long(&mut attribute, selector);
+            push_u8_string(&mut attribute, token);
+            t_long(&mut attribute, 0);
+            t_long(&mut attribute, references.len() as i64);
+            for reference in references {
+                t_long(&mut attribute, *reference);
+            }
+            t_long(&mut attribute, 0);
+        }
+    } else {
+        for (kind, id, reference) in [(3, "311", 6), (4, "900", 42), (3, "322", 7)] {
+            t_long(&mut attribute, kind);
+            push_u8_string(&mut attribute, id);
+            for value in [reference, 0, 0] {
+                t_long(&mut attribute, value);
+            }
         }
     }
     t_end(&mut attribute);
