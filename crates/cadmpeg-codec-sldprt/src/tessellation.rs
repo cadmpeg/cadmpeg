@@ -1004,11 +1004,41 @@ enum PlanarOuter {
 }
 
 #[derive(Debug, Clone)]
+enum PlanarHole {
+    Polygon {
+        boundary: Vec<Point2>,
+        triangles: Vec<[Point2; 3]>,
+    },
+    Circle(CircularHole),
+}
+
+impl PlanarHole {
+    fn polygon(boundary: Vec<Point2>, tolerance: f64) -> Option<Self> {
+        let triangles = triangulate_polygon(&boundary, tolerance)?;
+        Some(Self::Polygon {
+            boundary,
+            triangles,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
 struct PlanarTrim {
     frame: PlaneFrame,
     outer: Option<PlanarOuter>,
-    holes: Vec<CircularHole>,
+    holes: Vec<PlanarHole>,
     boundary_tolerance: f64,
+}
+
+enum HoleConstraint<'a> {
+    Polygon {
+        boundary: &'a [Point2],
+        triangles: &'a [[Point2; 3]],
+    },
+    Circle {
+        exclusion: CircularHole,
+        boundary: CircularHole,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1117,7 +1147,20 @@ impl PlanarTrim {
         let holes = self
             .holes
             .iter()
-            .map(|hole| chordal_hole_constraint(*hole, &projected, tolerance))
+            .map(|hole| match hole {
+                PlanarHole::Polygon {
+                    boundary,
+                    triangles,
+                } => Some(HoleConstraint::Polygon {
+                    boundary,
+                    triangles,
+                }),
+                PlanarHole::Circle(hole) => chordal_hole_constraint(*hole, &projected, tolerance)
+                    .map(|(exclusion, boundary)| HoleConstraint::Circle {
+                        exclusion,
+                        boundary,
+                    }),
+            })
             .collect::<Option<Vec<_>>>();
         let Some(holes) = holes else {
             return false;
@@ -1130,7 +1173,7 @@ impl PlanarTrim {
                 }
             }) || holes
                 .iter()
-                .any(|(hole, _)| point_distance(*point, hole.center) < hole.radius - tolerance)
+                .any(|hole| hole.contains_interior(*point, tolerance))
         }) {
             return false;
         }
@@ -1140,10 +1183,33 @@ impl PlanarTrim {
             else {
                 return false;
             };
-            holes.iter().all(|(exclusion, boundary)| {
-                !triangle_crosses_hole([a, b, c], *exclusion, *boundary, tolerance)
-            })
+            holes
+                .iter()
+                .all(|hole| !hole.crosses_triangle([a, b, c], tolerance))
         })
+    }
+}
+
+impl HoleConstraint<'_> {
+    fn contains_interior(&self, point: Point2, tolerance: f64) -> bool {
+        match self {
+            Self::Polygon { boundary, .. } => polygon_strictly_contains(boundary, point, tolerance),
+            Self::Circle { exclusion, .. } => {
+                point_distance(point, exclusion.center) < exclusion.radius - tolerance
+            }
+        }
+    }
+
+    fn crosses_triangle(&self, triangle: [Point2; 3], tolerance: f64) -> bool {
+        match self {
+            Self::Polygon { triangles, .. } => triangles.iter().any(|hole_triangle| {
+                triangles_have_positive_overlap(triangle, *hole_triangle, tolerance)
+            }),
+            Self::Circle {
+                exclusion,
+                boundary,
+            } => triangle_crosses_hole(triangle, *exclusion, *boundary, tolerance),
+        }
     }
 }
 
@@ -1396,27 +1462,73 @@ fn planar_trim(
         }
         polygons.push(polygon);
     }
-    let (outer, holes) = match (polygons.as_slice(), circles.as_slice()) {
-        ([outer], holes) if is_simple_polygon(outer, sampling_tolerance) => {
-            if holes
-                .iter()
-                .any(|hole| !circle_inside_polygon(outer, *hole, sampling_tolerance))
-                || holes.iter().enumerate().any(|(index, left)| {
-                    holes[index + 1..].iter().any(|right| {
-                        point_distance(left.center, right.center)
-                            < left.radius + right.radius - sampling_tolerance
-                    })
+    let (outer, holes) = if polygons.is_empty() {
+        if circles.is_empty() {
+            return None;
+        }
+        let (outer, holes) = circular_outer_and_holes(&circles, tolerance)?;
+        (
+            PlanarOuter::Circle(outer),
+            holes.into_iter().map(PlanarHole::Circle).collect(),
+        )
+    } else {
+        let outer_candidates = polygons
+            .iter()
+            .enumerate()
+            .filter(|(index, outer)| {
+                polygons
+                    .iter()
+                    .enumerate()
+                    .filter(|(inner_index, _)| index != inner_index)
+                    .all(|(_, inner)| polygon_inside_polygon(inner, outer, sampling_tolerance))
+                    && circles
+                        .iter()
+                        .all(|circle| circle_inside_polygon(outer, *circle, sampling_tolerance))
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let [outer_index] = outer_candidates.as_slice() else {
+            return None;
+        };
+        let outer_polygon = &polygons[*outer_index];
+        let polygon_holes = polygons
+            .iter()
+            .enumerate()
+            .filter_map(|(index, polygon)| (index != *outer_index).then_some(polygon))
+            .collect::<Vec<_>>();
+        if polygon_holes
+            .iter()
+            .any(|hole| !polygon_inside_polygon(hole, outer_polygon, sampling_tolerance))
+            || polygon_holes.iter().enumerate().any(|(index, left)| {
+                polygon_holes[index + 1..]
+                    .iter()
+                    .any(|right| polygons_overlap(left, right, sampling_tolerance))
+            })
+            || polygon_holes.iter().any(|polygon| {
+                circles
+                    .iter()
+                    .any(|circle| circle_overlaps_polygon(*circle, polygon, sampling_tolerance))
+            })
+            || circles.iter().enumerate().any(|(index, left)| {
+                circles[index + 1..].iter().any(|right| {
+                    point_distance(left.center, right.center)
+                        < left.radius + right.radius - sampling_tolerance
                 })
-            {
-                return None;
-            }
-            (PlanarOuter::Polygon(outer.clone()), holes.to_vec())
+            })
+        {
+            return None;
         }
-        ([], circles) if !circles.is_empty() => {
-            let (outer, holes) = circular_outer_and_holes(circles, tolerance)?;
-            (PlanarOuter::Circle(outer), holes)
-        }
-        _ => return None,
+        let mut holes = circles
+            .into_iter()
+            .map(PlanarHole::Circle)
+            .collect::<Vec<_>>();
+        holes.extend(
+            polygon_holes
+                .into_iter()
+                .map(|polygon| PlanarHole::polygon(polygon.clone(), sampling_tolerance))
+                .collect::<Option<Vec<_>>>()?,
+        );
+        (PlanarOuter::Polygon(outer_polygon.clone()), holes)
     };
     Some(PlanarTrim {
         frame,
@@ -1461,7 +1573,7 @@ fn planar_hole_trim(
     (!holes.is_empty()).then_some(PlanarTrim {
         frame,
         outer: None,
-        holes,
+        holes: holes.into_iter().map(PlanarHole::Circle).collect(),
         boundary_tolerance: 0.0,
     })
 }
@@ -1900,17 +2012,21 @@ fn signed_area_twice(left: Point2, middle: Point2, right: Point2) -> f64 {
     (middle.u - left.u) * (right.v - middle.v) - (middle.v - left.v) * (right.u - middle.u)
 }
 
-fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
-    if polygon.len() < 3 {
-        return false;
-    }
-    let area = (0..polygon.len())
+fn polygon_area_twice(polygon: &[Point2]) -> f64 {
+    (0..polygon.len())
         .map(|index| {
             let left = polygon[index];
             let right = polygon[(index + 1) % polygon.len()];
             left.u * right.v - left.v * right.u
         })
-        .sum::<f64>();
+        .sum()
+}
+
+fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+    let area = polygon_area_twice(polygon);
     if !area.is_finite() || area.abs() <= tolerance * tolerance {
         return false;
     }
@@ -1931,6 +2047,87 @@ fn is_simple_polygon(polygon: &[Point2], tolerance: f64) -> bool {
         }
     }
     true
+}
+
+fn triangulate_polygon(polygon: &[Point2], tolerance: f64) -> Option<Vec<[Point2; 3]>> {
+    if !is_simple_polygon(polygon, tolerance)
+        || !polygon
+            .iter()
+            .all(|point| point.u.is_finite() && point.v.is_finite())
+    {
+        return None;
+    }
+    let orientation = polygon_area_twice(polygon).signum();
+    let mut remaining = (0..polygon.len()).collect::<Vec<_>>();
+    let mut triangles = Vec::with_capacity(polygon.len() - 2);
+    while remaining.len() > 3 {
+        let ear_position = (0..remaining.len()).find(|position| {
+            let previous_position = (position + remaining.len() - 1) % remaining.len();
+            let next_position = (position + 1) % remaining.len();
+            let previous = polygon[remaining[previous_position]];
+            let current = polygon[remaining[*position]];
+            let next = polygon[remaining[next_position]];
+            let scale = point_distance(previous, current)
+                .max(point_distance(current, next))
+                .max(1.0);
+            let cross = signed_area_twice(previous, current, next);
+            if !cross.is_finite() || orientation * cross <= tolerance * scale {
+                return false;
+            }
+            if remaining.iter().enumerate().any(|(edge_position, _)| {
+                let edge_next_position = (edge_position + 1) % remaining.len();
+                if edge_position == previous_position
+                    || edge_position == *position
+                    || edge_position == next_position
+                    || edge_next_position == previous_position
+                    || edge_next_position == *position
+                    || edge_next_position == next_position
+                {
+                    return false;
+                }
+                segments_intersect(
+                    previous,
+                    next,
+                    polygon[remaining[edge_position]],
+                    polygon[remaining[edge_next_position]],
+                    tolerance,
+                )
+            }) {
+                return false;
+            }
+            let triangle = [previous, current, next];
+            !remaining.iter().enumerate().any(|(other_position, index)| {
+                other_position != previous_position
+                    && other_position != *position
+                    && other_position != next_position
+                    && polygon_strictly_contains(&triangle, polygon[*index], tolerance)
+            })
+        });
+        let position = ear_position?;
+        let previous_position = (position + remaining.len() - 1) % remaining.len();
+        let next_position = (position + 1) % remaining.len();
+        triangles.push([
+            polygon[remaining[previous_position]],
+            polygon[remaining[position]],
+            polygon[remaining[next_position]],
+        ]);
+        remaining.remove(position);
+    }
+    let final_triangle = remaining
+        .into_iter()
+        .map(|index| polygon[index])
+        .collect::<Vec<_>>();
+    let [first, second, third] = final_triangle.as_slice() else {
+        return None;
+    };
+    let scale = point_distance(*first, *second)
+        .max(point_distance(*second, *third))
+        .max(point_distance(*third, *first))
+        .max(1.0);
+    (signed_area_twice(*first, *second, *third).abs() > tolerance * scale).then(|| {
+        triangles.push([*first, *second, *third]);
+        triangles
+    })
 }
 
 fn segments_intersect(
@@ -2001,6 +2198,90 @@ fn polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
         }
     }
     inside
+}
+
+fn polygon_strictly_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
+    polygon_contains(polygon, point, tolerance)
+        && !polygon.iter().enumerate().any(|(index, start)| {
+            point_segment_distance(point, *start, polygon[(index + 1) % polygon.len()]) <= tolerance
+        })
+}
+
+fn polygon_inside_polygon(inner: &[Point2], outer: &[Point2], tolerance: f64) -> bool {
+    is_simple_polygon(inner, tolerance)
+        && is_simple_polygon(outer, tolerance)
+        && inner
+            .iter()
+            .all(|point| polygon_contains(outer, *point, tolerance))
+        && !inner.iter().enumerate().any(|(left_index, left)| {
+            outer.iter().enumerate().any(|(right_index, right)| {
+                segments_intersect(
+                    *left,
+                    inner[(left_index + 1) % inner.len()],
+                    *right,
+                    outer[(right_index + 1) % outer.len()],
+                    tolerance,
+                )
+            })
+        })
+}
+
+fn polygons_overlap(first: &[Point2], second: &[Point2], tolerance: f64) -> bool {
+    first.iter().enumerate().any(|(first_index, first_start)| {
+        second
+            .iter()
+            .enumerate()
+            .any(|(second_index, second_start)| {
+                segments_intersect(
+                    *first_start,
+                    first[(first_index + 1) % first.len()],
+                    *second_start,
+                    second[(second_index + 1) % second.len()],
+                    tolerance,
+                )
+            })
+    }) || first
+        .iter()
+        .any(|point| polygon_strictly_contains(second, *point, tolerance))
+        || second
+            .iter()
+            .any(|point| polygon_strictly_contains(first, *point, tolerance))
+}
+
+fn triangles_have_positive_overlap(
+    first: [Point2; 3],
+    second: [Point2; 3],
+    tolerance: f64,
+) -> bool {
+    for triangle in [first, second] {
+        for index in 0..triangle.len() {
+            let start = triangle[index];
+            let end = triangle[(index + 1) % triangle.len()];
+            let length = point_distance(start, end);
+            if !length.is_finite() || length <= f64::EPSILON {
+                return false;
+            }
+            let axis = Point2::new((start.v - end.v) / length, (end.u - start.u) / length);
+            let first_projection = triangle_projection(first, axis);
+            let second_projection = triangle_projection(second, axis);
+            let overlap = first_projection.1.min(second_projection.1)
+                - first_projection.0.max(second_projection.0);
+            if !overlap.is_finite() || overlap <= tolerance {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn triangle_projection(triangle: [Point2; 3], axis: Point2) -> (f64, f64) {
+    triangle
+        .into_iter()
+        .map(|point| point.u * axis.u + point.v * axis.v)
+        .fold(
+            (f64::INFINITY, f64::NEG_INFINITY),
+            |(minimum, maximum), value| (minimum.min(value), maximum.max(value)),
+        )
 }
 
 fn convex_polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
@@ -2134,6 +2415,20 @@ fn triangle_crosses_hole(
                 (point_distance(*point, boundary.center) - boundary.radius).abs() <= tolerance
             })
     })
+}
+
+fn circle_overlaps_polygon(circle: CircularHole, polygon: &[Point2], tolerance: f64) -> bool {
+    polygon_strictly_contains(polygon, circle.center, tolerance)
+        || polygon
+            .iter()
+            .any(|point| point_distance(*point, circle.center) < circle.radius + tolerance)
+        || (0..polygon.len()).any(|index| {
+            point_segment_distance(
+                circle.center,
+                polygon[index],
+                polygon[(index + 1) % polygon.len()],
+            ) < circle.radius + tolerance
+        })
 }
 
 fn analytic_surface_normal(surface: &SurfaceGeometry, point: Point3) -> Option<Vector3> {

@@ -1281,10 +1281,10 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
             Point2::new(3.0, 3.0),
             Point2::new(-3.0, 3.0),
         ])),
-        holes: vec![CircularHole {
+        holes: vec![PlanarHole::Circle(CircularHole {
             center: Point2::new(0.0, 0.0),
             radius: 1.0,
-        }],
+        })],
         boundary_tolerance: 0.0,
     };
     let mesh = |vertices, triangle| Tessellation {
@@ -1329,6 +1329,131 @@ fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
         &crossing,
         cadmpeg_ir::transform::Transform::identity(),
         1.0e-9
+    ));
+}
+
+#[test]
+fn polygonal_planar_hole_excludes_inner_face_mesh() {
+    let trim = PlanarTrim {
+        frame: PlaneFrame {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            v_axis: Vector3::new(0.0, 1.0, 0.0),
+        },
+        outer: Some(PlanarOuter::Polygon(vec![
+            Point2::new(-4.0, -4.0),
+            Point2::new(4.0, -4.0),
+            Point2::new(4.0, 4.0),
+            Point2::new(-4.0, 4.0),
+        ])),
+        holes: vec![PlanarHole::polygon(
+            vec![
+                Point2::new(-2.0, -2.0),
+                Point2::new(2.0, -2.0),
+                Point2::new(2.0, 2.0),
+                Point2::new(-2.0, 2.0),
+            ],
+            EPS_DISPLAY_QUANTIZATION,
+        )
+        .unwrap()],
+        boundary_tolerance: 0.0,
+    };
+    let mesh = |vertices, triangles| Tessellation {
+        id: "mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices,
+        triangles,
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    };
+    let inner_face = mesh(
+        vec![
+            Point3::new(-2.0, -2.0, 0.0),
+            Point3::new(2.0, -2.0, 0.0),
+            Point3::new(2.0, 2.0, 0.0),
+            Point3::new(-2.0, 2.0, 0.0),
+        ],
+        vec![[0, 1, 2], [0, 2, 3]],
+    );
+    let outer_face = mesh(
+        vec![
+            Point3::new(-4.0, -4.0, 0.0),
+            Point3::new(-3.0, -4.0, 0.0),
+            Point3::new(-4.0, -3.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+    );
+    let exterior_boundary_chord = mesh(
+        vec![
+            Point3::new(-2.0, -2.0, 0.0),
+            Point3::new(2.0, -2.0, 0.0),
+            Point3::new(0.0, -4.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+    );
+    let interior_boundary_chord = mesh(
+        vec![
+            Point3::new(-2.0, -2.0, 0.0),
+            Point3::new(2.0, -2.0, 0.0),
+            Point3::new(4.0, 4.0, 0.0),
+        ],
+        vec![[0, 1, 2]],
+    );
+
+    assert!(!trim.contains_mesh(
+        &inner_face,
+        cadmpeg_ir::transform::Transform::identity(),
+        EPS_DISPLAY_QUANTIZATION
+    ));
+    assert!(trim.contains_mesh(
+        &outer_face,
+        cadmpeg_ir::transform::Transform::identity(),
+        EPS_DISPLAY_QUANTIZATION
+    ));
+    assert!(trim.contains_mesh(
+        &exterior_boundary_chord,
+        cadmpeg_ir::transform::Transform::identity(),
+        EPS_DISPLAY_QUANTIZATION
+    ));
+    assert!(!trim.contains_mesh(
+        &interior_boundary_chord,
+        cadmpeg_ir::transform::Transform::identity(),
+        EPS_DISPLAY_QUANTIZATION
+    ));
+}
+
+#[test]
+fn mixed_planar_holes_reject_overlap() {
+    let polygon = vec![
+        Point2::new(-2.0, -2.0),
+        Point2::new(2.0, -2.0),
+        Point2::new(2.0, 2.0),
+        Point2::new(-2.0, 2.0),
+    ];
+    assert!(circle_overlaps_polygon(
+        CircularHole {
+            center: Point2::new(0.0, 0.0),
+            radius: 1.0,
+        },
+        &polygon,
+        EPS_DISPLAY_QUANTIZATION
+    ));
+    assert!(!circle_overlaps_polygon(
+        CircularHole {
+            center: Point2::new(4.0, 0.0),
+            radius: 1.0,
+        },
+        &polygon,
+        EPS_DISPLAY_QUANTIZATION
     ));
 }
 
@@ -1590,6 +1715,7 @@ fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
         Point2::new(0.0, 2.0),
     ];
     assert!(is_simple_polygon(&concave, CONTAINMENT_TOLERANCE));
+    assert!(PlanarHole::polygon(concave.clone(), CONTAINMENT_TOLERANCE).is_some());
     assert!(polygon_contains(
         &concave,
         Point2::new(1.0, 1.0),
