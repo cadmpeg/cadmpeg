@@ -9,7 +9,7 @@ use super::{
     section_skamp_is_arc, section_skamp_is_line, section_skamp_is_point, section_skamp_line_pair,
     section_skamp_locus, section_skamp_midpoint, section_skamp_oriented_line,
     section_skamp_point_locus, section_skamp_same_coordinate, section_skamp_same_coordinate_axis,
-    section_skamp_tangent_loci,
+    section_skamp_tangent_loci, unique_bounded_curve_segment,
 };
 use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::sketches::{
@@ -380,6 +380,16 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             native_constraint()?
                         }
                     }
+                    (33, [item])
+                        if skamp.flags == 34
+                            && item.sense == 10
+                            && unique_bounded_curve_segment(definition, item.entity_id)
+                                .is_some() =>
+                    {
+                        SketchConstraintDefinition::Fixed {
+                            entity: sketch_entity_id(sketch, item.entity_id),
+                        }
+                    }
                     (14, [axis, first, second])
                         if axis.sense == 0
                             && section_skamp_is_line(definition, axis)
@@ -552,6 +562,8 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
         SketchConstraintDefinition::SameCoordinate { first, second, .. }
         | SketchConstraintDefinition::TangentLoci { first, second }
         | SketchConstraintDefinition::DistanceLoci { first, second, .. }
+        | SketchConstraintDefinition::DistanceLociValue { first, second, .. }
+        | SketchConstraintDefinition::MidpointCoordinate { first, second, .. }
         | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
         | SketchConstraintDefinition::VerticalDistance { first, second, .. }
         | SketchConstraintDefinition::HorizontalLoci { first, second }
@@ -562,9 +574,12 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
         | SketchConstraintDefinition::PointOnObject { point, entity } => {
             locus_compatible(point) && geometry.contains_key(entity)
         }
-        SketchConstraintDefinition::Symmetric { first, second, .. } => {
-            locus_compatible(first) && locus_compatible(second)
-        }
+        SketchConstraintDefinition::PointCoordinateValues { point, .. } => locus_compatible(point),
+        SketchConstraintDefinition::Symmetric {
+            first,
+            second,
+            axis,
+        } => locus_compatible(first) && locus_compatible(second) && geometry.contains_key(axis),
         SketchConstraintDefinition::PointSymmetric {
             first,
             second,
@@ -573,8 +588,103 @@ pub(in super::super) fn sketch_constraint_loci_compatible_with_policy(
         SketchConstraintDefinition::SnellsLaw {
             incident,
             refracted,
+            interface,
             ..
-        } => locus_compatible(incident) && locus_compatible(refracted),
+        } => {
+            locus_compatible(incident)
+                && locus_compatible(refracted)
+                && geometry.contains_key(interface)
+        }
+        SketchConstraintDefinition::Concentric { first, second }
+        | SketchConstraintDefinition::Coradial { first, second }
+        | SketchConstraintDefinition::Collinear { first, second }
+        | SketchConstraintDefinition::ProjectedCopy {
+            source: first,
+            result: second,
+        }
+        | SketchConstraintDefinition::Parallel { first, second }
+        | SketchConstraintDefinition::Perpendicular { first, second }
+        | SketchConstraintDefinition::Tangent { first, second }
+        | SketchConstraintDefinition::Equal { first, second }
+        | SketchConstraintDefinition::Angle { first, second, .. } => {
+            geometry.contains_key(first) && geometry.contains_key(second)
+        }
+        SketchConstraintDefinition::Horizontal { entity }
+        | SketchConstraintDefinition::Vertical { entity }
+        | SketchConstraintDefinition::Fixed { entity }
+        | SketchConstraintDefinition::Radius { entity, .. }
+        | SketchConstraintDefinition::Diameter { entity, .. }
+        | SketchConstraintDefinition::ArcAngle { entity, .. }
+        | SketchConstraintDefinition::EllipseAngle { entity, .. } => geometry.contains_key(entity),
+        SketchConstraintDefinition::AtIntersection {
+            point,
+            first,
+            second,
+        } => {
+            locus_compatible(point) && geometry.contains_key(first) && geometry.contains_key(second)
+        }
         _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sketch_constraint_loci_compatible_with_policy;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchLocus,
+    };
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn typed_entity_relations_require_every_entity_in_the_emitted_geometry() {
+        let first = SketchEntityId("synthetic:test:relation#first".into());
+        let second = SketchEntityId("synthetic:test:relation#second".into());
+        let axis = SketchEntityId("synthetic:test:relation#axis".into());
+        let geometry = BTreeMap::from([
+            (
+                first.clone(),
+                SketchGeometry::Point {
+                    position: Point2::new(0.0, 0.0),
+                },
+            ),
+            (
+                second.clone(),
+                SketchGeometry::Point {
+                    position: Point2::new(1.0, 0.0),
+                },
+            ),
+        ]);
+        let symmetry = SketchConstraintDefinition::Symmetric {
+            first: SketchLocus::Entity(first.clone()),
+            second: SketchLocus::Entity(second.clone()),
+            axis: axis.clone(),
+        };
+        assert!(!sketch_constraint_loci_compatible_with_policy(
+            &symmetry, &geometry, false,
+        ));
+
+        let projected = SketchConstraintDefinition::ProjectedCopy {
+            source: first.clone(),
+            result: axis.clone(),
+        };
+        assert!(!sketch_constraint_loci_compatible_with_policy(
+            &projected, &geometry, false,
+        ));
+
+        let mut complete = geometry;
+        complete.insert(
+            axis.clone(),
+            SketchGeometry::ReferenceLine {
+                origin: Point2::new(0.0, 0.0),
+                direction: Point2::new(0.0, 1.0),
+            },
+        );
+        assert!(sketch_constraint_loci_compatible_with_policy(
+            &symmetry, &complete, false,
+        ));
+        assert!(sketch_constraint_loci_compatible_with_policy(
+            &projected, &complete, false,
+        ));
     }
 }

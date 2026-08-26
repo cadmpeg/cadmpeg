@@ -3,13 +3,17 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::ids::SurfaceId;
 
 use crate::container::ContainerScan;
 
 use super::super::holes::plane_envelope_corners;
 use super::super::sketch::normalized;
-use super::super::surfaces::intersect_plane_with_carrier_components;
+use super::super::surfaces::{
+    fc05_cap_pair_model_frame, fc05_model_frame, intersect_plane_with_carrier_components,
+};
 
 use super::edges::nurbs_intrinsic_parameter_range;
 use super::equations::{
@@ -23,6 +27,11 @@ const EPS_POINT_UNIQUE: f64 = 1.0e-7;
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_ORTHO: f64 = 1.0e-10;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
+const EPS_STORED_FRAME_NONZERO: f64 = 1.0e-6;
+const EPS_STORED_FRAME_RELATIVE: f64 = 1.0e-9;
+const EPS_FC05_TANGENT_AXIS: f64 = 1.0e-10;
+const EPS_FC05_TANGENT_RESIDUAL: f64 = 1.0e-9;
+const EPS_FC05_CAP_AXIS: f64 = 1.0e-9;
 
 pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
     match carrier {
@@ -116,10 +125,22 @@ pub fn tangent_plane_sphere_point(
     }))
 }
 
-pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct CarrierSolveDiagnostics {
+    pub pair_intersections: usize,
+    pub triple_intersections: usize,
+    pub valid_candidates: usize,
+    pub unique_solutions: usize,
+}
+
+pub fn solve_carriers_with_diagnostics(
+    carriers: &[CarrierEquation],
+) -> (Option<[f64; 3]>, CarrierSolveDiagnostics) {
     let mut candidates = Vec::new();
+    let mut diagnostics = CarrierSolveDiagnostics::default();
     for first in 0..carriers.len() {
         for second in first + 1..carriers.len() {
+            let candidate_start = candidates.len();
             match (carriers[first], carriers[second]) {
                 (CarrierEquation::Plane(plane), CarrierEquation::Sphere(sphere))
                 | (CarrierEquation::Sphere(sphere), CarrierEquation::Plane(plane)) => {
@@ -134,11 +155,13 @@ pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                 }
                 _ => {}
             }
+            diagnostics.pair_intersections += candidates.len() - candidate_start;
         }
     }
     for first in 0..carriers.len() {
         for second in first + 1..carriers.len() {
             for third in second + 1..carriers.len() {
+                let candidate_start = candidates.len();
                 let triple = [carriers[first], carriers[second], carriers[third]];
                 let mut planes = Vec::new();
                 let mut cylinders = Vec::new();
@@ -254,6 +277,7 @@ pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                         ));
                     }
                 }
+                diagnostics.triple_intersections += candidates.len() - candidate_start;
             }
         }
     }
@@ -262,6 +286,7 @@ pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
             .iter()
             .all(|carrier| point_on_carrier(*point, *carrier))
     });
+    diagnostics.valid_candidates = candidates.len();
     let mut unique = Vec::<[f64; 3]>::new();
     for candidate in candidates {
         if !unique.iter().any(|known| {
@@ -273,10 +298,17 @@ pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
             unique.push(candidate);
         }
     }
-    let [point] = unique.as_slice() else {
-        return None;
+    diagnostics.unique_solutions = unique.len();
+    let point = match unique.as_slice() {
+        [point] => Some(*point),
+        _ => None,
     };
-    Some(*point)
+    (point, diagnostics)
+}
+
+#[cfg(test)]
+pub fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
+    solve_carriers_with_diagnostics(carriers).0
 }
 
 pub fn is_axis_aligned(vector: [f64; 3]) -> bool {
@@ -328,6 +360,38 @@ pub fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
                 && (first_distance - distance).abs() <= EPS_AGREE * scale
         })
         .then_some(first)
+}
+
+pub fn reconciled_model_plane(
+    local_planes: &BTreeMap<u32, PlaneEquation>,
+    ir: &CadIr,
+    surface_id: u32,
+) -> Option<PlaneEquation> {
+    let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+    let model_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.id == model_id)
+        .collect::<Vec<_>>();
+    let model_plane = match model_surfaces.as_slice() {
+        [] => None,
+        [surface] => match &surface.geometry {
+            SurfaceGeometry::Plane { origin, normal, .. } => Some(PlaneEquation {
+                origin: [origin.x, origin.y, origin.z],
+                normal: [normal.x, normal.y, normal.z],
+            }),
+            SurfaceGeometry::Unknown { .. } => None,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    match (local_planes.get(&surface_id).copied(), model_plane) {
+        (Some(local), Some(model)) => agreed_plane(&[local, model]),
+        (Some(local), None) => Some(local),
+        (None, Some(model)) => Some(model),
+        (None, None) => None,
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -394,7 +458,945 @@ pub fn agreed_plane_surface(
         ))
 }
 
+fn stored_parameter_normal_candidate(
+    frame: &crate::surface::PlaneLocalSystem,
+    mirror_z: bool,
+    mirror_origin_z: bool,
+) -> Option<PlaneCandidate> {
+    let slots: [f64; 12] = frame
+        .slots
+        .iter()
+        .copied()
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()?;
+    if slots[3..6].iter().any(|value| *value != 0.0) {
+        return None;
+    }
+    let mut origin: [f64; 3] = slots[9..12].try_into().ok()?;
+    let mut u_axis: [f64; 3] = slots[0..3].try_into().ok()?;
+    let mut normal: [f64; 3] = slots[6..9].try_into().ok()?;
+    if mirror_z {
+        u_axis[2] = -u_axis[2];
+        normal[2] = -normal[2];
+    }
+    if mirror_origin_z {
+        origin[2] = -origin[2];
+    }
+    let u_magnitude = dot(u_axis, u_axis).sqrt();
+    let normal_magnitude = dot(normal, normal).sqrt();
+    let scale = u_magnitude.max(normal_magnitude).max(1.0);
+    if !u_magnitude.is_finite()
+        || !normal_magnitude.is_finite()
+        || u_magnitude <= EPS_STORED_FRAME_NONZERO
+        || normal_magnitude <= EPS_STORED_FRAME_NONZERO
+        || (u_magnitude - normal_magnitude).abs() > EPS_STORED_FRAME_RELATIVE * scale
+        || dot(u_axis, normal).abs() > EPS_STORED_FRAME_RELATIVE * u_magnitude * normal_magnitude
+    {
+        return None;
+    }
+    u_axis = u_axis.map(|value| value / u_magnitude);
+    normal = normal.map(|value| value / normal_magnitude);
+    Some(PlaneCandidate {
+        equation: PlaneEquation { origin, normal },
+        chart: Some(PlaneChart {
+            origin,
+            normal,
+            u_axis,
+        }),
+        offset: frame.offset,
+    })
+}
+
+fn stored_parameter_origin_sign_candidates(base: PlaneCandidate) -> Vec<PlaneCandidate> {
+    let nonzero_axes = base
+        .equation
+        .origin
+        .into_iter()
+        .enumerate()
+        .filter_map(|(axis, value)| {
+            (value.abs() > EPS_STORED_FRAME_NONZERO
+                && base.equation.normal[axis].abs() > EPS_STORED_FRAME_NONZERO)
+                .then_some(axis)
+        })
+        .collect::<Vec<_>>();
+    if nonzero_axes.is_empty() {
+        return vec![base];
+    }
+    let mut candidates = Vec::with_capacity(1usize << nonzero_axes.len());
+    for mask in 0..(1usize << nonzero_axes.len()) {
+        let mut candidate = base;
+        for (bit, axis) in nonzero_axes.iter().copied().enumerate() {
+            if mask & (1usize << bit) == 0 {
+                continue;
+            }
+            candidate.equation.origin[axis] = -candidate.equation.origin[axis];
+            if let Some(chart) = &mut candidate.chart {
+                chart.origin[axis] = -chart.origin[axis];
+            }
+        }
+        if candidate
+            .equation
+            .origin
+            .iter()
+            .all(|value| value.is_finite())
+        {
+            candidates.push(candidate);
+        }
+    }
+    candidates
+}
+
+fn stored_parameter_normal_candidates_with_origin_branches(
+    frame: &crate::surface::PlaneLocalSystem,
+    include_origin_z_branches: bool,
+) -> Option<Vec<PlaneCandidate>> {
+    if frame.classification == crate::surface::LocalSystemClassification::Simple {
+        return None;
+    }
+    let slots: [f64; 12] = frame
+        .slots
+        .iter()
+        .copied()
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()?;
+    if slots[3..6].iter().any(|value| *value != 0.0) {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    let origin_branches: &[bool] = if include_origin_z_branches {
+        &[false, true]
+    } else {
+        &[false]
+    };
+    for mirror_z in [false, true] {
+        for mirror_origin_z in origin_branches {
+            let candidate = stored_parameter_normal_candidate(frame, mirror_z, *mirror_origin_z)?;
+            if !candidates
+                .iter()
+                .any(|known| plane_candidates_equivalent(*known, candidate))
+            {
+                candidates.push(candidate);
+            }
+        }
+    }
+    (candidates.len() > 1).then_some(candidates)
+}
+
+pub(crate) fn stored_parameter_normal_candidates(
+    frame: &crate::surface::PlaneLocalSystem,
+) -> Option<Vec<PlaneCandidate>> {
+    stored_parameter_normal_candidates_with_origin_branches(frame, false)
+}
+
+fn coordinate_vectors_agree(first: [f64; 3], second: [f64; 3]) -> bool {
+    first.into_iter().zip(second).all(|(first, second)| {
+        (first - second).abs() <= EPS_AGREE * first.abs().max(second.abs()).max(1.0)
+    })
+}
+
+fn plane_candidates_equivalent(first: PlaneCandidate, second: PlaneCandidate) -> bool {
+    agreed_plane(&[first.equation, second.equation]).is_some()
+        && match (first.chart, second.chart) {
+            (Some(first), Some(second)) => {
+                coordinate_vectors_agree(first.origin, second.origin)
+                    && coordinate_vectors_agree(first.normal, second.normal)
+                    && coordinate_vectors_agree(first.u_axis, second.u_axis)
+            }
+            (None, None) => true,
+            _ => false,
+        }
+}
+
+fn plane_chart_point(candidate: PlaneCandidate, uv: [f64; 2]) -> Option<[f64; 3]> {
+    let chart = candidate.chart?;
+    let normal = normalized(chart.normal)?;
+    let u_axis = normalized(chart.u_axis)?;
+    (dot(normal, u_axis).abs() <= EPS_ORTHO).then_some(())?;
+    let v_axis = cross(normal, u_axis);
+    let point = std::array::from_fn(|axis| {
+        chart.origin[axis] + uv[0] * u_axis[axis] + uv[1] * v_axis[axis]
+    });
+    point.iter().all(|value| value.is_finite()).then_some(point)
+}
+
+fn pcurve_candidate_endpoint_witness(
+    candidate: PlaneCandidate,
+    adjacent: PlaneCandidate,
+    endpoints: [[f64; 2]; 2],
+) -> bool {
+    if candidate.chart.is_none() {
+        return false;
+    }
+    let Some(adjacent_normal) = normalized(adjacent.equation.normal) else {
+        return false;
+    };
+    let Some(candidate_normal) = normalized(candidate.equation.normal) else {
+        return false;
+    };
+    let cross_normals = cross(candidate_normal, adjacent_normal);
+    if dot(cross_normals, cross_normals) <= EPS_ORTHO * EPS_ORTHO {
+        return false;
+    }
+    let Some(points) = endpoints
+        .map(|uv| plane_chart_point(candidate, uv))
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    if model_points_agree(points[0], points[1]) {
+        return false;
+    }
+    points
+        .into_iter()
+        .all(|point| point_on_carrier(point, CarrierEquation::Plane(adjacent.equation)))
+}
+
+fn pcurve_candidates_agree(
+    first: PlaneCandidate,
+    second: PlaneCandidate,
+    endpoint_sets: [[[f64; 2]; 2]; 2],
+) -> bool {
+    pcurve_candidate_endpoint_witness(first, second, endpoint_sets[0])
+        || pcurve_candidate_endpoint_witness(second, first, endpoint_sets[1])
+}
+
+#[derive(Clone, Copy)]
+struct PlaneBranchConstraint {
+    faces: [u32; 2],
+    endpoint_sets: [[[f64; 2]; 2]; 2],
+}
+
+fn stored_frame_branch_constraints(
+    scan: &ContainerScan,
+    domains: &BTreeMap<u32, Vec<PlaneCandidate>>,
+) -> Vec<PlaneBranchConstraint> {
+    let mut constraints = Vec::new();
+    let mut add = |faces: [u32; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+        if faces[0] == faces[1] {
+            return;
+        }
+        let (Some(first), Some(second)) = (domains.get(&faces[0]), domains.get(&faces[1])) else {
+            return;
+        };
+        let compatible = first
+            .iter()
+            .filter(|first| {
+                second
+                    .iter()
+                    .any(|second| pcurve_candidates_agree(**first, *second, endpoint_sets))
+            })
+            .count();
+        if compatible != 0 {
+            constraints.push(PlaneBranchConstraint {
+                faces,
+                endpoint_sets,
+            });
+        }
+    };
+    for pcurve in &scan.curves.pcurves {
+        add(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            ),
+        );
+    }
+    for pcurve in &scan.curves.bound_prototype_pcurves {
+        add(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            ),
+        );
+    }
+    for pcurve in &scan.curves.two_chart_pcurves {
+        let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
+            continue;
+        };
+        add(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                [first[0], last[0]],
+                [first[1], last[1]],
+            ),
+        );
+    }
+    constraints
+}
+
+fn fc05_cylinder_branch_witnesses(
+    scan: &ContainerScan,
+) -> BTreeMap<u32, Vec<super::equations::CylinderEquation>> {
+    let mut cylinder_frames = scan
+        .curves
+        .fc05_cylinder_cap_pairs
+        .iter()
+        .filter_map(|pair| {
+            let frame = fc05_cap_pair_model_frame(scan, pair)?;
+            let legacy = super::equations::CylinderEquation {
+                origin: frame.origin,
+                axis: frame.axis,
+                ref_direction: frame.ref_direction,
+                radius: pair.radius_mm,
+            };
+            Some((
+                pair.surface_id,
+                fc05_cylinder_model_witness(scan, pair.surface_id, legacy),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for circle in &scan.curves.fc05_circles {
+        let topologies = scan
+            .curves
+            .topology_rows
+            .iter()
+            .find(|row| row.id == circle.curve_id)
+            .into_iter()
+            .collect::<Vec<_>>();
+        let [topology] = topologies.as_slice() else {
+            continue;
+        };
+        let planes = topology
+            .faces
+            .into_iter()
+            .filter(|face| {
+                crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
+            })
+            .filter_map(|face| {
+                crate::surface::unique_outline_plane(&scan.planes.outlines, face)
+                    .map(|plane| (face, plane))
+            })
+            .collect::<Vec<_>>();
+        let cylinders = topology
+            .faces
+            .into_iter()
+            .filter(|face| {
+                crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+            })
+            .collect::<Vec<_>>();
+        let ([(_, cap)], [cylinder_id]) = (planes.as_slice(), cylinders.as_slice()) else {
+            continue;
+        };
+        let Some(axis_index) =
+            (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - EPS_FC05_CAP_AXIS)
+        else {
+            continue;
+        };
+        let (reference, axis_sign) = circle
+            .reference_direction_row_frame
+            .zip(circle.parameter_sign)
+            .map_or(
+                (
+                    circle.sample_direction_row_frame,
+                    cap.normal[axis_index].signum(),
+                ),
+                |(reference, parameter_sign)| (reference, -f64::from(parameter_sign)),
+            );
+        let (origin, axis, ref_direction) = fc05_model_frame(
+            axis_index,
+            cap.origin[axis_index],
+            circle.center_row_frame,
+            reference,
+            axis_sign,
+        );
+        if cylinder_frames.contains_key(cylinder_id) {
+            continue;
+        }
+        let legacy = super::equations::CylinderEquation {
+            origin,
+            axis,
+            ref_direction,
+            radius: circle.radius_mm,
+        };
+        let witness = fc05_cylinder_model_witness(scan, *cylinder_id, legacy);
+        cylinder_frames.insert(*cylinder_id, witness);
+    }
+
+    let mut witnesses = BTreeMap::<u32, Vec<super::equations::CylinderEquation>>::new();
+    for topology in &scan.curves.topology_rows {
+        let Some((cylinder_id, plane_id)) = topology.faces.into_iter().find_map(|first| {
+            let second = topology
+                .faces
+                .into_iter()
+                .find(|candidate| *candidate != first)?;
+            if cylinder_frames.contains_key(&first)
+                && crate::surface::unique_surface_row(&scan.surfaces.rows, second)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
+            {
+                Some((first, second))
+            } else if cylinder_frames.contains_key(&second)
+                && crate::surface::unique_surface_row(&scan.surfaces.rows, first)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
+            {
+                Some((second, first))
+            } else {
+                None
+            }
+        }) else {
+            continue;
+        };
+        let Some(cylinder) = cylinder_frames.get(&cylinder_id).copied() else {
+            continue;
+        };
+        let entries = witnesses.entry(plane_id).or_default();
+        if !entries.iter().any(|known| {
+            known.origin == cylinder.origin
+                && known.axis == cylinder.axis
+                && known.radius.to_bits() == cylinder.radius.to_bits()
+        }) {
+            entries.push(cylinder);
+        }
+    }
+    witnesses
+}
+
+/// Select an FC05 cylinder frame only when reference geometry improves the
+/// independent stored-plane tangency score. A validated cap pair remains the
+/// primary frame source; this witness does not turn an ID match into geometry.
+pub(crate) fn fc05_cylinder_model_witness(
+    scan: &ContainerScan,
+    cylinder_id: u32,
+    legacy: super::equations::CylinderEquation,
+) -> super::equations::CylinderEquation {
+    let curve_ids = scan
+        .curves
+        .fc05_circles
+        .iter()
+        .filter(|circle| {
+            scan.curves.topology_rows.iter().any(|topology| {
+                topology.id == circle.curve_id && topology.faces.contains(&cylinder_id)
+            })
+        })
+        .map(|circle| circle.curve_id)
+        .collect::<BTreeSet<_>>();
+    let circles = curve_ids
+        .iter()
+        .flat_map(|curve_id| {
+            scan.references
+                .circles
+                .iter()
+                .filter(move |circle| circle.entity_id == *curve_id)
+        })
+        .collect::<Vec<_>>();
+    let Some(frame) = fc05_reference_circle_frame(&circles) else {
+        return legacy;
+    };
+    if (frame.radius - legacy.radius).abs() > EPS_FC05_TANGENT_RESIDUAL
+        || dot(frame.axis, legacy.axis).abs() < 1.0 - EPS_FC05_TANGENT_AXIS
+    {
+        return legacy;
+    }
+    let legacy_score = fc05_tangent_plane_score(scan, cylinder_id, legacy);
+    let mut reference_origin = frame.origin;
+    if let Some(axis_index) = (0..3).find(|axis| legacy.axis[*axis].abs() > 1.0 - EPS_FC05_CAP_AXIS)
+    {
+        reference_origin[axis_index] = legacy.origin[axis_index];
+    }
+    let reference = super::equations::CylinderEquation {
+        origin: reference_origin,
+        axis: legacy.axis,
+        ref_direction: legacy.ref_direction,
+        radius: legacy.radius,
+    };
+    if fc05_tangent_plane_score(scan, cylinder_id, reference) > legacy_score {
+        reference
+    } else {
+        legacy
+    }
+}
+
+fn fc05_reference_circle_frame(
+    circles: &[&crate::reference::ReferenceCircle],
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    if let Some(frame) = super::super::surfaces::reference_circle_pair_cylinder_frame(circles) {
+        return Some(frame);
+    }
+    let [circle] = circles else {
+        return None;
+    };
+    if !circle.center_stored || !circle.radius.is_finite() || circle.radius <= 0.0 {
+        return None;
+    }
+    let axis = normalized(circle.axis)?;
+    let radial = std::array::from_fn(|index| circle.start[index] - circle.center[index]);
+    let end_radial = std::array::from_fn(|index| circle.end[index] - circle.center[index]);
+    let radial_length = dot(radial, radial).sqrt();
+    let end_radial_length = dot(end_radial, end_radial).sqrt();
+    let scale = circle
+        .center
+        .into_iter()
+        .chain(circle.start)
+        .chain(circle.end)
+        .map(f64::abs)
+        .fold(circle.radius.max(1.0), f64::max);
+    if !radial_length.is_finite()
+        || !end_radial_length.is_finite()
+        || (radial_length - circle.radius).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
+        || (end_radial_length - circle.radius).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
+        || dot(axis, radial).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
+        || dot(axis, end_radial).abs() > EPS_FC05_TANGENT_RESIDUAL * scale
+    {
+        return None;
+    }
+    Some(crate::surface::PositionalCylinderFrame {
+        origin: circle.center,
+        axis,
+        ref_direction: radial.map(|value| value / radial_length),
+        radius: circle.radius,
+        length: None,
+    })
+    .filter(crate::surface::PositionalCylinderFrame::is_valid)
+}
+
+fn fc05_tangent_plane_score(
+    scan: &ContainerScan,
+    cylinder_id: u32,
+    cylinder: super::equations::CylinderEquation,
+) -> usize {
+    scan.curves
+        .topology_rows
+        .iter()
+        .filter(|topology| topology.faces.contains(&cylinder_id))
+        .flat_map(|topology| topology.faces.into_iter())
+        .filter(|face_id| *face_id != cylinder_id)
+        .filter(|face_id| {
+            crate::surface::unique_surface_row(&scan.surfaces.rows, *face_id)
+                .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|plane_id| {
+            scan.planes
+                .local_systems
+                .iter()
+                .filter(|frame| frame.surface_id == *plane_id)
+                .filter_map(stored_parameter_normal_candidates)
+                .flatten()
+                .any(|candidate| plane_candidate_is_fc05_tangent(candidate, cylinder))
+        })
+        .count()
+}
+
+fn plane_candidate_is_fc05_tangent(
+    candidate: PlaneCandidate,
+    cylinder: super::equations::CylinderEquation,
+) -> bool {
+    let Some(normal) = normalized(candidate.equation.normal) else {
+        return false;
+    };
+    let Some(axis) = normalized(cylinder.axis) else {
+        return false;
+    };
+    if dot(normal, axis).abs() > EPS_FC05_TANGENT_AXIS {
+        return false;
+    }
+    let relative =
+        std::array::from_fn(|index| cylinder.origin[index] - candidate.equation.origin[index]);
+    let signed_distance = dot(normal, relative);
+    (signed_distance.abs() - cylinder.radius).abs()
+        <= EPS_FC05_TANGENT_RESIDUAL * cylinder.radius.max(1.0)
+}
+
+pub(crate) fn plane_candidate_pcurve_lies_on_carrier(
+    candidate: PlaneCandidate,
+    endpoints: [[f64; 2]; 2],
+    carrier: CarrierEquation,
+) -> bool {
+    let Some(points) = endpoints
+        .map(|uv| plane_chart_point(candidate, uv))
+        .into_iter()
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    !model_points_agree(points[0], points[1])
+        && points
+            .into_iter()
+            .all(|point| point_on_carrier(point, carrier))
+}
+
+fn native_positional_cylinder_carriers(scan: &ContainerScan) -> BTreeMap<u32, CarrierEquation> {
+    crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
+        .into_iter()
+        .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+        .filter_map(|row| {
+            let frame =
+                crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?
+                    .positional_cylinder_frame?;
+            Some((
+                row.id,
+                CarrierEquation::Cylinder(super::equations::CylinderEquation {
+                    origin: frame.origin,
+                    axis: frame.axis,
+                    ref_direction: frame.ref_direction,
+                    radius: frame.radius,
+                }),
+            ))
+        })
+        .collect()
+}
+
+fn select_stored_frame_carrier_pcurve_branches(
+    scan: &ContainerScan,
+    variable_domains: &BTreeMap<u32, Vec<PlaneCandidate>>,
+    domains: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
+) {
+    let carriers = native_positional_cylinder_carriers(scan);
+    let mut apply = |faces: [u32; 2], endpoint_sets: [[[f64; 2]; 2]; 2]| {
+        for face_index in 0..2 {
+            let plane_id = faces[face_index];
+            let Some(options) = variable_domains.get(&plane_id) else {
+                continue;
+            };
+            let Some(carrier) = carriers.get(&faces[1 - face_index]).copied() else {
+                continue;
+            };
+            let retained = options
+                .iter()
+                .copied()
+                .filter(|candidate| {
+                    plane_candidate_pcurve_lies_on_carrier(
+                        *candidate,
+                        endpoint_sets[face_index],
+                        carrier,
+                    )
+                })
+                .collect::<Vec<_>>();
+            if retained.len() == 1 {
+                domains.insert(plane_id, retained);
+            }
+        }
+    };
+    for pcurve in &scan.curves.pcurves {
+        apply(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            ),
+        );
+    }
+    for pcurve in &scan.curves.bound_prototype_pcurves {
+        apply(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            ),
+        );
+    }
+    for pcurve in &scan.curves.two_chart_pcurves {
+        let (Some(first), Some(last)) = (pcurve.samples.first(), pcurve.samples.last()) else {
+            continue;
+        };
+        apply(
+            pcurve.faces,
+            super::pcurves::canonicalized_pcurve_endpoints(
+                scan,
+                pcurve.faces,
+                [first[0], last[0]],
+                [first[1], last[1]],
+            ),
+        );
+    }
+}
+
+fn select_stored_frame_branches(
+    scan: &ContainerScan,
+    candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
+) {
+    let cylinder_witnesses = fc05_cylinder_branch_witnesses(scan);
+    let mut variable_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
+    let mut origin_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
+    for frame in &scan.planes.local_systems {
+        let Some(options) = stored_parameter_normal_candidates(frame) else {
+            continue;
+        };
+        if cylinder_witnesses.contains_key(&frame.surface_id) {
+            if let Some(origin_options) =
+                stored_parameter_normal_candidates_with_origin_branches(frame, true)
+            {
+                let known = origin_domains.entry(frame.surface_id).or_default();
+                for option in origin_options {
+                    if !known
+                        .iter()
+                        .any(|candidate| plane_candidates_equivalent(*candidate, option))
+                    {
+                        known.push(option);
+                    }
+                }
+            }
+        }
+        let known = variable_domains.entry(frame.surface_id).or_default();
+        for option in options {
+            if !known
+                .iter()
+                .any(|candidate| plane_candidates_equivalent(*candidate, option))
+            {
+                known.push(option);
+            }
+        }
+    }
+    for (surface_id, options) in origin_domains {
+        let Some(witnesses) = cylinder_witnesses.get(&surface_id) else {
+            continue;
+        };
+        let retained = options
+            .into_iter()
+            .filter(|candidate| {
+                witnesses
+                    .iter()
+                    .copied()
+                    .any(|cylinder| plane_candidate_is_fc05_tangent(*candidate, cylinder))
+            })
+            .collect::<Vec<_>>();
+        if retained.len() == 1 {
+            variable_domains.insert(surface_id, retained);
+        }
+    }
+    if variable_domains.is_empty() {
+        return;
+    }
+
+    let mut domains = variable_domains.clone();
+    select_stored_frame_carrier_pcurve_branches(scan, &variable_domains, &mut domains);
+    for (surface_id, options) in &variable_domains {
+        let Some(witnesses) = cylinder_witnesses.get(surface_id) else {
+            continue;
+        };
+        let retained = options
+            .iter()
+            .copied()
+            .filter(|candidate| {
+                witnesses
+                    .iter()
+                    .copied()
+                    .any(|cylinder| plane_candidate_is_fc05_tangent(*candidate, cylinder))
+            })
+            .collect::<Vec<_>>();
+        if retained.len() == 1 {
+            domains.insert(*surface_id, retained);
+        }
+    }
+    for (surface_id, known) in candidates.iter() {
+        let fixed = if known.len() == 1 {
+            known
+                .first()
+                .copied()
+                .filter(|candidate| candidate.chart.is_some())
+        } else {
+            agreed_plane_surface(known).map(|(equation, u_axis, offset)| PlaneCandidate {
+                equation,
+                chart: Some(PlaneChart {
+                    origin: equation.origin,
+                    normal: equation.normal,
+                    u_axis,
+                }),
+                offset,
+            })
+        };
+        if let Some(fixed) = fixed {
+            domains.entry(*surface_id).or_insert_with(|| vec![fixed]);
+        }
+    }
+    let constraints = stored_frame_branch_constraints(scan, &domains);
+
+    let variable_ids = variable_domains.keys().copied().collect::<BTreeSet<_>>();
+    let mut filtered = domains;
+    loop {
+        let mut changed = false;
+        for constraint in &constraints {
+            let Some(first) = filtered.get(&constraint.faces[0]).cloned() else {
+                continue;
+            };
+            let Some(second) = filtered.get(&constraint.faces[1]).cloned() else {
+                continue;
+            };
+            if variable_ids.contains(&constraint.faces[0]) {
+                let retained = first
+                    .into_iter()
+                    .filter(|first| {
+                        second.iter().any(|second| {
+                            pcurve_candidates_agree(*first, *second, constraint.endpoint_sets)
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if retained.is_empty() {
+                    continue;
+                }
+                changed |= retained.len() != filtered[&constraint.faces[0]].len();
+                filtered.insert(constraint.faces[0], retained);
+            }
+            if variable_ids.contains(&constraint.faces[1]) {
+                let Some(first) = filtered.get(&constraint.faces[0]).cloned() else {
+                    continue;
+                };
+                let retained = second
+                    .into_iter()
+                    .filter(|second| {
+                        first.iter().any(|first| {
+                            pcurve_candidates_agree(*first, *second, constraint.endpoint_sets)
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if retained.is_empty() {
+                    continue;
+                }
+                changed |= retained.len() != filtered[&constraint.faces[1]].len();
+                filtered.insert(constraint.faces[1], retained);
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    for surface_id in variable_ids {
+        let Some([candidate]) = filtered.get(&surface_id).map(Vec::as_slice) else {
+            continue;
+        };
+        candidates.insert(surface_id, vec![*candidate]);
+    }
+}
+
+fn round_edge_endpoint_plane_score(
+    candidate: PlaneCandidate,
+    envelopes: &[crate::surface::Type24RoundEdgeEnvelope],
+) -> usize {
+    envelopes
+        .iter()
+        .filter(|envelope| {
+            envelope.vertices.into_iter().any(|point| {
+                let scale = point
+                    .into_iter()
+                    .chain(candidate.equation.origin)
+                    .map(f64::abs)
+                    .fold(1.0, f64::max);
+                (dot(candidate.equation.normal, point)
+                    - dot(candidate.equation.normal, candidate.equation.origin))
+                .abs()
+                    <= EPS_ON_CARRIER * scale
+            })
+        })
+        .count()
+}
+
+pub(crate) fn unique_round_edge_origin_candidate(
+    candidates: &[PlaneCandidate],
+    envelopes: &[crate::surface::Type24RoundEdgeEnvelope],
+) -> Option<PlaneCandidate> {
+    let scores = candidates
+        .iter()
+        .copied()
+        .map(|candidate| {
+            (
+                candidate,
+                round_edge_endpoint_plane_score(candidate, envelopes),
+            )
+        })
+        .collect::<Vec<_>>();
+    let maximum = scores.iter().map(|(_, score)| *score).max()?;
+    (maximum > 0).then_some(())?;
+    let mut best = scores
+        .into_iter()
+        .filter_map(|(candidate, score)| (score == maximum).then_some(candidate));
+    let candidate = best.next()?;
+    best.next().is_none().then_some(candidate)
+}
+
+fn round_edge_envelopes_for_plane(
+    scan: &ContainerScan,
+    plane_id: u32,
+) -> Vec<crate::surface::Type24RoundEdgeEnvelope> {
+    let rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
+        .into_iter()
+        .map(|row| (row.id, row))
+        .collect::<BTreeMap<_, _>>();
+    crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
+        .into_iter()
+        .filter_map(|topology| {
+            let cylinder_id = topology.faces.into_iter().find(|face_id| {
+                *face_id != plane_id
+                    && rows.get(face_id).is_some_and(|row| {
+                        row.kind == crate::surface::SurfaceKind::Cylinder
+                            && row.type_byte == 0x24
+                            && crate::decode::sketch_transfer::feature_schema_class(
+                                scan,
+                                row.feature_id,
+                            ) == Some(913)
+                    })
+            })?;
+            if !topology.faces.contains(&plane_id) {
+                return None;
+            }
+            let record =
+                crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?;
+            record.type24_round_edge_envelope(0x24)
+        })
+        .collect()
+}
+
+fn select_round_edge_origin_branches(
+    scan: &ContainerScan,
+    candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
+) {
+    for frame in &scan.planes.local_systems {
+        if frame.classification != crate::surface::LocalSystemClassification::Simple {
+            continue;
+        }
+        let Some(existing) = candidates.get(&frame.surface_id) else {
+            continue;
+        };
+        let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
+        else {
+            continue;
+        };
+        let base = PlaneCandidate {
+            equation: PlaneEquation { origin, normal },
+            chart: Some(PlaneChart {
+                origin,
+                normal,
+                u_axis,
+            }),
+            offset: frame.offset,
+        };
+        if existing.len() != 1 || !plane_candidates_equivalent(existing[0], base) {
+            continue;
+        }
+        let envelopes = round_edge_envelopes_for_plane(scan, frame.surface_id);
+        let options = stored_parameter_origin_sign_candidates(base);
+        let Some(selected) = unique_round_edge_origin_candidate(&options, &envelopes) else {
+            continue;
+        };
+        candidates.insert(frame.surface_id, vec![selected]);
+    }
+}
+
 pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
+    let matrix_frame_ids = scan
+        .planes
+        .local_systems
+        .iter()
+        .filter(|frame| crate::surface::uses_matrix_column_frame(frame))
+        .map(|frame| frame.surface_id)
+        .collect::<BTreeSet<_>>();
     let held_planes = scan
         .planes
         .envelopes
@@ -470,6 +1472,9 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
         .map(|frame| frame.surface_id)
         .collect::<BTreeSet<_>>();
     for outline in &scan.planes.outlines {
+        if matrix_frame_ids.contains(&outline.surface_id) {
+            continue;
+        }
         candidates
             .entry(outline.surface_id)
             .or_default()
@@ -487,6 +1492,9 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
             });
     }
     for envelope in &scan.planes.envelopes {
+        if matrix_frame_ids.contains(&envelope.surface_id) {
+            continue;
+        }
         let Some(equation) = held_coordinate_plane(envelope) else {
             continue;
         };
@@ -519,6 +1527,8 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
             }],
         );
     }
+    select_stored_frame_branches(scan, &mut candidates);
+    select_round_edge_origin_branches(scan, &mut candidates);
     candidates
         .into_iter()
         .filter(|(id, _)| {

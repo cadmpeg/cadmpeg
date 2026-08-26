@@ -406,6 +406,34 @@ item = "cadmpeg_ir::codec::DecodeResult::{ir_mut,source_fidelity_mut}"
 reason = "edit guards restore canonical order before a mutated result can be read"
 
 [[change]]
+commit = "4c65315c49407d9557866ecc1cfe3723f9186022"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::{SketchDistancePair,SketchConstraintDefinition::EqualDistance}"
+reason = "Creo function 33 transfers equality of two endpoint-pair distances as a typed sketch relation"
+
+[[change]]
+commit = "cf9f7389c38cfa62d51608542d68f10d4e03b85d"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::PolarDistance"
+reason = "Creo function 0 transfers complete polar endpoint displacement as a typed sketch relation"
+
+[[change]]
+commit = "bdf272ab22500b5ad2b0c22704a0026488218cbf"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLociValue"
+reason = "Creo function 6 transfers fixed Euclidean locus distance as a typed sketch relation"
+
+[[change]]
+commit = "ca8f2d138a4e18a61ade036a5af1210602f96d3a"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::{PointCoordinateValues,MidpointCoordinate}"
+reason = "Creo functions 31 and 42 transfer coordinate-value and arithmetic-mean solver relations"
+
+[[change]]
 commit = "715b8c419c6dc2bfa579e516d9a4f10f7e8e9d3c"
 crate = "cadmpeg-core"
 kind = "deletion"
@@ -439,3 +467,17 @@ crate = "cadmpeg-core"
 kind = "signature"
 item = "cadmpeg_core::decode::View::utf16_le"
 reason = "sequential UTF-16LE reader paired with View::utf16le_at"
+
+[[change]]
+commit = "ad3eb0048"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::{SketchSolverScalar,SketchConstraintDefinition::AngleDifference}"
+reason = "Creo direct Function 16 angle differences transfer as typed solver-scalar sketch relations"
+
+[[change]]
+commit = "3d9ad9160"
+crate = "cadmpeg-ir"
+kind = "signature"
+item = "cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality"
+reason = "Creo direct Function 5 scalar equalities transfer as typed solver-scalar relations"

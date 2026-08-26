@@ -368,6 +368,92 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
 }
 
 #[test]
+fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id,
+        source_entity_id,
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: false,
+        offset: 0,
+        end_offset: 0,
+    };
+    let entries = vec![
+        entry(21, 204, None),
+        entry(22, 203, None),
+        entry(11, 200, Some(2)),
+        entry(13, 200, Some(3)),
+        entry(15, 200, Some(4)),
+        entry(23, 204, None),
+        entry(24, 203, None),
+        entry(12, 200, Some(2)),
+        entry(14, 200, Some(3)),
+        entry(16, 200, Some(4)),
+        entry(30, 200, Some(6)),
+        entry(31, 200, Some(7)),
+        entry(32, 200, Some(6)),
+        entry(33, 200, Some(7)),
+    ];
+    let table = crate::feature::FeatureEntityTable {
+        feature_id: Some(9),
+        table_class_id: 29,
+        entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
+        entries,
+        surface_ids: vec![15, 16, 30, 31, 33],
+        non_surface_entity_ids: vec![11, 12, 13, 14, 21, 22, 23, 24, 32],
+        offset: 0,
+    };
+    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+        id,
+        type_byte: kind.canonical_type_byte(),
+        kind,
+        feature_id: 9,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    let mut rows = vec![
+        row(15, crate::surface::SurfaceKind::Cylinder),
+        row(16, crate::surface::SurfaceKind::Cylinder),
+        row(30, crate::surface::SurfaceKind::Plane),
+        row(31, crate::surface::SurfaceKind::Cylinder),
+        row(33, crate::surface::SurfaceKind::Cylinder),
+    ];
+
+    assert_eq!(
+        stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+        Some(HoleForm::Counterbore)
+    );
+    assert_eq!(
+        stepped_hole_form(9, &[table.clone(), table.clone()], &rows),
+        None
+    );
+
+    let mut missing_plane_companion = table.clone();
+    missing_plane_companion
+        .entries
+        .retain(|entry| entry.entity_id != 32);
+    missing_plane_companion
+        .entry_ids
+        .retain(|entity_id| *entity_id != 32);
+    missing_plane_companion
+        .non_surface_entity_ids
+        .retain(|entity_id| *entity_id != 32);
+    assert_eq!(
+        stepped_hole_form(9, std::slice::from_ref(&missing_plane_companion), &rows),
+        None
+    );
+
+    rows[2].kind = crate::surface::SurfaceKind::Cylinder;
+    assert_eq!(
+        stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+        None
+    );
+}
+
+#[test]
 fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     let mut table = simple_drilled_recipe_table(9);
     let mut rows = simple_drilled_recipe_surface_rows(9);

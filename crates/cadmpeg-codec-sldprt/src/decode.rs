@@ -263,6 +263,8 @@ fn sketch_constraint_has_complete_neutral_semantics(
         | Constraint::SameCoordinate { .. }
         | Constraint::PointOnObject { .. }
         | Constraint::Midpoint { .. }
+        | Constraint::PointCoordinateValues { .. }
+        | Constraint::MidpointCoordinate { .. }
         | Constraint::Offset { .. }
         | Constraint::ProjectedCopy { .. }
         | Constraint::AtIntersection { .. }
@@ -283,11 +285,16 @@ fn sketch_constraint_has_complete_neutral_semantics(
         | Constraint::TangentLoci { .. }
         | Constraint::Curvature { .. }
         | Constraint::Equal { .. }
+        | Constraint::EqualDistance { .. }
         | Constraint::Fixed { .. }
         | Constraint::ArcAngle { .. }
         | Constraint::EllipseAngle { .. }
         | Constraint::Distance { .. }
         | Constraint::DistanceLoci { .. }
+        | Constraint::DistanceLociValue { .. }
+        | Constraint::PolarDistance { .. }
+        | Constraint::AngleDifference { .. }
+        | Constraint::ScalarEquality { .. }
         | Constraint::HorizontalDistance { .. }
         | Constraint::VerticalDistance { .. }
         | Constraint::RepeatedDistance { .. }
@@ -1641,11 +1648,14 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::DetailedThreadUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved
             | FeatureDefinition::DraftUnresolved
-            | FeatureDefinition::BrepUnresolved
-            | FeatureDefinition::MirrorFaceUnresolved
-            | FeatureDefinition::SubdivisionBodyUnresolved
-            | FeatureDefinition::TopologyOptimizationUnresolved
-            | FeatureDefinition::DeleteFaceUnresolved => true,
+                | FeatureDefinition::BrepUnresolved
+                | FeatureDefinition::MirrorFaceUnresolved
+                | FeatureDefinition::SubdivisionBodyUnresolved
+                | FeatureDefinition::TopologyOptimizationUnresolved
+                | FeatureDefinition::DeleteFaceUnresolved
+                | FeatureDefinition::ExtrudeUnresolved
+                | FeatureDefinition::RevolveUnresolved
+                | FeatureDefinition::FilletUnresolved => true,
             }
         })
         .count();

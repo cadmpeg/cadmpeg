@@ -9,6 +9,8 @@ use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeom
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::SketchGeometry;
 
+const EPS_TABULATED_ENDPOINT_ROUNDING: f64 = 1e-4;
+const EPS_TABULATED_FRAME_EXACT: f64 = 1.0e-9;
 const EPS_PLANAR_COORDINATE: f64 = 1.0e-12;
 
 pub(in super::super) fn extruded_geometry_surface(
@@ -523,8 +525,12 @@ pub(in super::super) fn signed_unit_chart(
     frame: [f64; 2],
     offset: f64,
 ) -> Option<(f64, f64)> {
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
+    let endpoint_close = |left: f64, right: f64| {
+        (left - right).abs()
+            <= EPS_TABULATED_ENDPOINT_ROUNDING * left.abs().max(right.abs()).max(1.0)
+    };
+    let frame_close = |left: f64, right: f64| {
+        (left - right).abs() <= EPS_TABULATED_FRAME_EXACT * left.abs().max(right.abs()).max(1.0)
     };
     let mut matches = Vec::new();
     for first_sign in [-1.0, 1.0] {
@@ -538,8 +544,8 @@ pub(in super::super) fn signed_unit_chart(
                 };
                 let slope = if reversed { -1.0 } else { 1.0 };
                 let chart_intercept = target[0] - slope * local[0];
-                if close(target[1], slope * local[1] + chart_intercept)
-                    && close(chart_intercept.abs(), offset)
+                if endpoint_close(target[1], slope * local[1] + chart_intercept)
+                    && frame_close(chart_intercept.abs(), offset)
                     && !matches.contains(&(slope, chart_intercept))
                 {
                     matches.push((slope, chart_intercept));
@@ -617,7 +623,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
         return None;
     }
     let close = |left: f64, right: f64| {
-        (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
+        (left - right).abs() <= EPS_TABULATED_FRAME_EXACT * left.abs().max(right.abs()).max(1.0)
     };
     let axis_matches = |axis: usize, coordinate: usize| match layout {
         FrameLayout::LegacyReflected => {
@@ -794,4 +800,18 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
         },
         sweep,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::signed_unit_chart;
+
+    #[test]
+    fn signed_unit_chart_accepts_bounded_endpoint_rounding_only() {
+        assert_eq!(
+            signed_unit_chart([1.0, 4.0], [1.0, 4.000_03], 0.0),
+            Some((1.0, 0.0))
+        );
+        assert!(signed_unit_chart([1.0, 4.0], [1.0, 4.001], 0.0).is_none());
+    }
 }

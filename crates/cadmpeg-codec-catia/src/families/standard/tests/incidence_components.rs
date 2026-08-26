@@ -394,21 +394,43 @@ fn deferred_boundary_enforces_anchored_gap_capacities() {
     assert_eq!(
         assignment.boundaries[0]
             .iter()
-            .map(|use_| (use_.edge, use_.reversed))
+            .map(|use_| (use_.edge, use_.start, use_.end, use_.reversed))
             .collect::<Vec<_>>(),
         vec![
-            (0, Some(false)),
-            (1, None),
-            (2, None),
-            (3, Some(false)),
-            (4, None),
-            (5, None),
+            (0, 0, 1, Some(false)),
+            (1, 1, 2, None),
+            (2, 2, 3, None),
+            (3, 3, 4, Some(false)),
+            (4, 4, 5, None),
+            (5, 5, 0, None),
         ]
     );
     assert!(!crate::solve::incidence::deferred_boundary_closes(
         &domain,
         &overfilled_first_gap
     ));
+}
+
+#[test]
+fn deferred_boundary_materialization_assigns_canonical_positive_spans() {
+    let domain = crate::solve::missing_edge::MeshDeferredFaceBoundary {
+        cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+            length: 4,
+            exact_uses: Vec::new(),
+        }],
+        missing_edges: vec![0, 1],
+    };
+    let assignment =
+        crate::solve::incidence::deferred_boundary_assignment(&domain, &[[0, 1], [0, 1]])
+            .expect("materialized deferred boundary");
+
+    assert_eq!(
+        assignment.boundaries[0]
+            .iter()
+            .map(|use_| (use_.edge, use_.start, use_.end))
+            .collect::<Vec<_>>(),
+        vec![(0, 0, 3), (1, 3, 0)]
+    );
 }
 
 #[test]
@@ -444,6 +466,40 @@ fn deferred_anchored_runs_propagate_forced_adjacencies() {
 
     assert_eq!(quotient.union.find(0), quotient.union.find(3));
     assert_eq!(quotient.union.find(1), quotient.union.find(2));
+}
+
+#[test]
+fn deferred_quotient_retains_unknown_exact_run_direction() {
+    let use_ = |edge, start| MeshBoundaryEdgeCandidate {
+        edge,
+        start,
+        end: (start + 1) % 2,
+        reversed: None,
+    };
+    let domains = [MeshFaceBoundaryDomain::DeferredValidation(
+        crate::solve::missing_edge::MeshDeferredFaceBoundary {
+            cycles: vec![crate::solve::missing_edge::MeshDeferredBoundaryCycle {
+                length: 2,
+                exact_uses: vec![(use_(0, 0), 1), (use_(1, 1), 1)],
+            }],
+            missing_edges: Vec::new(),
+        },
+    )];
+    let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
+    let mut quotient =
+        crate::solve::mesh_quotient::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
+            .expect("initial quotient");
+    let budget = WorkBudget::new(100);
+
+    crate::solve::mesh_quotient::propagate_common_ordered_face_quotients(
+        &domains,
+        &candidates,
+        &mut quotient,
+        &budget,
+    )
+    .expect("unknown exact direction is deferred");
+
+    assert_ne!(quotient.union.find(0), quotient.union.find(3));
 }
 
 #[test]

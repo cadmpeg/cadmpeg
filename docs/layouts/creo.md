@@ -66,7 +66,7 @@ Parsed by:
 
 Spec §1 · layout: byte offsets · size: 11 B
 
-Fixed prefix only; `hhh` bytes of ASCII name follow at +11, then trailing ASCII space padding. Exactly one record establishes model identity; an absent or repeated record leaves model identity undefined.
+Fixed prefix only; `hhh` bytes of ASCII name follow at +11, then trailing ASCII space padding. A unique valid record supplies the header model filename; a repeated or malformed record does not establish identity. Binary model-data may provide the named `model_name` identity field described in the specification.
 
 Parsed by:
 - `crates/cadmpeg-codec-creo/src/container.rs`

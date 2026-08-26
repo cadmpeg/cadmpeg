@@ -994,8 +994,9 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         end,
         header_token,
     } = frame;
-    if data.get(pos) == Some(&0xa5) && !matches!(header_token, 5 | 9 | 13 | 29) {
-        return None;
+    if data.get(pos) == Some(&0xa5) {
+        let header_byte = u8::try_from(header_token).ok()?;
+        a5_int(header_byte)?;
     }
     let mut at = payload;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
@@ -1005,7 +1006,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     }
     match data.get(at..at + 2) {
         Some([0x0c, _]) => at += 1,
-        Some([0x08, 0x09 | 0x05]) => at += 2,
+        Some([0x08, marker]) if a5_int(*marker).is_some() => at += 2,
         _ => return None,
     }
     let knot_bytes = count.checked_mul(8)?;
@@ -1745,13 +1746,18 @@ fn a5_array_marker(bytes: &[u8], at: usize) -> Option<usize> {
 
 pub(super) fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     let multiplicities = match degree {
+        1 | 3 if distinct.len() >= 2 => {
+            let mut values = vec![degree + 1];
+            values.extend(std::iter::repeat_n(1, distinct.len() - 2));
+            values.push(degree + 1);
+            values
+        }
         5 if distinct.len() >= 2 => {
             let mut values = vec![6u32];
             values.extend(std::iter::repeat_n(3, distinct.len() - 2));
             values.push(6);
             values
         }
-        1 | 3 | 5 if distinct.len() == 2 => vec![degree + 1, degree + 1],
         _ => return None,
     };
     let count = pole_count(&multiplicities, degree)?;

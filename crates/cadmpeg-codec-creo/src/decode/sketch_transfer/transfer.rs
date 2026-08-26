@@ -3,8 +3,8 @@
 
 use super::super::coverage::SketchSegmentTransferCoverage;
 use super::super::feature_history::{
-    owned_section_feature_id, section_entity_is_generated_profile,
-    section_generated_profile_surface_kinds,
+    owned_section_feature_id, planned_feature_dimension_parameter_ids,
+    section_entity_is_generated_profile, section_generated_profile_surface_kinds,
 };
 use super::super::native::annotate;
 use super::super::sketch::{
@@ -24,12 +24,23 @@ use super::entities::transfer_section_entities;
 use super::{
     ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
     native_section_segment_verhor_definition, opaque_section_segment_identity_suffix,
-    reconcile_constraint_entity_references, resolved_profile_chains, section_degenerate_axis_line,
-    section_dimension_constraints, section_segment_identity_suffix,
-    section_segment_radius_constraints, section_segment_verhor_definition,
-    section_skamp_constraints_for_geometry, solver_only_section_entities,
-    solver_only_section_entity_family, unique_saved_section_internal_ids,
-    unique_section_segment_external_ids, SectionEntityIncidenceFamily,
+    reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
+    reconcile_section_dimension_constraint, resolved_profile_chains, section_degenerate_axis_line,
+    section_dimension_constraints, section_equation_axis_distance_constraints,
+    section_equation_equal_distance_constraints,
+    section_equation_function_five_scalar_equality_constraints,
+    section_equation_function_forty_two_midpoint_coordinate_constraints,
+    section_equation_function_six_distance_constraints,
+    section_equation_function_sixteen_angle_difference_constraints,
+    section_equation_function_thirty_one_point_coordinate_constraints,
+    section_equation_native_constraints, section_equation_point_on_line_constraints,
+    section_equation_polar_distance_constraints, section_equation_radius_dimension_constraints,
+    section_equation_same_coordinate_constraints, section_equation_unsigned_distance_constraints,
+    section_segment_identity_suffix, section_segment_radius_constraints_for_emitted,
+    section_segment_verhor_definition, section_skamp_constraints_for_geometry,
+    solver_only_section_entities, solver_only_section_entity_family,
+    unique_saved_section_internal_ids, unique_section_segment_external_ids,
+    SectionEntityIncidenceFamily,
 };
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
@@ -46,6 +57,13 @@ pub(in super::super) fn transfer_sketches(
     annotations: &mut AnnotationBuilder,
 ) -> SketchSegmentTransferCoverage {
     let mut coverage = SketchSegmentTransferCoverage::default();
+    let mut available_parameter_ids = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.clone())
+        .collect::<BTreeSet<_>>();
+    available_parameter_ids.extend(planned_feature_dimension_parameter_ids(scan));
     for definition in scan
         .features
         .definitions
@@ -591,10 +609,25 @@ pub(in super::super) fn transfer_sketches(
                 })
             })
             .collect::<Vec<_>>();
-        for (mut constraint, offset) in section_dimension_constraints(definition, &sketch_id) {
-            if !reconcile_constraint_entity_references(
+        for (relation_index, (mut constraint, offset)) in
+            section_dimension_constraints(definition, &sketch_id)
+                .into_iter()
+                .enumerate()
+        {
+            let Some(relation) = definition
+                .relations
+                .as_ref()
+                .and_then(|relations| relations.rows.get(relation_index))
+            else {
+                continue;
+            };
+            if !reconcile_section_dimension_constraint(
                 &mut constraint.definition,
+                definition,
+                &sketch_id,
+                relation,
                 &emitted_entity_ids,
+                &available_parameter_ids,
             ) {
                 continue;
             }
@@ -608,11 +641,89 @@ pub(in super::super) fn transfer_sketches(
             );
             constraints.push(constraint);
         }
-        for (mut constraint, offset) in section_segment_radius_constraints(definition, &sketch_id) {
-            if !reconcile_constraint_entity_references(
+        for (constraint, offset) in section_segment_radius_constraints_for_emitted(
+            definition,
+            &sketch_id,
+            &emitted_entity_ids,
+            &available_parameter_ids,
+        ) {
+            annotate(
+                annotations,
+                &constraint.id.0,
+                "FeatDefs",
+                offset as u64,
+                "section_segment_radius_constraint",
+                Exactness::ByteExact,
+            );
+            constraints.push(constraint);
+        }
+        let equation_constraints =
+            section_equation_axis_distance_constraints(definition, &sketch_id)
+                .into_iter()
+                .chain(section_equation_unsigned_distance_constraints(
+                    definition, &sketch_id,
+                ))
+                .chain(section_equation_point_on_line_constraints(
+                    definition, &sketch_id,
+                ))
+                .chain(section_equation_same_coordinate_constraints(
+                    definition, &sketch_id,
+                ))
+                .chain(
+                    section_equation_function_thirty_one_point_coordinate_constraints(
+                        definition, &sketch_id,
+                    ),
+                )
+                .chain(
+                    section_equation_function_forty_two_midpoint_coordinate_constraints(
+                        definition, &sketch_id,
+                    ),
+                )
+                .chain(section_equation_function_five_scalar_equality_constraints(
+                    definition, &sketch_id,
+                ))
+                .chain(
+                    section_equation_function_sixteen_angle_difference_constraints(
+                        definition, &sketch_id,
+                    ),
+                )
+                .chain(section_equation_radius_dimension_constraints(
+                    definition, &sketch_id,
+                ))
+                .chain(section_equation_polar_distance_constraints(
+                    definition, &sketch_id,
+                ))
+                .chain(section_equation_function_six_distance_constraints(
+                    definition, &sketch_id,
+                ))
+                .chain(section_equation_equal_distance_constraints(
+                    definition, &sketch_id,
+                ))
+                .collect::<Vec<_>>();
+        let equation_offsets = equation_constraints
+            .iter()
+            .map(|(_, offset)| *offset)
+            .collect::<BTreeSet<_>>();
+        let mut rejected_equation_offsets = BTreeSet::new();
+        let mut reconciled_equation_constraints = Vec::new();
+        for (mut constraint, offset) in equation_constraints {
+            let entity_reconciled = reconcile_constraint_entity_references(
                 &mut constraint.definition,
                 &emitted_entity_ids,
-            ) {
+            );
+            let parameter_reconciled = reconcile_constraint_parameter_reference(
+                &mut constraint.definition,
+                &available_parameter_ids,
+            );
+            if !entity_reconciled || !parameter_reconciled {
+                rejected_equation_offsets.insert(offset);
+                continue;
+            }
+            reconciled_equation_constraints.push((constraint, offset));
+        }
+        let mut typed_equation_offsets = BTreeSet::new();
+        for (constraint, offset) in reconciled_equation_constraints {
+            if rejected_equation_offsets.contains(&offset) {
                 continue;
             }
             annotate(
@@ -620,7 +731,25 @@ pub(in super::super) fn transfer_sketches(
                 &constraint.id.0,
                 "FeatDefs",
                 offset as u64,
-                "section_segment_radius_constraint",
+                "section_equation_constraint",
+                Exactness::ByteExact,
+            );
+            constraints.push(constraint);
+        }
+        typed_equation_offsets.extend(
+            equation_offsets
+                .into_iter()
+                .filter(|offset| !rejected_equation_offsets.contains(offset)),
+        );
+        for (constraint, offset) in
+            section_equation_native_constraints(definition, &sketch_id, &typed_equation_offsets)
+        {
+            annotate(
+                annotations,
+                &constraint.id.0,
+                "FeatDefs",
+                offset as u64,
+                "section_native_equation_constraint",
                 Exactness::ByteExact,
             );
             constraints.push(constraint);

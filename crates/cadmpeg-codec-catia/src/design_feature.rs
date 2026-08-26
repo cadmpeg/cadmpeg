@@ -5,12 +5,17 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition, FeatureId, ParameterId, PrincipalPlane, SketchSpace,
+    Feature, FeatureDefinition, FeatureId, ParameterId, PatternForm, PatternKind, PrincipalPlane,
+    SketchSpace,
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
-use crate::native::{CatiaDesignObject, CatiaEntityRecord, CatiaNative, CatiaObjectRecord};
-use crate::object_graph::{HeadToken, PayloadField, PayloadSubtype};
+use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
+use crate::native::{
+    CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaEntityRecord, CatiaNative,
+    CatiaObjectRecord, CatiaRangeInterval, CatiaRangeNominalFraming,
+};
+use crate::object_graph::{PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DesignFeatureTransfer {
@@ -18,9 +23,12 @@ pub(crate) struct DesignFeatureTransfer {
     pub(crate) native_operation_records: HashSet<String>,
     pub(crate) native_operation_definition_value_count: usize,
     pub(crate) native_operation_definition_chain_value_count: usize,
+    pub(crate) native_operation_range_count: usize,
     pub(crate) native_operation_definition_value_records: HashSet<String>,
     pub(crate) native_operation_definition_chain_value_records: HashSet<String>,
+    pub(crate) native_operation_range_records: HashSet<String>,
     pub(crate) principal_plane_records: HashSet<String>,
+    pub(crate) reference_plane_records: HashSet<String>,
     pub(crate) sketch_owner_records: HashSet<String>,
 }
 
@@ -28,9 +36,11 @@ impl DesignFeatureTransfer {
     pub(crate) fn consumed_records(&self) -> HashSet<String> {
         self.principal_plane_records
             .union(&self.sketch_owner_records)
+            .chain(self.reference_plane_records.iter())
             .chain(self.native_operation_records.iter())
             .chain(self.native_operation_definition_value_records.iter())
             .chain(self.native_operation_definition_chain_value_records.iter())
+            .chain(self.native_operation_range_records.iter())
             .cloned()
             .collect()
     }
@@ -149,6 +159,73 @@ impl DesignFeatureTransfer {
             }
         }
     }
+
+    /// Bind exact payload references to earlier transferred features as
+    /// structural dependencies. A target may resolve through its complete
+    /// owner-design-object chain. Storage selectors, unresolved targets,
+    /// self-links, and forward targets do not establish history edges.
+    pub(crate) fn assign_feature_dependencies(&self, ir: &mut CadIr, native: &CatiaNative) {
+        let design_objects = native
+            .design_objects
+            .iter()
+            .map(|object| (object.id.as_str(), object))
+            .collect::<HashMap<_, _>>();
+        let feature_ordinals = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| (feature.id.clone(), feature.ordinal))
+            .collect::<HashMap<_, _>>();
+        let mut dependencies_by_feature = HashMap::<FeatureId, Vec<FeatureId>>::new();
+
+        for feature in &ir.model.features {
+            let Some(native_ref) = feature.native_ref.as_deref() else {
+                continue;
+            };
+            let Some(object) = design_objects.get(native_ref) else {
+                continue;
+            };
+            let mut seen = feature.dependencies.iter().cloned().collect::<HashSet<_>>();
+            for relation in &object.relations {
+                if !matches!(
+                    &relation.source,
+                    CatiaDesignObjectRelationSource::Payload { .. }
+                ) {
+                    continue;
+                }
+                let Some(target_object) = relation.target_design_object.as_deref() else {
+                    continue;
+                };
+                let Some(target) = nearest_feature_for_design_object(
+                    target_object,
+                    &design_objects,
+                    &self.feature_ids,
+                ) else {
+                    continue;
+                };
+                if target == feature.id || seen.contains(&target) {
+                    continue;
+                }
+                let Some(target_ordinal) = feature_ordinals.get(&target) else {
+                    continue;
+                };
+                if *target_ordinal >= feature.ordinal {
+                    continue;
+                }
+                seen.insert(target.clone());
+                dependencies_by_feature
+                    .entry(feature.id.clone())
+                    .or_default()
+                    .push(target.clone());
+            }
+        }
+
+        for feature in &mut ir.model.features {
+            if let Some(dependencies) = dependencies_by_feature.remove(&feature.id) {
+                feature.dependencies.extend(dependencies);
+            }
+        }
+    }
 }
 
 fn assign_feature_parameter_ordinals(
@@ -237,11 +314,13 @@ fn assign_document_parameter_ordinals(ir: &mut CadIr) {
     }
 }
 
-/// Expose exact feature-owned parameter expressions on an opaque native
-/// operation without assigning operation-specific roles. The map uses the
-/// neutral, scope-unique parameter names assigned by
-/// [`normalize_parameter_names`]. A changed name retains its source spelling
-/// in the corresponding parameter's `source_name` property.
+/// Expose exact feature-owned parameter expressions without assigning
+/// operation-specific roles. The map uses the neutral, scope-unique parameter
+/// names assigned by [`normalize_parameter_names`]. A changed name retains its
+/// source spelling in the corresponding parameter's `source_name` property.
+/// Typed unresolved operation families retain the same expressions in feature
+/// source properties because their neutral definitions have no generic
+/// parameter map.
 fn assign_native_operation_parameter_values(
     ir: &mut CadIr,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
@@ -261,11 +340,24 @@ fn assign_native_operation_parameter_values(
         let Some(values) = values_by_feature.remove(&feature.id) else {
             continue;
         };
-        let FeatureDefinition::Native { parameters, .. } = &mut feature.definition else {
-            continue;
-        };
-        if parameters.is_empty() {
-            *parameters = values;
+        match &mut feature.definition {
+            FeatureDefinition::Native { parameters, .. } => {
+                if parameters.is_empty() {
+                    *parameters = values;
+                }
+            }
+            FeatureDefinition::ExtrudeUnresolved
+            | FeatureDefinition::RevolveUnresolved
+            | FeatureDefinition::FilletUnresolved
+            | FeatureDefinition::Pattern { .. }
+            | FeatureDefinition::Sweep { .. } => {
+                for (name, expression) in values {
+                    feature
+                        .source_properties
+                        .insert(format!("catia_parameter_{name}"), expression);
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -434,34 +526,44 @@ pub(crate) fn transfer_design_features(
     {
         let plane_candidate = principal_plane_candidate(object, &records);
         let sketch_owner = sketch_candidate(object, &records);
+        let reference_plane = reference_plane_candidate(object, &records);
         let native_operation = native_operation_candidate(object, &records);
-        match (plane_candidate, sketch_owner, native_operation) {
-            (Some(candidate), None, None) => {
+        match (
+            plane_candidate,
+            sketch_owner,
+            reference_plane,
+            native_operation,
+        ) {
+            (Some(candidate), None, None, None) => {
                 transfer_principal_plane(ir, &mut transfer, candidate);
             }
-            (None, Some(owner_record), None) => {
+            (None, Some(owner_record), None, None) => {
                 transfer_sketch(ir, &mut transfer, object, owner_record);
             }
-            (None, None, Some(candidate)) => {
+            (None, None, Some(candidate), None) => {
+                transfer_reference_plane(ir, &mut transfer, &candidate);
+            }
+            (None, None, None, Some(candidate)) => {
                 transfer_native_operation(
                     ir,
                     &mut transfer,
                     &candidate,
+                    &records,
                     &entities,
                     &design_objects,
                     &native_operation_object_ids,
                 );
             }
-            (Some(_), Some(_), _) | (Some(_), None, Some(_)) | (None, Some(_), Some(_)) => {
+            _ => {
                 // One object cannot safely occupy two neutral feature identities.
                 // Leave all declarations unresolved so the feature-id map cannot
                 // overwrite one transfer with another.
             }
-            (None, None, None) => {}
         }
     }
 
     transfer.assign_feature_parents(ir, native);
+    transfer.assign_feature_dependencies(ir, native);
     transfer
 }
 
@@ -496,6 +598,34 @@ fn transfer_principal_plane(
             .into_iter()
             .map(|record| record.id.clone()),
     );
+}
+
+fn transfer_reference_plane(
+    ir: &mut CadIr,
+    transfer: &mut DesignFeatureTransfer,
+    candidate: &ReferencePlaneCandidate<'_>,
+) {
+    let object = candidate.object;
+    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
+    ir.model.features.push(Feature {
+        id: feature_id.clone(),
+        ordinal: object.first_field_byte_offset,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some(candidate.kind.to_string()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumPlaneUnresolved,
+        native_ref: Some(object.id.clone()),
+    });
+    transfer.feature_ids.insert(object.id.clone(), feature_id);
+    transfer
+        .reference_plane_records
+        .insert(candidate.owner_record.id.clone());
 }
 
 fn transfer_sketch(
@@ -545,90 +675,99 @@ struct NativeOperationCandidate<'a> {
     kind: &'a str,
 }
 
+struct ReferencePlaneCandidate<'a> {
+    object: &'a CatiaDesignObject,
+    owner_record: &'a CatiaObjectRecord,
+    kind: &'a str,
+}
+
+fn reference_plane_candidate<'a>(
+    object: &'a CatiaDesignObject,
+    records: &HashMap<&str, &'a CatiaObjectRecord>,
+) -> Option<ReferencePlaneCandidate<'a>> {
+    let owner_class = object.owner_class.as_ref()?;
+    is_admitted_native_reference_plane_class(&owner_class.name).then_some(())?;
+    let owner_record_id = object.owner_record.as_deref()?;
+    let owner_record = records.get(owner_record_id).copied()?;
+    (owner_record.class_name.as_deref() == Some(owner_class.name.as_str())
+        && owner_record.class_entry.as_deref() == Some(owner_class.entry.as_str())
+        && owner_record.entity_id == Some(object.owner_entity_id)
+        && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
+    .then_some(ReferencePlaneCandidate {
+        object,
+        owner_record,
+        kind: owner_class.name.as_str(),
+    })
+}
+
 fn native_operation_candidate<'a>(
     object: &'a CatiaDesignObject,
     records: &HashMap<&str, &'a CatiaObjectRecord>,
 ) -> Option<NativeOperationCandidate<'a>> {
     let owner_record_id = object.owner_record.as_deref()?;
     let owner_record = records.get(owner_record_id).copied()?;
-    // A compact 1A root does not carry separator roles, but its complete
-    // class/storage/null/owner lane is an exact self-owned object anchor.
-    // Accept it only when the selected record, owner slot, and design-object
-    // identity all agree; a class name in an arbitrary field is insufficient.
-    let self_owned_compact_root = object.owner_design_object.is_none()
-        && owner_record.design_object.as_deref() == Some(object.id.as_str())
-        && owner_record.entity_id == Some(object.owner_entity_id)
-        && owner_record.owner_entity_id() == Some(object.owner_entity_id)
-        && owner_record.class_ref.is_some()
-        && matches!(
-            owner_record.head.as_slice(),
-            [
-                HeadToken::Lead(0x1a),
-                HeadToken::Reference(_),
-                HeadToken::Reference(0),
-                HeadToken::NullHandle,
-                HeadToken::Reference(owner),
-            ] if *owner == object.owner_entity_id
-        );
-    let (owner_class_name, owner_class_entry) = object
-        .owner_class
-        .as_ref()
-        .map(|class| (class.name.as_str(), class.entry.as_str()))
-        .or_else(|| {
-            if !self_owned_compact_root {
-                return None;
-            }
-            Some((
-                owner_record.class_name.as_deref()?,
-                owner_record.class_entry.as_deref()?,
-            ))
-        })?;
+    // `owner_class` is populated only by a complete separator-form owner
+    // declaration. A compact root's class entry remains field vocabulary.
+    let owner_class = object.owner_class.as_ref()?;
+    let owner_class_name = owner_class.name.as_str();
+    let owner_class_entry = owner_class.entry.as_str();
     is_admitted_native_operation_class(owner_class_name).then_some(())?;
     (owner_record.class_name.as_deref() == Some(owner_class_name)
         && owner_record.class_entry.as_deref() == Some(owner_class_entry)
         && owner_record.entity_id == Some(object.owner_entity_id)
-        && (owner_record.design_object.as_deref() == object.owner_design_object.as_deref()
-            || self_owned_compact_root))
-        .then_some(NativeOperationCandidate {
-            object,
-            owner_record,
-            kind: owner_class_name,
-        })
+        && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
+    .then_some(NativeOperationCandidate {
+        object,
+        owner_record,
+        kind: owner_class_name,
+    })
 }
 
-fn is_admitted_native_operation_class(name: &str) -> bool {
+pub(crate) fn is_admitted_native_operation_class(name: &str) -> bool {
     matches!(
         name,
         "EdgeFillet"
+            | "Prism_EndLimit_Length"
             | "Prism_ThickThin1"
             | "Prism_ThickThin2"
             | "Revol_ThickThin1"
+            | "CircPattern_RadialNumber"
             | "Sweep_ThickThin1"
     )
+}
+
+pub(crate) fn is_admitted_native_reference_plane_class(name: &str) -> bool {
+    matches!(name, "GSMPlaneAngle" | "GSMPlaneOffset")
 }
 
 fn transfer_native_operation(
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     candidate: &NativeOperationCandidate<'_>,
+    object_records: &HashMap<&str, &CatiaObjectRecord>,
     entities: &HashMap<&str, &CatiaEntityRecord>,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
 ) {
     let object = candidate.object;
     let kind = candidate.kind.to_string();
-    let (
-        properties,
+    let NativeOperationDefinitionProperties {
+        source_properties: properties,
         definition_value_count,
         definition_chain_value_count,
+        range_count,
         definition_value_records,
         definition_chain_value_records,
-    ) = native_operation_definition_properties(
+        range_records,
+    } = native_operation_definition_properties(
         object,
+        object_records,
         entities,
         design_objects,
         native_operation_object_ids,
     );
+    let (definition, source_properties) =
+        native_operation_definition(&kind, &object.id, properties);
     let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
     ir.model.features.push(Feature {
         id: feature_id.clone(),
@@ -637,16 +776,12 @@ fn transfer_native_operation(
         suppressed: None,
         parent: None,
         dependencies: Vec::new(),
-        source_properties: BTreeMap::new(),
+        source_properties,
         source_tag: Some(kind.clone()),
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Native {
-            kind,
-            parameters: BTreeMap::new(),
-            properties,
-        },
+        definition,
         native_ref: Some(object.id.clone()),
     });
     transfer.feature_ids.insert(object.id.clone(), feature_id);
@@ -655,38 +790,103 @@ fn transfer_native_operation(
         .insert(candidate.owner_record.id.clone());
     transfer.native_operation_definition_value_count += definition_value_count;
     transfer.native_operation_definition_chain_value_count += definition_chain_value_count;
+    transfer.native_operation_range_count += range_count;
     transfer
         .native_operation_definition_value_records
         .extend(definition_value_records);
     transfer
         .native_operation_definition_chain_value_records
         .extend(definition_chain_value_records);
+    transfer
+        .native_operation_range_records
+        .extend(range_records);
 }
 
-/// Retain complete definition-bound values on the exact native operation
-/// owner chain. A one-definition value carries a source definition and a
-/// typed suffix payload, while a two-definition value carries its repeated
-/// selector, role, and selected payload. Neither production assigns an
-/// operation role here. Store the exact selectors and payload state as native
-/// properties; supported two-definition roles are also exposed through the
-/// independent typed-parameter transfer.
+/// Project an admitted CATIA operation class into the neutral family while
+/// keeping every unresolved operand explicit. The exact owner declaration
+/// proves the family identity; it does not prove profile, axis, extent,
+/// result, edge group, pattern seed, pattern axis, pattern angle, pattern
+/// count, or operation-specific dependency roles.
+fn native_operation_definition(
+    kind: &str,
+    native_ref: &str,
+    properties: BTreeMap<String, String>,
+) -> (FeatureDefinition, BTreeMap<String, String>) {
+    let definition = match kind {
+        "Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2" => {
+            FeatureDefinition::ExtrudeUnresolved
+        }
+        "Revol_ThickThin1" => FeatureDefinition::RevolveUnresolved,
+        "CircPattern_RadialNumber" => FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved {
+                form: Some(PatternForm::Circular),
+            },
+        },
+        "Sweep_ThickThin1" => FeatureDefinition::Sweep {
+            section: cadmpeg_ir::features::SweepSection::Unresolved(Some(native_ref.to_string())),
+            sections: Vec::new(),
+            path: Some(cadmpeg_ir::features::PathRef::Unresolved(
+                native_ref.to_string(),
+            )),
+            mode: cadmpeg_ir::features::SweepMode::Unresolved,
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
+            twist: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
+            scale: None,
+            allow_multi_profile_faces: None,
+        },
+        "EdgeFillet" => FeatureDefinition::FilletUnresolved,
+        _ => FeatureDefinition::Native {
+            kind: kind.to_string(),
+            parameters: BTreeMap::new(),
+            properties: properties.clone(),
+        },
+    };
+    if matches!(definition, FeatureDefinition::Native { .. }) {
+        (definition, BTreeMap::new())
+    } else {
+        (definition, properties)
+    }
+}
+
+/// Exact source properties and records retained for one native operation.
+struct NativeOperationDefinitionProperties {
+    source_properties: BTreeMap<String, String>,
+    definition_value_count: usize,
+    definition_chain_value_count: usize,
+    range_count: usize,
+    definition_value_records: HashSet<String>,
+    definition_chain_value_records: HashSet<String>,
+    range_records: HashSet<String>,
+}
+
+/// Retain complete definition-bound values and source-schema `Range` fields
+/// on the exact native operation owner chain. A one-definition value carries
+/// a source definition and typed suffix payload, while a two-definition value
+/// carries its repeated selector, role, and selected payload. Neither
+/// production assigns an operation role here. Supported two-definition roles
+/// are exposed separately through the typed-parameter transfer.
 fn native_operation_definition_properties(
     object: &CatiaDesignObject,
+    object_records: &HashMap<&str, &CatiaObjectRecord>,
     entities: &HashMap<&str, &CatiaEntityRecord>,
     design_objects: &HashMap<&str, &CatiaDesignObject>,
     native_operation_object_ids: &HashSet<&str>,
-) -> (
-    BTreeMap<String, String>,
-    usize,
-    usize,
-    HashSet<String>,
-    HashSet<String>,
-) {
+) -> NativeOperationDefinitionProperties {
     let mut properties = BTreeMap::new();
     let mut definition_value_count = 0;
     let mut definition_chain_value_count = 0;
+    let mut range_count = 0;
     let mut definition_value_records = HashSet::new();
     let mut definition_chain_value_records = HashSet::new();
+    let mut range_records = HashSet::new();
 
     let owned_objects = design_objects
         .values()
@@ -775,13 +975,51 @@ fn native_operation_definition_properties(
         );
     }
 
-    (
-        properties,
+    let mut range_intervals = owned_objects
+        .iter()
+        .flat_map(|owned| {
+            owned.fields.iter().filter_map(|field_id| {
+                let field = object_records.get(field_id.as_str()).copied()?;
+                (field.design_object.as_deref() == Some(owned.id.as_str())).then_some(field)
+            })
+        })
+        .filter_map(|field| {
+            let entity_id = field.entity_record.as_deref()?;
+            let entity = entities.get(entity_id).copied()?;
+            (entity.object_record == field.id && entity.range_interval.is_some()).then_some(entity)
+        })
+        .collect::<Vec<_>>();
+    range_intervals.sort_by(|left, right| {
+        left.byte_offset
+            .cmp(&right.byte_offset)
+            .then(left.ordinal.cmp(&right.ordinal))
+            .then(left.id.cmp(&right.id))
+    });
+    range_intervals.dedup_by(|left, right| left.id == right.id);
+    for (ordinal, entity) in range_intervals.into_iter().enumerate() {
+        range_count += 1;
+        range_records.insert(entity.object_record.clone());
+        let prefix = format!("catia_range_{ordinal}");
+        properties.insert(format!("{prefix}_entity"), entity.id.clone());
+        insert_range_interval_properties(
+            &mut properties,
+            &prefix,
+            entity
+                .range_interval
+                .as_ref()
+                .expect("range intervals were filtered to complete records"),
+        );
+    }
+
+    NativeOperationDefinitionProperties {
+        source_properties: properties,
         definition_value_count,
         definition_chain_value_count,
+        range_count,
         definition_value_records,
         definition_chain_value_records,
-    )
+        range_records,
+    }
 }
 
 /// Return whether a design object belongs to one operation's exact structural
@@ -826,6 +1064,87 @@ fn insert_schema_value_properties(
     properties.insert(format!("{prefix}_ordinal"), value.ordinal.to_string());
     properties.insert(format!("{prefix}_offset"), value.offset.to_string());
     properties.insert(format!("{prefix}_value"), value.value.clone());
+}
+
+fn insert_range_interval_properties(
+    properties: &mut BTreeMap<String, String>,
+    prefix: &str,
+    range: &CatiaRangeInterval,
+) {
+    insert_schema_value_properties(properties, &format!("{prefix}_selector"), &range.range);
+    match &range.interval.prefix {
+        RangeIntervalPrefix::Compact { value, width } => {
+            properties.insert(format!("{prefix}_prefix_kind"), "compact".to_string());
+            properties.insert(format!("{prefix}_prefix_value"), value.to_string());
+            properties.insert(format!("{prefix}_prefix_width"), width.to_string());
+        }
+        RangeIntervalPrefix::EscapedWord { word } => {
+            properties.insert(format!("{prefix}_prefix_kind"), "escaped_word".to_string());
+            properties.insert(format!("{prefix}_prefix_word"), word.to_string());
+        }
+    }
+    match &range.interval.slots {
+        Some([lower, upper]) => {
+            properties.insert(format!("{prefix}_slots"), "two".to_string());
+            insert_range_slot_properties(properties, &format!("{prefix}_lower"), lower);
+            insert_range_slot_properties(properties, &format!("{prefix}_upper"), upper);
+        }
+        None => {
+            properties.insert(format!("{prefix}_slots"), "none".to_string());
+        }
+    }
+    if let Some(nominal) = range.nominal.as_ref() {
+        properties.insert(format!("{prefix}_nominal_kind"), "finite".to_string());
+        properties.insert(
+            format!("{prefix}_nominal_framing"),
+            range_nominal_framing_name(nominal.framing).to_string(),
+        );
+        properties.insert(
+            format!("{prefix}_nominal_bits"),
+            format!("{:016x}", nominal.bits),
+        );
+        properties.insert(
+            format!("{prefix}_nominal_opcode_offset"),
+            nominal.evaluation_opcode_offset.to_string(),
+        );
+    } else {
+        properties.insert(format!("{prefix}_nominal_kind"), "absent".to_string());
+    }
+    properties.insert(
+        format!("{prefix}_incoming_payload_reference_count"),
+        range.incoming_references.len().to_string(),
+    );
+    properties.insert(
+        format!("{prefix}_incoming_storage_reference_count"),
+        range.incoming_storage_references.len().to_string(),
+    );
+}
+
+fn insert_range_slot_properties(
+    properties: &mut BTreeMap<String, String>,
+    prefix: &str,
+    slot: &RangeIntervalSlot,
+) {
+    match slot {
+        RangeIntervalSlot::Binary64 { bits, offset } => {
+            properties.insert(format!("{prefix}_kind"), "binary64".to_string());
+            properties.insert(format!("{prefix}_bits"), format!("{bits:016x}"));
+            properties.insert(format!("{prefix}_offset"), offset.to_string());
+        }
+        RangeIntervalSlot::Unset { offset } => {
+            properties.insert(format!("{prefix}_kind"), "unset".to_string());
+            properties.insert(format!("{prefix}_offset"), offset.to_string());
+        }
+    }
+}
+
+fn range_nominal_framing_name(framing: CatiaRangeNominalFraming) -> &'static str {
+    match framing {
+        CatiaRangeNominalFraming::D8Token8193 => "D8Token8193",
+        CatiaRangeNominalFraming::D8Token81DB => "D8Token81DB",
+        CatiaRangeNominalFraming::DCToken81DB => "DCToken81DB",
+        CatiaRangeNominalFraming::DFToken8192 => "DFToken8192",
+    }
 }
 
 fn insert_suffix_payload_properties(

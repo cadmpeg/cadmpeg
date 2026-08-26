@@ -19,6 +19,7 @@ use super::super::sketch_ids::{
     feature_sketch_record_id_in_scan, model_sketch_id, section_owner_feature_id,
     sketch_identity_scope,
 };
+use super::super::uniqueness::exactly_one;
 
 pub(in super::super) fn feature_dimension_parameter_id(
     sketch: &SketchId,
@@ -66,6 +67,26 @@ pub(in super::super) fn resolved_feature_dimension_parameter<'a>(
                 feature_dimension_parameter_id(sketch, dimension.external_id),
             )
         })
+}
+
+pub(in super::super) fn planned_feature_dimension_parameter_ids(
+    scan: &ContainerScan,
+) -> BTreeSet<ParameterId> {
+    let mut ids = BTreeSet::new();
+    for definition in &scan.features.definitions {
+        let Some(table) = &definition.dimensions else {
+            continue;
+        };
+        let sketch = model_sketch_id(scan, definition);
+        for (ordinal, _) in table.rows.iter().enumerate() {
+            if let Some((_, parameter)) =
+                resolved_feature_dimension_parameter(&sketch, table, ordinal)
+            {
+                ids.insert(parameter);
+            }
+        }
+    }
+    ids
 }
 
 pub(in super::super) fn feature_dimension_table_complete(
@@ -291,12 +312,12 @@ pub(in super::super) fn transfer_feature_dimensions(
             pmi: None,
             native_ref: Some(feature_sketch_record_id_in_scan(scan, definition)),
         });
-        if let Some(feature) = ir
-            .model
-            .features
-            .iter_mut()
-            .find(|feature| feature.id == owner_id)
-        {
+        if let Some(feature) = exactly_one(
+            ir.model
+                .features
+                .iter_mut()
+                .filter(|feature| feature.id == owner_id),
+        ) {
             feature
                 .source_content
                 .push(FeatureSourceContent::Parameter(id));
@@ -304,3 +325,6 @@ pub(in super::super) fn transfer_feature_dimensions(
     }
     (transferred, relation_parameters)
 }
+
+#[cfg(test)]
+mod tests;

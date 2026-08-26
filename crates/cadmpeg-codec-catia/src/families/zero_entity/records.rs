@@ -494,47 +494,68 @@ pub fn zero_entity_ownership_root(data: &[u8]) -> Option<ZeroEntityOwnershipRoot
     zero_entity_ownership_root_in_range(data, 0..data.len())
 }
 
+/// Decode every complete ownership hierarchy in the zero-entity stream.
+#[cfg(test)]
+#[must_use]
+pub fn zero_entity_ownership_roots(data: &[u8]) -> Vec<ZeroEntityOwnershipRoot> {
+    zero_entity_ownership_roots_in_range(data, 0..data.len())
+}
+
 /// Decode ownership roots whose records stay inside `range`.
 #[must_use]
 pub(crate) fn zero_entity_ownership_root_in_range(
     data: &[u8],
     range: Range<usize>,
 ) -> Option<ZeroEntityOwnershipRoot> {
+    let roots = zero_entity_ownership_roots_in_range(data, range);
+    (roots.len() == 1)
+        .then(|| roots.into_iter().next())
+        .flatten()
+}
+
+/// Decode every ownership root whose records stay inside `range`.
+pub(crate) fn zero_entity_ownership_roots_in_range(
+    data: &[u8],
+    range: Range<usize>,
+) -> Vec<ZeroEntityOwnershipRoot> {
     let records = zero_entity_records_in_range(data, range);
-    records.windows(3).find_map(|window| {
-        let [face_roster, shell, body] = window else {
-            return None;
-        };
-        let body_trailer = body.pos.checked_add(18)?;
-        if face_roster.tag != [0x61, 0x42]
-            || shell.tag != [0x60, 0x06]
-            || body.tag != [0x65, 0x08]
-            || face_roster.end != shell.pos
-            || shell.end != body.pos
-            || tagged_u32(data, shell.pos.checked_add(7)?)? != 1
-            || data.get(shell.pos.checked_add(12)?) != Some(&0x81)
-            || tagged_u32(data, shell.pos.checked_add(13)?)? != 1
-            || tagged_u32(data, body.pos.checked_add(7)?)? != 1
-            || data.get(body.pos.checked_add(12)?) != Some(&0x81)
-            || tagged_u32(data, body.pos.checked_add(13)?)? != 1
-            || data.get(body_trailer..body.end)? != [0x05, 0x0d]
-        {
-            return None;
-        }
-        let count = usize::from(data[face_roster.pos + 12] - 0x80);
-        let face_slots = (0..count)
-            .map(|index| tagged_u32(data, face_roster.pos + 13 + index * 5))
-            .collect::<Option<Vec<_>>>()?;
-        Some(ZeroEntityOwnershipRoot {
-            face_roster_pos: face_roster.pos,
-            face_roster_record_ordinal: face_roster.ordinal,
-            face_slots,
-            shell_pos: shell.pos,
-            shell_record_ordinal: shell.ordinal,
-            body_pos: body.pos,
-            body_record_ordinal: body.ordinal,
+    records
+        .windows(3)
+        .filter_map(|window| {
+            let [face_roster, shell, body] = window else {
+                return None;
+            };
+            let body_trailer = body.pos.checked_add(18)?;
+            if face_roster.tag != [0x61, 0x42]
+                || shell.tag != [0x60, 0x06]
+                || body.tag != [0x65, 0x08]
+                || face_roster.end != shell.pos
+                || shell.end != body.pos
+                || tagged_u32(data, shell.pos.checked_add(7)?)? != 1
+                || data.get(shell.pos.checked_add(12)?) != Some(&0x81)
+                || tagged_u32(data, shell.pos.checked_add(13)?)? != 1
+                || tagged_u32(data, body.pos.checked_add(7)?)? != 1
+                || data.get(body.pos.checked_add(12)?) != Some(&0x81)
+                || tagged_u32(data, body.pos.checked_add(13)?)? != 1
+                || data.get(body_trailer..body.end)? != [0x05, 0x0d]
+            {
+                return None;
+            }
+            let count = usize::from(data[face_roster.pos + 12] - 0x80);
+            let face_slots = (0..count)
+                .map(|index| tagged_u32(data, face_roster.pos + 13 + index * 5))
+                .collect::<Option<Vec<_>>>()?;
+            Some(ZeroEntityOwnershipRoot {
+                face_roster_pos: face_roster.pos,
+                face_roster_record_ordinal: face_roster.ordinal,
+                face_slots,
+                shell_pos: shell.pos,
+                shell_record_ordinal: shell.ordinal,
+                body_pos: body.pos,
+                body_record_ordinal: body.ordinal,
+            })
         })
-    })
+        .collect()
 }
 
 /// Decode analytic surface carriers in a zero-entity `a9 03` stream.  The
@@ -2595,6 +2616,19 @@ mod tests {
         assert_eq!(root.face_slots, (1..=62).rev().collect::<Vec<_>>());
         assert_eq!(root.shell_record_ordinal, 2);
         assert_eq!(root.body_record_ordinal, 3);
+    }
+
+    #[test]
+    fn ownership_root_requires_one_complete_candidate_for_unique_selection() {
+        let first = zero_entity_ownership_stream(3);
+        let mut stream = first.clone();
+        stream.extend(first);
+
+        let roots = zero_entity_ownership_roots(&stream);
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0].face_roster_record_ordinal, 1);
+        assert_eq!(roots[1].face_roster_record_ordinal, 4);
+        assert!(zero_entity_ownership_root(&stream).is_none());
     }
 
     #[test]

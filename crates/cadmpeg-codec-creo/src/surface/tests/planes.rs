@@ -650,6 +650,50 @@ fn plane_envelope_scalar_tokens_take_precedence_over_compound_close_bytes() {
 }
 
 #[test]
+fn plane_envelope_positive_dict_scalar_owns_an_e3_tail() {
+    let body = [
+        0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f, 0x99, 1, 2, 3, 4, 5, 6,
+    ];
+    let mut payload = vec![7, 0x22, 4, 0x01, 0, 0];
+    payload.extend_from_slice(&body);
+    payload.push(psb::token::COMPOUND_CLOSE);
+
+    let envelopes = plane_envelopes(&payload);
+    assert_eq!(envelopes.len(), 1);
+    assert_eq!(envelopes[0].body, body);
+    assert_eq!(envelopes[0].scalar_tokens.len(), 10);
+    assert_eq!(envelopes[0].scalar_tokens[9], vec![0x99, 1, 2, 3, 4, 5, 6]);
+}
+
+#[test]
+fn plane_envelope_positive_dict_recovery_requires_the_final_slot() {
+    let body = [
+        0x0f, 0xe4, 0x99, 1, 2, 3, 4, 5, 6, 0x0d, 0x0f, 0x0f, 0xe4, 0x0d, 0x0f, 0x0d,
+    ];
+    let mut payload = vec![7, 0x22, 4, 0x01, 0, 0];
+    payload.extend_from_slice(&body);
+    payload.push(psb::token::COMPOUND_CLOSE);
+
+    assert!(plane_envelopes(&payload).is_empty());
+}
+
+#[test]
+fn compact_plane_envelope_positive_dict_scalar_owns_an_e3_tail() {
+    let body = [
+        0x0e, 0x0f, 0xe4, 0x0d, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x99, 1, 2, 3, 4, 5, 6,
+    ];
+    let mut payload = vec![7, 0x22, 4, 0x01, 0, 0];
+    payload.extend_from_slice(&body);
+    payload.push(psb::token::COMPOUND_CLOSE);
+
+    let envelopes = plane_envelopes(&payload);
+    assert_eq!(envelopes.len(), 1);
+    assert_eq!(envelopes[0].body, body);
+    assert_eq!(envelopes[0].scalar_tokens.len(), 9);
+    assert_eq!(envelopes[0].scalar_tokens[8], vec![0x99, 1, 2, 3, 4, 5, 6]);
+}
+
+#[test]
 fn plane_envelope_coordinates_decode_compact_positive_half() {
     let body = [
         0x0f, 0xe4, 0x0d, 0x0f, 0x43, 0xe0, 0x00, 0xe4, 0x0f, 0x0e, 0xe4, 0x0f,
@@ -829,6 +873,21 @@ fn positional_plane_frame_decodes_terminal_zero_before_null_tail() {
 }
 
 #[test]
+fn explicit_plane_frame_uses_the_stored_normal_triple() {
+    let slots = [
+        0.6, 0.0, 0.8, // parameter direction
+        0.0, 0.0, 0.0, // zero rank
+        0.8, 0.0, -0.6, // stored plane normal
+        2.0, 3.0, 4.0,
+    ];
+
+    let frame = plane_direct_frame(&slots.map(Some));
+    assert_eq!(frame.origin, Some([2.0, 3.0, 4.0]));
+    assert_eq!(frame.u_axis, Some([0.6, 0.0, 0.8]));
+    assert_eq!(frame.normal, Some([0.8, 0.0, -0.6]));
+}
+
+#[test]
 fn positional_plane_frame_decodes_outline_separator_zero_suffix() {
     let first = [
         0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x18, 0x2f, 0x05, 0x00, 0x00, 0x0c, 0x98,
@@ -853,6 +912,28 @@ fn positional_plane_frame_decodes_outline_separator_zero_suffix() {
 fn outline_separator_precedes_compact_integer_alias_of_compound_close() {
     let payload = [0x0f, 0x00, 0x0c, 0x98, 0xe3, 0xe0, 0x01, b'x', 0];
     assert_eq!(first_compound_close(&payload, 0, payload.len()), Some(4));
+}
+
+#[test]
+fn plane_local_system_close_validates_past_an_e0_numeric_byte() {
+    let mut payload = vec![
+        0x4e, 0xf0, 0, 0, 0, 0, 0xe0, // finite first support coordinate
+        0x18, // zero second coordinate
+        0x4c, 0xf0, 0, 0, 0, 0, 0, // finite third coordinate
+        0x10, 0x10, 0x10, // zero-rank triple
+        0x10, 0x10, 0x4c, 0xf0, 0, 0, 0, 0, 0, // second support triple
+        0x10, 0x10, 0x18, // origin
+    ];
+    let close = payload.len();
+    payload.push(psb::token::COMPOUND_CLOSE);
+    payload.extend_from_slice(&[psb::token::NAMED_RECORD, 0x01, b'x', 0]);
+    let cache = scalar::ScalarCache::from_section(&payload);
+
+    assert_eq!(first_compound_close(&payload, 0, payload.len()), None);
+    assert_eq!(
+        plane_local_system_compound_close(&payload, 0, payload.len(), &cache),
+        Some(close)
+    );
 }
 
 #[test]
@@ -931,6 +1012,21 @@ fn positional_plane_frame_requires_one_unique_orthogonal_support_pair() {
     ]))
     .normal
     .is_none());
+}
+
+#[test]
+fn matrix_plane_frame_uses_stored_direction_and_normal_columns() {
+    let slots = [
+        1.0, 0.0, 0.0, // x components of the three columns
+        0.0, 0.0, 0.0, // zero-rank column
+        0.0, 0.0, 1.0, // z components of the three columns
+        2.0, 3.0, 4.0,
+    ];
+
+    let frame = plane_matrix_frame(&slots.map(Some));
+    assert_eq!(frame.origin, Some([2.0, 3.0, 4.0]));
+    assert_eq!(frame.u_axis, Some([1.0, 0.0, 0.0]));
+    assert_eq!(frame.normal, Some([0.0, 0.0, 1.0]));
 }
 
 #[test]

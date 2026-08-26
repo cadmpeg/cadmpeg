@@ -67,6 +67,10 @@ pub(crate) mod feature;
 /// Byte-offset constants generated from `docs/layouts/creo.toml`.
 pub(crate) mod layout;
 pub(crate) mod legacy;
+pub(crate) mod legacy_family;
+pub(crate) mod legacy_feature;
+pub(crate) mod legacy_geometry;
+pub(crate) mod loop_array;
 #[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 pub(crate) mod loss;
 pub(crate) mod placement;

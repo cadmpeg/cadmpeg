@@ -471,14 +471,19 @@ impl FeatureSegmentTable {
             .count()
     }
 
-    /// Resolve a uniquely identified defining-sketch segment.
-    pub fn segment(&self, external_id: u32) -> Option<&FeatureSegment> {
-        self.is_complete().then_some(())?;
+    /// Resolve a unique ordinary row without requiring whole-table completeness.
+    pub(crate) fn unique_segment(&self, external_id: u32) -> Option<&FeatureSegment> {
         let segment = self
             .rows
             .iter()
             .find(|segment| segment.external_id == external_id)?;
         (self.external_id_count(external_id) == 1).then_some(segment)
+    }
+
+    /// Resolve a uniquely identified defining-sketch segment from a complete table.
+    pub fn segment(&self, external_id: u32) -> Option<&FeatureSegment> {
+        self.is_complete().then_some(())?;
+        self.unique_segment(external_id)
     }
 }
 
@@ -573,7 +578,7 @@ pub struct FeatureTrimVertex {
     pub vertex_id: u32,
     /// Distinct `ent_tab` external entity identifiers meeting at the vertex.
     pub entities: Vec<u32>,
-    /// Solved section-frame coordinates for a nonparallel line-line junction.
+    /// Solved section-frame coordinates for a uniquely resolved carrier junction.
     pub section_coordinates: Option<[f64; 2]>,
     /// Byte offset of the positional triple in the original stream.
     pub offset: usize,
@@ -1788,7 +1793,9 @@ pub fn equation_table(payload: &[u8], start: usize, end: usize) -> Option<Featur
         let row_end = if payload.get(cursor) == Some(&0xe2) {
             cursor += 1;
             cursor
-        } else if cursor == rows_end {
+        } else if cursor == rows_end
+            || payload.get(cursor..cursor + 2) == Some(&[0xf2, psb::token::ENTITY_REF])
+        {
             cursor
         } else {
             break;
@@ -3006,58 +3013,369 @@ pub(crate) fn positional_trim_vertex_table(
     })
 }
 
+const TRIM_COORDINATE_EPS: f64 = 1.0e-9;
+const TRIM_INTERSECTION_EPS: f64 = 1.0e-12;
+
+#[derive(Clone, Copy)]
+enum TrimCarrier {
+    Line { start: [f64; 2], end: [f64; 2] },
+    Circle { center: [f64; 2], radius: f64 },
+}
+
 fn trim_vertex_intersection(
     entities: &[u32],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
 ) -> Option<[f64; 2]> {
-    let [first, second] = entities else {
-        return None;
+    entity_intersection(entities, segments, variables)
+}
+
+fn resolved_trim_scalar(
+    variables: &FeatureVariableTable,
+    variable_type: u32,
+    key: u32,
+) -> Result<Option<f64>, ()> {
+    let values = variables
+        .rows
+        .iter()
+        .filter(|row| row.variable_type == variable_type && row.key == key)
+        .map(|row| row.value)
+        .collect::<Vec<_>>();
+    if values.is_empty() || values.iter().all(Option::is_none) {
+        return Ok(None);
+    }
+    let values = values.into_iter().collect::<Option<Vec<_>>>().ok_or(())?;
+    let first = *values.first().ok_or(())?;
+    if !first.is_finite() {
+        return Err(());
+    }
+    values
+        .iter()
+        .copied()
+        .try_fold(first, |first, value| {
+            if !value.is_finite() {
+                return Err(());
+            }
+            let scale = first.abs().max(value.abs()).max(1.0);
+            ((value - first).abs() <= TRIM_COORDINATE_EPS * scale)
+                .then_some(first)
+                .ok_or(())
+        })
+        .map(Some)
+}
+
+fn trim_endpoint_radius(
+    segment: &FeatureSegment,
+    center: [f64; 2],
+    points: &BTreeMap<u32, [Option<f64>; 2]>,
+) -> Result<Option<f64>, ()> {
+    let mut radii = Vec::new();
+    for point_id in segment.point_ids {
+        let Some([Some(u), Some(v)]) = points.get(&point_id).copied() else {
+            continue;
+        };
+        let radius = (u - center[0]).hypot(v - center[1]);
+        if !radius.is_finite() || radius <= TRIM_INTERSECTION_EPS {
+            return Err(());
+        }
+        radii.push(radius);
+    }
+    let Some(first) = radii.first().copied() else {
+        return Ok(None);
     };
-    (first != second)
-        .then(|| entity_intersection([*first, *second], segments, variables))
+    radii
+        .iter()
+        .copied()
+        .try_fold(first, |first, radius| {
+            let scale = first.abs().max(radius.abs()).max(1.0);
+            ((radius - first).abs() <= TRIM_COORDINATE_EPS * scale)
+                .then_some(first)
+                .ok_or(())
+        })
+        .map(Some)
+}
+
+fn trim_radius(
+    segment: &FeatureSegment,
+    center: [f64; 2],
+    points: &BTreeMap<u32, [Option<f64>; 2]>,
+    variables: &FeatureVariableTable,
+) -> Option<f64> {
+    let stored = resolved_trim_scalar(variables, 3, segment.radius_ref?).ok()?;
+    let endpoint = trim_endpoint_radius(segment, center, points).ok()?;
+    let radius = match (stored, endpoint) {
+        (Some(stored), Some(endpoint)) => {
+            let scale = stored.abs().max(endpoint.abs()).max(1.0);
+            ((stored - endpoint).abs() <= TRIM_COORDINATE_EPS * scale).then_some(stored)?
+        }
+        (Some(stored), None) | (None, Some(stored)) => stored,
+        (None, None) => return None,
+    };
+    radius
+        .is_finite()
+        .then_some(radius)
+        .filter(|radius| *radius > 0.0)
+}
+
+fn trim_carrier(
+    segment: &FeatureSegment,
+    points: &BTreeMap<u32, [Option<f64>; 2]>,
+    variables: &FeatureVariableTable,
+) -> Option<TrimCarrier> {
+    let point = |point_id| {
+        let coordinates = points.get(&point_id).copied()?;
+        let [Some(u), Some(v)] = coordinates else {
+            return None;
+        };
+        (u.is_finite() && v.is_finite()).then_some([u, v])
+    };
+    match segment.kind {
+        FeatureSegmentKind::Line => {
+            let start = point(segment.point_ids[0])?;
+            let end = point(segment.point_ids[1])?;
+            let scale = start
+                .into_iter()
+                .chain(end)
+                .map(f64::abs)
+                .fold(1.0, f64::max);
+            ((end[0] - start[0]).hypot(end[1] - start[1]) > TRIM_INTERSECTION_EPS * scale)
+                .then_some(TrimCarrier::Line { start, end })
+        }
+        FeatureSegmentKind::Arc => {
+            let center = point(segment.center_id?)?;
+            let radius = trim_radius(segment, center, points, variables)?;
+            Some(TrimCarrier::Circle { center, radius })
+        }
+        FeatureSegmentKind::Point => None,
+    }
+}
+
+fn trim_line_line_intersection(
+    first_start: [f64; 2],
+    first_end: [f64; 2],
+    second_start: [f64; 2],
+    second_end: [f64; 2],
+) -> Option<[f64; 2]> {
+    let first_direction = [first_end[0] - first_start[0], first_end[1] - first_start[1]];
+    let second_direction = [
+        second_end[0] - second_start[0],
+        second_end[1] - second_start[1],
+    ];
+    let denominator = first_direction[0].mul_add(
+        second_direction[1],
+        -(first_direction[1] * second_direction[0]),
+    );
+    let scale = first_direction
+        .into_iter()
+        .chain(second_direction)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    if denominator.abs() <= TRIM_INTERSECTION_EPS * scale * scale {
+        return None;
+    }
+    let relative = [
+        second_start[0] - first_start[0],
+        second_start[1] - first_start[1],
+    ];
+    let first_parameter = relative[0]
+        .mul_add(second_direction[1], -(relative[1] * second_direction[0]))
+        / denominator;
+    let coordinate = [
+        first_start[0] + first_parameter * first_direction[0],
+        first_start[1] + first_parameter * first_direction[1],
+    ];
+    coordinate
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(coordinate)
+}
+
+fn trim_line_circle_intersection(
+    start: [f64; 2],
+    end: [f64; 2],
+    center: [f64; 2],
+    radius: f64,
+) -> Option<[f64; 2]> {
+    let direction = [end[0] - start[0], end[1] - start[1]];
+    let relative = [start[0] - center[0], start[1] - center[1]];
+    let quadratic = direction[0].mul_add(direction[0], direction[1] * direction[1]);
+    if quadratic <= 0.0 || !quadratic.is_finite() {
+        return None;
+    }
+    let linear = 2.0 * relative[0].mul_add(direction[0], relative[1] * direction[1]);
+    let constant = relative[0].mul_add(relative[0], relative[1] * relative[1]) - radius * radius;
+    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
+    let scale = linear
+        .abs()
+        .max((4.0 * quadratic * constant).abs().sqrt())
+        .max(1.0);
+    let tolerance = TRIM_INTERSECTION_EPS * scale * scale;
+    if !discriminant.is_finite() || discriminant < -tolerance {
+        return None;
+    }
+    let in_segment =
+        |parameter: f64| (-TRIM_COORDINATE_EPS..=1.0 + TRIM_COORDINATE_EPS).contains(&parameter);
+    let point = |parameter: f64| {
+        let coordinate = [
+            start[0] + parameter * direction[0],
+            start[1] + parameter * direction[1],
+        ];
+        coordinate
+            .into_iter()
+            .all(f64::is_finite)
+            .then_some(coordinate)
+    };
+    if discriminant.abs() <= tolerance {
+        let parameter = -linear / (2.0 * quadratic);
+        return in_segment(parameter)
+            .then(|| point(parameter.clamp(0.0, 1.0)))
+            .flatten();
+    }
+    let root = discriminant.sqrt();
+    let parameters = [
+        (-linear + root) / (2.0 * quadratic),
+        (-linear - root) / (2.0 * quadratic),
+    ];
+    let mut matching = parameters
+        .into_iter()
+        .filter(|parameter| in_segment(*parameter));
+    let parameter = matching.next()?;
+    matching
+        .next()
+        .is_none()
+        .then(|| point(parameter.clamp(0.0, 1.0)))
         .flatten()
 }
 
+fn trim_circle_circle_intersection(
+    first_center: [f64; 2],
+    first_radius: f64,
+    second_center: [f64; 2],
+    second_radius: f64,
+) -> Option<[f64; 2]> {
+    let delta = [
+        second_center[0] - first_center[0],
+        second_center[1] - first_center[1],
+    ];
+    let distance = delta[0].hypot(delta[1]);
+    let scale = distance.max(first_radius).max(second_radius).max(1.0);
+    if !distance.is_finite() || distance <= TRIM_INTERSECTION_EPS * scale {
+        return None;
+    }
+    let external = first_radius + second_radius;
+    let internal = (first_radius - second_radius).abs();
+    if distance < internal - TRIM_COORDINATE_EPS * scale
+        || distance > external + TRIM_COORDINATE_EPS * scale
+    {
+        return None;
+    }
+    let axial = (first_radius * first_radius - second_radius * second_radius + distance * distance)
+        / (2.0 * distance);
+    let height_squared = first_radius.mul_add(first_radius, -(axial * axial));
+    let tolerance = TRIM_INTERSECTION_EPS * scale * scale;
+    if !height_squared.is_finite() || height_squared.abs() > tolerance {
+        return None;
+    }
+    let direction = [delta[0] / distance, delta[1] / distance];
+    let coordinate = [
+        first_center[0] + axial * direction[0],
+        first_center[1] + axial * direction[1],
+    ];
+    coordinate
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(coordinate)
+}
+
 pub(crate) fn entity_intersection(
-    entity_ids: [u32; 2],
+    entity_ids: &[u32],
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
 ) -> Option<[f64; 2]> {
     let segments = segments?;
     let variables = variables?;
-    let (points, _) = variables.reconciled_points();
-    let point = |point_id| {
-        let point = points.get(&point_id)?;
-        Some([point[0]?, point[1]?])
-    };
-    let first = segments.segment(entity_ids[0])?;
-    let second = segments.segment(entity_ids[1])?;
-    let shared = first
-        .point_ids
+    (variables.is_complete() && entity_ids.len() >= 2).then_some(())?;
+    let mut unique_entities = BTreeSet::new();
+    if !entity_ids
+        .iter()
+        .all(|entity_id| unique_entities.insert(*entity_id))
+    {
+        return None;
+    }
+    let (points, ambiguous_points) = variables.reconciled_points();
+    let segments = entity_ids
+        .iter()
+        .map(|entity_id| segments.unique_segment(*entity_id))
+        .collect::<Option<Vec<_>>>()?;
+    let common_point_ids = segments
+        .iter()
+        .skip(1)
+        .fold(
+            segments[0].point_ids.into_iter().collect::<BTreeSet<_>>(),
+            |common, segment| {
+                let segment_points = segment.point_ids.into_iter().collect::<BTreeSet<_>>();
+                common.intersection(&segment_points).copied().collect()
+            },
+        )
         .into_iter()
-        .filter(|point_id| second.point_ids.contains(point_id))
-        .collect::<BTreeSet<_>>();
-    if let [point_id] = shared.iter().copied().collect::<Vec<_>>().as_slice() {
-        return point(*point_id);
+        .collect::<Vec<_>>();
+    if entity_ids.len() == 2 {
+        if let [point_id] = common_point_ids.as_slice() {
+            if !ambiguous_points.contains(point_id) {
+                if let Some([Some(u), Some(v)]) = points.get(point_id).copied() {
+                    if u.is_finite() && v.is_finite() {
+                        return Some([u, v]);
+                    }
+                }
+            }
+        }
     }
-    if first.kind != FeatureSegmentKind::Line || second.kind != FeatureSegmentKind::Line {
-        return None;
+    let carriers = segments
+        .iter()
+        .map(|segment| trim_carrier(segment, &points, variables))
+        .collect::<Option<Vec<_>>>()?;
+    let mut intersections = Vec::new();
+    for first in 0..carriers.len() {
+        for second in first + 1..carriers.len() {
+            let coordinate = match (carriers[first], carriers[second]) {
+                (
+                    TrimCarrier::Line { start, end },
+                    TrimCarrier::Line {
+                        start: second_start,
+                        end: second_end,
+                    },
+                ) => trim_line_line_intersection(start, end, second_start, second_end),
+                (TrimCarrier::Line { start, end }, TrimCarrier::Circle { center, radius })
+                | (TrimCarrier::Circle { center, radius }, TrimCarrier::Line { start, end }) => {
+                    trim_line_circle_intersection(start, end, center, radius)
+                }
+                (
+                    TrimCarrier::Circle { center, radius },
+                    TrimCarrier::Circle {
+                        center: second_center,
+                        radius: second_radius,
+                    },
+                ) => trim_circle_circle_intersection(center, radius, second_center, second_radius),
+            }?;
+            intersections.push(coordinate);
+        }
     }
-    let [x1, y1] = point(first.point_ids[0])?;
-    let [x2, y2] = point(first.point_ids[1])?;
-    let [x3, y3] = point(second.point_ids[0])?;
-    let [x4, y4] = point(second.point_ids[1])?;
-    let denominator = (x1 - x2).mul_add(y3 - y4, -(y1 - y2) * (x3 - x4));
-    if denominator == 0.0 {
-        return None;
-    }
-    let first_cross = x1.mul_add(y2, -(y1 * x2));
-    let second_cross = x3.mul_add(y4, -(y3 * x4));
-    Some([
-        first_cross.mul_add(x3 - x4, -(x1 - x2) * second_cross) / denominator,
-        first_cross.mul_add(y3 - y4, -(y1 - y2) * second_cross) / denominator,
-    ])
+    let first = *intersections.first()?;
+    let rest = &intersections[1..];
+    let scale = first
+        .into_iter()
+        .chain(
+            rest.iter()
+                .flat_map(|coordinate| coordinate.iter().copied()),
+        )
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    rest.iter()
+        .all(|coordinate| {
+            (coordinate[0] - first[0]).hypot(coordinate[1] - first[1])
+                <= TRIM_COORDINATE_EPS * scale
+        })
+        .then_some(first)
 }
 
 pub(crate) fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderTable> {
@@ -3949,11 +4267,18 @@ pub(crate) fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<Fe
     item_close.push(0xf1);
     item_close.extend_from_slice(item_class_encoding);
     item_close.push(0xe2);
-    let Some(named_item_end) = find_bytes(payload, &item_close, after_item_class, prototype_end)
-    else {
-        return Vec::new();
+    let named_item_end = find_bytes(payload, &item_close, after_item_class, prototype_end);
+    let (named_item_end, named_item_close_len) = match named_item_end {
+        Some(offset) => (offset, item_close.len()),
+        None if prototype_item_count == 1 && named_item.is_some() => {
+            // Some named prototypes store the one named item directly in the
+            // array body. The outer table trailer closes both the prototype
+            // and its one-item schema; there is no inner item trailer.
+            (prototype_end, 0)
+        }
+        None => return Vec::new(),
     };
-    item_cursor = named_item_end + item_close.len();
+    item_cursor = named_item_end + named_item_close_len;
     let mut prototype_items = named_item.into_iter().collect::<Vec<_>>();
     while prototype_items.len() < usize::try_from(prototype_item_count).unwrap_or(usize::MAX) {
         let (Some(entity_id), next) = segment_int(payload, item_cursor) else {
@@ -4274,37 +4599,171 @@ fn positional_skamp_item_array(
     row_separator.extend_from_slice(outer_table_class);
     row_separator.push(0xe2);
     let row_end = find_bytes(payload, &row_separator, start, end).unwrap_or(end);
-    let candidates = (start..row_end)
-        .filter_map(|array| {
-            (payload.get(array) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-            let (count, after_count) = psb::compact_int(payload, array + 1);
-            (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let (_, after_table_class) = psb::reference_id(payload, after_count + 1).ok()?;
-            let table_class = payload.get(after_count..after_table_class)?;
-            expected_table_class
-                .is_none_or(|expected| expected == table_class)
-                .then_some(())?;
-            (payload.get(after_table_class..after_table_class + 2) == Some(&[0xfb, 0xe2]))
-                .then_some(())?;
-            let row_class_start = after_table_class + 2;
-            (payload.get(row_class_start) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let (_, after_row_class) = psb::reference_id(payload, row_class_start + 1).ok()?;
-            let row_class = payload.get(row_class_start..after_row_class)?;
-            expected_row_class
-                .is_none_or(|expected| expected == row_class)
-                .then_some(())?;
-            Some((
-                count,
-                after_row_class,
-                table_class.to_vec(),
-                row_class.to_vec(),
-            ))
+    let candidate = (start..row_end).find_map(|array| {
+        positional_skamp_item_array_candidate(
+            payload,
+            array,
+            row_end,
+            expected_table_class,
+            expected_row_class,
+        )
+    })?;
+    let item_end =
+        positional_skamp_item_array_body_end(payload, candidate.1, candidate.0, &candidate.2, end)?;
+    if payload.get(item_end) == Some(&psb::token::ARRAY_OPEN)
+        && positional_skamp_item_array_candidate(
+            payload,
+            item_end,
+            row_end,
+            expected_table_class,
+            expected_row_class,
+        )
+        .is_some_and(|second| {
+            positional_skamp_item_array_body_end(payload, second.1, second.0, &second.2, end)
+                .is_some()
         })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
+    {
         return None;
-    };
-    Some(candidate.clone())
+    }
+    positional_skamp_item_array_has_valid_boundary(
+        payload,
+        candidate.1,
+        candidate.0,
+        &candidate.2,
+        outer_table_class,
+        end,
+    )?;
+    Some(candidate)
+}
+
+fn positional_skamp_item_array_candidate(
+    payload: &[u8],
+    array: usize,
+    end: usize,
+    expected_table_class: Option<&[u8]>,
+    expected_row_class: Option<&[u8]>,
+) -> Option<(u32, usize, Vec<u8>, Vec<u8>)> {
+    (payload.get(array) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (count, after_count) = psb::compact_int(payload, array + 1);
+    (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (_, after_table_class) = psb::reference_id(payload, after_count + 1).ok()?;
+    let table_class = payload.get(after_count..after_table_class)?;
+    expected_table_class
+        .is_none_or(|expected| expected == table_class)
+        .then_some(())?;
+    (payload.get(after_table_class..after_table_class + 2) == Some(&[0xfb, 0xe2])).then_some(())?;
+    let row_class_start = after_table_class + 2;
+    (payload.get(row_class_start) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (_, after_row_class) = psb::reference_id(payload, row_class_start + 1).ok()?;
+    (after_row_class <= end).then_some(())?;
+    let row_class = payload.get(row_class_start..after_row_class)?;
+    expected_row_class
+        .is_none_or(|expected| expected == row_class)
+        .then_some(())?;
+    Some((
+        count,
+        after_row_class,
+        table_class.to_vec(),
+        row_class.to_vec(),
+    ))
+}
+
+fn positional_skamp_item_array_body_end(
+    payload: &[u8],
+    mut cursor: usize,
+    item_count: u32,
+    item_table_class: &[u8],
+    end: usize,
+) -> Option<usize> {
+    let item_limit = usize::try_from(item_count).unwrap_or(usize::MAX);
+    let mut items = 0;
+    while items < item_limit {
+        next_solver_int(payload, &mut cursor)?;
+        next_solver_int(payload, &mut cursor)?;
+        items += 1;
+        if items < item_limit {
+            cursor = consume_positional_separator(payload, cursor, end, item_table_class, &[0xf1])?;
+        }
+    }
+    Some(cursor)
+}
+
+fn positional_skamp_item_array_has_valid_boundary(
+    payload: &[u8],
+    mut cursor: usize,
+    item_count: u32,
+    item_table_class: &[u8],
+    outer_table_class: &[u8],
+    end: usize,
+) -> Option<()> {
+    cursor =
+        positional_skamp_item_array_body_end(payload, cursor, item_count, item_table_class, end)?;
+
+    let mut row_separator = Vec::with_capacity(outer_table_class.len() + 2);
+    row_separator.push(0xf3);
+    row_separator.extend_from_slice(outer_table_class);
+    row_separator.push(0xe2);
+    if cursor == end {
+        return Some(());
+    }
+    if payload.get(cursor..cursor + row_separator.len()) == Some(row_separator.as_slice()) {
+        return Some(());
+    }
+    if payload.get(cursor) == Some(&0xe2) {
+        return Some(());
+    }
+    if positional_skamp_following_table_header(payload, cursor, end, item_table_class).is_some() {
+        return Some(());
+    }
+    payload
+        .get(cursor)
+        .is_some_and(|byte| *byte == 0xe0)
+        .then_some(())
+        .or_else(|| {
+            let Some([0xf4, 0x04 | 0x05]) = payload.get(cursor..cursor + 2) else {
+                return None;
+            };
+            (payload.get(cursor + 2) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (_, after_table_class) = psb::reference_id(payload, cursor + 3).ok()?;
+            (after_table_class <= end).then_some(())?;
+            if payload.get(after_table_class) == Some(&psb::token::ARRAY_OPEN) {
+                let (_, after_count) = psb::compact_int(payload, after_table_class + 1);
+                (after_count < end && payload.get(after_count) == Some(&psb::token::ENTITY_REF))
+                    .then_some(())?;
+                let (_, after_next_table_class) =
+                    psb::reference_id(payload, after_count + 1).ok()?;
+                (after_next_table_class + 2 <= end
+                    && payload.get(after_next_table_class..after_next_table_class + 2)
+                        == Some(&[0xfb, 0xe2]))
+                .then_some(())
+            } else {
+                payload
+                    .get(after_table_class)
+                    .is_some_and(|byte| matches!(byte, 0xe0..=0xe3))
+                    .then_some(())
+            }
+        })
+}
+
+fn positional_skamp_following_table_header(
+    payload: &[u8],
+    cursor: usize,
+    end: usize,
+    item_table_class: &[u8],
+) -> Option<()> {
+    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (_, after_count) = psb::compact_int(payload, cursor + 1);
+    (after_count < end && payload.get(after_count) == Some(&psb::token::ENTITY_REF))
+        .then_some(())?;
+    let reference_start = after_count + 1;
+    let (_, after_table_class) = psb::reference_id(payload, reference_start).ok()?;
+    let table_class = payload.get(after_count..after_table_class)?;
+    (table_class != item_table_class
+        && after_table_class + 2 <= end
+        && payload.get(after_table_class..after_table_class + 2) == Some(&[0xfb, 0xe2]))
+    .then_some(())?;
+    let (_, after_row_class) = psb::reference_id(payload, after_table_class + 3).ok()?;
+    (after_row_class <= end).then_some(())
 }
 
 pub(crate) fn feature_relation_triples(
@@ -5040,7 +5499,7 @@ pub(crate) fn saved_positional_generated_entities(
             (order_table.internal_id(row.external_id) == Some(row.internal_id)
                 && order_table.external_id(row.internal_id) == Some(row.external_id))
             .then_some(())?;
-            let segment = segments.segment(row.external_id)?;
+            let segment = segments.unique_segment(row.external_id)?;
             Some((row.internal_id, segment))
         })
         .collect::<BTreeMap<_, _>>();

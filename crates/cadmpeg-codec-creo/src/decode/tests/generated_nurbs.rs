@@ -14,9 +14,10 @@ use crate::decode::sketch::{
 };
 use crate::decode::sketch_transfer::{
     current_feature_operation, current_feature_recipe, current_feature_recipe_parent,
-    first_material_feature_by_definition_order, reconcile_constraint_entity_references,
-    reconcile_constraint_parameter_reference, resolved_feature_schema_class_from_classes,
-    row_feature_schema_classes, unique_feature_revolution_extent_kind,
+    feature_is_first_material_operation, first_material_feature_by_definition_order,
+    reconcile_constraint_entity_references, reconcile_constraint_parameter_reference,
+    resolved_feature_schema_class_from_classes, row_feature_schema_classes,
+    section_equation_same_coordinate_constraints, unique_feature_revolution_extent_kind,
 };
 use crate::decode::sweep::{generated_nurbs_translation_extent, nurbs_translation_span};
 use crate::decode::uniqueness::{
@@ -78,6 +79,8 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
         row(31, crate::surface::SurfaceKind::Extrusion),
         row(32, crate::surface::SurfaceKind::Plane),
         row(33, crate::surface::SurfaceKind::Plane),
+        row(34, crate::surface::SurfaceKind::Extrusion),
+        row(35, crate::surface::SurfaceKind::Plane),
     ]);
     let mut ir = CadIr::empty(Units::default());
     ir.model.surfaces.extend([
@@ -102,6 +105,16 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
                 normal: Vector3::new(0.0, 0.0, -1.0),
                 u_axis: Vector3::new(1.0, 0.0, 0.0),
             },
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#34".to_string()),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#35".to_string()),
+            geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         },
     ]);
@@ -661,6 +674,18 @@ fn equation_function_six_derives_positive_point_distance() {
         resolved_section_radii(&definition(Some(6.0))).get(&20),
         Some(&6.0)
     );
+
+    let mut stored_without_coordinates = definition(Some(5.0));
+    for row in &mut stored_without_coordinates
+        .variables
+        .as_mut()
+        .expect("variables")
+        .rows[..4]
+    {
+        row.value = None;
+        row.guess = None;
+    }
+    assert!(!resolved_section_scalar_values(&stored_without_coordinates).contains_key(&(3, 20)));
 }
 
 #[test]
@@ -1070,6 +1095,19 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         dimension_driven: false,
         offset: 0,
     };
+    let line = |external_id, point_ids| crate::feature::FeatureSegment {
+        kind: crate::feature::FeatureSegmentKind::Line,
+        directions: [None; 3],
+        point_ids,
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: 0,
+    };
     let definition = crate::feature::FeatureDefinition {
         id: 40,
         owner_feature_id: None,
@@ -1086,7 +1124,20 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
             points: Vec::new(),
             offset: 0,
         }),
-        segments: None,
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![line(10, [1, 2])],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
         trim_entities: None,
         trim_vertices: None,
         order_table: None,
@@ -1100,6 +1151,48 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
     assert_eq!(
         resolved_section_coordinates(&definition).get(&2),
         Some(&[None, Some(4.5)])
+    );
+    let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
+    let constraints = section_equation_same_coordinate_constraints(&definition, &sketch);
+    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints[0].0.active, Some(true));
+    assert_eq!(
+        constraints[0].0.definition,
+        SketchConstraintDefinition::SameCoordinate {
+            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            axis: cadmpeg_ir::sketches::SketchCoordinateAxis::V,
+        }
+    );
+
+    let mut function_two = definition.clone();
+    function_two.body = b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+            \x01\x02\x00\x01\xf6\xe2\
+            \x02\x0d\xf8\x03\x02\x03\x04\xf6\xe2"
+        .to_vec();
+    function_two.variables.as_mut().expect("variables").rows = vec![
+        row(1, 1, None),
+        row(1, 2, None),
+        row(2, 1, Some(4.5)),
+        row(2, 2, None),
+        row(7, 3, Some(0.0)),
+    ];
+    function_two
+        .variables
+        .as_mut()
+        .expect("variables")
+        .declared_count = 5;
+    let function_two_constraints =
+        section_equation_same_coordinate_constraints(&function_two, &sketch);
+    assert_eq!(function_two_constraints.len(), 2);
+    assert_eq!(
+        function_two_constraints[0].0.definition,
+        SketchConstraintDefinition::SameCoordinate {
+            first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
+            axis: cadmpeg_ir::sketches::SketchCoordinateAxis::U,
+        }
     );
 
     let mut nonzero_auxiliary = definition;
@@ -1741,6 +1834,80 @@ fn material_base_body_uses_bounded_definition_order() {
         10,
         &[(20, 200)]
     ));
+}
+
+#[test]
+fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
+    let operation = |feature_id, root_schema_class, recipe| crate::feature::FeatureOperation {
+        feature_id,
+        kind: "Sweep".to_string(),
+        display_name_stored: false,
+        stored_name: None,
+        stored_name_bytes: None,
+        identifier_keyword: None,
+        stored_name_prefix: None,
+        recipe,
+        recipe_conflict: false,
+        display_state_conflict: false,
+        root_schema_class,
+        parent_feature_id: None,
+        offset: feature_id as usize,
+        state_offset: feature_id as usize,
+    };
+    let definition = |id, section_offset, offset| crate::feature::FeatureDefinition {
+        id,
+        owner_feature_id: Some(id),
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: Some(crate::feature::FeatureSection3d {
+            sketch_plane_entity_id: None,
+            sketch_plane_flip: None,
+            reference_plane_entity_ids: Vec::new(),
+            reference_plane_rows: Vec::new(),
+            reference_plane_datum_geometry_id: None,
+            orientation: crate::feature::FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: section_offset,
+        }),
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset,
+    };
+    let transform = |definition_id, feature_id, offset| crate::placement::FeatureSectionTransform {
+        definition_id,
+        feature_id: Some(feature_id),
+        origin: [0.0; 3],
+        u_axis: [1.0, 0.0, 0.0],
+        v_axis: [0.0, 1.0, 0.0],
+        normal: [0.0, 0.0, 1.0],
+        offset,
+    };
+
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.operations.extend([
+        operation(
+            10,
+            Some(917),
+            Some(crate::feature::FeatureRecipe::ProtrudeExtrude),
+        ),
+        operation(20, Some(917), None),
+        operation(30, Some(917), None),
+    ]);
+    scan.features.definitions.push(definition(10, 101, 100));
+    scan.features
+        .section_transforms
+        .extend([transform(10, 10, 101), transform(30, 30, 302)]);
+
+    assert!(feature_is_first_material_operation(&scan, 10));
+    assert!(!feature_is_first_material_operation(&scan, 20));
+    assert!(!feature_is_first_material_operation(&scan, 30));
 }
 
 #[test]

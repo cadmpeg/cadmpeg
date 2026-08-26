@@ -21,8 +21,8 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::graph::{
     bounded_occurrence_range, edge_pcurve_parameters, face_loop_owner_counts, loop_chain_closes,
-    B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph, B5OffsetSurface, B5SupportedSurface,
-    B5Surface,
+    pcurve_nurbs_knots, pcurve_parameter_domain, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph,
+    B5OffsetSurface, B5SupportedSurface, B5Surface,
 };
 
 mod edges;
@@ -266,29 +266,6 @@ fn referenced_surface_ids(
     referenced
 }
 
-fn native_pcurve_parameter_range(
-    pcurve: &super::graph::B5Pcurve,
-    knots: &[f64],
-) -> Option<[f64; 2]> {
-    let degree = usize::try_from(pcurve.degree).ok()?;
-    let spline_domain = knots
-        .get(degree)
-        .copied()
-        .zip(
-            knots
-                .len()
-                .checked_sub(degree + 1)
-                .and_then(|index| knots.get(index))
-                .copied(),
-        )
-        .map(|(start, end)| [start, end])
-        .filter(|range| range[0].is_finite() && range[0] < range[1])?;
-    match pcurve.parameter_range {
-        Some(range) => bounded_occurrence_range(range, spline_domain),
-        None => Some(spline_domain),
-    }
-}
-
 /// Resolve the whole graph into the cross-pass [`TransferPlan`]. Returns `None`
 /// when any referenced surface, pcurve, edge endpoint, or loop chain fails to
 /// close so the caller leaves the model untouched.
@@ -409,8 +386,8 @@ fn build_plan(graph: &B5Graph, payload: &UnknownId) -> Option<TransferPlan> {
             if pcurve.surface != loop_.surface || !graph.edge_vertices.contains_key(&edge_id) {
                 return None;
             }
-            let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
-            let parameter_range = native_pcurve_parameter_range(pcurve, &knots)?;
+            let knots = pcurve_nurbs_knots(pcurve)?;
+            let parameter_range = pcurve_parameter_domain(pcurve)?;
             let surface = graph.surfaces.get(&loop_.surface)?;
             let cylinder_reparameterized = matches!(surface, B5Surface::Cylinder { .. });
             let geometry = PcurveGeometry::Nurbs {
@@ -891,12 +868,8 @@ pub(crate) fn resolved_extrusion_surface(
             let source_surface = graph.surfaces.get(&surface_object_id)?;
             let surface = resolved_surface_geometry(graph, surface_object_id)?;
             let pcurve = graph.pcurves.get(&pcurve_object_id)?;
-            let knots = expand_knots(&pcurve.distinct_knots, &pcurve.multiplicities)?;
-            let degree = usize::try_from(pcurve.degree).ok()?;
-            let domain = [
-                *knots.get(degree)?,
-                *knots.get(knots.len().checked_sub(degree + 1)?)?,
-            ];
+            let knots = pcurve_nurbs_knots(pcurve)?;
+            let domain = pcurve_parameter_domain(pcurve)?;
             bounded_occurrence_range(pcurve_parameter_range, domain)?;
             let pcurve_geometry = PcurveGeometry::Nurbs {
                 degree: pcurve.degree,
@@ -1056,20 +1029,6 @@ pub(crate) fn resolved_offset_surface(
         distance: offset.distance,
         parameter_bounds: offset.parameter_bounds,
     })
-}
-
-fn expand_knots(distinct: &[f64], multiplicities: &[u32]) -> Option<Vec<f64>> {
-    if distinct.len() != multiplicities.len() {
-        return None;
-    }
-    let mut knots = Vec::new();
-    for (&knot, &multiplicity) in distinct.iter().zip(multiplicities) {
-        knots.extend(std::iter::repeat_n(
-            knot,
-            usize::try_from(multiplicity).ok()?,
-        ));
-    }
-    Some(knots)
 }
 
 fn annotate(

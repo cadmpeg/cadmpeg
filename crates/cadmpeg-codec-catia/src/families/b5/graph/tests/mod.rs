@@ -10,6 +10,7 @@ fn test_pcurve(object_id: u32, surface: u32) -> B5Pcurve {
         control_points: vec![[0.0, 0.0], [1.0, 0.0]],
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     }

@@ -85,6 +85,37 @@ fn modeling_scope_without_outer_declarations_remains_unbounded() {
 }
 
 #[test]
+fn nonfinite_constraint_scalar_is_not_reported_as_a_finite_quantity_loss() {
+    let mut suffix = vec![0x84, 0x96, 0x82, 0xc1, 0xe6];
+    suffix.extend_from_slice(&f64::NAN.to_bits().to_le_bytes());
+    let file = standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &suffix);
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode non-finite constraint scalar");
+
+    assert!(decoded.report().losses.iter().all(|loss| {
+        loss.code != crate::loss::CatiaLossCode::AttributesDimensionQuantityUnresolved.kind()
+    }));
+}
+
+#[test]
+fn finite_c1_constraint_scalar_reports_an_unresolved_quantity() {
+    let mut suffix = vec![0x84, 0x96, 0x82, 0xc1, 0xe6];
+    suffix.extend_from_slice(&25.4_f64.to_bits().to_le_bytes());
+    let file = standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &suffix);
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode finite C1 constraint scalar");
+
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::CatiaLossCode::AttributesDimensionQuantityUnresolved.kind()
+            && loss.message.contains("1 finite")
+    }));
+}
+
+#[test]
 fn unresolved_modeling_scope_accounts_for_every_retained_object_record() {
     let (mut bytes, _) = outer_container_object_graph_catpart();
     let class_offset = bytes

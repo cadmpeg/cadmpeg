@@ -61,6 +61,38 @@ fn entity_suffix_values_accept_8193_trailers() {
 }
 
 #[test]
+fn entity_suffix_values_accept_8192_trailers() {
+    use crate::native::{
+        CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixPayload,
+        CatiaEntitySuffixTrailer,
+    };
+
+    let bits = (-6.25_f64).to_bits();
+    let mut suffix = vec![0x84, 0x96, 0x82, 0xdf, 0xe6];
+    suffix.extend_from_slice(&bits.to_le_bytes());
+    suffix.extend_from_slice(&[0x81, 0x92]);
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_two_selector_value(
+        "Range",
+        "CstAttr_Dimension",
+        &suffix,
+    ));
+    let suffix_value = native.entity_records[0]
+        .suffix_value
+        .as_ref()
+        .expect("81 92-terminated suffix value");
+    assert_eq!(suffix_value.prefix_code, 0xdf);
+    assert_eq!(suffix_value.trailer, CatiaEntitySuffixTrailer::Token8192);
+    assert_eq!(
+        suffix_value.payload,
+        CatiaEntitySuffixPayload::Evaluation {
+            opcode_offset: 4,
+            evaluation: CatiaEntityEvaluation::Scalar { bits },
+            encoding: CatiaEntityEvaluationEncoding::Direct,
+        }
+    );
+}
+
+#[test]
 fn native_namespace_types_and_validates_generic_entity_suffix_values() {
     use crate::native::{
         CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySuffixPayload,

@@ -1,6 +1,102 @@
 use super::*;
 
 #[test]
+fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
+    let bounds = |center: [f64; 3], half_extents: [f64; 3]| StandardFaceBounds {
+        aabb_center: center,
+        aabb_half_extents: half_extents,
+        sphere_center: center,
+        sphere_radius: 10.0,
+    };
+    let edge_faces = [[0, 0]];
+    let face_bounds = [
+        Some(bounds([0.0, 0.0, 0.0], [4.0, 4.0, 4.0])),
+        Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
+        Some(bounds([0.0, 5.0, 0.0], [1.0, 1.0, 1.0])),
+    ];
+    let mut allowed_faces = vec![vec![1, 2]];
+
+    refine_repeated_face_domains_by_geometry_and_bounds(
+        &edge_faces,
+        &mut allowed_faces,
+        Some(&face_bounds),
+        None,
+        &[],
+    );
+    assert_eq!(allowed_faces, vec![vec![1]]);
+
+    let face_bounds = [
+        Some(bounds([0.0, 0.0, 0.0], [4.0, 4.0, 4.0])),
+        Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
+        Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
+    ];
+    let mut tied = vec![vec![1, 2]];
+    refine_repeated_face_domains_by_geometry_and_bounds(
+        &edge_faces,
+        &mut tied,
+        Some(&face_bounds),
+        None,
+        &[],
+    );
+    assert_eq!(tied, vec![vec![1, 2]]);
+
+    let face_bounds = [
+        Some(bounds([0.0, 0.0, 0.0], [4.0, 4.0, 4.0])),
+        Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
+        None,
+    ];
+    let mut incomplete = vec![vec![1, 2]];
+    refine_repeated_face_domains_by_geometry_and_bounds(
+        &edge_faces,
+        &mut incomplete,
+        Some(&face_bounds),
+        None,
+        &[],
+    );
+    assert_eq!(incomplete, vec![vec![1, 2]]);
+}
+
+#[test]
+fn repeated_circle_face_domain_prefers_a_distinct_carrier_before_bounds() {
+    let bounds = |center: [f64; 3], half_extents: [f64; 3]| StandardFaceBounds {
+        aabb_center: center,
+        aabb_half_extents: half_extents,
+        sphere_center: center,
+        sphere_radius: 10.0,
+    };
+    let plane = |origin: Point3| SurfaceGeometry::Plane {
+        origin,
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let edge_faces = [[0, 0]];
+    let face_bounds = [
+        Some(bounds([0.0, 0.0, 0.0], [4.0, 4.0, 4.0])),
+        Some(bounds([0.0, 5.0, 0.0], [1.0, 1.0, 1.0])),
+        Some(bounds([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])),
+    ];
+    let face_geometries = [
+        plane(Point3::new(0.0, 0.0, 0.0)),
+        plane(Point3::new(0.0, 1.0, 0.0)),
+        plane(Point3::new(0.0, 0.0, 0.0)),
+    ];
+    let edge_geometries = [StandardCurveGeometry::Circle {
+        center: Point3::new(0.0, 0.0, 0.0),
+        radius: 1.0,
+    }];
+    let mut allowed_faces = vec![vec![1, 2]];
+
+    refine_repeated_face_domains_by_geometry_and_bounds(
+        &edge_faces,
+        &mut allowed_faces,
+        Some(&face_bounds),
+        Some(&face_geometries),
+        &edge_geometries,
+    );
+    assert_eq!(allowed_faces, vec![vec![1]]);
+}
+
+#[test]
 fn targeted_face_surface_evidence_follows_an_analytic_offset() {
     let append = |bytes: &mut Vec<u8>, class, object_id: u32, payload: &[u8]| {
         bytes.extend_from_slice(&[
@@ -255,6 +351,19 @@ fn mesh_retry_runs_only_after_exact_rejection() {
     assert!(!called.get());
 
     let outcome = retry_rejected_mesh_solution(
+        MeshCandidateSolve::Exhausted(MeshCandidateExhaustion::PreferredSolutionSearch),
+        || {
+            called.set(true);
+            MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+        },
+    );
+    assert!(matches!(
+        outcome,
+        MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+    ));
+    assert!(called.get());
+
+    let outcome = retry_rejected_mesh_solution(
         MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure),
         || {
             called.set(true);
@@ -308,6 +417,275 @@ fn circular_face_intervals_allow_seams_but_reject_crossing_boundaries() {
         [5.0, 7.0],
         [7.0 - tau, 5.0],
     ]));
+}
+
+#[test]
+fn circular_face_interval_choices_select_disjoint_arc_branches() {
+    let tau = std::f64::consts::TAU;
+    let simple = vec![
+        vec![[0.0, 0.125], [0.125, tau]],
+        vec![
+            [3.0, std::f64::consts::PI],
+            [std::f64::consts::PI, tau + 3.0],
+        ],
+    ];
+    let crossing = vec![
+        vec![
+            [0.125, std::f64::consts::PI],
+            [std::f64::consts::PI, tau + 0.125],
+        ],
+        vec![[0.0, 3.0], [3.0, tau]],
+    ];
+
+    assert!(circular_range_choices_have_simple_selection(&simple));
+    assert!(!circular_range_choices_have_simple_selection(&crossing));
+}
+
+#[test]
+fn standard_line_interval_constraint_rejects_partial_collinear_overlap() {
+    let points = [0.0, 1.0, 2.0, 3.0]
+        .into_iter()
+        .enumerate()
+        .map(|(index, x)| Point {
+            id: PointId(format!("p{index}")),
+            position: Point3::new(x, 0.0, 0.0),
+            source_object: None,
+        })
+        .collect::<Vec<_>>();
+    let supports = (0..3)
+        .map(|tag| StandardCurveSupport {
+            pos: tag,
+            tag: tag as u32,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Line,
+        })
+        .collect::<Vec<_>>();
+    let options = vec![vec![[0, 1], [0, 2]]; 3];
+    let simple = [Some([0, 1]), Some([1, 2]), Some([2, 3])];
+    let overlapping = [Some([0, 2]), Some([2, 3]), Some([1, 3])];
+
+    assert!(standard_line_pair_solution_is_simple(
+        &points, &supports, &options, &simple,
+    ));
+    assert!(!standard_line_pair_solution_is_simple(
+        &points,
+        &supports,
+        &options,
+        &overlapping,
+    ));
+    let zero_length = [Some([1, 1]), None, None];
+    assert!(!standard_line_pair_solution_is_simple(
+        &points,
+        &supports,
+        &options,
+        &zero_length,
+    ));
+    assert!(!standard_line_pair_solution_is_simple_cached(
+        &points,
+        &supports,
+        &options,
+        &zero_length,
+    ));
+}
+
+#[test]
+fn standard_edge_identity_requires_coordinate_bound_evidence() {
+    assert!(!standard_edge_identity_is_admitted(
+        None, None, false, false
+    ));
+    assert!(standard_edge_identity_is_admitted(
+        Some([0, 1]),
+        None,
+        false,
+        false,
+    ));
+    assert!(standard_edge_identity_is_admitted(
+        None,
+        Some([0, 1]),
+        false,
+        false,
+    ));
+    assert!(standard_edge_identity_is_admitted(None, None, true, false,));
+    assert!(standard_edge_identity_is_admitted(None, None, false, true,));
+}
+
+#[test]
+fn shared_nurbs_boundary_filters_identity_free_endpoint_pairs() {
+    let surface = |reverse_shared_boundary: bool, offset: f64| {
+        let shared = if reverse_shared_boundary {
+            [Point3::new(offset, 1.0, 0.0), Point3::new(offset, 0.0, 0.0)]
+        } else {
+            [Point3::new(offset, 0.0, 0.0), Point3::new(offset, 1.0, 0.0)]
+        };
+        SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                shared[0],
+                shared[1],
+                Point3::new(
+                    offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
+                    shared[0].y,
+                    0.0,
+                ),
+                Point3::new(
+                    offset + if reverse_shared_boundary { 1.0 } else { -1.0 },
+                    shared[1].y,
+                    0.0,
+                ),
+            ],
+            weights: None,
+            normal_reversed: false,
+            u_periodic: false,
+            v_periodic: false,
+        })
+    };
+    let left = surface(false, 0.0);
+    let right = surface(true, 0.0);
+    let points = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(0.0, 0.5, 1.0),
+    ];
+    let options = [[0, 1], [0, 2], [2, 3], [0, 3]];
+
+    assert_eq!(
+        standard_shared_nurbs_boundary_pair_options(&left, &right, &points, &options),
+        Some(vec![[0, 1]])
+    );
+    assert!(standard_shared_nurbs_boundary_pair_options(
+        &left,
+        &surface(false, 2.0),
+        &points,
+        &options,
+    )
+    .is_none());
+}
+
+#[test]
+fn repeated_shared_boundary_rows_keep_domains_when_one_witness_cannot_cover_them() {
+    let supports = [0, 1]
+        .into_iter()
+        .map(|pos| StandardCurveSupport {
+            pos,
+            tag: pos as u32,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Bspline,
+        })
+        .collect::<Vec<_>>();
+    let original = vec![
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+    ];
+    let mut filtered = vec![vec![[2, 8]], vec![[2, 8]]];
+
+    standard_shared_boundary_group_domains(
+        &supports,
+        &original,
+        &mut filtered,
+        &[false, false],
+        &[true, true],
+    );
+
+    assert_eq!(filtered, original);
+}
+
+#[test]
+fn repeated_shared_boundary_rows_keep_positive_narrowing_when_witnesses_cover_rows() {
+    let supports = [0, 1]
+        .into_iter()
+        .map(|pos| StandardCurveSupport {
+            pos,
+            tag: pos as u32,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Bspline,
+        })
+        .collect::<Vec<_>>();
+    let original = vec![
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+    ];
+    let mut filtered = vec![vec![[2, 8]], vec![[3, 9]]];
+
+    standard_shared_boundary_group_domains(
+        &supports,
+        &original,
+        &mut filtered,
+        &[false, false],
+        &[true, true],
+    );
+
+    assert_eq!(filtered, vec![vec![[2, 8]], vec![[3, 9]]]);
+}
+
+#[test]
+fn repeated_shared_boundary_rows_keep_domains_when_a_witness_is_unavailable() {
+    let supports = [0, 1]
+        .into_iter()
+        .map(|pos| StandardCurveSupport {
+            pos,
+            tag: pos as u32,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Bspline,
+        })
+        .collect::<Vec<_>>();
+    let original = vec![
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+        vec![[2, 8], [2, 9], [3, 8], [3, 9]],
+    ];
+    let mut filtered = vec![vec![[2, 8]], original[1].clone()];
+
+    standard_shared_boundary_group_domains(
+        &supports,
+        &original,
+        &mut filtered,
+        &[false, false],
+        &[true, false],
+    );
+
+    assert_eq!(filtered, original);
+}
+
+#[test]
+fn cached_standard_line_pair_preference_matches_the_geometry_rule() {
+    let points = [0.0, 1.0, 2.0, 3.0]
+        .into_iter()
+        .enumerate()
+        .map(|(index, x)| Point {
+            id: PointId(format!("p{index}")),
+            position: Point3::new(x, 0.0, 0.0),
+            source_object: None,
+        })
+        .collect::<Vec<_>>();
+    let supports = (0..3)
+        .map(|tag| StandardCurveSupport {
+            pos: tag,
+            tag: tag as u32,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Line,
+        })
+        .collect::<Vec<_>>();
+    let options = vec![
+        vec![[0, 1], [0, 2], [1, 2], [1, 3], [2, 3]],
+        vec![[0, 1], [0, 2], [1, 2], [1, 3], [2, 3]],
+        vec![[0, 1], [0, 2], [1, 2], [1, 3], [2, 3]],
+    ];
+    let simple = [Some([0, 1]), Some([1, 2]), Some([2, 3])];
+    let overlapping = [Some([0, 2]), Some([2, 3]), Some([1, 3])];
+
+    assert_eq!(
+        standard_line_pair_solution_is_simple_cached(&points, &supports, &options, &simple),
+        standard_line_pair_solution_is_simple(&points, &supports, &options, &simple),
+    );
+    assert_eq!(
+        standard_line_pair_solution_is_simple_cached(&points, &supports, &options, &overlapping),
+        standard_line_pair_solution_is_simple(&points, &supports, &options, &overlapping),
+    );
 }
 
 #[test]
@@ -411,6 +789,257 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
             && context.sides[1].surface.as_ref().is_some_and(|id| id.0 == "surface-1")
             && context.parameter_range == [0.0, 3.0]
     ));
+}
+
+#[test]
+fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
+    let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
+    let section_radius = 3.0_f64.sqrt();
+    ir.model.points.extend(
+        [
+            Point3::new(1.0 + section_radius, 3.0, 3.0),
+            Point3::new(1.0 - section_radius, 3.0, 3.0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, position)| Point {
+            id: PointId(format!("point-{index}")),
+            position,
+            source_object: None,
+        }),
+    );
+    let sphere_id = SurfaceId("sphere".to_string());
+    let plane_id = SurfaceId("plane".to_string());
+    ir.model.surfaces.extend([
+        Surface {
+            id: sphere_id.clone(),
+            geometry: SurfaceGeometry::Sphere {
+                center: Point3::new(1.0, 2.0, 3.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: plane_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(1.0, 3.0, 3.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let support = StandardCurveSupport {
+        pos: 12,
+        tag: 7,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Bspline,
+    };
+    let (id, range) = build_standard_edge_curve(
+        &mut ir,
+        &mut annotations,
+        &[(sphere_id.clone(), false, 0), (plane_id.clone(), false, 1)],
+        &HashMap::from([(sphere_id, 0), (plane_id, 1)]),
+        &[],
+        &support,
+        [0, 1],
+        None,
+        None,
+    );
+    let id = id.expect("spline support identifies a curve carrier");
+    assert_eq!(range, None);
+    let CurveGeometry::Circle {
+        center,
+        axis,
+        radius,
+        ..
+    } = &ir.model.curves[0].geometry
+    else {
+        panic!("sphere-plane spline did not derive a circle");
+    };
+    assert!(center.distance(Point3::new(1.0, 3.0, 3.0)) <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
+    assert!(axis.cross(Vector3::new(0.0, 1.0, 0.0)).norm() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
+    assert!((*radius - section_radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE);
+    assert_eq!(ir.model.curves[0].id, id);
+    assert!(ir.model.procedural_curves.is_empty());
+}
+
+#[test]
+fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
+    let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
+    let sqrt_three = 3.0_f64.sqrt();
+    ir.model.points.extend(
+        [
+            Point3::new(0.0, -2.0 / sqrt_three, -2.0),
+            Point3::new(0.0, 2.0 / sqrt_three, 2.0),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, position)| Point {
+            id: PointId(format!("point-{index}")),
+            position,
+            source_object: None,
+        }),
+    );
+    let cylinder_id = SurfaceId("cylinder".to_string());
+    let plane_id = SurfaceId("plane".to_string());
+    ir.model.surfaces.extend([
+        Surface {
+            id: cylinder_id.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 1.0, 0.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: plane_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, sqrt_three / 2.0, -0.5),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let support = StandardCurveSupport {
+        pos: 12,
+        tag: 7,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Bspline,
+    };
+    let (id, range) = build_standard_edge_curve(
+        &mut ir,
+        &mut annotations,
+        &[
+            (cylinder_id.clone(), false, 0),
+            (plane_id.clone(), false, 1),
+        ],
+        &HashMap::from([(cylinder_id, 0), (plane_id, 1)]),
+        &[],
+        &support,
+        [0, 1],
+        None,
+        None,
+    );
+    let id = id.expect("spline support identifies a curve carrier");
+    assert_eq!(range, None);
+    let CurveGeometry::Ellipse {
+        center,
+        axis,
+        major_direction,
+        major_radius,
+        minor_radius,
+    } = &ir.model.curves[0].geometry
+    else {
+        panic!("cylinder-plane spline did not derive an ellipse");
+    };
+    assert!(center.distance(Point3::new(0.0, 0.0, 0.0)) <= CYLINDER_PLANE_CONIC_TOLERANCE);
+    assert!(
+        axis.cross(Vector3::new(0.0, sqrt_three / 2.0, -0.5)).norm()
+            <= CYLINDER_PLANE_CONIC_TOLERANCE
+    );
+    assert!(
+        major_direction
+            .dot(Vector3::new(0.0, -0.5, -sqrt_three / 2.0))
+            .abs()
+            >= 1.0 - CYLINDER_PLANE_CONIC_TOLERANCE
+    );
+    assert!((*major_radius - 4.0 / sqrt_three).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE);
+    assert!((*minor_radius - 2.0).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE);
+    assert_eq!(ir.model.curves[0].id, id);
+    assert!(ir.model.procedural_curves.is_empty());
+}
+
+#[test]
+fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
+    let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
+    ir.model.points.extend(
+        [Point3::new(2.0, 0.0, 2.0), Point3::new(-2.0, 0.0, -2.0)]
+            .into_iter()
+            .enumerate()
+            .map(|(index, position)| Point {
+                id: PointId(format!("point-{index}")),
+                position,
+                source_object: None,
+            }),
+    );
+    let first_id = SurfaceId("first-cylinder".to_string());
+    let second_id = SurfaceId("second-cylinder".to_string());
+    ir.model.surfaces.extend([
+        Surface {
+            id: first_id.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: second_id.clone(),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(1.0, 0.0, 0.0),
+                ref_direction: Vector3::new(0.0, 0.0, 1.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        },
+    ]);
+    let support = StandardCurveSupport {
+        pos: 12,
+        tag: 7,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Bspline,
+    };
+    let (id, range) = build_standard_edge_curve(
+        &mut ir,
+        &mut annotations,
+        &[(first_id.clone(), false, 0), (second_id.clone(), false, 1)],
+        &HashMap::from([(first_id, 0), (second_id, 1)]),
+        &[],
+        &support,
+        [0, 1],
+        None,
+        None,
+    );
+    let id = id.expect("spline support identifies a curve carrier");
+    assert_eq!(range, None);
+    let CurveGeometry::Ellipse {
+        center,
+        axis,
+        major_direction,
+        major_radius,
+        minor_radius,
+    } = &ir.model.curves[0].geometry
+    else {
+        panic!("perpendicular cylinders did not select an ellipse branch");
+    };
+    assert!(center.distance(Point3::new(0.0, 0.0, 0.0)) <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
+    assert!(
+        axis.dot(Vector3::new(-1.0, 0.0, 1.0).scale(1.0 / 2.0_f64.sqrt()))
+            .abs()
+            >= 1.0 - PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+    );
+    assert!(
+        major_direction
+            .dot(Vector3::new(1.0, 0.0, 1.0).scale(1.0 / 2.0_f64.sqrt()))
+            .abs()
+            >= 1.0 - PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+    );
+    assert!((*major_radius - 2.0 * 2.0_f64.sqrt()).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
+    assert!((*minor_radius - 2.0).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE);
+    assert_eq!(ir.model.curves[0].id, id);
+    assert!(ir.model.procedural_curves.is_empty());
 }
 
 #[test]
@@ -525,6 +1154,19 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
         Some([0, 1])
     );
     assert_eq!(
+        standard_oriented_native_support_pcurves(&native, &points, [1, 0]),
+        Some([
+            PcurveGeometry::Line {
+                origin: Point2::new(5.0, 0.0),
+                direction: Point2::new(-1.0, 0.0),
+            },
+            PcurveGeometry::Line {
+                origin: Point2::new(5.0, 0.0),
+                direction: Point2::new(-1.0, 0.0),
+            },
+        ])
+    );
+    assert_eq!(
         standard_native_support_endpoint_pair(&native, &points, &[0, 1], Some([0, 2])),
         None
     );
@@ -628,8 +1270,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         &surface_indices,
         std::slice::from_ref(&support),
         std::slice::from_ref(&limit_curve),
-    )
-    .expect("limit-curve binding allocation");
+    );
     let [limit_candidates] = limit_bindings.as_slice() else {
         panic!("one edge limit-curve domain");
     };
@@ -663,8 +1304,7 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         &surface_indices,
         &[support.clone(), support],
         &[limit_curve],
-    )
-    .expect("limit-curve binding allocation");
+    );
     assert_eq!(duplicated, vec![vec![*binding], vec![*binding]]);
     let reversed = resolve_standard_limit_curve_binding(limit_candidates, [1, 0])
         .expect("the solved endpoint pair selects the limit curve");
@@ -1179,7 +1819,58 @@ fn standard_planar_intersection_spline_uses_the_common_line_domain() {
 }
 
 #[test]
-fn standard_parallel_line_rows_retain_mesh_resolvable_domains() {
+fn standard_antipodal_circle_candidates_admit_full_circle_seams() {
+    let mut ir = CadIr::empty(Units::default());
+    for (index, position) in [Point3::new(5.0, 0.0, 0.0), Point3::new(-5.0, 0.0, 0.0)]
+        .into_iter()
+        .enumerate()
+    {
+        ir.model.points.push(Point {
+            id: PointId(format!("p{index}")),
+            position,
+            source_object: None,
+        });
+    }
+    for index in 0..2 {
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId(format!("s{index}")),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+    }
+    let bindings = [
+        (SurfaceId("s0".to_string()), true, 0),
+        (SurfaceId("s1".to_string()), true, 0),
+    ];
+    let indices = [
+        (SurfaceId("s0".to_string()), 0),
+        (SurfaceId("s1".to_string()), 1),
+    ]
+    .into_iter()
+    .collect();
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            radius: 5.0,
+        },
+    };
+
+    let choices =
+        resolve_standard_endpoint_pairs(&ir, &bindings, &indices, &[support], &[vec![0, 1]])
+            .expect("endpoint option pass");
+
+    assert_eq!(choices, [vec![[0, 0], [0, 1], [1, 1]]]);
+}
+
+#[test]
+fn standard_parallel_line_rows_retain_domains_independent_of_allocation_order() {
     let mut ir = CadIr::empty(Units::default());
     for (index, position) in [
         Point3::new(-2.0, 0.0, 0.0),
@@ -1218,9 +1909,9 @@ fn standard_parallel_line_rows_retain_mesh_resolvable_domains() {
     ]
     .into_iter()
     .collect();
-    let supports = [0, 1].map(|index| StandardCurveSupport {
-        pos: index,
-        tag: index as u32,
+    let supports = [(90, 900), (10, 100)].map(|(pos, tag)| StandardCurveSupport {
+        pos,
+        tag,
         faces: [0, 1],
         geometry: StandardCurveGeometry::Line,
     });
@@ -1235,149 +1926,4 @@ fn standard_parallel_line_rows_retain_mesh_resolvable_domains() {
     .expect("endpoint option pass");
 
     assert_eq!(choices, [vec![[0, 2], [1, 3]], vec![[0, 2], [1, 3]]]);
-}
-
-#[test]
-fn standard_spline_rows_bind_complete_bipartite_domains_by_allocation_rank() {
-    let supports = [10, 11].map(|tag| StandardCurveSupport {
-        pos: tag as usize,
-        tag,
-        faces: [3, 7],
-        geometry: StandardCurveGeometry::Bspline,
-    });
-    let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
-    let mut candidates = [domain.clone(), domain];
-
-    bind_ordered_standard_curve_branches(&supports, &mut candidates);
-
-    assert_eq!(candidates, [vec![[2, 8]], vec![[3, 9]]]);
-}
-
-#[test]
-fn standard_spline_group_binding_does_not_rank_unfocused_groups() {
-    let supports = [10, 11, 20, 21].map(|tag| StandardCurveSupport {
-        pos: tag as usize,
-        tag,
-        faces: if tag < 20 { [1, 2] } else { [3, 4] },
-        geometry: StandardCurveGeometry::Bspline,
-    });
-    let unfocused_domain = vec![[0, 1], [0, 2], [3, 1], [3, 2]];
-    let focused_domain = vec![[4, 5], [4, 6], [7, 5], [7, 6]];
-    let mut candidates = [
-        unfocused_domain.clone(),
-        unfocused_domain.clone(),
-        focused_domain.clone(),
-        focused_domain,
-    ];
-
-    bind_ordered_standard_curve_branches_for_group(&supports, &mut candidates, &[2, 3]);
-
-    assert_eq!(candidates[0], unfocused_domain);
-    assert_eq!(candidates[1], unfocused_domain);
-    assert_eq!(candidates[2], vec![[4, 5]]);
-    assert_eq!(candidates[3], vec![[7, 6]]);
-}
-
-#[test]
-fn standard_line_rows_bind_complete_bipartite_domains_by_allocation_rank() {
-    let supports = [10, 11].map(|tag| StandardCurveSupport {
-        pos: tag as usize,
-        tag,
-        faces: [3, 7],
-        geometry: StandardCurveGeometry::Line,
-    });
-    let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
-    let mut candidates = [domain.clone(), domain];
-
-    bind_ordered_standard_curve_branches(&supports, &mut candidates);
-
-    assert_eq!(candidates, [vec![[2, 8]], vec![[3, 9]]]);
-}
-
-#[test]
-fn standard_line_rows_keep_complete_relation_before_face_frontiers() {
-    let supports = [10, 11].map(|tag| StandardCurveSupport {
-        pos: tag as usize,
-        tag,
-        faces: [3, 7],
-        geometry: StandardCurveGeometry::Line,
-    });
-    let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
-    let candidates = [domain.clone(), domain];
-    let groups =
-        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
-    let assignment = [None, None];
-
-    let constrained = standard_curve_branch_candidates_after_partial_assignment(
-        &supports,
-        &candidates,
-        &groups,
-        &assignment,
-        None,
-    )
-    .expect("unresolved branch relation remains admissible");
-
-    assert_eq!(constrained, candidates);
-}
-
-#[test]
-fn standard_branch_ranking_stops_when_its_work_budget_is_exhausted() {
-    let supports = [10, 11].map(|tag| StandardCurveSupport {
-        pos: tag as usize,
-        tag,
-        faces: [3, 7],
-        geometry: StandardCurveGeometry::Line,
-    });
-    let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
-    let candidates = [domain.clone(), domain];
-    let groups =
-        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
-    let budget = WorkBudget::new(1);
-
-    assert!(standard_curve_branch_candidates_after_partial_assignment(
-        &supports,
-        &candidates,
-        &groups,
-        &[None, None],
-        Some(&budget),
-    )
-    .is_none());
-    assert!(budget.exhausted());
-}
-
-#[test]
-fn standard_branch_group_binding_ignores_empty_unrelated_domains() {
-    let supports = [
-        StandardCurveSupport {
-            pos: 10,
-            tag: 10,
-            faces: [0, 1],
-            geometry: StandardCurveGeometry::Line,
-        },
-        StandardCurveSupport {
-            pos: 11,
-            tag: 11,
-            faces: [0, 1],
-            geometry: StandardCurveGeometry::Line,
-        },
-        StandardCurveSupport {
-            pos: 12,
-            tag: 12,
-            faces: [8, 9],
-            geometry: StandardCurveGeometry::Line,
-        },
-    ];
-    let domain = vec![[0, 2], [0, 3], [1, 2], [1, 3]];
-    let all_candidates = [domain.clone(), domain, Vec::new()];
-    let mut group_candidates = all_candidates[..2].to_vec();
-
-    bind_standard_curve_branch_group(
-        &supports,
-        &mut group_candidates,
-        &[0, 1],
-        &all_candidates,
-        &[None, None, None],
-    );
-
-    assert_eq!(group_candidates, [vec![[0, 2]], vec![[1, 3]]]);
 }

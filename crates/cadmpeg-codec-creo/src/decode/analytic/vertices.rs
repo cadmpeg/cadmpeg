@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::CurveGeometry;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -13,16 +13,25 @@ use crate::container::ContainerScan;
 use super::super::sketch::normalized;
 use super::super::surfaces::curve_contains_points;
 
+use super::super::uniqueness::exactly_one;
 use super::edges::{nonperiodic_nurbs_endpoint_points, planar_conic_equation, PlanarConicEquation};
 use super::equations::{
     common_plane_conic_parameters, cross, dot, plane_intersection_line, CarrierEquation,
     PlaneConicEquation, PlaneEquation,
 };
-use super::pcurves::{directed_pcurve_points, pcurve_edge_endpoints, solve_pcurve_vertex_domains};
-use super::planes::{solve_carriers, valid_positive_nurbs_curve};
+use super::pcurves::{
+    directed_pcurve_points, pcurve_edge_endpoint_evidence_with_carriers,
+    solve_pcurve_vertex_domains_with_authoritative_points, PcurveEndpointDiagnostics,
+};
+use super::planes::{solve_carriers_with_diagnostics, CarrierSolveDiagnostics};
 
 const EPS_AGREE: f64 = 1.0e-9;
 const EPS_NEAR_ZERO: f64 = 1.0e-12;
+const CARRIER_VERTEX_SAMPLE_LIMIT: usize = 8;
+
+fn unique_model_curve<'a>(ir: &'a CadIr, id: &CurveId) -> Option<&'a Curve> {
+    exactly_one(ir.model.curves.iter().filter(|curve| &curve.id == id))
+}
 
 pub fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
     let scale = first
@@ -34,6 +43,31 @@ pub fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
         .into_iter()
         .zip(second)
         .all(|(first, second)| (first - second).abs() <= EPS_AGREE * scale)
+}
+
+fn pcurve_candidate_agrees_with_fixed_points(
+    vertices: [u32; 2],
+    points: [[f64; 3]; 2],
+    directions: [u8; 2],
+    fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
+) -> bool {
+    let Some(ordered) = directed_pcurve_points(directions, points) else {
+        return true;
+    };
+    vertices.into_iter().zip(ordered).all(|(vertex, point)| {
+        fixed_points
+            .get(&vertex)
+            .is_none_or(|known| known.is_none_or(|known| model_points_agree(known, point)))
+    })
+}
+
+fn pcurve_endpoint_is_ambiguous(candidates: &[[f64; 3]]) -> bool {
+    candidates.first().is_some_and(|first| {
+        candidates
+            .iter()
+            .skip(1)
+            .any(|candidate| !model_points_agree(*first, *candidate))
+    })
 }
 
 pub fn line_line_intersection(first: &CurveGeometry, second: &CurveGeometry) -> Option<[f64; 3]> {
@@ -332,97 +366,268 @@ pub fn incident_analytic_vertex_domain(curves: &[&CurveGeometry]) -> Vec<[f64; 3
         })
 }
 
-pub fn solved_topological_vertices(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CarrierFailureKind {
+    NoGeometricCandidate,
+    NoValidCandidate,
+}
+
+fn carrier_failure_kind(diagnostics: CarrierSolveDiagnostics) -> Option<CarrierFailureKind> {
+    if diagnostics.unique_solutions != 0 {
+        return None;
+    }
+    let generated_candidates = diagnostics
+        .pair_intersections
+        .saturating_add(diagnostics.triple_intersections);
+    if generated_candidates == 0 {
+        Some(CarrierFailureKind::NoGeometricCandidate)
+    } else if diagnostics.valid_candidates == 0 {
+        Some(CarrierFailureKind::NoValidCandidate)
+    } else {
+        None
+    }
+}
+
+fn carrier_kind(carrier: CarrierEquation) -> &'static str {
+    match carrier {
+        CarrierEquation::Plane(_) => "plane",
+        CarrierEquation::Cylinder(_) => "cylinder",
+        CarrierEquation::Cone(_) => "cone",
+        CarrierEquation::Sphere(_) => "sphere",
+        CarrierEquation::Torus(_) => "torus",
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CarrierVertexDiagnostic {
+    pub vertex_id: u32,
+    pub incident_face_ids: Vec<u32>,
+    pub carrier_kinds: Vec<&'static str>,
+    pub pair_intersections: usize,
+    pub triple_intersections: usize,
+    pub valid_candidates: usize,
+    pub unique_solutions: usize,
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct TopologicalVertexSolveDiagnostics {
+    pub topological_vertices: usize,
+    pub carrier_incident_vertices: usize,
+    pub carrier_pair_candidates: usize,
+    pub carrier_triple_candidates: usize,
+    pub carrier_valid_candidates: usize,
+    pub carrier_zero_candidate_vertices: usize,
+    pub carrier_ambiguous_candidate_vertices: usize,
+    pub carrier_no_geometric_candidate_vertices: usize,
+    pub carrier_no_valid_candidate_vertices: usize,
+    pub carrier_rejection_samples: Vec<CarrierVertexDiagnostic>,
+    pub carrier_points: usize,
+    pub pcurve: PcurveEndpointDiagnostics,
+    pub pcurve_constraints: usize,
+    pub pcurve_fixed_endpoint_conflicts: usize,
+    pub pcurve_ambiguous_endpoint_vertices: usize,
+    pub directed_endpoint_assignments: usize,
+    pub directed_endpoint_conflicts: usize,
+    pub nurbs_endpoint_constraints: usize,
+    pub analytic_domain_vertices: usize,
+    pub solved_vertices: usize,
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct SolvedTopologicalVertices {
+    pub points: BTreeMap<u32, [f64; 3]>,
+    pub diagnostics: TopologicalVertexSolveDiagnostics,
+}
+
+pub fn solve_topological_vertices(
     scan: &ContainerScan,
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
     nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
-) -> BTreeMap<u32, [f64; 3]> {
+) -> SolvedTopologicalVertices {
+    let mut diagnostics = TopologicalVertexSolveDiagnostics {
+        topological_vertices: scan.topology.vertices.len(),
+        ..TopologicalVertexSolveDiagnostics::default()
+    };
     let vertex_faces =
         crate::topology::vertex_incident_faces(&scan.topology.vertices, &scan.topology.half_edges);
-    let carrier_points = scan
-        .topology
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            let incident_carriers = vertex_faces
-                .get(&vertex.id)?
-                .iter()
-                .filter_map(|face_id| carriers.get(face_id))
-                .copied()
-                .collect::<Vec<_>>();
-            solve_carriers(&incident_carriers).map(|point| (vertex.id, point))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let edge_endpoints = pcurve_edge_endpoints(scan, ir);
-    let edge_vertices =
-        crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
+    let mut carrier_points = BTreeMap::new();
+    for vertex in &scan.topology.vertices {
+        let Some(face_ids) = vertex_faces.get(&vertex.id) else {
+            continue;
+        };
+        let incident_face_ids = face_ids
+            .iter()
+            .filter(|face_id| carriers.contains_key(face_id))
+            .copied()
+            .collect::<Vec<_>>();
+        let incident_carriers = incident_face_ids
+            .iter()
+            .filter_map(|face_id| carriers.get(face_id))
+            .copied()
+            .collect::<Vec<_>>();
+        if incident_carriers.is_empty() {
+            continue;
+        }
+        diagnostics.carrier_incident_vertices += 1;
+        let (point, carrier_diagnostics) = solve_carriers_with_diagnostics(&incident_carriers);
+        diagnostics.carrier_pair_candidates += carrier_diagnostics.pair_intersections;
+        diagnostics.carrier_triple_candidates += carrier_diagnostics.triple_intersections;
+        diagnostics.carrier_valid_candidates += carrier_diagnostics.valid_candidates;
+        let failure_kind = carrier_failure_kind(carrier_diagnostics);
+        match carrier_diagnostics.unique_solutions {
+            0 => {
+                diagnostics.carrier_zero_candidate_vertices += 1;
+                match failure_kind {
+                    Some(CarrierFailureKind::NoGeometricCandidate) => {
+                        diagnostics.carrier_no_geometric_candidate_vertices += 1;
+                    }
+                    Some(CarrierFailureKind::NoValidCandidate) => {
+                        diagnostics.carrier_no_valid_candidate_vertices += 1;
+                    }
+                    None => {}
+                }
+                if diagnostics.carrier_rejection_samples.len() < CARRIER_VERTEX_SAMPLE_LIMIT {
+                    diagnostics
+                        .carrier_rejection_samples
+                        .push(CarrierVertexDiagnostic {
+                            vertex_id: vertex.id,
+                            incident_face_ids: incident_face_ids.clone(),
+                            carrier_kinds: incident_carriers
+                                .iter()
+                                .map(|carrier| carrier_kind(*carrier))
+                                .collect(),
+                            pair_intersections: carrier_diagnostics.pair_intersections,
+                            triple_intersections: carrier_diagnostics.triple_intersections,
+                            valid_candidates: carrier_diagnostics.valid_candidates,
+                            unique_solutions: carrier_diagnostics.unique_solutions,
+                        });
+                }
+            }
+            1 => {
+                if let Some(point) = point {
+                    carrier_points.insert(vertex.id, point);
+                }
+            }
+            _ => diagnostics.carrier_ambiguous_candidate_vertices += 1,
+        }
+    }
+    diagnostics.carrier_points = carrier_points.len();
+    let edge_start_vertices =
+        crate::topology::edge_start_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     let mut fixed_points = carrier_points
         .into_iter()
         .map(|(vertex, point)| (vertex, Some(point)))
         .collect::<BTreeMap<_, _>>();
-    let mut constraints = Vec::new();
-    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
-        let Some(points) = edge_endpoints.get(&row.id).copied() else {
+    let (endpoint_evidence, pcurve_diagnostics) =
+        pcurve_edge_endpoint_evidence_with_carriers(scan, ir, carriers);
+    diagnostics.pcurve = pcurve_diagnostics;
+    let edge_endpoints = endpoint_evidence
+        .into_iter()
+        .map(|(curve_id, evidence)| {
+            (
+                curve_id,
+                (evidence.points, evidence.complete, evidence.authoritative),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let topology_rows = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows);
+    let mut pcurve_constraints = Vec::new();
+    let mut pcurve_endpoint_candidates = BTreeMap::<u32, Vec<[f64; 3]>>::new();
+    for row in &topology_rows {
+        let Some((points, complete, authoritative)) = edge_endpoints.get(&row.id).copied() else {
             continue;
         };
-        let Some(vertices) = edge_vertices.get(&row.id).copied() else {
+        let Some(vertices) = edge_start_vertices.get(&row.id).copied() else {
             continue;
         };
-        constraints.push((vertices, points));
-        if let Some(ordered) = directed_pcurve_points(row.directions, points) {
+        if !pcurve_candidate_agrees_with_fixed_points(
+            vertices,
+            points,
+            row.directions,
+            &fixed_points,
+        ) {
+            diagnostics.pcurve_fixed_endpoint_conflicts += 1;
+            continue;
+        }
+        let ordered = directed_pcurve_points(row.directions, points);
+        if let Some(ordered) = ordered {
             for (vertex, point) in vertices.into_iter().zip(ordered) {
-                match fixed_points.entry(vertex) {
-                    std::collections::btree_map::Entry::Vacant(entry) => {
-                        entry.insert(Some(point));
-                    }
-                    std::collections::btree_map::Entry::Occupied(mut entry) => {
-                        if entry
-                            .get()
-                            .is_none_or(|known| !model_points_agree(known, point))
-                        {
-                            entry.insert(None);
-                        }
-                    }
-                }
+                pcurve_endpoint_candidates
+                    .entry(vertex)
+                    .or_default()
+                    .push(point);
             }
         }
+        pcurve_constraints.push((vertices, points, ordered, complete, authoritative));
     }
-    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
-        let Some(vertices) = edge_vertices.get(&row.id).copied() else {
+    let ambiguous_pcurve_vertices = pcurve_endpoint_candidates
+        .iter()
+        .filter_map(|(vertex, candidates)| {
+            pcurve_endpoint_is_ambiguous(candidates).then_some(*vertex)
+        })
+        .collect::<BTreeSet<_>>();
+    diagnostics.pcurve_ambiguous_endpoint_vertices = ambiguous_pcurve_vertices.len();
+    let mut constraints = Vec::new();
+    let mut authoritative_points = BTreeMap::new();
+    for (vertices, points, ordered, complete, authoritative) in pcurve_constraints {
+        if let Some(ordered) = ordered {
+            let ambiguous = vertices
+                .iter()
+                .any(|vertex| ambiguous_pcurve_vertices.contains(vertex));
+            if ambiguous && !complete {
+                continue;
+            }
+            diagnostics.pcurve_constraints += 1;
+            constraints.push((vertices, points));
+            if ambiguous {
+                continue;
+            }
+            for (vertex, point) in vertices.into_iter().zip(ordered) {
+                diagnostics.directed_endpoint_assignments += 1;
+                fixed_points.entry(vertex).or_insert(Some(point));
+                if authoritative && !ambiguous {
+                    authoritative_points.entry(vertex).or_insert(point);
+                }
+            }
+        } else {
+            diagnostics.pcurve_constraints += 1;
+            constraints.push((vertices, points));
+        }
+    }
+    for row in &topology_rows {
+        let Some(vertices) = edge_start_vertices.get(&row.id).copied() else {
             continue;
         };
         let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
         if !nurbs_endpoint_witnesses.contains(&id) {
             continue;
         }
-        let Some(geometry) = ir.model.curves.iter().find(|curve| curve.id == id) else {
+        let Some(geometry) = unique_model_curve(ir, &id) else {
             continue;
         };
         let Some(points) = nonperiodic_nurbs_endpoint_points(&geometry.geometry) else {
             continue;
         };
+        diagnostics.nurbs_endpoint_constraints += 1;
         constraints.push((vertices, points));
     }
-    let analytic_curves = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
+    // Non-periodic NURBS boundary rows contribute their intrinsic endpoint
+    // pair through the witness constraint above. They are not analytic
+    // carrier equations for the vertex-domain solver.
+    let analytic_curves = topology_rows
         .into_iter()
         .filter_map(|row| {
             let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
-            let geometry = &ir
-                .model
-                .curves
-                .iter()
-                .find(|curve| curve.id == id)?
-                .geometry;
-            let evaluable = match geometry {
+            let geometry = &unique_model_curve(ir, &id)?.geometry;
+            let evaluable = matches!(
+                geometry,
                 CurveGeometry::Line { .. }
-                | CurveGeometry::Circle { .. }
-                | CurveGeometry::Ellipse { .. }
-                | CurveGeometry::Parabola { .. }
-                | CurveGeometry::Hyperbola { .. } => true,
-                CurveGeometry::Nurbs(nurbs) => valid_positive_nurbs_curve(nurbs).is_some(),
-                _ => false,
-            };
+                    | CurveGeometry::Circle { .. }
+                    | CurveGeometry::Ellipse { .. }
+                    | CurveGeometry::Parabola { .. }
+                    | CurveGeometry::Hyperbola { .. }
+            );
             evaluable.then_some((row.id, geometry))
         })
         .collect::<BTreeMap<_, _>>();
@@ -446,10 +651,96 @@ pub fn solved_topological_vertices(
             (!candidates.is_empty()).then_some((*vertex, candidates))
         })
         .collect::<BTreeMap<_, _>>();
-    solve_pcurve_vertex_domains(
+    diagnostics.analytic_domain_vertices = analytic_domains.len();
+    let points = solve_pcurve_vertex_domains_with_authoritative_points(
         &constraints,
         &fixed_points,
         &analytic_domains,
         &incident_curves,
-    )
+        &authoritative_points,
+    );
+    diagnostics.solved_vertices = points.len();
+    SolvedTopologicalVertices {
+        points,
+        diagnostics,
+    }
+}
+
+pub fn solved_topological_vertices(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    carriers: &BTreeMap<u32, CarrierEquation>,
+    nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
+) -> BTreeMap<u32, [f64; 3]> {
+    solve_topological_vertices(scan, ir, carriers, nurbs_endpoint_witnesses).points
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::units::Units;
+
+    #[test]
+    fn unique_model_curve_rejects_duplicate_ids() {
+        let id = CurveId("creo:visibgeom:curve#7".to_string());
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.curves.extend([
+            Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Line {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    direction: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+            Curve {
+                id: id.clone(),
+                geometry: CurveGeometry::Line {
+                    origin: Point3::new(0.0, 1.0, 0.0),
+                    direction: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            },
+        ]);
+
+        assert!(unique_model_curve(&ir, &id).is_none());
+    }
+
+    #[test]
+    fn carrier_failure_kind_distinguishes_generation_from_validation() {
+        assert_eq!(
+            carrier_failure_kind(CarrierSolveDiagnostics::default()),
+            Some(CarrierFailureKind::NoGeometricCandidate)
+        );
+        assert_eq!(
+            carrier_failure_kind(CarrierSolveDiagnostics {
+                triple_intersections: 1,
+                ..CarrierSolveDiagnostics::default()
+            }),
+            Some(CarrierFailureKind::NoValidCandidate)
+        );
+        assert_eq!(
+            carrier_failure_kind(CarrierSolveDiagnostics {
+                triple_intersections: 1,
+                valid_candidates: 1,
+                unique_solutions: 1,
+                ..CarrierSolveDiagnostics::default()
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn pcurve_endpoint_ambiguity_requires_distinct_points() {
+        const EPS_TEST_POINT_AGREE: f64 = 1.0e-12;
+        assert!(!pcurve_endpoint_is_ambiguous(&[[1.0, 2.0, 3.0]]));
+        assert!(!pcurve_endpoint_is_ambiguous(&[
+            [1.0, 2.0, 3.0],
+            [1.0 + EPS_TEST_POINT_AGREE, 2.0, 3.0],
+        ]));
+        assert!(pcurve_endpoint_is_ambiguous(&[
+            [1.0, 2.0, 3.0],
+            [1.1, 2.0, 3.0],
+        ]));
+    }
 }

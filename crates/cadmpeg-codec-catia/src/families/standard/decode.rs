@@ -2,10 +2,10 @@
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
 use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
-use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
-    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
+    Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
@@ -13,13 +13,17 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::schema::EntitySchema;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell,
     Vertex, VertexUse,
 };
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
+use cadmpeg_ir::{AnnotationBuilder, Annotations};
+use serde::{de::DeserializeOwned, Serialize};
+use serde_value::{Value, ValueDeserializer};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::assemble::cgm_source;
@@ -35,17 +39,33 @@ use crate::families::freeform::{
 };
 use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
-use crate::solve::{mesh_quotient, missing_edge};
+use crate::loss::CatiaLossCode;
+use crate::solve::matching::{
+    distinct_domain_matching_with_budget, retain_distinct_matching_supports,
+};
+use crate::solve::{mesh_gauge::MeshEdgeGeometry, mesh_quotient, missing_edge};
 use crate::variant::Variant;
 use crate::wire::records::ConsolidatedRecord;
 
-const EPS_PARAM_RESOLUTION_SPAN: f64 = 1.0e-7;
-const EPS_PARAM_TOLERANCE_SPAN: f64 = 1.0e-9;
-const EPS_CIRCLE_AXIS_ORTHO: f64 = 1.0e-6;
-const EPS_APEX_DISTANCE: f64 = 1.0e-6;
-const EPS_RANGE_ENDPOINT: f64 = 1.0e-9;
-const EPS_RANGE_GAP: f64 = 1.0e-6;
-const EPS_CROSS_PRODUCT: f64 = 1.0e-6;
+const EPS_PARAM_RESOLUTION_SPAN: f64 = 1e-7;
+const EPS_PARAM_TOLERANCE_SPAN: f64 = 1e-9;
+const EPS_SAME_CONE_GENERATOR: f64 = 2e-3;
+const EPS_ANTIPODAL_CIRCLE: f64 = 2e-3;
+const SPHERE_SECTION_ENDPOINT_TOLERANCE: f64 = 2e-3;
+const SPHERE_CENTER_COINCIDENCE_TOLERANCE: f64 = 2e-3;
+const CYLINDER_PLANE_CONIC_TOLERANCE: f64 = 2e-3;
+const PERPENDICULAR_CYLINDER_CONIC_TOLERANCE: f64 = 2e-3;
+const LINE_SEGMENT_GEOMETRY_TOLERANCE: f64 = 2e-3;
+const ANALYTIC_CURVE_ENDPOINT_TOLERANCE: f64 = 2e-3;
+const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1e-6;
+const STANDARD_FACE_BOUNDS_TOLERANCE: f64 = 2e-3;
+const NURBS_SURFACE_MEMBERSHIP_TOLERANCE: f64 = 2e-3;
+const NURBS_SHARED_BOUNDARY_TOLERANCE: f64 = 1e-9;
+const NURBS_SURFACE_SEEDS_PER_SPAN: usize = 3;
+const NURBS_SURFACE_MAX_SEEDS: usize = 256;
+const NURBS_SURFACE_REFINEMENT_ITERATIONS: usize = 24;
+const NURBS_SURFACE_BACKTRACK_STEPS: usize = 8;
+const NURBS_LINE_FACE_SAMPLES: [f64; 3] = [0.25, 0.5, 0.75];
 
 fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
@@ -146,7 +166,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         let normal_norm = normal.norm();
         if !normal_norm.is_finite()
             || normal_norm == 0.0
-            || (normal.dot(*axis) / normal_norm).abs() > EPS_CIRCLE_AXIS_ORTHO
+            || (normal.dot(*axis) / normal_norm).abs() > 1e-6
         {
             return None;
         }
@@ -962,20 +982,461 @@ fn parameter_record_bounds(bounds: [[f64; 2]; 2]) -> [Option<f64>; 4] {
     ]
 }
 
+fn standard_freeform_e5_carrier_ids(data: &[u8]) -> HashMap<u32, u32> {
+    let mut face_surfaces = HashMap::<u32, Option<u32>>::new();
+    for (face, surface) in crate::families::e5::graph::face_surface_references(data) {
+        match face_surfaces.entry(face).or_insert(Some(surface)) {
+            stored @ Some(_) if *stored != Some(surface) => *stored = None,
+            _ => {}
+        }
+    }
+    let face_surfaces = face_surfaces
+        .into_iter()
+        .filter_map(|(face, surface)| surface.map(|surface| (face, surface)))
+        .collect::<HashMap<_, _>>();
+
+    let mut wrappers = HashMap::<u32, Option<u32>>::new();
+    for wrapper in crate::families::e5::records::e5_surface_wrappers(data) {
+        match wrappers
+            .entry(wrapper.record_id)
+            .or_insert(Some(wrapper.underlying_surface()))
+        {
+            stored @ Some(_) if *stored != Some(wrapper.underlying_surface()) => *stored = None,
+            _ => {}
+        }
+    }
+    let wrappers = wrappers
+        .into_iter()
+        .filter_map(|(wrapper, surface)| surface.map(|surface| (wrapper, surface)))
+        .collect::<HashMap<_, _>>();
+
+    face_surfaces
+        .into_iter()
+        .filter_map(|(face, wrapper)| Some((face, *wrappers.get(&wrapper)?)))
+        .collect()
+}
+
+/// Join a standard freeform face to a directly decoded E5 analytic carrier
+/// through the serialized face and class-`0xf1` wrapper identities.
+///
+/// This path is exact: a geometric candidate is accepted only when the
+/// standard tag names one E5 face, that face names one valid `0xf1` wrapper,
+/// and the wrapper's first reference names one supported E5 surface carrier.
+pub(crate) fn associate_standard_freeform_e5_surfaces(
+    records: &[crate::families::standard::records::StandardSurfaceRecord],
+    data: &[u8],
+) -> HashMap<u32, SurfaceGeometry> {
+    let carrier_ids = standard_freeform_e5_carrier_ids(data);
+
+    let mut surfaces = HashMap::<u32, Option<SurfaceGeometry>>::new();
+    for surface in crate::families::e5::records::e5_surfaces(data) {
+        match surfaces
+            .entry(surface.record_id)
+            .or_insert(Some(surface.geometry.clone()))
+        {
+            stored @ Some(_) if *stored != Some(surface.geometry.clone()) => *stored = None,
+            _ => {}
+        }
+    }
+    let surfaces = surfaces
+        .into_iter()
+        .filter_map(|(surface, geometry)| geometry.map(|geometry| (surface, geometry)))
+        .collect::<HashMap<_, _>>();
+
+    records
+        .iter()
+        .filter_map(|record| {
+            let crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. } =
+                record
+            else {
+                return None;
+            };
+            let underlying_surface = *carrier_ids.get(tag)?;
+            Some((*tag, surfaces.get(&underlying_surface)?.clone()))
+        })
+        .collect()
+}
+
+/// Join standard freeform faces to exact E5 class-`0xd8` rolling-ball jets.
+/// The face and wrapper identities are the same strict join used by analytic
+/// E5 carriers; only the underlying carrier decoder differs. The carrier's
+/// signed sense must agree with the owning face orientation before admission.
+pub(crate) fn associate_standard_freeform_e5_rolling_ball_jets(
+    records: &[crate::families::standard::records::StandardSurfaceRecord],
+    data: &[u8],
+) -> HashMap<u32, StandardSurfaceProcedure> {
+    let carrier_ids = standard_freeform_e5_carrier_ids(data);
+    let mut jets = HashMap::<u32, Option<crate::families::e5::records::E5RollingBallJet>>::new();
+    for jet in crate::families::e5::records::e5_rolling_ball_jets(data) {
+        match jets
+            .entry(jet.record_id)
+            .or_insert_with(|| Some(jet.clone()))
+        {
+            stored @ Some(_) if *stored != Some(jet) => *stored = None,
+            _ => {}
+        }
+    }
+    let jets = jets
+        .into_iter()
+        .filter_map(|(carrier, jet)| jet.map(|jet| (carrier, jet)))
+        .collect::<HashMap<_, _>>();
+
+    records
+        .iter()
+        .filter_map(|record| {
+            let crate::families::standard::records::StandardSurfaceRecord::Freeform {
+                tag,
+                forward,
+                ..
+            } = record
+            else {
+                return None;
+            };
+            let carrier = *carrier_ids.get(tag)?;
+            let jet = jets.get(&carrier)?;
+            (*forward == (jet.sense == -1)).then_some((
+                *tag,
+                StandardSurfaceProcedure::RollingBall {
+                    carrier_object_id: jet.record_id,
+                    definition: jet.definition(),
+                    source: StandardRollingBallSource::E5D8,
+                },
+            ))
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone)]
+struct StandardPopulationSelection {
+    spine: Vec<u8>,
+    records: Vec<crate::families::standard::records::StandardSurfaceRecord>,
+    supports: Vec<crate::families::standard::records::StandardCurveSupport>,
+    fbb_edge_table: bool,
+    vertex_roster_compatible: bool,
+}
+
+fn standard_population_selections(
+    scan: &ContainerScan<'_>,
+) -> Option<Vec<StandardPopulationSelection>> {
+    let brep = scan.brep.as_ref()?;
+    let standard_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
+    let layouts = fbb::fbb_population_layouts(standard_spine);
+    let populations = crate::families::standard::records::standard_surface_populations(brep);
+    let pairs =
+        crate::families::standard::records::pair_standard_populations(&layouts, &populations)?;
+    pairs
+        .into_iter()
+        .map(|(layout, population)| {
+            Some(StandardPopulationSelection {
+                spine: fbb::population_spine(standard_spine, &layout)?.to_vec(),
+                records: population.records,
+                supports: population.supports,
+                fbb_edge_table: layout.fbb_edge_table,
+                vertex_roster_compatible:
+                    crate::families::standard::records::standard_vertex_roster(
+                        &scan.data,
+                        layout.vertex_count,
+                    )
+                    .is_some(),
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn try_decode_standard(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
+    let Some(selections) = standard_population_selections(scan) else {
+        return try_decode_standard_population(ctx, scan, None);
+    };
+    if selections.len() == 1 {
+        return try_decode_standard_population(ctx, scan, selections.first());
+    }
+    try_decode_standard_populations(ctx, scan, &selections)
+}
+
+fn retain_standard_population_model(model: &mut Model) {
+    macro_rules! retain_standard {
+        ($($field:ident),+ $(,)?) => {
+            $(model.$field.retain(|entity| {
+                entity.identity().starts_with("catia:standard:")
+            });)+
+        };
+    }
+    retain_standard!(
+        bodies,
+        regions,
+        shells,
+        faces,
+        loops,
+        coedges,
+        edges,
+        vertices,
+        points,
+        surfaces,
+        curves,
+        subds,
+        pcurves,
+        procedural_surfaces,
+        procedural_curves,
+        assets,
+        features,
+        feature_input_topologies,
+        feature_result_topologies,
+        configurations,
+        parameters,
+        sketches,
+        sketch_entities,
+        sketch_constraints,
+        spatial_sketches,
+        spatial_sketch_entities,
+        spatial_sketch_constraints,
+        spreadsheets,
+        product_definitions,
+        occurrences,
+        assembly_joints,
+        drawings,
+        semantic_annotations,
+        presentation_documents,
+        view_presentations,
+        tessellations,
+        appearances,
+        appearance_bindings,
+        attributes,
+        pmi,
+        presentation_layers,
+    );
+}
+
+fn rescope_standard_id(text: &str, scope: &str) -> String {
+    text.strip_prefix("catia:standard:").map_or_else(
+        || text.to_owned(),
+        |rest| format!("catia:standard:{scope}/{rest}"),
+    )
+}
+
+fn rescope_standard_value(value: &mut Value, scope: &str) {
+    match value {
+        Value::String(text) => *text = rescope_standard_id(text, scope),
+        Value::Seq(items) => items
+            .iter_mut()
+            .for_each(|item| rescope_standard_value(item, scope)),
+        Value::Map(fields) => {
+            let entries = std::mem::take(fields);
+            for (mut key, mut item) in entries {
+                rescope_standard_value(&mut key, scope);
+                rescope_standard_value(&mut item, scope);
+                fields.insert(key, item);
+            }
+        }
+        Value::Option(Some(item)) | Value::Newtype(item) => rescope_standard_value(item, scope),
+        _ => {}
+    }
+}
+
+struct StandardPopulationScope<'a> {
+    scope: &'a str,
+}
+
+impl EntityRewrite for StandardPopulationScope<'_> {
+    type Error = String;
+
+    fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, Self::Error> {
+        let mut value = serde_value::to_value(entity)
+            .map_err(|error| format!("standard population entity serialization failed: {error}"))?;
+        rescope_standard_value(&mut value, self.scope);
+        T::deserialize(ValueDeserializer::<serde_value::DeserializerError>::new(
+            value,
+        ))
+        .map_err(|error| format!("standard population entity rewrite failed: {error}"))
+    }
+}
+
+fn merge_standard_population_annotations(
+    target: &mut Annotations,
+    source: Annotations,
+    scope: &str,
+) -> Option<()> {
+    let mut stream_map = Vec::with_capacity(source.streams.len());
+    for stream in source.streams {
+        let index = target
+            .streams
+            .iter()
+            .position(|candidate| candidate == &stream)
+            .unwrap_or_else(|| {
+                target.streams.push(stream);
+                target.streams.len() - 1
+            });
+        stream_map.push(u32::try_from(index).ok()?);
+    }
+    for (id, mut provenance) in source.provenance {
+        let stream = *stream_map.get(usize::try_from(provenance.stream).ok()?)?;
+        provenance.stream = stream;
+        target
+            .provenance
+            .insert(rescope_standard_id(&id, scope), provenance);
+    }
+    target.exactness.extend(
+        source
+            .exactness
+            .into_iter()
+            .map(|(id, note)| (rescope_standard_id(&id, scope), note)),
+    );
+    Some(())
+}
+
+fn try_decode_standard_populations(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    selections: &[StandardPopulationSelection],
+) -> Option<FamilyOutput> {
+    let mut outputs = selections
+        .iter()
+        .map(|selection| try_decode_standard_population(ctx, scan, Some(selection)))
+        .collect::<Option<Vec<_>>>()?;
+    let attached_topology_count = outputs
+        .iter()
+        .map(|output| {
+            output
+                .report
+                .coverage
+                .get("attached_standard_topology_count")
+                .copied()
+                .unwrap_or_default()
+        })
+        .sum::<usize>();
+    let population_coverage = [
+        "attempted_standard_topology_count",
+        "standard_topology_curve_support_count",
+        "standard_topology_native_endpoint_pair_count",
+        "standard_topology_empty_endpoint_domain_count",
+        "standard_topology_singleton_endpoint_domain_count",
+        "standard_topology_multiple_endpoint_domain_count",
+        "standard_topology_endpoint_domain_choice_count",
+    ]
+    .into_iter()
+    .map(|key| {
+        (
+            key,
+            outputs
+                .iter()
+                .map(|output| output.report.coverage.get(key).copied().unwrap_or_default())
+                .sum::<usize>(),
+        )
+    })
+    .collect::<Vec<_>>();
+    let admitted_face_rows = selections
+        .iter()
+        .map(|selection| selection.records.len())
+        .sum::<usize>();
+    let all_fbb_rows_admitted =
+        selections.len() == scan.census.fbb_runs && admitted_face_rows == scan.census.fbb_face_rows;
+    let all_topologies_attached = attached_topology_count == selections.len();
+
+    let mut merged = outputs.remove(0);
+    for (index, (_population, output)) in selections.iter().skip(1).zip(outputs).enumerate() {
+        let scope = format!("population-{}", index + 1);
+        let mut model = output.ir.model;
+        retain_standard_population_model(&mut model);
+        let mut rewriter = StandardPopulationScope { scope: &scope };
+        merged
+            .ir
+            .model
+            .extend_rewritten(model, &mut rewriter)
+            .ok()?;
+        merge_standard_population_annotations(&mut merged.annotations, output.annotations, &scope)?;
+        merged.report.geometry_transferred |= output.report.geometry_transferred;
+    }
+
+    for (key, value) in population_coverage {
+        merged.report.coverage.insert(key.to_string(), value);
+    }
+    merged
+        .report
+        .coverage
+        .insert("standard_fbb_run_count".to_string(), scan.census.fbb_runs);
+    merged.report.coverage.insert(
+        "standard_fbb_candidate_face_row_count".to_string(),
+        scan.census.fbb_face_rows,
+    );
+    merged.report.coverage.insert(
+        "standard_fbb_admitted_face_row_count".to_string(),
+        admitted_face_rows,
+    );
+    merged.report.coverage.insert(
+        "standard_fbb_withheld_face_row_count".to_string(),
+        scan.census.fbb_face_rows.saturating_sub(admitted_face_rows),
+    );
+    merged.report.coverage.insert(
+        "attached_standard_topology_count".to_string(),
+        attached_topology_count,
+    );
+
+    merged.report.losses.retain(|loss| {
+        !matches!(
+            loss.code.local_code(),
+            "topology.fbb-rows-withheld"
+                | "geometry.carrier-summary"
+                | "geometry.unresolved-carriers"
+        )
+    });
+    if !all_fbb_rows_admitted {
+        merged.report.losses.push(CatiaLossCode::TopologyFbbRowsWithheld.note(
+            format!(
+                "{} candidate FBB face row(s) in {} marker group(s) were not admitted to the standard topology population; only {} row(s) have source-closed population bindings.",
+                scan.census.fbb_face_rows.saturating_sub(admitted_face_rows),
+                scan.census.fbb_runs,
+                admitted_face_rows,
+            ),
+        ));
+    }
+    if !all_topologies_attached {
+        merged
+            .report
+            .losses
+            .push(CatiaLossCode::TopologyBoundaryGraphNotEmitted.note(format!(
+            "The B-rep boundary graph was emitted for {} of {} source-closed standard populations.",
+            attached_topology_count,
+            selections.len(),
+        )));
+    }
+    let mut typed = TypedCounts::default();
+    for surface in &merged.ir.model.surfaces {
+        typed.record(&surface.geometry);
+    }
+    merged.report.losses.push(CatiaLossCode::GeometryCarrierSummary.note(format!(
+        "{} vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and {} analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: {} plane, {} cylinder, {} cone, {} sphere, {} torus.",
+        merged.ir.model.vertices.len(),
+        typed.total(),
+        typed.plane,
+        typed.cylinder,
+        typed.cone,
+        typed.sphere,
+        typed.torus,
+    )));
+    crate::assemble::insert_unresolved_carrier_loss(&merged.ir, &mut merged.report.losses);
+    Some(merged)
+}
+
+fn try_decode_standard_population(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    selection: Option<&StandardPopulationSelection>,
+) -> Option<FamilyOutput> {
     let work_budget = ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
     let brep = scan.brep.as_ref()?;
-    let standard_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
-    let fbb_only = scan.variant == Variant::FbbOnly;
+    let default_spine = scan.main_data_stream.as_deref().unwrap_or(brep);
+    let standard_spine = selection.map_or(default_spine, |selection| selection.spine.as_slice());
+    let fbb_only = selection.map_or(scan.variant == Variant::FbbOnly, |selection| {
+        selection.fbb_edge_table
+    });
     if !work_budget.charge() {
         return None;
     }
-    let consolidated_records = crate::wire::records::consolidated_records_in_ranges(
+    let consolidated_records = crate::wire::records::consolidated_records_in_sources(
         &scan.data,
-        container::consolidated_record_ranges(scan),
+        container::consolidated_record_sources(scan),
     );
     let points = (if fbb_only {
         fbb::fbb_only_vertex_points(standard_spine)
@@ -986,16 +1447,28 @@ pub(crate) fn try_decode_standard(
     .into_iter()
     .map(|[x, y, z]| Point3::new(x, y, z))
     .collect::<Vec<_>>();
-    let vertex_roster =
-        crate::families::standard::records::standard_vertex_roster(&scan.data, points.len());
-    let face_count = fbb::standard_face_count(standard_spine).unwrap_or_default();
-    let records = crate::families::standard::records::standard_surface_records(brep, face_count)
-        .unwrap_or_else(|| {
-            crate::families::standard::records::surface_prefixes(brep)
-                .into_iter()
-                .map(crate::families::standard::records::StandardSurfaceRecord::Analytic)
-                .collect()
-        });
+    let vertex_roster = selection
+        .is_none_or(|selection| selection.vertex_roster_compatible)
+        .then(|| {
+            crate::families::standard::records::standard_vertex_roster(&scan.data, points.len())
+        })
+        .flatten();
+    let face_count = selection.map_or_else(
+        || fbb::standard_face_count(standard_spine).unwrap_or_default(),
+        |selection| selection.records.len(),
+    );
+    let records = selection.map_or_else(
+        || {
+            crate::families::standard::records::standard_surface_records(brep, face_count)
+                .unwrap_or_else(|| {
+                    crate::families::standard::records::surface_prefixes(brep)
+                        .into_iter()
+                        .map(crate::families::standard::records::StandardSurfaceRecord::Analytic)
+                        .collect()
+                })
+        },
+        |selection| selection.records.clone(),
+    );
     let analytic_record_count = records
         .iter()
         .filter(|record| {
@@ -1014,16 +1487,26 @@ pub(crate) fn try_decode_standard(
             crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
         })
         .collect::<HashSet<_>>();
-    let standard_edge_count = (if fbb_only {
-        fbb::fbb_only_edge_count(standard_spine)
-    } else {
-        fbb::standard_edge_count(standard_spine)
-    })
-    .filter(|count| *count > 0);
-    let curve_supports = crate::families::standard::records::standard_curve_supports(
-        brep,
-        face_count,
-        standard_edge_count,
+    let standard_edge_count = selection.map_or_else(
+        || {
+            (if fbb_only {
+                fbb::fbb_only_edge_count(standard_spine)
+            } else {
+                fbb::standard_edge_count(standard_spine)
+            })
+            .filter(|count| *count > 0)
+        },
+        |selection| (!selection.supports.is_empty()).then_some(selection.supports.len()),
+    );
+    let curve_supports = selection.map_or_else(
+        || {
+            crate::families::standard::records::standard_curve_supports(
+                brep,
+                face_count,
+                standard_edge_count,
+            )
+        },
+        |selection| selection.supports.clone(),
     );
     let edge_tags = curve_supports
         .iter()
@@ -1037,20 +1520,7 @@ pub(crate) fn try_decode_standard(
         &consolidated_records,
     )
     .len();
-    let freeform_geometries = &object_evidence.surface_geometries;
-    let freeform_procedural_surfaces = &object_evidence.procedural_surfaces;
-    let unresolved_freeform_record_count = records
-        .iter()
-        .filter(|record| {
-            matches!(
-                record,
-                crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. }
-                    if !freeform_geometries.contains_key(tag)
-                        && !freeform_procedural_surfaces.contains_key(tag)
-            )
-        })
-        .count();
-    let face_frame_vectors = fbb::standard_face_frame_vectors(standard_spine);
+    let face_frame_vectors = fbb::standard_face_frame_vectors(standard_spine, records.len());
     let mut curved_surfaces = records
         .iter()
         .map(|record| match record {
@@ -1078,7 +1548,38 @@ pub(crate) fn try_decode_standard(
         .iter()
         .map(|record| crate::families::standard::records::standard_face_bounds(brep, record))
         .collect::<Vec<_>>();
-
+    let mut freeform_geometries = object_evidence.surface_geometries.clone();
+    let e5_freeform_geometries = associate_standard_freeform_e5_surfaces(&records, &scan.data);
+    let mut e5_freeform_tags = HashSet::new();
+    for (tag, geometry) in e5_freeform_geometries {
+        freeform_geometries.insert(tag, geometry);
+        e5_freeform_tags.insert(tag);
+    }
+    let mut freeform_procedural_surfaces = object_evidence.procedural_surfaces.clone();
+    let e5_freeform_procedural_surfaces =
+        associate_standard_freeform_e5_rolling_ball_jets(&records, &scan.data);
+    for (tag, procedure) in e5_freeform_procedural_surfaces {
+        match freeform_procedural_surfaces.get(&tag) {
+            Some(existing) if existing != &procedure => {
+                freeform_procedural_surfaces.remove(&tag);
+            }
+            Some(_) => {}
+            None => {
+                freeform_procedural_surfaces.insert(tag, procedure);
+            }
+        }
+    }
+    let unresolved_freeform_record_count = records
+        .iter()
+        .filter(|record| {
+            matches!(
+                record,
+                crate::families::standard::records::StandardSurfaceRecord::Freeform { tag, .. }
+                    if !freeform_geometries.contains_key(tag)
+                        && !freeform_procedural_surfaces.contains_key(tag)
+            )
+        })
+        .count();
     let mut surfaces = Vec::new();
     let mut surface_annotations = Vec::new();
     let mut face_bindings = Vec::new();
@@ -1109,7 +1610,8 @@ pub(crate) fn try_decode_standard(
                 "MainDataStream+SurfacicReps",
                 *pos,
                 "surfacic_reps_freeform_alias".to_string(),
-                if freeform_procedural_surfaces.contains_key(tag) {
+                if freeform_procedural_surfaces.contains_key(tag) || e5_freeform_tags.contains(tag)
+                {
                     Exactness::ByteExact
                 } else if matches!(geometry, SurfaceGeometry::Unknown { .. }) {
                     Exactness::Unknown
@@ -1234,8 +1736,12 @@ pub(crate) fn try_decode_standard(
             StandardSurfaceProcedure::RollingBall {
                 carrier_object_id,
                 definition,
+                source: procedure_source,
             } => (
-                "object_stream_a8_03_32",
+                match procedure_source {
+                    StandardRollingBallSource::ObjectStreamA8 => "object_stream_a8_03_32",
+                    StandardRollingBallSource::E5D8 => "e5_0d_03_d8",
+                },
                 carrier_object_id,
                 definition,
                 Exactness::ByteExact,
@@ -1376,6 +1882,19 @@ pub(crate) fn try_decode_standard(
                 )
             }
         };
+        if matches!(
+            &definition,
+            ProceduralSurfaceDefinition::RollingBallJet { .. }
+        ) {
+            if let Some(surface_record) = surfaces
+                .iter_mut()
+                .find(|candidate| candidate.id == surface)
+            {
+                surface_record.geometry = SurfaceGeometry::Procedural {
+                    construction: procedural_id.clone(),
+                };
+            }
+        }
         annotate(
             &mut annotations,
             &procedural_id,
@@ -1451,6 +1970,7 @@ pub(crate) fn try_decode_standard(
     );
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
+    let topology_budget = ctx.work_budget(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS as u64);
     let topology_result = attach_standard_topology(
         &mut topology_ir,
         &mut topology_annotations,
@@ -1460,11 +1980,13 @@ pub(crate) fn try_decode_standard(
         standard_spine,
         fbb_only,
         brep,
+        selection.map(|selection| selection.supports.as_slice()),
         &scan.data,
+        selection.is_none_or(|selection| selection.vertex_roster_compatible),
         &object_evidence.edge_owner_faces,
         &object_evidence.edge_supports,
         &object_evidence.limit_curves,
-        &work_budget,
+        &topology_budget,
         &mut topology_diagnostics,
         &mut bound_standard_limit_curve_count,
     )
@@ -1508,8 +2030,23 @@ pub(crate) fn try_decode_standard(
             &mut annotations,
             &consolidated_revolutions,
         );
-    let consolidated_curve_bindings =
-        append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data, &consolidated_records);
+    let mut consolidated_curve_bindings = append_freeform_surface_pools(
+        &mut ir,
+        &mut annotations,
+        &scan.data,
+        &consolidated_records,
+        &scan.surface_alias_tags,
+    );
+    let owner_binding_budget =
+        ctx.work_budget(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS as u64);
+    consolidated_curve_bindings.standard_face_surfaces += bind_standard_a5_owner_surfaces(
+        &mut ir,
+        &mut annotations,
+        &scan.data,
+        &consolidated_records,
+        &face_bounds,
+        &owner_binding_budget,
+    );
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
 
@@ -1870,7 +2407,10 @@ fn retry_rejected_mesh_solution(
     fallback: impl FnOnce() -> mesh_quotient::MeshCandidateSolve,
 ) -> mesh_quotient::MeshCandidateSolve {
     match preferred {
-        mesh_quotient::MeshCandidateSolve::Rejected(_) => fallback(),
+        mesh_quotient::MeshCandidateSolve::Rejected(_)
+        | mesh_quotient::MeshCandidateSolve::Exhausted(
+            mesh_quotient::MeshCandidateExhaustion::PreferredSolutionSearch,
+        ) => fallback(),
         outcome => outcome,
     }
 }
@@ -1894,6 +2434,7 @@ pub(crate) enum StandardSurfaceProcedure {
     RollingBall {
         carrier_object_id: u32,
         definition: ProceduralSurfaceDefinition,
+        source: StandardRollingBallSource,
     },
     Offset {
         carrier_object_id: u32,
@@ -1904,6 +2445,12 @@ pub(crate) enum StandardSurfaceProcedure {
     },
     Extrusion(Box<crate::families::b5::transfer::ResolvedExtrusionSurface>),
     Revolution(Box<crate::families::b5::transfer::ResolvedRevolutionSurface>),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum StandardRollingBallSource {
+    ObjectStreamA8,
+    E5D8,
 }
 
 #[derive(Clone, PartialEq)]
@@ -2091,6 +2638,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                                 StandardSurfaceProcedure::RollingBall {
                                     carrier_object_id,
                                     definition: *definition,
+                                    source: StandardRollingBallSource::ObjectStreamA8,
                                 },
                             ),
                         })
@@ -2183,23 +2731,8 @@ pub(crate) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(evidence));
         }
-        let Some(graph) = crate::families::b5::graph::parse_from_frames(&stream, &frames) else {
-            continue;
-        };
-        let mut stream_edge_faces = HashMap::<u32, HashSet<u32>>::new();
-        for face in &graph.faces {
-            for edge in face
-                .loops
-                .iter()
-                .filter_map(|loop_id| graph.loops.get(loop_id))
-                .flat_map(|loop_| loop_.edges.iter().copied())
-            {
-                stream_edge_faces
-                    .entry(edge)
-                    .or_default()
-                    .insert(face.object_id);
-            }
-        }
+        let stream_edge_faces =
+            crate::families::b5::graph::edge_face_references_from_frames(&stream, &frames);
         for (edge, owners) in stream_edge_faces {
             edge_face_candidates
                 .entry(edge)
@@ -2210,6 +2743,9 @@ pub(crate) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(owners));
         }
+        let Some(graph) = crate::families::b5::graph::parse_from_frames(&stream, &frames) else {
+            continue;
+        };
         for &surface_id in tags {
             let Some(evidence) = standard_surface_evidence(&graph, surface_id) else {
                 continue;
@@ -2318,6 +2854,7 @@ fn standard_surface_evidence(
                     |(carrier_object_id, definition)| StandardSurfaceProcedure::RollingBall {
                         carrier_object_id,
                         definition,
+                        source: StandardRollingBallSource::ObjectStreamA8,
                     },
                 )
         })
@@ -2885,7 +3422,7 @@ fn standard_limit_curve_bindings(
     surface_indices: &HashMap<SurfaceId, usize>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     curves: &[NurbsCurve],
-) -> Option<Vec<Vec<StandardLimitCurveBinding>>> {
+) -> Vec<Vec<StandardLimitCurveBinding>> {
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
 
     let curve_points = curves
@@ -2906,12 +3443,7 @@ fn standard_limit_curve_bindings(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    let mut edge_curves = alloc_filled(
-        supports.len(),
-        Vec::<StandardLimitCurveBinding>::new(),
-        "catia standard limit-curve bindings",
-    )
-    .ok()?;
+    let mut edge_curves = vec![Vec::<StandardLimitCurveBinding>::new(); supports.len()];
     for (curve, points) in curve_points.iter().enumerate() {
         for (edge, support) in supports.iter().enumerate() {
             if !matches!(
@@ -2964,7 +3496,7 @@ fn standard_limit_curve_bindings(
             }
         }
     }
-    Some(edge_curves)
+    edge_curves
 }
 
 fn resolve_standard_limit_curve_binding(
@@ -2994,7 +3526,9 @@ fn attach_standard_topology(
     spine: &[u8],
     fbb_only: bool,
     brep: &[u8],
+    support_override: Option<&[crate::families::standard::records::StandardCurveSupport]>,
     source: &[u8],
+    use_vertex_roster: bool,
     native_edge_faces: &HashMap<u32, HashSet<u32>>,
     native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
     limit_curves: &[NurbsCurve],
@@ -3011,10 +3545,15 @@ fn attach_standard_topology(
     .filter(|count| *count > 0) else {
         return Err(StandardTopologyFailure::NoCurveSupports);
     };
-    let mut supports = crate::families::standard::records::standard_curve_supports(
-        brep,
-        face_count,
-        Some(edge_count),
+    let mut supports = support_override.map_or_else(
+        || {
+            crate::families::standard::records::standard_curve_supports(
+                brep,
+                face_count,
+                Some(edge_count),
+            )
+        },
+        ToOwned::to_owned,
     );
     if supports.is_empty() {
         return Err(StandardTopologyFailure::NoCurveSupports);
@@ -3029,6 +3568,10 @@ fn attach_standard_topology(
     else {
         return Err(StandardTopologyFailure::EdgeFaceAssignment);
     };
+    let mut deferred_port_edges = alloc_filled(supports.len(), false, "catia_deferred_port_edges")
+        .map_err(|_| StandardTopologyFailure::TopologySearchExhausted)?;
+    let mut open_face_domains = None;
+    let mut endpoint_face_assignments = None;
     apply_standard_native_edge_faces(&mut edge_faces, &supports, records, native_edge_faces);
     for (support, faces) in supports.iter_mut().zip(&edge_faces) {
         support.faces = *faces;
@@ -3041,11 +3584,33 @@ fn attach_standard_topology(
         .map(|(index, surface)| (surface.id.clone(), index))
         .collect::<HashMap<_, _>>();
     let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
-    let Some(limit_curve_bindings) =
-        standard_limit_curve_bindings(ir, bindings, &surface_indices, &supports, limit_curves)
-    else {
-        return Err(StandardTopologyFailure::TopologySearchExhausted);
-    };
+    let face_point_membership =
+        standard_face_point_membership(ir, bindings, &surface_indices, face_bounds);
+    let limit_curve_bindings =
+        standard_limit_curve_bindings(ir, bindings, &surface_indices, &supports, limit_curves);
+    let mut ordered_endpoint_pairs =
+        alloc_filled(supports.len(), None, "catia_ordered_endpoint_pairs")
+            .map_err(|_| StandardTopologyFailure::TopologySearchExhausted)?;
+    let point_coordinates = ir
+        .model
+        .points
+        .iter()
+        .map(|point| {
+            [
+                point.position.x as f32,
+                point.position.y as f32,
+                point.position.z as f32,
+            ]
+        })
+        .collect::<Vec<_>>();
+    let visualization_endpoint_pairs = missing_edge::standard_edge_rows(spine).and_then(|rows| {
+        missing_edge::visualization_endpoint_pairs(source, &rows, &point_coordinates)
+    });
+    if let Some(pairs) = &visualization_endpoint_pairs {
+        if pairs.len() != ordered_endpoint_pairs.len() {
+            return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+        }
+    }
     let mut endpoint_candidates = Vec::with_capacity(supports.len());
     let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
     let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();
@@ -3121,53 +3686,29 @@ fn attach_standard_topology(
         };
         endpoint_candidates.push(candidates);
     }
-    let mut edge_classes = Vec::with_capacity(supports.len());
-    for (edge, support) in supports.iter().enumerate() {
-        let class = supports[..edge]
-            .iter()
-            .position(|candidate| {
-                let mut candidate_faces = candidate.faces;
-                candidate_faces.sort_unstable();
-                let mut support_faces = support.faces;
-                support_faces.sort_unstable();
-                candidate_faces == support_faces
-                    && match (&candidate.geometry, &support.geometry) {
-                        (
-                            crate::families::standard::records::StandardCurveGeometry::Circle {
-                                center: left_center,
-                                radius: left_radius,
-                            },
-                            crate::families::standard::records::StandardCurveGeometry::Circle {
-                                center: right_center,
-                                radius: right_radius,
-                            },
-                        ) => {
-                            left_center.x.to_bits() == right_center.x.to_bits()
-                                && left_center.y.to_bits() == right_center.y.to_bits()
-                                && left_center.z.to_bits() == right_center.z.to_bits()
-                                && left_radius.to_bits() == right_radius.to_bits()
-                        }
-                        (
-                            crate::families::standard::records::StandardCurveGeometry::Line,
-                            crate::families::standard::records::StandardCurveGeometry::Line,
-                        ) => true,
-                        _ => false,
-                    }
-            })
-            .map_or(edge, |candidate| edge_classes[candidate]);
-        edge_classes.push(class);
-    }
+    let edge_classes = standard_curve_edge_classes(&supports);
+    let edge_geometry = standard_curve_geometry_gauge_keys(&supports);
     let topology_graph = crate::families::b5::graph::parse(source);
-    let native_edges = topology_graph
+    let mut native_edges = topology_graph
         .as_ref()
         .and_then(crate::families::b5::graph::B5Graph::referenced_edge_vertex_references)
         .unwrap_or_else(|| crate::families::b5::graph::edge_vertex_references(source));
+    if let Some(e5_topology) = crate::container::e5_record_stream(source)
+        .and_then(|range| crate::families::e5::graph::parse_topology(&source[range]))
+    {
+        let e5_edges = e5_topology
+            .edges
+            .into_values()
+            .map(|edge| (edge.record_id, [edge.start_vertex, edge.end_vertex]));
+        if !merge_standard_edge_vertex_references(&mut native_edges, e5_edges) {
+            return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+        }
+    }
     let graph_endpoint_pairs = standard_native_graph_endpoint_pairs(
         topology_graph.as_ref(),
         &supports,
         &native_edges,
         &ir.model.points,
-        &endpoint_candidates,
     );
     let native_port_options = supports
         .iter()
@@ -3177,42 +3718,22 @@ fn attach_standard_topology(
         .iter()
         .copied()
         .collect::<Option<Vec<_>>>();
-    let vertex_roster =
-        crate::families::standard::records::standard_vertex_roster(source, ir.model.points.len());
+    let vertex_roster = use_vertex_roster
+        .then(|| {
+            crate::families::standard::records::standard_vertex_roster(
+                source,
+                ir.model.points.len(),
+            )
+        })
+        .flatten();
     let allocation_endpoint_points = vertex_roster
         .as_ref()
         .map(|roster| standard_successor_endpoint_points(&supports, roster));
-    let roster_endpoint_pairs = vertex_roster.as_ref().map(|roster| {
-        let point_by_identity = roster
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(point, identity)| (identity, point))
-            .collect::<HashMap<_, _>>();
-        supports
-            .iter()
-            .map(|support| {
-                let identities = native_edges.get(&support.tag)?;
-                Some([
-                    *point_by_identity.get(&identities[0])?,
-                    *point_by_identity.get(&identities[1])?,
-                ])
-            })
-            .collect::<Vec<_>>()
-    });
-    let allocation_endpoint_pairs = vertex_roster
+    let roster_endpoint_pairs = vertex_roster
         .as_ref()
-        .map(|roster| standard_successor_endpoint_pairs(&supports, roster, &endpoint_candidates));
+        .and_then(|roster| standard_serialized_endpoint_pairs(&supports, &native_edges, roster));
     let native_support_ids = native_edge_supports.keys().copied().collect::<HashSet<_>>();
-    let Some(native_support_edge_ids) = standard_native_support_edge_ids(
-        &supports,
-        &native_edges,
-        &native_support_ids,
-        vertex_roster.as_deref(),
-        &endpoint_candidates,
-    ) else {
-        return Err(StandardTopologyFailure::TopologySearchExhausted);
-    };
+    let native_support_edge_ids = standard_native_support_edge_ids(&supports, &native_support_ids);
     let native_supports_by_row = native_support_edge_ids
         .iter()
         .map(|edge| edge.and_then(|edge| native_edge_supports.get(&edge).cloned()))
@@ -3220,15 +3741,38 @@ fn attach_standard_topology(
     let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
         graph_endpoint_pairs.as_deref(),
         roster_endpoint_pairs.as_deref(),
-    )
-    .and_then(|evidence| {
-        merge_native_endpoint_evidence(evidence.as_deref(), allocation_endpoint_pairs.as_deref())
-    }) else {
+    ) else {
         return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
     };
     diagnostics.native_endpoint_pairs = native_endpoint_evidence
         .as_ref()
         .map_or(0, |pairs| pairs.iter().flatten().count());
+    if let Some(pairs) = &native_endpoint_evidence {
+        for (edge, pair) in pairs
+            .iter()
+            .enumerate()
+            .filter_map(|(edge, pair)| pair.as_ref().copied().map(|pair| (edge, pair)))
+        {
+            if !merge_ordered_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+            }
+        }
+    }
+    if let Some(pairs) = visualization_endpoint_pairs {
+        for (edge, pair) in pairs.into_iter().enumerate() {
+            if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+                return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+            }
+        }
+    }
+    for (edge, bindings) in limit_curve_bindings.iter().enumerate() {
+        let Ok([binding]) = <[StandardLimitCurveBinding; 1]>::try_from(bindings.as_slice()) else {
+            continue;
+        };
+        if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, binding.points) {
+            return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+        }
+    }
     if let Some(pairs) = &native_endpoint_evidence {
         include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
     }
@@ -3259,30 +3803,31 @@ fn attach_standard_topology(
             }
         }
     }
-    if let Some(options) = &mut endpoint_options {
-        for edge in 0..supports.len() {
-            let Some(pair) = native_supports_by_row
-                .get(edge)
-                .and_then(Option::as_ref)
-                .and_then(|native| {
-                    standard_native_support_endpoint_pair(
-                        native,
-                        &ir.model.points,
-                        &endpoint_candidates[edge],
-                        native_endpoint_evidence
-                            .as_ref()
-                            .and_then(|pairs| pairs[edge]),
-                    )
-                })
-                .filter(|pair| {
-                    options[edge]
-                        .iter()
-                        .any(|candidate| missing_edge::same_unordered_pair(*candidate, *pair))
-                })
-            else {
-                continue;
-            };
-            options[edge] = vec![pair];
+    for edge in 0..supports.len() {
+        let native_pair = native_supports_by_row
+            .get(edge)
+            .and_then(Option::as_ref)
+            .and_then(|native| {
+                standard_native_support_endpoint_pair(
+                    native,
+                    &ir.model.points,
+                    &endpoint_candidates[edge],
+                    native_endpoint_evidence
+                        .as_ref()
+                        .and_then(|pairs| pairs[edge]),
+                )
+            });
+        let Some(pair) = native_pair else { continue };
+        if !merge_derived_endpoint_pair(&mut ordered_endpoint_pairs, edge, pair) {
+            return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
+        }
+        if let Some(options) = &mut endpoint_options {
+            if options[edge]
+                .iter()
+                .any(|candidate| missing_edge::same_unordered_pair(*candidate, pair))
+            {
+                options[edge] = vec![pair];
+            }
         }
     }
     if let (Some(options), Some(pairs)) = (&mut endpoint_options, &native_endpoint_evidence) {
@@ -3298,7 +3843,11 @@ fn attach_standard_topology(
     let graph_propagated_endpoint_pairs = match native_endpoint_evidence.as_ref() {
         Some(pairs) => {
             let Some(propagated) =
-                missing_edge::propagate_partial_edge_port_points(&native_port_options, pairs)
+                missing_edge::propagate_partial_edge_port_points_with_ordered_seeds(
+                    &native_port_options,
+                    pairs,
+                    &ordered_endpoint_pairs,
+                )
             else {
                 return Err(StandardTopologyFailure::NativeEndpointPropagation);
             };
@@ -3318,6 +3867,10 @@ fn attach_standard_topology(
         include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
     }
     if let Some(options) = &mut endpoint_options {
+        let handle_face_candidates = missing_edge::standard_repeated_edge_face_handle_candidates(
+            spine,
+            &serialized_edge_faces,
+        );
         let mut allowed_faces = supports
             .iter()
             .enumerate()
@@ -3341,33 +3894,91 @@ fn attach_standard_topology(
                                         face_bounds.as_ref().and_then(|bounds| bounds[*face]),
                                     )
                                 })
-                            })
+                            }) && standard_nurbs_line_pair_on_face(
+                                &surface.geometry,
+                                support,
+                                pair,
+                                &ir.model.points,
+                                face_bounds.as_ref().and_then(|bounds| bounds[*face]),
+                            )
                         })
                     })
                     .collect()
             })
             .collect::<Vec<_>>();
-        for edge in 0..allowed_faces.len() {
-            let mut exhausted = false;
-            allowed_faces[edge].retain(|face| {
-                let mut trial = edge_faces.clone();
-                trial[edge][1] = *face;
-                match missing_edge::face_endpoint_candidates_close(&trial, options, *face) {
-                    missing_edge::FaceEndpointClosureOutcome::Closed => true,
-                    missing_edge::FaceEndpointClosureOutcome::Rejected => false,
-                    missing_edge::FaceEndpointClosureOutcome::Exhausted => {
-                        exhausted = true;
-                        true
-                    }
-                }
-            });
-            if exhausted {
-                return Err(StandardTopologyFailure::TopologySearchExhausted);
-            }
+        let face_geometries = (0..face_count)
+            .map(|face| {
+                face_surface(ir, bindings, &surface_indices, face)
+                    .map(|surface| surface.geometry.clone())
+            })
+            .collect::<Option<Vec<_>>>();
+        let edge_geometries = supports
+            .iter()
+            .map(|support| support.geometry.clone())
+            .collect::<Vec<_>>();
+        if let Some(handle_face_candidates) = handle_face_candidates {
+            missing_edge::refine_repeated_edge_face_candidates(
+                &edge_faces,
+                &mut allowed_faces,
+                &handle_face_candidates,
+            )
+            .ok_or(StandardTopologyFailure::EdgeFaceAssignment)?;
         }
-        if let Some(completed) =
-            missing_edge::resolve_standard_duplicate_edge_faces(spine, &edge_faces, &allowed_faces)
+        refine_repeated_face_domains_by_geometry_and_bounds(
+            &edge_faces,
+            &mut allowed_faces,
+            face_bounds,
+            face_geometries.as_deref(),
+            &edge_geometries,
+        );
+        let has_alternates = allowed_faces.iter().any(|faces| !faces.is_empty());
+        let endpoint_closures = has_alternates
+            .then(|| {
+                options
+                    .iter()
+                    .map(|pairs| {
+                        <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                            .ok()
+                            .map(|[pair]| pair)
+                    })
+                    .collect::<Option<Vec<_>>>()
+            })
+            .flatten()
+            .and_then(|pairs| {
+                missing_edge::repeated_face_endpoint_closures(
+                    &edge_faces,
+                    &allowed_faces,
+                    &pairs,
+                    face_count,
+                )
+            });
+        let endpoint_completed = endpoint_closures
+            .as_deref()
+            .and_then(|closures| match closures {
+                [closure] => Some(closure.clone()),
+                _ => None,
+            });
+        if endpoint_closures
+            .as_ref()
+            .is_some_and(|closures| closures.len() > 1)
         {
+            endpoint_face_assignments = endpoint_closures;
+        }
+        // A non-empty domain remains open when endpoint degree closure does
+        // not select one complete incidence assignment. Face-local endpoint
+        // evidence cannot choose among multiple globally closed assignments.
+        let completed = endpoint_completed.or_else(|| {
+            (!has_alternates)
+                .then(|| {
+                    missing_edge::resolve_standard_duplicate_edge_faces(
+                        spine,
+                        &edge_faces,
+                        &allowed_faces,
+                    )
+                })
+                .flatten()
+        });
+        if let Some(completed) = completed {
             edge_faces = completed;
             for (edge, (support, faces)) in supports.iter_mut().zip(&edge_faces).enumerate() {
                 if support.faces == *faces {
@@ -3392,8 +4003,21 @@ fn attach_standard_topology(
                     return Err(StandardTopologyFailure::EmptyEndpointDomain);
                 }
             }
+        } else {
+            for (edge, faces) in edge_faces.iter().enumerate() {
+                deferred_port_edges[edge] = faces[0] == faces[1]
+                    && allowed_faces
+                        .get(edge)
+                        .is_some_and(|faces| !faces.is_empty());
+            }
+            if allowed_faces.iter().any(|faces| !faces.is_empty()) {
+                open_face_domains = Some(allowed_faces);
+            }
         }
     }
+    let has_open_face_domains = open_face_domains
+        .as_ref()
+        .is_some_and(|domains| domains.iter().any(|domain| !domain.is_empty()));
     let endpoint_pair_on_incident_faces = |edge: usize, pair: [usize; 2]| {
         pair.iter().all(|point| {
             let Some(position) = ir.model.points.get(*point).map(|point| point.position) else {
@@ -3401,11 +4025,15 @@ fn attach_standard_topology(
             };
             supports[edge].faces.iter().all(|face| {
                 face_surface(ir, bindings, &surface_indices, *face).is_some_and(|surface| {
-                    point_on_standard_face(
-                        position,
-                        &surface.geometry,
-                        face_bounds.as_ref().and_then(|bounds| bounds[*face]),
-                    )
+                    let bounds = face_bounds.as_ref().and_then(|bounds| bounds[*face]);
+                    point_on_standard_face(position, &surface.geometry, bounds)
+                        && standard_nurbs_line_pair_on_face(
+                            &surface.geometry,
+                            &supports[edge],
+                            &pair,
+                            &ir.model.points,
+                            bounds,
+                        )
                 })
             })
         })
@@ -3431,7 +4059,7 @@ fn attach_standard_topology(
                     let Some(surface) = face_surface(ir, bindings, &surface_indices, face) else {
                         return false;
                     };
-                    standard_pcurve_geometry(
+                    standard_endpoint_pair_supports_topology(
                         &surface.geometry,
                         support,
                         start,
@@ -3440,9 +4068,7 @@ fn attach_standard_topology(
                             brep,
                             bindings[face].2,
                         ),
-                        None,
                     )
-                    .is_some()
                 })
             });
             if pairs.is_empty() {
@@ -3465,6 +4091,9 @@ fn attach_standard_topology(
                 missing_edge::standard_mesh_placement_endpoint_pairs(spine, &edge_faces, &seeds)
             {
                 for (edge, mut domain) in placement_domains.into_iter().enumerate() {
+                    if deferred_port_edges[edge] {
+                        continue;
+                    }
                     domain.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
                     if domain.is_empty() {
                         continue;
@@ -3495,6 +4124,9 @@ fn attach_standard_topology(
                 .flatten()
             {
                 for (edge, mut domain) in boundary_domains.into_iter().enumerate() {
+                    if deferred_port_edges[edge] {
+                        continue;
+                    }
                     domain.retain(|pair| endpoint_pair_on_incident_faces(edge, *pair));
                     let previous = options[edge].clone();
                     if options[edge].is_empty() {
@@ -3518,7 +4150,7 @@ fn attach_standard_topology(
             pairs.sort_unstable();
             pairs.dedup();
         }
-        for (candidates, options) in endpoint_candidates.iter_mut().zip(options) {
+        for (candidates, options) in endpoint_candidates.iter_mut().zip(&mut *options) {
             for point in options.iter().flatten() {
                 if !candidates.contains(point) {
                     candidates.push(*point);
@@ -3543,7 +4175,11 @@ fn attach_standard_topology(
                         .map(|[pair]| pair)
                 })
                 .collect::<Vec<_>>();
-            let propagated = missing_edge::propagate_edge_port_points(ports, &seeds)?;
+            let propagated = missing_edge::propagate_edge_port_points_with_ordered_seeds(
+                ports,
+                &seeds,
+                &ordered_endpoint_pairs,
+            )?;
             if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
                 return Some(complete);
             }
@@ -3571,7 +4207,12 @@ fn attach_standard_topology(
                         .map(|pair| pair[0])
                 })
                 .collect::<Vec<_>>();
-            missing_edge::propagate_edge_port_points(&ports, &pairs)
+            missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
+                &ports,
+                &pairs,
+                &ordered_endpoint_pairs,
+                &deferred_port_edges,
+            )
         })
         .zip(endpoint_options.as_ref())
         .map(|(propagated, options)| {
@@ -3599,7 +4240,12 @@ fn attach_standard_topology(
                         .map(|pair| pair[0])
                 })
                 .collect::<Vec<_>>();
-            missing_edge::propagate_edge_port_points(&ports, &pairs)
+            missing_edge::propagate_edge_port_points_with_ordered_seeds_and_deferred(
+                &ports,
+                &pairs,
+                &ordered_endpoint_pairs,
+                &deferred_port_edges,
+            )
         });
     let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
         propagated_endpoint_pairs,
@@ -3621,15 +4267,41 @@ fn attach_standard_topology(
         constrained_endpoint_options.as_mut(),
         missing_edge::standard_mesh_edge_ports(spine),
     ) {
-        if let Some(pruned) = fbb::prune_edge_candidates_by_port_domains(&ports, options) {
+        let pruned = if deferred_port_edges.iter().any(|deferred| *deferred) {
+            fbb::prune_edge_candidates_by_port_domains_with_deferred(
+                &ports,
+                options,
+                &deferred_port_edges,
+            )
+        } else {
+            fbb::prune_edge_candidates_by_port_domains(&ports, options)
+        };
+        if let Some(pruned) = pruned {
             *options = pruned;
+        }
+        let unique_pairs = if deferred_port_edges.iter().any(|deferred| *deferred) {
+            missing_edge::unique_mesh_edge_port_candidate_pairs_with_deferred(
+                &ports,
+                options,
+                &deferred_port_edges,
+            )
+        } else {
+            missing_edge::unique_mesh_edge_port_candidate_pairs(&ports, options)
+                .map(|pairs| pairs.into_iter().map(Some).collect())
+        };
+        if let Some(pairs) = unique_pairs {
+            for (domain, pair) in options
+                .iter_mut()
+                .zip(pairs)
+                .filter_map(|(domain, pair)| pair.map(|pair| (domain, pair)))
+            {
+                domain.retain(|candidate| missing_edge::same_unordered_pair(*candidate, pair));
+            }
         }
     }
     if let Some(options) = &mut constrained_endpoint_options {
         // A same-incidence row relation is not an endpoint identity. Keep its
-        // complete candidate domain for the mesh solver; allocation-rank
-        // reduction is valid only after the solver has fixed the surrounding
-        // face frontier and the remaining branch relation can be checked.
+        // complete candidate domain for exact identity and mesh constraints.
         diagnostics.empty_endpoint_domains =
             options.iter().filter(|domain| domain.is_empty()).count();
         diagnostics.singleton_endpoint_domains =
@@ -3656,31 +4328,34 @@ fn attach_standard_topology(
         fbb::parse_standard(spine)
             .or_else(|| topology::parse_fbb_with_native_vertices(spine, native_ports.as_ref()?))
     };
-    let mesh_bound = mesh_topology.and_then(|topology| {
-        let endpoint_pairs = resolved_endpoint_pairs
-            .clone()
-            .or_else(|| {
-                endpoint_candidates
-                    .iter()
-                    .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
-                    .collect::<Option<Vec<[usize; 2]>>>()
-            })
-            .or_else(|| {
-                let ports = topology
-                    .edge_vertices()?
-                    .into_iter()
-                    .map(|[left, right]| {
-                        Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                missing_edge::bind_edge_port_candidates(
-                    &ports,
-                    constrained_endpoint_options.as_ref()?,
-                )
-            })?;
-        let point_assignment = topology.bind_vertex_points(&endpoint_pairs)?;
-        Some((topology, point_assignment))
-    });
+    let mesh_bound = (!has_open_face_domains)
+        .then_some(mesh_topology)
+        .flatten()
+        .and_then(|topology| {
+            let endpoint_pairs = resolved_endpoint_pairs
+                .clone()
+                .or_else(|| {
+                    endpoint_candidates
+                        .iter()
+                        .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
+                        .collect::<Option<Vec<[usize; 2]>>>()
+                })
+                .or_else(|| {
+                    let ports = topology
+                        .edge_vertices()?
+                        .into_iter()
+                        .map(|[left, right]| {
+                            Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    missing_edge::bind_edge_port_candidates(
+                        &ports,
+                        constrained_endpoint_options.as_ref()?,
+                    )
+                })?;
+            let point_assignment = topology.bind_vertex_points(&endpoint_pairs)?;
+            Some((topology, point_assignment))
+        });
     let circle_anchors: Vec<Option<[usize; 2]>> = supports
         .iter()
         .zip(&endpoint_candidates)
@@ -3692,129 +4367,291 @@ fn attach_standard_topology(
             | crate::families::standard::records::StandardCurveGeometry::Bspline => None,
         })
         .collect();
-    let circle_constraint_edges = supports
-        .iter()
-        .enumerate()
-        .map(|(edge, support)| {
-            matches!(
-                support.geometry,
-                crate::families::standard::records::StandardCurveGeometry::Circle { .. }
-            ) && constrained_endpoint_options
-                .as_ref()
-                .is_some_and(|options| options[edge].len() > 1)
-        })
-        .collect::<Vec<_>>();
     let mut mesh_search_exhausted = false;
+    let native_fbb_topology = if fbb_only && !has_open_face_domains {
+        native_endpoint_pairs.as_ref().and_then(|pairs| {
+            fbb::parse_fbb_endpoints_with_edge_classes(
+                spine,
+                &edge_faces,
+                pairs,
+                Some(&edge_classes),
+            )
+        })
+    } else {
+        None
+    };
+    let mut selected_face_assignment = None;
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
-    } else if fbb_only {
-        return Err(StandardTopologyFailure::NoTopologySolution);
-    } else if let Some(topology) = native_endpoint_pairs.as_ref().and_then(|pairs| {
-        fbb::parse_standard_endpoints_with_edge_classes(
-            spine,
-            &edge_faces,
-            pairs,
-            Some(&edge_classes),
-        )
-    }) {
+    } else if let Some(topology) = native_fbb_topology {
+        let point_assignment = (0..ir.model.points.len()).collect();
+        (topology, point_assignment)
+    } else if let Some(topology) = (!has_open_face_domains)
+        .then_some(native_endpoint_pairs.as_ref())
+        .flatten()
+        .and_then(|pairs| {
+            fbb::parse_standard_endpoints_with_edge_classes(
+                spine,
+                &edge_faces,
+                pairs,
+                Some(&edge_classes),
+            )
+        })
+    {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
-        let branch_groups = standard_curve_branch_groups(&supports, options)?;
-        let initial_assignment = options
+        let edge_identity_evidence = supports
             .iter()
-            .map(|candidates| {
-                if candidates.len() == 1 {
-                    Some(candidates[0])
-                } else {
-                    None
-                }
+            .enumerate()
+            .map(|(edge, _)| {
+                standard_edge_identity_is_admitted(
+                    ordered_endpoint_pairs[edge],
+                    native_endpoint_evidence
+                        .as_ref()
+                        .and_then(|pairs| pairs.get(edge).copied().flatten()),
+                    native_supports_by_row[edge].is_some(),
+                    !limit_curve_bindings[edge].is_empty(),
+                )
             })
             .collect::<Vec<_>>();
-        let solver_options = standard_curve_branch_candidates_after_partial_assignment(
-            &supports,
-            options,
-            &branch_groups,
-            &initial_assignment,
-            Some(work_budget),
-        )?;
-        let mut branch_preferred_edges =
-            alloc_filled(options.len(), false, "catia standard branch preferences").ok()?;
-        for edge in branch_groups
+        let edge_direction_evidence = native_endpoint_evidence.as_ref().map_or_else(
+            || supports.iter().map(|_| false).collect::<Vec<_>>(),
+            |pairs| pairs.iter().map(Option::is_some).collect(),
+        );
+        let point_on_face = |face: usize, point: usize| {
+            if let Some(membership) = face_point_membership.as_ref() {
+                return membership
+                    .get(face)
+                    .and_then(|points| points.get(point))
+                    .copied()
+                    .unwrap_or(false);
+            }
+            let Some(position) = ir.model.points.get(point).map(|point| point.position) else {
+                return false;
+            };
+            face_surface(ir, bindings, &surface_indices, face).is_some_and(|surface| {
+                point_on_standard_face(
+                    position,
+                    &surface.geometry,
+                    face_bounds
+                        .and_then(|bounds| bounds.get(face).copied())
+                        .flatten(),
+                )
+            })
+        };
+        let point_positions = ir
+            .model
+            .points
             .iter()
-            .flat_map(|group| group.edges.iter().copied())
-        {
-            branch_preferred_edges[edge] = true;
+            .map(|point| point.position)
+            .collect::<Vec<_>>();
+        let mut solver_deferred_edges = deferred_port_edges.clone();
+        if let Some(ports) = missing_edge::edge_port_identities(spine) {
+            if !missing_edge::expand_deferred_edge_port_components(
+                &ports,
+                &mut solver_deferred_edges,
+            ) {
+                return None;
+            }
         }
-        let branch_assignment_dependencies =
-            standard_curve_branch_assignment_dependencies(&supports, &branch_groups)?;
-        let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
-            spine,
-            &edge_faces,
-            &solver_options,
-            &edge_classes,
-            &circle_constraint_edges,
-            &branch_preferred_edges,
-            Some(&branch_assignment_dependencies),
-            work_budget,
-            |pairs| {
-                standard_curve_branch_assignment_is_ranked(
-                    &supports,
-                    &solver_options,
-                    &branch_groups,
-                    pairs,
-                    Some(work_budget),
-                ) && standard_circle_pair_solution_is_simple(
+        let solve_mesh_candidate =
+            |selected_edge_faces: &[[usize; 2]],
+             selected_supports: &[crate::families::standard::records::StandardCurveSupport],
+             selected_edge_classes: &[usize],
+             solve_budget: &WorkBudget<'_>| {
+                // FBB-only rows are complete boundary runs. Their global
+                // handle quotient is the incidence source.
+                let mut solver_options = standard_endpoint_options_for_selected_faces(
                     ir,
                     bindings,
                     &surface_indices,
-                    brep,
-                    &supports,
-                    &solver_options,
-                    pairs,
-                )
-            },
-        );
-        let has_circle_preference = circle_constraint_edges
-            .iter()
-            .any(|constrained| *constrained);
-        let outcome = if has_circle_preference {
-            // Distinct B-rep edges may legally occupy overlapping ranges of the same
-            // circular carrier. Treat range separation as a search preference, then
-            // accept the unconstrained bounded result only when it is uniquely
-            // determined.
-            retry_rejected_mesh_solution(preferred, || {
-                let Ok(unconstrained) = alloc_filled(
-                    circle_constraint_edges.len(),
-                    false,
-                    "catia standard unconstrained circle edges",
-                ) else {
-                    return mesh_quotient::MeshCandidateSolve::Rejected(
-                        mesh_quotient::MeshCandidateRejection::QuotientPreparation,
-                    );
+                    selected_supports,
+                    &point_positions,
+                    options,
+                    &edge_identity_evidence,
+                );
+                for (edge, deferred) in solver_deferred_edges.iter().copied().enumerate() {
+                    if deferred && !edge_identity_evidence[edge] {
+                        solver_options[edge].clear();
+                    }
+                }
+                let endpoint_pairs_on_selected_faces = |pairs: &[Option<[usize; 2]>]| {
+                    if pairs.len() != selected_supports.len() {
+                        return false;
+                    }
+                    pairs.iter().enumerate().all(|(edge, pair)| {
+                        let Some(pair) = pair else {
+                            return true;
+                        };
+                        pair.iter().all(|point| {
+                            selected_supports[edge]
+                                .faces
+                                .iter()
+                                .all(|face| point_on_face(*face, *point))
+                        })
+                    })
                 };
-                mesh_quotient::parse_standard_mesh_candidate_outcome(
-                    spine,
-                    &edge_faces,
+                let line_constraint = StandardLinePairConstraint::new(
+                    &ir.model.points,
+                    selected_supports,
                     &solver_options,
-                    &edge_classes,
-                    &unconstrained,
-                    &branch_preferred_edges,
-                    Some(&branch_assignment_dependencies),
-                    work_budget,
+                );
+                let face_domain_edges = open_face_domains.as_ref().map_or_else(
+                    || solver_options.iter().map(|_| false).collect::<Vec<_>>(),
+                    |domains| domains.iter().map(|domain| !domain.is_empty()).collect(),
+                );
+                let selected_circle_constraint_edges = selected_supports
+                    .iter()
+                    .enumerate()
+                    .map(|(edge, support)| {
+                        matches!(
+                            support.geometry,
+                            crate::families::standard::records::StandardCurveGeometry::Circle { .. }
+                        ) && solver_options[edge].len() > 1
+                    })
+                    .collect::<Vec<_>>();
+                let partial_constraint_edges = selected_circle_constraint_edges
+                    .iter()
+                    .zip(line_constraint.flexible_edge_mask())
+                    .zip(&face_domain_edges)
+                    .map(|((circle, line), face)| *circle || *line || *face)
+                    .collect::<Vec<_>>();
+                let preferred_budget =
+                    solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+                let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
+                    spine,
+                    selected_edge_faces,
+                    &solver_options,
+                    selected_edge_classes,
+                    &edge_geometry,
+                    &edge_identity_evidence,
+                    &edge_direction_evidence,
+                    has_open_face_domains,
+                    &partial_constraint_edges,
+                    &partial_constraint_edges,
+                    Some(&partial_constraint_edges),
+                    None,
+                    &preferred_budget,
                     |pairs| {
-                        standard_curve_branch_assignment_is_ranked(
-                            &supports,
-                            &solver_options,
-                            &branch_groups,
-                            pairs,
-                            Some(work_budget),
-                        )
+                        endpoint_pairs_on_selected_faces(pairs) && line_constraint.is_valid(pairs)
                     },
-                )
-            })
+                    |pairs| {
+                        endpoint_pairs_on_selected_faces(pairs)
+                            && line_constraint.is_simple(pairs)
+                            && standard_circle_pair_solution_is_simple(
+                                ir,
+                                bindings,
+                                &surface_indices,
+                                selected_supports,
+                                &solver_options,
+                                pairs,
+                            )
+                    },
+                );
+                if !solve_budget.charge_by(preferred_budget.consumed()) {
+                    return mesh_quotient::MeshCandidateSolve::Exhausted(
+                        mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
+                    );
+                }
+                let has_circle_preference = selected_circle_constraint_edges
+                    .iter()
+                    .any(|constrained| *constrained);
+                if has_circle_preference {
+                    // Circular interval choice is a preference because both
+                    // complementary arcs can be valid. The fallback relaxes
+                    // only that choice; straight-carrier interval overlap is
+                    // an invalid endpoint relation in both searches.
+                    let fallback_budget =
+                        solve_budget.child_slice(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+                    let fallback = mesh_quotient::parse_standard_mesh_candidate_outcome(
+                        spine,
+                        selected_edge_faces,
+                        &solver_options,
+                        selected_edge_classes,
+                        &edge_geometry,
+                        &edge_identity_evidence,
+                        &edge_direction_evidence,
+                        has_open_face_domains,
+                        &partial_constraint_edges,
+                        &partial_constraint_edges,
+                        Some(&partial_constraint_edges),
+                        None,
+                        &fallback_budget,
+                        |pairs| {
+                            endpoint_pairs_on_selected_faces(pairs)
+                                && line_constraint.is_simple(pairs)
+                        },
+                        |pairs| {
+                            endpoint_pairs_on_selected_faces(pairs)
+                                && line_constraint.is_simple(pairs)
+                        },
+                    );
+                    if !solve_budget.charge_by(fallback_budget.consumed()) {
+                        return mesh_quotient::MeshCandidateSolve::Exhausted(
+                            mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
+                        );
+                    }
+                    retry_rejected_mesh_solution(preferred, || fallback)
+                } else {
+                    preferred
+                }
+            };
+        let outcome = if has_open_face_domains {
+            let domains = open_face_domains.as_deref().unwrap_or_default();
+            let face_assignments = endpoint_face_assignments.as_deref().map_or(
+                mesh_quotient::MeshFaceAssignmentCandidates::Domains {
+                    edge_faces: &edge_faces,
+                    allowed_faces: domains,
+                    face_count,
+                },
+                |assignments| mesh_quotient::MeshFaceAssignmentCandidates::Concrete {
+                    assignments,
+                    face_count,
+                },
+            );
+            match mesh_quotient::parse_standard_mesh_candidate_outcome_with_face_assignments(
+                face_assignments,
+                work_budget,
+                |selected_edge_faces, branch_budget| {
+                    let selected_supports = supports
+                        .iter()
+                        .zip(selected_edge_faces)
+                        .map(|(support, faces)| {
+                            let mut selected = support.clone();
+                            selected.faces = *faces;
+                            selected
+                        })
+                        .collect::<Vec<_>>();
+                    let selected_edge_classes = standard_curve_edge_classes(&selected_supports);
+                    solve_mesh_candidate(
+                        selected_edge_faces,
+                        &selected_supports,
+                        &selected_edge_classes,
+                        branch_budget,
+                    )
+                },
+            ) {
+                mesh_quotient::MeshFaceDomainCandidateSolve::Solved(
+                    faces,
+                    topology,
+                    assignment,
+                ) => {
+                    selected_face_assignment = Some(faces);
+                    mesh_quotient::MeshCandidateSolve::Solved(topology, assignment)
+                }
+                mesh_quotient::MeshFaceDomainCandidateSolve::Rejected(rejection) => {
+                    mesh_quotient::MeshCandidateSolve::Rejected(rejection)
+                }
+                mesh_quotient::MeshFaceDomainCandidateSolve::Ambiguous(ambiguity) => {
+                    mesh_quotient::MeshCandidateSolve::Ambiguous(ambiguity)
+                }
+                mesh_quotient::MeshFaceDomainCandidateSolve::Exhausted(exhaustion) => {
+                    mesh_quotient::MeshCandidateSolve::Exhausted(exhaustion)
+                }
+            }
         } else {
-            preferred
+            solve_mesh_candidate(&edge_faces, &supports, &edge_classes, work_budget)
         };
         match outcome {
             mesh_quotient::MeshCandidateSolve::Solved(topology, assignment) => {
@@ -3836,24 +4673,36 @@ fn attach_standard_topology(
         }
     }) {
         bound
-    } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
-        missing_edge::standard_mesh_edge_ports(spine)
-            .and_then(|ports| {
-                fbb::parse_standard_port_endpoint_candidates(
-                    spine,
-                    &edge_faces,
-                    options,
-                    &ports,
-                    work_budget,
-                )
-            })
-            .or_else(|| {
-                fbb::parse_standard_endpoint_candidates(spine, &edge_faces, options, work_budget)
-            })
-    }) {
+    } else if let Some(topology) = (!has_open_face_domains)
+        .then_some(constrained_endpoint_options.as_ref())
+        .flatten()
+        .and_then(|options| {
+            missing_edge::standard_mesh_edge_ports(spine)
+                .and_then(|ports| {
+                    fbb::parse_standard_port_endpoint_candidates(
+                        spine,
+                        &edge_faces,
+                        options,
+                        &ports,
+                        work_budget,
+                    )
+                })
+                .or_else(|| {
+                    fbb::parse_standard_endpoint_candidates(
+                        spine,
+                        &edge_faces,
+                        options,
+                        work_budget,
+                    )
+                })
+        })
+    {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else if let Some(topology) = fbb::parse_standard_motif(spine, &edge_faces, &circle_anchors) {
+    } else if let Some(topology) = (!has_open_face_domains)
+        .then(|| fbb::parse_standard_motif(spine, &edge_faces, &circle_anchors))
+        .flatten()
+    {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {
@@ -3865,6 +4714,12 @@ fn attach_standard_topology(
             StandardTopologyFailure::NoTopologySolution
         });
     };
+    if let Some(faces) = selected_face_assignment {
+        edge_faces = faces;
+        for (support, faces) in supports.iter_mut().zip(&edge_faces) {
+            support.faces = *faces;
+        }
+    }
     let Some(edge_vertices) = validate_standard_topology(
         ir,
         annotations,
@@ -3891,7 +4746,7 @@ fn attach_standard_topology(
         .iter()
         .filter(|binding| binding.is_some())
         .count();
-    if !emit_standard_topology(
+    emit_standard_topology(
         ir,
         annotations,
         bindings,
@@ -3904,9 +4759,7 @@ fn attach_standard_topology(
         &native_supports_by_row,
         &resolved_limit_curve_bindings,
         limit_curves,
-    ) {
-        return Err(StandardTopologyFailure::TopologySearchExhausted);
-    }
+    );
     Ok(())
 }
 
@@ -3982,17 +4835,6 @@ fn standard_boundary_roles(
     face_index: usize,
     point_assignment: &[usize],
 ) -> Vec<LoopBoundaryRole> {
-    let unspecified = || {
-        alloc_filled(
-            topology
-                .faces()
-                .get(face_index)
-                .map_or(0, |face| face.boundaries.len()),
-            LoopBoundaryRole::Unspecified,
-            "catia standard boundary roles",
-        )
-        .unwrap_or_default()
-    };
     let Some(face_topology) = topology.faces().get(face_index) else {
         return Vec::new();
     };
@@ -4004,13 +4846,13 @@ fn standard_boundary_roles(
         };
     }
     let Some(surface_id) = bindings.get(face_index).map(|binding| &binding.0) else {
-        return unspecified();
+        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
     };
     let Some(&surface_index) = surface_indices.get(surface_id) else {
-        return unspecified();
+        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
     };
     let Some(surface) = ir.model.surfaces.get(surface_index) else {
-        return unspecified();
+        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
     };
     let Some(boundaries) = face_topology
         .boundaries
@@ -4027,7 +4869,7 @@ fn standard_boundary_roles(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return unspecified();
+        return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
     };
     crate::boundary_roles::classify_planar_boundary_roles(&surface.geometry, &boundaries)
 }
@@ -4047,7 +4889,7 @@ fn emit_standard_topology(
     native_edge_supports: &[Option<StandardEdgeSupport>],
     limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
     limit_curves: &[NurbsCurve],
-) -> bool {
+) {
     let mut edge_reversed = Vec::with_capacity(supports.len());
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
     {
@@ -4118,13 +4960,7 @@ fn emit_standard_topology(
         .enumerate()
         .map(|(index, curve)| (curve.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let Ok(mut edge_coedges) = alloc_filled(
-        ir.model.edges.len(),
-        Vec::new(),
-        "catia standard edge coedges",
-    ) else {
-        return false;
-    };
+    let mut edge_coedges = vec![Vec::new(); ir.model.edges.len()];
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
         let boundary_roles = standard_boundary_roles(
             ir,
@@ -4281,7 +5117,6 @@ fn emit_standard_topology(
             ir.model.coedges[*current].radial_next = ir.model.coedges[next].id.clone();
         }
     }
-    true
 }
 
 pub(crate) fn standard_native_support_endpoint_pair(
@@ -4290,7 +5125,6 @@ pub(crate) fn standard_native_support_endpoint_pair(
     candidates: &[usize],
     required_pair: Option<[usize; 2]>,
 ) -> Option<[usize; 2]> {
-    const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1.0e-6;
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
 
     let lifted = support
@@ -4365,28 +5199,47 @@ pub(crate) fn resolve_standard_endpoint_pairs(
         })
         .collect();
     for (edge, support) in supports.iter().enumerate() {
-        if resolved[edge].is_empty()
-            && matches!(
-                support.geometry,
-                crate::families::standard::records::StandardCurveGeometry::Circle { .. }
-            )
-        {
-            let count = candidates[edge].len();
-            if count
-                .checked_mul(count.saturating_sub(1))
-                .and_then(|value| value.checked_div(2))
-                .is_some_and(|relations| relations <= MAX_PAIR_RELATIONS_PER_EDGE)
-            {
-                resolved[edge] = candidates[edge]
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(left, &start)| {
-                        candidates[edge][left + 1..]
-                            .iter()
-                            .map(move |&end| [start, end])
-                    })
-                    .collect();
+        let crate::families::standard::records::StandardCurveGeometry::Circle { center, radius } =
+            support.geometry
+        else {
+            continue;
+        };
+        let count = candidates[edge].len();
+        if count < 2 {
+            continue;
+        }
+        let include_full_circle_seams = count == 2
+            && if let [start, end] = candidates[edge].as_slice() {
+                if let (Some(start), Some(end)) = (
+                    ir.model.points.get(*start).map(|point| point.position),
+                    ir.model.points.get(*end).map(|point| point.position),
+                ) {
+                    let midpoint = Point3::new(
+                        (start.x + end.x) * 0.5,
+                        (start.y + end.y) * 0.5,
+                        (start.z + end.z) * 0.5,
+                    );
+                    midpoint.distance(center) <= EPS_ANTIPODAL_CIRCLE
+                        && (start.distance(end) - 2.0 * radius).abs() <= EPS_ANTIPODAL_CIRCLE
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+        let relation_count = count
+            .checked_mul(count.saturating_sub(1))
+            .and_then(|value| value.checked_div(2))
+            .and_then(|value| value.checked_add(if include_full_circle_seams { count } else { 0 }));
+        if relation_count.is_some_and(|relations| relations <= MAX_PAIR_RELATIONS_PER_EDGE) {
+            let mut pairs = Vec::with_capacity(relation_count.unwrap_or_default());
+            for (left, &start) in candidates[edge].iter().enumerate() {
+                let first_end = left + usize::from(!include_full_circle_seams);
+                for &end in &candidates[edge][first_end..] {
+                    pairs.push([start, end]);
+                }
             }
+            resolved[edge] = pairs;
         }
     }
     let mut line_groups = HashMap::<[usize; 2], Vec<usize>>::new();
@@ -4415,6 +5268,10 @@ pub(crate) fn resolve_standard_endpoint_pairs(
         let surface0 = face_surface(ir, bindings, surface_indices, faces[0])?;
         let surface1 = face_surface(ir, bindings, surface_indices, faces[1])?;
         let direction = intersection_line_direction(&surface0.geometry, &surface1.geometry);
+        let same_cone_surface = matches!(
+            (&surface0.geometry, &surface1.geometry),
+            (SurfaceGeometry::Cone { .. }, SurfaceGeometry::Cone { .. })
+        ) && surface0.geometry == surface1.geometry;
         let points = candidates.get(*edges.first()?)?;
         let relation_count = points
             .len()
@@ -4448,8 +5305,16 @@ pub(crate) fn resolve_standard_endpoint_pairs(
                             .sqrt()
                             <= 1e-2 * segment_norm * direction_norm
                 });
+                let follows_same_cone_generator = !same_cone_surface
+                    || same_cone_generator_pair(
+                        &surface0.geometry,
+                        &surface1.geometry,
+                        start_point,
+                        end_point,
+                    );
                 if segment_norm != 0.0
                     && follows_direction
+                    && follows_same_cone_generator
                     && point_on_surface(midpoint, &surface0.geometry)
                     && point_on_surface(midpoint, &surface1.geometry)
                 {
@@ -4499,948 +5364,69 @@ pub(crate) fn resolve_standard_endpoint_pairs(
     Some(resolved)
 }
 
-fn bipartite_relation_sides<I>(relation: I) -> Option<[Vec<usize>; 2]>
-where
-    I: IntoIterator<Item = [usize; 2]>,
-{
-    let mut adjacency = HashMap::<usize, Vec<usize>>::new();
-    for [left, right] in relation {
-        if left == right {
-            return None;
-        }
-        adjacency.entry(left).or_default().push(right);
-        adjacency.entry(right).or_default().push(left);
-    }
-    let root = *adjacency.keys().min()?;
-    let mut colors = HashMap::from([(root, false)]);
-    let mut stack = vec![root];
-    while let Some(vertex) = stack.pop() {
-        let color = colors[&vertex];
-        for &neighbor in &adjacency[&vertex] {
-            match colors.get(&neighbor) {
-                Some(stored) if *stored == color => return None,
-                Some(_) => {}
-                None => {
-                    colors.insert(neighbor, !color);
-                    stack.push(neighbor);
-                }
-            }
-        }
-    }
-    if colors.len() != adjacency.len() {
-        return None;
-    }
-    let mut sides = [Vec::new(), Vec::new()];
-    for (vertex, color) in colors {
-        sides[usize::from(color)].push(vertex);
-    }
-    sides[0].sort_unstable();
-    sides[1].sort_unstable();
-    Some(sides)
-}
-
-/// Bind curve branches when their surviving endpoint relation and serialized
-/// cardinality establish corresponding allocation ranks.
-#[cfg(test)]
-fn bind_ordered_standard_curve_branches(
+fn standard_curve_edge_classes(
     supports: &[crate::families::standard::records::StandardCurveSupport],
-    candidates: &mut [Vec<[usize; 2]>],
-) {
-    bind_ordered_standard_curve_branches_with_focus(supports, candidates, None);
-}
-
-#[cfg(test)]
-fn bind_ordered_standard_curve_branches_for_group(
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    candidates: &mut [Vec<[usize; 2]>],
-    group: &[usize],
-) {
-    let focused_edges = group.iter().copied().collect::<HashSet<_>>();
-    bind_ordered_standard_curve_branches_with_focus(supports, candidates, Some(&focused_edges));
-}
-
-/// Apply the ranked-family phases to one branch group without materializing a
-/// full candidate matrix for every group.
-fn bind_standard_curve_branch_group(
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    candidates: &mut [Vec<[usize; 2]>],
-    group: &[usize],
-    all_candidates: &[Vec<[usize; 2]>],
-    assignment: &[Option<[usize; 2]>],
-) -> bool {
-    if supports.len() != all_candidates.len()
-        || supports.len() != assignment.len()
-        || candidates.len() != group.len()
-        || group.len() < 2
-    {
-        return false;
-    }
-    let is_ranked_family =
-        |geometry: &crate::families::standard::records::StandardCurveGeometry| {
-            matches!(
-                geometry,
-                crate::families::standard::records::StandardCurveGeometry::Line
-                    | crate::families::standard::records::StandardCurveGeometry::Bspline
-            )
-        };
-    let same_ranked_family =
-        |left: &crate::families::standard::records::StandardCurveGeometry,
-         right: &crate::families::standard::records::StandardCurveGeometry| {
-            is_ranked_family(left) && std::mem::discriminant(left) == std::mem::discriminant(right)
-        };
-    let normalize = |pairs: &[[usize; 2]]| {
-        let mut pairs = pairs
+) -> Vec<usize> {
+    let mut classes = Vec::with_capacity(supports.len());
+    for (edge, support) in supports.iter().enumerate() {
+        let class = supports[..edge]
             .iter()
-            .copied()
-            .map(|mut pair| {
-                pair.sort_unstable();
-                pair
+            .position(|candidate| {
+                let mut candidate_faces = candidate.faces;
+                candidate_faces.sort_unstable();
+                let mut support_faces = support.faces;
+                support_faces.sort_unstable();
+                candidate_faces == support_faces
+                    && match (&candidate.geometry, &support.geometry) {
+                        (
+                            crate::families::standard::records::StandardCurveGeometry::Circle {
+                                center: left_center,
+                                radius: left_radius,
+                            },
+                            crate::families::standard::records::StandardCurveGeometry::Circle {
+                                center: right_center,
+                                radius: right_radius,
+                            },
+                        ) => {
+                            left_center.x.to_bits() == right_center.x.to_bits()
+                                && left_center.y.to_bits() == right_center.y.to_bits()
+                                && left_center.z.to_bits() == right_center.z.to_bits()
+                                && left_radius.to_bits() == right_radius.to_bits()
+                        }
+                        (
+                            crate::families::standard::records::StandardCurveGeometry::Line,
+                            crate::families::standard::records::StandardCurveGeometry::Line,
+                        ) => true,
+                        _ => false,
+                    }
             })
-            .collect::<Vec<_>>();
-        pairs.sort_unstable();
-        pairs.dedup();
-        pairs
-    };
-    let positions = group
+            .map_or(edge, |candidate| classes[candidate]);
+        classes.push(class);
+    }
+    classes
+}
+
+fn standard_curve_geometry_gauge_keys(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+) -> Vec<MeshEdgeGeometry> {
+    supports
         .iter()
-        .copied()
-        .enumerate()
-        .map(|(position, edge)| (edge, position))
-        .collect::<HashMap<_, _>>();
-    if group.windows(2).any(|edges| edges[0] >= edges[1]) {
-        return false;
-    }
-    if group.iter().any(|edge| *edge >= supports.len()) {
-        return false;
-    }
-    let mut faces = supports[group[0]].faces;
-    faces.sort_unstable();
-    if group.iter().any(|edge| {
-        *edge >= supports.len() || !is_ranked_family(&supports[*edge].geometry) || {
-            let mut candidate_faces = supports[*edge].faces;
-            candidate_faces.sort_unstable();
-            candidate_faces != faces
-        }
-    }) {
-        return false;
-    }
-
-    let fixed_relations =
-        |normalized: &[Vec<[usize; 2]>], excluded: &HashSet<usize>, vertices: &HashSet<usize>| {
-            (0..supports.len())
-                .filter_map(|edge| {
-                    if excluded.contains(&edge) {
-                        return None;
-                    }
-                    let pair = if let Some(position) = positions.get(&edge) {
-                        (normalized[*position].len() == 1).then_some(normalized[*position][0])
-                    } else {
-                        assignment[edge].or_else(|| {
-                            all_candidates[edge]
-                                .first()
-                                .copied()
-                                .filter(|_| all_candidates[edge].len() == 1)
-                        })
-                    }?;
-                    if !supports[edge].faces.iter().any(|face| faces.contains(face))
-                        || !pair.iter().all(|point| vertices.contains(point))
-                    {
-                        return None;
-                    }
-                    let mut pair = pair;
-                    pair.sort_unstable();
-                    Some(pair)
-                })
-                .collect::<HashSet<_>>()
-        };
-
-    let Ok(mut grouped) = alloc_filled(group.len(), false, "catia standard branch ranking") else {
-        return false;
-    };
-    let mut normalized = candidates
-        .iter()
-        .map(|pairs| normalize(pairs))
-        .collect::<Vec<_>>();
-    for first_position in 0..group.len() {
-        if grouped[first_position] || normalized[first_position].len() < 4 {
-            continue;
-        }
-        let first = group[first_position];
-        let edges = (first_position..group.len())
-            .filter(|position| {
-                let edge = group[*position];
-                !grouped[*position]
-                    && same_ranked_family(&supports[edge].geometry, &supports[first].geometry)
-                    && {
-                        let mut candidate_faces = supports[edge].faces;
-                        candidate_faces.sort_unstable();
-                        candidate_faces == faces
-                    }
-                    && normalized[*position] == normalized[first_position]
-            })
-            .map(|position| group[position])
-            .collect::<Vec<_>>();
-        let branch_count = edges.len();
-        if branch_count < 2 {
-            continue;
-        }
-        let vertices = normalized[first_position]
-            .iter()
-            .flatten()
-            .copied()
-            .collect::<HashSet<_>>();
-        let excluded = edges.iter().copied().collect::<HashSet<_>>();
-        let fixed_relations = fixed_relations(&normalized, &excluded, &vertices);
-        let relation = normalized[first_position]
-            .iter()
-            .copied()
-            .filter(|pair| !fixed_relations.contains(pair))
-            .collect::<Vec<_>>();
-        let Some(sides) = bipartite_relation_sides(relation.iter().copied()) else {
-            continue;
-        };
-        let ranked_side = match [
-            sides[0].len() == branch_count,
-            sides[1].len() == branch_count,
-        ] {
-            [true, true] => None,
-            [true, false] => Some(0),
-            [false, true] => Some(1),
-            [false, false] => continue,
-        };
-        if sides[0]
-            .len()
-            .checked_mul(sides[1].len())
-            .is_none_or(|count| relation.len() != count)
-        {
-            continue;
-        }
-        let cross_relations = sides[0]
-            .iter()
-            .flat_map(|left| {
-                sides[1].iter().map(move |right| {
-                    let mut pair = [*left, *right];
-                    pair.sort_unstable();
-                    pair
-                })
-            })
-            .collect::<HashSet<_>>();
-        if relation.iter().copied().collect::<HashSet<_>>() != cross_relations
-            || normalized[first_position]
-                .iter()
-                .any(|pair| !cross_relations.contains(pair) && !fixed_relations.contains(pair))
-        {
-            continue;
-        }
-        for (rank, edge) in edges.into_iter().enumerate() {
-            let position = positions[&edge];
-            candidates[position] = ranked_side.map_or_else(
-                || vec![[sides[0][rank], sides[1][rank]]],
-                |side| {
-                    normalized[first_position]
-                        .iter()
-                        .copied()
-                        .filter(|pair| pair.contains(&sides[side][rank]))
-                        .collect()
-                },
-            );
-            grouped[position] = true;
-        }
-    }
-
-    normalized = candidates.iter().map(|pairs| normalize(pairs)).collect();
-    for first_position in 0..group.len() {
-        if grouped[first_position] || normalized[first_position].len() < 2 {
-            continue;
-        }
-        let first = group[first_position];
-        let edges = group
-            .iter()
-            .enumerate()
-            .filter(|(position, edge)| {
-                !grouped[*position]
-                    && same_ranked_family(&supports[**edge].geometry, &supports[first].geometry)
-                    && {
-                        let mut candidate_faces = supports[**edge].faces;
-                        candidate_faces.sort_unstable();
-                        candidate_faces == faces
-                    }
-                    && normalized[*position].len() >= 2
-            })
-            .map(|(_, edge)| *edge)
-            .collect::<Vec<_>>();
-        let branch_count = edges.len();
-        if edges.first() != Some(&first) || branch_count < 2 {
-            continue;
-        }
-        let vertices = edges
-            .iter()
-            .flat_map(|edge| normalized[positions[edge]].iter().flatten().copied())
-            .collect::<HashSet<_>>();
-        let excluded = edges.iter().copied().collect::<HashSet<_>>();
-        let fixed_relations = fixed_relations(&normalized, &excluded, &vertices);
-        let anchored = edges
-            .iter()
-            .map(|edge| {
-                let position = positions[edge];
-                let relation = normalized[position]
-                    .iter()
-                    .copied()
-                    .filter(|pair| !fixed_relations.contains(pair))
-                    .collect::<Vec<_>>();
-                let anchor = relation
-                    .first()?
-                    .iter()
-                    .copied()
-                    .find(|point| relation.iter().all(|pair| pair.contains(point)))?;
-                let mut opposite = relation
-                    .iter()
-                    .map(|pair| if pair[0] == anchor { pair[1] } else { pair[0] })
-                    .collect::<Vec<_>>();
-                opposite.sort_unstable();
-                opposite.dedup();
-                (opposite.len() == relation.len()).then_some((anchor, opposite))
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(anchored) = anchored else {
-            continue;
-        };
-        let anchors = anchored
-            .iter()
-            .map(|(anchor, _)| *anchor)
-            .collect::<Vec<_>>();
-        if anchors.len() != branch_count
-            || anchors.windows(2).any(|pair| pair[0] == pair[1])
-            || anchored
-                .iter()
-                .any(|(_, opposite)| opposite != &anchored[0].1)
-            || anchored[0].1.len() != branch_count
-            || anchors.iter().any(|anchor| anchored[0].1.contains(anchor))
-        {
-            continue;
-        }
-        let diagonal = edges
-            .iter()
-            .enumerate()
-            .map(|(rank, edge)| {
-                let mut pair = [anchors[rank], anchored[0].1[rank]];
-                pair.sort_unstable();
-                let position = positions[edge];
-                normalized[position]
-                    .contains(&pair)
-                    .then_some((position, pair))
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(diagonal) = diagonal else {
-            continue;
-        };
-        for (position, pair) in diagonal {
-            candidates[position] = vec![pair];
-            grouped[position] = true;
-        }
-    }
-    true
-}
-
-#[cfg(test)]
-fn bind_ordered_standard_curve_branches_with_focus(
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    candidates: &mut [Vec<[usize; 2]>],
-    focused_edges: Option<&HashSet<usize>>,
-) {
-    if supports.len() != candidates.len() {
-        return;
-    }
-    let is_focused = |edge: usize| focused_edges.is_none_or(|edges| edges.contains(&edge));
-    let normalize = |candidates: &[Vec<[usize; 2]>]| {
-        candidates
-            .iter()
-            .map(|pairs| {
-                let mut pairs = pairs
-                    .iter()
-                    .copied()
-                    .map(|mut pair| {
-                        pair.sort_unstable();
-                        pair
-                    })
-                    .collect::<Vec<_>>();
-                pairs.sort_unstable();
-                pairs.dedup();
-                pairs
-            })
-            .collect::<Vec<_>>()
-    };
-    let is_ranked_family =
-        |geometry: &crate::families::standard::records::StandardCurveGeometry| {
-            matches!(
-                geometry,
-                crate::families::standard::records::StandardCurveGeometry::Line
-                    | crate::families::standard::records::StandardCurveGeometry::Bspline
-            )
-        };
-    let same_ranked_family =
-        |left: &crate::families::standard::records::StandardCurveGeometry,
-         right: &crate::families::standard::records::StandardCurveGeometry| {
-            is_ranked_family(left) && std::mem::discriminant(left) == std::mem::discriminant(right)
-        };
-    let normalized = normalize(candidates);
-    let Ok(mut grouped) = alloc_filled(supports.len(), false, "catia standard test branch ranking")
-    else {
-        return;
-    };
-    for first in 0..supports.len() {
-        if grouped[first]
-            || !is_focused(first)
-            || !matches!(
-                supports[first].geometry,
-                crate::families::standard::records::StandardCurveGeometry::Circle { .. }
-            )
-            || normalized[first].len() < 2
-        {
-            continue;
-        }
-        let mut faces = supports[first].faces;
-        faces.sort_unstable();
-        let edges = (first..supports.len())
-            .filter(|edge| {
-                let mut candidate_faces = supports[*edge].faces;
-                candidate_faces.sort_unstable();
-                let same_circle = match (&supports[*edge].geometry, &supports[first].geometry) {
-                    (
-                        crate::families::standard::records::StandardCurveGeometry::Circle {
-                            center: candidate_center,
-                            radius: candidate_radius,
-                        },
-                        crate::families::standard::records::StandardCurveGeometry::Circle {
-                            center,
-                            radius,
-                        },
-                    ) => candidate_center == center && candidate_radius == radius,
-                    _ => false,
-                };
-                is_focused(*edge)
-                    && !grouped[*edge]
-                    && same_circle
-                    && candidate_faces == faces
-                    && normalized[*edge] == normalized[first]
-            })
-            .collect::<Vec<_>>();
-        if edges.len() != normalized[first].len() {
-            continue;
-        }
-        for (pair, edge) in normalized[first].iter().copied().zip(edges) {
-            candidates[edge] = vec![pair];
-            grouped[edge] = true;
-        }
-    }
-    let normalized = normalize(candidates);
-    for first in 0..supports.len() {
-        if grouped[first]
-            || !is_focused(first)
-            || !matches!(
-                supports[first].geometry,
-                crate::families::standard::records::StandardCurveGeometry::Circle { .. }
-            )
-            || normalized[first].len() < 2
-        {
-            continue;
-        }
-        let mut edges = (first..supports.len())
-            .filter(|edge| {
-                let same_circle = match (&supports[*edge].geometry, &supports[first].geometry) {
-                    (
-                        crate::families::standard::records::StandardCurveGeometry::Circle {
-                            center: candidate_center,
-                            radius: candidate_radius,
-                        },
-                        crate::families::standard::records::StandardCurveGeometry::Circle {
-                            center,
-                            radius,
-                        },
-                    ) => candidate_center == center && candidate_radius == radius,
-                    _ => false,
-                };
-                is_focused(*edge)
-                    && !grouped[*edge]
-                    && same_circle
-                    && normalized[*edge] == normalized[first]
-            })
-            .collect::<Vec<_>>();
-        if edges.len() != normalized[first].len() {
-            continue;
-        }
-        let shared_faces = supports[edges[0]]
-            .faces
-            .into_iter()
-            .filter(|face| {
-                edges[1..]
-                    .iter()
-                    .all(|edge| supports[*edge].faces.contains(face))
-            })
-            .collect::<Vec<_>>();
-        let [shared_face] = shared_faces.as_slice() else {
-            continue;
-        };
-        let mut partner_faces = edges
-            .iter()
-            .map(|edge| {
-                supports[*edge]
-                    .faces
-                    .into_iter()
-                    .find(|face| face != shared_face)
-                    .map(|partner| (partner, *edge))
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(partner_faces) = partner_faces.as_mut() else {
-            continue;
-        };
-        partner_faces.sort_unstable();
-        if partner_faces
-            .windows(2)
-            .any(|faces| faces[0].0 == faces[1].0)
-        {
-            continue;
-        }
-        edges.clear();
-        edges.extend(partner_faces.iter().map(|(_, edge)| *edge));
-        for (pair, edge) in normalized[first].iter().copied().zip(edges) {
-            candidates[edge] = vec![pair];
-            grouped[edge] = true;
-        }
-    }
-    let normalized = normalize(candidates);
-    for first in 0..supports.len() {
-        if grouped[first]
-            || !is_focused(first)
-            || !is_ranked_family(&supports[first].geometry)
-            || normalized[first].len() < 4
-        {
-            continue;
-        }
-        let mut faces = supports[first].faces;
-        faces.sort_unstable();
-        let edges = (first..supports.len())
-            .filter(|edge| {
-                let mut candidate_faces = supports[*edge].faces;
-                candidate_faces.sort_unstable();
-                is_focused(*edge)
-                    && !grouped[*edge]
-                    && same_ranked_family(&supports[*edge].geometry, &supports[first].geometry)
-                    && candidate_faces == faces
-                    && normalized[*edge] == normalized[first]
-            })
-            .collect::<Vec<_>>();
-        let branch_count = edges.len();
-        if branch_count < 2 {
-            continue;
-        }
-        let vertices = normalized[first]
-            .iter()
-            .flatten()
-            .copied()
-            .collect::<HashSet<_>>();
-        let fixed_relations = normalized
-            .iter()
-            .enumerate()
-            .filter(|(edge, pairs)| {
-                !edges.contains(edge)
-                    && pairs.len() == 1
-                    && supports[*edge]
-                        .faces
-                        .iter()
-                        .any(|face| faces.contains(face))
-                    && pairs[0].iter().all(|point| vertices.contains(point))
-            })
-            .map(|(_, pairs)| pairs[0])
-            .collect::<HashSet<_>>();
-        let relation = normalized[first]
-            .iter()
-            .copied()
-            .filter(|pair| !fixed_relations.contains(pair))
-            .collect::<Vec<_>>();
-        let Some(sides) = bipartite_relation_sides(relation.iter().copied()) else {
-            continue;
-        };
-        let ranked_side = match [
-            sides[0].len() == branch_count,
-            sides[1].len() == branch_count,
-        ] {
-            [true, true] => None,
-            [true, false] => Some(0),
-            [false, true] => Some(1),
-            [false, false] => continue,
-        };
-        if sides[0]
-            .len()
-            .checked_mul(sides[1].len())
-            .is_none_or(|count| relation.len() != count)
-        {
-            continue;
-        }
-        let cross_relations = sides[0]
-            .iter()
-            .flat_map(|left| {
-                sides[1].iter().map(move |right| {
-                    let mut pair = [*left, *right];
-                    pair.sort_unstable();
-                    pair
-                })
-            })
-            .collect::<HashSet<_>>();
-        if relation.iter().copied().collect::<HashSet<_>>() != cross_relations
-            || normalized[first]
-                .iter()
-                .any(|pair| !cross_relations.contains(pair) && !fixed_relations.contains(pair))
-        {
-            continue;
-        }
-        for (rank, edge) in edges.into_iter().enumerate() {
-            candidates[edge] = ranked_side.map_or_else(
-                || vec![[sides[0][rank], sides[1][rank]]],
-                |side| {
-                    normalized[first]
-                        .iter()
-                        .copied()
-                        .filter(|pair| pair.contains(&sides[side][rank]))
-                        .collect()
-                },
-            );
-            grouped[edge] = true;
-        }
-    }
-    let normalized = normalize(candidates);
-    for first in 0..supports.len() {
-        if grouped[first]
-            || !is_focused(first)
-            || !is_ranked_family(&supports[first].geometry)
-            || normalized[first].len() < 2
-        {
-            continue;
-        }
-        let mut faces = supports[first].faces;
-        faces.sort_unstable();
-        let edges = (0..supports.len())
-            .filter(|edge| {
-                let mut candidate_faces = supports[*edge].faces;
-                candidate_faces.sort_unstable();
-                is_focused(*edge)
-                    && !grouped[*edge]
-                    && same_ranked_family(&supports[*edge].geometry, &supports[first].geometry)
-                    && candidate_faces == faces
-                    && normalized[*edge].len() >= 2
-            })
-            .collect::<Vec<_>>();
-        let branch_count = edges.len();
-        if edges.first() != Some(&first) || branch_count < 2 {
-            continue;
-        }
-        let vertices = edges
-            .iter()
-            .flat_map(|edge| normalized[*edge].iter().flatten().copied())
-            .collect::<HashSet<_>>();
-        let fixed_relations = normalized
-            .iter()
-            .enumerate()
-            .filter(|(edge, pairs)| {
-                !edges.contains(edge)
-                    && pairs.len() == 1
-                    && supports[*edge]
-                        .faces
-                        .iter()
-                        .any(|face| faces.contains(face))
-                    && pairs[0].iter().all(|point| vertices.contains(point))
-            })
-            .map(|(_, pairs)| pairs[0])
-            .collect::<HashSet<_>>();
-        let anchored = edges
-            .iter()
-            .map(|edge| {
-                let relation = normalized[*edge]
-                    .iter()
-                    .copied()
-                    .filter(|pair| !fixed_relations.contains(pair))
-                    .collect::<Vec<_>>();
-                let anchor = relation
-                    .first()?
-                    .iter()
-                    .copied()
-                    .find(|point| relation.iter().all(|pair| pair.contains(point)))?;
-                let mut opposite = relation
-                    .iter()
-                    .map(|pair| if pair[0] == anchor { pair[1] } else { pair[0] })
-                    .collect::<Vec<_>>();
-                opposite.sort_unstable();
-                opposite.dedup();
-                (opposite.len() == relation.len()).then_some((anchor, opposite))
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(anchored) = anchored else {
-            continue;
-        };
-        let anchors = anchored
-            .iter()
-            .map(|(anchor, _)| *anchor)
-            .collect::<Vec<_>>();
-        if anchors.len() != branch_count
-            || anchors.windows(2).any(|pair| pair[0] == pair[1])
-            || anchored
-                .iter()
-                .any(|(_, opposite)| opposite != &anchored[0].1)
-            || anchored[0].1.len() != branch_count
-            || anchors.iter().any(|anchor| anchored[0].1.contains(anchor))
-        {
-            continue;
-        }
-        let diagonal = edges
-            .iter()
-            .enumerate()
-            .map(|(rank, edge)| {
-                let mut pair = [anchors[rank], anchored[0].1[rank]];
-                pair.sort_unstable();
-                normalized[*edge].contains(&pair).then_some((*edge, pair))
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(diagonal) = diagonal else {
-            continue;
-        };
-        for (edge, pair) in diagonal {
-            candidates[edge] = vec![pair];
-            grouped[edge] = true;
-        }
-    }
-}
-
-struct StandardCurveBranchGroup {
-    edges: Vec<usize>,
-    faces: [usize; 2],
-}
-
-fn standard_curve_branch_groups(
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    candidates: &[Vec<[usize; 2]>],
-) -> Option<Vec<StandardCurveBranchGroup>> {
-    if supports.len() != candidates.len() {
-        return None;
-    }
-    let normalize = |pairs: &[[usize; 2]]| {
-        let mut pairs = pairs
-            .iter()
-            .copied()
-            .map(|mut pair| {
-                pair.sort_unstable();
-                pair
-            })
-            .collect::<Vec<_>>();
-        pairs.sort_unstable();
-        pairs.dedup();
-        pairs
-    };
-    let ranked_family = |geometry: &crate::families::standard::records::StandardCurveGeometry| {
-        matches!(
-            geometry,
-            crate::families::standard::records::StandardCurveGeometry::Line
-                | crate::families::standard::records::StandardCurveGeometry::Bspline
-        )
-    };
-    let normalized = candidates
-        .iter()
-        .map(|pairs| normalize(pairs))
-        .collect::<Vec<_>>();
-    let mut checked = alloc_filled(supports.len(), false, "catia standard branch groups").ok()?;
-    let mut groups = Vec::new();
-    for first in 0..supports.len() {
-        if checked[first] || !ranked_family(&supports[first].geometry) {
-            continue;
-        }
-        let mut faces = supports[first].faces;
-        faces.sort_unstable();
-        let group = (first..supports.len())
-            .filter(|edge| {
-                let mut candidate_faces = supports[*edge].faces;
-                candidate_faces.sort_unstable();
-                ranked_family(&supports[*edge].geometry)
-                    && std::mem::discriminant(&supports[*edge].geometry)
-                        == std::mem::discriminant(&supports[first].geometry)
-                    && candidate_faces == faces
-                    && normalized[*edge].len() >= 2
-            })
-            .collect::<Vec<_>>();
-        if group.len() < 2 {
-            continue;
-        }
-        let identical_domains = group
-            .iter()
-            .all(|edge| normalized[*edge] == normalized[first]);
-        if !identical_domains {
-            let relation = group
-                .iter()
-                .flat_map(|edge| normalized[*edge].iter().copied())
-                .collect::<HashSet<_>>();
-            let Some(sides) = bipartite_relation_sides(relation.iter().copied()) else {
-                continue;
-            };
-            if !sides.iter().any(|side| side.len() == group.len()) {
-                continue;
+        .map(|support| match &support.geometry {
+            crate::families::standard::records::StandardCurveGeometry::Line => {
+                MeshEdgeGeometry::Line
             }
-            let complete = sides[0]
-                .iter()
-                .flat_map(|left| {
-                    sides[1].iter().map(move |right| {
-                        let mut pair = [*left, *right];
-                        pair.sort_unstable();
-                        pair
-                    })
-                })
-                .collect::<HashSet<_>>();
-            if relation != complete {
-                continue;
+            crate::families::standard::records::StandardCurveGeometry::Circle {
+                center,
+                radius,
+            } => MeshEdgeGeometry::Circle {
+                center: [center.x.to_bits(), center.y.to_bits(), center.z.to_bits()],
+                radius: radius.to_bits(),
+            },
+            crate::families::standard::records::StandardCurveGeometry::Bspline => {
+                MeshEdgeGeometry::Bspline
             }
-        }
-        for &edge in &group {
-            checked[edge] = true;
-        }
-        groups.push(StandardCurveBranchGroup {
-            edges: group,
-            faces,
-        });
-    }
-    Some(groups)
-}
-
-fn standard_curve_branch_assignment_dependencies(
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    groups: &[StandardCurveBranchGroup],
-) -> Option<Vec<Vec<usize>>> {
-    let mut grouped =
-        alloc_filled(supports.len(), false, "catia standard branch dependencies").ok()?;
-    for edge in groups.iter().flat_map(|group| group.edges.iter().copied()) {
-        if let Some(grouped_edge) = grouped.get_mut(edge) {
-            *grouped_edge = true;
-        }
-    }
-    let mut dependencies = alloc_filled(
-        supports.len(),
-        Vec::new(),
-        "catia standard branch dependency lists",
-    )
-    .ok()?;
-    for group in groups {
-        let external = supports
-            .iter()
-            .enumerate()
-            .filter(|(edge, support)| {
-                !grouped[*edge] && support.faces.iter().any(|face| group.faces.contains(face))
-            })
-            .map(|(edge, _)| edge)
-            .collect::<Vec<_>>();
-        for &edge in &group.edges {
-            dependencies[edge].extend(external.iter().copied());
-        }
-    }
-    for edge_dependencies in &mut dependencies {
-        edge_dependencies.sort_unstable();
-        edge_dependencies.dedup();
-    }
-    Some(dependencies)
-}
-
-fn standard_curve_branch_candidates_after_partial_assignment(
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    candidates: &[Vec<[usize; 2]>],
-    groups: &[StandardCurveBranchGroup],
-    assignment: &[Option<[usize; 2]>],
-    budget: Option<&WorkBudget<'_>>,
-) -> Option<Vec<Vec<[usize; 2]>>> {
-    if supports.len() != candidates.len() || candidates.len() != assignment.len() {
-        return None;
-    }
-    if let Some(budget) = budget {
-        let candidate_count = candidates.iter().map(Vec::len).sum::<usize>();
-        let work = groups
-            .len()
-            .checked_mul(supports.len().saturating_add(candidate_count))?;
-        if !budget.charge_by(work) {
-            return None;
-        }
-    }
-    let mut constrained = candidates.to_vec();
-    for StandardCurveBranchGroup {
-        edges: group,
-        faces,
-    } in groups
-    {
-        let frontiers = faces.map(|face| {
-            let complete = supports.iter().enumerate().all(|(edge, support)| {
-                group.contains(&edge)
-                    || !support.faces.contains(&face)
-                    || assignment[edge].is_some()
-            });
-            complete.then(|| {
-                let mut degrees = HashMap::<usize, usize>::new();
-                for (edge, support) in supports.iter().enumerate() {
-                    if group.contains(&edge) || !support.faces.contains(&face) {
-                        continue;
-                    }
-                    for point in assignment[edge].into_iter().flatten() {
-                        *degrees.entry(point).or_default() += 1;
-                    }
-                }
-                degrees
-                    .into_iter()
-                    .filter_map(|(point, degree)| (degree == 1).then_some(point))
-                    .collect::<HashSet<_>>()
-            })
-        });
-        let [Some(left), Some(right)] = frontiers else {
-            continue;
-        };
-        if left != right || left.len() != group.len().saturating_mul(2) {
-            continue;
-        }
-        let mut group_constrained = group
-            .iter()
-            .map(|edge| {
-                let mut candidates = candidates[*edge].clone();
-                candidates.retain(|pair| pair.iter().all(|point| left.contains(point)));
-                candidates
-            })
-            .collect::<Vec<_>>();
-        if !bind_standard_curve_branch_group(
-            supports,
-            &mut group_constrained,
-            group,
-            candidates,
-            assignment,
-        ) {
-            return None;
-        }
-        if group.iter().enumerate().any(|(position, edge)| {
-            assignment[*edge].is_some_and(|assigned| {
-                !group_constrained[position]
-                    .iter()
-                    .any(|candidate| missing_edge::same_unordered_pair(*candidate, assigned))
-            })
-        }) {
-            return None;
-        }
-        for (position, edge) in group.iter().enumerate() {
-            constrained[*edge].clone_from(&group_constrained[position]);
-        }
-    }
-    Some(constrained)
-}
-
-fn standard_curve_branch_assignment_is_ranked(
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    candidates: &[Vec<[usize; 2]>],
-    groups: &[StandardCurveBranchGroup],
-    assignment: &[Option<[usize; 2]>],
-    budget: Option<&WorkBudget<'_>>,
-) -> bool {
-    standard_curve_branch_candidates_after_partial_assignment(
-        supports, candidates, groups, assignment, budget,
-    )
-    .is_some()
+        })
+        .collect()
 }
 
 pub(crate) fn standard_circle_endpoint_candidates(
@@ -5469,19 +5455,13 @@ pub(crate) fn standard_circle_endpoint_candidates(
         .collect()
 }
 
-/// Resolve standard-row endpoints from native edge identities. Exact local-tag
-/// matches take precedence; otherwise an unused native edge may contribute
-/// only when its logical point pair is unique inside the row's geometric domain.
+/// Resolve standard-row endpoints from equal standard and native edge identities.
 pub(crate) fn standard_native_graph_endpoint_pairs(
     graph: Option<&crate::families::b5::graph::B5Graph>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     native_edges: &BTreeMap<u32, [u32; 2]>,
     points: &[Point],
-    endpoint_candidates: &[Vec<usize>],
 ) -> Option<Vec<Option<[usize; 2]>>> {
-    if supports.len() != endpoint_candidates.len() {
-        return None;
-    }
     let graph = graph?;
     let identity_points = unique_native_identity_points(
         &graph.logical_vertex_refs,
@@ -5490,159 +5470,98 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
         &graph.vertex_tolerances,
         points,
     );
-    let directly_bound_edges = supports
-        .iter()
-        .filter_map(|support| {
-            native_edges
-                .contains_key(&support.tag)
-                .then_some(support.tag)
-        })
-        .collect::<HashSet<_>>();
-    let unbound_edge_points = native_edges
-        .iter()
-        .filter(|(edge, _)| !directly_bound_edges.contains(edge))
-        .filter_map(|(_, [start_identity, end_identity])| {
-            let mut pair = [
-                *identity_points.get(start_identity)?,
-                *identity_points.get(end_identity)?,
-            ];
-            pair.sort_unstable();
-            Some(pair)
-        })
-        .collect::<Vec<_>>();
     Some(
         supports
             .iter()
-            .zip(endpoint_candidates)
-            .map(|(support, candidates)| {
-                if let Some([start_identity, end_identity]) = native_edges.get(&support.tag) {
-                    return Some([
-                        *identity_points.get(start_identity)?,
-                        *identity_points.get(end_identity)?,
-                    ]);
-                }
-                unique_unbound_native_endpoint_pair(candidates, &unbound_edge_points)
+            .map(|support| {
+                let [start_identity, end_identity] = native_edges.get(&support.tag)?;
+                Some([
+                    *identity_points.get(start_identity)?,
+                    *identity_points.get(end_identity)?,
+                ])
             })
             .collect(),
     )
 }
 
-/// Resolve native two-sided edge carriers for standard rows. An exact native
-/// edge identity wins. Without that identity, endpoint-roster incidence may
-/// bind a carrier only when it leaves one unused native edge identity; a
-/// repeated endpoint pair remains unresolved because it does not select a
-/// physical carrier.
-pub(crate) fn standard_native_support_edge_ids(
+/// Bind standard rows to ordered coordinate rows through the file-global
+/// object journal: `0x60.tag` selects the `b5 03 5e` object id, whose ordered
+/// vertex identities select positions in the standard vertex roster.
+pub(crate) fn standard_serialized_endpoint_pairs(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     native_edges: &BTreeMap<u32, [u32; 2]>,
-    native_support_ids: &HashSet<u32>,
-    vertex_roster: Option<&[u32]>,
-    endpoint_candidates: &[Vec<usize>],
-) -> Option<Vec<Option<u32>>> {
-    if supports.len() != endpoint_candidates.len() {
-        return None;
+    vertex_roster: &[u32],
+) -> Option<Vec<Option<[usize; 2]>>> {
+    let mut point_by_identity = HashMap::with_capacity(vertex_roster.len());
+    for (point, identity) in vertex_roster.iter().copied().enumerate() {
+        if point_by_identity.insert(identity, point).is_some() {
+            return None;
+        }
     }
+    Some(
+        supports
+            .iter()
+            .map(|support| {
+                let [start, end] = native_edges.get(&support.tag)?;
+                Some([*point_by_identity.get(start)?, *point_by_identity.get(end)?])
+            })
+            .collect(),
+    )
+}
 
-    let exact_edge_ids = supports
-        .iter()
-        .filter_map(|support| {
-            (native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag))
-                .then_some(support.tag)
-        })
-        .collect::<HashSet<_>>();
+pub(crate) fn merge_standard_edge_vertex_references(
+    target: &mut BTreeMap<u32, [u32; 2]>,
+    source: impl IntoIterator<Item = (u32, [u32; 2])>,
+) -> bool {
+    for (edge, vertices) in source {
+        match target.entry(edge) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(vertices);
+            }
+            std::collections::btree_map::Entry::Occupied(entry) if *entry.get() == vertices => {}
+            std::collections::btree_map::Entry::Occupied(_) => return false,
+        }
+    }
+    true
+}
+
+/// Resolve native two-sided edge carriers by equal standard and native identities.
+pub(crate) fn standard_native_support_edge_ids(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    native_support_ids: &HashSet<u32>,
+) -> Vec<Option<u32>> {
     let mut exact_row_counts = HashMap::<u32, usize>::new();
     for support in supports {
-        if native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag) {
+        if native_support_ids.contains(&support.tag) {
             *exact_row_counts.entry(support.tag).or_default() += 1;
         }
     }
 
-    let mut bindings = supports
+    supports
         .iter()
         .map(|support| {
             (native_support_ids.contains(&support.tag)
                 && exact_row_counts.get(&support.tag) == Some(&1))
             .then_some(support.tag)
         })
-        .collect::<Vec<_>>();
-    let mut fallback_candidates = alloc_filled(
-        supports.len(),
-        Vec::<u32>::new(),
-        "catia standard native edge candidates",
-    )
-    .ok()?;
-
-    if let Some(vertex_roster) = vertex_roster {
-        let point_by_identity = vertex_roster
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(point, identity)| (identity, point))
-            .collect::<HashMap<_, _>>();
-        for (row, (support, candidates)) in supports.iter().zip(endpoint_candidates).enumerate() {
-            if native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag)
-            {
-                continue;
-            }
-            for (&edge, [start_identity, end_identity]) in native_edges {
-                if exact_edge_ids.contains(&edge) || !native_support_ids.contains(&edge) {
-                    continue;
-                }
-                let Some(&start) = point_by_identity.get(start_identity) else {
-                    continue;
-                };
-                let Some(&end) = point_by_identity.get(end_identity) else {
-                    continue;
-                };
-                if candidates.contains(&start) && candidates.contains(&end) {
-                    fallback_candidates[row].push(edge);
-                }
-            }
-        }
-    }
-
-    let mut used = exact_edge_ids;
-    loop {
-        let mut changed = false;
-        for row in 0..bindings.len() {
-            if bindings[row].is_some() {
-                continue;
-            }
-            let available = fallback_candidates[row]
-                .iter()
-                .copied()
-                .filter(|edge| !used.contains(edge))
-                .collect::<Vec<_>>();
-            if let [edge] = available.as_slice() {
-                bindings[row] = Some(*edge);
-                used.insert(*edge);
-                changed = true;
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-    Some(bindings)
+        .collect()
 }
 
-/// Return the sole distinct unordered native pair contained in a geometric
-/// endpoint domain.
-pub(crate) fn unique_unbound_native_endpoint_pair(
-    candidates: &[usize],
-    native_edge_points: &[[usize; 2]],
-) -> Option<[usize; 2]> {
-    let mut pairs = native_edge_points
-        .iter()
-        .copied()
-        .filter(|pair| candidates.contains(&pair[0]) && candidates.contains(&pair[1]))
-        .collect::<Vec<_>>();
-    for pair in &mut pairs {
-        pair.sort_unstable();
-    }
-    pairs.sort_unstable();
-    pairs.dedup();
-    <[[usize; 2]; 1]>::try_from(pairs).ok().map(|[pair]| pair)
+/// Return whether a standard edge has an admitted identity binding.
+///
+/// Native port pairs remain useful for endpoint propagation and candidate
+/// pruning, but an allocation-only port pair does not bind its row to decoded
+/// coordinates and therefore must not freeze an evidence-preserving gauge.
+pub(crate) fn standard_edge_identity_is_admitted(
+    ordered_endpoint_pair: Option<[usize; 2]>,
+    native_endpoint_pair: Option<[usize; 2]>,
+    has_native_support: bool,
+    has_limit_curve_binding: bool,
+) -> bool {
+    ordered_endpoint_pair.is_some()
+        || native_endpoint_pair.is_some()
+        || has_native_support
+        || has_limit_curve_binding
 }
 
 pub(crate) fn include_native_endpoint_pairs(
@@ -5716,37 +5635,53 @@ pub(crate) fn merge_native_endpoint_evidence(
     }
 }
 
-pub(crate) fn standard_successor_endpoint_pairs(
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    vertex_roster: &[u32],
-    endpoint_candidates: &[Vec<usize>],
-) -> Vec<Option<[usize; 2]>> {
-    let point_by_identity = vertex_roster
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(point, identity)| (identity, point))
-        .collect::<HashMap<_, _>>();
-    supports
-        .iter()
-        .enumerate()
-        .map(|(edge, support)| {
-            let candidates = endpoint_candidates.get(edge)?;
-            let pair = [
-                *point_by_identity.get(&support.tag.checked_add(1)?)?,
-                *point_by_identity.get(&support.tag.checked_add(2)?)?,
-            ];
-            pair.into_iter()
-                .all(|point| candidates.contains(&point))
-                .then_some(pair)
-        })
-        .collect()
+fn merge_ordered_endpoint_pair(
+    ordered_pairs: &mut [Option<[usize; 2]>],
+    edge: usize,
+    pair: [usize; 2],
+) -> bool {
+    let Some(slot) = ordered_pairs.get_mut(edge) else {
+        return false;
+    };
+    match slot {
+        Some(previous) => *previous == pair,
+        None => {
+            *slot = Some(pair);
+            true
+        }
+    }
 }
 
+/// Merge endpoint coordinates derived from support geometry without replacing
+/// the direction selected by a native identity source. Support pcurves
+/// corroborate the endpoint identity, but their wrapper order is not a second
+/// directed edge-identity source.
+pub(crate) fn merge_derived_endpoint_pair(
+    ordered_pairs: &mut [Option<[usize; 2]>],
+    edge: usize,
+    pair: [usize; 2],
+) -> bool {
+    let Some(slot) = ordered_pairs.get_mut(edge) else {
+        return false;
+    };
+    match slot {
+        Some(previous) => missing_edge::same_unordered_pair(*previous, pair),
+        None => {
+            *slot = Some(pair);
+            true
+        }
+    }
+}
+
+/// Return checked successor identities as endpoint-domain corroboration.
+///
+/// The creation-order pattern is not a row identity. It may narrow an
+/// existing geometric domain independently for either successor identity, but
+/// it never supplies native endpoint evidence by itself.
 pub(crate) fn standard_successor_endpoint_points(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     vertex_roster: &[u32],
-) -> Vec<Option<usize>> {
+) -> Vec<[Option<usize>; 2]> {
     let point_by_identity = vertex_roster
         .iter()
         .copied()
@@ -5755,20 +5690,30 @@ pub(crate) fn standard_successor_endpoint_points(
         .collect::<HashMap<_, _>>();
     supports
         .iter()
-        .map(|support| point_by_identity.get(&support.tag.checked_add(1)?).copied())
+        .map(|support| {
+            [
+                support
+                    .tag
+                    .checked_add(1)
+                    .and_then(|identity| point_by_identity.get(&identity).copied()),
+                support
+                    .tag
+                    .checked_add(2)
+                    .and_then(|identity| point_by_identity.get(&identity).copied()),
+            ]
+        })
         .collect()
 }
 
 pub(crate) fn corroborate_successor_endpoint_points(
     options: &mut [Vec<[usize; 2]>],
-    points: &[Option<usize>],
+    points: &[[Option<usize>; 2]],
 ) {
-    for (options, point) in options.iter_mut().zip(points) {
-        let Some(point) = point else {
-            continue;
-        };
-        if options.iter().any(|pair| pair.contains(point)) {
-            options.retain(|pair| pair.contains(point));
+    for (options, points) in options.iter_mut().zip(points) {
+        for point in points.iter().flatten() {
+            if options.iter().any(|pair| pair.contains(point)) {
+                options.retain(|pair| pair.contains(point));
+            }
         }
     }
 }
@@ -5816,7 +5761,7 @@ pub(crate) fn intersection_line_direction(
     left: &SurfaceGeometry,
     right: &SurfaceGeometry,
 ) -> Option<Vector3> {
-    const ANGULAR_TOLERANCE: f64 = 1.0e-9;
+    const ANGULAR_TOLERANCE: f64 = 1e-9;
 
     match (left, right) {
         (
@@ -5841,6 +5786,58 @@ pub(crate) fn intersection_line_direction(
         ) => ((*left_axis).cross(*right_axis).norm() <= ANGULAR_TOLERANCE).then_some(*left_axis),
         _ => None,
     }
+}
+
+/// A line on one right circular or elliptical cone is a generator through its
+/// apex. Same-carrier line rows have no surface-intersection direction, so
+/// their endpoint relation needs this independent straight-branch predicate.
+pub(crate) fn same_cone_generator_pair(
+    left: &SurfaceGeometry,
+    right: &SurfaceGeometry,
+    start: Point3,
+    end: Point3,
+) -> bool {
+    if left != right {
+        return false;
+    }
+    let SurfaceGeometry::Cone {
+        origin,
+        axis,
+        radius,
+        half_angle,
+        ..
+    } = left
+    else {
+        return false;
+    };
+    let tangent = half_angle.tan();
+    if !tangent.is_finite() || tangent == 0.0 {
+        return false;
+    }
+    let apex_offset = -*radius / tangent;
+    if !apex_offset.is_finite() {
+        return false;
+    }
+    let apex = Point3::new(
+        origin.x + apex_offset * axis.x,
+        origin.y + apex_offset * axis.y,
+        origin.z + apex_offset * axis.z,
+    );
+    if ![apex.x, apex.y, apex.z].into_iter().all(f64::is_finite) {
+        return false;
+    }
+    let segment = end.vector_from(start);
+    let segment_length = segment.norm();
+    if !segment_length.is_finite() || segment_length == 0.0 {
+        return false;
+    }
+    if start.distance(apex) <= EPS_SAME_CONE_GENERATOR
+        || end.distance(apex) <= EPS_SAME_CONE_GENERATOR
+    {
+        return true;
+    }
+    let line_distance = start.vector_from(apex).cross(segment).norm() / segment_length;
+    line_distance.is_finite() && line_distance <= EPS_SAME_CONE_GENERATOR
 }
 
 /// Collect plane normals only from trim-packet frame vectors, which carry the
@@ -5887,29 +5884,1017 @@ pub(crate) fn face_surface<'a>(
     ir.model.surfaces.get(*surface_indices.get(id)?)
 }
 
+/// Cache the exact face-membership predicate used by endpoint search.
+///
+/// Face geometry and standard face bounds are immutable while a topology
+/// candidate is searched. The cache changes only lookup cost; allocation
+/// failure returns `None`, and callers retain the original predicate.
+pub(crate) fn standard_face_point_membership(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    face_bounds: Option<&[Option<crate::families::standard::records::StandardFaceBounds>]>,
+) -> Option<Vec<Vec<bool>>> {
+    bindings
+        .iter()
+        .enumerate()
+        .map(|(face, _)| {
+            let surface = face_surface(ir, bindings, surface_indices, face)?;
+            let bounds = face_bounds
+                .and_then(|bounds| bounds.get(face).copied())
+                .flatten();
+            let mut membership =
+                alloc_filled(ir.model.points.len(), false, "catia_face_point_membership").ok()?;
+            for (point, candidate) in ir.model.points.iter().enumerate() {
+                membership[point] =
+                    point_on_standard_face(candidate.position, &surface.geometry, bounds);
+            }
+            Some(membership)
+        })
+        .collect()
+}
+
 pub(crate) fn point_on_standard_face(
     point: Point3,
     surface: &SurfaceGeometry,
     bounds: Option<crate::families::standard::records::StandardFaceBounds>,
 ) -> bool {
-    const TOLERANCE: f64 = 2e-3;
-
-    if point_on_surface_if_supported(point, surface) == Some(false) {
+    if bounds.is_some_and(|bounds| !point_inside_standard_face_bounds(point, bounds)) {
         return false;
     }
-    bounds.is_none_or(|bounds| {
-        let coordinates = [point.x, point.y, point.z];
-        let inside_aabb = coordinates.iter().enumerate().all(|(axis, coordinate)| {
-            (*coordinate - bounds.aabb_center[axis]).abs()
-                <= bounds.aabb_half_extents[axis] + TOLERANCE
+    point_on_surface_if_supported(point, surface) != Some(false)
+}
+
+fn point_inside_standard_face_bounds(
+    point: Point3,
+    bounds: crate::families::standard::records::StandardFaceBounds,
+) -> bool {
+    let coordinates = [point.x, point.y, point.z];
+    let inside_aabb = coordinates.iter().enumerate().all(|(axis, coordinate)| {
+        (*coordinate - bounds.aabb_center[axis]).abs()
+            <= bounds.aabb_half_extents[axis] + STANDARD_FACE_BOUNDS_TOLERANCE
+    });
+    let distance_squared = coordinates
+        .iter()
+        .enumerate()
+        .map(|(axis, coordinate)| (*coordinate - bounds.sphere_center[axis]).powi(2))
+        .sum::<f64>();
+    inside_aabb && distance_squared.sqrt() <= bounds.sphere_radius + STANDARD_FACE_BOUNDS_TOLERANCE
+}
+
+/// Narrow a repeated-face domain only when one alternate has a strictly larger
+/// circular-carrier or positive-dimensional AABB relation with the serialized
+/// face.
+///
+/// A real shared surface boundary must have a positive overlap along at least
+/// one world axis. The overlap dimension is deliberately used as a partial
+/// order after the distinct-carrier rank for circular supports: ties remain
+/// domains, so this helper cannot choose between symmetric or insufficiently
+/// bounded incidences.
+pub(crate) fn refine_repeated_face_domains_by_geometry_and_bounds(
+    edge_faces: &[[usize; 2]],
+    allowed_faces: &mut [Vec<usize>],
+    face_bounds: Option<&[Option<crate::families::standard::records::StandardFaceBounds>]>,
+    face_geometries: Option<&[SurfaceGeometry]>,
+    edge_geometries: &[crate::families::standard::records::StandardCurveGeometry],
+) {
+    let Some(face_bounds) = face_bounds else {
+        return;
+    };
+    for (edge, alternatives) in allowed_faces.iter_mut().enumerate() {
+        if alternatives.is_empty() {
+            continue;
+        }
+        let Some([serialized_face, repeated_face]) = edge_faces.get(edge).copied() else {
+            continue;
+        };
+        if serialized_face != repeated_face {
+            continue;
+        }
+        let Some(serialized_bounds) = face_bounds.get(serialized_face).copied().flatten() else {
+            continue;
+        };
+        if alternatives
+            .iter()
+            .any(|face| face_bounds.get(*face).copied().flatten().is_none())
+        {
+            continue;
+        }
+        let circular_support = matches!(
+            edge_geometries.get(edge),
+            Some(crate::families::standard::records::StandardCurveGeometry::Circle { .. })
+        );
+        if circular_support
+            && face_geometries.is_none_or(|geometries| {
+                std::iter::once(serialized_face)
+                    .chain(alternatives.iter().copied())
+                    .any(|face| {
+                        matches!(geometries.get(face), Some(SurfaceGeometry::Unknown { .. }))
+                    })
+            })
+        {
+            continue;
+        }
+        let scores = alternatives
+            .iter()
+            .copied()
+            .map(|face| {
+                let distinct_circle_carrier = circular_support
+                    && face_geometries.is_some_and(|geometries| {
+                        geometries
+                            .get(serialized_face)
+                            .zip(geometries.get(face))
+                            .is_some_and(|(left, right)| left != right)
+                    });
+                let overlap_dimension =
+                    face_bounds
+                        .get(face)
+                        .copied()
+                        .flatten()
+                        .map_or(0, |candidate| {
+                            (0..3)
+                                .filter(|axis| {
+                                    let left = serialized_bounds.aabb_center[*axis]
+                                        - serialized_bounds.aabb_half_extents[*axis];
+                                    let right = serialized_bounds.aabb_center[*axis]
+                                        + serialized_bounds.aabb_half_extents[*axis];
+                                    let candidate_left = candidate.aabb_center[*axis]
+                                        - candidate.aabb_half_extents[*axis];
+                                    let candidate_right = candidate.aabb_center[*axis]
+                                        + candidate.aabb_half_extents[*axis];
+                                    right.min(candidate_right) - left.max(candidate_left)
+                                        > STANDARD_FACE_BOUNDS_TOLERANCE
+                                })
+                                .count() as u8
+                        });
+                (face, (distinct_circle_carrier as u8, overlap_dimension))
+            })
+            .collect::<Vec<_>>();
+        let best = scores
+            .iter()
+            .map(|(_, score)| *score)
+            .max()
+            .unwrap_or((0, 0));
+        if best == (0, 0) || scores.iter().filter(|(_, score)| *score == best).count() != 1 {
+            continue;
+        }
+        alternatives.retain(|face| {
+            scores
+                .iter()
+                .any(|(candidate, score)| candidate == face && *score == best)
         });
-        let distance_squared = coordinates
+    }
+}
+
+fn standard_nurbs_line_pair_on_face(
+    surface: &SurfaceGeometry,
+    support: &crate::families::standard::records::StandardCurveSupport,
+    pair: &[usize; 2],
+    points: &[Point],
+    bounds: Option<crate::families::standard::records::StandardFaceBounds>,
+) -> bool {
+    if !matches!(surface, SurfaceGeometry::Nurbs(_))
+        || !matches!(
+            support.geometry,
+            crate::families::standard::records::StandardCurveGeometry::Line
+        )
+    {
+        return true;
+    }
+    let Some(start) = points.get(pair[0]).map(|point| point.position) else {
+        return false;
+    };
+    let Some(end) = points.get(pair[1]).map(|point| point.position) else {
+        return false;
+    };
+    NURBS_LINE_FACE_SAMPLES.iter().all(|fraction| {
+        let point = Point3::new(
+            start.x + fraction * (end.x - start.x),
+            start.y + fraction * (end.y - start.y),
+            start.z + fraction * (end.z - start.z),
+        );
+        point_on_standard_face(point, surface, bounds)
+    })
+}
+
+fn nurbs_surface_control_bounds(surface: &NurbsSurface) -> Option<[[f64; 2]; 3]> {
+    if surface.weights.as_ref().is_some_and(|weights| {
+        weights.len() != surface.control_points.len()
+            || weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
+    }) {
+        return None;
+    }
+    let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 3];
+    for point in &surface.control_points {
+        for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
+            if !coordinate.is_finite() {
+                return None;
+            }
+            bounds[axis][0] = bounds[axis][0].min(coordinate);
+            bounds[axis][1] = bounds[axis][1].max(coordinate);
+        }
+    }
+    bounds
+        .iter()
+        .all(|[lower, upper]| lower.is_finite() && upper.is_finite() && lower <= upper)
+        .then_some(bounds)
+}
+
+fn nurbs_surface_parameter_domain(surface: &NurbsSurface) -> Option<[[f64; 2]; 2]> {
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    if u_count <= u_degree
+        || v_count <= v_degree
+        || surface.control_points.len() != u_count.checked_mul(v_count)?
+    {
+        return None;
+    }
+    let domains = [
+        [
+            *surface.u_knots.get(u_degree)?,
+            *surface.u_knots.get(u_count)?,
+        ],
+        [
+            *surface.v_knots.get(v_degree)?,
+            *surface.v_knots.get(v_count)?,
+        ],
+    ];
+    domains
+        .into_iter()
+        .all(|[lower, upper]| lower.is_finite() && upper.is_finite() && lower < upper)
+        .then_some(domains)
+}
+
+fn reverse_nurbs_curve(curve: &NurbsCurve) -> Option<NurbsCurve> {
+    let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve)?;
+    let sum = lower + upper;
+    if !sum.is_finite() {
+        return None;
+    }
+    let knots = curve
+        .knots
+        .iter()
+        .rev()
+        .map(|knot| sum - knot)
+        .collect::<Vec<_>>();
+    knots
+        .iter()
+        .copied()
+        .all(f64::is_finite)
+        .then_some(NurbsCurve {
+            degree: curve.degree,
+            knots,
+            control_points: curve.control_points.iter().rev().copied().collect(),
+            weights: curve
+                .weights
+                .as_ref()
+                .map(|weights| weights.iter().rev().copied().collect()),
+            periodic: curve.periodic,
+        })
+}
+
+fn nurbs_shared_boundary_scalar_matches(left: f64, right: f64) -> bool {
+    left.is_finite()
+        && right.is_finite()
+        && (left - right).abs()
+            <= NURBS_SHARED_BOUNDARY_TOLERANCE * left.abs().max(right.abs()).max(1.0)
+}
+
+fn nurbs_shared_boundary_curves_match(left: &NurbsCurve, right: &NurbsCurve) -> bool {
+    let same_payload = |left: &NurbsCurve, right: &NurbsCurve| {
+        left.degree == right.degree
+            && left.periodic == right.periodic
+            && left.knots.len() == right.knots.len()
+            && left
+                .knots
+                .iter()
+                .zip(&right.knots)
+                .all(|(left, right)| nurbs_shared_boundary_scalar_matches(*left, *right))
+            && left.control_points.len() == right.control_points.len()
+            && left
+                .control_points
+                .iter()
+                .zip(&right.control_points)
+                .all(|(left, right)| {
+                    [left.x, left.y, left.z]
+                        .into_iter()
+                        .zip([right.x, right.y, right.z])
+                        .all(|(left, right)| nurbs_shared_boundary_scalar_matches(left, right))
+                })
+            && match (&left.weights, &right.weights) {
+                (None, None) => true,
+                (Some(left), Some(right)) => {
+                    left.len() == right.len()
+                        && left.iter().zip(right).all(|(left, right)| {
+                            nurbs_shared_boundary_scalar_matches(*left, *right)
+                        })
+                }
+                _ => false,
+            }
+    };
+    same_payload(left, right)
+        || reverse_nurbs_curve(right).is_some_and(|reversed| same_payload(left, &reversed))
+}
+
+fn nurbs_surface_boundary_curves(surface: &NurbsSurface) -> Option<[NurbsCurve; 4]> {
+    let [[u_lower, u_upper], [v_lower, v_upper]] = nurbs_surface_parameter_domain(surface)?;
+    Some([
+        cadmpeg_ir::eval::nurbs_surface_isocurve(
+            surface,
+            cadmpeg_ir::geometry::SurfaceParameterAxis::U,
+            u_lower,
+        )?,
+        cadmpeg_ir::eval::nurbs_surface_isocurve(
+            surface,
+            cadmpeg_ir::geometry::SurfaceParameterAxis::U,
+            u_upper,
+        )?,
+        cadmpeg_ir::eval::nurbs_surface_isocurve(
+            surface,
+            cadmpeg_ir::geometry::SurfaceParameterAxis::V,
+            v_lower,
+        )?,
+        cadmpeg_ir::eval::nurbs_surface_isocurve(
+            surface,
+            cadmpeg_ir::geometry::SurfaceParameterAxis::V,
+            v_upper,
+        )?,
+    ])
+}
+
+fn nurbs_boundary_contains_point(curve: &NurbsCurve, point: Point3) -> bool {
+    let Some([lower, upper]) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(curve) else {
+        return false;
+    };
+    [lower, 0.5 * (lower + upper), upper]
+        .into_iter()
+        .any(|seed| {
+            cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                curve,
+                point,
+                NURBS_SURFACE_MEMBERSHIP_TOLERANCE,
+                seed,
+            )
+            .is_some()
+        })
+}
+
+/// Return endpoint pairs that lie on an exact shared NURBS carrier boundary.
+///
+/// A shared boundary is a positive relation between two tensor-product
+/// carriers. It is not inferred from carrier AABBs or from a sampled surface
+/// intersection. `None` means that the relation is unavailable; `Some` may be
+/// empty when the relation is present but no supplied pair lies on it.
+pub(crate) fn standard_shared_nurbs_boundary_pair_options(
+    left: &SurfaceGeometry,
+    right: &SurfaceGeometry,
+    points: &[Point3],
+    options: &[[usize; 2]],
+) -> Option<Vec<[usize; 2]>> {
+    let (SurfaceGeometry::Nurbs(left), SurfaceGeometry::Nurbs(right)) = (left, right) else {
+        return None;
+    };
+    let left_boundaries = nurbs_surface_boundary_curves(left)?;
+    let right_boundaries = nurbs_surface_boundary_curves(right)?;
+    let shared_boundaries = left_boundaries
+        .iter()
+        .filter(|left| {
+            right_boundaries
+                .iter()
+                .any(|right| nurbs_shared_boundary_curves_match(left, right))
+        })
+        .collect::<Vec<_>>();
+    if shared_boundaries.is_empty() {
+        return None;
+    }
+    Some(
+        options
+            .iter()
+            .copied()
+            .filter(|pair| {
+                shared_boundaries.iter().any(|boundary| {
+                    pair.iter().all(|point| {
+                        points
+                            .get(*point)
+                            .is_some_and(|point| nurbs_boundary_contains_point(boundary, *point))
+                    })
+                })
+            })
+            .collect(),
+    )
+}
+
+fn standard_shared_boundary_group_domains(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    original: &[Vec<[usize; 2]>],
+    filtered: &mut [Vec<[usize; 2]>],
+    edge_identity_evidence: &[bool],
+    boundary_witnesses: &[bool],
+) {
+    if supports.len() != original.len()
+        || supports.len() != filtered.len()
+        || supports.len() != edge_identity_evidence.len()
+        || supports.len() != boundary_witnesses.len()
+    {
+        return;
+    }
+    // A shared carrier boundary is positive endpoint evidence, not a row
+    // identity. Repeated rows can include trimmed boundaries in the carrier
+    // interior. If any row lacks a non-empty witness relation, or if the
+    // retained witness pairs cannot cover the complete repeated-row group,
+    // preserve every original domain and defer the row assignment to the
+    // admitted port and trim relations.
+    let mut groups = HashMap::<[usize; 2], Vec<usize>>::new();
+    for (edge, support) in supports.iter().enumerate() {
+        if edge_identity_evidence[edge]
+            || !matches!(
+                support.geometry,
+                crate::families::standard::records::StandardCurveGeometry::Bspline
+            )
+            || support.faces[0] == support.faces[1]
+            || original[edge].is_empty()
+        {
+            continue;
+        }
+        let mut faces = support.faces;
+        faces.sort_unstable();
+        groups.entry(faces).or_default().push(edge);
+    }
+    for edges in groups.into_values() {
+        if edges.len() < 2 {
+            continue;
+        }
+        if edges.iter().any(|edge| !boundary_witnesses[*edge]) {
+            for edge in edges {
+                filtered[edge].clone_from(&original[edge]);
+            }
+            continue;
+        }
+        let filtered_pairs = edges
+            .iter()
+            .flat_map(|edge| filtered[*edge].iter().copied())
+            .map(|mut pair| {
+                pair.sort_unstable();
+                pair
+            })
+            .collect::<HashSet<_>>();
+        if filtered_pairs.len() >= edges.len() {
+            continue;
+        }
+        for edge in edges {
+            filtered[edge].clone_from(&original[edge]);
+        }
+    }
+}
+
+fn standard_endpoint_options_for_selected_faces(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    points: &[Point3],
+    options: &[Vec<[usize; 2]>],
+    edge_identity_evidence: &[bool],
+) -> Vec<Vec<[usize; 2]>> {
+    let (mut filtered_options, boundary_witnesses): (Vec<Vec<[usize; 2]>>, Vec<bool>) = supports
+        .iter()
+        .enumerate()
+        .map(|(edge, support)| {
+            let Some(pairs) = options.get(edge) else {
+                return (Vec::new(), false);
+            };
+            if edge_identity_evidence.get(edge).copied().unwrap_or(false)
+                || !matches!(
+                    support.geometry,
+                    crate::families::standard::records::StandardCurveGeometry::Bspline
+                )
+                || support.faces[0] == support.faces[1]
+            {
+                return (pairs.clone(), false);
+            }
+            let Some(left) = face_surface(ir, bindings, surface_indices, support.faces[0]) else {
+                return (pairs.clone(), false);
+            };
+            let Some(right) = face_surface(ir, bindings, surface_indices, support.faces[1]) else {
+                return (pairs.clone(), false);
+            };
+            let filtered = standard_shared_nurbs_boundary_pair_options(
+                &left.geometry,
+                &right.geometry,
+                points,
+                pairs,
+            );
+            match filtered {
+                Some(filtered) if !filtered.is_empty() => (filtered, true),
+                _ => (pairs.clone(), false),
+            }
+        })
+        .unzip();
+    standard_shared_boundary_group_domains(
+        supports,
+        options,
+        &mut filtered_options,
+        edge_identity_evidence,
+        &boundary_witnesses,
+    );
+    filtered_options
+}
+
+fn nurbs_surface_axis_samples(knots: &[f64], degree: usize, count: usize) -> Option<Vec<f64>> {
+    let mut boundaries = Vec::new();
+    for &knot in knots.get(degree..=count)? {
+        if boundaries.last().is_none_or(|previous| *previous != knot) {
+            boundaries.push(knot);
+        }
+    }
+    let mut samples = Vec::new();
+    for pair in boundaries.windows(2) {
+        let [lower, upper] = *pair else {
+            continue;
+        };
+        if !lower.is_finite() || !upper.is_finite() || lower >= upper {
+            continue;
+        }
+        for step in 0..NURBS_SURFACE_SEEDS_PER_SPAN {
+            let fraction = step as f64 / (NURBS_SURFACE_SEEDS_PER_SPAN - 1) as f64;
+            samples.push(lower + fraction * (upper - lower));
+        }
+    }
+    (!samples.is_empty()).then_some(samples)
+}
+
+fn nurbs_surface_start_grid(surface: &NurbsSurface, domains: [[f64; 2]; 2]) -> Option<Vec<Point2>> {
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    let u_samples = nurbs_surface_axis_samples(&surface.u_knots, u_degree, u_count)?;
+    let v_samples = nurbs_surface_axis_samples(&surface.v_knots, v_degree, v_count)?;
+    if u_samples.len().checked_mul(v_samples.len())? > NURBS_SURFACE_MAX_SEEDS {
+        let side = (NURBS_SURFACE_MAX_SEEDS as f64).sqrt() as usize;
+        let mut grid = Vec::with_capacity(side * side);
+        for u in 0..side {
+            for v in 0..side {
+                let u_fraction = u as f64 / (side - 1) as f64;
+                let v_fraction = v as f64 / (side - 1) as f64;
+                grid.push(Point2::new(
+                    domains[0][0] + u_fraction * (domains[0][1] - domains[0][0]),
+                    domains[1][0] + v_fraction * (domains[1][1] - domains[1][0]),
+                ));
+            }
+        }
+        return Some(grid);
+    }
+    Some(
+        u_samples
+            .into_iter()
+            .flat_map(|u| v_samples.iter().copied().map(move |v| Point2::new(u, v)))
+            .collect(),
+    )
+}
+
+fn nurbs_surface_point_distance_squared(
+    surface: &NurbsSurface,
+    point: Point3,
+    uv: Point2,
+) -> Option<f64> {
+    let position = cadmpeg_ir::eval::nurbs_surface_point(surface, uv.u, uv.v)?;
+    let distance = position.vector_from(point);
+    let squared = distance.dot(distance);
+    squared.is_finite().then_some(squared)
+}
+
+fn refine_nurbs_surface_point(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Point2,
+    domains: [[f64; 2]; 2],
+) -> Option<f64> {
+    let mut parameters = seed;
+    for _ in 0..NURBS_SURFACE_REFINEMENT_ITERATIONS {
+        let partials =
+            cadmpeg_ir::eval::nurbs_surface_partials(surface, parameters.u, parameters.v)?;
+        let residual = partials.point.vector_from(point);
+        let du_squared = partials.du.dot(partials.du);
+        let mixed = partials.du.dot(partials.dv);
+        let dv_squared = partials.dv.dot(partials.dv);
+        let determinant = du_squared * dv_squared - mixed * mixed;
+        if !determinant.is_finite()
+            || determinant.abs() <= f64::EPSILON * du_squared.max(dv_squared).powi(2)
+        {
+            break;
+        }
+        let du_residual = partials.du.dot(residual);
+        let dv_residual = partials.dv.dot(residual);
+        let step = Point2::new(
+            (dv_squared * du_residual - mixed * dv_residual) / determinant,
+            (du_squared * dv_residual - mixed * du_residual) / determinant,
+        );
+        let current = nurbs_surface_point_distance_squared(surface, point, parameters)?;
+        let mut scale = 1.0;
+        let mut accepted = None;
+        for _ in 0..NURBS_SURFACE_BACKTRACK_STEPS {
+            let candidate = Point2::new(
+                (parameters.u - scale * step.u).clamp(domains[0][0], domains[0][1]),
+                (parameters.v - scale * step.v).clamp(domains[1][0], domains[1][1]),
+            );
+            let distance = nurbs_surface_point_distance_squared(surface, point, candidate)?;
+            if distance <= current {
+                accepted = Some((candidate, distance));
+                break;
+            }
+            scale *= 0.5;
+        }
+        let Some((candidate, distance)) = accepted else {
+            break;
+        };
+        parameters = candidate;
+        if distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE.powi(2) {
+            return Some(distance);
+        }
+    }
+    nurbs_surface_point_distance_squared(surface, point, parameters)
+}
+
+fn nurbs_surface_witness_distance(surface: &NurbsSurface, point: Point3) -> Option<f64> {
+    let domains = nurbs_surface_parameter_domain(surface)?;
+    let starts = nurbs_surface_start_grid(surface, domains)?;
+    starts
+        .into_iter()
+        .filter_map(|seed| refine_nurbs_surface_point(surface, point, seed, domains))
+        .min_by(f64::total_cmp)
+}
+
+fn point_on_nurbs_surface(point: Point3, surface: &NurbsSurface) -> Option<bool> {
+    // A positive-weight NURBS control net bounds the surface, so its AABB is a
+    // sound negative test.  The bounded parameter search supplies positive
+    // witnesses only.  A failed search inside that AABB is unknown, not proof
+    // that the point is off the surface.
+    if let Some(bounds) = nurbs_surface_control_bounds(surface) {
+        let outside =
+            [point.x, point.y, point.z]
+                .into_iter()
+                .enumerate()
+                .any(|(axis, coordinate)| {
+                    coordinate < bounds[axis][0] - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+                        || coordinate > bounds[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+                });
+        if outside {
+            return Some(false);
+        }
+    }
+    let distance = nurbs_surface_witness_distance(surface, point)?;
+    (distance <= NURBS_SURFACE_MEMBERSHIP_TOLERANCE.powi(2)).then_some(true)
+}
+
+fn invariant_face_carrier_bindings(
+    face_edges: &[Vec<(usize, Vec<usize>)>],
+    owner_count: usize,
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<Vec<Option<usize>>> {
+    let normalized = face_edges
+        .iter()
+        .map(|edges| {
+            let mut by_owner = BTreeMap::<usize, HashSet<usize>>::new();
+            for (owner, carriers) in edges {
+                if *owner >= owner_count || carriers.is_empty() {
+                    continue;
+                }
+                by_owner
+                    .entry(*owner)
+                    .or_default()
+                    .extend(carriers.iter().copied());
+            }
+            by_owner
+        })
+        .collect::<Vec<_>>();
+    let mut domains = normalized
+        .iter()
+        .map(|edges| edges.keys().copied().collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    let matching = distinct_domain_matching_with_budget(
+        domains.iter().map(Vec::as_slice),
+        owner_count,
+        budget,
+        None,
+    )?;
+    retain_distinct_matching_supports(&mut domains, owner_count, &matching, budget)?;
+    Some(
+        domains
+            .iter()
+            .zip(&normalized)
+            .map(|(owners, labels)| {
+                let carriers = owners
+                    .iter()
+                    .filter_map(|owner| labels.get(owner))
+                    .flatten()
+                    .copied()
+                    .collect::<HashSet<_>>();
+                if carriers.len() != 1 {
+                    return None;
+                }
+                carriers.into_iter().next()
+            })
+            .collect(),
+    )
+}
+
+fn owner_matches_a5_carrier(
+    tail: &crate::families::b2::records::B2OwnerNumericTail,
+    surface: &NurbsSurface,
+) -> bool {
+    let Some(domain) = nurbs_surface_parameter_domain(surface) else {
+        return false;
+    };
+    if (0..2).any(|axis| {
+        tail.lower[axis] < domain[axis][0] - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+            || tail.upper[axis] > domain[axis][1] + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+    }) {
+        return false;
+    }
+    [tail.lower[0], tail.upper[0]].into_iter().all(|u| {
+        [tail.lower[1], tail.upper[1]].into_iter().all(|v| {
+            cadmpeg_ir::eval::nurbs_surface_point(surface, u, v).is_some_and(|point| {
+                [point.x, point.y, point.z]
+                    .into_iter()
+                    .enumerate()
+                    .all(|(axis, value)| {
+                        value
+                            >= f64::from(tail.bounds[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+                            && value
+                                <= f64::from(tail.bounds[axis][1])
+                                    + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+                    })
+            })
+        })
+    })
+}
+
+fn owner_contains_face_bounds(
+    reference_encoding: crate::families::b2::records::B2OwnerReferenceEncoding,
+    tail: &crate::families::b2::records::B2OwnerNumericTail,
+    bounds: crate::families::standard::records::StandardFaceBounds,
+) -> bool {
+    if reference_encoding != crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact {
+        return false;
+    }
+    (0..3).all(|axis| {
+        let lower = bounds.aabb_center[axis] - bounds.aabb_half_extents[axis];
+        let upper = bounds.aabb_center[axis] + bounds.aabb_half_extents[axis];
+        lower >= f64::from(tail.bounds[axis][0]) - NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+            && upper <= f64::from(tail.bounds[axis][1]) + NURBS_SURFACE_MEMBERSHIP_TOLERANCE
+    })
+}
+
+fn standard_face_boundary_witnesses(ir: &CadIr) -> Vec<Vec<Point3>> {
+    let point_positions = ir
+        .model
+        .points
+        .iter()
+        .map(|point| (point.id.clone(), point.position))
+        .collect::<HashMap<_, _>>();
+    let vertex_positions = ir
+        .model
+        .vertices
+        .iter()
+        .filter_map(|vertex| Some((vertex.id.clone(), *point_positions.get(&vertex.point)?)))
+        .collect::<HashMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.clone(), edge))
+        .collect::<HashMap<_, _>>();
+    let coedges = ir
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.clone(), coedge))
+        .collect::<HashMap<_, _>>();
+    let loops = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.clone(), loop_))
+        .collect::<HashMap<_, _>>();
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve.id.clone(), curve))
+        .collect::<HashMap<_, _>>();
+    ir.model
+        .faces
+        .iter()
+        .map(|face| {
+            let mut witnesses = Vec::new();
+            for edge in face
+                .loops
+                .iter()
+                .filter_map(|id| loops.get(id))
+                .flat_map(|loop_| &loop_.coedges)
+                .filter_map(|id| coedges.get(id))
+                .filter_map(|coedge| edges.get(&coedge.edge))
+            {
+                witnesses.extend(
+                    [&edge.start, &edge.end]
+                        .into_iter()
+                        .filter_map(|id| vertex_positions.get(id).copied()),
+                );
+                let Some((curve, [start, end])) = edge
+                    .curve
+                    .as_ref()
+                    .and_then(|id| curves.get(id))
+                    .zip(edge.param_range)
+                else {
+                    continue;
+                };
+                if let Some(point) =
+                    cadmpeg_ir::eval::curve_point(&curve.geometry, 0.5 * (start + end))
+                {
+                    witnesses.push(point);
+                }
+            }
+            let mut distinct = Vec::<Point3>::new();
+            for point in witnesses {
+                if distinct
+                    .iter()
+                    .all(|stored| stored.distance(point) > NURBS_SURFACE_MEMBERSHIP_TOLERANCE)
+                {
+                    distinct.push(point);
+                }
+            }
+            distinct
+        })
+        .collect()
+}
+
+fn bind_standard_a5_owner_surfaces(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+    face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
+    budget: &WorkBudget<'_>,
+) -> usize {
+    let carriers = crate::families::a5a8::records::a5_surfaces_from_records(data, records);
+    let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records);
+    if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {
+        return 0;
+    }
+    let owner_carriers = owners
+        .iter()
+        .map(|owner| {
+            carriers
+                .iter()
+                .enumerate()
+                .filter_map(|(carrier, value)| {
+                    let SurfaceGeometry::Nurbs(surface) = &value.geometry else {
+                        return None;
+                    };
+                    owner_matches_a5_carrier(&owner.numeric_tail, surface).then_some(carrier)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let witnesses = standard_face_boundary_witnesses(ir);
+    let surface_indices = ir
+        .model
+        .surfaces
+        .iter()
+        .enumerate()
+        .map(|(index, surface)| (surface.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let unknown_faces = ir
+        .model
+        .faces
+        .iter()
+        .enumerate()
+        .filter_map(|(face, value)| {
+            let ordinal = value
+                .id
+                .0
+                .strip_prefix("catia:standard:face#")?
+                .parse::<usize>()
+                .ok()?;
+            let surface = *surface_indices.get(&value.surface)?;
+            matches!(
+                ir.model.surfaces[surface].geometry,
+                SurfaceGeometry::Unknown { .. }
+            )
+            .then_some((face, ordinal, surface))
+        })
+        .collect::<Vec<_>>();
+    let mut face_edges = Vec::with_capacity(unknown_faces.len());
+    for &(face, ordinal, _) in &unknown_faces {
+        let Some(Some(bounds)) = face_bounds.get(ordinal) else {
+            face_edges.push(Vec::new());
+            continue;
+        };
+        let containing_owners = owners
             .iter()
             .enumerate()
-            .map(|(axis, coordinate)| (*coordinate - bounds.sphere_center[axis]).powi(2))
-            .sum::<f64>();
-        inside_aabb && distance_squared.sqrt() <= bounds.sphere_radius + TOLERANCE
-    })
+            .filter_map(|(owner, value)| {
+                (!owner_carriers[owner].is_empty()
+                    && owner_contains_face_bounds(
+                        value.reference_encoding,
+                        &value.numeric_tail,
+                        *bounds,
+                    ))
+                .then_some(owner)
+            })
+            .collect::<Vec<_>>();
+        let possible_carriers = containing_owners
+            .iter()
+            .flat_map(|owner| owner_carriers[*owner].iter().copied())
+            .collect::<HashSet<_>>();
+        let face_carriers = possible_carriers
+            .into_iter()
+            .filter(|carrier| {
+                let SurfaceGeometry::Nurbs(surface) = &carriers[*carrier].geometry else {
+                    return false;
+                };
+                witnesses.get(face).is_some_and(|points| {
+                    points.len() >= 3
+                        && points
+                            .iter()
+                            .all(|point| point_on_nurbs_surface(*point, surface) == Some(true))
+                })
+            })
+            .collect::<HashSet<_>>();
+        face_edges.push(
+            containing_owners
+                .into_iter()
+                .filter_map(|owner| {
+                    let labels = owner_carriers[owner]
+                        .iter()
+                        .filter(|carrier| face_carriers.contains(carrier))
+                        .copied()
+                        .collect::<Vec<_>>();
+                    (!labels.is_empty()).then_some((owner, labels))
+                })
+                .collect(),
+        );
+    }
+    let Some(bindings) = invariant_face_carrier_bindings(&face_edges, owners.len(), Some(budget))
+    else {
+        return 0;
+    };
+    let mut bound = 0;
+    for ((_, _, surface), carrier) in unknown_faces.into_iter().zip(bindings) {
+        let Some(carrier) = carrier else {
+            continue;
+        };
+        ir.model.surfaces[surface].geometry = carriers[carrier].geometry.clone();
+        annotations.derived(&ir.model.surfaces[surface].id, "geometry");
+        bound += 1;
+    }
+    bound
+}
+
+/// Keep a topological endpoint pair when p-curve derivation cannot prove it.
+///
+/// The endpoint domain is an input to exact trim-cycle and port-identity
+/// solving. P-curve construction is a later, optional emission step. A
+/// spherical face can carry a non-isoparametric circular section; the generic
+/// UV-midpoint p-curve test cannot derive that section from its endpoints, but
+/// the serialized circle carrier and face membership still make the pair
+/// admissible for topology solving.
+pub(super) fn standard_endpoint_pair_supports_topology(
+    surface: &SurfaceGeometry,
+    support: &crate::families::standard::records::StandardCurveSupport,
+    start: Point3,
+    end: Point3,
+    witness: Option<Point3>,
+) -> bool {
+    let endpoint_is_supported = |point| match surface {
+        SurfaceGeometry::Nurbs(_) => point_on_surface_if_supported(point, surface) != Some(false),
+        _ => point_on_surface(point, surface),
+    };
+    if !endpoint_is_supported(start) || !endpoint_is_supported(end) {
+        return false;
+    }
+    if standard_pcurve_geometry(surface, support, start, end, witness, None).is_some() {
+        return true;
+    }
+    if matches!(surface, SurfaceGeometry::Nurbs(_)) {
+        // A bounded model-space NURBS search may remain unknown inside the
+        // control-net bound.  Topology retains that pair; a UV p-curve is
+        // optional and is derived only from an admitted parameterization.
+        return true;
+    }
+    matches!(
+        (surface, &support.geometry),
+        (
+            SurfaceGeometry::Sphere { .. },
+            crate::families::standard::records::StandardCurveGeometry::Circle { center, radius },
+        ) if (start.distance(*center) - *radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
+            && (end.distance(*center) - *radius).abs() <= SPHERE_SECTION_ENDPOINT_TOLERANCE
+    )
 }
 
 pub(crate) fn standard_pcurve_geometry(
@@ -5920,6 +6905,9 @@ pub(crate) fn standard_pcurve_geometry(
     witness: Option<Point3>,
     edge_curve: Option<&CurveGeometry>,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
+    if matches!(edge_curve, Some(CurveGeometry::Unknown { .. })) {
+        return None;
+    }
     if !point_on_surface(start, surface) || !point_on_surface(end, surface) {
         return None;
     }
@@ -5944,10 +6932,10 @@ pub(crate) fn standard_pcurve_geometry(
                     origin.y + apex_offset * axis.y,
                     origin.z + apex_offset * axis.z,
                 );
-                if start.distance_squared(apex) <= EPS_APEX_DISTANCE {
+                if start.distance_squared(apex) <= 1e-6 {
                     uv[0].u = uv[1].u;
                 }
-                if end.distance_squared(apex) <= EPS_APEX_DISTANCE {
+                if end.distance_squared(apex) <= 1e-6 {
                     uv[1].u = uv[0].u;
                 }
             }
@@ -6233,8 +7221,10 @@ fn point_on_surface_if_supported(point: Point3, surface: &SurfaceGeometry) -> Op
                 .sqrt();
             (((radial - major_radius).powi(2) + axial * axial).sqrt() - minor_radius.abs()).abs()
         }
-        SurfaceGeometry::Nurbs(_)
-        | SurfaceGeometry::Polygonal { .. }
+        SurfaceGeometry::Nurbs(surface) => {
+            return point_on_nurbs_surface(point, surface);
+        }
+        SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return None,
@@ -6328,6 +7318,442 @@ pub(crate) fn standard_spline_line(
     ))
 }
 
+fn standard_spline_circle(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    support: &crate::families::standard::records::StandardCurveSupport,
+    points: [usize; 2],
+) -> Option<CurveGeometry> {
+    let surfaces = support
+        .faces
+        .map(|face| face_surface(ir, bindings, surface_indices, face));
+    let [Some(left), Some(right)] = surfaces else {
+        return None;
+    };
+    let (sphere_center, sphere_radius, plane_origin, plane_normal) =
+        match (&left.geometry, &right.geometry) {
+            (
+                SurfaceGeometry::Sphere { center, radius, .. },
+                SurfaceGeometry::Plane { origin, normal, .. },
+            )
+            | (
+                SurfaceGeometry::Plane { origin, normal, .. },
+                SurfaceGeometry::Sphere { center, radius, .. },
+            ) => (*center, *radius, *origin, *normal),
+            _ => return None,
+        };
+    let axis = unit_vector(plane_normal)?;
+    let sphere_radius = sphere_radius.abs();
+    let signed_distance = sphere_center.vector_from(plane_origin).dot(axis);
+    if !sphere_radius.is_finite() || sphere_radius <= 0.0 || !signed_distance.is_finite() {
+        return None;
+    }
+    let section_radius_squared = sphere_radius * sphere_radius - signed_distance * signed_distance;
+    if !section_radius_squared.is_finite()
+        || section_radius_squared <= SPHERE_SECTION_ENDPOINT_TOLERANCE.powi(2)
+    {
+        return None;
+    }
+    let section_center = sphere_center.translated(axis, -signed_distance);
+    let section_radius = section_radius_squared.sqrt();
+    let start = ir.model.points.get(points[0])?.position;
+    let end = ir.model.points.get(points[1])?.position;
+    if !point_on_surface(start, &left.geometry)
+        || !point_on_surface(start, &right.geometry)
+        || !point_on_surface(end, &left.geometry)
+        || !point_on_surface(end, &right.geometry)
+        || (start.distance(section_center) - section_radius).abs()
+            > SPHERE_SECTION_ENDPOINT_TOLERANCE
+        || (end.distance(section_center) - section_radius).abs() > SPHERE_SECTION_ENDPOINT_TOLERANCE
+    {
+        return None;
+    }
+    Some(CurveGeometry::Circle {
+        center: section_center,
+        axis,
+        ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
+        radius: section_radius,
+    })
+}
+
+fn standard_spline_cylinder_plane(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    support: &crate::families::standard::records::StandardCurveSupport,
+    points: [usize; 2],
+) -> Option<CurveGeometry> {
+    let surfaces = support
+        .faces
+        .map(|face| face_surface(ir, bindings, surface_indices, face));
+    let [Some(left), Some(right)] = surfaces else {
+        return None;
+    };
+    let (cylinder_axis, cylinder_origin, cylinder_radius, plane_origin, plane_normal) =
+        match (&left.geometry, &right.geometry) {
+            (
+                SurfaceGeometry::Cylinder {
+                    axis,
+                    origin: cylinder_origin,
+                    radius,
+                    ..
+                },
+                SurfaceGeometry::Plane {
+                    origin: plane_origin,
+                    normal: plane_normal,
+                    ..
+                },
+            )
+            | (
+                SurfaceGeometry::Plane {
+                    origin: plane_origin,
+                    normal: plane_normal,
+                    ..
+                },
+                SurfaceGeometry::Cylinder {
+                    axis,
+                    origin: cylinder_origin,
+                    radius,
+                    ..
+                },
+            ) => (
+                *axis,
+                *cylinder_origin,
+                *radius,
+                *plane_origin,
+                *plane_normal,
+            ),
+            _ => return None,
+        };
+    let cylinder_axis = unit_vector(cylinder_axis)?;
+    let plane_normal = unit_vector(plane_normal)?;
+    let cylinder_radius = cylinder_radius.abs();
+    if !cylinder_radius.is_finite() || cylinder_radius <= 0.0 {
+        return None;
+    }
+    let axis_dot_normal = cylinder_axis.dot(plane_normal);
+    if !axis_dot_normal.is_finite() || axis_dot_normal.abs() <= CYLINDER_PLANE_CONIC_TOLERANCE {
+        return None;
+    }
+    let axis_parameter =
+        -cylinder_origin.vector_from(plane_origin).dot(plane_normal) / axis_dot_normal;
+    if !axis_parameter.is_finite() {
+        return None;
+    }
+    let center = cylinder_origin.translated(cylinder_axis, axis_parameter);
+    let start = ir.model.points.get(points[0])?.position;
+    let end = ir.model.points.get(points[1])?.position;
+    if !point_on_surface(start, &left.geometry)
+        || !point_on_surface(start, &right.geometry)
+        || !point_on_surface(end, &left.geometry)
+        || !point_on_surface(end, &right.geometry)
+    {
+        return None;
+    }
+    let minor_vector = cylinder_axis.cross(plane_normal);
+    let minor_norm = minor_vector.norm();
+    if !minor_norm.is_finite() {
+        return None;
+    }
+    if minor_norm <= CYLINDER_PLANE_CONIC_TOLERANCE {
+        return Some(CurveGeometry::Circle {
+            center,
+            axis: plane_normal,
+            ref_direction: cadmpeg_ir::geometry::derive_reference_direction(plane_normal),
+            radius: cylinder_radius,
+        });
+    }
+    let minor_direction = minor_vector.scale(1.0 / minor_norm);
+    let radial_normal =
+        (plane_normal - cylinder_axis.scale(axis_dot_normal)).scale(1.0 / minor_norm);
+    let major_unscaled = radial_normal - cylinder_axis.scale(minor_norm / axis_dot_normal);
+    let major_norm = major_unscaled.norm();
+    if !major_norm.is_finite() || major_norm <= 0.0 {
+        return None;
+    }
+    let major_direction = major_unscaled.scale(1.0 / major_norm);
+    let major_radius = cylinder_radius * major_norm;
+    if !major_radius.is_finite() || major_radius <= 0.0 {
+        return None;
+    }
+    let endpoint_is_on_ellipse = |point: Point3| {
+        let offset = point.vector_from(center);
+        let major = offset.dot(major_direction) / major_radius;
+        let minor = offset.dot(minor_direction) / cylinder_radius;
+        let equation = major * major + minor * minor;
+        equation.is_finite() && (equation - 1.0).abs() <= CYLINDER_PLANE_CONIC_TOLERANCE
+    };
+    if !endpoint_is_on_ellipse(start) || !endpoint_is_on_ellipse(end) {
+        return None;
+    }
+    Some(CurveGeometry::Ellipse {
+        center,
+        axis: plane_normal,
+        major_direction,
+        major_radius,
+        minor_radius: cylinder_radius,
+    })
+}
+
+fn standard_spline_perpendicular_cylinders(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    support: &crate::families::standard::records::StandardCurveSupport,
+    points: [usize; 2],
+) -> Option<CurveGeometry> {
+    let surfaces = support
+        .faces
+        .map(|face| face_surface(ir, bindings, surface_indices, face));
+    let [Some(left), Some(right)] = surfaces else {
+        return None;
+    };
+    let (first_axis, first_origin, first_radius, second_axis, second_origin, second_radius) =
+        match (&left.geometry, &right.geometry) {
+            (
+                SurfaceGeometry::Cylinder {
+                    axis,
+                    origin,
+                    radius,
+                    ..
+                },
+                SurfaceGeometry::Cylinder {
+                    axis: second_axis,
+                    origin: second_origin,
+                    radius: second_radius,
+                    ..
+                },
+            ) => (
+                *axis,
+                *origin,
+                *radius,
+                *second_axis,
+                *second_origin,
+                *second_radius,
+            ),
+            _ => return None,
+        };
+    let first_axis = unit_vector(first_axis)?;
+    let second_axis = unit_vector(second_axis)?;
+    let first_radius = first_radius.abs();
+    let second_radius = second_radius.abs();
+    if !first_radius.is_finite()
+        || !second_radius.is_finite()
+        || first_radius <= 0.0
+        || second_radius <= 0.0
+        || (first_radius - second_radius).abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+    {
+        return None;
+    }
+    let axis_dot = first_axis.dot(second_axis);
+    if !axis_dot.is_finite() || axis_dot.abs() > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
+        return None;
+    }
+    let denominator = 1.0 - axis_dot * axis_dot;
+    if !denominator.is_finite() || denominator <= 0.0 {
+        return None;
+    }
+    let axis_offset = second_origin.vector_from(first_origin);
+    let first_parameter =
+        (axis_offset.dot(first_axis) - axis_dot * axis_offset.dot(second_axis)) / denominator;
+    let second_parameter = axis_dot * first_parameter - axis_offset.dot(second_axis);
+    if !first_parameter.is_finite() || !second_parameter.is_finite() {
+        return None;
+    }
+    let first_center = first_origin.translated(first_axis, first_parameter);
+    let second_center = second_origin.translated(second_axis, second_parameter);
+    if first_center.distance(second_center) > PERPENDICULAR_CYLINDER_CONIC_TOLERANCE {
+        return None;
+    }
+    let center = Point3::new(
+        (first_center.x + second_center.x) * 0.5,
+        (first_center.y + second_center.y) * 0.5,
+        (first_center.z + second_center.z) * 0.5,
+    );
+    let start = ir.model.points.get(points[0])?.position;
+    let end = ir.model.points.get(points[1])?.position;
+    if !point_on_surface(start, &left.geometry)
+        || !point_on_surface(start, &right.geometry)
+        || !point_on_surface(end, &left.geometry)
+        || !point_on_surface(end, &right.geometry)
+    {
+        return None;
+    }
+    let minor_direction = unit_vector(first_axis.cross(second_axis))?;
+    let radius = (first_radius + second_radius) * 0.5;
+    let major_radius = radius * 2.0_f64.sqrt();
+    if !radius.is_finite() || !major_radius.is_finite() || major_radius <= 0.0 {
+        return None;
+    }
+    let branches = [
+        (first_axis - second_axis, first_axis + second_axis),
+        (first_axis + second_axis, first_axis - second_axis),
+    ]
+    .into_iter()
+    .filter_map(|(axis, major_direction)| {
+        let axis = unit_vector(axis)?;
+        let major_direction = unit_vector(major_direction)?;
+        let endpoint_is_on_branch = |point: Point3| {
+            let offset = point.vector_from(center);
+            let major = offset.dot(major_direction) / major_radius;
+            let minor = offset.dot(minor_direction) / radius;
+            let equation = major * major + minor * minor;
+            offset.dot(axis).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+                && equation.is_finite()
+                && (equation - 1.0).abs() <= PERPENDICULAR_CYLINDER_CONIC_TOLERANCE
+        };
+        (endpoint_is_on_branch(start) && endpoint_is_on_branch(end)).then_some(
+            CurveGeometry::Ellipse {
+                center,
+                axis,
+                major_direction,
+                major_radius,
+                minor_radius: radius,
+            },
+        )
+    })
+    .collect::<Vec<_>>();
+    let [geometry] = branches.as_slice() else {
+        return None;
+    };
+    Some(geometry.clone())
+}
+
+fn standard_native_support_witness(native: &StandardEdgeSupport) -> Option<Point3> {
+    let parameter = 0.5 * (native.parameter_range[0] + native.parameter_range[1]);
+    let lifted = native
+        .carriers
+        .iter()
+        .zip(&native.pcurves)
+        .map(|(carrier, pcurve)| {
+            let crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(surface) = carrier
+            else {
+                return None;
+            };
+            let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
+            cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let [first, second] = <[Point3; 2]>::try_from(lifted).ok()?;
+    (first.distance_squared(second).sqrt() <= SUPPORT_AGREEMENT_TOLERANCE).then_some(first)
+}
+
+fn standard_analytic_curve_angle(geometry: &CurveGeometry, point: Point3) -> Option<f64> {
+    let (center, first, second) = match geometry {
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => (
+            *center,
+            ref_direction.scale(*radius),
+            axis.cross(*ref_direction).scale(*radius),
+        ),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => (
+            *center,
+            major_direction.scale(*major_radius),
+            axis.cross(*major_direction).scale(*minor_radius),
+        ),
+        _ => return None,
+    };
+    let offset = point.vector_from(center);
+    let first_length = first.norm();
+    let second_length = second.norm();
+    if !first_length.is_finite()
+        || !second_length.is_finite()
+        || first_length <= 0.0
+        || second_length <= 0.0
+    {
+        return None;
+    }
+    let first_component = offset.dot(first) / first_length.powi(2);
+    let second_component = offset.dot(second) / second_length.powi(2);
+    let residual = first_component * first_component + second_component * second_component - 1.0;
+    (residual.is_finite() && residual.abs() <= ANALYTIC_CURVE_ENDPOINT_TOLERANCE)
+        .then(|| second_component.atan2(first_component))
+}
+
+fn standard_analytic_curve_parameter_range(
+    geometry: &CurveGeometry,
+    start: Point3,
+    end: Point3,
+    witness: Option<Point3>,
+) -> Option<[f64; 2]> {
+    if start.distance_squared(end).sqrt() <= ANALYTIC_CURVE_ENDPOINT_TOLERANCE {
+        return Some([0.0, std::f64::consts::TAU]);
+    }
+    let start = standard_analytic_curve_angle(geometry, start)?;
+    let short_end = unwrap_angle(standard_analytic_curve_angle(geometry, end)?, start);
+    let end = witness.map_or(Some(short_end), |witness| {
+        witness_arc_end(
+            start,
+            short_end,
+            standard_analytic_curve_angle(geometry, witness)?,
+        )
+    })?;
+    crate::nurbs::canonical_periodic_range([start, end])
+}
+
+fn standard_oriented_analytic_curve_parameter_range(
+    geometry: &mut CurveGeometry,
+    start: Point3,
+    end: Point3,
+    witness: Point3,
+) -> Option<[f64; 2]> {
+    if let Some(range) =
+        standard_analytic_curve_parameter_range(geometry, start, end, Some(witness))
+    {
+        return Some(range);
+    }
+    let original_axis = match geometry {
+        CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => *axis,
+        _ => return None,
+    };
+    match geometry {
+        CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => {
+            *axis = axis.scale(-1.0);
+        }
+        _ => unreachable!("analytic orientation was checked above"),
+    }
+    let range = standard_analytic_curve_parameter_range(geometry, start, end, Some(witness));
+    if range.is_none() {
+        match geometry {
+            CurveGeometry::Circle { axis, .. } | CurveGeometry::Ellipse { axis, .. } => {
+                *axis = original_axis;
+            }
+            _ => unreachable!("analytic orientation was checked above"),
+        }
+    }
+    range
+}
+
+fn standard_oriented_native_support_pcurves(
+    native: &StandardEdgeSupport,
+    points: &[Point],
+    endpoint_pair: [usize; 2],
+) -> Option<[PcurveGeometry; 2]> {
+    let Some(native_pair) =
+        standard_native_support_endpoint_pair(native, points, &endpoint_pair, Some(endpoint_pair))
+    else {
+        return Some(native.pcurves.clone());
+    };
+    if native_pair == endpoint_pair {
+        return Some(native.pcurves.clone());
+    }
+    Some([
+        crate::nurbs::reverse_pcurve_geometry(&native.pcurves[0], native.parameter_range)?,
+        crate::nurbs::reverse_pcurve_geometry(&native.pcurves[1], native.parameter_range)?,
+    ])
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_standard_edge_curve(
     ir: &mut CadIr,
@@ -6340,7 +7766,7 @@ pub(crate) fn build_standard_edge_curve(
     native_support: Option<&StandardEdgeSupport>,
     limit_curve: Option<(&NurbsCurve, [f64; 2])>,
 ) -> (Option<CurveId>, Option<[f64; 2]>) {
-    let (geometry, mut param_range) = match &support.geometry {
+    let (mut geometry, mut param_range) = match &support.geometry {
         crate::families::standard::records::StandardCurveGeometry::Line => {
             let start = ir.model.points[points[0]].position;
             let end = ir.model.points[points[1]].position;
@@ -6364,7 +7790,9 @@ pub(crate) fn build_standard_edge_curve(
                 .faces
                 .iter()
                 .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
-                .filter_map(|surface| circle_axis_from_carrier(*center, *radius, &surface.geometry))
+                .filter_map(|surface| {
+                    standard_circle_axis_from_carrier(*center, *radius, &surface.geometry)
+                })
                 .collect();
             axes.extend(native_support.into_iter().flat_map(|native| {
                 native.carriers.iter().filter_map(|carrier| {
@@ -6373,84 +7801,104 @@ pub(crate) fn build_standard_edge_curve(
                     else {
                         return None;
                     };
-                    circle_axis_from_carrier(*center, *radius, surface)
+                    standard_circle_axis_from_carrier(*center, *radius, surface)
                 })
             }));
             if axes.is_empty() {
                 axes.extend(circle_axis_from_endpoints(*center, *radius, start, end));
             }
-            let Some(axis) = axes.first().copied() else {
-                return (None, None);
-            };
-            if axes
-                .iter()
-                .skip(1)
-                .any(|other| axis.dot(*other).abs() < 0.9999)
-            {
-                return (None, None);
-            }
-            let (axis, ref_direction, param_range) = if points[0] == points[1] {
-                let Some((axis, ref_direction)) = full_circle_frame(*center, *radius, axis, start)
-                else {
-                    return (None, None);
-                };
-                (axis, ref_direction, Some([0.0, std::f64::consts::TAU]))
-            } else {
-                let candidates = [axis, axis.scale(-1.0)]
-                    .into_iter()
-                    .filter_map(|axis| {
-                        let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
-                        let range = standard_circle_param_range(
-                            ir,
-                            bindings,
-                            surface_indices,
-                            brep,
-                            support,
-                            *center,
-                            *radius,
-                            axis,
-                            ref_direction,
-                            start,
-                            end,
-                        )
-                        .or_else(|| {
-                            native_support.and_then(|native| {
-                                native_support_circle_param_range(
-                                    native,
-                                    *center,
-                                    *radius,
-                                    axis,
-                                    ref_direction,
-                                    start,
-                                    end,
-                                )
-                            })
-                        })?;
-                        Some((
-                            axis,
-                            ref_direction,
-                            crate::nurbs::canonical_periodic_range(range)?,
-                        ))
-                    })
-                    .collect::<Vec<_>>();
-                match candidates.as_slice() {
-                    [(axis, reference, range)] => (*axis, *reference, Some(*range)),
-                    _ => (
-                        axis,
-                        cadmpeg_ir::geometry::derive_reference_direction(axis),
-                        None,
-                    ),
+            let axis = axes.first().copied();
+            let conflicting_axes = axis.is_some_and(|axis| {
+                axes.iter()
+                    .skip(1)
+                    .any(|other| axis.dot(*other).abs() < 0.9999)
+            });
+            match axis.filter(|_| !conflicting_axes) {
+                Some(axis) if points[0] == points[1] => {
+                    match full_circle_frame(*center, *radius, axis, start) {
+                        Some((axis, ref_direction)) => (
+                            CurveGeometry::Circle {
+                                center: *center,
+                                axis,
+                                ref_direction,
+                                radius: *radius,
+                            },
+                            Some([0.0, std::f64::consts::TAU]),
+                        ),
+                        None => (
+                            CurveGeometry::Unknown {
+                                record: Some(UnknownId(
+                                    "catia:payload:unknown#brep-stream".to_string(),
+                                )),
+                            },
+                            None,
+                        ),
+                    }
                 }
-            };
-            (
-                CurveGeometry::Circle {
-                    center: *center,
-                    axis,
-                    ref_direction,
-                    radius: *radius,
-                },
-                param_range,
-            )
+                Some(axis) => {
+                    let candidates = [axis, axis.scale(-1.0)]
+                        .into_iter()
+                        .filter_map(|axis| {
+                            let ref_direction =
+                                cadmpeg_ir::geometry::derive_reference_direction(axis);
+                            let range = standard_circle_param_range(
+                                ir,
+                                bindings,
+                                surface_indices,
+                                brep,
+                                support,
+                                *center,
+                                *radius,
+                                axis,
+                                ref_direction,
+                                start,
+                                end,
+                            )
+                            .or_else(|| {
+                                native_support.and_then(|native| {
+                                    native_support_circle_param_range(
+                                        native,
+                                        *center,
+                                        *radius,
+                                        axis,
+                                        ref_direction,
+                                        start,
+                                        end,
+                                    )
+                                })
+                            })?;
+                            Some((
+                                axis,
+                                ref_direction,
+                                crate::nurbs::canonical_periodic_range(range)?,
+                            ))
+                        })
+                        .collect::<Vec<_>>();
+                    let (axis, ref_direction, param_range) = match candidates.as_slice() {
+                        [(axis, reference, range)] => (*axis, *reference, Some(*range)),
+                        _ => (
+                            axis,
+                            cadmpeg_ir::geometry::derive_reference_direction(axis),
+                            None,
+                        ),
+                    };
+                    (
+                        CurveGeometry::Circle {
+                            center: *center,
+                            axis,
+                            ref_direction,
+                            radius: *radius,
+                        },
+                        param_range,
+                    )
+                }
+                None => (
+                    CurveGeometry::Unknown {
+                        record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
+                    },
+                    None,
+                ),
+            }
         }
         crate::families::standard::records::StandardCurveGeometry::Bspline => {
             if let Some((limit_curve, parameter_range)) = limit_curve {
@@ -6461,17 +7909,76 @@ pub(crate) fn build_standard_edge_curve(
             } else {
                 match standard_spline_line(ir, bindings, surface_indices, support, points) {
                     Some((geometry, range)) => (geometry, Some(range)),
-                    None => (
-                        CurveGeometry::Unknown {
-                            record: Some(UnknownId(
-                                "catia:payload:unknown#brep-stream".to_string(),
-                            )),
-                        },
-                        None,
-                    ),
+                    None => {
+                        match standard_spline_circle(ir, bindings, surface_indices, support, points)
+                        {
+                            Some(geometry) => (geometry, None),
+                            None => match standard_spline_cylinder_plane(
+                                ir,
+                                bindings,
+                                surface_indices,
+                                support,
+                                points,
+                            ) {
+                                Some(geometry) => (geometry, None),
+                                None => match standard_spline_perpendicular_cylinders(
+                                    ir,
+                                    bindings,
+                                    surface_indices,
+                                    support,
+                                    points,
+                                ) {
+                                    Some(geometry) => (geometry, None),
+                                    None => (
+                                        CurveGeometry::Unknown {
+                                            record: Some(UnknownId(
+                                                "catia:payload:unknown#brep-stream".to_string(),
+                                            )),
+                                        },
+                                        None,
+                                    ),
+                                },
+                            },
+                        }
+                    }
                 }
             }
         }
+    };
+    if param_range.is_none()
+        && matches!(
+            geometry,
+            CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
+        )
+    {
+        let endpoints = [
+            ir.model.points[points[0]].position,
+            ir.model.points[points[1]].position,
+        ];
+        if let Some(witness) = native_support.and_then(standard_native_support_witness) {
+            param_range = standard_oriented_analytic_curve_parameter_range(
+                &mut geometry,
+                endpoints[0],
+                endpoints[1],
+                witness,
+            );
+        }
+    }
+    let oriented_native_support_pcurves = if matches!(
+        &support.geometry,
+        crate::families::standard::records::StandardCurveGeometry::Bspline
+    ) {
+        match native_support {
+            Some(native) => {
+                match standard_oriented_native_support_pcurves(native, &ir.model.points, points) {
+                    Some(pcurves) => Some(pcurves),
+                    None => return (None, None),
+                }
+            }
+            None => None,
+        }
+    } else {
+        None
     };
     let id = CurveId(format!("catia:standard:curve#{}", support.pos));
     annotate(
@@ -6493,11 +8000,40 @@ pub(crate) fn build_standard_edge_curve(
             .derived(&id, "geometry.origin")
             .derived(&id, "geometry.direction");
     } else if matches!(
-        &support.geometry,
-        crate::families::standard::records::StandardCurveGeometry::Circle { .. }
+        (&support.geometry, &geometry),
+        (
+            crate::families::standard::records::StandardCurveGeometry::Bspline,
+            CurveGeometry::Circle { .. }
+        )
+    ) {
+        annotations
+            .derived(&id, "geometry.center")
+            .derived(&id, "geometry.axis")
+            .derived(&id, "geometry.ref_direction")
+            .derived(&id, "geometry.radius");
+    } else if matches!(
+        (&support.geometry, &geometry),
+        (
+            crate::families::standard::records::StandardCurveGeometry::Bspline,
+            CurveGeometry::Ellipse { .. }
+        )
+    ) {
+        annotations
+            .derived(&id, "geometry.center")
+            .derived(&id, "geometry.axis")
+            .derived(&id, "geometry.major_direction")
+            .derived(&id, "geometry.major_radius")
+            .derived(&id, "geometry.minor_radius");
+    } else if matches!(
+        (&support.geometry, &geometry),
+        (
+            crate::families::standard::records::StandardCurveGeometry::Circle { .. },
+            CurveGeometry::Circle { .. }
+        )
     ) {
         annotations.derived(&id, "geometry.axis");
     }
+    let geometry_is_unknown = matches!(&geometry, CurveGeometry::Unknown { .. });
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
@@ -6508,6 +8044,9 @@ pub(crate) fn build_standard_edge_curve(
         crate::families::standard::records::StandardCurveGeometry::Bspline
     ) {
         let sides = if let Some(native) = native_support {
+            let Some(pcurves) = oriented_native_support_pcurves.as_ref() else {
+                return (None, None);
+            };
             let mut surfaces = Vec::with_capacity(2);
             for side in 0..2 {
                 surfaces.push(ensure_native_edge_support_surface(
@@ -6519,7 +8058,7 @@ pub(crate) fn build_standard_edge_curve(
             }
             std::array::from_fn(|side| IntcurveSupportSide {
                 surface: Some(surfaces[side].clone()),
-                pcurve: Some(native.pcurves[side].clone()),
+                pcurve: Some(pcurves[side].clone()),
                 pcurve_parameter_range: Some(native.parameter_range),
             })
         } else {
@@ -6537,36 +8076,39 @@ pub(crate) fn build_standard_edge_curve(
         if sides.iter().all(|side| side.surface.is_some())
             && (native_support.is_some() || sides[0].surface != sides[1].surface)
         {
-            let procedural_id =
-                ProceduralCurveId(format!("catia:standard:intersection#{}", support.pos));
-            annotate(
-                annotations,
-                &procedural_id,
-                "MainDataStream+SurfacicReps",
-                support.pos as u64,
-                "standard_surface_intersection",
-                Exactness::Derived,
-            );
-            annotations
-                .derived(&procedural_id, "curve")
-                .derived(&procedural_id, "definition");
-            let curve_parameter_range = param_range
-                .or_else(|| native_support.map(|native| native.parameter_range))
-                .unwrap_or([0.0, 1.0]);
-            ir.model.procedural_curves.push(ProceduralCurve {
-                id: procedural_id,
-                curve: id.clone(),
-                definition: ProceduralCurveDefinition::Intersection {
-                    context: IntcurveSupportContext {
-                        sides,
-                        parameter_range: ordered_range(curve_parameter_range),
-                        discontinuities: std::array::from_fn(|_| Vec::new()),
-                    },
-                    discontinuity_flag: false,
-                },
-                cache_fit_tolerance: None,
+            let curve_parameter_range = param_range.or_else(|| {
+                geometry_is_unknown
+                    .then(|| native_support.map_or([0.0, 1.0], |native| native.parameter_range))
             });
-            param_range = Some(curve_parameter_range);
+            if let Some(curve_parameter_range) = curve_parameter_range {
+                let procedural_id =
+                    ProceduralCurveId(format!("catia:standard:intersection#{}", support.pos));
+                annotate(
+                    annotations,
+                    &procedural_id,
+                    "MainDataStream+SurfacicReps",
+                    support.pos as u64,
+                    "standard_surface_intersection",
+                    Exactness::Derived,
+                );
+                annotations
+                    .derived(&procedural_id, "curve")
+                    .derived(&procedural_id, "definition");
+                ir.model.procedural_curves.push(ProceduralCurve {
+                    id: procedural_id,
+                    curve: id.clone(),
+                    definition: ProceduralCurveDefinition::Intersection {
+                        context: IntcurveSupportContext {
+                            sides,
+                            parameter_range: ordered_range(curve_parameter_range),
+                            discontinuities: std::array::from_fn(|_| Vec::new()),
+                        },
+                        discontinuity_flag: false,
+                    },
+                    cache_fit_tolerance: None,
+                });
+                param_range = Some(curve_parameter_range);
+            }
         }
     }
     (Some(id), param_range)
@@ -6610,6 +8152,14 @@ fn ensure_native_edge_support_surface(
     let id = SurfaceId(format!(
         "catia:standard:edge-support-surface#{surface_object_id}"
     ));
+    let procedural_id = match carrier {
+        crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {
+            Some(ProceduralSurfaceId(format!(
+                "catia:standard:edge-support-definition#{surface_object_id}"
+            )))
+        }
+        crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(_) => None,
+    };
     annotate(
         annotations,
         &id,
@@ -6623,7 +8173,11 @@ fn ensure_native_edge_support_surface(
             geometry.clone()
         }
         crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall { .. } => {
-            SurfaceGeometry::Unknown { record: None }
+            SurfaceGeometry::Procedural {
+                construction: procedural_id
+                    .clone()
+                    .expect("rolling-ball support procedure id"),
+            }
         }
     };
     ir.model.surfaces.push(Surface {
@@ -6631,14 +8185,14 @@ fn ensure_native_edge_support_surface(
         geometry,
         source_object: Some(source),
     });
-    if let crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
-        carrier_object_id,
-        definition,
-    } = carrier
+    if let (
+        Some(procedural_id),
+        crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+            carrier_object_id,
+            definition,
+        },
+    ) = (procedural_id, carrier)
     {
-        let procedural_id = ProceduralSurfaceId(format!(
-            "catia:standard:edge-support-definition#{surface_object_id}"
-        ));
         annotate(
             annotations,
             &procedural_id,
@@ -6664,14 +8218,13 @@ pub(crate) fn standard_circle_pair_solution_is_simple(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
     surface_indices: &HashMap<SurfaceId, usize>,
-    brep: &[u8],
     supports: &[crate::families::standard::records::StandardCurveSupport],
     endpoint_options: &[Vec<[usize; 2]>],
     pairs: &[Option<[usize; 2]>],
 ) -> bool {
     type CircleFaceKey = (u64, u64, u64, u64, usize);
 
-    let mut ranges = HashMap::<CircleFaceKey, Vec<[f64; 2]>>::new();
+    let mut range_choices = HashMap::<CircleFaceKey, Vec<Vec<[f64; 2]>>>::new();
     for ((support, options), pair) in supports.iter().zip(endpoint_options).zip(pairs) {
         let Some(pair) = pair else {
             continue;
@@ -6694,39 +8247,20 @@ pub(crate) fn standard_circle_pair_solution_is_simple(
             .faces
             .iter()
             .filter_map(|face| face_surface(ir, bindings, surface_indices, *face))
-            .filter_map(|surface| circle_axis_from_carrier(*center, *radius, &surface.geometry))
-            .collect::<Vec<_>>();
-        let Some(axis) = axes.first().copied() else {
-            continue;
-        };
-        if axes
-            .iter()
-            .skip(1)
-            .any(|other| axis.dot(*other).abs() < 0.9999)
-        {
-            return false;
-        }
-        let candidates = [axis, axis.scale(-1.0)]
-            .into_iter()
-            .filter_map(|axis| {
-                let reference = cadmpeg_ir::geometry::derive_reference_direction(axis);
-                let range = standard_circle_param_range(
-                    ir,
-                    bindings,
-                    surface_indices,
-                    brep,
-                    support,
-                    *center,
-                    *radius,
-                    axis,
-                    reference,
-                    start,
-                    end,
-                )?;
-                crate::nurbs::canonical_periodic_range(range)
+            .filter_map(|surface| {
+                standard_circle_axis_from_carrier(*center, *radius, &surface.geometry)
             })
             .collect::<Vec<_>>();
-        let [range] = candidates.as_slice() else {
+        let Some(axis) = axes.first().copied().and_then(canonical_unoriented_axis) else {
+            continue;
+        };
+        if axes.iter().skip(1).any(|other| {
+            canonical_unoriented_axis(*other).is_none_or(|other| axis.dot(other).abs() < 0.9999)
+        }) {
+            return false;
+        }
+        let Some(choices) = circle_endpoint_range_choices(*center, *radius, axis, start, end)
+        else {
             continue;
         };
         for &face in &support.faces {
@@ -6737,12 +8271,390 @@ pub(crate) fn standard_circle_pair_solution_is_simple(
                 radius.to_bits(),
                 face,
             );
-            ranges.entry(key).or_default().push(*range);
+            range_choices.entry(key).or_default().push(choices.clone());
         }
     }
-    ranges
-        .values()
-        .all(|ranges| circular_ranges_are_nonoverlapping_or_coincident(ranges))
+    for choices in range_choices.values() {
+        if !circular_range_choices_have_simple_selection(choices) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Require line endpoint assignments to partition each shared straight
+/// carrier into disjoint edge intervals. Exact coincident intervals remain
+/// admissible because seam and duplicate-edge representations can share one
+/// carrier; a partial collinear overlap is the non-simple alternative.
+#[derive(Clone, Copy)]
+struct StandardLineSegment {
+    start: Point3,
+    end: Point3,
+}
+
+#[derive(Clone, Copy)]
+struct StandardLineSelection {
+    pair: [usize; 2],
+    segment: StandardLineSegment,
+}
+
+type StandardLinePairKey = ((usize, [usize; 2]), (usize, [usize; 2]));
+
+struct StandardLinePairConstraint {
+    points: Vec<Point3>,
+    line_edges: Vec<bool>,
+    flexible_edges: Vec<bool>,
+    edges_by_face: HashMap<usize, Vec<usize>>,
+    simplicity_cache: RefCell<HashMap<StandardLinePairKey, bool>>,
+}
+
+impl StandardLinePairConstraint {
+    fn new(
+        points: &[Point],
+        supports: &[crate::families::standard::records::StandardCurveSupport],
+        endpoint_options: &[Vec<[usize; 2]>],
+    ) -> Self {
+        let points = points
+            .iter()
+            .map(|point| point.position)
+            .collect::<Vec<_>>();
+        let line_edges = supports
+            .iter()
+            .map(|support| {
+                matches!(
+                    support.geometry,
+                    crate::families::standard::records::StandardCurveGeometry::Line
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut flexible_edges = vec![false; supports.len()];
+        let mut edges_by_face = HashMap::<usize, Vec<usize>>::new();
+
+        for (edge, (support, options)) in supports.iter().zip(endpoint_options).enumerate() {
+            if !matches!(
+                support.geometry,
+                crate::families::standard::records::StandardCurveGeometry::Line
+            ) || options.len() <= 1
+            {
+                continue;
+            }
+            flexible_edges[edge] = true;
+            for &face in &support.faces {
+                let edges = edges_by_face.entry(face).or_default();
+                if !edges.contains(&edge) {
+                    edges.push(edge);
+                }
+            }
+        }
+
+        Self {
+            points,
+            line_edges,
+            flexible_edges,
+            edges_by_face,
+            simplicity_cache: RefCell::new(HashMap::new()),
+        }
+    }
+
+    fn flexible_edge_mask(&self) -> &[bool] {
+        &self.flexible_edges
+    }
+
+    fn is_valid(&self, pairs: &[Option<[usize; 2]>]) -> bool {
+        pairs.iter().enumerate().all(|(edge, pair)| {
+            if !self.line_edges.get(edge).copied().unwrap_or(false) {
+                return true;
+            }
+            let Some(pair) = pair else {
+                return true;
+            };
+            let Some(segment) = standard_line_segment(&self.points, *pair) else {
+                return false;
+            };
+            standard_line_segment_is_materializable(segment)
+        })
+    }
+
+    fn is_simple(&self, pairs: &[Option<[usize; 2]>]) -> bool {
+        if !self.is_valid(pairs) {
+            return false;
+        }
+        let mut selected = vec![None; self.flexible_edges.len()];
+        for (edge, pair) in pairs.iter().enumerate() {
+            if !self.flexible_edges.get(edge).copied().unwrap_or(false) {
+                continue;
+            }
+            let Some(pair) = pair else {
+                continue;
+            };
+            let segment = standard_line_segment(&self.points, *pair);
+            let Some(segment) = segment else {
+                continue;
+            };
+            selected[edge] = Some(StandardLineSelection {
+                pair: *pair,
+                segment,
+            });
+        }
+
+        for edges in self.edges_by_face.values() {
+            for (left_position, &left_edge) in edges.iter().enumerate() {
+                let Some(left) = selected[left_edge] else {
+                    continue;
+                };
+                for &right_edge in &edges[left_position + 1..] {
+                    let Some(right) = selected[right_edge] else {
+                        continue;
+                    };
+                    let key = ordered_line_pair(left_edge, left.pair, right_edge, right.pair);
+                    let incompatible = {
+                        let cached = {
+                            let cache = self.simplicity_cache.borrow();
+                            cache.get(&key).copied()
+                        };
+                        if let Some(simple) = cached {
+                            !simple
+                        } else {
+                            let simple =
+                                standard_line_segments_are_simple(left.segment, right.segment);
+                            self.simplicity_cache.borrow_mut().insert(key, simple);
+                            !simple
+                        }
+                    };
+                    if incompatible {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+}
+
+fn ordered_line_pair(
+    left_edge: usize,
+    left_pair: [usize; 2],
+    right_edge: usize,
+    right_pair: [usize; 2],
+) -> StandardLinePairKey {
+    if left_edge < right_edge {
+        ((left_edge, left_pair), (right_edge, right_pair))
+    } else {
+        ((right_edge, right_pair), (left_edge, left_pair))
+    }
+}
+
+fn standard_line_segment(points: &[Point3], pair: [usize; 2]) -> Option<StandardLineSegment> {
+    Some(StandardLineSegment {
+        start: *points.get(pair[0])?,
+        end: *points.get(pair[1])?,
+    })
+}
+
+fn standard_line_segment_is_materializable(segment: StandardLineSegment) -> bool {
+    let delta = segment.end.vector_from(segment.start);
+    let length = delta.x.hypot(delta.y).hypot(delta.z);
+    length.is_finite() && length != 0.0
+}
+
+fn standard_line_segments_are_simple(
+    left: StandardLineSegment,
+    right: StandardLineSegment,
+) -> bool {
+    let left_axis = left.end.vector_from(left.start);
+    let left_length = left_axis.norm();
+    let right_axis = right.end.vector_from(right.start);
+    let right_length = right_axis.norm();
+    if left_length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+        || right_length <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+    {
+        return true;
+    }
+    let left_unit = left_axis.scale(1.0 / left_length);
+    let parallel_error = left_unit.cross(right_axis.scale(1.0 / right_length)).norm();
+    let line_error = left_unit
+        .cross(right.start.vector_from(left.start))
+        .norm()
+        .max(left_unit.cross(right.end.vector_from(left.start)).norm());
+    if parallel_error > LINE_SEGMENT_GEOMETRY_TOLERANCE
+        || line_error > LINE_SEGMENT_GEOMETRY_TOLERANCE
+    {
+        return true;
+    }
+    let left_interval = [0.0, left_length];
+    let right_interval = [
+        left_unit.dot(right.start.vector_from(left.start)),
+        left_unit.dot(right.end.vector_from(left.start)),
+    ];
+    let right_interval = [
+        right_interval[0].min(right_interval[1]),
+        right_interval[0].max(right_interval[1]),
+    ];
+    let overlap = left_interval[1].min(right_interval[1]) - left_interval[0].max(right_interval[0]);
+    if overlap <= LINE_SEGMENT_GEOMETRY_TOLERANCE {
+        return true;
+    }
+    (left_interval[0] - right_interval[0]).abs() <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+        && (left_interval[1] - right_interval[1]).abs() <= LINE_SEGMENT_GEOMETRY_TOLERANCE
+}
+
+#[cfg(test)]
+pub(crate) fn standard_line_pair_solution_is_simple(
+    points: &[Point],
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    endpoint_options: &[Vec<[usize; 2]>],
+    pairs: &[Option<[usize; 2]>],
+) -> bool {
+    let point_positions = points
+        .iter()
+        .map(|point| point.position)
+        .collect::<Vec<_>>();
+    let segments = supports
+        .iter()
+        .zip(endpoint_options)
+        .zip(pairs)
+        .filter_map(|((support, options), pair)| {
+            if !matches!(
+                support.geometry,
+                crate::families::standard::records::StandardCurveGeometry::Line
+            ) {
+                return None;
+            }
+            if options.len() <= 1 {
+                return None;
+            }
+            let pair = pair.as_ref()?;
+            Some((
+                support.faces,
+                standard_line_segment(&point_positions, *pair)?,
+            ))
+        })
+        .collect::<Vec<_>>();
+    if supports.iter().zip(pairs).any(|(support, pair)| {
+        matches!(
+            support.geometry,
+            crate::families::standard::records::StandardCurveGeometry::Line
+        ) && pair.is_some_and(|pair| {
+            standard_line_segment(&point_positions, pair)
+                .is_none_or(|segment| !standard_line_segment_is_materializable(segment))
+        })
+    }) {
+        return false;
+    }
+    if segments
+        .iter()
+        .any(|(_, segment)| !standard_line_segment_is_materializable(*segment))
+    {
+        return false;
+    }
+    let mut segments_by_face = HashMap::<usize, Vec<StandardLineSegment>>::new();
+    for (faces, segment) in segments {
+        for face in faces {
+            segments_by_face.entry(face).or_default().push(segment);
+        }
+    }
+    segments_by_face.into_values().all(|segments| {
+        segments.iter().enumerate().all(|(left_index, left)| {
+            segments[left_index + 1..]
+                .iter()
+                .all(|right| standard_line_segments_are_simple(*left, *right))
+        })
+    })
+}
+
+#[cfg(test)]
+pub(crate) fn standard_line_pair_solution_is_simple_cached(
+    points: &[Point],
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    endpoint_options: &[Vec<[usize; 2]>],
+    pairs: &[Option<[usize; 2]>],
+) -> bool {
+    StandardLinePairConstraint::new(points, supports, endpoint_options).is_simple(pairs)
+}
+
+fn circle_endpoint_range_choices(
+    center: Point3,
+    radius: f64,
+    axis: Vector3,
+    start: Point3,
+    end: Point3,
+) -> Option<Vec<[f64; 2]>> {
+    const ENDPOINT_TOLERANCE: f64 = 2e-3;
+
+    if !radius.is_finite()
+        || radius <= 0.0
+        || (start.distance(center) - radius).abs() > ENDPOINT_TOLERANCE
+        || (end.distance(center) - radius).abs() > ENDPOINT_TOLERANCE
+    {
+        return None;
+    }
+    if start.distance(end) <= ENDPOINT_TOLERANCE {
+        return Some(vec![[0.0, std::f64::consts::TAU]]);
+    }
+    let axis = unit_vector(axis)?;
+    let reference = cadmpeg_ir::geometry::derive_reference_direction(axis);
+    let tangent = axis.cross(reference);
+    let angle = |point: Point3| {
+        let offset = point.vector_from(center);
+        offset
+            .dot(tangent)
+            .atan2(offset.dot(reference))
+            .rem_euclid(std::f64::consts::TAU)
+    };
+    let mut endpoints = [angle(start), angle(end)];
+    if endpoints.iter().any(|angle| !angle.is_finite()) {
+        return None;
+    }
+    endpoints.sort_by(f64::total_cmp);
+    let short = crate::nurbs::canonical_periodic_range(endpoints)?;
+    let long = crate::nurbs::canonical_periodic_range([
+        endpoints[1],
+        endpoints[0] + std::f64::consts::TAU,
+    ])?;
+    Some(vec![short, long])
+}
+
+pub(crate) fn circular_range_choices_have_simple_selection(choices: &[Vec<[f64; 2]>]) -> bool {
+    const MAX_SELECTION_STATES: usize = 4_096;
+
+    fn visit(
+        choices: &[Vec<[f64; 2]>],
+        index: usize,
+        selected: &mut Vec<[f64; 2]>,
+        states: &mut usize,
+    ) -> Option<bool> {
+        if *states >= MAX_SELECTION_STATES {
+            return None;
+        }
+        *states += 1;
+        if index == choices.len() {
+            return Some(true);
+        }
+        for &range in &choices[index] {
+            selected.push(range);
+            let compatible = circular_ranges_are_nonoverlapping_or_coincident(selected);
+            if compatible {
+                match visit(choices, index + 1, selected, states) {
+                    Some(true) => {
+                        selected.pop();
+                        return Some(true);
+                    }
+                    None => {
+                        selected.pop();
+                        return None;
+                    }
+                    Some(false) => {}
+                }
+            }
+            selected.pop();
+        }
+        Some(false)
+    }
+
+    if choices.iter().any(Vec::is_empty) {
+        return false;
+    }
+    visit(choices, 0, &mut Vec::new(), &mut 0).unwrap_or(true)
 }
 
 pub(crate) fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2]]) -> bool {
@@ -6762,13 +8674,13 @@ pub(crate) fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2
 
     ranges.iter().enumerate().all(|(left_index, left)| {
         ranges[left_index + 1..].iter().all(|right| {
-            let coincident = (right[0] - left[0]).abs() <= EPS_RANGE_ENDPOINT
-                && (right[1] - left[1]).abs() <= EPS_RANGE_ENDPOINT;
+            let coincident =
+                (right[0] - left[0]).abs() <= 1e-9 && (right[1] - left[1]).abs() <= 1e-9;
             coincident
                 || !segments(*left).iter().any(|left| {
                     segments(*right)
                         .iter()
-                        .any(|right| left[1].min(right[1]) - left[0].max(right[0]) > EPS_RANGE_GAP)
+                        .any(|right| left[1].min(right[1]) - left[0].max(right[0]) > 1e-6)
                 })
         })
     })
@@ -6812,10 +8724,8 @@ pub(crate) fn standard_circle_param_range(
         )
     });
     let range = ranges.next()?;
-    if ranges.any(|other| {
-        (other[0] - range[0]).abs() > EPS_RANGE_ENDPOINT
-            || (other[1] - range[1]).abs() > EPS_RANGE_ENDPOINT
-    }) {
+    if ranges.any(|other| (other[0] - range[0]).abs() > 1e-9 || (other[1] - range[1]).abs() > 1e-9)
+    {
         return None;
     }
     Some(range)
@@ -6831,7 +8741,6 @@ pub(crate) fn native_support_circle_param_range(
     start: Point3,
     end: Point3,
 ) -> Option<[f64; 2]> {
-    const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1.0e-6;
     const GEOMETRY_TOLERANCE: f64 = 2e-3;
 
     let parameters = [
@@ -6848,7 +8757,7 @@ pub(crate) fn native_support_circle_param_range(
             else {
                 return None;
             };
-            let carrier_axis = circle_axis_from_carrier(center, radius, surface)?;
+            let carrier_axis = standard_circle_axis_from_carrier(center, radius, surface)?;
             (carrier_axis.dot(axis) >= 0.9999).then_some(())?;
             Some(parameters.map(|parameter| {
                 let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
@@ -6911,7 +8820,7 @@ pub(crate) fn attach_standard_circles(
                     .find(|surface| surface.id == *surface_id)
             })
             .filter_map(|surface| {
-                circle_axis_from_carrier(circle.center, circle.radius, &surface.geometry)
+                standard_circle_axis_from_carrier(circle.center, circle.radius, &surface.geometry)
             })
             .collect();
         let Some(axis) = axes.first().copied() else {
@@ -6962,7 +8871,7 @@ fn circle_axis_from_endpoints(
         return None;
     }
     let normal = start_radius.cross(end_radius);
-    (normal.norm() > EPS_CROSS_PRODUCT * start_length * end_length)
+    (normal.norm() > 1e-6 * start_length * end_length)
         .then(|| unit_vector(normal))
         .flatten()
 }
@@ -6986,6 +8895,39 @@ fn full_circle_frame(
     }
     let ref_direction = unit_vector(radial)?;
     (axis.dot(ref_direction).abs() <= TOLERANCE).then_some((axis, ref_direction))
+}
+
+fn canonical_unoriented_axis(axis: Vector3) -> Option<Vector3> {
+    let axis = unit_vector(axis)?;
+    let value = [axis.x, axis.y, axis.z]
+        .into_iter()
+        .max_by(|left, right| left.abs().total_cmp(&right.abs()))?;
+    Some(if value.is_sign_negative() {
+        axis.scale(-1.0)
+    } else {
+        axis
+    })
+}
+
+fn standard_circle_axis_from_carrier(
+    center: Point3,
+    circle_radius: f64,
+    surface: &SurfaceGeometry,
+) -> Option<Vector3> {
+    if let SurfaceGeometry::Sphere {
+        center: sphere_center,
+        radius: sphere_radius,
+        ..
+    } = surface
+    {
+        let center_distance = center.distance(*sphere_center);
+        if center_distance <= SPHERE_CENTER_COINCIDENCE_TOLERANCE
+            && close_length(circle_radius, *sphere_radius)
+        {
+            return None;
+        }
+    }
+    circle_axis_from_carrier(center, circle_radius, surface)
 }
 
 pub(crate) fn circle_axis_from_carrier(
@@ -7175,7 +9117,7 @@ mod tests;
 
 #[cfg(test)]
 mod circle_axis_tests {
-    use super::circle_axis_from_carrier;
+    use super::{circle_axis_from_carrier, standard_circle_axis_from_carrier};
     use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -7255,5 +9197,47 @@ mod circle_axis_tests {
             circle_axis_from_carrier(Point3::new(0.0, 0.0, 2.0), 10.0, &torus),
             Some(z())
         );
+    }
+
+    #[test]
+    fn centered_sphere_does_not_override_a_cylinder_axis() {
+        let center = Point3::new(1e-10, 0.0, -1e-10);
+        let sphere = SurfaceGeometry::Sphere {
+            center: origin(),
+            axis: z(),
+            ref_direction: x(),
+            radius: 3.175,
+        };
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(center.x, 0.0, center.z),
+            axis: y(),
+            ref_direction: x(),
+            radius: 3.175,
+        };
+
+        assert_eq!(
+            standard_circle_axis_from_carrier(center, 3.175, &sphere),
+            None
+        );
+        assert_eq!(
+            standard_circle_axis_from_carrier(center, 3.175, &cylinder),
+            Some(y())
+        );
+    }
+
+    #[test]
+    fn unoriented_circle_axes_use_one_parameter_frame() {
+        const AXIS_COMPONENT_TOLERANCE: f64 = 1e-12;
+
+        assert_eq!(super::canonical_unoriented_axis(z()), Some(z()));
+        assert_eq!(
+            super::canonical_unoriented_axis(Vector3::new(0.0, 0.0, -1.0)),
+            Some(z())
+        );
+        let axis =
+            super::canonical_unoriented_axis(Vector3::new(-2.0, 1.0, 0.0)).expect("finite axis");
+        let length = 5.0_f64.sqrt();
+        assert!((axis.x - 2.0 / length).abs() < AXIS_COMPONENT_TOLERANCE);
+        assert!((axis.y + 1.0 / length).abs() < AXIS_COMPONENT_TOLERANCE);
     }
 }

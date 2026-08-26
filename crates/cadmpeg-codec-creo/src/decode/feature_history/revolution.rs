@@ -16,7 +16,7 @@ use super::super::sweep::{
     revolved_section_circle, revolved_section_surface,
 };
 use super::super::uniqueness::{
-    unique_feature_definition_for_transform, unique_feature_section_transform,
+    exactly_one, unique_feature_definition_for_transform, unique_feature_section_transform,
 };
 use super::{
     feature_allows_linear_extrusion, ordered_analytic_surface_id_for_feature,
@@ -83,12 +83,12 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
         let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
-        if let Some(sketch) = ir
-            .model
-            .sketches
-            .iter()
-            .find(|sketch| sketch.id == sketch_id)
-        {
+        if let Some(sketch) = exactly_one(
+            ir.model
+                .sketches
+                .iter()
+                .filter(|sketch| sketch.id == sketch_id),
+        ) {
             let segments = complete_section_segment_rows(definition).to_vec();
             generating_ids.extend(profile_segment_ids(
                 definition.id,
@@ -269,12 +269,9 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 "creo:featdefs:saved_spline_curve#{}:{suffix}",
                 definition.id
             ));
-            let Some(CurveGeometry::Nurbs(directrix)) = ir
-                .model
-                .curves
-                .iter()
-                .find(|curve| curve.id == curve_id)
-                .map(|curve| &curve.geometry)
+            let Some(CurveGeometry::Nurbs(directrix)) =
+                exactly_one(ir.model.curves.iter().filter(|curve| curve.id == curve_id))
+                    .map(|curve| &curve.geometry)
             else {
                 continue;
             };
@@ -350,6 +347,9 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
     }
     transferred
 }
+
+#[cfg(test)]
+mod tests;
 
 pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
     scan: &ContainerScan,

@@ -95,6 +95,81 @@ fn decode_transfers_positional_line_extrusion_plane() {
 }
 
 #[test]
+fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0]);
+    for value in [0.0, 0.0, 1.0] {
+        push_generated_scalar(&mut payload, value);
+    }
+    payload.extend_from_slice(&[0x00, 0x0c, 0x9a]);
+    payload.extend_from_slice(&[0x4a, 0x00, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x0f, 0x0f]);
+    payload.extend_from_slice(&[0x4a, 0x10, 0, 0, 0, 0, 0]);
+    payload.extend_from_slice(&[0x0f, 0x0f, 0xe3]);
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
+
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("extrusion plane");
+    assert!(matches!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3 {
+                x: 2.0,
+                y: 0.0,
+                z: 0.0
+            },
+            normal: cadmpeg_ir::math::Vector3 {
+                x: 0.0,
+                y: -1.0,
+                z: 0.0
+            },
+            u_axis: cadmpeg_ir::math::Vector3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0
+            },
+        }
+    ));
+    let record = &result.ir().native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    assert_ne!(
+        record.fields()["scalar_frames"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(
+        record.fields()["tabulated_cylinder_frame"]["prefixes"][0],
+        0x4a
+    );
+    assert_eq!(
+        record.fields()["tabulated_cylinder_frame"]["values"][0],
+        2.0
+    );
+    assert_eq!(
+        record.fields()["tabulated_cylinder_frame"]["values"][3],
+        4.0
+    );
+    assert_eq!(
+        result
+            .report()
+            .coverage
+            .get("decoded_positional_extrusion_direction_count")
+            .copied(),
+        Some(1)
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn decode_withholds_positional_line_extrusion_for_duplicate_surface_id() {
     let mut extrusion = visibgeom_payload(1, 0);
     extrusion.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0]);
@@ -918,7 +993,7 @@ fn decode_does_not_cross_counted_surface_array_frames_for_prototypes() {
 }
 
 #[test]
-fn decode_does_not_use_section_wide_prototype_join_for_an_incomplete_frame() {
+fn decode_does_not_use_incomplete_frame_for_prototype_join() {
     let mut payload = b"srf_array\0\xf8\x02".to_vec();
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     push_named_analytic_prototype(&mut payload, "plane", &[]);
@@ -931,12 +1006,7 @@ fn decode_does_not_use_section_wide_prototype_join_for_an_incomplete_frame() {
         )
         .expect("decode");
 
-    assert!(!result
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| surface.id.as_str() == "creo:visibgeom:surface#7"));
+    assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
     assert_eq!(
         result
             .report()
@@ -1264,8 +1334,8 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
     assert_eq!(
         cylinder.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-            origin: cadmpeg_ir::math::Point3::new(2.0, 5.0, 3.0),
-            axis: cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
+            origin: cadmpeg_ir::math::Point3::new(0.0, 5.0, 3.0),
+            axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             ref_direction: cadmpeg_ir::math::Vector3::new(0.0, (-2.0_f64).sin(), (-2.0_f64).cos(),),
             radius: 1.0,
         }
@@ -1275,7 +1345,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Circle {
             axis: cadmpeg_ir::math::Vector3 {
-                x: -1.0,
+                x: 1.0,
                 y: 0.0,
                 z: 0.0
             },
