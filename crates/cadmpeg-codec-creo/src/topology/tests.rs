@@ -223,6 +223,31 @@ fn edge_vertex_pair_accepts_one_closed_face_and_rejects_disagreement() {
 }
 
 #[test]
+fn edge_start_vertex_pair_survives_an_unresolved_successor() {
+    let incidence = vec![
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
+                curve_id: 7,
+                side: 0,
+            },
+            start_vertex_id: 10,
+            end_vertex_id: None,
+        },
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
+                curve_id: 7,
+                side: 1,
+            },
+            start_vertex_id: 20,
+            end_vertex_id: None,
+        },
+    ];
+
+    assert_eq!(edge_start_vertex_pairs(&incidence).get(&7), Some(&[10, 20]));
+    assert!(!edge_vertex_pairs(&incidence).contains_key(&7));
+}
+
+#[test]
 fn scan_groups_connected_nonzero_face_references() {
     let mut payload = visibgeom_payload(0, 2);
     payload.extend_from_slice(
@@ -233,6 +258,17 @@ fn scan_groups_connected_nonzero_face_references() {
     assert_eq!(scan.topology.face_components.len(), 1);
     assert_eq!(scan.topology.face_components[0].face_ids, vec![10, 11, 12]);
     assert_eq!(scan.topology.face_components[0].curve_ids, vec![7, 8]);
+}
+
+#[test]
+fn selects_body_count_in_metadata_precedence_order() {
+    assert_eq!(selected_body_count(Some(2), Some(0), 7), Some(2));
+    assert_eq!(selected_body_count(None, Some(0), 7), Some(1));
+    assert_eq!(selected_body_count(None, None, 7), Some(7));
+    assert_eq!(selected_body_count(None, Some(9), 7), None);
+    assert_eq!(selected_body_count(None, Some(9), 1), Some(1));
+    assert_eq!(selected_body_count(None, Some(0), 0), Some(1));
+    assert_eq!(selected_body_count(Some(0), None, 7), None);
 }
 
 #[test]
@@ -274,8 +310,7 @@ fn scan_builds_topological_vertex_orbits_and_incidence() {
     assert_eq!(incidence.end_vertex_id, Some(2));
 }
 
-#[test]
-fn decode_transfers_closed_plane_intersection_brep() {
+fn closed_plane_intersection_data(geomlists: Option<&[u8]>) -> Vec<u8> {
     let mut payload = b"srf_array\0\xf8\x04".to_vec();
     push_generated_plane_row(
         &mut payload,
@@ -325,14 +360,20 @@ fn decode_transfers_closed_plane_intersection_brep() {
         \xe0\x21geoms_affected\0\xf8\x01\x63\
         \xe0\x21edgs_affected\0\xf8\x02\x0a\x0b"
         .to_vec();
-    let data = build_prt(
-        "c",
-        &[
-            ("VisibGeom", payload),
-            ("AllFeatur", allfeatur),
-            ("MdlStatus", b"Round id 4\0".to_vec()),
-        ],
-    );
+    let mut sections = vec![
+        ("VisibGeom", payload),
+        ("AllFeatur", allfeatur),
+        ("MdlStatus", b"Round id 4\0".to_vec()),
+    ];
+    if let Some(geomlists) = geomlists {
+        sections.push(("Geomlists", geomlists.to_vec()));
+    }
+    build_prt("c", &sections)
+}
+
+#[test]
+fn decode_transfers_closed_plane_intersection_brep() {
+    let data = closed_plane_intersection_data(None);
     let scan = container::scan_bytes(data.clone());
     assert_eq!(scan.planes.local_systems.len(), 4);
     assert_eq!(scan.curves.topology_rows.len(), 6);
@@ -476,4 +517,26 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(native, "creo:allfeatur:edgs_affected#4:10,11");
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn decode_withholds_native_brep_when_declared_body_count_disagrees() {
+    let data = closed_plane_intersection_data(Some(b"n_bodies\0\x02"));
+    let scan = container::scan_bytes(data.clone());
+    assert_eq!(scan.framing.declared_body_count, Some(2));
+    assert_eq!(scan.topology.face_components.len(), 1);
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    let model = &result.ir().model;
+    assert_eq!(model.points.len(), 4);
+    assert!(model.vertices.is_empty());
+    assert!(model.edges.is_empty());
+    assert!(model.faces.is_empty());
+    assert!(model.loops.is_empty());
+    assert!(model.coedges.is_empty());
+    assert!(model.shells.is_empty());
+    assert!(model.regions.is_empty());
+    assert!(model.bodies.is_empty());
 }

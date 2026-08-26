@@ -209,6 +209,16 @@ pub(in super::super) fn placed_sketch_curve_ref(
     Some(sketch_section_curve_id(sketch, suffix))
 }
 
+fn unique_feature_surface_row(
+    rows: &[crate::surface::SurfaceRow],
+    surface_id: u32,
+    feature_id: u32,
+    expected_kind: crate::surface::SurfaceKind,
+) -> bool {
+    crate::surface::unique_surface_row(rows, surface_id)
+        .is_some_and(|row| row.feature_id == feature_id && row.kind == expected_kind)
+}
+
 pub(in super::super) fn transfer_saved_spline_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -521,11 +531,12 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             let Some(expected_kind) = surface_kind_for_geometry(&geometry) else {
                 continue;
             };
-            if !scan.surfaces.rows.iter().any(|row| {
-                row.id == native_surface_id
-                    && row.feature_id == feature_id
-                    && row.kind == expected_kind
-            }) {
+            if !unique_feature_surface_row(
+                &scan.surfaces.rows,
+                native_surface_id,
+                feature_id,
+                expected_kind,
+            ) {
                 continue;
             }
             let id = SurfaceId(format!("creo:visibgeom:surface#{native_surface_id}"));
@@ -569,15 +580,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     feature_id,
                     external_id,
                 )?;
-                scan.surfaces
-                    .rows
-                    .iter()
-                    .any(|row| {
-                        row.id == surface_id
-                            && row.feature_id == feature_id
-                            && row.kind == crate::surface::SurfaceKind::Extrusion
-                    })
-                    .then_some((surface_id, spline))
+                unique_feature_surface_row(
+                    &scan.surfaces.rows,
+                    surface_id,
+                    feature_id,
+                    crate::surface::SurfaceKind::Extrusion,
+                )
+                .then_some((surface_id, spline))
             })
             .collect::<Vec<_>>();
         let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
@@ -683,3 +692,6 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
     }
     transferred
 }
+
+#[cfg(test)]
+mod tests;

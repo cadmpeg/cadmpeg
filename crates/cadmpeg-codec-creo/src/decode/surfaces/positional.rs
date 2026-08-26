@@ -15,14 +15,17 @@ use crate::container::ContainerScan;
 
 use super::super::analytic::cross;
 use super::super::feature_history::{
-    paired_five_coordinate_sphere_center, unique_surface_parameter_record,
+    paired_five_coordinate_sphere_center, round_constant_radius, unique_surface_parameter_record,
 };
 use super::super::native::annotate;
 use super::super::sketch::normalized;
+use super::super::sketch_transfer::feature_schema_class;
 use super::super::sweep::{extruded_nurbs_surface, placed_tabulated_cylinder_directrix};
 use super::super::uniqueness::exactly_one;
 
-use super::prototypes::{prototype_scalar, unique_surface_prototype_associations};
+use super::prototypes::{
+    prototype_scalar, surface_prototype_frame_bounds, unique_surface_prototype_associations,
+};
 
 pub(in super::super) fn transfer_paired_envelope_spheres(
     scan: &ContainerScan,
@@ -33,7 +36,14 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         return 0;
     }
     let mut transferred = 0;
-    for (prototype, associated_row, section) in unique_surface_prototype_associations(scan) {
+    let associations = unique_surface_prototype_associations(scan)
+        .into_iter()
+        .filter_map(|(prototype, associated_row, section)| {
+            let frame = surface_prototype_frame_bounds(scan, section, prototype.offset)?;
+            Some((prototype, associated_row, section, frame))
+        })
+        .collect::<Vec<_>>();
+    for (prototype, associated_row, section, (frame_start, frame_end)) in &associations {
         if prototype.family != crate::surface::SurfacePrototypeFamily::Torus
             || prototype_scalar(prototype, "radius1") != Some(0.0)
         {
@@ -44,12 +54,25 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         else {
             continue;
         };
+        let associated_prototype_count = associations
+            .iter()
+            .filter(|(candidate, candidate_row, _, candidate_frame)| {
+                candidate.family == crate::surface::SurfacePrototypeFamily::Torus
+                    && candidate_row.feature_id == associated_row.feature_id
+                    && candidate_frame == &(*frame_start, *frame_end)
+            })
+            .count();
+        if associated_prototype_count != 1 {
+            continue;
+        }
         let rows = scan
             .surfaces
             .rows
             .iter()
             .filter(|row| {
-                row.feature_id == associated_row.feature_id
+                row.offset >= *frame_start
+                    && row.offset < *frame_end
+                    && row.feature_id == associated_row.feature_id
                     && row.kind == crate::surface::SurfaceKind::TorusOrSphere
             })
             .collect::<Vec<_>>();
@@ -105,11 +128,25 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
     transferred
 }
 
+#[cfg(test)]
+mod tests;
+
 pub(in super::super) fn transfer_positional_tori(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
+    let constant_round_feature_ids = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.kind == crate::surface::SurfaceKind::TorusOrSphere)
+        .map(|row| row.feature_id)
+        .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(913))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|feature_id| round_constant_radius(scan, ir, *feature_id).is_some())
+        .collect::<BTreeSet<_>>();
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
@@ -122,6 +159,18 @@ pub(in super::super) fn transfer_positional_tori(
                 record.surface_id,
             )
             .is_none_or(|unique| unique.offset != record.offset)
+        {
+            continue;
+        }
+        // Class-913 type-26 rows can be rolling-radius samples from the same
+        // generated round family. A positional torus frame is a neutral
+        // carrier only after the complete family proves one constant radius.
+        let inline_non_plane = record.has_inline_non_plane_envelope()
+            || record.has_inline_non_plane_local_system_suffix(row.type_byte);
+        if row.type_byte == 0x26
+            && feature_schema_class(scan, row.feature_id) == Some(913)
+            && !constant_round_feature_ids.contains(&row.feature_id)
+            && !inline_non_plane
         {
             continue;
         }
@@ -146,9 +195,19 @@ pub(in super::super) fn transfer_positional_tori(
             "positional_torus_frame",
             Exactness::Derived,
         );
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry: SurfaceGeometry::Torus {
+        let geometry = if frame.major_radius == 0.0 {
+            SurfaceGeometry::Sphere {
+                center: Point3::new(frame.center[0], frame.center[1], frame.center[2]),
+                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                ref_direction: Vector3::new(
+                    frame.ref_direction[0],
+                    frame.ref_direction[1],
+                    frame.ref_direction[2],
+                ),
+                radius: frame.minor_radius,
+            }
+        } else {
+            SurfaceGeometry::Torus {
                 center: Point3::new(frame.center[0], frame.center[1], frame.center[2]),
                 axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
                 ref_direction: Vector3::new(
@@ -158,7 +217,11 @@ pub(in super::super) fn transfer_positional_tori(
                 ),
                 major_radius: frame.major_radius,
                 minor_radius: frame.minor_radius,
-            },
+            }
+        };
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry,
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
                 object_id: format!("{}:{}", section.name, row.id),

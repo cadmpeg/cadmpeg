@@ -736,28 +736,13 @@
         &type_33_bounded_curve,
         &SketchId("creo:model:sketch#917".into()),
     );
-    let SketchConstraintDefinition::Native {
-        native_kind,
-        native_state,
-        native_flags,
-        entities,
-        operands,
-        ..
-    } = &type_33_constraints[0].0.definition
-    else {
-        panic!("native type-33 incidence");
-    };
-    assert_eq!(native_kind, "creo:skamp:33");
-    assert_eq!(*native_state, Some(35));
-    assert_eq!(*native_flags, Some(34));
-    assert_eq!(
-        entities,
-        &[SketchEntityId(
-            "creo:featdefs:sketch_entity#917:18".to_string()
-        )]
-    );
-    assert_eq!(operands.len(), 1);
-    assert_eq!(operands[0].native_role, Some(10));
+    assert!(matches!(
+        &type_33_constraints[0].0.definition,
+        SketchConstraintDefinition::Fixed { entity }
+            if entity == &SketchEntityId(
+                "creo:featdefs:sketch_entity#917:18".to_string()
+            )
+    ));
     assert_eq!(type_33_constraints[0].0.active, Some(true));
     type_33_bounded_curve
         .relations
@@ -771,11 +756,7 @@
     );
     assert!(matches!(
         inactive_type_33[0].0.definition,
-        SketchConstraintDefinition::Native {
-            native_state: Some(34),
-            native_flags: Some(34),
-            ..
-        }
+        SketchConstraintDefinition::Fixed { .. }
     ));
     assert_eq!(inactive_type_33[0].0.active, Some(false));
     type_33_bounded_curve
@@ -825,7 +806,8 @@
         .skamps[0]
         .items[0]
         .sense = 10;
-    type_33_bounded_curve
+    let mut missing_bounded_curve = type_33_bounded_curve.clone();
+    missing_bounded_curve
         .segments
         .as_mut()
         .expect("segments")
@@ -833,7 +815,7 @@
         .clear();
     assert!(matches!(
         section_skamp_constraints(
-            &type_33_bounded_curve,
+            &missing_bounded_curve,
             &SketchId("creo:model:sketch#917".into()),
         )[0]
         .0
@@ -853,10 +835,10 @@
     );
     assert!(matches!(
         &emitted_type_33_constraints[0].0.definition,
-        SketchConstraintDefinition::Native { entities, .. }
-            if entities == &[SketchEntityId(
+        SketchConstraintDefinition::Fixed { entity }
+            if entity == &SketchEntityId(
                 "creo:featdefs:sketch_entity#917:18".to_string()
-            )]
+            )
     ));
 
     let mut type_33_line = definition.clone();
@@ -1855,6 +1837,47 @@
         resolved_section_points(&midpoint_definition),
         BTreeMap::from([(1, [0.0, 0.0]), (2, [4.0, 2.0]), (4, [2.0, 1.0])])
     );
+    let mut saved_line_midpoint = midpoint_definition.clone();
+    saved_line_midpoint.order_table = Some(crate::feature::FeatureOrderTable {
+        declared_count: 1,
+        has_prototype: false,
+        entity_ref: None,
+        rows: vec![crate::feature::FeatureOrderRow {
+            external_id: 99,
+            internal_id: 20,
+            bitmask: 1,
+            offset: 95,
+        }],
+        offset: 94,
+    });
+    saved_line_midpoint.saved_section = Some(crate::feature::FeatureSavedSection {
+        entities: vec![crate::feature::FeatureSavedEntity::Line(
+            crate::feature::FeatureSavedLine {
+                entity_id: 20,
+                references: Vec::new(),
+                attributes: Vec::new(),
+                endpoints: [
+                    [Some(0.0), Some(0.0), Some(0.0)],
+                    [Some(4.0), Some(2.0), Some(0.0)],
+                ],
+                body: Vec::new(),
+                offset: 96,
+            },
+        )],
+        offset: 96,
+    });
+    saved_line_midpoint
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items[0]
+        .entity_id = 99;
+    synchronize_skamp_count(&mut saved_line_midpoint);
+    assert_eq!(
+        resolved_section_points(&saved_line_midpoint).get(&4),
+        Some(&[2.0, 1.0])
+    );
     let mut arc_midpoint_definition = midpoint_definition.clone();
     arc_midpoint_definition
         .variables
@@ -2679,6 +2702,72 @@
             },
         ),
         None
+    );
+    let mut endpoint_families = definition.clone();
+    let endpoint_segments = endpoint_families
+        .segments
+        .as_mut()
+        .expect("segment table");
+    endpoint_segments.declared_count += 2;
+    endpoint_segments
+        .reference_line_rows
+        .push(crate::feature::FeatureReferenceLineSegment {
+            point_ids: [Some(1), Some(5)],
+            external_id: 101,
+            ..reference_line.clone()
+        });
+    endpoint_segments
+        .bounded_curve_rows
+        .push(crate::feature::FeatureBoundedCurveSegment {
+            point_ids: [1, 5],
+            external_id: 102,
+            directions: [None; 3],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            offset: 604,
+        });
+    assert_eq!(
+        section_skamp_selected_point_id(
+            &endpoint_families,
+            &crate::feature::FeatureSkampItem {
+                entity_id: 101,
+                sense: 2,
+            },
+        ),
+        Some(1)
+    );
+    assert_eq!(
+        section_skamp_selected_point_id(
+            &endpoint_families,
+            &crate::feature::FeatureSkampItem {
+                entity_id: 101,
+                sense: 3,
+            },
+        ),
+        Some(5)
+    );
+    assert_eq!(
+        section_skamp_selected_point_id(
+            &endpoint_families,
+            &crate::feature::FeatureSkampItem {
+                entity_id: 102,
+                sense: 2,
+            },
+        ),
+        Some(1)
+    );
+    assert_eq!(
+        section_skamp_selected_point_id(
+            &endpoint_families,
+            &crate::feature::FeatureSkampItem {
+                entity_id: 102,
+                sense: 3,
+            },
+        ),
+        Some(5)
     );
     let mut opaque_line = definition.clone();
     opaque_line
@@ -3651,6 +3740,85 @@
             parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
         }
     );
+    let mut conflicting_spanning_distance = distance_definition.clone();
+    conflicting_spanning_distance
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points
+        .push(crate::feature::FeatureSectionPoint {
+            point_id: 2,
+            u: Some(4.0),
+            v: Some(3.0),
+        });
+    assert!(matches!(
+        section_dimension_constraints(
+            &conflicting_spanning_distance,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
+    let mut conflicting_saved_spanning_distance = distance_definition.clone();
+    conflicting_saved_spanning_distance.order_table = Some(crate::feature::FeatureOrderTable {
+        declared_count: 1,
+        has_prototype: false,
+        entity_ref: None,
+        rows: vec![crate::feature::FeatureOrderRow {
+            external_id: 12,
+            internal_id: 20,
+            bitmask: 1,
+            offset: 95,
+        }],
+        offset: 94,
+    });
+    conflicting_saved_spanning_distance.saved_section = Some(crate::feature::FeatureSavedSection {
+        entities: vec![crate::feature::FeatureSavedEntity::Line(
+            crate::feature::FeatureSavedLine {
+                entity_id: 20,
+                references: Vec::new(),
+                attributes: Vec::new(),
+                endpoints: [
+                    [Some(0.0), Some(2.0), Some(0.0)],
+                    [Some(4.0), Some(3.0), Some(0.0)],
+                ],
+                body: Vec::new(),
+                offset: 96,
+            },
+        )],
+        offset: 96,
+    });
+    assert!(matches!(
+        section_dimension_constraints(
+            &conflicting_saved_spanning_distance,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
+    let mut agreeing_saved_spanning_distance = conflicting_saved_spanning_distance.clone();
+    let crate::feature::FeatureSavedEntity::Line(line) = agreeing_saved_spanning_distance
+        .saved_section
+        .as_mut()
+        .expect("saved section")
+        .entities
+        .first_mut()
+        .expect("saved line")
+    else {
+        panic!("saved line entity");
+    };
+    line.endpoints[1][0] = Some(0.0);
+    assert!(matches!(
+        section_dimension_constraints(
+            &agreeing_saved_spanning_distance,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::VerticalDistance { .. }
+    ));
     let mut schema_orientation = distance_definition.clone();
     let schema_dimension = &mut schema_orientation
         .dimensions
@@ -3725,23 +3893,15 @@
         [Some(0), Some(0), Some(0), Some(0)],
         [Some(15), Some(16), Some(15), Some(1)],
     ]);
-    assert_eq!(
+    assert!(matches!(
         section_dimension_constraints(
             &separate_point_distance,
             &SketchId("creo:model:sketch#917".into())
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::HorizontalDistance {
-            first: SketchLocus::Start(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:12".to_string()
-            )),
-            second: SketchLocus::Start(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:15".to_string()
-            )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
-        }
-    );
+        SketchConstraintDefinition::Native { .. }
+    ));
     let mut coincident_point_keys = separate_point_distance.clone();
     coincident_point_keys
         .variables
@@ -4238,6 +4398,159 @@
         } if native_kind == "creo:relation:5"
     ));
 
+    let mut type6_radius_definition = definition.clone();
+    let type6_arc = &mut type6_radius_definition
+        .segments
+        .as_mut()
+        .expect("segments")
+        .rows[1];
+    type6_arc.radius_ref = Some(0);
+    let [type6_first_point, type6_second_point] = type6_arc.point_ids;
+    let type6_center = type6_arc.center_id.expect("arc center");
+    let type6_relation = &mut type6_radius_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .rows[0];
+    type6_relation.relation_type = 6;
+    type6_relation.sign = 1;
+    type6_relation.dimension_id = 0;
+    type6_relation.operand_vectors = Some([
+        [
+            Some(type6_first_point),
+            Some(type6_second_point),
+            Some(0),
+            Some(1),
+        ],
+        [Some(type6_center), Some(0), Some(0), Some(0)],
+        [Some(16), Some(15), Some(0), Some(0)],
+    ]);
+    type6_radius_definition
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0]
+        .dimension_type = 3;
+    assert_eq!(
+        section_dimension_constraints(
+            &type6_radius_definition,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Radius {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+        }
+    );
+    assert_eq!(
+        resolved_section_radii(&type6_radius_definition),
+        BTreeMap::from([(0, 3.0)])
+    );
+    type6_radius_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .rows[0]
+        .operand_vectors = Some([
+            [
+                Some(type6_first_point),
+                Some(type6_second_point),
+                Some(0),
+                Some(1),
+            ],
+            [Some(type6_center), Some(0), Some(0), Some(0)],
+            [Some(15), Some(16), Some(15), Some(1)],
+        ]);
+    assert_eq!(
+        section_dimension_constraints(
+            &type6_radius_definition,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Radius {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+        }
+    );
+    type6_radius_definition
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0]
+        .dimension_type = 4;
+    assert_eq!(
+        section_dimension_constraints(
+            &type6_radius_definition,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Diameter {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+        }
+    );
+    assert_eq!(
+        resolved_section_radii(&type6_radius_definition),
+        BTreeMap::from([(0, 1.5)])
+    );
+    let mut incomplete_type6 = type6_radius_definition.clone();
+    incomplete_type6
+        .relations
+        .as_mut()
+        .expect("relations")
+        .rows[0]
+        .operand_vectors = Some([
+            [
+                Some(type6_first_point),
+                Some(type6_second_point),
+                Some(0),
+                Some(1),
+            ],
+            [Some(type6_center), Some(0), Some(0), Some(0)],
+            [Some(15), Some(16), Some(15), None],
+        ]);
+    assert!(matches!(
+        section_dimension_constraints(
+            &incomplete_type6,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native {
+            ref native_kind,
+            ..
+        } if native_kind == "creo:relation:6"
+    ));
+    let mut ambiguous_type6 = type6_radius_definition.clone();
+    let mut duplicate_type6_arc = ambiguous_type6
+        .segments
+        .as_ref()
+        .expect("segments")
+        .rows[1]
+        .clone();
+    duplicate_type6_arc.offset = 500;
+    ambiguous_type6
+        .segments
+        .as_mut()
+        .expect("segments")
+        .rows
+        .push(duplicate_type6_arc);
+    assert!(matches!(
+        section_dimension_constraints(
+            &ambiguous_type6,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native {
+            ref native_kind,
+            ..
+        } if native_kind == "creo:relation:6"
+    ));
+
     let mut radius_definition = definition.clone();
     radius_definition
         .dimensions
@@ -4338,6 +4651,74 @@
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
             parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+        }
+    );
+    let mut relation_orientation = definition.clone();
+    relation_orientation
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0]
+        .value = Some(0.0);
+    relation_orientation
+        .dimensions
+        .as_mut()
+        .expect("dimensions")
+        .rows[0]
+        .value_unit = crate::feature::DimensionUnit::SchemaDefined;
+    let relation = relation_orientation
+        .relations
+        .as_mut()
+        .expect("relations");
+    relation.rows[0].relation_type = 0;
+    relation.rows[0].operand_vectors = Some([
+        [Some(1), Some(2), None, Some(1)],
+        [Some(0), Some(0), Some(0), Some(0)],
+        [Some(15), Some(16), Some(15), Some(1)],
+    ]);
+    relation_orientation
+        .segments
+        .as_mut()
+        .expect("segments")
+        .rows[0]
+        .vertical_horizontal = Some(1);
+    relation.triples = vec![crate::feature::FeatureRelationTriple {
+        relation_id: Some(8),
+        equation_id: None,
+        skamp_id: Some(3),
+        offset: 94,
+    }];
+    relation.triples_header = Some(crate::feature::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 2,
+        offset: 94,
+    });
+    assert_eq!(
+        section_dimension_constraints(
+            &relation_orientation,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Horizontal {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+        }
+    );
+    let mut incomplete_relation_orientation = relation_orientation.clone();
+    incomplete_relation_orientation
+        .segments
+        .as_mut()
+        .expect("segments")
+        .declared_count += 1;
+    assert_eq!(
+        section_dimension_constraints(
+            &incomplete_relation_orientation,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Horizontal {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
         }
     );
     radius_definition
@@ -4769,6 +5150,64 @@
             (Some("c[3]"), 1),
         ]
     );
+    let mut special_endpoint_dimension = definition.clone();
+    let special_segments = special_endpoint_dimension
+        .segments
+        .as_mut()
+        .expect("segments");
+    special_segments.rows.clear();
+    special_segments.circle_rows.clear();
+    special_segments.point_rows.clear();
+    special_segments.centered_line_rows.clear();
+    special_segments.reference_line_rows = vec![crate::feature::FeatureReferenceLineSegment {
+        directions: [None; 3],
+        point_ids: [Some(1), Some(4)],
+        vertical_horizontal: None,
+        external_id: 101,
+        offset: 91,
+    }];
+    special_segments.bounded_curve_rows = vec![crate::feature::FeatureBoundedCurveSegment {
+        directions: [None; 3],
+        point_ids: [5, 6],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 102,
+        offset: 92,
+    }];
+    special_segments.conic_rows.clear();
+    special_segments.opaque_rows.clear();
+    special_segments.declared_count = 2;
+    let special_relation = &mut special_endpoint_dimension
+        .relations
+        .as_mut()
+        .expect("relations")
+        .rows[0];
+    special_relation.relation_type = 0;
+    special_relation.operand_vectors = Some([
+        [Some(1), Some(5), None, Some(1)],
+        [Some(1), Some(1), Some(0), Some(1)],
+        [Some(15), Some(16), Some(15), Some(1)],
+    ]);
+    assert_eq!(
+        section_dimension_constraints(
+            &special_endpoint_dimension,
+            &SketchId("creo:model:sketch#917".into()),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::HorizontalDistance {
+            first: SketchLocus::Start(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:101".to_string(),
+            )),
+            second: SketchLocus::Start(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:102".to_string(),
+            )),
+            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+        }
+    );
     vector_native.relations.as_mut().expect("relations").rows[0].used = 34;
     let stored_state =
         section_dimension_constraints(&vector_native, &SketchId("creo:model:sketch#917".into()));
@@ -5029,6 +5468,74 @@
         .expect("conflicting point record");
     assert_eq!(conflicting_record.state, "conflicting");
     assert_eq!([conflicting_record.u, conflicting_record.v], [None; 2]);
+    let mut point_row_type_nine = definition.clone();
+    point_row_type_nine
+        .segments
+        .as_mut()
+        .expect("segments")
+        .rows[0]
+        .vertical_horizontal = Some(1);
+    point_row_type_nine
+        .segments
+        .as_mut()
+        .expect("segments")
+        .point_rows
+        .push(crate::feature::FeaturePointSegment {
+            point_id: 7,
+            external_id: 17,
+            offset: 90,
+        });
+    point_row_type_nine
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points
+        .push(crate::feature::FeatureSectionPoint {
+            point_id: 7,
+            u: Some(4.0),
+            v: None,
+        });
+    point_row_type_nine
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps = vec![crate::feature::FeatureSkamp {
+        id: 90,
+        kind: 9,
+        flags: 0,
+        status: 1,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 17,
+                sense: 0,
+            },
+        ],
+        offset: 91,
+    }];
+    synchronize_segment_count(&mut point_row_type_nine);
+    point_row_type_nine
+        .segments
+        .as_mut()
+        .expect("segments")
+        .declared_count += 1;
+    synchronize_skamp_count(&mut point_row_type_nine);
+    let point_row_type_nine_skamp = &point_row_type_nine
+        .relations
+        .as_ref()
+        .expect("relations")
+        .skamps[0];
+    assert_eq!(
+        section_skamp_point_on_line(&point_row_type_nine, point_row_type_nine_skamp),
+        Some((1, 7, 1))
+    );
+    assert_eq!(
+        resolved_section_coordinates(&point_row_type_nine).get(&7),
+        Some(&[Some(4.0), Some(2.0)])
+    );
     let mut saved_definition = definition;
     saved_definition.order_table = Some(crate::feature::FeatureOrderTable {
         declared_count: 1,
@@ -5191,6 +5698,57 @@
     assert_eq!(
         resolved_section_points(&saved_definition).get(&4),
         Some(&[3.0, 1.0])
+    );
+    let mut saved_point_row_type_nine = saved_definition.clone();
+    saved_point_row_type_nine
+        .segments
+        .as_mut()
+        .expect("segments")
+        .point_rows
+        .push(crate::feature::FeaturePointSegment {
+            point_id: 7,
+            external_id: 17,
+            offset: 94,
+        });
+    saved_point_row_type_nine
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points
+        .push(crate::feature::FeatureSectionPoint {
+            point_id: 7,
+            u: Some(3.0),
+            v: None,
+        });
+    saved_point_row_type_nine
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items[1]
+        .entity_id = 17;
+    synchronize_segment_count(&mut saved_point_row_type_nine);
+    saved_point_row_type_nine
+        .segments
+        .as_mut()
+        .expect("segments")
+        .declared_count += 1;
+    synchronize_skamp_count(&mut saved_point_row_type_nine);
+    let saved_point_row_type_nine_skamp = &saved_point_row_type_nine
+        .relations
+        .as_ref()
+        .expect("relations")
+        .skamps[0];
+    assert_eq!(
+        section_skamp_saved_point_on_line(
+            &saved_point_row_type_nine,
+            saved_point_row_type_nine_skamp,
+        ),
+        Some((7, 1, 1.0))
+    );
+    assert_eq!(
+        resolved_section_coordinates(&saved_point_row_type_nine).get(&7),
+        Some(&[Some(3.0), Some(1.0)])
     );
     let mut saved_coincident = saved_definition.clone();
     for point in &mut saved_coincident

@@ -32,6 +32,19 @@ pub struct FeatureRow {
     pub offset: usize,
 }
 
+/// One short-form scalar candidate from a class-913 round replay record.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct FeatureRoundReplayScalar {
+    /// Owning feature identifier.
+    pub(crate) feature_id: u32,
+    /// Decoded short-form scalar value.
+    pub(crate) value: f64,
+    /// Absolute byte offset of the scalar in the source stream.
+    pub(crate) offset: usize,
+    /// Absolute byte offset of the enclosing `cr_flags_xar` record.
+    pub(crate) record_offset: usize,
+}
+
 /// One labeled procedural-choice span inside a known feature row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureChoice {
@@ -395,6 +408,96 @@ pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<FeatureRow> {
             })
         })
         .collect()
+}
+
+/// Decode the first short-form scalar in each bounded class-913 replay record.
+///
+/// The `f2 f7 80 a0` record is an unlabeled `cr_flags_xar` replay. Its record
+/// boundary is the next `f3 f7 80 97 e2` `misc_choice` replay anchor. Within
+/// the bounded record, `01 f6` ends the preceding compact fields and the first
+/// `0x29` token is the replayed short-form scalar lane. Other `0x29` images in
+/// the record are not assigned a field role.
+pub(crate) fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<FeatureRoundReplayScalar> {
+    const CR_FLAGS_ANCHOR: &[u8] = &[0xf2, 0xf7, 0x80, 0xa0];
+    const MISC_CHOICE_ANCHOR: &[u8] = &[0xf3, 0xf7, 0x80, 0x97, 0xe2];
+    let mut result = Vec::new();
+    for row in rows.iter().filter(|row| row.root_schema_class == Some(913)) {
+        let record_ends = row
+            .body
+            .windows(MISC_CHOICE_ANCHOR.len())
+            .enumerate()
+            .filter_map(|(offset, bytes)| (bytes == MISC_CHOICE_ANCHOR).then_some(offset))
+            .collect::<Vec<_>>();
+        for (record_start, bytes) in row.body.windows(CR_FLAGS_ANCHOR.len()).enumerate() {
+            if bytes != CR_FLAGS_ANCHOR {
+                continue;
+            }
+            let Some(record_end) = record_ends
+                .iter()
+                .copied()
+                .find(|offset| *offset > record_start)
+            else {
+                continue;
+            };
+            let Some(separator) = row.body[record_start + CR_FLAGS_ANCHOR.len()..record_end]
+                .windows(2)
+                .position(|bytes| bytes == [0x01, 0xf6])
+                .map(|offset| record_start + CR_FLAGS_ANCHOR.len() + offset + 2)
+            else {
+                continue;
+            };
+            let Some(scalar_offset) = round_replay_short_scalar(&row.body, separator, record_end)
+            else {
+                continue;
+            };
+            let Some((value, scalar_end)) = scalar::decode(&row.body, scalar_offset) else {
+                continue;
+            };
+            if scalar_end != scalar_offset + 3 || !value.is_finite() {
+                continue;
+            }
+            result.push(FeatureRoundReplayScalar {
+                feature_id: row.feature_id,
+                value,
+                offset: row.body_offset + scalar_offset,
+                record_offset: row.body_offset + record_start,
+            });
+        }
+    }
+    result.sort_by_key(|candidate| candidate.offset);
+    result
+}
+
+fn round_replay_short_scalar(body: &[u8], start: usize, end: usize) -> Option<usize> {
+    let mut offset = start;
+    while offset < end {
+        if body.get(offset) == Some(&0x29)
+            && scalar::decode(body, offset).is_some_and(|(value, scalar_end)| {
+                scalar_end == offset + 3 && scalar_end <= end && value.is_finite()
+            })
+        {
+            return Some(offset);
+        }
+        offset = round_replay_token_end(body, offset, end)?;
+    }
+    None
+}
+
+fn round_replay_token_end(body: &[u8], offset: usize, end: usize) -> Option<usize> {
+    let head = *body.get(offset)?;
+    let width = match head {
+        0x19 | 0x28 | 0x32 | 0x37 | 0x41 => 8,
+        0x31 | 0x4f | 0x90 | 0xd5 | 0xd7 => 7,
+        0x18 => {
+            let (_, compact_end) = psb::compact_int(body, offset + 1);
+            compact_end.saturating_sub(offset).max(1)
+        }
+        _ => scalar::decode(body, offset)
+            .map(|(_, scalar_end)| scalar_end.saturating_sub(offset))
+            .or_else(|| psb::token_at(body, offset).map(|token| token.length))?,
+    };
+    let next = offset.checked_add(width)?;
+    (width > 0 && next <= end).then_some(next)
 }
 
 /// Bound recognized procedural-choice labels within decoded feature rows.

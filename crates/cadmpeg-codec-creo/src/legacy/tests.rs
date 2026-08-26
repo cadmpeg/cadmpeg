@@ -55,6 +55,56 @@ fn scan_resolves_identifiers_within_independent_scopes() {
 }
 
 #[test]
+fn model_name_prefers_root_solid_over_null_view_placeholder() {
+    let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 ROOT\n\
+@View 3 0\n@model_name 4 10\n0 3 ->\n1 4 NULL\n";
+    let persistence = scan(data, std::iter::once(0..data.len()));
+    let expected_offset = data
+        .windows(b"1 2 ROOT".len())
+        .position(|window| window == b"1 2 ROOT")
+        .expect("model name value");
+
+    assert_eq!(
+        persistence.model_name(),
+        Some(("ROOT".to_string(), expected_offset))
+    );
+}
+
+#[test]
+fn model_name_withholds_conflicting_root_identities() {
+    let data = b"@Solid 1 0\n@model_name 2 10\n0 1 ->\n1 2 FIRST\n\
+@Solid 3 0\n@model_name 4 10\n0 3 ->\n1 4 SECOND\n";
+    let second_scope = data
+        .windows(b"@Solid 3".len())
+        .position(|window| window == b"@Solid 3")
+        .expect("second scope");
+    let persistence = scan(data, [0..second_scope, second_scope..data.len()]);
+
+    assert_eq!(persistence.model_name(), None);
+}
+
+#[test]
+fn first_source_model_name_selects_root_row_for_scoped_sections() {
+    let data = b"@model_name 1 10\n0 1 ROOT\n\
+@model_name 2 10\n0 2 DEPENDENT\n";
+    let second_scope = data
+        .windows(b"@model_name 2".len())
+        .position(|window| window == b"@model_name 2")
+        .expect("second scope");
+    let persistence = scan(data, [0..second_scope, second_scope..data.len()]);
+
+    assert_eq!(
+        persistence.first_source_model_name(),
+        Some((
+            "ROOT".to_string(),
+            data.windows(b"0 1 ROOT".len())
+                .position(|window| window == b"0 1 ROOT")
+                .expect("root value")
+        ))
+    );
+}
+
+#[test]
 fn principal_unit_requires_one_complete_known_type_10_scalar() {
     let millimeter = b"@principal_sys_units 25 10\n2 25 millimeter Newton Second (mmNs)\n";
     let persistence = scan(millimeter, std::iter::once(0..millimeter.len()));
@@ -85,6 +135,63 @@ fn principal_unit_requires_one_complete_known_type_10_scalar() {
     let mut repeated = millimeter.to_vec();
     repeated.extend_from_slice(millimeter);
     let persistence = scan(&repeated, std::iter::once(0..repeated.len()));
+    assert_eq!(persistence.principal_unit_system(), None);
+}
+
+#[test]
+fn legacy_unit_array_supplies_length_scale_when_principal_scalar_is_absent() {
+    let factor = 0.393_700_787_401_574_8_f64;
+    let data = format!(
+        r"@Solid 1 0
+@unit_arr 2 0
+@type 3 1
+@unit_type 4 1
+@factor 5 2
+@name 6 10
+0 1 ->
+1 2 [1]
+2 2 ->
+3 3 11
+3 4 0
+3 5 {factor_bits:016X}
+3 6 CM
+",
+        factor_bits = factor.to_bits()
+    );
+    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()));
+
+    assert_eq!(
+        persistence
+            .principal_unit_system()
+            .and_then(PrincipalUnitSystem::length_scale_mm),
+        Some(10.0)
+    );
+}
+
+#[test]
+fn legacy_unit_array_conflict_withholds_length_scale() {
+    let factor = 0.393_700_787_401_574_8_f64;
+    let data = format!(
+        r"@Solid 1 0
+@unit_arr 2 0
+@type 3 1
+@unit_type 4 1
+@factor 5 2
+@name 6 10
+0 1 ->
+1 2 [1]
+2 2 ->
+3 3 11
+3 4 0
+3 5 {factor_bits:016X}
+3 5 {other_factor_bits:016X}
+3 6 CM
+",
+        factor_bits = factor.to_bits(),
+        other_factor_bits = (factor * 2.0).to_bits()
+    );
+    let persistence = scan(data.as_bytes(), std::iter::once(0..data.len()));
+
     assert_eq!(persistence.principal_unit_system(), None);
 }
 

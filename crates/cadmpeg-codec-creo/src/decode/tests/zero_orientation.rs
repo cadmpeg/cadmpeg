@@ -8,7 +8,9 @@ use crate::decode::analytic::{
 };
 use crate::decode::build::has_transferred_geometry;
 use crate::decode::feature_history::{
-    full_turn_revolution_carrier_axis, resolved_revolution_axis, revolution_axis_for_transfer,
+    full_turn_revolution_carrier_axis, named_feature_definition,
+    named_or_referenced_feature_definition, resolved_revolution_axis, revolution_axis_for_transfer,
+    schema_feature_definition,
 };
 use crate::decode::sketch::{
     intersect_incident_section_carriers, section_arc_geometry, trim_segment_id,
@@ -30,12 +32,15 @@ use crate::decode::sweep::{
 };
 use crate::topology::HalfEdgeId;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Angle, Length, RevolutionAxis, RevolveExtent, Termination};
+use cadmpeg_ir::features::{
+    Angle, BooleanOp, FeatureDefinition as IrFeatureDefinition, Length, RevolutionAxis,
+    RevolveExtent, Termination,
+};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::{PointId, SurfaceId};
+use cadmpeg_ir::ids::{BodyId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
-use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::topology::{Body, BodyKind, Point};
 use cadmpeg_ir::units::Units;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -192,7 +197,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
     );
     assert_eq!(profiles.len(), 1);
-    assert_eq!(profiles[0].len(), 4);
+    assert_eq!(profiles[0].len(), 3);
 
     let mut arcs = definition.clone();
     arcs.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
@@ -526,6 +531,260 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     };
     center.z = 1.0;
     assert!(full_turn_revolution_carrier_axis(&scan, &ir, 7, Some(&full_turn)).is_none());
+}
+
+#[test]
+fn named_revolve_transfers_profile_axis() {
+    let definition = crate::feature::FeatureDefinition {
+        id: 822,
+        owner_feature_id: Some(822),
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 4,
+            entity_ref: None,
+            rows: [(1, 1, 0.0), (2, 1, 0.0), (1, 2, 0.0), (2, 2, 10.0)]
+                .into_iter()
+                .map(
+                    |(variable_type, key, value)| crate::feature::FeatureVariableRow {
+                        variable_type,
+                        key,
+                        value: Some(value),
+                        value_body: Vec::new(),
+                        guess: Some(value),
+                        guess_body: Vec::new(),
+                        guess_dimension_driven: false,
+                        known: Some(0),
+                        homogeneity: Some(1),
+                        uvar_id: None,
+                        dimension_driven: false,
+                        offset: 0,
+                    },
+                )
+                .collect(),
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureSegment {
+                kind: crate::feature::FeatureSegmentKind::Line,
+                directions: [None; 3],
+                point_ids: [1, 2],
+                center_id: None,
+                arc_orientation: None,
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 1,
+                body: Vec::new(),
+                offset: 0,
+            }],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: Some(crate::feature::FeatureSection3d {
+            sketch_plane_entity_id: None,
+            sketch_plane_flip: None,
+            reference_plane_entity_ids: Vec::new(),
+            reference_plane_rows: Vec::new(),
+            reference_plane_datum_geometry_id: None,
+            orientation: crate::feature::FeatureSectionOrientation::default(),
+            dimension_ids: Vec::new(),
+            offset: 90,
+        }),
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 80,
+    };
+    let transform = crate::placement::FeatureSectionTransform {
+        definition_id: 822,
+        feature_id: Some(822),
+        origin: [0.0; 3],
+        u_axis: [1.0, 0.0, 0.0],
+        v_axis: [0.0, 1.0, 0.0],
+        normal: [0.0, 0.0, 1.0],
+        offset: 90,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.definitions.push(definition);
+    scan.features.section_transforms.push(transform);
+    scan.features
+        .revolution_extents
+        .push(crate::feature::FeatureRevolutionExtent {
+            feature_id: 822,
+            kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
+            offset: 1,
+        });
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.bodies.push(Body {
+        id: BodyId("creo:feature:revolution#822:body".to_string()),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+
+    let Some(cadmpeg_ir::features::FeatureDefinition::Revolve {
+        construction:
+            cadmpeg_ir::features::RevolutionConstruction {
+                axis: Some(axis),
+                solid: Some(true),
+                ..
+            },
+        op: BooleanOp::NewBody,
+    }) = named_feature_definition(&scan, &ir, 822, "Revolve")
+    else {
+        panic!("named revolve axis");
+    };
+    assert_eq!(axis.origin, Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(axis.direction, Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
+fn named_extrude_with_evaluated_body_is_new_body() {
+    let scan = crate::container::scan_bytes(Vec::new());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.bodies.push(Body {
+        id: BodyId("creo:feature:extrusion#822:body".to_string()),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+
+    let Some(cadmpeg_ir::features::FeatureDefinition::Extrude { op, solid, .. }) =
+        named_feature_definition(&scan, &ir, 822, "Extrude")
+    else {
+        panic!("named extrude definition");
+    };
+    assert_eq!(op, BooleanOp::NewBody);
+    assert_eq!(solid, Some(true));
+}
+
+#[test]
+fn schema_numbered_extrude_with_evaluated_body_is_new_body() {
+    let scan = crate::container::scan_bytes(Vec::new());
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.bodies.push(Body {
+        id: BodyId("creo:feature:extrusion#822:body".to_string()),
+        kind: BodyKind::Solid,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+
+    let IrFeatureDefinition::Extrude { op, solid, .. } =
+        schema_feature_definition(&scan, &ir, 822, 0, "Extrude 822")
+    else {
+        panic!("schema numbered extrude definition");
+    };
+    assert_eq!(op, BooleanOp::NewBody);
+    assert_eq!(solid, Some(true));
+}
+
+#[test]
+fn conflicting_section_sweep_names_remain_unresolved() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .operations
+        .push(crate::feature::FeatureOperation {
+            feature_id: 822,
+            kind: "Extrude".to_string(),
+            display_name_stored: true,
+            stored_name: Some("Extrude id 822".to_string()),
+            stored_name_bytes: Some(b"Extrude id 822".to_vec()),
+            identifier_keyword: Some("id".to_string()),
+            stored_name_prefix: None,
+            recipe: None,
+            recipe_conflict: true,
+            display_state_conflict: false,
+            root_schema_class: None,
+            parent_feature_id: None,
+            offset: 0,
+            state_offset: 0,
+        });
+    scan.features
+        .reference_names
+        .push(crate::feature::FeatureReferenceName {
+            feature_id: 822,
+            name: "Revolve 822".to_string(),
+            name_bytes: b"Revolve 822".to_vec(),
+            own_reference_id: 1,
+            reference_type: 0,
+            offset: 0,
+        });
+    let ir = CadIr::empty(Units::default());
+
+    for kind in [
+        "Protrusion",
+        "Cut",
+        "Extrude",
+        "Extrude 822",
+        "Revolve",
+        "Revolve 822",
+    ] {
+        assert!(
+            named_feature_definition(&scan, &ir, 822, kind).is_none(),
+            "conflicting section-sweep name projected: {kind}"
+        );
+    }
+    assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature").is_none());
+}
+
+#[test]
+fn conflicting_display_states_do_not_select_reference_family() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .operations
+        .push(crate::feature::FeatureOperation {
+            feature_id: 822,
+            kind: "Native Feature".to_string(),
+            display_name_stored: false,
+            stored_name: None,
+            stored_name_bytes: None,
+            identifier_keyword: None,
+            stored_name_prefix: None,
+            recipe: None,
+            recipe_conflict: false,
+            display_state_conflict: true,
+            root_schema_class: None,
+            parent_feature_id: None,
+            offset: 0,
+            state_offset: 0,
+        });
+    scan.features
+        .reference_names
+        .push(crate::feature::FeatureReferenceName {
+            feature_id: 822,
+            name: "Thicken 1".to_string(),
+            name_bytes: b"Thicken 1".to_vec(),
+            own_reference_id: 1,
+            reference_type: 0,
+            offset: 0,
+        });
+    let ir = CadIr::empty(Units::default());
+
+    assert!(named_or_referenced_feature_definition(&scan, &ir, 822, "Native Feature").is_none());
 }
 
 #[test]

@@ -7,10 +7,16 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use super::super::analytic::{circular_cone, cross, dot, CarrierEquation};
 use super::super::sketch::normalized;
 
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
+const EPS_CENTER_ALIGNMENT: f64 = 1.0e-9;
+const EPS_TANGENT_ROOT: f64 = 1.0e-9;
+const EPS_NONZERO_SLOPE: f64 = 1.0e-12;
+const EPS_POSITIVE_RADIUS: f64 = 1.0e-12;
+const EPS_COINCIDENT_CENTER: f64 = 1.0e-12;
+const EPS_MERIDIAN_ROOT: f64 = 1.0e-12;
 const EPS_AXIS_ORTHO: f64 = 1.0e-10;
 const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 const EPS_DISTANCE_NONZERO: f64 = 1.0e-12;
-const EPS_TANGENCY_RESIDUAL: f64 = 1.0e-9;
 const EPS_HEIGHT_RESIDUAL: f64 = 1.0e-12;
 const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_SLOPE_NONZERO: f64 = 1.0e-12;
@@ -149,21 +155,30 @@ pub(in super::super) fn coaxial_cylinder_sphere_circle_candidates(
     let scale = sphere.radius.max(cylinder.radius).max(1.0);
     if sphere.radius <= 0.0
         || cylinder.radius <= 0.0
-        || dot(transverse, transverse).sqrt() > EPS_GEOMETRY_AGREEMENT * scale
+        || dot(transverse, transverse).sqrt() > EPS_CENTER_ALIGNMENT * scale
     {
         return Vec::new();
     }
     let offset_squared = sphere
         .radius
         .mul_add(sphere.radius, -(cylinder.radius * cylinder.radius));
-    if offset_squared <= EPS_TANGENCY_RESIDUAL * scale * scale {
+    let offset_tolerance = EPS_TANGENT_ROOT * scale * scale;
+    if offset_squared < -offset_tolerance {
         return Vec::new();
     }
     let Some(reference) = normalized(cylinder.ref_direction) else {
         return Vec::new();
     };
-    let offset = offset_squared.sqrt();
-    [-offset, offset]
+    let (offsets, tag) = if offset_squared.abs() <= offset_tolerance {
+        (vec![0.0], "coaxial_cylinder_sphere_tangent_circle")
+    } else {
+        let offset = offset_squared.sqrt();
+        (
+            vec![-offset, offset],
+            "coaxial_cylinder_sphere_secant_circle",
+        )
+    };
+    offsets
         .into_iter()
         .map(|offset| {
             let center: [f64; 3] =
@@ -175,7 +190,7 @@ pub(in super::super) fn coaxial_cylinder_sphere_circle_candidates(
                     ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
                     radius: cylinder.radius,
                 },
-                "coaxial_cylinder_sphere_secant_circle",
+                tag,
             )
         })
         .collect()
@@ -523,11 +538,11 @@ pub(in super::super) fn coaxial_cone_sphere_circle_candidates(
     let transverse: [f64; 3] =
         std::array::from_fn(|index| relative[index] - sphere_axial * axis[index]);
     let scale = cone.radius.max(sphere.radius).max(1.0);
-    if dot(transverse, transverse).sqrt() > EPS_GEOMETRY_AGREEMENT * scale {
+    if dot(transverse, transverse).sqrt() > EPS_CENTER_ALIGNMENT * scale {
         return Vec::new();
     }
     let slope = cone.half_angle.tan();
-    if slope.abs() <= EPS_SLOPE_NONZERO || !slope.is_finite() || cone.radius < 0.0 {
+    if slope.abs() <= EPS_NONZERO_SLOPE || !slope.is_finite() || cone.radius < 0.0 {
         return Vec::new();
     }
     let quadratic = 1.0 + slope * slope;
@@ -539,19 +554,28 @@ pub(in super::super) fn coaxial_cone_sphere_circle_candidates(
         .abs()
         .max((4.0 * quadratic * constant).abs().sqrt())
         .max(1.0);
-    if discriminant <= EPS_DISCRIMINANT * discriminant_scale * discriminant_scale {
+    let discriminant_tolerance = EPS_TANGENT_ROOT * discriminant_scale * discriminant_scale;
+    if discriminant < -discriminant_tolerance {
         return Vec::new();
     }
     let Some(reference) = normalized(cone.ref_direction) else {
         return Vec::new();
     };
-    let root_delta = discriminant.sqrt();
-    [-root_delta, root_delta]
+    let (deltas, tag) = if discriminant.abs() <= discriminant_tolerance {
+        (vec![0.0], "coaxial_cone_sphere_tangent_circle")
+    } else {
+        let root_delta = discriminant.sqrt();
+        (
+            vec![-root_delta, root_delta],
+            "coaxial_cone_sphere_secant_circle",
+        )
+    };
+    deltas
         .into_iter()
         .filter_map(|delta| {
             let parameter = (-linear + delta) / (2.0 * quadratic);
             let radius = (cone.radius + parameter * slope).abs();
-            if radius <= EPS_RADIUS_NONZERO * scale {
+            if radius <= EPS_POSITIVE_RADIUS * scale {
                 return None;
             }
             let center: [f64; 3] =
@@ -563,7 +587,7 @@ pub(in super::super) fn coaxial_cone_sphere_circle_candidates(
                     ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
                     radius,
                 },
-                "coaxial_cone_sphere_secant_circle",
+                tag,
             ))
         })
         .collect()
@@ -682,7 +706,7 @@ pub(in super::super) fn coaxial_cylinder_torus_circle_candidates(
     ) else {
         return Vec::new();
     };
-    if (dot(cylinder_axis, torus_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
+    if (dot(cylinder_axis, torus_axis).abs() - 1.0).abs() > EPS_AXIS_ALIGNMENT {
         return Vec::new();
     }
     let relative: [f64; 3] =
@@ -695,20 +719,27 @@ pub(in super::super) fn coaxial_cylinder_torus_circle_candidates(
         .max(torus.minor_radius)
         .max(cylinder.radius)
         .max(1.0);
-    if dot(transverse, transverse).sqrt() > EPS_GEOMETRY_AGREEMENT * scale {
+    if dot(transverse, transverse).sqrt() > EPS_CENTER_ALIGNMENT * scale {
         return Vec::new();
     }
     let radial_delta = cylinder.radius - torus.major_radius;
     let height_squared = torus
         .minor_radius
         .mul_add(torus.minor_radius, -(radial_delta * radial_delta));
-    if height_squared <= EPS_TANGENCY_RESIDUAL * scale * scale
-        || cylinder.radius <= EPS_RADIUS_NONZERO * scale
-    {
+    let height_tolerance = EPS_TANGENT_ROOT * scale * scale;
+    if height_squared < -height_tolerance || cylinder.radius <= EPS_POSITIVE_RADIUS * scale {
         return Vec::new();
     }
-    let height = height_squared.sqrt();
-    [-height, height]
+    let (offsets, tag) = if height_squared.abs() <= height_tolerance {
+        (vec![0.0], "coaxial_cylinder_torus_tangent_circle")
+    } else {
+        let height = height_squared.sqrt();
+        (
+            vec![-height, height],
+            "coaxial_cylinder_torus_secant_circle",
+        )
+    };
+    offsets
         .into_iter()
         .map(|offset| {
             let center: [f64; 3] =
@@ -720,7 +751,7 @@ pub(in super::super) fn coaxial_cylinder_torus_circle_candidates(
                     ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
                     radius: cylinder.radius,
                 },
-                "coaxial_cylinder_torus_secant_circle",
+                tag,
             )
         })
         .collect()
@@ -742,7 +773,7 @@ pub(in super::super) fn axis_normal_plane_torus_circle_candidates(
     ) else {
         return Vec::new();
     };
-    if (dot(normal, axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
+    if (dot(normal, axis).abs() - 1.0).abs() > EPS_AXIS_ALIGNMENT {
         return Vec::new();
     }
     let relative: [f64; 3] = std::array::from_fn(|index| plane.origin[index] - torus.center[index]);
@@ -751,29 +782,38 @@ pub(in super::super) fn axis_normal_plane_torus_circle_candidates(
     let radial_offset_squared = torus
         .minor_radius
         .mul_add(torus.minor_radius, -(axial * axial));
-    if radial_offset_squared <= EPS_TANGENCY_RESIDUAL * scale * scale {
+    let radial_offset_tolerance = EPS_TANGENT_ROOT * scale * scale;
+    if radial_offset_squared < -radial_offset_tolerance {
         return Vec::new();
     }
     let center: [f64; 3] = std::array::from_fn(|index| torus.center[index] + axial * axis[index]);
-    let radial_offset = radial_offset_squared.sqrt();
-    [
-        torus.major_radius - radial_offset,
-        torus.major_radius + radial_offset,
-    ]
-    .into_iter()
-    .filter(|radius| *radius > EPS_RADIUS_NONZERO * scale)
-    .map(|radius| {
+    let (radii, tag) = if radial_offset_squared.abs() <= radial_offset_tolerance {
+        (vec![torus.major_radius], "plane_torus_tangent_circle")
+    } else {
+        let radial_offset = radial_offset_squared.sqrt();
         (
-            CurveGeometry::Circle {
-                center: Point3::new(center[0], center[1], center[2]),
-                axis: Vector3::new(axis[0], axis[1], axis[2]),
-                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                radius,
-            },
+            vec![
+                torus.major_radius - radial_offset,
+                torus.major_radius + radial_offset,
+            ],
             "plane_torus_secant_circle",
         )
-    })
-    .collect()
+    };
+    radii
+        .into_iter()
+        .filter(|radius| *radius > EPS_POSITIVE_RADIUS * scale)
+        .map(|radius| {
+            (
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius,
+                },
+                tag,
+            )
+        })
+        .collect()
 }
 
 pub(in super::super) fn meridian_circle_intersections(
@@ -788,28 +828,33 @@ pub(in super::super) fn meridian_circle_intersections(
         second_center[1] - first_center[1],
     ];
     let distance = delta[0].hypot(delta[1]);
-    if distance <= EPS_DISTANCE_NONZERO * scale
-        || distance >= first_radius + second_radius - EPS_GEOMETRY_AGREEMENT * scale
-        || distance <= (first_radius - second_radius).abs() + EPS_GEOMETRY_AGREEMENT * scale
+    let scale = scale.max(1.0);
+    let distance_tolerance = EPS_CENTER_ALIGNMENT * scale;
+    if distance <= EPS_COINCIDENT_CENTER * scale
+        || distance > first_radius + second_radius + distance_tolerance
+        || distance < (first_radius - second_radius).abs() - distance_tolerance
     {
         return Vec::new();
     }
     let along = (distance * distance + first_radius * first_radius - second_radius * second_radius)
         / (2.0 * distance);
     let height_squared = first_radius.mul_add(first_radius, -(along * along));
-    if height_squared <= EPS_HEIGHT_RESIDUAL * scale * scale {
+    let height_tolerance = EPS_MERIDIAN_ROOT * scale * scale;
+    if height_squared < -height_tolerance {
         return Vec::new();
     }
     let unit = [delta[0] / distance, delta[1] / distance];
+    let base = [
+        first_center[0] + along * unit[0],
+        first_center[1] + along * unit[1],
+    ];
+    if height_squared.abs() <= height_tolerance {
+        return vec![base];
+    }
     let height = height_squared.sqrt();
     [-height, height]
         .into_iter()
-        .map(|sense| {
-            [
-                first_center[0] + along * unit[0] - sense * unit[1],
-                first_center[1] + along * unit[1] + sense * unit[0],
-            ]
-        })
+        .map(|sense| [base[0] - sense * unit[1], base[1] + sense * unit[0]])
         .collect()
 }
 
@@ -881,35 +926,41 @@ pub(in super::super) fn coaxial_sphere_torus_circle_candidates(
         .max(torus.minor_radius)
         .max(sphere.radius)
         .max(1.0);
-    if dot(transverse, transverse).sqrt() > EPS_GEOMETRY_AGREEMENT * scale {
+    if dot(transverse, transverse).sqrt() > EPS_CENTER_ALIGNMENT * scale {
         return Vec::new();
     }
-    meridian_circle_intersections(
+    let intersections = meridian_circle_intersections(
         [0.0, 0.0],
         sphere.radius,
         [torus.major_radius, axial],
         torus.minor_radius,
         scale,
-    )
-    .into_iter()
-    .filter_map(|[radius, center_axial]| {
-        let radius = radius.abs();
-        if radius <= EPS_RADIUS_NONZERO * scale {
-            return None;
-        }
-        let center: [f64; 3] =
-            std::array::from_fn(|index| sphere.center[index] + center_axial * axis[index]);
-        Some((
-            CurveGeometry::Circle {
-                center: Point3::new(center[0], center[1], center[2]),
-                axis: Vector3::new(axis[0], axis[1], axis[2]),
-                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                radius,
-            },
-            "coaxial_sphere_torus_secant_circle",
-        ))
-    })
-    .collect()
+    );
+    let tag = match intersections.len() {
+        1 => "coaxial_sphere_torus_tangent_circle",
+        2 => "coaxial_sphere_torus_secant_circle",
+        _ => return Vec::new(),
+    };
+    intersections
+        .into_iter()
+        .filter_map(|[radius, center_axial]| {
+            let radius = radius.abs();
+            if radius <= EPS_POSITIVE_RADIUS * scale {
+                return None;
+            }
+            let center: [f64; 3] =
+                std::array::from_fn(|index| sphere.center[index] + center_axial * axis[index]);
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius,
+                },
+                tag,
+            ))
+        })
+        .collect()
 }
 
 pub(in super::super) fn coaxial_tori_circle_candidates(
@@ -926,7 +977,7 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
     ) else {
         return Vec::new();
     };
-    if (dot(first_axis, second_axis).abs() - 1.0).abs() > EPS_AXIS_ORTHO {
+    if (dot(first_axis, second_axis).abs() - 1.0).abs() > EPS_AXIS_ALIGNMENT {
         return Vec::new();
     }
     let relative: [f64; 3] =
@@ -940,33 +991,39 @@ pub(in super::super) fn coaxial_tori_circle_candidates(
         .max(second.major_radius)
         .max(second.minor_radius)
         .max(1.0);
-    if dot(transverse, transverse).sqrt() > EPS_GEOMETRY_AGREEMENT * scale {
+    if dot(transverse, transverse).sqrt() > EPS_CENTER_ALIGNMENT * scale {
         return Vec::new();
     }
-    meridian_circle_intersections(
+    let intersections = meridian_circle_intersections(
         [first.major_radius, 0.0],
         first.minor_radius,
         [second.major_radius, axial],
         second.minor_radius,
         scale,
-    )
-    .into_iter()
-    .filter_map(|[radius, center_axial]| {
-        let radius = radius.abs();
-        if radius <= EPS_RADIUS_NONZERO * scale {
-            return None;
-        }
-        let center: [f64; 3] =
-            std::array::from_fn(|index| first.center[index] + center_axial * first_axis[index]);
-        Some((
-            CurveGeometry::Circle {
-                center: Point3::new(center[0], center[1], center[2]),
-                axis: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
-                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                radius,
-            },
-            "coaxial_tori_secant_circle",
-        ))
-    })
-    .collect()
+    );
+    let tag = match intersections.len() {
+        1 => "coaxial_tori_tangent_circle",
+        2 => "coaxial_tori_secant_circle",
+        _ => return Vec::new(),
+    };
+    intersections
+        .into_iter()
+        .filter_map(|[radius, center_axial]| {
+            let radius = radius.abs();
+            if radius <= EPS_POSITIVE_RADIUS * scale {
+                return None;
+            }
+            let center: [f64; 3] =
+                std::array::from_fn(|index| first.center[index] + center_axial * first_axis[index]);
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius,
+                },
+                tag,
+            ))
+        })
+        .collect()
 }

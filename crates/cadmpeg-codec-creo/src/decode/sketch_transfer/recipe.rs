@@ -96,12 +96,12 @@ pub(in super::super) fn feature_is_first_material_operation(
             .filter(|transform| transform.feature_id == Some(candidate))
             .collect::<Vec<_>>();
         let [transform] = transforms.as_slice() else {
-            return false;
+            continue;
         };
         let Some(definition) =
             unique_feature_definition_for_transform(&scan.features.definitions, transform)
         else {
-            return false;
+            continue;
         };
         material_definition_offsets.push((candidate, definition.offset));
     }
@@ -141,6 +141,13 @@ pub(in super::super) fn feature_schema_class(scan: &ContainerScan, feature_id: u
         feature_row_schema_classes(scan, feature_id),
         feature_id,
     )
+    .or_else(|| {
+        scan.features
+            .legacy_rounds
+            .iter()
+            .any(|round| round.feature_id == feature_id)
+            .then_some(913)
+    })
 }
 
 pub(in super::super) fn resolved_feature_schema_class_from_classes(

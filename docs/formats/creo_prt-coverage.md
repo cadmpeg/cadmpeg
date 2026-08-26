@@ -7,8 +7,9 @@ belong in [creo_prt.md](creo_prt.md); unresolved byte meanings belong in
 
 ## Envelope
 
-The implemented format band is `#UGC:2` PSB part documents using the ND or
-DEPDB section layouts recognized by the container scanner. This is not yet a
+The implemented format band is `#UGC:2` PSB part documents using the legacy
+ASCII, ND, or DEPDB section layouts recognized by the container scanner. This
+is not yet a
 closed support envelope: supported Creo release bounds, required and optional
 section combinations, and the admitted geometry and feature-family matrix have
 not been fixed. Until that matrix is closed and exercised by representative
@@ -33,6 +34,50 @@ fixtures, scores above L1 remain blocked.
 - Paired `9e` and `a3` scalars require one distinct section-cache `46` image
   for their six-byte tail; duplicate images are valid and differing payload
   bytes withhold the scalar.
+- Legacy ASCII `Sld_VisGeom.active_geom.srf_array` and
+  `Sld_NonVisGeom.inactive_geom.srf_array` are namespace-bounded object arrays.
+  Complete rows transfer their fixed-prefix surface fields. Complete plane and
+  cylinder rows transfer analytic carriers from their matching primitive
+  object and twelve-slot row-major `local_sys` frame, including canonical unit
+  scaling. A complete legacy ASCII type-40 row transfers the bicubic NURBS
+  carrier from its matching `srf_prim_ptr(splsrf)` interpolation arrays. The
+  carrier transfer does not imply trim or face admission; the interpolation
+  carrier remains excluded from cross-face pcurve endpoint reconciliation until
+  the spline trim join is defined. Those uses require the common boundary and
+  topology gates. Incomplete, duplicate, conflicting, or non-visible carriers
+  remain native.
+- Legacy ASCII `Sld_VisGeom.active_geom.crv_array` joins complete curve objects
+  to their two face references, two successor references, signed endpoint
+  directions, and bounded `crv_pnt_arr` endpoint witnesses. These rows use the
+  common guarded half-edge, vertex, and face-loop transfer path; incomplete or
+  ambiguous curve objects remain native.
+- Legacy ASCII topology admission filters persistence components by admitted
+  visible faces. A component with at least one face that passes the visible
+  carrier, boundary, edge, and vertex gates receives only those eligible faces
+  and their incident edges; non-visible-only components and unresolved face
+  references remain native.
+- Native B-rep admission emits one derived `brep_face_admission_rejections`
+  record for every rejected candidate face. The record keeps the stable
+  first-failure predicate, face identity, and bounded unresolved half-edge and
+  vertex operands. Aggregate loss text remains a bounded summary; the arena is
+  the complete per-face diagnostic.
+- Two-edge loops transfer when distinct typed non-linear edge carriers have
+  complete native pcurve endpoints that close in traversal order. Multiple
+  circular loops on one plane additionally require a common center, distinct
+  radii, and antipodal endpoints so radius order proves outer versus inner;
+  line-only and ambiguous circular loops remain native.
+- Legacy ASCII neutral body transfer requires one admitted component when body
+  metadata does not resolve multi-quilt ownership. Ambiguous multi-component
+  sets remain native until their body assignment is decoded.
+- When a legacy ASCII part has no unique `principal_sys_units` scalar, its
+  unique complete `unit_arr` length record supplies the stored-to-millimeter
+  scale from `25.4 * factor`. Missing or ambiguous unit records do not select
+  a scale.
+- Complete legacy ASCII family-table roots transfer to the native
+  `configuration_driver_tables` arena. The root, ordered item descriptors,
+  uniquely named instance rows, and ordinally aligned typed values are retained
+  with source offsets. Neutral configurations and parameter semantics remain
+  untransferred.
 - Section-reference lines transfer as construction-line geometry when both
   stored endpoint references resolve to distinct section coordinates.
 - Section lines with a uniquely proven fixed coordinate and unresolved
@@ -45,9 +90,68 @@ fixtures, scores above L1 remain blocked.
   trimmed line, two unmatched saved endpoints, and a stored `verhor` selector
   those endpoints satisfy; absent or conflicting selectors remain unresolved.
 - Active solver incidences drive coordinate, orientation, equality, radius,
-  and supported dimensional equations; type-five arc-radius relations seed the
+  and supported dimensional equations; type-five and type-six arc-radius relations seed the
   joined radius component in radius and diameter form. Disabled incidences
   remain retained but do not affect solved geometry.
+- Function-two and function-thirteen coordinate-equality equations transfer as
+  typed same-coordinate constraints when both point keys resolve to unique
+  section loci. Function-thirty-three endpoint-pair equations transfer as
+  typed equal-distance constraints under the same unique-locus rule; inactive
+  rows remain retained with their source activity. Function-thirty-five
+  equations transfer as typed point-on-object constraints when the two
+  reference point keys bind to one unique section line and the target key
+  resolves to an emitted point locus. Function-three equations transfer as
+  typed horizontal- or vertical-distance constraints when their dimension
+  ordinal resolves to one emitted parameter, their inline or scalar-equality-
+  resolved value agrees with the magnitude of that dimension, and both point
+  keys resolve to emitted loci, including unique arc or circle centers.
+  Function-forty-three equations transfer as
+  typed horizontal- or vertical-distance constraints when their unique dimension
+  parameter agrees with the solved one-axis coordinate difference and both point
+  keys resolve to emitted loci. Direct function-sixteen angle-difference rows
+  transfer as typed solver-scalar relations when both angle operands, the
+  type-zero result, and the zero type-five selector satisfy the settled direct
+  form; inactive rows retain their source activity. Active function-five direct
+  scalar-equality rows transfer as typed solver-scalar equality and join the
+  scalar equality graph when their type-five selector has a stored or
+  independently reconciled zero value; inactive or conflicting rows remain
+  native.
+- Function-two type-3/type-0 radius equations transfer as typed radius
+  constraints when the radius key binds to a unique emitted arc or circle
+  entity, including a complete row in an incomplete segment table, and the
+  complete type-3 dimension agrees with the inline or scalar-equality-resolved
+  equation scalars; solver activity is retained.
+- Function-zero equations transfer as typed polar-distance constraints when
+  both point loci and finite radial and angular values reconcile. Zero-length
+  rows omit the undefined direction, and a reconciled type-3 radius dimension
+  remains attached as the driving distance parameter.
+- Function-six equations transfer as typed fixed Euclidean locus-distance
+  constraints when their positive scalar agrees with a complete point pair and
+  both point loci reconcile. A
+  reconciled type-3 radius dimension remains attached as an optional driving
+  distance parameter.
+- Function-thirty-one equations transfer as typed two-axis point-coordinate
+  constraints when both type-6 scalar values and the point locus reconcile.
+  Function-forty-two equations transfer as typed same-axis coordinate-mean
+  constraints when the scalar value and both point loci reconcile. Inactive
+  rows retain their source activity. Zero-valued auxiliary rows in functions
+  thirteen, thirty-three, and thirty-five also reconcile through active scalar
+  equality components; conflicting or incomplete rows remain native.
+- Function-ten seven-slot axis-alignment equations transfer as typed
+  same-coordinate constraints when their two reference points have distinct
+  selected ordinates and equal opposite ordinates, their target has the
+  selected ordinate and a missing opposite ordinate, both type-seven
+  auxiliaries resolve to zero, and all point identities and coordinates are
+  complete and unambiguous. Other function-ten forms remain native.
+- Scalar-equality components compare stored `var_arr` values with finite
+  dimension, relation, equation, and coordinate-derived candidates without source
+  precedence. A non-finite source or any disagreement blocks every resolved
+  scalar in that component; derived candidates cannot fill a conflicting member.
+- Every parsed equation row without a typed transfer is retained as a native
+  equation constraint. The native record keeps the function and equation IDs,
+  row and table offsets, explicit argument count, ordered argument slots
+  including nulls, solver activity, and the source sketch reference; typed
+  rows are not duplicated.
 - Linear extrusions and rotations transfer when profile, placement, direction,
   and termination have independent byte-backed proofs. Additive linear
   extrusions also accept a closed one-entity circle section, a closed single
@@ -69,8 +173,19 @@ fixtures, scores above L1 remain blocked.
 - Generated cap-plane tables and complete positional-cylinder carriers provide
   blind extrusion spans to generated feature surfaces and first additive linear
   or one-circle B-reps when the section transform agrees with the carrier
-  direction. Complete NURBS-translation carriers provide the same span to
-  generated NURBS feature surfaces when their profile is supported.
+  direction. Complete NURBS-translation and rectilinear-plane carriers provide
+  the same span to generated NURBS or plane feature surfaces when their profile
+  is supported. Retained
+  unknown rows in the same plane, cylinder, or extrusion family do not
+  invalidate this proof; every materialized carrier and cap must still agree.
+- Unbound `geom_type = 2c` rows with a complete direction prefix and
+  lane-specific six-slot straight-directrix frame transfer as unbounded plane
+  carriers. Rows owned by a cubic replay remain on the replay-bound path.
+- Named `Protrusion`, `Cut`, and `Extrude` operations use the same independent
+  generated-cap, positional-cylinder, NURBS-translation, and rectilinear
+  carrier proofs as schema-backed linear sweeps. A resolved proof transfers
+  its explicit model-space direction and one-sided, symmetric, or two-sided
+  blind extent even when the profile remains unresolved.
 - Rectilinear generated-plane fallback uses the uniquely owned section's
   `plane_flip`/section-`flip` parity for cap polarity; Boolean operation does not
   select the sweep direction, and missing section or cap evidence remains
@@ -80,9 +195,20 @@ fixtures, scores above L1 remain blocked.
   offsets do not order material bodies.
 - Named surface rows require byte-backed `orient` and `boundary_type`
   discriminators; absent or undefined values remain opaque.
+- Complete positional surface contour chains retain their curve-header
+  references, traversal bytes, ordered parameter-space envelope slots, and
+  separator references as native records. The chain is not yet used to assign
+  outer or inner loop roles or to relax strict face admission.
+- Complete `lo_array` frame headers and bounded positional roster rows retain
+  their fixed fields and exact bodies as native records. Their joins to faces,
+  contours, and curve topology remain unresolved and do not affect neutral
+  loop or face admission.
 - Eight-slot type-24 terminal frames require mutually exclusive
   single-diameter and square-radial invariants; a collision withholds the
   carrier.
+- Positional-cylinder bodies are admitted only when every matching defined
+  row grammar agrees on the complete model-space frame; conflicting frame
+  candidates remain native.
 - Positional cylinder terminal radii require one positive scalar start that
   consumes the body remainder; overlapping starts withhold the carrier.
 - Plane placement keeps `ActDatums` datum-geometry and model-surface
@@ -100,7 +226,13 @@ fixtures, scores above L1 remain blocked.
   exposed as sections. Attribute declarations, locally resolved depth/value
   rows, and immediate `$` continuations are structurally enumerated. A unique
   legacy type-10 `principal_sys_units` scalar transfers the active length
-  system and its canonical millimeter scale. Complete finite type-2 scalars and
+  system and its canonical millimeter scale. The neutral unit boundary applies
+  that scale to model-space feature-motion distances and origins, explicit
+  pattern-scale centers, explicit Boolean-operation fuzzy tolerances, and
+  emitted procedural construction vectors, origins, and cache tolerances,
+  while preserving unit directions, angles, scale factors, parameter
+  intervals, and relative tolerances.
+  Complete finite type-2 scalars and
   dimensioned run-length arrays transfer as exact typed native records without
   expanding repeated elements. Complete type-1 signed-integer scalars and
   arrays transfer with the same scoped identity and retained run
@@ -128,9 +260,21 @@ fixtures, scores above L1 remain blocked.
   world-coordinate token.
 - Holes and rounds transfer typed operation definitions where their affected
   geometry, edge identities, radii, and extents resolve uniquely.
+- A round with a complete placed set of generated cylinder carriers transfers
+  their common positive radius even when generated cap or support rows are
+  also present. A complete direct rolling-radius sample set must agree with the
+  complete placed cylinder set; disagreement withholds the constant radius.
+- An equal-distance chamfer uses a complete transferred model cone carrier
+  when its row-local parameter body is opaque; duplicate parameter records do
+  not supply an alternate placement.
 - A round whose generated type-26 rows all replay the same uniquely associated
   prototype minor radius transfers that exact value as its constant radius;
   patch placement is independent of the radius proof.
+- A legacy ASCII type-913 feature joins its feature-owned type-8,
+  dim_type-3 dimension rows to one constant positive radius when all matching
+  dim_dat_ptr values are finite and bit-identical. Its unique feature-owned
+  curve rows select result edges. Missing or ambiguous joins retain the
+  unresolved radius or edge selection.
 - Curve-equation assignments retain source order and dependency identity;
   closed numeric and string operator and deterministic function values transfer,
   including exact and regular-expression whole-string matching.
@@ -196,7 +340,7 @@ fixtures, scores above L1 remain blocked.
   recipe effects, saved sections, and operation states retain stable native
   identities when neutral semantics remain incomplete. A class-100 generated
   entity reference adds a history dependency when that entity has exactly one
-  preceding feature-generated class-200 producer.
+  other feature-owned class-200 producer.
 - Same-ID operation display states retain their exact stored candidates. The
   neutral operation projection retains only fields on which all candidates
   agree and does not select a current candidate without a stored selector.
@@ -211,6 +355,12 @@ fixtures, scores above L1 remain blocked.
 - Named `gsec3d_ptr` fields stay inside the span through their first
   `p_saved_result` close, or the next `gsec3d_ptr`/definition boundary when the
   close is absent; nested `ref_planes` identifiers use their typed field.
+- A complete tagged type-26 radius trailer on the first prototype-associated
+  row overrides the prototype radii while retaining the prototype local-system
+  placement; an overridden zero major radius transfers as a sphere.
+- Signed radial-envelope cylinders accept the terminal-zero axial endpoint
+  form when its negative signed length, auxiliary bound, radial spans, and
+  axial sample satisfy the same carrier invariants as the trailer form.
 - Positional `gsec3d_ptr` reference rows retain all six row fields, and the
   geometrically selected orientation plane supplies its own `ref_type`,
   `seg_id`, and `flip_flag`.
@@ -263,6 +413,20 @@ fixtures, scores above L1 remain blocked.
   blind extent without assigning a placement face. A complete frame on the
   recipe's axis-normal step plane supplies an unoriented hole axis without
   assigning the entry position or drilling direction.
+- Complete paired terminal corner envelopes construct both source-cylinder
+  pairs when no source carrier is already admitted. The unique bore and
+  counterbore assignment supplies their exact radii, common entry origin,
+  directed axis, and canonical radial reference direction. Incomplete,
+  conflicting, or ambiguous observations remain native.
+- A class-911 positional cylinder frame is admitted against a complete
+  counterbore tuple only when its radius is the declared bore or counterbore
+  radius. A mismatching frame remains native; an unavailable or ambiguous tuple
+  does not gate the frame.
+- Complete selector-corner interval cylinders transfer their source-bound axis
+  line, radius, and extent independently of the owning feature's generated
+  round replay. Split selectors and one reconstructed transverse placeholder
+  span use the same admission rule. Ambiguous axis, sign, selector, or radius
+  evidence remains native.
 - Fill boundaries use the unique feature-bound section transform when present
   and otherwise the unique feature-owned section definition. The sketch
   identity remains available when its placement or profile geometry is
@@ -308,9 +472,19 @@ fixtures, scores above L1 remain blocked.
   dimension-driven sentinel state for each lane. Complete endpoints from
   uniquely joined saved lines and arcs, and the center of a joined saved arc or
   circle, seed the corresponding segment-point equations even when no variable
-  table is present. A joined saved circle also seeds its
-  radius-reference component. Disagreement with stored or constraint-derived
-  coordinates or radii withholds the inconsistent derivation.
+  table is present or the segment table is incomplete. A joined saved circle
+  also seeds its radius-reference component. Disagreement with stored or
+  constraint-derived coordinates or radii withholds the inconsistent derivation.
+- Trim-vertex intersections and saved-section generated-entity replay accept a
+  uniquely identified ordinary segment row from an incomplete segment table.
+  Profile chains, model-space placement, and whole-table topology continue to
+  require the complete-table proof.
+- A unique ordinary arc row with complete center and endpoint coordinates adds
+  its consistent radius to radius solving despite an incomplete segment table;
+  active complete equal-radius incidences use that row's radius reference.
+- A unique ordinary point row supplies its sense-zero or sense-four solver point
+  identity from an incomplete segment table; duplicate ordinary or cross-family
+  identifiers remain unresolved.
 - Positional `entity(line)` rows require exactly one six-scalar endpoint suffix
   start that consumes the complete row body; competing starts withhold the
   line.
@@ -320,16 +494,39 @@ fixtures, scores above L1 remain blocked.
   local-system prefix immediately before the trailing compound record;
   incomplete or competing frame boundaries remain unresolved.
 - Type-zero and type-three coincidence incidences add point-coordinate
-  equalities when their selected point rows are unique. This includes the
-  two-sense-zero-point form of type three; contradictory components retain
-  stored non-conflicting coordinates.
+  equalities when their selected point or endpoint-bearing section entities are
+  unique, including endpoints from unique ordinary line or arc rows in an
+  incomplete segment table. This includes type-12 bounded-curve and type-25
+  reference-line endpoints and the two-sense-zero-point form of type three;
+  contradictory components retain stored non-conflicting coordinates.
+- Same-coordinate incidences and type-35 line or arc midpoint equations use
+  selected endpoint or center point identities from unique ordinary line or arc
+  rows in an incomplete segment table. Duplicate ordinary or cross-family
+  identifiers withhold the affected affine source.
+- Active point-symmetry equations use selected endpoint or center point
+  identities from unique ordinary line or arc rows in an incomplete segment
+  table; duplicate ordinary or cross-family identifiers withhold the equation.
+- Active axis-symmetry equations use selected endpoint or center point
+  identities from unique ordinary line or arc rows in an incomplete segment
+  table when the fixed axis has an independent stored-selector, saved, or
+  complete proof.
+- Type-three and type-nine point-on-line equations accept a unique ordinary
+  line row from an incomplete segment table when its stored `verhor` selector
+  or an independent active unary or line-incidence proof supplies the held
+  coordinate; selected unique ordinary endpoint rows are also admitted.
+  Duplicate or unresolved-orientation rows remain unresolved.
 - Signed type-zero linear dimensions select their measured coordinate from a
   unique spanning line, or from one equal endpoint coordinate on uniquely
-  incident point rows when no segment spans the pair. Stored and uniquely
-  joined saved endpoint coordinates both participate in that axis proof. A
-  pair of separate incident lines does not select an axis. The selected
-  equation can derive a missing ordinate; ambiguous endpoint or
-  orientation evidence does not derive one.
+  incident section entities when no segment spans the pair. Standalone type-1
+  point rows supply whole-point loci for this proof. Type-12 bounded curves,
+  type-25 reference lines, and validated type-47 centered lines supply their
+  ordered endpoint loci as well. Stored and uniquely joined saved endpoint
+  coordinates both participate in that axis proof. A pair of separate incident
+  lines does not select an axis. The selected equation can derive a missing
+  ordinate; ambiguous endpoint or orientation evidence does not derive one.
+- Schema-defined zero-valued relation rows with complete relation, incidence,
+  and dimension joins emit typed horizontal or vertical constraints from a
+  unique ordinary line row even when the segment table is incomplete.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
   It also counts decoded and missing declared relation, incidence, and
@@ -340,6 +537,10 @@ fixtures, scores above L1 remain blocked.
   frame occurs between solver status and the item array. Matching item-table
   and item-row classes delimit the auxiliary body and prevent an embedded
   counted value from becoming the item array.
+- Named solver-incidence prototypes accept both the inner item-trailer form
+  and the one-item form closed directly by the outer table trailer. The
+  declared count and every complete instantiated row remain available in both
+  forms.
 - Every decoded non-null `segtab.verhor` field transfers as a distinct source
   constraint. Values zero and one on a line use the defined neutral vertical
   and horizontal forms; other segment families and selector values retain the
@@ -372,16 +573,21 @@ fixtures, scores above L1 remain blocked.
   activity and does not require evaluated tangent vectors.
 - A two-item type-five incidence transfers as entity-level perpendicularity
   when both sense-zero operands have uniquely established curve families.
-  Line-only coordinate-orientation propagation remains restricted to two
-  uniquely established lines.
+  A unique two-line type-five, type-seven, or type-eight incidence retains the
+  native line family even when disabled. Line-only coordinate-orientation
+  propagation remains restricted to two uniquely established lines and active
+  incidences.
 - A type-37 incidence transfers as a projected-copy relation when its two
   sense-zero operands are consecutive reference/result identities and the
   result has a unique row in the trimmed profile.
-- A sense-four incidence item establishes a solver-only entity's circular
-  family independently of solver activity. A disabled type-three incidence can
-  therefore transfer its selected center onto a sense-zero curve. A disabled
-  type-three incidence between two emitted sense-zero point entities transfers
-  as coincident loci.
+- A sense-two or sense-three incidence item establishes a solver-only entity's
+  endpoint-bearing curve family independently of solver activity. A sense-four
+  incidence item establishes its circular family independently of solver
+  activity. A sense-zero entity paired with a proven endpoint or center locus in
+  a type-zero coincidence retains the point family independently of solver
+  activity. A disabled type-three incidence can therefore transfer its selected
+  center onto a sense-zero curve. A disabled type-three incidence between two
+  emitted sense-zero point entities transfers as coincident loci.
 - Unary type-ten and type-eleven incidences on a uniquely established arc
   transfer as neutral 90-degree and 180-degree fixed arc-angle constraints.
   Solver activity controls constraint activity, not the stored arc role or
@@ -392,6 +598,9 @@ fixtures, scores above L1 remain blocked.
   affine solver; inactive forms retain the neutral constraint without adding
   an equation. Solver activity controls constraint activity, not the stored
   arc role or endpoint selection.
+- A unary type-thirty-three incidence transfers as a fixed-entity constraint
+  when its flags are `34`, its sole operand has sense `10`, and that operand is
+  a unique bounded curve. Other type-thirty-three shapes remain native.
 - Two-locus type-fifteen incidences transfer the same flag-selected
   same-coordinate constraint as type seventeen. Disabled forms retain
   endpoint-selected loci on emitted solver-only carriers without requiring a
@@ -480,8 +689,10 @@ fixtures, scores above L1 remain blocked.
    incomplete surface construction raises a decode loss note. Section-shape
    coverage counts operations and operations with unresolved input shape sets.
    Pattern coverage partitions unresolved seed selections and transform
-   operands. Analytic helices whose axis remains source-native are counted
-   separately. Each incomplete construction raises a decode loss note.
+   operands. Affine cylindrical curve-equation programs with complete local
+   frames transfer neutral helix axes and exact procedural helix carriers;
+   programs without a complete frame retain native-axis semantics. Each
+   incomplete construction raises a decode loss note.
 4. Validate semantic fingerprints for units, placements, carrier parameters,
    connected topology, feature order, dependencies, sketches, constraints,
    dimensions, expressions, and configuration state. The coverage map counts
@@ -507,9 +718,10 @@ fixtures, scores above L1 remain blocked.
    or solve-control count raises a decode loss note. Container and census
    facts about the file — version line, layout, section table, namespace array
    sizes, principal unit, family-table pointer, and configuration state — remain
-   in the source metadata attribute map. Referenced configuration driver tables
-   are counted separately from transferred configuration tables, and every
-   unresolved reference raises a decode loss note.
+   in the source metadata attribute map. Binary driver-table references and
+   complete legacy family-table roots are counted separately. Legacy item and
+   instance row counts are reported separately from neutral configuration
+   transfer, and every unresolved binary reference raises a decode loss note.
 5. Run malformed-input and fuzz gates for every admitted parser family.
 
 The current public score remains L1. Capabilities above L1 are extras

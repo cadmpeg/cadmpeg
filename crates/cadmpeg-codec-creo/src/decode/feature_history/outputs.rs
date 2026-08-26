@@ -6,11 +6,12 @@ use super::super::sketch_transfer::{
     current_feature_operation, current_feature_recipe, feature_recipe, feature_row_schema_classes,
     feature_schema_class, unique_feature_revolution_extent_kind,
 };
-use super::super::uniqueness::unique_feature_definition_for_transform;
+use super::super::uniqueness::{exactly_one, unique_feature_definition_for_transform};
+use super::dependencies::feature_generated_dependencies;
 use super::{agreed_feature_geometry_ids, feature_edge_selection, feature_is_sheet_extrusion};
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::EdgeSelection;
+use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
 use cadmpeg_ir::ids::{BodyId, EdgeId, SurfaceId};
 use cadmpeg_ir::topology::BodyKind;
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,6 +21,18 @@ pub(in super::super) fn feature_output_bodies(
     ir: &CadIr,
     feature_id: u32,
 ) -> Vec<BodyId> {
+    feature_output_bodies_with_history(scan, ir, feature_id, &mut BTreeSet::new())
+}
+
+fn feature_output_bodies_with_history(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    visiting: &mut BTreeSet<u32>,
+) -> Vec<BodyId> {
+    if !visiting.insert(feature_id) {
+        return Vec::new();
+    }
     let affected_geometry = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
@@ -48,30 +61,93 @@ pub(in super::super) fn feature_output_bodies(
     let mut outputs = evaluated_sweep_output_bodies(ir, feature_id);
     let edge_outputs = match feature_edge_selection(scan, ir, feature_id) {
         Some(EdgeSelection::Resolved { edges, .. }) => bodies_containing_edges(ir, &edges),
+        Some(EdgeSelection::Generated { edges, .. }) => {
+            generated_edge_output_bodies(scan, ir, &edges, visiting)
+        }
         _ => Vec::new(),
     };
-    if edge_outputs.is_empty() {
-        for surface in generated_surfaces {
-            for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
-                let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == face.shell)
-                else {
-                    continue;
-                };
-                let Some(region) = ir
-                    .model
+    let generated_input_outputs = generated_input_output_bodies(scan, ir, feature_id, visiting);
+    for surface in generated_surfaces {
+        for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
+            let Some(shell) = exactly_one(
+                ir.model
+                    .shells
+                    .iter()
+                    .filter(|shell| shell.id == face.shell),
+            ) else {
+                continue;
+            };
+            let Some(region) = exactly_one(
+                ir.model
                     .regions
                     .iter()
-                    .find(|region| region.id == shell.region)
-                else {
-                    continue;
-                };
-                if !outputs.contains(&region.body) {
-                    outputs.push(region.body.clone());
-                }
+                    .filter(|region| region.id == shell.region),
+            ) else {
+                continue;
+            };
+            if !outputs.contains(&region.body) {
+                outputs.push(region.body.clone());
             }
         }
-    } else {
-        for body in edge_outputs {
+    }
+    for body in edge_outputs.into_iter().chain(generated_input_outputs) {
+        if !outputs.contains(&body) {
+            outputs.push(body);
+        }
+    }
+    visiting.remove(&feature_id);
+    outputs
+}
+
+fn generated_input_output_bodies(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    visiting: &mut BTreeSet<u32>,
+) -> Vec<BodyId> {
+    let feature_id_text = format!("creo:model:feature#{feature_id}");
+    let Some(feature) = exactly_one(
+        ir.model
+            .features
+            .iter()
+            .filter(|feature| feature.id.as_str() == feature_id_text),
+    ) else {
+        return Vec::new();
+    };
+    feature_generated_dependencies(&feature.definition)
+        .into_iter()
+        .filter_map(|producer| {
+            producer
+                .as_str()
+                .strip_prefix("creo:model:feature#")
+                .and_then(|value| value.parse::<u32>().ok())
+        })
+        .flat_map(|producer_id| feature_output_bodies_with_history(scan, ir, producer_id, visiting))
+        .fold(Vec::new(), |mut outputs, body| {
+            if !outputs.contains(&body) {
+                outputs.push(body);
+            }
+            outputs
+        })
+}
+
+fn generated_edge_output_bodies(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    edges: &[GeneratedEdgeRef],
+    visiting: &mut BTreeSet<u32>,
+) -> Vec<BodyId> {
+    let mut outputs = Vec::new();
+    for edge in edges {
+        let Some(producer_id) = edge
+            .feature
+            .as_str()
+            .strip_prefix("creo:model:feature#")
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        for body in feature_output_bodies_with_history(scan, ir, producer_id, visiting) {
             if !outputs.contains(&body) {
                 outputs.push(body);
             }
@@ -88,15 +164,13 @@ pub(in super::super) fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) ->
         .iter()
         .filter(|coedge| selected.contains(&coedge.edge))
         .filter_map(|coedge| {
-            let lp = ir
-                .model
-                .loops
-                .iter()
-                .find(|lp| lp.id == coedge.owner_loop)?;
-            ir.model
-                .faces
-                .iter()
-                .find(|face| face.id == lp.face)
+            let lp = exactly_one(
+                ir.model
+                    .loops
+                    .iter()
+                    .filter(|lp| lp.id == coedge.owner_loop),
+            )?;
+            exactly_one(ir.model.faces.iter().filter(|face| face.id == lp.face))
                 .map(|face| face.shell.clone())
         })
         .collect::<BTreeSet<_>>();
@@ -107,20 +181,18 @@ pub(in super::super) fn bodies_containing_edges(ir: &CadIr, edges: &[EdgeId]) ->
             .filter(|shell| shell.wire_edges.iter().any(|edge| selected.contains(edge)))
             .map(|shell| shell.id.clone()),
     );
-    ir.model
-        .shells
-        .iter()
-        .filter(|shell| shell_ids.contains(&shell.id))
-        .filter_map(|shell| {
-            let region = ir
-                .model
-                .regions
-                .iter()
-                .find(|region| region.id == shell.region)?;
-            ir.model
-                .bodies
-                .iter()
-                .any(|body| body.id == region.body)
+    shell_ids
+        .into_iter()
+        .filter_map(|shell_id| {
+            let shell = exactly_one(ir.model.shells.iter().filter(|shell| shell.id == shell_id))?;
+            let region = exactly_one(
+                ir.model
+                    .regions
+                    .iter()
+                    .filter(|region| region.id == shell.region),
+            )?;
+            exactly_one(ir.model.bodies.iter().filter(|body| body.id == region.body))
+                .is_some()
                 .then(|| region.body.clone())
         })
         .fold(Vec::new(), |mut bodies, body| {
@@ -135,7 +207,7 @@ pub(in super::super) fn evaluated_sweep_output_bodies(ir: &CadIr, feature_id: u3
     ["extrusion", "revolution"]
         .into_iter()
         .map(|family| BodyId(format!("creo:feature:{family}#{feature_id}:body")))
-        .filter(|id| ir.model.bodies.iter().any(|body| body.id == *id))
+        .filter(|id| exactly_one(ir.model.bodies.iter().filter(|body| body.id == *id)).is_some())
         .collect()
 }
 
@@ -145,11 +217,7 @@ pub(in super::super) fn evaluated_sweep_body_kind(
     feature_id: u32,
 ) -> Option<BodyKind> {
     let id = BodyId(format!("creo:feature:{family}#{feature_id}:body"));
-    ir.model
-        .bodies
-        .iter()
-        .find(|body| body.id == id)
-        .map(|body| body.kind)
+    exactly_one(ir.model.bodies.iter().filter(|body| body.id == id)).map(|body| body.kind)
 }
 
 pub(in super::super) fn new_sheet_output_surface_id(
@@ -634,3 +702,6 @@ pub(in super::super) fn feature_source_properties(
     }
     properties
 }
+
+#[cfg(test)]
+mod tests;

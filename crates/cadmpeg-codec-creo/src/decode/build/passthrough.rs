@@ -229,5 +229,24 @@ pub(in super::super) fn emit_legacy_arenas(
         "legacy_type_11_values",
         &legacy.persistence.type_11_values,
         "legacy_type_11_value",
-    )
+    )?;
+    if let Some(table) = &scan.framing.legacy_family_table {
+        emit_arena(
+            ir,
+            annotations,
+            "configuration_driver_tables",
+            std::slice::from_ref(table),
+            |annotations, record| {
+                annotate(
+                    annotations,
+                    &record.id,
+                    legacy_source_stream(scan, record.offset),
+                    record.offset as u64,
+                    "legacy_configuration_driver_table",
+                    Exactness::ByteExact,
+                );
+            },
+        )?;
+    }
+    Ok(())
 }

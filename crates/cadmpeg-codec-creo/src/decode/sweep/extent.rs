@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrusion span resolution from carriers, cylinders, NURBS translation, and rectilinear planes.
 
-use super::super::analytic::{canonical_plane, dot, PlaneEquation};
-use super::super::holes::{extrusion_span, ExtrusionSpan};
+use super::super::analytic::{
+    canonical_plane, dot, placed_planes, reconciled_model_plane, PlaneEquation,
+};
+use super::super::holes::{extrusion_extent_and_direction, extrusion_span, ExtrusionSpan};
 use super::super::sketch::normalized;
 use super::planes::{
     feature_plane_equations, generated_arc_cylinder_extent, generated_cap_plane_extent,
@@ -13,11 +15,12 @@ use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 
+const EPS_PLANE_PARALLEL: f64 = 1.0e-10;
+const EPS_STATION_RELATIVE: f64 = 1.0e-9;
 const EPS_COORDINATE_AGREEMENT: f64 = 1.0e-9;
 const EPS_VECTOR_AGREEMENT: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
 const EPS_WEIGHT_AGREEMENT: f64 = 1.0e-10;
-const EPS_STATION_AGREEMENT: f64 = 1.0e-9;
 
 pub(in super::super) struct ExtrusionCarrierSpan {
     pub(in super::super) starts: Vec<[f64; 3]>,
@@ -192,6 +195,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
         }))
     .then_some(())?;
 
+    let local_planes = placed_planes(scan);
     let mut frames = Vec::new();
     let mut planes = Vec::new();
     for row in rows {
@@ -206,46 +210,63 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
             .collect::<Vec<_>>();
         match row.kind {
             crate::surface::SurfaceKind::Plane => match surfaces.as_slice() {
-                [] => {}
+                [] => {
+                    if let Some(plane) = local_planes.get(&row.id) {
+                        planes.push((plane.origin, plane.normal));
+                    }
+                }
                 [Surface {
-                    geometry: SurfaceGeometry::Plane { origin, normal, .. },
+                    geometry: SurfaceGeometry::Plane { .. },
                     ..
-                }] => planes.push((
-                    [origin.x, origin.y, origin.z],
-                    [normal.x, normal.y, normal.z],
-                )),
+                }] => {
+                    let plane = reconciled_model_plane(&local_planes, ir, row.id)?;
+                    planes.push((plane.origin, plane.normal));
+                }
+                [Surface {
+                    geometry: SurfaceGeometry::Unknown { .. },
+                    ..
+                }] => {
+                    if let Some(plane) = local_planes.get(&row.id) {
+                        planes.push((plane.origin, plane.normal));
+                    }
+                }
                 _ => return None,
             },
-            crate::surface::SurfaceKind::Cylinder => {
-                let [Surface {
+            crate::surface::SurfaceKind::Cylinder => match surfaces.as_slice() {
+                [Surface {
+                    geometry: SurfaceGeometry::Unknown { .. },
+                    ..
+                }] => {}
+                [Surface {
                     geometry: SurfaceGeometry::Cylinder { origin, axis, .. },
                     ..
-                }] = surfaces.as_slice()
-                else {
-                    return None;
-                };
-                let parameters =
-                    crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?;
-                let frame = parameters.positional_cylinder_frame?;
-                let transferred_origin = [origin.x, origin.y, origin.z];
-                let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
-                let frame_axis = normalized(frame.axis)?;
-                let scale = transferred_origin
-                    .into_iter()
-                    .chain(frame.origin)
-                    .map(f64::abs)
-                    .fold(1.0, f64::max);
-                (transferred_origin
-                    .into_iter()
-                    .zip(frame.origin)
-                    .all(|(left, right)| (left - right).abs() <= EPS_COORDINATE_AGREEMENT * scale)
-                    && transferred_axis
+                }] => {
+                    let parameters = crate::surface::unique_surface_parameter(
+                        &scan.surfaces.parameters,
+                        row.id,
+                    )?;
+                    let frame = parameters.positional_cylinder_frame?;
+                    let transferred_origin = [origin.x, origin.y, origin.z];
+                    let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
+                    let frame_axis = normalized(frame.axis)?;
+                    let scale = transferred_origin
                         .into_iter()
-                        .zip(frame_axis)
-                        .all(|(left, right)| (left - right).abs() <= EPS_WEIGHT_AGREEMENT))
-                .then_some(())?;
-                frames.push(frame);
-            }
+                        .chain(frame.origin)
+                        .map(f64::abs)
+                        .fold(1.0, f64::max);
+                    (transferred_origin
+                        .into_iter()
+                        .zip(frame.origin)
+                        .all(|(left, right)| (left - right).abs() <= 1.0e-9 * scale)
+                        && transferred_axis
+                            .into_iter()
+                            .zip(frame_axis)
+                            .all(|(left, right)| (left - right).abs() <= 1.0e-10))
+                    .then_some(())?;
+                    frames.push(frame);
+                }
+                _ => return None,
+            },
             _ => unreachable!("surface family checked above"),
         }
     }
@@ -425,6 +446,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
     .then_some(())?;
     let mut carriers = Vec::new();
     let mut planes = Vec::new();
+    let local_planes = placed_planes(scan);
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
             .then_some(())?;
@@ -436,23 +458,33 @@ pub(in super::super) fn generated_nurbs_translation_extent(
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
         match row.kind {
-            crate::surface::SurfaceKind::Plane => match surfaces.as_slice() {
-                [] => {}
-                [Surface {
-                    geometry: SurfaceGeometry::Plane { origin, normal, .. },
-                    ..
-                }] => planes.push((
-                    [origin.x, origin.y, origin.z],
-                    [normal.x, normal.y, normal.z],
-                )),
-                _ => return None,
-            },
+            crate::surface::SurfaceKind::Plane => {
+                let plane = match surfaces.as_slice() {
+                    []
+                    | [Surface {
+                        geometry: SurfaceGeometry::Unknown { .. },
+                        ..
+                    }] => local_planes.get(&row.id).copied(),
+                    [Surface {
+                        geometry: SurfaceGeometry::Plane { .. },
+                        ..
+                    }] => Some(reconciled_model_plane(&local_planes, ir, row.id)?),
+                    _ => return None,
+                };
+                if let Some(plane) = plane {
+                    planes.push((plane.origin, plane.normal));
+                }
+            }
             crate::surface::SurfaceKind::Extrusion => match surfaces.as_slice() {
                 [] => {}
                 [Surface {
                     geometry: SurfaceGeometry::Nurbs(nurbs),
                     ..
                 }] => carriers.push(nurbs_translation_span(nurbs)?),
+                [Surface {
+                    geometry: SurfaceGeometry::Unknown { .. },
+                    ..
+                }] => {}
                 _ => return None,
             },
             _ => unreachable!("surface family checked above"),
@@ -469,6 +501,90 @@ pub(in super::super) struct RectilinearPlaneStation {
 pub(in super::super) struct RectilinearPlaneFamily {
     pub(in super::super) normal: [f64; 3],
     pub(in super::super) stations: Vec<RectilinearPlaneStation>,
+}
+
+#[derive(Clone, Copy)]
+enum SectionPlaneEvidence {
+    Missing,
+    Ambiguous,
+    Resolved(PlaneEquation),
+}
+
+fn normalized_plane(normal: [f64; 3], distance: f64) -> Option<PlaneEquation> {
+    let magnitude = dot(normal, normal).sqrt();
+    (magnitude.is_finite() && magnitude > 0.0 && distance.is_finite()).then_some(())?;
+    let normal = normal.map(|component| component / magnitude);
+    let distance = distance / magnitude;
+    Some(PlaneEquation {
+        origin: normal.map(|component| component * distance),
+        normal,
+    })
+}
+
+fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence {
+    let datums = scan
+        .planes
+        .datums
+        .iter()
+        .filter(|datum| datum.id == id)
+        .collect::<Vec<_>>();
+    let model_planes = scan
+        .planes
+        .local_systems
+        .iter()
+        .filter(|plane| plane.surface_id == id)
+        .collect::<Vec<_>>();
+    let model_equation = match model_planes.as_slice() {
+        [plane] => plane
+            .normal
+            .zip(plane.origin)
+            .and_then(|(normal, origin)| normalized_plane(normal, dot(normal, origin))),
+        _ => None,
+    };
+    let outline_planes = if scan
+        .planes
+        .outlines
+        .iter()
+        .any(|plane| plane.surface_id == id)
+    {
+        scan.planes
+            .outlines
+            .iter()
+            .filter(|plane| plane.surface_id == id)
+            .collect::<Vec<_>>()
+    } else {
+        scan.planes
+            .positional_frames
+            .iter()
+            .filter(|plane| plane.surface_id == id)
+            .collect::<Vec<_>>()
+    };
+    let outline_equation = match outline_planes.as_slice() {
+        [plane] => normalized_plane(plane.normal, dot(plane.normal, plane.origin)),
+        _ => None,
+    };
+
+    if datums.len() > 1
+        || (datums.len() == 1 && (model_equation.is_some() || outline_equation.is_some()))
+    {
+        return SectionPlaneEvidence::Ambiguous;
+    }
+    if let [datum] = datums.as_slice() {
+        return normalized_plane(datum.normal, datum.offset).map_or(
+            SectionPlaneEvidence::Ambiguous,
+            SectionPlaneEvidence::Resolved,
+        );
+    }
+    if let Some(equation) = model_equation {
+        return SectionPlaneEvidence::Resolved(equation);
+    }
+    if model_planes.len() > 1 || outline_planes.len() > 1 {
+        return SectionPlaneEvidence::Ambiguous;
+    }
+    outline_equation.map_or(
+        SectionPlaneEvidence::Missing,
+        SectionPlaneEvidence::Resolved,
+    )
 }
 
 pub(in super::super) fn rectilinear_family_extent(
@@ -504,6 +620,34 @@ pub(in super::super) fn rectilinear_family_extent(
     (signed_length.abs() > station_tolerance).then_some((direction, signed_length.abs()))
 }
 
+pub(in super::super) fn rectilinear_extent_from_section_plane(
+    family: &RectilinearPlaneFamily,
+    section_origin: [f64; 3],
+    section_normal: [f64; 3],
+    start_reversed: bool,
+    station_tolerance: f64,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let (cap_direction, _) = rectilinear_family_extent(family, start_reversed, station_tolerance)?;
+    let section_normal = normalized(section_normal)?;
+    (dot(section_normal, family.normal).abs() >= 1.0 - EPS_PLANE_PARALLEL).then_some(())?;
+    let planes = family.stations.iter().map(|station| {
+        (
+            family
+                .normal
+                .map(|component| component * station.coordinate),
+            family.normal,
+        )
+    });
+    let (extent, direction) =
+        extrusion_extent_and_direction(section_origin, section_normal, planes)?;
+    if matches!(extent, ExtrudeExtent::OneSided { .. })
+        && dot(cap_direction, direction) < 1.0 - EPS_PLANE_PARALLEL
+    {
+        return None;
+    }
+    Some((extent, direction))
+}
+
 pub(in super::super) fn generated_rectilinear_plane_extent(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -512,8 +656,14 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
     let section = section?;
     section.sketch_plane_entity_id?;
-    let plane_flip = section.sketch_plane_flip == Some(crate::feature::BinaryFlag::Set);
-    let section_flip = section.orientation.section_flip == Some(crate::feature::BinaryFlag::Set);
+    let plane_flip = match section.sketch_plane_flip? {
+        crate::feature::BinaryFlag::Clear => false,
+        crate::feature::BinaryFlag::Set => true,
+    };
+    let section_flip = match section.orientation.section_flip? {
+        crate::feature::BinaryFlag::Clear => false,
+        crate::feature::BinaryFlag::Set => true,
+    };
     let start_reversed = plane_flip ^ section_flip;
     let rows = scan
         .surfaces
@@ -527,6 +677,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .all(|row| row.kind == crate::surface::SurfaceKind::Plane))
     .then_some(())?;
 
+    let local_planes = placed_planes(scan);
     let mut planes = Vec::with_capacity(rows.len());
     for row in rows {
         (crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(row))
@@ -538,16 +689,24 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .iter()
             .filter(|surface| surface.id == id)
             .collect::<Vec<_>>();
-        let [Surface {
-            geometry: SurfaceGeometry::Plane { origin, normal, .. },
-            ..
-        }] = surfaces.as_slice()
-        else {
-            return None;
+        let plane = match surfaces.as_slice() {
+            [] => return None,
+            [Surface {
+                geometry: SurfaceGeometry::Unknown { .. },
+                ..
+            }] => local_planes.get(&row.id).copied(),
+            [Surface {
+                geometry: SurfaceGeometry::Plane { .. },
+                ..
+            }] => Some(reconciled_model_plane(&local_planes, ir, row.id)?),
+            _ => return None,
+        };
+        let Some(plane) = plane else {
+            continue;
         };
         let plane = canonical_plane(PlaneEquation {
-            origin: [origin.x, origin.y, origin.z],
-            normal: [normal.x, normal.y, normal.z],
+            origin: plane.origin,
+            normal: plane.normal,
         })?;
         planes.push((plane, row.reversed));
     }
@@ -557,7 +716,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         .flat_map(|(plane, _)| plane.origin)
         .map(f64::abs)
         .fold(1.0, f64::max);
-    let station_tolerance = EPS_STATION_AGREEMENT * coordinate_scale;
+    let station_tolerance = EPS_STATION_RELATIVE * coordinate_scale;
     let mut families: Vec<RectilinearPlaneFamily> = Vec::new();
     for (plane, reversed) in planes {
         let station = dot(plane.origin, plane.normal);
@@ -567,7 +726,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
                 .normal
                 .iter()
                 .zip(plane.normal)
-                .all(|(left, right)| (left - right).abs() <= EPS_WEIGHT_AGREEMENT)
+                .all(|(left, right)| (left - right).abs() <= EPS_PLANE_PARALLEL)
         }) {
             if let Some(known) = family
                 .stations
@@ -584,7 +743,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         } else {
             families
                 .iter()
-                .all(|family| dot(family.normal, plane.normal).abs() <= EPS_AXIS_ALIGNMENT)
+                .all(|family| dot(family.normal, plane.normal).abs() <= EPS_PLANE_PARALLEL)
                 .then_some(())?;
             families.push(RectilinearPlaneFamily {
                 normal: plane.normal,
@@ -602,6 +761,36 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
             .count()
             >= 2)
         .then_some(())?;
+
+    match section_plane_evidence(scan, section.sketch_plane_entity_id?) {
+        SectionPlaneEvidence::Ambiguous => return None,
+        SectionPlaneEvidence::Resolved(section_plane) => {
+            let mut section_normal = section_plane.normal;
+            if plane_flip {
+                section_normal = section_normal.map(|component| -component);
+            }
+            if section_flip {
+                section_normal = section_normal.map(|component| -component);
+            }
+            let axial_families = families
+                .iter()
+                .filter(|family| {
+                    dot(section_normal, family.normal).abs() >= 1.0 - EPS_PLANE_PARALLEL
+                })
+                .collect::<Vec<_>>();
+            let [family] = axial_families.as_slice() else {
+                return None;
+            };
+            return rectilinear_extent_from_section_plane(
+                family,
+                section_plane.origin,
+                section_normal,
+                start_reversed,
+                station_tolerance,
+            );
+        }
+        SectionPlaneEvidence::Missing => {}
+    }
 
     let candidates = families
         .iter()
@@ -692,10 +881,10 @@ pub(in super::super) fn resolved_feature_extrusion_span(
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<ExtrusionSpan> {
     let feature_id = feature_id_for_section_transform(definition, transform)?;
-    generated_arc_cylinder_extent(scan, definition, transform)
+    generated_arc_cylinder_extent(scan, ir, definition, transform)
         .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction))
         .or_else(|| {
-            feature_plane_equations(scan, feature_id)
+            feature_plane_equations(scan, ir, feature_id)
                 .and_then(|planes| extrusion_span(transform.origin, transform.normal, planes))
         })
         .or_else(|| {

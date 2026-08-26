@@ -2,8 +2,9 @@ use crate::decode::analytic::{
     exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
     full_periodic_nurbs_edge_parameter_range, native_pcurve_midpoint,
     nonperiodic_conic_edge_parameter_range, nonperiodic_conic_parameter,
-    nonperiodic_nurbs_edge_parameter_range, pcurve_backed_periodic_conic_parameter_range,
-    periodic_conic_edge_parameter_range, NativePcurveCandidates,
+    nonperiodic_nurbs_edge_parameter_range, orient_nonperiodic_nurbs_edge_carrier,
+    pcurve_backed_periodic_conic_parameter_range, periodic_conic_edge_parameter_range,
+    NativePcurveCandidates,
 };
 use crate::decode::surfaces::{
     analytic_curve_branches, curve_contains_points, select_unique_curve_candidate,
@@ -81,6 +82,28 @@ fn full_nonperiodic_nurbs_recovers_its_intrinsic_domain() {
         nonperiodic_nurbs_edge_parameter_range(&nurbs, [[9.0, 8.0, 3.0], [1.0, 2.1, 3.0]],),
         None
     );
+}
+
+#[test]
+fn orients_reversed_nonperiodic_nurbs_edges_with_increasing_ranges() {
+    let mut nurbs = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)],
+        weights: Some(vec![2.0, 3.0]),
+        periodic: false,
+    });
+
+    assert_eq!(
+        orient_nonperiodic_nurbs_edge_carrier(&mut nurbs, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],),
+        Some([0.0, 1.0])
+    );
+    assert_eq!(evaluated(&nurbs, 0.0), [0.0, 0.0, 0.0]);
+    assert_eq!(evaluated(&nurbs, 1.0), [1.0, 0.0, 0.0]);
+    let CurveGeometry::Nurbs(nurbs) = nurbs else {
+        panic!("NURBS carrier");
+    };
+    assert_eq!(nurbs.weights, Some(vec![3.0, 2.0]));
 }
 
 #[test]

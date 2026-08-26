@@ -869,6 +869,31 @@ pub enum SketchDistanceMeasurement {
     },
 }
 
+/// One ordered pair of loci whose Euclidean separation participates in an
+/// equality relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SketchDistancePair {
+    /// First locus in the measured pair.
+    pub first: SketchLocus,
+    /// Second locus in the measured pair.
+    pub second: SketchLocus,
+}
+
+/// One opaque scalar symbol in a sketch solver graph.
+///
+/// The identity is local to the owning sketch. `variable_type` preserves the
+/// solver's scalar class so relations can join only compatible symbols; it has
+/// no meaning outside that solver graph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct SketchSolverScalar {
+    /// Solver scalar class.
+    pub variable_type: u32,
+    /// Solver-local scalar key.
+    pub key: u32,
+}
+
 /// Meaning of an internal sketch alignment helper relation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -988,6 +1013,24 @@ pub enum SketchConstraintDefinition {
         point: SketchLocus,
         /// Bounded entity whose midpoint is used.
         entity: SketchEntityId,
+    },
+    /// A point locus has fixed values on both sketch coordinate axes.
+    PointCoordinateValues {
+        /// Point whose two coordinates are constrained.
+        point: SketchLocus,
+        /// Coordinate values in sketch `u`, then `v`, order.
+        values: [Length; 2],
+    },
+    /// One sketch coordinate is the arithmetic mean of two point loci.
+    MidpointCoordinate {
+        /// First point contributing to the mean.
+        first: SketchLocus,
+        /// Second point contributing to the mean.
+        second: SketchLocus,
+        /// Coordinate axis carrying the mean relation.
+        axis: SketchCoordinateAxis,
+        /// Source-evaluated coordinate mean.
+        value: Length,
     },
     /// One or more entities offset from their progenitors by one signed distance.
     Offset {
@@ -1172,6 +1215,60 @@ pub enum SketchConstraintDefinition {
         second: SketchLocus,
         /// Driving distance parameter.
         parameter: ParameterId,
+    },
+    /// Euclidean distance between two loci with a source-evaluated value.
+    DistanceLociValue {
+        /// First measured locus.
+        first: SketchLocus,
+        /// Second measured locus.
+        second: SketchLocus,
+        /// Non-negative measured distance in model units.
+        distance: Length,
+        /// Driving distance parameter, when the source supplies one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter: Option<ParameterId>,
+    },
+    /// A second locus is displaced from the first by a polar sketch-space
+    /// distance and direction.
+    PolarDistance {
+        /// Origin locus of the displacement.
+        first: SketchLocus,
+        /// Displaced locus.
+        second: SketchLocus,
+        /// Non-negative displacement length in model units.
+        distance: Length,
+        /// Direction from the sketch-u axis; absent when the displacement is
+        /// zero and therefore has no defined direction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angle: Option<Angle>,
+        /// Driving distance parameter, when the source supplies one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance_parameter: Option<ParameterId>,
+    },
+    /// Direct difference between two angle-valued solver scalars.
+    AngleDifference {
+        /// First angle scalar in the subtraction.
+        first: SketchSolverScalar,
+        /// Second angle scalar in the subtraction.
+        second: SketchSolverScalar,
+        /// Scalar receiving `first - second`.
+        difference: SketchSolverScalar,
+        /// Source-evaluated non-negative angle difference in radians.
+        value: Angle,
+    },
+    /// Equality between two type-6 solver scalars.
+    ScalarEquality {
+        /// First scalar in the equality.
+        first: SketchSolverScalar,
+        /// Second scalar in the equality.
+        second: SketchSolverScalar,
+    },
+    /// Two explicit Euclidean locus pairs have equal separation.
+    EqualDistance {
+        /// First measured locus pair.
+        first: SketchDistancePair,
+        /// Second measured locus pair.
+        second: SketchDistancePair,
     },
     /// Horizontal separation between two explicit loci.
     HorizontalDistance {

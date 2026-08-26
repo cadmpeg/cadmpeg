@@ -25,6 +25,7 @@ use super::super::analytic::placed_plane_surfaces;
 use super::super::expanded::attach_expanded_sections;
 use super::super::native::annotate;
 use super::super::sketch::normalized;
+use super::super::surfaces::BrepTransferDiagnostics;
 use super::arenas::{emit_geometry_arenas, emit_reference_arenas};
 use super::coverage::collect_feature_coverage;
 use super::ir_features::{emit_model_features, finish_feature_transfers};
@@ -37,6 +38,7 @@ pub(in super::super) struct BuiltIr {
     pub(in super::super) annotations: cadmpeg_ir::Annotations,
     pub(in super::super) unknowns: Vec<UnknownRecord>,
     pub(in super::super) coverage: BTreeMap<String, usize>,
+    pub(in super::super) brep_diagnostics: BrepTransferDiagnostics,
 }
 
 pub(in super::super) fn build_container_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
@@ -52,6 +54,7 @@ pub(in super::super) fn build_container_ir(scan: &ContainerScan) -> Result<Built
         annotations: annotations.build(),
         unknowns,
         coverage,
+        brep_diagnostics: BrepTransferDiagnostics::default(),
     })
 }
 
@@ -470,6 +473,7 @@ pub(in super::super) fn build_ir(
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let (meta, mut coverage) = source_meta(scan);
+    let mut brep_diagnostics = BrepTransferDiagnostics::default();
     ir.source = Some(meta);
     emit_legacy_arenas(scan, &mut ir, &mut annotations)?;
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
@@ -480,12 +484,26 @@ pub(in super::super) fn build_ir(
     transfer_display_tessellations(scan, &mut ir, &mut annotations);
     transfer_datum_plane_surfaces(scan, &mut ir, &mut annotations);
     transfer_placed_plane_surfaces_into_ir(scan, &mut ir, &mut annotations);
-    transfer_and_record_scanned_geometry(ctx, scan, &mut ir, &mut annotations, &mut coverage)?;
+    transfer_and_record_scanned_geometry(
+        ctx,
+        scan,
+        &mut ir,
+        &mut annotations,
+        &mut coverage,
+        &mut brep_diagnostics,
+    )?;
     let geometry_generator_feature_count = emit_model_features(scan, &mut ir, &mut annotations);
     let (feature_result_topology_count, feature_result_edge_count) =
         finish_feature_transfers(scan, &mut ir, &mut annotations, &mut coverage);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
-    emit_geometry_arenas(scan, &mut ir, &mut annotations)?;
+    emit_geometry_arenas(scan, &mut ir, &mut annotations, &brep_diagnostics)?;
+    if let Some(length_scale_mm) = scan
+        .framing
+        .principal_unit
+        .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm)
+    {
+        super::units::normalize_model_lengths(&mut ir, length_scale_mm);
+    }
     collect_feature_coverage(
         scan,
         &ir,
@@ -499,5 +517,6 @@ pub(in super::super) fn build_ir(
         annotations: annotations.build(),
         unknowns,
         coverage,
+        brep_diagnostics,
     })
 }

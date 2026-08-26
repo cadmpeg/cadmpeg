@@ -1,10 +1,13 @@
 use crate::decode::analytic::{
     agreed_plane, agreed_plane_surface, agreed_topology_bound_plane, analytic_boundary_line,
-    analytic_curve_plane, dot, envelope_reconciled_plane_candidate,
-    frame_bound_outline_plane_candidate, held_coordinate_plane, plane_candidates,
-    topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes, BoundaryLine,
-    PlaneCandidate, PlaneChart, PlaneEquation,
+    analytic_curve_plane, dot, envelope_reconciled_plane_candidate, fc05_cylinder_model_witness,
+    frame_bound_outline_plane_candidate, held_coordinate_plane,
+    plane_candidate_pcurve_lies_on_carrier, plane_candidates, stored_parameter_normal_candidates,
+    topology_bound_line_plane, topology_bound_plane, transfer_topology_bound_planes,
+    unique_round_edge_origin_candidate, BoundaryLine, CylinderEquation, PlaneCandidate, PlaneChart,
+    PlaneEquation,
 };
+use crate::decode::surfaces::fc05_cap_pair_model_frame;
 use crate::surface::{
     LocalSystemClassification, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
 };
@@ -497,4 +500,713 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
     assert_eq!(plane.origin, [100.0, -4.0, 300.0]);
     assert_eq!(plane.normal, [0.0, 1.0, 0.0]);
     assert_eq!(u_axis, [0.0, 0.0, 1.0]);
+}
+
+#[test]
+fn matrix_frame_owns_conflicting_held_coordinate_plane() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 42,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 4,
+        reversed: false,
+        boundary_type: 1,
+        next_surface: 0,
+        offset: 10,
+    });
+    scan.planes.envelopes.push(PlaneEnvelopeRecord {
+        surface_id: 42,
+        body: Vec::new(),
+        envelope: PlaneEnvelope::Standard {
+            bounds_2d: [[None; 2]; 2],
+            corners_3d: [
+                [Some(-1.0), Some(0.0), Some(1.0)],
+                [Some(1.0), Some(0.0), Some(-1.0)],
+            ],
+        },
+        corner_coordinate_equal: [Some(false), Some(true), Some(false)],
+        scalar_tokens: Vec::new(),
+        row_offset: 10,
+        offset: 20,
+    });
+    let component = std::f64::consts::FRAC_1_SQRT_2;
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 42,
+        body: Vec::new(),
+        slots: vec![
+            Some(1.0),
+            Some(0.0),
+            Some(1.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(-1.0),
+            Some(0.0),
+            Some(1.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+        ],
+        origin: Some([0.0, 0.0, 0.0]),
+        u_axis: Some([component, 0.0, -component]),
+        normal: Some([component, 0.0, component]),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 10,
+        offset: 30,
+    });
+    scan.planes.outlines =
+        crate::surface::placed_outline_planes(&scan.planes.envelopes, &scan.planes.local_systems);
+
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&42).expect("plane candidates");
+    let (plane, u_axis, _) = agreed_plane_surface(candidates).expect("matrix frame plane");
+    assert_eq!(plane.normal, [component, 0.0, component]);
+    assert_eq!(u_axis, [component, 0.0, -component]);
+}
+
+#[test]
+fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
+    const EPS_BRANCH_TEST: f64 = 1e-12;
+
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    for (id, kind) in [
+        (1, crate::surface::SurfaceKind::Plane),
+        (2, crate::surface::SurfaceKind::Plane),
+        (5, crate::surface::SurfaceKind::Plane),
+        (7, crate::surface::SurfaceKind::Cylinder),
+    ] {
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id,
+            type_byte: 0x22,
+            kind,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: id as usize,
+        });
+    }
+    scan.planes.outlines.extend([
+        OutlinePlane {
+            surface_id: 1,
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 10,
+        },
+        OutlinePlane {
+            surface_id: 2,
+            origin: [0.0, 38.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 20,
+        },
+    ]);
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 10,
+            type_byte: 0,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [7, 5],
+            next_edges: [0; 2],
+            offset: 30,
+        });
+    scan.curves
+        .fc05_cylinder_cap_pairs
+        .push(crate::curve::Fc05CylinderCapPair {
+            surface_id: 7,
+            curve_ids: vec![11, 12],
+            cap_plane_ids: vec![1, 2],
+            curve_cap_ordinates_row_frame: vec![0.0, 38.0],
+            center_row_frame: [2.0, 3.0],
+            radius_mm: 0.5,
+            reference_direction_row_frame: [1.0, 0.0],
+            parameter_sign: 1,
+            cap_ordinates_row_frame: vec![0.0, 38.0],
+            offset: 40,
+        });
+    let origin_z = -(17.0 / 8.0);
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 5,
+        body: Vec::new(),
+        slots: vec![
+            Some(0.8),
+            Some(0.0),
+            Some(-0.6),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.6),
+            Some(0.0),
+            Some(0.8),
+            Some(0.0),
+            Some(0.0),
+            Some(origin_z),
+        ],
+        origin: Some([0.0, 0.0, origin_z]),
+        u_axis: Some([0.8, 0.0, -0.6]),
+        normal: Some([-0.6, 0.0, 0.8]),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 50,
+        offset: 60,
+    });
+
+    let candidates = plane_candidates(&scan);
+    let [candidate] = candidates.get(&5).expect("plane candidates").as_slice() else {
+        panic!("one tangent branch must be selected");
+    };
+    assert!((candidate.equation.normal[0] - 0.6).abs() < EPS_BRANCH_TEST);
+    assert!((candidate.equation.normal[2] + 0.8).abs() < EPS_BRANCH_TEST);
+    assert!((candidate.equation.origin[2] + origin_z).abs() < EPS_BRANCH_TEST);
+    assert!((candidate.chart.expect("stored chart").u_axis[2] - 0.6).abs() < EPS_BRANCH_TEST);
+}
+
+#[test]
+fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
+    const EPS_FC05_FRAME_TEST: f64 = 1e-12;
+
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.planes.outlines.extend([
+        OutlinePlane {
+            surface_id: 1,
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 10,
+        },
+        OutlinePlane {
+            surface_id: 2,
+            origin: [0.0, 38.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 20,
+        },
+    ]);
+    let pair = crate::curve::Fc05CylinderCapPair {
+        surface_id: 7,
+        curve_ids: vec![11, 12],
+        cap_plane_ids: vec![1, 2],
+        curve_cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        center_row_frame: [2.0, 3.0],
+        radius_mm: 0.5,
+        reference_direction_row_frame: [1.0, 0.0],
+        parameter_sign: 1,
+        cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        offset: 30,
+    };
+
+    let frame = fc05_cap_pair_model_frame(&scan, &pair).expect("unit cap-span frame");
+    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+    assert!((frame.origin[0] - 2.0).abs() <= EPS_FC05_FRAME_TEST);
+    assert!((frame.origin[1] - 87.5368).abs() <= EPS_FC05_FRAME_TEST);
+    assert!((frame.origin[2] - 3.0).abs() <= EPS_FC05_FRAME_TEST);
+
+    let reversed = crate::curve::Fc05CylinderCapPair {
+        cap_plane_ids: vec![2, 1],
+        curve_cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        ..pair
+    };
+    let reversed_frame =
+        fc05_cap_pair_model_frame(&scan, &reversed).expect("reversed unit cap-span frame");
+    assert_eq!(reversed_frame.axis, [0.0, -1.0, 0.0]);
+    assert!((reversed_frame.origin[1] + 49.5368).abs() <= EPS_FC05_FRAME_TEST);
+}
+
+#[test]
+fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
+    const EPS_BRANCH_TEST: f64 = 1e-12;
+
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    for (id, kind) in [
+        (1, crate::surface::SurfaceKind::Plane),
+        (2, crate::surface::SurfaceKind::Plane),
+        (5, crate::surface::SurfaceKind::Plane),
+        (7, crate::surface::SurfaceKind::Cylinder),
+    ] {
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id,
+            type_byte: 0x22,
+            kind,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: id as usize,
+        });
+    }
+    scan.planes.outlines.extend([
+        OutlinePlane {
+            surface_id: 1,
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 10,
+        },
+        OutlinePlane {
+            surface_id: 2,
+            origin: [0.0, 38.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 20,
+        },
+    ]);
+    scan.curves.fc05_circles.extend([
+        crate::curve::Fc05Circle {
+            curve_id: 11,
+            center_row_frame: [2.0, 3.0],
+            radius_mm: 0.5,
+            sample_direction_row_frame: [1.0, 0.0],
+            reference_direction_row_frame: Some([1.0, 0.0]),
+            parameter_sign: Some(1),
+            cap_ordinate_row_frame: Some(0.0),
+            point_count: 8,
+            max_residual: 0.0,
+            angle_parameter_consistent: true,
+            offset: 30,
+        },
+        crate::curve::Fc05Circle {
+            curve_id: 12,
+            center_row_frame: [2.0, 3.0],
+            radius_mm: 0.5,
+            sample_direction_row_frame: [1.0, 0.0],
+            reference_direction_row_frame: Some([1.0, 0.0]),
+            parameter_sign: Some(1),
+            cap_ordinate_row_frame: Some(38.0),
+            point_count: 8,
+            max_residual: 0.0,
+            angle_parameter_consistent: true,
+            offset: 31,
+        },
+    ]);
+    scan.curves.topology_rows.extend([
+        crate::curve::CurveTopologyRow {
+            id: 11,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [7, 1],
+            next_edges: [0; 2],
+            offset: 40,
+        },
+        crate::curve::CurveTopologyRow {
+            id: 12,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [7, 2],
+            next_edges: [0; 2],
+            offset: 41,
+        },
+        crate::curve::CurveTopologyRow {
+            id: 13,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [7, 5],
+            next_edges: [0; 2],
+            offset: 42,
+        },
+    ]);
+    scan.curves
+        .fc05_cylinder_cap_pairs
+        .push(crate::curve::Fc05CylinderCapPair {
+            surface_id: 7,
+            curve_ids: vec![11, 12],
+            cap_plane_ids: vec![1, 2],
+            curve_cap_ordinates_row_frame: vec![0.0, 38.0],
+            center_row_frame: [2.0, 3.0],
+            radius_mm: 0.5,
+            reference_direction_row_frame: [1.0, 0.0],
+            parameter_sign: 1,
+            cap_ordinates_row_frame: vec![0.0, 38.0],
+            offset: 43,
+        });
+    scan.references.circles.extend([
+        crate::reference::ReferenceCircle {
+            entity_id: 11,
+            center: [2.0, 0.0, -3.0],
+            center_stored: true,
+            radius: 0.5,
+            axis: [0.0, 1.0, 0.0],
+            start: [2.5, 0.0, -3.0],
+            end: [2.0, 0.0, -2.5],
+            offset: 50,
+        },
+        crate::reference::ReferenceCircle {
+            entity_id: 12,
+            center: [2.0, 38.0, -3.0],
+            center_stored: true,
+            radius: 0.5,
+            axis: [0.0, 1.0, 0.0],
+            start: [2.5, 38.0, -3.0],
+            end: [2.0, 38.0, -2.5],
+            offset: 51,
+        },
+    ]);
+    let origin_z = -(17.0 / 8.0);
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 5,
+        body: Vec::new(),
+        slots: vec![
+            Some(0.8),
+            Some(0.0),
+            Some(-0.6),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.6),
+            Some(0.0),
+            Some(0.8),
+            Some(0.0),
+            Some(0.0),
+            Some(origin_z),
+        ],
+        origin: Some([0.0, 0.0, origin_z]),
+        u_axis: Some([0.8, 0.0, -0.6]),
+        normal: Some([0.6, 0.0, 0.8]),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 50,
+        offset: 60,
+    });
+
+    let candidates = plane_candidates(&scan);
+    let [candidate] = candidates.get(&5).expect("plane candidates").as_slice() else {
+        panic!("the reference-tangent branch must be selected");
+    };
+    assert!((candidate.equation.normal[0] - 0.6).abs() < EPS_BRANCH_TEST);
+    assert!((candidate.equation.normal[2] - 0.8).abs() < EPS_BRANCH_TEST);
+    assert!((candidate.equation.origin[2] - origin_z).abs() < EPS_BRANCH_TEST);
+}
+
+#[test]
+fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([
+        crate::surface::SurfaceRow {
+            id: 1,
+            type_byte: 0x22,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: 1,
+        },
+        crate::surface::SurfaceRow {
+            id: 2,
+            type_byte: 0x23,
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: 2,
+        },
+    ]);
+    scan.curves.fc05_circles.push(crate::curve::Fc05Circle {
+        curve_id: 7,
+        center_row_frame: [0.0, 0.0],
+        radius_mm: 1.0,
+        sample_direction_row_frame: [1.0, 0.0],
+        reference_direction_row_frame: Some([1.0, 0.0]),
+        parameter_sign: Some(1),
+        cap_ordinate_row_frame: Some(0.0),
+        point_count: 8,
+        max_residual: 0.0,
+        angle_parameter_consistent: true,
+        offset: 7,
+    });
+    scan.references
+        .circles
+        .push(crate::reference::ReferenceCircle {
+            entity_id: 7,
+            center: [1.0, 0.0, 0.5],
+            center_stored: true,
+            radius: 1.0,
+            axis: [0.0, 1.0, 0.0],
+            start: [2.0, 0.0, 0.5],
+            end: [1.0, 0.0, 1.5],
+            offset: 8,
+        });
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 7,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [2, 1],
+            next_edges: [0; 2],
+            offset: 9,
+        });
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 1,
+        body: Vec::new(),
+        slots: vec![
+            Some(0.8),
+            Some(0.0),
+            Some(-0.6),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.6),
+            Some(0.0),
+            Some(0.8),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+        ],
+        origin: Some([0.0, 0.0, 0.0]),
+        u_axis: Some([0.8, 0.0, -0.6]),
+        normal: Some([0.6, 0.0, 0.8]),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 10,
+        offset: 11,
+    });
+
+    let witness = fc05_cylinder_model_witness(
+        &scan,
+        2,
+        CylinderEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 1.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 1.0,
+        },
+    );
+
+    assert_eq!(witness.origin, [1.0, 0.0, 0.5]);
+    assert_eq!(witness.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(witness.radius, 1.0);
+}
+
+fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerScan<'static> {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    for id in [1, 2] {
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id,
+            type_byte: 0x22,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: id as usize,
+        });
+    }
+    scan.planes.local_systems.extend([
+        crate::surface::PlaneLocalSystem {
+            surface_id: 1,
+            body: Vec::new(),
+            slots: vec![
+                Some(0.6),
+                Some(0.0),
+                Some(-0.8),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.8),
+                Some(0.0),
+                Some(0.6),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+            ],
+            origin: Some([0.0, 0.0, 0.0]),
+            u_axis: Some([0.6, 0.0, 0.8]),
+            normal: Some([0.8, 0.0, -0.6]),
+            classification: LocalSystemClassification::Unclassified,
+            row_offset: 1,
+            offset: 10,
+        },
+        crate::surface::PlaneLocalSystem {
+            surface_id: 2,
+            body: Vec::new(),
+            slots: vec![None; 12],
+            origin: Some([0.0, 1.0, 0.0]),
+            u_axis: Some([1.0, 0.0, 0.0]),
+            normal: Some([0.0, 1.0, 0.0]),
+            classification: LocalSystemClassification::Simple,
+            row_offset: 2,
+            offset: 20,
+        },
+    ]);
+    if with_pcurve {
+        scan.curves.pcurves.push(crate::curve::PcurveEndpoints {
+            curve_id: 7,
+            faces: [1, 2],
+            face_0_endpoints: [[1.0, 1.0], [2.0, 1.0]],
+            face_1_endpoints: [[0.6, 0.8], [1.2, 1.6]],
+            offset: 30,
+        });
+    }
+    scan
+}
+
+#[test]
+fn stored_parameter_normal_frame_exposes_both_mirror_branches() {
+    let scan = stored_frame_branch_scan(false);
+    let frame = &scan.planes.local_systems[0];
+    let candidates = stored_parameter_normal_candidates(frame).expect("ambiguous frame");
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates.iter().any(|candidate| {
+        candidate.equation.normal == [0.8, 0.0, 0.6]
+            && candidate.chart.expect("chart").u_axis == [0.6, 0.0, -0.8]
+    }));
+    assert!(candidates.iter().any(|candidate| {
+        candidate.equation.normal == [0.8, 0.0, -0.6]
+            && candidate.chart.expect("chart").u_axis == [0.6, 0.0, 0.8]
+    }));
+
+    let mut nonzero_origin = frame.clone();
+    nonzero_origin.slots[11] = Some(2.0);
+    let candidates = stored_parameter_normal_candidates(&nonzero_origin).expect("ambiguous frame");
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates
+        .iter()
+        .all(|candidate| candidate.equation.origin[2] == 2.0));
+
+    let mut invalid = frame.clone();
+    invalid.slots[4] = Some(1.0);
+    assert!(stored_parameter_normal_candidates(&invalid).is_none());
+
+    let mut compact = frame.clone();
+    compact.classification = LocalSystemClassification::Simple;
+    assert!(stored_parameter_normal_candidates(&compact).is_none());
+}
+
+#[test]
+fn plane_pcurve_discriminates_a_feature_frame_against_an_analytic_carrier() {
+    let candidate = PlaneCandidate {
+        equation: PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
+        chart: Some(PlaneChart {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+        }),
+        offset: 0,
+    };
+    let cylinder = crate::decode::analytic::CarrierEquation::Cylinder(
+        crate::decode::analytic::CylinderEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [1.0, 0.0, 0.0],
+            ref_direction: [0.0, 1.0, 0.0],
+            radius: 1.0,
+        },
+    );
+
+    assert!(plane_candidate_pcurve_lies_on_carrier(
+        candidate,
+        [[0.0, 1.0], [2.0, 1.0]],
+        cylinder
+    ));
+    assert!(!plane_candidate_pcurve_lies_on_carrier(
+        candidate,
+        [[0.0, 2.0], [2.0, 2.0]],
+        cylinder
+    ));
+}
+
+#[test]
+fn stored_parameter_normal_branch_uses_unique_pcurve_endpoint_witness() {
+    let scan = stored_frame_branch_scan(true);
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&1).expect("selected plane");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
+    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, -0.8]);
+}
+
+#[test]
+fn stored_parameter_normal_branch_considers_every_bounded_frame_candidate() {
+    let mut scan = stored_frame_branch_scan(true);
+    let mut later = scan.planes.local_systems[0].clone();
+    later.offset += 1;
+    later.slots[9] = Some(5.0);
+    later.slots[10] = Some(5.0);
+    later.origin = Some([5.0, 5.0, 0.0]);
+    scan.planes.local_systems.push(later);
+
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&1).expect("selected plane");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].equation.origin, [0.0, 0.0, 0.0]);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
+}
+
+#[test]
+fn stored_parameter_normal_branch_uses_unique_two_chart_endpoint_witness() {
+    let mut scan = stored_frame_branch_scan(false);
+    scan.curves
+        .two_chart_pcurves
+        .push(crate::curve::TwoChartPcurveSamples {
+            curve_id: 7,
+            faces: [1, 2],
+            samples: vec![[[1.0, 1.0], [0.6, 0.8]], [[2.0, 1.0], [1.2, 1.6]]],
+            offset: 30,
+        });
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&1).expect("selected plane");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, 0.6]);
+    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, -0.8]);
+}
+
+#[test]
+fn stored_parameter_normal_branch_keeps_existing_frame_without_witness() {
+    let scan = stored_frame_branch_scan(false);
+    let candidates = plane_candidates(&scan);
+    let candidates = candidates.get(&1).expect("existing plane");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].equation.normal, [0.8, 0.0, -0.6]);
+    assert_eq!(candidates[0].chart.expect("chart").u_axis, [0.6, 0.0, 0.8]);
+}
+
+#[test]
+fn round_edge_origin_witness_selects_the_plane_with_an_incident_endpoint() {
+    let positive = PlaneCandidate {
+        equation: PlaneEquation {
+            origin: [0.0, 5.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
+        chart: Some(PlaneChart {
+            origin: [0.0, 5.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+        }),
+        offset: 0,
+    };
+    let negative = PlaneCandidate {
+        equation: PlaneEquation {
+            origin: [0.0, -5.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        },
+        chart: Some(PlaneChart {
+            origin: [0.0, -5.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+        }),
+        offset: 0,
+    };
+    let envelope = crate::surface::Type24RoundEdgeEnvelope {
+        parameter_interval: [0.0, 1.0],
+        vertices: [[-30.0, -5.7, 0.0], [-29.8, -5.5, 1.0]],
+        generated_entity_reference: None,
+    };
+
+    assert_eq!(
+        unique_round_edge_origin_candidate(&[positive, negative], &[envelope])
+            .expect("incident plane candidate")
+            .equation
+            .origin,
+        [0.0, -5.5, 0.0]
+    );
+    assert!(unique_round_edge_origin_candidate(&[positive, negative], &[]).is_none());
 }

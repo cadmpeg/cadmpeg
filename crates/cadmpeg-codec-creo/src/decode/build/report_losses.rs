@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use crate::container::ContainerScan;
+use crate::decode::surfaces::{BrepTransferDiagnostics, FaceAdmissionRejection};
 use crate::loss::CreoLossCode;
 
 use super::coverage::torus_parameter_coverage;
@@ -128,6 +129,305 @@ pub(super) fn push_legacy_value_losses(
             )),
         );
     }
+}
+
+pub(super) fn push_brep_transfer_note(
+    losses: &mut Vec<LossNote>,
+    diagnostics: &BrepTransferDiagnostics,
+    geometry_section_count: usize,
+) {
+    let rejected_face_count = diagnostics
+        .rejected_faces
+        .values()
+        .map(|evidence| evidence.count)
+        .sum::<usize>();
+    let rejection_details = FaceAdmissionRejection::ALL
+        .into_iter()
+        .filter_map(|reason| {
+            let evidence = diagnostics.rejected_faces.get(&reason)?;
+            let samples = evidence
+                .sample_details
+                .iter()
+                .map(|detail| {
+                    let half_edges = detail
+                        .boundary_half_edges
+                        .iter()
+                        .map(|half_edge| format!("{}:{}", half_edge.curve_id, half_edge.side))
+                        .collect::<Vec<_>>()
+                        .join("|");
+                    let vertices = detail
+                        .vertex_ids
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join("|");
+                    match (half_edges.is_empty(), vertices.is_empty()) {
+                        (true, true) => detail.face_id.to_string(),
+                        (false, true) => format!("{}[edges:{half_edges}]", detail.face_id),
+                        (true, false) => format!("{}[vertices:{vertices}]", detail.face_id),
+                        (false, false) => {
+                            format!("{}[edges:{half_edges};vertices:{vertices}]", detail.face_id)
+                        }
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let samples = if samples.is_empty() {
+                evidence
+                    .sample_ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            } else {
+                samples
+            };
+            Some(if samples.is_empty() {
+                format!("{}={}", reason.label(), evidence.count)
+            } else {
+                format!(
+                    "{}={} (sample faces: {samples})",
+                    reason.label(),
+                    evidence.count
+                )
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let rejection_details = if rejection_details.is_empty() {
+        "none".to_string()
+    } else {
+        rejection_details
+    };
+    let mut component_gate_reasons = Vec::new();
+    if diagnostics.body_count_mismatch {
+        component_gate_reasons.push("selected body count mismatch".to_string());
+    }
+    if diagnostics.legacy_body_ownership_ambiguous {
+        component_gate_reasons.push("legacy body ownership ambiguous".to_string());
+    }
+    if diagnostics.empty_component_count != 0 {
+        component_gate_reasons.push(format!(
+            "{} empty admitted component(s)",
+            diagnostics.empty_component_count
+        ));
+    }
+    let component_gate_status = component_gate_reasons.join(", ");
+    let component_gate_status = if component_gate_status.is_empty() {
+        "passed".to_string()
+    } else {
+        component_gate_status
+    };
+    let selected_body_count = diagnostics
+        .selected_body_count
+        .map_or_else(|| "unresolved".to_string(), |count| count.to_string());
+    let component_gate = format!(
+        "{} admitted component(s), selected body count {selected_body_count}; {component_gate_status}",
+        diagnostics.admitted_component_count,
+    );
+    let pcurve_mismatch_samples = diagnostics
+        .vertex_solve
+        .pcurve
+        .mismatch_samples
+        .iter()
+        .map(|detail| {
+            format!(
+                "{}[faces:{}|{};same:{:.3e};reverse:{:.3e}]",
+                detail.curve_id,
+                detail.faces[0],
+                detail.faces[1],
+                detail.same_order_error,
+                detail.reverse_order_error,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let pcurve_mismatch_evidence = if pcurve_mismatch_samples.is_empty() {
+        String::new()
+    } else {
+        format!(" Pcurve mismatch samples: {pcurve_mismatch_samples}.")
+    };
+    let pcurve_activity_evidence = {
+        let pcurve = &diagnostics.vertex_solve.pcurve;
+        if pcurve.inactive_paths > 0
+            || pcurve.inactive_records > 0
+            || pcurve.partial_records > 0
+            || pcurve.topology_mismatch_records > 0
+        {
+            format!(
+                " Pcurve path activity: inactive paths={}, inactive records={}, partial records={}, topology mismatches={}.",
+                pcurve.inactive_paths,
+                pcurve.inactive_records,
+                pcurve.partial_records,
+                pcurve.topology_mismatch_records,
+            )
+        } else {
+            String::new()
+        }
+    };
+    let pcurve_carrier_evidence = {
+        let pcurve = &diagnostics.vertex_solve.pcurve;
+        let fixed_endpoint_conflicts = diagnostics.vertex_solve.pcurve_fixed_endpoint_conflicts;
+        let ambiguous_endpoint_vertices =
+            diagnostics.vertex_solve.pcurve_ambiguous_endpoint_vertices;
+        if pcurve.carrier_validated_paths > 0
+            || pcurve.carrier_rejected_paths > 0
+            || pcurve.carrier_unknown_paths > 0
+            || pcurve.carrier_rejected_records > 0
+            || fixed_endpoint_conflicts > 0
+            || ambiguous_endpoint_vertices > 0
+        {
+            format!(
+                " Pcurve carrier join: validated paths={}, rejected paths={}, unknown paths={} \
+                 (missing surface={}, missing carrier={}, unsupported pair={}, parallel plane={}, \
+                 unsupported path={}), rejected records={}, fixed endpoint conflicts={}, ambiguous \
+                 endpoint vertices={}.",
+                pcurve.carrier_validated_paths,
+                pcurve.carrier_rejected_paths,
+                pcurve.carrier_unknown_paths,
+                pcurve.carrier_unknown_missing_surface_paths,
+                pcurve.carrier_unknown_missing_carrier_paths,
+                pcurve.carrier_unknown_unsupported_pair_paths,
+                pcurve.carrier_unknown_parallel_plane_paths,
+                pcurve.carrier_unknown_unsupported_path_paths,
+                pcurve.carrier_rejected_records,
+                fixed_endpoint_conflicts,
+                ambiguous_endpoint_vertices,
+            )
+        } else {
+            String::new()
+        }
+    };
+    let two_chart_mapping_evidence = {
+        let pcurve = &diagnostics.vertex_solve.pcurve;
+        if pcurve.two_chart_records > 0 {
+            format!(
+                " Two-chart mapping: {} record(s), {} mapped ({} complete, {} partial), {} unmapped; {} missing surface path(s), {} unevaluable path(s), {} surface disagreement(s), {} empty sample record(s).",
+                pcurve.two_chart_records,
+                pcurve.two_chart_mapped_records,
+                pcurve.two_chart_complete_records,
+                pcurve.two_chart_partial_records,
+                pcurve.two_chart_unmapped_records,
+                pcurve.two_chart_missing_surface_paths,
+                pcurve.two_chart_unevaluable_paths,
+                pcurve.two_chart_surface_mismatch_records,
+                pcurve.two_chart_no_sample_records,
+            )
+        } else {
+            String::new()
+        }
+    };
+    let carrier_rejection_samples = diagnostics
+        .vertex_solve
+        .carrier_rejection_samples
+        .iter()
+        .map(|sample| {
+            format!(
+                "{}[faces:{};carriers:{};pair:{};triple:{};valid:{};unique:{}]",
+                sample.vertex_id,
+                sample
+                    .incident_face_ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join("|"),
+                sample.carrier_kinds.join("|"),
+                sample.pair_intersections,
+                sample.triple_intersections,
+                sample.valid_candidates,
+                sample.unique_solutions,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let carrier_rejection_evidence = if diagnostics
+        .vertex_solve
+        .carrier_no_geometric_candidate_vertices
+        == 0
+        && diagnostics.vertex_solve.carrier_no_valid_candidate_vertices == 0
+        && carrier_rejection_samples.is_empty()
+    {
+        String::new()
+    } else {
+        format!(
+            " Carrier solver classification: no geometric candidate={}, no valid candidate={}; \
+             rejection samples: {carrier_rejection_samples}.",
+            diagnostics
+                .vertex_solve
+                .carrier_no_geometric_candidate_vertices,
+            diagnostics.vertex_solve.carrier_no_valid_candidate_vertices,
+        )
+    };
+    let vertex_evidence = format!(
+        "Boundary evidence: {} curve(s), {} without a unique incidence pair, {} with an \
+         unsolved endpoint vertex. Vertex solver: {} topological, {} carrier intersections, \
+         {} carrier-bearing vertices, {} pair-intersection candidate(s), {} triple-intersection \
+         candidate(s), {} validated carrier candidate(s), {} carrier vertices with no candidate, \
+         {} ambiguous carrier vertices, {} pcurve record(s), {} pcurve path(s), {} path(s) without \
+         a unique surface, {} unevaluable path(s), {} mapped path(s), {} unmapped record(s), {} \
+         inconsistent record(s), {} accepted record(s) ({} complete), {} conflicting curve(s), {} \
+         pcurve endpoint evidence ({} complete), {} pcurve constraint(s), {} analytic domain(s), \
+         {} NURBS endpoint constraint(s), {} directed endpoint conflict(s), {} solved.{}{}{}{}{}",
+        diagnostics.boundary_curve_count,
+        diagnostics.boundary_curve_missing_incidence_count,
+        diagnostics.boundary_curve_unsolved_vertex_count,
+        diagnostics.vertex_solve.topological_vertices,
+        diagnostics.vertex_solve.carrier_points,
+        diagnostics.vertex_solve.carrier_incident_vertices,
+        diagnostics.vertex_solve.carrier_pair_candidates,
+        diagnostics.vertex_solve.carrier_triple_candidates,
+        diagnostics.vertex_solve.carrier_valid_candidates,
+        diagnostics.vertex_solve.carrier_zero_candidate_vertices,
+        diagnostics
+            .vertex_solve
+            .carrier_ambiguous_candidate_vertices,
+        diagnostics.vertex_solve.pcurve.records,
+        diagnostics.vertex_solve.pcurve.paths,
+        diagnostics.vertex_solve.pcurve.missing_surfaces,
+        diagnostics.vertex_solve.pcurve.unevaluable_paths,
+        diagnostics.vertex_solve.pcurve.mapped_paths,
+        diagnostics.vertex_solve.pcurve.unmapped_records,
+        diagnostics.vertex_solve.pcurve.inconsistent_records,
+        diagnostics.vertex_solve.pcurve.accepted_records,
+        diagnostics.vertex_solve.pcurve.complete_records,
+        diagnostics.vertex_solve.pcurve.conflicting_curves,
+        diagnostics.vertex_solve.pcurve.evidence,
+        diagnostics.vertex_solve.pcurve.complete_evidence,
+        diagnostics.vertex_solve.pcurve_constraints,
+        diagnostics.vertex_solve.analytic_domain_vertices,
+        diagnostics.vertex_solve.nurbs_endpoint_constraints,
+        diagnostics.vertex_solve.directed_endpoint_conflicts,
+        diagnostics.vertex_solve.solved_vertices,
+        pcurve_mismatch_evidence,
+        pcurve_activity_evidence,
+        pcurve_carrier_evidence,
+        carrier_rejection_evidence,
+        two_chart_mapping_evidence,
+    );
+
+    losses.push(CreoLossCode::BrepTransferIncomplete.note(format!(
+        "General model B-rep transfer remains incomplete. Native face components transfer \
+         when every boundary edge has solved vertex orbits, face orientation is unique, and \
+         every loop is complete; a multi-loop face additionally requires strict parameter-space \
+         containment or a complete common-center, distinct-radius circular-loop proof on a plane. Selected \
+         cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, \
+         a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
+         square cap outline establishes the complete axis placement and radius, or a compact \
+         class-911 table owns a complete positional cylinder carrier, a class-911 \
+         counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature \
+         patches have complementary square outline bounds on one axis-normal plane. Later positional \
+         instances do not inherit prototype placement or scalar \
+         defaults; they require their per-instance parameter bodies \
+         ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). \
+         Face admission considered {} candidate(s): {} passed, {} emitted, and {} were rejected. \
+         First-failure rejection counts are: {rejection_details}. Component admission gate: \
+         {component_gate}. {vertex_evidence} {geometry_section_count} PSB geometry section(s) were preserved \
+         verbatim as unknown records.",
+        diagnostics.candidate_face_count,
+        diagnostics.admitted_face_count,
+        diagnostics.emitted_face_count,
+        rejected_face_count,
+    )));
 }
 
 pub(super) fn push_carrier_transfer_notes(

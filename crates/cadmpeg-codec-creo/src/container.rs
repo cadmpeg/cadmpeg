@@ -15,7 +15,7 @@
 //! converts that scan into the codec-neutral container summary.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::bytes::find_from as find;
 use cadmpeg_core::{ContainerEntry, ContainerSummary};
@@ -24,9 +24,9 @@ use crate::curve::{
     self, BoundPrototypePcurve, CurveExpressionRecord, CurveExpressionValue, CurveParameterRecord,
     CurvePrototype, CurvePrototypeTopology, CurveTopologyRow, DepdbCurveRow,
     ExternalRelationSymbols, Fc05Circle, Fc05CylinderCapPair, FcCurveCoordinates, PcurveEndpoints,
-    PrototypePcurveEndpoints,
+    PrototypePcurveEndpoints, TwoChartPcurveSamples,
 };
-use crate::datum::{self, DatumPlane};
+use crate::datum::{self, DatumCylinder, DatumPlane};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
     FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopHistoryEntry,
@@ -35,13 +35,15 @@ use crate::feature::{
 };
 use crate::layout::cmnm_model_name_record as cmnm;
 use crate::legacy;
+use crate::loop_array::{self, LoopArrayFrame, LoopArrayRecord, LoopArrayScan};
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
 use crate::psb;
 use crate::reference::{self, ReferenceCircle, ReferenceConic, ReferenceEllipse, ReferenceLine};
 use crate::surface::{
-    self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord,
-    SurfacePrototype, SurfacePrototypeRecord, SurfaceRow, TabulatedCylinderCurveReplay,
+    self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceContourRecord,
+    SurfaceParameterRecord, SurfacePrototype, SurfacePrototypeRecord, SurfaceRow,
+    TabulatedCylinderCurveReplay,
 };
 use crate::topology::{
     self, FaceComponent, HalfEdge, HalfEdgeVertexIncidence, Loop, TopologicalVertex,
@@ -213,10 +215,10 @@ pub struct FamilyTableRecord {
     pub offset: usize,
 }
 
-/// Structural data read from one `.prt` file. The 76 decoded products are
-/// grouped into per-domain sub-structs so each consumer names the domain it
-/// reads. `ContainerScan` is never serialized; grouping and field naming are
-/// internal and do not affect IR or JSON output.
+/// Structural data read from one `.prt` file. Decoded products are grouped
+/// into per-domain sub-structs so each consumer names the domain it reads.
+/// `ContainerScan` is never serialized; grouping and field naming are internal
+/// and do not affect IR or JSON output.
 pub struct ContainerScan<'a> {
     /// Container framing: raw bytes, header, TOC-enumerated sections, and
     /// model-level diagnostics.
@@ -234,6 +236,8 @@ pub struct ContainerScan<'a> {
     pub curves: CurveScan,
     /// Native half-edge adjacency graph resolved from curve topology rows.
     pub topology: TopologyScan,
+    /// Native `lo_array` frame headers and complete positional roster rows.
+    pub loop_arrays: LoopArrayScan,
     /// Feature rows, definitions, operations, and the implicit entity graph.
     pub features: FeatureScan,
 }
@@ -244,9 +248,10 @@ pub struct FramingScan<'a> {
     pub data: Cow<'a, [u8]>,
     /// The magic/version header line, ASCII, trimmed.
     pub version_line: String,
-    /// Native model filename from the length-prefixed `CMNM` header record.
+    /// Native root model filename or name from `CMNM` or a binary
+    /// `model_name` field.
     pub model_name: Option<String>,
-    /// Byte offset of the native model filename.
+    /// Byte offset of the native model name in the source.
     pub model_name_offset: Option<usize>,
     /// Enumerated sections in file order.
     pub sections: Vec<Section>,
@@ -263,6 +268,8 @@ pub struct FramingScan<'a> {
     pub principal_unit: Option<legacy::PrincipalUnitSystem>,
     /// Configuration driver-table pointer from `FamilyInf`.
     pub family_table: Option<FamilyTableRecord>,
+    /// Complete legacy ASCII family-table root and ordered rows, when joined.
+    pub legacy_family_table: Option<crate::legacy_family::FamilyTable>,
     /// Declared `Geomlists.n_bodies` cardinality, when present.
     pub declared_body_count: Option<u32>,
     /// `Geomlists.first_quilt_ptr`: zero denotes the single-quilt form;
@@ -312,6 +319,15 @@ pub struct SurfaceScan {
     pub nonvisible_parameters: Vec<SurfaceParameterRecord>,
     /// Bounded scalar parameter bodies from DEPDB cross-section surface rows.
     pub cross_section_parameters: Vec<SurfaceParameterRecord>,
+    /// Complete positional contour-chain entries from the selected material
+    /// model geometry namespace.
+    pub contours: Vec<SurfaceContourRecord>,
+    /// Complete positional contour-chain entries from the separate invisible
+    /// and construction surface namespace.
+    pub nonvisible_contours: Vec<SurfaceContourRecord>,
+    /// Complete positional contour-chain entries from DEPDB cross-section
+    /// geometry.
+    pub cross_section_contours: Vec<SurfaceContourRecord>,
     /// Labeled surface prototypes with fully decoded scalar fields.
     pub prototypes: Vec<SurfacePrototype>,
     /// Bounded named `srf_prim_ptr(<kind>)` parameter records.
@@ -319,6 +335,8 @@ pub struct SurfaceScan {
     /// Bounded named surface-prototype records from the separate invisible
     /// and construction geometry namespace.
     pub nonvisible_prototype_records: Vec<SurfacePrototypeRecord>,
+    /// Complete analytic carriers from legacy visible surface prototypes.
+    pub legacy_carriers: Vec<crate::legacy_geometry::LegacySurfaceCarrier>,
 }
 
 /// Plane support frames, envelopes, placed planes, and datum planes.
@@ -339,6 +357,9 @@ pub struct PlaneScan {
     pub cross_section_outlines: Vec<OutlinePlane>,
     /// Model-space standard datum planes decoded from `ActDatums` outlines.
     pub datums: Vec<DatumPlane>,
+    /// Complete model-space cylinder carriers decoded from active-datum
+    /// surface rows.
+    pub datum_cylinders: Vec<DatumCylinder>,
 }
 
 /// Curve prototypes, parameter bodies, pcurves, and native curve rows.
@@ -362,6 +383,8 @@ pub struct CurveScan {
     pub nonvisible_parameters: Vec<CurveParameterRecord>,
     /// Complete eight-slot pcurve endpoints in both adjacent face frames.
     pub pcurves: Vec<PcurveEndpoints>,
+    /// Ordered, pointwise-corresponding samples in both incident-face charts.
+    pub two_chart_pcurves: Vec<TwoChartPcurveSamples>,
     /// Ordered world-coordinate lanes from FC-prefixed dense curve rows.
     pub fc_coordinates: Vec<FcCurveCoordinates>,
     /// FC05 records whose decoded points prove an exact circle.
@@ -406,6 +429,8 @@ pub struct FeatureScan {
     pub ids: Vec<u32>,
     /// Byte-bounded `AllFeatur` rows for known geometry-owning features.
     pub rows: Vec<FeatureRow>,
+    /// Short-form radius candidates from bounded class-913 round replays.
+    pub round_replay_scalars: Vec<crate::feature::FeatureRoundReplayScalar>,
     /// Section-bounded procedural recipe rows synthesized from `DEPDB_DATA`.
     pub depdb_recipe_rows: Vec<FeatureRow>,
     /// Labeled procedural-choice spans inside decoded feature rows.
@@ -443,6 +468,8 @@ pub struct FeatureScan {
     /// Mixed generated-entity tables from `AllFeatur`, with owner bindings
     /// retained only where their containing feature row is byte-bounded.
     pub entity_tables: Vec<FeatureEntityTable>,
+    /// Legacy ASCII round features joined to their dimensions and result edges.
+    pub legacy_rounds: Vec<crate::legacy_feature::LegacyRoundFeature>,
 }
 
 /// Whether a byte prefix is a Creo PSB `.prt`: the `#UGC:2` ASCII magic is the
@@ -972,18 +999,20 @@ fn geom_census(data: &[u8], sections: &[Section]) -> GeomCensus {
     }
 }
 
-/// Decode the active unit-system selector. `51` is millimeter-Newton-Second
-/// and `55` is millimeter-Kilogram-Second; both use millimeters for lengths.
+/// Decode the active unit-system selector. `51` is millimeter-Newton-Second,
+/// `54` is the Creo default inch-pound-mass-second system, and `55` is
+/// millimeter-Kilogram-Second.
 fn binary_principal_unit(data: &[u8]) -> Option<legacy::PrincipalUnitSystem> {
     let start = find(data, PRINCIPAL_UNIT_ID, 0)? + PRINCIPAL_UNIT_ID.len();
     match *data.get(start)? {
         51 => Some(legacy::PrincipalUnitSystem::MillimeterNewtonSecond),
+        54 => Some(legacy::PrincipalUnitSystem::InchPoundMassSecond),
         55 => Some(legacy::PrincipalUnitSystem::MillimeterKilogramSecond),
         value => Some(legacy::PrincipalUnitSystem::UnknownBinarySelector(value)),
     }
 }
 
-fn model_name(data: &[u8]) -> Option<(String, usize)> {
+fn cmnm_model_name(data: &[u8]) -> Option<(String, usize)> {
     const PREFIX: &[u8] = &cmnm::PREFIX_VALUE;
     let marker = find(data, PREFIX, 0)?;
     let start = marker + cmnm::NAME_LENGTH_HEX;
@@ -999,11 +1028,57 @@ fn model_name(data: &[u8]) -> Option<(String, usize)> {
     ))
 }
 
+/// Find the root model name stored by binary sections that do not carry a
+/// `CMNM` header record.
+fn native_model_name(data: &[u8], sections: &[Section]) -> Option<(String, usize)> {
+    const FIELD: &[u8] = b"model_name\0";
+
+    for section in sections {
+        if section.role == role::THUMBNAIL {
+            continue;
+        }
+        let end = section
+            .offset
+            .saturating_add(section.length)
+            .min(data.len());
+        let region = data.get(section.offset..end)?;
+        let mut from = 0;
+        while let Some(field) = find(region, FIELD, from) {
+            let value_start = field + FIELD.len();
+            if region.get(value_start) == Some(&0xe1) {
+                from = value_start + 1;
+                continue;
+            }
+            let Some(value_end) = find(region, b"\0", value_start) else {
+                break;
+            };
+            let mut name_start = value_start;
+            if region.get(name_start) == Some(&0xf1) {
+                name_start += 1;
+            }
+            let value = &region[name_start..value_end];
+            if let Ok(name) = std::str::from_utf8(value) {
+                if !name.is_empty() && name.chars().all(|character| !character.is_control()) {
+                    return Some((name.to_owned(), section.offset + name_start));
+                }
+            }
+            from = value_end + 1;
+        }
+    }
+    None
+}
+
 fn relation_model_name(filename: &str) -> Option<&str> {
     let filename = filename.trim_end_matches(' ');
-    let suffix = filename.get(filename.len().checked_sub(4)?..)?;
-    suffix.eq_ignore_ascii_case(".prt").then_some(())?;
-    let name = filename.get(..filename.len() - 4)?;
+    let name = if filename.len() >= 4
+        && filename.as_bytes()[filename.len() - 4..].eq_ignore_ascii_case(b".prt")
+    {
+        &filename[..filename.len() - 4]
+    } else if !filename.contains('.') {
+        filename
+    } else {
+        return None;
+    };
     (!name.is_empty()).then_some(name)
 }
 
@@ -1183,6 +1258,77 @@ fn cross_section_surface_parameters(
     records
 }
 
+fn surface_contours(data: &[u8], sections: &[Section]) -> Vec<SurfaceContourRecord> {
+    let mut records = Vec::new();
+    for section in sections {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            surface::contour_records(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record.envelope_offset += section.offset;
+                    record.surface_row_offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn cross_section_surface_contours(data: &[u8], sections: &[Section]) -> Vec<SurfaceContourRecord> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "Xsections")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        if find(payload, b"Sld_Xsections\0", 0).is_none() {
+            continue;
+        }
+        records.extend(
+            surface::cross_section_contour_records(payload)
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record.envelope_offset += section.offset;
+                    record.surface_row_offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn loop_array_scan(data: &[u8], sections: &[Section]) -> LoopArrayScan {
+    let mut frames = Vec::new();
+    let mut records = Vec::new();
+    for section in sections {
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        let scan = loop_array::scan(payload);
+        frames.extend(scan.frames.into_iter().map(|mut frame| {
+            frame.offset += section.offset;
+            frame.prototype_end += section.offset;
+            frame.end += section.offset;
+            frame
+        }));
+        records.extend(scan.records.into_iter().map(|mut record| {
+            record.frame_offset += section.offset;
+            record.offset += section.offset;
+            record.body_offset += section.offset;
+            record.end += section.offset;
+            record
+        }));
+    }
+    frames.sort_by_key(|frame: &LoopArrayFrame| frame.offset);
+    records.sort_by_key(|record: &LoopArrayRecord| record.offset);
+    LoopArrayScan { frames, records }
+}
+
 fn tabulated_cylinder_curve_replays(
     data: &[u8],
     sections: &[Section],
@@ -1312,10 +1458,7 @@ fn curve_expressions(
     model_name: Option<&str>,
 ) -> Vec<CurveExpressionRecord> {
     let mut records = Vec::new();
-    for section in sections
-        .iter()
-        .filter(|section| section.name == VISIBGEOM || section.name == "DEPDB_DATA")
-    {
+    for section in sections {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
             curve::expression_records_with_model_name(&data[section.offset..end], model_name)
@@ -1347,12 +1490,16 @@ fn curve_expressions(
     records
 }
 
-fn curve_parameters(data: &[u8], sections: &[Section]) -> Vec<CurveParameterRecord> {
+fn curve_parameters(
+    data: &[u8],
+    sections: &[Section],
+    face_ids: &BTreeSet<u32>,
+) -> Vec<CurveParameterRecord> {
     let mut records = Vec::new();
     for section in sections {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
-            curve::parameter_records(&data[section.offset..end])
+            curve::parameter_records_with_face_ids(&data[section.offset..end], Some(face_ids))
                 .into_iter()
                 .map(|mut record| {
                     record.offset += section.offset;
@@ -1363,6 +1510,32 @@ fn curve_parameters(data: &[u8], sections: &[Section]) -> Vec<CurveParameterReco
         );
     }
     records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn two_chart_pcurves(
+    data: &[u8],
+    sections: &[Section],
+    face_ids: &BTreeSet<u32>,
+) -> Vec<TwoChartPcurveSamples> {
+    let mut records = Vec::new();
+    for section in sections {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            curve::two_chart_pcurve_samples(&data[section.offset..end], Some(face_ids))
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    let mut counts = BTreeMap::new();
+    for record in &records {
+        *counts.entry(record.curve_id).or_insert(0usize) += 1;
+    }
+    records.retain(|record| counts.get(&record.curve_id) == Some(&1));
     records
 }
 
@@ -1400,12 +1573,16 @@ fn curve_prototype_topology(data: &[u8], sections: &[Section]) -> Vec<CurveProto
     records
 }
 
-fn curve_topology_rows(data: &[u8], sections: &[Section]) -> Vec<CurveTopologyRow> {
+fn curve_topology_rows(
+    data: &[u8],
+    sections: &[Section],
+    face_ids: &BTreeSet<u32>,
+) -> Vec<CurveTopologyRow> {
     let mut rows = Vec::new();
     for section in sections {
         let end = (section.offset + section.length).min(data.len());
         rows.extend(
-            curve::topology_rows(&data[section.offset..end])
+            curve::topology_rows_with_face_ids(&data[section.offset..end], Some(face_ids))
                 .into_iter()
                 .map(|mut row| {
                     row.offset += section.offset;
@@ -1483,6 +1660,26 @@ fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlane> {
     }
     planes.sort_by_key(|plane| plane.offset_in_payload);
     planes
+}
+
+fn datum_cylinders(data: &[u8], sections: &[Section]) -> Vec<DatumCylinder> {
+    let mut cylinders = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "ActDatums")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        cylinders.extend(
+            datum::cylinders(&data[section.offset..end])
+                .into_iter()
+                .map(|mut cylinder| {
+                    cylinder.offset_in_payload += section.offset;
+                    cylinder
+                }),
+        );
+    }
+    cylinders.sort_by_key(|cylinder| cylinder.offset_in_payload);
+    cylinders
 }
 
 fn structural_feature_ids(
@@ -2004,12 +2201,38 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     (after > value_offset).then_some(count)
 }
 
+/// Read one scalar integer owned by the unique legacy `Sld_GeomDepend` root.
+///
+/// Legacy ASCII stores this metadata in the persistence object tree rather
+/// than in a binary `Geomlists` section. Distinct complete values remain
+/// unresolved; equal duplicate records are one value witness.
+fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str) -> Option<u32> {
+    let mut values = persistence
+        .integer_values
+        .iter()
+        .filter(|record| record.name == field_name)
+        .filter_map(|record| {
+            let parent_id = record.parent.as_deref()?;
+            let parent = persistence
+                .objects
+                .iter()
+                .find(|object| object.id == parent_id)?;
+            (parent.name == "Sld_GeomDepend").then_some(())?;
+            let legacy::NumericPayload::Scalar { value } = &record.payload else {
+                return None;
+            };
+            u32::try_from(*value).ok()
+        });
+    let value = values.next()?;
+    values.all(|other| other == value).then_some(value)
+}
+
 /// Parse a whole `.prt` byte image.
 pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
     let version_line = line_at(&data, 0);
-    let (model_name, model_name_offset) =
-        model_name(&data).map_or((None, None), |(name, offset)| (Some(name), Some(offset)));
+    let (mut model_name, mut model_name_offset) =
+        cmnm_model_name(&data).map_or((None, None), |(name, offset)| (Some(name), Some(offset)));
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
@@ -2051,6 +2274,24 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             })
         }));
         framing.persistence = legacy::scan(&data, scopes);
+    }
+    if model_name.is_none() {
+        if let Some((name, offset)) = legacy_ascii
+            .as_ref()
+            .and_then(|framing| framing.persistence.model_name())
+        {
+            model_name = Some(name);
+            model_name_offset = Some(offset);
+        }
+    }
+    if model_name.is_none() {
+        if let Some((name, offset)) = legacy_ascii
+            .as_ref()
+            .and_then(|framing| framing.persistence.first_source_model_name())
+        {
+            model_name = Some(name);
+            model_name_offset = Some(offset);
+        }
     }
     let expanded_sections = expanded_sections(&data, &sections);
     let double_xar_tables = expanded_sections
@@ -2136,27 +2377,70 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .collect();
     let reference_ellipses = reference::ellipse_carriers(&reference_conics);
     let layout = identify_layout(&data, &sections, legacy_ascii.is_some());
+    if model_name.is_none() && layout != Layout::LegacyAscii {
+        if let Some((name, offset)) = native_model_name(&data, &sections) {
+            model_name = Some(name);
+            model_name_offset = Some(offset);
+        }
+    }
     let legacy_ascii = if layout == Layout::LegacyAscii {
         legacy_ascii
     } else {
         None
     };
+    let legacy_geometry = legacy_ascii
+        .as_ref()
+        .map(|framing| crate::legacy_geometry::scan(&framing.persistence))
+        .unwrap_or_default();
+    let legacy_rounds = legacy_ascii
+        .as_ref()
+        .map(|framing| {
+            crate::legacy_feature::scan(&framing.persistence, &legacy_geometry.topology_rows)
+        })
+        .unwrap_or_default();
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
     let principal_unit = binary_principal_unit(&data)
         .or_else(|| legacy_ascii.as_ref()?.persistence.principal_unit_system());
     let family_table = family_table(&data, &sections);
+    let legacy_family_table = legacy_ascii
+        .as_ref()
+        .and_then(|framing| crate::legacy_family::parse(&framing.persistence));
     let nonvisible_geometry_sections = sections
         .iter()
         .filter(|section| section.name == "NovisGeom")
         .cloned()
         .collect::<Vec<_>>();
-    let nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections);
-    let surface_rows = surface_rows(&data, &model_geometry_sections);
+    let mut loop_array_sections = model_geometry_sections.clone();
+    loop_array_sections.extend(nonvisible_geometry_sections.iter().cloned());
+    loop_array_sections.extend(
+        sections
+            .iter()
+            .filter(|section| {
+                if section.name != "Xsections" {
+                    return false;
+                }
+                let end = (section.offset + section.length).min(data.len());
+                find(&data[section.offset..end], b"Sld_Xsections\0", 0).is_some()
+            })
+            .cloned(),
+    );
+    loop_array_sections.sort_by_key(|section| section.offset);
+    loop_array_sections.dedup_by_key(|section| section.offset);
+    let loop_arrays = loop_array_scan(&data, &loop_array_sections);
+    let mut nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections);
+    nonvisible_surface_rows.extend(legacy_geometry.nonvisible_rows);
+    nonvisible_surface_rows.sort_by_key(|row| row.offset);
+    let mut surface_rows = surface_rows(&data, &model_geometry_sections);
+    surface_rows.extend(legacy_geometry.rows);
+    surface_rows.sort_by_key(|row| row.offset);
     let cross_section_surface_rows = cross_section_surface_rows(&data, &sections);
     let nonvisible_surface_parameters = surface_parameters(&data, &nonvisible_geometry_sections);
     let surface_parameters = surface_parameters(&data, &model_geometry_sections);
     let cross_section_surface_parameters = cross_section_surface_parameters(&data, &sections);
+    let nonvisible_surface_contours = surface_contours(&data, &nonvisible_geometry_sections);
+    let surface_contours = surface_contours(&data, &model_geometry_sections);
+    let cross_section_surface_contours = cross_section_surface_contours(&data, &sections);
     let tabulated_cylinder_curve_replays =
         tabulated_cylinder_curve_replays(&data, &model_geometry_sections);
     let plane_local_systems = plane_local_systems(&data, &model_geometry_sections);
@@ -2193,24 +2477,51 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         &sections,
         model_name.as_deref().and_then(relation_model_name),
     );
-    let nonvisible_curve_parameters = curve_parameters(&data, &nonvisible_geometry_sections);
-    let curve_parameters = curve_parameters(&data, &model_geometry_sections);
-    let nonvisible_curve_topology_rows = curve_topology_rows(&data, &nonvisible_geometry_sections);
-    let curve_topology_rows = curve_topology_rows(&data, &model_geometry_sections);
+    let topology_face_ids = nonvisible_surface_rows
+        .iter()
+        .chain(surface_rows.iter())
+        .map(|row| row.id)
+        .collect::<BTreeSet<_>>();
+    let nonvisible_curve_parameters =
+        curve_parameters(&data, &nonvisible_geometry_sections, &topology_face_ids);
+    let curve_parameters = curve_parameters(&data, &model_geometry_sections, &topology_face_ids);
+    let nonvisible_curve_topology_rows =
+        curve_topology_rows(&data, &nonvisible_geometry_sections, &topology_face_ids);
+    let mut curve_topology_rows =
+        curve_topology_rows(&data, &model_geometry_sections, &topology_face_ids);
+    let curve_prototype_topology = curve_prototype_topology(&data, &model_geometry_sections);
+    let prototype_topology_rows = curve::prototype_topology_rows(
+        &curve_prototypes,
+        &curve_prototype_topology,
+        &curve_topology_rows,
+        &topology_face_ids,
+    );
+    curve_topology_rows.extend(prototype_topology_rows);
+    curve_topology_rows.sort_by_key(|row| row.offset);
+    curve_topology_rows.dedup_by_key(|row| row.offset);
     let cross_section_curve_rows = cross_section_curve_rows(&data, &sections);
-    let pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
+    let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
+    let two_chart_pcurves = two_chart_pcurves(&data, &model_geometry_sections, &topology_face_ids);
+    if layout == Layout::LegacyAscii {
+        curve_topology_rows.extend(legacy_geometry.topology_rows.iter().cloned());
+        pcurves.extend(legacy_geometry.pcurves.iter().cloned());
+        curve_topology_rows.sort_by_key(|row| row.offset);
+        curve_topology_rows.dedup_by_key(|row| row.offset);
+        pcurves.sort_by_key(|pcurve| pcurve.offset);
+        pcurves.dedup_by_key(|pcurve| pcurve.offset);
+    }
     let fc_curve_coordinates = curve::fc_coordinates(&curve_parameters);
     let fc05_circles = curve::fc05_circles(&curve_parameters);
     let fc05_cylinder_cap_pairs =
         curve::fc05_cylinder_cap_pairs(&fc05_circles, &curve_topology_rows, &surface_rows);
     let prototype_pcurves = prototype_pcurves(&data, &model_geometry_sections);
-    let curve_prototype_topology = curve_prototype_topology(&data, &model_geometry_sections);
     let bound_prototype_pcurves =
         curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
     let (half_edges, loops) = topology::build(&curve_topology_rows);
     let (topological_vertices, half_edge_vertex_incidence) = topology::vertex_orbits(&half_edges);
     let face_components = topology::face_components(&curve_topology_rows);
     let datum_planes = datum_planes(&data, &sections);
+    let datum_cylinders = datum_cylinders(&data, &sections);
     let feature_operation_states = feature_operation_states(&data, &sections);
     let feature_operations = feature_operations(&data, &sections);
     let feature_reference_names = feature_reference_names(&data, &sections);
@@ -2243,6 +2554,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let mut feature_ids = structural_feature_ids;
     feature_ids.extend(feature_rows.iter().map(|row| row.feature_id));
     let feature_ids = feature_ids.into_iter().collect::<Vec<_>>();
+    let feature_round_replay_scalars = feature::round_replay_scalars(&feature_rows);
     let feature_choices = feature::choices(&feature_rows);
     let feature_choice_fields = feature::choice_fields(&feature_choices);
     let depdb_recipe_rows = depdb_recipe_rows(&data, &sections);
@@ -2323,7 +2635,11 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     );
     let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);
     let declared_body_count = geomlists_value(&data, &sections, b"n_bodies\0");
-    let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0");
+    let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0").or_else(|| {
+        legacy_ascii
+            .as_ref()
+            .and_then(|framing| legacy_geom_depend_value(&framing.persistence, "first_quilt_ptr"))
+    });
 
     ContainerScan {
         framing: FramingScan {
@@ -2338,6 +2654,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             census,
             principal_unit,
             family_table,
+            legacy_family_table,
             declared_body_count,
             first_quilt_ptr,
         },
@@ -2360,9 +2677,13 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             parameters: surface_parameters,
             nonvisible_parameters: nonvisible_surface_parameters,
             cross_section_parameters: cross_section_surface_parameters,
+            contours: surface_contours,
+            nonvisible_contours: nonvisible_surface_contours,
+            cross_section_contours: cross_section_surface_contours,
             prototypes: surface_prototypes,
             prototype_records: surface_prototype_records,
             nonvisible_prototype_records: nonvisible_surface_prototype_records,
+            legacy_carriers: legacy_geometry.carriers,
         },
         planes: PlaneScan {
             local_systems: plane_local_systems,
@@ -2373,6 +2694,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             positional_frames: positional_frame_planes,
             cross_section_outlines: cross_section_outline_planes,
             datums: datum_planes,
+            datum_cylinders,
         },
         curves: CurveScan {
             tabulated_cylinder_replays: tabulated_cylinder_curve_replays,
@@ -2383,6 +2705,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             parameters: curve_parameters,
             nonvisible_parameters: nonvisible_curve_parameters,
             pcurves,
+            two_chart_pcurves,
             fc_coordinates: fc_curve_coordinates,
             fc05_circles,
             fc05_cylinder_cap_pairs,
@@ -2400,9 +2723,11 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             vertices: topological_vertices,
             half_edge_vertex_incidence,
         },
+        loop_arrays,
         features: FeatureScan {
             ids: feature_ids,
             rows: feature_rows,
+            round_replay_scalars: feature_round_replay_scalars,
             depdb_recipe_rows,
             choices: feature_choices,
             choice_fields: feature_choice_fields,
@@ -2421,6 +2746,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             entities: feature_entities,
             entity_references: feature_entity_references,
             entity_tables: feature_entity_tables,
+            legacy_rounds: legacy_rounds.rounds,
         },
     }
 }

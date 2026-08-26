@@ -6,19 +6,47 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::feature_dimension_table_complete;
 use super::super::sketch_transfer::section_solver_equation_is_disabled;
-use super::equations_scalar::SectionScalarVariable;
+use super::equations_scalar::{
+    reconcile_equation_value, section_equation_scalar_equality_values, SectionScalarVariable,
+};
 use super::skamp::SectionPointSource;
 
+const EPS_DIMENSION_BINDING: f64 = 1.0e-9;
 const EPS_DISTANCE_AGREEMENT: f64 = 1.0e-9;
 const EPS_SOLVER_SCALE: f64 = 1.0e-12;
 const EPS_DISCRIMINANT_SCALE: f64 = 1.0e-12;
 const EPS_SOLUTION_AGREEMENT: f64 = 1.0e-9;
+
+#[derive(Clone, Copy)]
+pub(crate) struct SectionFunctionSixDistance {
+    pub(crate) first: u32,
+    pub(crate) second: u32,
+    pub(crate) radius: SectionScalarVariable,
+    pub(crate) distance: Option<f64>,
+    pub(crate) coordinate_distance: Option<f64>,
+    pub(crate) points_complete: bool,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
+}
 
 pub(crate) fn section_equation_function_six_distance_values(
     definition: &crate::feature::FeatureDefinition,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<(SectionScalarVariable, f64)> {
+    section_equation_function_six_distance_rows(definition, coordinates, ambiguous_point_ids)
+        .into_iter()
+        .filter(|equation| equation.active)
+        .filter_map(|equation| Some((equation.radius, equation.coordinate_distance?)))
+        .collect()
+}
+
+pub(crate) fn section_equation_function_six_distance_rows(
+    definition: &crate::feature::FeatureDefinition,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionFunctionSixDistance> {
     let Some(variables) = definition
         .variables
         .as_ref()
@@ -37,6 +65,7 @@ pub(crate) fn section_equation_function_six_distance_values(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     let row = |ordinal: Option<u32>| {
         usize::try_from(ordinal?)
             .ok()
@@ -45,7 +74,6 @@ pub(crate) fn section_equation_function_six_distance_values(
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter_map(|equation| {
             if equation.function_id != 6 {
                 return None;
@@ -77,26 +105,55 @@ pub(crate) fn section_equation_function_six_distance_values(
             {
                 return None;
             }
-            let first = coordinates
+            let radius_equality = scalar_equality_values
+                .get(&(radius.variable_type, radius.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let radius_value = reconcile_equation_value(radius.value, radius_equality).ok()?;
+            let stored_distance = radius_value.filter(|value| value.is_finite() && *value > 0.0);
+            if radius_value.is_some() && stored_distance.is_none() {
+                return None;
+            }
+            let active = !section_solver_equation_is_disabled(definition, equation.equation_id);
+            let first_point = coordinates
                 .get(&first_u.key)
-                .and_then(|point| Some([point[0]?, point[1]?]))?;
-            let second = coordinates
+                .and_then(|point| Some([point[0]?, point[1]?]));
+            let second_point = coordinates
                 .get(&second_u.key)
-                .and_then(|point| Some([point[0]?, point[1]?]))?;
-            let delta = [second[0] - first[0], second[1] - first[1]];
-            let distance = delta[0].hypot(delta[1]);
-            if !distance.is_finite() || distance <= 0.0 {
-                return None;
-            }
-            if radius.value.is_some_and(|stored| {
-                !stored.is_finite()
-                    || stored <= 0.0
-                    || (stored - distance).abs()
-                        > EPS_DISTANCE_AGREEMENT * stored.abs().max(distance).max(1.0)
-            }) {
-                return None;
-            }
-            Some(((radius.variable_type, radius.key), distance))
+                .and_then(|point| Some([point[0]?, point[1]?]));
+            let points_complete = first_point.is_some() && second_point.is_some();
+            let (distance, coordinate_distance) = if active {
+                match (first_point, second_point) {
+                    (Some(first), Some(second)) => {
+                        let delta = [second[0] - first[0], second[1] - first[1]];
+                        let distance = delta[0].hypot(delta[1]);
+                        if !distance.is_finite() || distance <= 0.0 {
+                            return None;
+                        }
+                        if stored_distance
+                            .is_some_and(|stored| !approximately_equal(stored, distance))
+                        {
+                            return None;
+                        }
+                        (Some(distance), Some(distance))
+                    }
+                    _ => (stored_distance, None),
+                }
+            } else {
+                (stored_distance, None)
+            };
+            Some(SectionFunctionSixDistance {
+                first: first_u.key,
+                second: second_u.key,
+                radius: (radius.variable_type, radius.key),
+                distance,
+                coordinate_distance,
+                points_complete,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active,
+            })
         })
         .collect()
 }
@@ -108,17 +165,25 @@ pub(crate) struct SectionUnsignedCoordinateDistance {
     pub(crate) coordinate: usize,
     pub(crate) scalar: SectionScalarVariable,
     pub(crate) value: f64,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct SectionRadiusDimension {
+    pub(crate) radius_variable: SectionScalarVariable,
     pub(crate) radius: u32,
     pub(crate) scalar: SectionScalarVariable,
     pub(crate) value: f64,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
 }
 
 pub(crate) fn section_equation_dimension_scalar_value(
     scalar: &crate::feature::FeatureVariableRow,
+    equality_value: Option<f64>,
     dimension_value: f64,
     strictly_positive: bool,
 ) -> Option<f64> {
@@ -129,7 +194,8 @@ pub(crate) fn section_equation_dimension_scalar_value(
     if !valid(dimension_value) {
         return None;
     }
-    match scalar.value {
+    let scalar_value = reconcile_equation_value(scalar.value, equality_value).ok()?;
+    match scalar_value {
         Some(value) if valid(value) && approximately_equal(value, dimension_value) => {
             Some(dimension_value)
         }
@@ -139,6 +205,16 @@ pub(crate) fn section_equation_dimension_scalar_value(
 }
 
 pub(crate) fn section_equation_unsigned_coordinate_distances(
+    definition: &crate::feature::FeatureDefinition,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionUnsignedCoordinateDistance> {
+    section_equation_unsigned_coordinate_distance_rows(definition, ambiguous_point_ids)
+        .into_iter()
+        .filter(|constraint| constraint.active)
+        .collect()
+}
+
+pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionUnsignedCoordinateDistance> {
@@ -167,10 +243,10 @@ pub(crate) fn section_equation_unsigned_coordinate_distances(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
         .filter_map(|equation| {
             let [Some(first), Some(second), Some(dimension)] = equation.arguments.as_slice() else {
@@ -194,14 +270,26 @@ pub(crate) fn section_equation_unsigned_coordinate_distances(
             {
                 return None;
             }
-            let value =
-                section_equation_dimension_scalar_value(dimension, dimension_row.value?, false)?;
+            let equality_value = scalar_equality_values
+                .get(&(dimension.variable_type, dimension.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let value = section_equation_dimension_scalar_value(
+                dimension,
+                equality_value,
+                dimension_row.value?.abs(),
+                false,
+            )?;
             Some(SectionUnsignedCoordinateDistance {
                 first: first.key,
                 second: second.key,
                 coordinate: usize::from(first.variable_type == 2),
                 scalar: (dimension.variable_type, dimension.key),
                 value,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
         .collect()
@@ -235,10 +323,10 @@ pub(crate) fn section_equation_radius_dimensions(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
         .filter_map(|equation| {
             let [Some(first), Some(second)] = equation.arguments.as_slice() else {
@@ -253,32 +341,73 @@ pub(crate) fn section_equation_radius_dimensions(
             };
             let dimension = dimensions.rows.get(usize::try_from(scalar.key).ok()?)?;
             let dimension_value = dimension.value?;
+            let radius_equality = scalar_equality_values
+                .get(&(radius.variable_type, radius.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let radius_value = reconcile_equation_value(radius.value, radius_equality).ok()?;
             if dimension.dimension_type != 3
                 || dimension.value_unit != crate::feature::DimensionUnit::Millimeters
-                || radius.value.is_some_and(|value| {
+                || radius_value.is_some_and(|value| {
                     !value.is_finite()
                         || value <= 0.0
                         || (value - dimension_value).abs()
-                            > EPS_DISTANCE_AGREEMENT
+                            > EPS_DIMENSION_BINDING
                                 * value.abs().max(dimension_value.abs()).max(1.0)
                 })
             {
                 return None;
             }
-            let value = section_equation_dimension_scalar_value(scalar, dimension_value, true)?;
+            let equality_value = scalar_equality_values
+                .get(&(scalar.variable_type, scalar.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let value = section_equation_dimension_scalar_value(
+                scalar,
+                equality_value,
+                dimension_value,
+                true,
+            )?;
             Some(SectionRadiusDimension {
+                radius_variable: (radius.variable_type, radius.key),
                 radius: radius.key,
                 scalar: (scalar.variable_type, scalar.key),
                 value,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
         .collect()
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct SectionPointOnLineConstraint {
+    pub(crate) target: u32,
+    pub(crate) first: u32,
+    pub(crate) second: u32,
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
 }
 
 pub(crate) fn section_equation_point_on_line_constraints(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<(u32, u32, u32)> {
+    section_equation_point_on_line_constraint_rows(definition, ambiguous_point_ids)
+        .into_iter()
+        .filter(|constraint| constraint.active)
+        .map(|constraint| (constraint.target, constraint.first, constraint.second))
+        .collect()
+}
+
+pub(crate) fn section_equation_point_on_line_constraint_rows(
+    definition: &crate::feature::FeatureDefinition,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionPointOnLineConstraint> {
     let Some(variables) = definition
         .variables
         .as_ref()
@@ -297,10 +426,10 @@ pub(crate) fn section_equation_point_on_line_constraints(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 35 && equation.arguments.len() == 9)
         .filter_map(|equation| {
             let [
@@ -343,15 +472,31 @@ pub(crate) fn section_equation_point_on_line_constraints(
                 || line_parameter.variable_type != 4
                 || first_zero.variable_type != 5
                 || second_zero.variable_type != 5
-                || first_zero.value != Some(0.0)
-                || second_zero.value != Some(0.0)
                 || ambiguous_point_ids.contains(&target_u.key)
                 || ambiguous_point_ids.contains(&first_u.key)
                 || ambiguous_point_ids.contains(&second_u.key)
             {
                 return None;
             }
-            Some((target_u.key, first_u.key, second_u.key))
+            let zero_value = |row: &crate::feature::FeatureVariableRow| {
+                let equality_value = scalar_equality_values
+                    .get(&(row.variable_type, row.key))
+                    .copied()
+                    .unwrap_or(Ok(None))
+                    .ok()?;
+                reconcile_equation_value(row.value, equality_value).ok()?
+            };
+            if zero_value(first_zero) != Some(0.0) || zero_value(second_zero) != Some(0.0) {
+                return None;
+            }
+            Some(SectionPointOnLineConstraint {
+                target: target_u.key,
+                first: first_u.key,
+                second: second_u.key,
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
+            })
         })
         .collect()
 }
@@ -360,9 +505,22 @@ pub(crate) fn section_equation_point_on_line_constraints(
 pub(crate) struct SectionEqualLengthConstraint {
     pub(crate) first: [u32; 2],
     pub(crate) second: [u32; 2],
+    pub(crate) equation_id: u32,
+    pub(crate) offset: usize,
+    pub(crate) active: bool,
 }
 
 pub(crate) fn section_equation_equal_length_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionEqualLengthConstraint> {
+    section_equation_equal_length_constraint_rows(definition, ambiguous_point_ids)
+        .into_iter()
+        .filter(|constraint| constraint.active)
+        .collect()
+}
+
+pub(crate) fn section_equation_equal_length_constraint_rows(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Vec<SectionEqualLengthConstraint> {
@@ -384,10 +542,10 @@ pub(crate) fn section_equation_equal_length_constraints(
     if declared_count != equations.rows.len() + 1 {
         return Vec::new();
     }
+    let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
         .rows
         .iter()
-        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 33 && equation.arguments.len() == 9)
         .filter_map(|equation| {
             let mut rows = Vec::with_capacity(equation.arguments.len());
@@ -408,7 +566,6 @@ pub(crate) fn section_equation_equal_length_constraints(
                 || fourth_u.variable_type != 1
                 || fourth_v.variable_type != 2
                 || auxiliary.variable_type != 7
-                || auxiliary.value != Some(0.0)
                 || first_u.key != first_v.key
                 || second_u.key != second_v.key
                 || third_u.key != third_v.key
@@ -421,9 +578,21 @@ pub(crate) fn section_equation_equal_length_constraints(
             {
                 return None;
             }
+            let equality_value = scalar_equality_values
+                .get(&(auxiliary.variable_type, auxiliary.key))
+                .copied()
+                .unwrap_or(Ok(None))
+                .ok()?;
+            let auxiliary_value = reconcile_equation_value(auxiliary.value, equality_value).ok()?;
+            if auxiliary_value != Some(0.0) {
+                return None;
+            }
             Some(SectionEqualLengthConstraint {
                 first: [first_u.key, second_u.key],
                 second: [third_u.key, fourth_u.key],
+                equation_id: equation.equation_id,
+                offset: equation.offset,
+                active: !section_solver_equation_is_disabled(definition, equation.equation_id),
             })
         })
         .collect()

@@ -8,6 +8,7 @@ use cadmpeg_ir::Exactness;
 
 use crate::container::ContainerScan;
 
+use super::super::coverage::source_section;
 use super::super::expanded::{
     fc05_circle_records, fc05_cylinder_cap_pair_records, feature_surface_replay_associations,
 };
@@ -17,7 +18,7 @@ use super::super::records::family_table_record;
 use super::super::records::{
     cross_section_curve_row_records, curve_expression_records, curve_parameter_records,
     curve_prototype_records, curve_prototype_topology_records, curve_topology_row_records,
-    datum_plane_records, depdb_recipe_row_records, face_component_records,
+    datum_cylinder_records, datum_plane_records, depdb_recipe_row_records, face_component_records,
     fc_curve_coordinate_records, feature_affected_id_records, feature_choice_field_records,
     feature_choice_records, feature_definition_records, feature_entity_records,
     feature_entity_reference_records, feature_entity_table_records, feature_geometry_table_records,
@@ -25,13 +26,15 @@ use super::super::records::{
     feature_operation_state_records, feature_placement_instruction_records,
     feature_reference_name_records, feature_replay_affected_id_records,
     feature_revolution_extent_records, feature_row_records, feature_section_transform_records,
-    half_edge_records, half_edge_vertex_incidence_records, loop_records, outline_plane_records,
-    pcurve_endpoint_records, plane_envelope_records, plane_local_system_records,
-    prototype_pcurve_records, reference_circle_records, reference_conic_records,
-    reference_ellipse_records, reference_line_records, sketch_records,
+    half_edge_records, half_edge_vertex_incidence_records, loop_array_frame_records,
+    loop_array_record_records, loop_records, outline_plane_records, pcurve_endpoint_records,
+    plane_envelope_records, plane_local_system_records, prototype_pcurve_records,
+    reference_circle_records, reference_conic_records, reference_ellipse_records,
+    reference_line_records, sketch_records, surface_contour_records,
     surface_merge_replay_affected_id_records, surface_parameter_records, surface_prototype_records,
     surface_row_records, tabulated_cylinder_curve_replay_records, topological_vertex_records,
 };
+use super::super::surfaces::BrepTransferDiagnostics;
 
 /// Emit the `MdlRefInfo` reference-geometry arenas.
 ///
@@ -98,6 +101,7 @@ pub(in super::super) fn emit_geometry_arenas(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    brep_diagnostics: &BrepTransferDiagnostics,
 ) -> Result<(), CodecError> {
     let surface_rows = surface_row_records(scan, &scan.surfaces.rows, "visibgeom");
     emit_uniform(
@@ -138,6 +142,47 @@ pub(in super::super) fn emit_geometry_arenas(
         |record| &record.source_section,
         |record| record.offset as u64,
         "cross_section_surface_namespace_row",
+        Exactness::ByteExact,
+    )?;
+    let surface_contours = surface_contour_records(scan, &scan.surfaces.contours, "visibgeom");
+    emit_uniform(
+        ir,
+        annotations,
+        "surface_contours",
+        &surface_contours,
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "surface_contour_chain_entry",
+        Exactness::ByteExact,
+    )?;
+    let nonvisible_surface_contours =
+        surface_contour_records(scan, &scan.surfaces.nonvisible_contours, "novisgeom");
+    emit_uniform(
+        ir,
+        annotations,
+        "nonvisible_surface_contours",
+        &nonvisible_surface_contours,
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "nonvisible_surface_contour_chain_entry",
+        Exactness::ByteExact,
+    )?;
+    let cross_section_surface_contours = surface_contour_records(
+        scan,
+        &scan.surfaces.cross_section_contours,
+        "cross_section_geometry",
+    );
+    emit_uniform(
+        ir,
+        annotations,
+        "cross_section_surface_contours",
+        &cross_section_surface_contours,
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "cross_section_surface_contour_chain_entry",
         Exactness::ByteExact,
     )?;
     let surface_prototypes =
@@ -309,6 +354,20 @@ pub(in super::super) fn emit_geometry_arenas(
         "cross_section_curve_row",
         Exactness::ByteExact,
     )?;
+    let loop_array_frames = loop_array_frame_records(scan);
+    store_arena(ir, "loop_array_frames", &loop_array_frames)?;
+    let loop_array_records = loop_array_record_records(scan);
+    emit_uniform(
+        ir,
+        annotations,
+        "loop_array_records",
+        &loop_array_records,
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "loop_array_record",
+        Exactness::ByteExact,
+    )?;
     let half_edges = half_edge_records(scan);
     emit_uniform(
         ir,
@@ -333,6 +392,12 @@ pub(in super::super) fn emit_geometry_arenas(
     )?;
     let face_components = face_component_records(scan);
     store_arena(ir, "face_components", &face_components)?;
+    let face_admission_rejections = brep_diagnostics.face_admission_rejection_records();
+    store_arena(
+        ir,
+        "brep_face_admission_rejections",
+        &face_admission_rejections,
+    )?;
     let surface_parameters = surface_parameter_records(
         scan,
         &scan.surfaces.rows,
@@ -434,6 +499,8 @@ pub(in super::super) fn emit_geometry_arenas(
     )?;
     let datum_planes = datum_plane_records(scan);
     store_arena(ir, "datum_planes", &datum_planes)?;
+    let datum_cylinders = datum_cylinder_records(scan);
+    store_arena(ir, "datum_cylinders", &datum_cylinders)?;
     let feature_section_transforms = feature_section_transform_records(scan);
     store_arena(
         ir,
@@ -672,10 +739,11 @@ pub(in super::super) fn emit_geometry_arenas(
     // the record, so annotation zips the two before the arena is stored.
     let curve_expressions = curve_expression_records(scan);
     for (expression, source) in curve_expressions.iter().zip(&scan.curves.expressions) {
+        let source_section = source_section(scan, source.expression_offset);
         annotate(
             annotations,
             &expression.id,
-            "DEPDB_DATA",
+            &source_section,
             source.expression_offset as u64,
             "curve_expression_program",
             Exactness::ByteExact,

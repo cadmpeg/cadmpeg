@@ -6,7 +6,7 @@
 //! persistence-layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -302,6 +302,181 @@ fn decode_reports_missing_declared_solver_variable_rows() {
                  equation-derived coordinates are withheld",
             )
     }));
+}
+
+#[test]
+fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
+    let definition = crate::feature::FeatureDefinition {
+        id: 7,
+        owner_feature_id: Some(8),
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: Vec::new(),
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 2,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureSegment {
+                kind: crate::feature::FeatureSegmentKind::Line,
+                directions: [None; 3],
+                point_ids: [21, 22],
+                center_id: None,
+                arc_orientation: None,
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 3,
+                body: Vec::new(),
+                offset: 0,
+            }],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: Some(crate::feature::FeatureOrderTable {
+            declared_count: 1,
+            has_prototype: false,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureOrderRow {
+                external_id: 3,
+                internal_id: 3,
+                bitmask: 0,
+                offset: 0,
+            }],
+            offset: 0,
+        }),
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: Some(crate::feature::FeatureSavedSection {
+            entities: vec![crate::feature::FeatureSavedEntity::Line(
+                crate::feature::FeatureSavedLine {
+                    entity_id: 3,
+                    references: Vec::new(),
+                    attributes: Vec::new(),
+                    endpoints: [
+                        [Some(2.0), Some(3.0), Some(0.0)],
+                        [Some(5.0), Some(7.0), Some(0.0)],
+                    ],
+                    body: Vec::new(),
+                    offset: 0,
+                },
+            )],
+            offset: 0,
+        }),
+        offset: 0,
+    };
+
+    assert_eq!(
+        crate::decode::resolved_section_points(&definition),
+        BTreeMap::from([(21, [2.0, 3.0]), (22, [5.0, 7.0])])
+    );
+}
+
+#[test]
+fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
+    let line = |point_ids| crate::feature::FeatureSegment {
+        kind: crate::feature::FeatureSegmentKind::Line,
+        directions: [None; 3],
+        point_ids,
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: Some(0),
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 10,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![line([1, 2])],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let segments = definition
+        .segments
+        .as_ref()
+        .expect("segments")
+        .rows
+        .iter()
+        .collect::<Vec<_>>();
+    let valid = BTreeMap::from([(1, [Some(2.0), Some(0.0)]), (2, [Some(2.0), Some(3.0)])]);
+    assert_eq!(
+        crate::decode::sketch::section_linear_distance_coordinate(
+            &definition,
+            &segments,
+            1,
+            2,
+            &valid,
+            &[],
+            &BTreeSet::new(),
+        ),
+        Some(1)
+    );
+    let conflicting = BTreeMap::from([(1, [Some(2.0), Some(0.0)]), (2, [Some(4.0), Some(3.0)])]);
+    assert_eq!(
+        crate::decode::sketch::section_linear_distance_coordinate(
+            &definition,
+            &segments,
+            1,
+            2,
+            &conflicting,
+            &[],
+            &BTreeSet::new(),
+        ),
+        None
+    );
+    assert_eq!(
+        crate::decode::sketch::section_linear_distance_coordinate(
+            &definition,
+            &segments,
+            1,
+            2,
+            &BTreeMap::new(),
+            &[(1, [2.0, 0.0]), (2, [4.0, 3.0])],
+            &BTreeSet::new(),
+        ),
+        None
+    );
 }
 
 #[test]

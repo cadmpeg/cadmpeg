@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
+#![allow(unused_imports)]
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
+use cadmpeg_ir::Exactness;
 
-use crate::container::{self};
+use crate::container::{self, role, Layout};
+use crate::surface::TorusRadius2Encoding;
 use crate::test_support::*;
 use crate::CreoCodec;
 
@@ -213,6 +219,16 @@ fn decodes_compact_width_datum_row_identifiers() {
 }
 
 #[test]
+fn decodes_compact_width_named_datum_identifiers() {
+    let data = b"\xe0\x01geom_id\0\x80\x80\xe0\x01feat_id\0\x81\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
+    let plane = named_plane(data).expect("compact-width named plane");
+
+    assert_eq!(plane.id, 128);
+    assert_eq!(plane.feature_id, 257);
+    assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
+}
+
+#[test]
 fn bounds_a_datum_outline_at_the_next_validated_row() {
     let mut data = b"srf_array\0\xf8\x02".to_vec();
     data.extend([4, 0x22, 1, 1, 1, 0]);
@@ -354,6 +370,168 @@ fn scan_discovers_model_space_datum_planes() {
     let scan = container::scan_bytes(build_prt("c", &[("ActDatums", datum)]));
     assert_eq!(scan.planes.datums.len(), 1);
     assert_eq!(scan.planes.datums[0].normal, [0.0, 1.0, 0.0]);
+}
+
+#[test]
+fn scan_discovers_complete_active_datum_cylinder_carrier() {
+    let mut datum = b"srf_array\0\xf8\x01".to_vec();
+    datum.extend([8, 0x24, 3, 1, 1, 0]);
+    datum.extend([
+        0x14, 0x2f, 0x10, 0x00, 0x2d, 0x1f, 0x6a, 0x7a, 0x29, 0x55, 0x38, 0x5e, 0x2f, 0x43, 0x00,
+        0x48, 0x29, 0x00, 0x2f, 0x10, 0x00, 0x43, 0xe8, 0x00, 0x48, 0x27, 0x80, 0x2f, 0x43, 0x00,
+        0x2a, 0xe8, 0x00,
+    ]);
+    let scan = container::scan_bytes(build_prt("c", &[("ActDatums", datum)]));
+    assert_eq!(scan.planes.datum_cylinders.len(), 1);
+    let cylinder = scan.planes.datum_cylinders[0];
+    assert_eq!(cylinder.id, 8);
+    assert_eq!(cylinder.feature_id, 3);
+    assert!(!cylinder.reversed);
+    assert_eq!(cylinder.frame.origin, [-12.5, 4.0, 0.0]);
+    assert_eq!(cylinder.frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(cylinder.frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert_eq!(cylinder.frame.radius, 0.75);
+    assert_eq!(cylinder.frame.length, Some(34.0));
+}
+
+#[test]
+fn active_datum_cylinder_envelope_decodes_direct_and_split_forms() {
+    let cases = [
+        (
+            8_u32,
+            false,
+            0,
+            vec![0xc0; 10],
+            [8.0, -13.0, -4.0, 0.0, -11.0, 4.0, 1.0],
+            [-12.0, 4.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            1.0,
+            8.0,
+        ),
+        (
+            10_u32,
+            false,
+            1,
+            {
+                let mut prefix = vec![0xc0; 2];
+                prefix.extend(ieee8(-8.0));
+                prefix.push(0xc1);
+                prefix
+            },
+            [0.0, 11.0, -4.0, 0.0, 13.0, 4.0, 1.0],
+            [12.0, 4.0, 0.0],
+            [0.0, -1.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            1.0,
+            8.0,
+        ),
+        (
+            12_u32,
+            true,
+            1,
+            {
+                let mut prefix = vec![0xc0; 2];
+                prefix.extend([0x0f, 0xe4]);
+                prefix.push(0xc1);
+                prefix
+            },
+            [6.0, -2.0, 19.0, -3.0, 2.0, 21.0, 3.0],
+            [0.0, 19.0, 3.0],
+            [0.0, 0.0, -1.0],
+            [-1.0, 0.0, 0.0],
+            2.0,
+            6.0,
+        ),
+    ];
+    for (
+        id,
+        reversed,
+        boundary_type,
+        mut prefix,
+        values,
+        origin,
+        axis,
+        ref_direction,
+        radius,
+        length,
+    ) in cases
+    {
+        let mut data = b"srf_array\0\xf8\x01".to_vec();
+        data.extend([
+            id as u8,
+            0x24,
+            3,
+            if reversed { 0xf6 } else { 1 },
+            boundary_type,
+            0,
+        ]);
+        for value in values {
+            if value == 0.0 {
+                prefix.push(0x0f);
+            } else if value == 1.0 {
+                prefix.push(0xe4);
+            } else {
+                prefix.extend(ieee8(value));
+            }
+        }
+        data.extend(prefix);
+        let decoded = cylinders(&data);
+        let [cylinder] = decoded.as_slice() else {
+            panic!("one complete active-datum cylinder expected");
+        };
+        assert_eq!(cylinder.id, id);
+        assert_eq!(cylinder.reversed, reversed);
+        assert_eq!(cylinder.frame.origin, origin);
+        assert_eq!(cylinder.frame.axis, axis);
+        assert_eq!(cylinder.frame.ref_direction, ref_direction);
+        assert_eq!(cylinder.frame.radius, radius);
+        assert_eq!(cylinder.frame.length, Some(length));
+    }
+}
+
+#[test]
+fn decode_transfers_active_datum_cylinder_with_source_namespace() {
+    let mut datum = b"srf_array\0\xf8\x01".to_vec();
+    datum.extend([8, 0x24, 3, 1, 1, 0]);
+    datum.extend([
+        0x14, 0x2f, 0x10, 0x00, 0x2d, 0x1f, 0x6a, 0x7a, 0x29, 0x55, 0x38, 0x5e, 0x2f, 0x43, 0x00,
+        0x48, 0x29, 0x00, 0x2f, 0x10, 0x00, 0x43, 0xe8, 0x00, 0x48, 0x27, 0x80, 0x2f, 0x43, 0x00,
+        0x2a, 0xe8, 0x00,
+    ]);
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ActDatums", datum)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:actdatums:surface#8")
+        .expect("active datum cylinder surface");
+    assert!(matches!(
+        surface.geometry,
+        SurfaceGeometry::Cylinder { radius, .. } if (radius - 0.75).abs() < 1.0e-12
+    ));
+    assert_eq!(
+        surface
+            .source_object
+            .as_ref()
+            .expect("source association")
+            .object_id,
+        "ActDatums:8"
+    );
+    let cylinders = &result.ir().native.namespace("creo").unwrap().arenas["datum_cylinders"];
+    assert_eq!(cylinders.len(), 1);
+    assert_eq!(cylinders[0].fields()["datum_id"], 8);
+    assert_eq!(cylinders[0].fields()["radius"], 0.75);
+    assert_eq!(
+        result.report().coverage["transferred_active_datum_cylinder_count"],
+        1
+    );
 }
 
 #[test]

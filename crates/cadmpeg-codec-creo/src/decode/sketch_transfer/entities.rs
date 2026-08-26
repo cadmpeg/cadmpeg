@@ -475,6 +475,7 @@ pub(super) fn transfer_section_entities(
         let geometry = if unique_external_id {
             let native_kind =
                 match unique_section_incidence_curve_family(definition, segment.external_id) {
+                    Some(SectionEntityIncidenceFamily::Point) => "point".to_string(),
                     Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve".to_string(),
                     Some(SectionEntityIncidenceFamily::Line) => "line".to_string(),
                     Some(SectionEntityIncidenceFamily::Arc) => "arc".to_string(),

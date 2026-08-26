@@ -22,7 +22,7 @@ use crate::decode::sweep::{
     agreed_generated_cylinder_extent, blind_extrusion_from_carriers, bounded_cylinder_span,
     directed_blind_extrusion_span, generated_bounded_cylinder_extent, generated_cap_plane_extent,
     generated_rectilinear_plane_extent, ordered_parallel_cap_extent,
-    resolved_feature_extrusion_span, unique_available_positional_cylinder_frames,
+    resolved_feature_extrusion_span, unique_available_positional_cylinder_frame_records,
     ExtrusionCarrierSpan,
 };
 use cadmpeg_ir::document::CadIr;
@@ -63,11 +63,11 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         non_surface_entity_ids: vec![43, 49],
         offset: 0,
     };
-    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+    let row = |feature_id, id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
         type_byte: kind.canonical_type_byte(),
         kind,
-        feature_id: 40,
+        feature_id,
         reversed: false,
         boundary_type: 0,
         next_surface: 0,
@@ -76,8 +76,8 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.entity_tables.push(table);
     scan.surfaces.rows.extend([
-        row(46, crate::surface::SurfaceKind::Plane),
-        row(51, crate::surface::SurfaceKind::Cylinder),
+        row(40, 46, crate::surface::SurfaceKind::Plane),
+        row(40, 51, crate::surface::SurfaceKind::Cylinder),
     ]);
     scan.planes.outlines.push(crate::surface::OutlinePlane {
         surface_id: 46,
@@ -116,6 +116,68 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         });
 
     assert!(single_cap_circular_sweep_geometry(&scan, 40).is_some());
+
+    let reversed_entries = vec![
+        entry(143, 204, None),
+        entry(146, 203, None),
+        entry(149, 200, Some(4)),
+        entry(151, 200, None),
+    ];
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(41),
+            table_class_id: 29,
+            entry_ids: reversed_entries
+                .iter()
+                .map(|entry| entry.entity_id)
+                .collect(),
+            entries: reversed_entries,
+            surface_ids: vec![143, 151],
+            non_surface_entity_ids: vec![146, 149],
+            offset: 0,
+        });
+    scan.surfaces.rows.extend([
+        row(41, 143, crate::surface::SurfaceKind::Plane),
+        row(41, 151, crate::surface::SurfaceKind::Cylinder),
+    ]);
+    scan.planes.outlines.push(crate::surface::OutlinePlane {
+        surface_id: 143,
+        origin: [0.0, 16.0, 0.0],
+        normal: [0.0, 1.0, 0.0],
+        u_axis: [1.0, 0.0, 0.0],
+        offset: 143,
+    });
+    scan.planes
+        .envelopes
+        .push(crate::surface::PlaneEnvelopeRecord {
+            surface_id: 143,
+            body: Vec::new(),
+            envelope: crate::surface::PlaneEnvelope::Standard {
+                bounds_2d: [[None; 2]; 2],
+                corners_3d: [
+                    [Some(-4.45), Some(16.0), Some(-4.45)],
+                    [Some(4.45), Some(16.0), Some(4.45)],
+                ],
+            },
+            corner_coordinate_equal: [Some(false), Some(true), Some(false)],
+            scalar_tokens: Vec::new(),
+            row_offset: 0,
+            offset: 0,
+        });
+    scan.features
+        .section_transforms
+        .push(crate::placement::FeatureSectionTransform {
+            definition_id: 41,
+            feature_id: Some(41),
+            origin: [0.0, 0.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 0.0, 1.0],
+            normal: [0.0, 1.0, 0.0],
+            offset: 0,
+        });
+    assert!(single_cap_circular_sweep_geometry(&scan, 41).is_some());
+
     assert!(section_entity_is_generated_profile(
         true,
         Some(40),
@@ -1338,12 +1400,14 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
     let surface_ids = BTreeSet::from([1, 2, 3]);
     let parameters = [parameter(1, Some(frame)), parameter(2, None)];
     assert_eq!(
-        unique_available_positional_cylinder_frames(&surface_ids, &parameters),
-        Some(vec![frame])
+        unique_available_positional_cylinder_frame_records(&surface_ids, &parameters),
+        Some(vec![(1, frame)])
     );
 
     let duplicates = [parameter(1, Some(frame)), parameter(1, Some(frame))];
-    assert!(unique_available_positional_cylinder_frames(&surface_ids, &duplicates).is_none());
+    assert!(
+        unique_available_positional_cylinder_frame_records(&surface_ids, &duplicates).is_none()
+    );
 }
 
 #[test]
@@ -1413,21 +1477,65 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         },
     ]);
 
+    let expected = Some((
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(8.0),
+                },
+                draft: None,
+                offset: None,
+            },
+        },
+        [0.0, -1.0, 0.0],
+    ));
     assert_eq!(
         generated_bounded_cylinder_extent(&scan, &ir, 7, None),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: Termination::Blind {
-                        length: Length(8.0),
-                    },
-                    draft: None,
-                    offset: None,
-                },
-            },
-            [0.0, -1.0, 0.0],
-        ))
+        expected
     );
+
+    scan.planes.outlines.push(crate::surface::OutlinePlane {
+        surface_id: 31,
+        origin: [0.0, 5.0, 0.0],
+        normal: [0.0, 1.0, 0.0],
+        u_axis: [1.0, 0.0, 0.0],
+        offset: 31,
+    });
+    let conflicting_extent = generated_bounded_cylinder_extent(&scan, &ir, 7, None);
+    assert!(conflicting_extent.is_none());
+    scan.planes.outlines[0].origin[1] = 4.0;
+    assert_eq!(
+        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        expected
+    );
+
+    scan.surfaces
+        .rows
+        .push(row(34, crate::surface::SurfaceKind::Plane));
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId("creo:visibgeom:surface#34".to_string()),
+        geometry: SurfaceGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    assert_eq!(
+        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        expected
+    );
+
+    scan.surfaces
+        .rows
+        .push(row(35, crate::surface::SurfaceKind::Cylinder));
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId("creo:visibgeom:surface#35".to_string()),
+        geometry: SurfaceGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    assert_eq!(
+        generated_bounded_cylinder_extent(&scan, &ir, 7, None),
+        expected
+    );
+    scan.surfaces.rows.truncate(3);
+    ir.model.surfaces.truncate(3);
 
     let mut untransferred_caps = ir.clone();
     untransferred_caps
@@ -1769,6 +1877,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.extend([
+        row(37, false),
         row(31, false),
         row(32, true),
         row(33, true),
@@ -1787,6 +1896,11 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     };
     let mut ir = CadIr::empty(Units::default());
     ir.model.surfaces.extend([
+        Surface {
+            id: SurfaceId("creo:visibgeom:surface#37".to_string()),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        },
         plane(31, Point3::new(0.0, 6.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
         plane(32, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
         plane(33, Point3::new(4.0, 48.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),

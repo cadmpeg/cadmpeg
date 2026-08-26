@@ -9,6 +9,8 @@ use serde::{Serialize, Serializer};
 const PRINCIPAL_UNIT_NAME: &str = "principal_sys_units";
 const MILLIMETER_NEWTON_SECOND: &str = "millimeter Newton Second (mmNs)";
 const INCH_POUND_MASS_SECOND: &str = "Inch lbm Second (Pro/E Default)";
+const LEGACY_INCH_TO_MM: f64 = 25.4;
+const LEGACY_LENGTH_UNIT_TYPE: i32 = 0;
 
 /// Active coordinate-unit system selected by a model-level persistence field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,6 +21,8 @@ pub enum PrincipalUnitSystem {
     MillimeterKilogramSecond,
     /// Inch, pound mass, second.
     InchPoundMassSecond,
+    /// A complete legacy `unit_arr` length record with a source-specific scale.
+    LegacyLengthScale(u64),
     /// A binary selector whose unit definition is not known.
     UnknownBinarySelector(u8),
 }
@@ -30,6 +34,9 @@ impl PrincipalUnitSystem {
             Self::MillimeterNewtonSecond => "mmNs".to_string(),
             Self::MillimeterKilogramSecond => "mmKs".to_string(),
             Self::InchPoundMassSecond => "inLbmS".to_string(),
+            Self::LegacyLengthScale(bits) => {
+                format!("legacy_length_scale_mm:{:.17}", f64::from_bits(bits))
+            }
             Self::UnknownBinarySelector(value) => format!("unknown:{value}"),
         }
     }
@@ -38,7 +45,8 @@ impl PrincipalUnitSystem {
     pub const fn length_scale_mm(self) -> Option<f64> {
         match self {
             Self::MillimeterNewtonSecond | Self::MillimeterKilogramSecond => Some(1.0),
-            Self::InchPoundMassSecond => Some(25.4),
+            Self::InchPoundMassSecond => Some(LEGACY_INCH_TO_MM),
+            Self::LegacyLengthScale(bits) => Some(f64::from_bits(bits)),
             Self::UnknownBinarySelector(_) => None,
         }
     }
@@ -49,6 +57,12 @@ impl PrincipalUnitSystem {
 pub struct Real(u64);
 
 impl Real {
+    /// Construct a real from its exact stored IEEE-754 bits.
+    #[cfg(test)]
+    pub(crate) const fn from_bits(bits: u64) -> Self {
+        Self(bits)
+    }
+
     /// Numeric value represented by the stored bits.
     pub fn value(self) -> f64 {
         f64::from_bits(self.0)
@@ -366,6 +380,77 @@ pub struct Persistence {
 }
 
 impl Persistence {
+    /// Resolve one unambiguous native model identity from legacy string rows.
+    ///
+    /// A legacy persistence tree can carry `model_name` in more than one
+    /// object, including null placeholders on view records. Prefer a
+    /// non-empty value owned by a root `Solid` object. If that role is absent,
+    /// accept one distinct non-empty value across the remaining rows; distinct
+    /// identities remain unresolved.
+    pub fn model_name(&self) -> Option<(String, usize)> {
+        let objects = self
+            .objects
+            .iter()
+            .map(|object| (object.id.as_str(), object))
+            .collect::<BTreeMap<_, _>>();
+        let mut all = BTreeMap::<String, usize>::new();
+        let mut preferred = BTreeMap::<String, usize>::new();
+        for record in self
+            .string_values
+            .iter()
+            .filter(|record| record.name == "model_name")
+        {
+            let StringPayload::Scalar {
+                value: StringValue::Utf8 { text },
+            } = &record.payload
+            else {
+                continue;
+            };
+            let text = text.trim();
+            if text.is_empty() {
+                continue;
+            }
+            all.entry(text.to_string()).or_insert(record.offset);
+            let is_root_solid = record
+                .parent
+                .as_deref()
+                .and_then(|parent| objects.get(parent))
+                .is_some_and(|object| {
+                    object.parent.is_none() && object.name.eq_ignore_ascii_case("solid")
+                });
+            if is_root_solid {
+                preferred.entry(text.to_string()).or_insert(record.offset);
+            }
+        }
+        let selected = if preferred.is_empty() { all } else { preferred };
+        let mut values = selected.into_iter();
+        let first = values.next()?;
+        values.next().is_none().then_some(first)
+    }
+
+    /// Return the first non-null source-order `model_name` row.
+    ///
+    /// This is a source-identity fallback for legacy sections that contain
+    /// several scoped model names. [`Self::model_name`] remains the resolver
+    /// for relation evaluation and withholds conflicting identities.
+    pub fn first_source_model_name(&self) -> Option<(String, usize)> {
+        self.string_values
+            .iter()
+            .filter(|record| record.name == "model_name")
+            .filter_map(|record| {
+                let StringPayload::Scalar {
+                    value: StringValue::Utf8 { text },
+                } = &record.payload
+                else {
+                    return None;
+                };
+                let text = text.trim();
+                (!text.is_empty() && !text.eq_ignore_ascii_case("NULL"))
+                    .then(|| (text.to_owned(), record.offset))
+            })
+            .min_by_key(|(_, offset)| *offset)
+    }
+
     /// Number of unique local attribute declarations across all scopes.
     pub fn declaration_count(&self) -> usize {
         self.scopes
@@ -407,11 +492,13 @@ impl Persistence {
     /// Resolve one unambiguous legacy principal-unit string.
     pub fn principal_unit_system(&self) -> Option<PrincipalUnitSystem> {
         let mut candidate = None;
+        let mut found = false;
         for record in self
             .string_values
             .iter()
             .filter(|record| record.name == PRINCIPAL_UNIT_NAME)
         {
+            found = true;
             if candidate.is_some() {
                 return None;
             }
@@ -429,7 +516,97 @@ impl Persistence {
                 _ => return None,
             };
         }
-        candidate
+        if found {
+            candidate
+        } else {
+            self.legacy_unit_array_system()
+        }
+    }
+
+    fn legacy_unit_array_system(&self) -> Option<PrincipalUnitSystem> {
+        let mut arrays = self.objects.iter().filter(|object| {
+            object.name == "unit_arr"
+                && matches!(object.payload, ObjectPayload::Array { complete: true, .. })
+        });
+        let array = arrays.next()?;
+        arrays.next().is_none().then_some(())?;
+        let ObjectPayload::Array { elements, .. } = &array.payload else {
+            unreachable!("the unit array was filtered above");
+        };
+        if elements.is_empty() {
+            return None;
+        }
+        let mut element_ids = BTreeSet::new();
+        if !elements
+            .iter()
+            .all(|element_id| element_ids.insert(element_id))
+        {
+            return None;
+        }
+        let element_records = elements
+            .iter()
+            .map(|element_id| {
+                let mut matches = self.objects.iter().filter(|object| {
+                    object.id == *element_id
+                        && object.parent.as_deref() == Some(array.id.as_str())
+                        && object.name == "unit_arr"
+                });
+                let element = matches.next()?;
+                matches.next().is_none().then_some(element)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let first = element_records.first()?;
+        let unit_type = self.unique_integer_scalar(&first.id, "unit_type")?;
+        if unit_type != LEGACY_LENGTH_UNIT_TYPE
+            || self.unique_utf8_scalar(&first.id, "name")?.is_empty()
+        {
+            return None;
+        }
+        let factor = self.unique_real_scalar(&first.id, "factor")?;
+        let scale_mm = factor * LEGACY_INCH_TO_MM;
+        (scale_mm.is_finite() && scale_mm > 0.0)
+            .then_some(PrincipalUnitSystem::LegacyLengthScale(scale_mm.to_bits()))
+    }
+
+    fn unique_integer_scalar(&self, parent: &str, name: &str) -> Option<i32> {
+        let mut matches = self
+            .integer_values
+            .iter()
+            .filter(|record| record.parent.as_deref() == Some(parent) && record.name == name);
+        let record = matches.next()?;
+        matches.next().is_none().then_some(())?;
+        match &record.payload {
+            NumericPayload::Scalar { value } => Some(*value),
+            NumericPayload::Array { .. } => None,
+        }
+    }
+
+    fn unique_real_scalar(&self, parent: &str, name: &str) -> Option<f64> {
+        let mut matches = self
+            .real_values
+            .iter()
+            .filter(|record| record.parent.as_deref() == Some(parent) && record.name == name);
+        let record = matches.next()?;
+        matches.next().is_none().then_some(())?;
+        match &record.payload {
+            NumericPayload::Scalar { value } => Some(value.value()),
+            NumericPayload::Array { .. } => None,
+        }
+    }
+
+    fn unique_utf8_scalar<'a>(&'a self, parent: &str, name: &str) -> Option<&'a str> {
+        let mut matches = self
+            .string_values
+            .iter()
+            .filter(|record| record.parent.as_deref() == Some(parent) && record.name == name);
+        let record = matches.next()?;
+        matches.next().is_none().then_some(())?;
+        match &record.payload {
+            StringPayload::Scalar {
+                value: StringValue::Utf8 { text },
+            } => Some(text),
+            _ => None,
+        }
     }
 }
 

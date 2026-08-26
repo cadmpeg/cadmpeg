@@ -448,9 +448,14 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
                 [display] => Some((*display).clone()),
                 displays => {
                     let mut projection = (*displays.last()?).clone();
+                    let first_recipe = displays.first()?.recipe;
                     projection.offset = displays.first()?.offset;
                     projection.state_offset = displays.first()?.state_offset;
-                    projection.recipe_conflict = displays.iter().any(|state| state.recipe_conflict);
+                    projection.recipe_conflict = displays.iter().any(|state| state.recipe_conflict)
+                        || displays
+                            .iter()
+                            .skip(1)
+                            .any(|state| state.recipe != first_recipe);
                     projection.display_state_conflict = true;
                     projection.kind =
                         agreeing_value(displays.iter().map(|state| state.kind.clone()))

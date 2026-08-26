@@ -13,9 +13,11 @@ use crate::container::{self, role, ContainerScan};
 use crate::loss::CreoLossCode;
 
 use super::super::analytic::is_axis_aligned;
+use super::super::surfaces::BrepTransferDiagnostics;
 use super::report_coverage::push_coverage_drop_losses;
 use super::report_losses::{
-    push_carrier_transfer_notes, push_legacy_value_losses, push_structural_layer_notes,
+    push_brep_transfer_note, push_carrier_transfer_notes, push_legacy_value_losses,
+    push_structural_layer_notes,
 };
 use cadmpeg_ir::report::DecodeReport;
 
@@ -62,6 +64,7 @@ pub(in super::super) fn build_report(
     scan: &ContainerScan,
     ir: &CadIr,
     coverage: BTreeMap<String, usize>,
+    brep_diagnostics: &BrepTransferDiagnostics,
     container_only: bool,
 ) -> DecodeReport {
     let summary = container::summarize(scan);
@@ -137,23 +140,7 @@ pub(in super::super) fn build_report(
 
     push_legacy_value_losses(&mut losses, &coverage);
 
-    // The core prototype-vs-instance limitation.
-    losses.push(CreoLossCode::BrepTransferIncomplete.note(format!(
-        "General model B-rep transfer remains incomplete. Native face components transfer \
-         when every boundary edge has solved vertex orbits, face orientation is unique, and \
-         every loop is complete; a multi-loop planar face additionally requires one strict \
-         containment outer boundary. Selected \
-         cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, \
-         a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
-         square cap outline establishes the complete axis placement and radius, or a compact \
-         class-911 table owns a complete positional cylinder carrier, a class-911 \
-         counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature \
-         patches have complementary square outline bounds on one axis-normal plane. Later positional \
-         instances do not inherit prototype placement or scalar \
-         defaults; they require their per-instance parameter bodies \
-         ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). {geom_sections} PSB geometry section(s) were preserved verbatim as unknown \
-         records."
-    )));
+    push_brep_transfer_note(&mut losses, brep_diagnostics, geom_sections);
 
     push_carrier_transfer_notes(
         &mut losses,

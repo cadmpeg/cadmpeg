@@ -1785,6 +1785,10 @@ pub(crate) fn constraint_parameters(
         Definition::Offset { parameter, .. } | Definition::Native { parameter, .. } => {
             parameter.iter().collect()
         }
+        Definition::PolarDistance {
+            distance_parameter, ..
+        } => distance_parameter.iter().collect(),
+        Definition::DistanceLociValue { parameter, .. } => parameter.iter().collect(),
         Definition::Distance { parameter, .. }
         | Definition::DistanceLoci { parameter, .. }
         | Definition::HorizontalDistance { parameter, .. }
@@ -1833,6 +1837,10 @@ pub(crate) fn constraint_parameters(
         | Definition::TangentLoci { .. }
         | Definition::AtIntersection { .. }
         | Definition::Midpoint { .. }
+        | Definition::PointCoordinateValues { .. }
+        | Definition::MidpointCoordinate { .. }
+        | Definition::AngleDifference { .. }
+        | Definition::ScalarEquality { .. }
         | Definition::Concentric { .. }
         | Definition::Coradial { .. }
         | Definition::Collinear { .. }
@@ -1848,6 +1856,7 @@ pub(crate) fn constraint_parameters(
         | Definition::Tangent { .. }
         | Definition::Curvature { .. }
         | Definition::Equal { .. }
+        | Definition::EqualDistance { .. }
         | Definition::ArcAngle { .. }
         | Definition::EllipseAngle { .. }
         | Definition::Fixed { .. }

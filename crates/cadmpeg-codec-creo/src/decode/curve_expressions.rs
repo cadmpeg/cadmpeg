@@ -16,6 +16,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
 
+use super::coverage::source_section;
 use super::native::annotate;
 
 pub(crate) fn curve_expression_record_id(record: &crate::curve::CurveExpressionRecord) -> String {
@@ -63,6 +64,10 @@ pub(crate) fn curve_expression_helix_definition(
         u.z * v.x - u.x * v.z,
         u.x * v.y - u.y * v.x,
     );
+    slots[9..12]
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(())?;
     let origin = Point3::new(slots[9], slots[10], slots[11]);
     let (sin, cos) = helix.start_angle.sin_cos();
     let major_direction = Vector3::new(
@@ -109,6 +114,37 @@ pub(crate) fn curve_expression_helix_definition(
         apex_factor: 0.0,
         axis,
     })
+}
+
+fn curve_expression_helix_feature_definition(
+    helix: &crate::curve::CurveExpressionHelix,
+    procedural: &ProceduralCurveDefinition,
+) -> Option<IrFeatureDefinition> {
+    let ProceduralCurveDefinition::Helix {
+        center,
+        pitch,
+        axis,
+        ..
+    } = procedural
+    else {
+        return None;
+    };
+    let axial_pitch = pitch.x * axis.x + pitch.y * axis.y + pitch.z * axis.z;
+    axial_pitch
+        .is_finite()
+        .then_some(IrFeatureDefinition::Helix {
+            axis_origin: *center,
+            axis_direction: *axis,
+            radius: Length(helix.radius),
+            pitch: Length(axial_pitch),
+            revolutions: helix.revolutions,
+            start_angle: Angle(helix.start_angle),
+            clockwise: helix.clockwise,
+            radial_growth: None,
+            cone_angle: None,
+            segment_turns: None,
+            construction_style: None,
+        })
 }
 
 pub(crate) fn expression_dependency_reaches(
@@ -229,6 +265,7 @@ pub(crate) fn transfer_curve_expression_features(
         .filter(|record| !record.backup)
         .enumerate()
     {
+        let source_section = source_section(scan, record.offset);
         let ordinal = ordinal_base + expression_ordinal as u64;
         let feature_id = IrFeatureId(format!(
             "creo:depdb:curve_expression_feature#{}-{}",
@@ -416,7 +453,7 @@ pub(crate) fn transfer_curve_expression_features(
             annotate(
                 annotations,
                 &parameter_id.0,
-                "DEPDB_DATA",
+                &source_section,
                 assignment.offset as u64,
                 "curve_expression_assignment",
                 Exactness::Derived,
@@ -454,13 +491,20 @@ pub(crate) fn transfer_curve_expression_features(
         annotate(
             annotations,
             &feature_id.0,
-            "DEPDB_DATA",
+            &source_section,
             record.expression_offset as u64,
             "curve_expression_feature",
             Exactness::Derived,
         );
         let helix = crate::curve::expression_helix(record);
         let placed_helix = curve_expression_helix_definition(record);
+        let neutral_helix =
+            helix
+                .as_ref()
+                .zip(placed_helix.as_ref())
+                .and_then(|(helix, procedural)| {
+                    curve_expression_helix_feature_definition(helix, procedural)
+                });
         if let Some(procedural_definition) = placed_helix {
             let curve_id = CurveId(format!(
                 "creo:depdb:curve_expression_curve#{}-{}",
@@ -473,7 +517,7 @@ pub(crate) fn transfer_curve_expression_features(
             annotate(
                 annotations,
                 &curve_id.0,
-                "DEPDB_DATA",
+                &source_section,
                 record.offset as u64,
                 "curve_expression_carrier",
                 Exactness::Unknown,
@@ -481,7 +525,7 @@ pub(crate) fn transfer_curve_expression_features(
             annotate(
                 annotations,
                 &procedural_id.0,
-                "DEPDB_DATA",
+                &source_section,
                 record.offset as u64,
                 "curve_expression_helix",
                 Exactness::Derived,
@@ -498,8 +542,16 @@ pub(crate) fn transfer_curve_expression_features(
                 cache_fit_tolerance: None,
             });
         }
-        let definition = helix.map_or_else(
-            || IrFeatureDefinition::Native {
+        let definition = match helix {
+            Some(helix) => neutral_helix.unwrap_or_else(|| IrFeatureDefinition::HelixNativeAxis {
+                axis_native_ref: curve_expression_record_id(record),
+                axial_rise: Length(helix.height),
+                pitch: Length(helix.height / helix.revolutions),
+                revolutions: helix.revolutions,
+                start_angle: Angle(helix.start_angle),
+                clockwise: helix.clockwise,
+            }),
+            None => IrFeatureDefinition::Native {
                 kind: "CurveFromEquation".to_string(),
                 parameters: BTreeMap::from([
                     ("entity_id".to_string(), record.entity_id.to_string()),
@@ -510,15 +562,7 @@ pub(crate) fn transfer_curve_expression_features(
                 ]),
                 properties: BTreeMap::new(),
             },
-            |helix| IrFeatureDefinition::HelixNativeAxis {
-                axis_native_ref: curve_expression_record_id(record),
-                axial_rise: Length(helix.height),
-                pitch: Length(helix.height / helix.revolutions),
-                revolutions: helix.revolutions,
-                start_angle: Angle(helix.start_angle),
-                clockwise: helix.clockwise,
-            },
-        );
+        };
         ir.model.features.push(Feature {
             id: feature_id,
             ordinal,
@@ -544,3 +588,6 @@ pub(crate) fn transfer_curve_expression_features(
     }
     transferred_parameter_count
 }
+
+#[cfg(test)]
+mod tests;

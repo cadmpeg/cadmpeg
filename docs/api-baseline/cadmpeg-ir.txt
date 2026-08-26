@@ -1,4 +1,4 @@
-# generated at 31894f1dc
+# generated at 4c65315c4
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -11829,6 +11829,9 @@ pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci::first: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci::parameter: cadmpeg_ir::features::ParameterId
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci::second: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::EqualDistance
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::EqualDistance::first: cadmpeg_ir::sketches::SketchDistancePair
+pub cadmpeg_ir::sketches::SketchConstraintDefinition::EqualDistance::second: cadmpeg_ir::sketches::SketchDistancePair
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::EllipseAngle
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::EllipseAngle::angle: cadmpeg_ir::features::Angle
 pub cadmpeg_ir::sketches::SketchConstraintDefinition::EllipseAngle::entity: cadmpeg_ir::sketches::SketchEntityId
@@ -12032,6 +12035,28 @@ impl core::marker::Unpin for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchDistanceMeasurement
+pub struct cadmpeg_ir::sketches::SketchDistancePair
+pub cadmpeg_ir::sketches::SketchDistancePair::first: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::sketches::SketchDistancePair::second: cadmpeg_ir::sketches::SketchLocus
+impl core::clone::Clone for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::clone(&self) -> cadmpeg_ir::sketches::SketchDistancePair
+impl core::cmp::Eq for cadmpeg_ir::sketches::SketchDistancePair
+impl core::cmp::PartialEq for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::eq(&self, &cadmpeg_ir::sketches::SketchDistancePair) -> bool
+impl core::fmt::Debug for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::sketches::SketchDistancePair
+impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Send for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Sync for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Unpin for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchDistancePair
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
 pub enum cadmpeg_ir::sketches::SketchGeometry
 pub cadmpeg_ir::sketches::SketchGeometry::Arc
 pub cadmpeg_ir::sketches::SketchGeometry::Arc::center: cadmpeg_ir::math::Point2
@@ -15856,6 +15881,9 @@ pub cadmpeg_ir::SketchConstraintDefinition::DistanceLoci
 pub cadmpeg_ir::SketchConstraintDefinition::DistanceLoci::first: cadmpeg_ir::sketches::SketchLocus
 pub cadmpeg_ir::SketchConstraintDefinition::DistanceLoci::parameter: cadmpeg_ir::features::ParameterId
 pub cadmpeg_ir::SketchConstraintDefinition::DistanceLoci::second: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::SketchConstraintDefinition::EqualDistance
+pub cadmpeg_ir::SketchConstraintDefinition::EqualDistance::first: cadmpeg_ir::sketches::SketchDistancePair
+pub cadmpeg_ir::SketchConstraintDefinition::EqualDistance::second: cadmpeg_ir::sketches::SketchDistancePair
 pub cadmpeg_ir::SketchConstraintDefinition::EllipseAngle
 pub cadmpeg_ir::SketchConstraintDefinition::EllipseAngle::angle: cadmpeg_ir::features::Angle
 pub cadmpeg_ir::SketchConstraintDefinition::EllipseAngle::entity: cadmpeg_ir::sketches::SketchEntityId
@@ -16059,6 +16087,28 @@ impl core::marker::Unpin for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchDistanceMeasurement
 impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchDistanceMeasurement
+pub struct cadmpeg_ir::SketchDistancePair
+pub cadmpeg_ir::SketchDistancePair::first: cadmpeg_ir::sketches::SketchLocus
+pub cadmpeg_ir::SketchDistancePair::second: cadmpeg_ir::sketches::SketchLocus
+impl core::clone::Clone for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::clone(&self) -> cadmpeg_ir::sketches::SketchDistancePair
+impl core::cmp::Eq for cadmpeg_ir::sketches::SketchDistancePair
+impl core::cmp::PartialEq for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::eq(&self, &cadmpeg_ir::sketches::SketchDistancePair) -> bool
+impl core::fmt::Debug for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for cadmpeg_ir::sketches::SketchDistancePair
+impl serde_core::ser::Serialize for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::sketches::SketchDistancePair
+pub fn cadmpeg_ir::sketches::SketchDistancePair::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Send for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Sync for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::Unpin for cadmpeg_ir::sketches::SketchDistancePair
+impl core::marker::UnsafeUnpin for cadmpeg_ir::sketches::SketchDistancePair
+impl core::panic::unwind_safe::RefUnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
+impl core::panic::unwind_safe::UnwindSafe for cadmpeg_ir::sketches::SketchDistancePair
 pub enum cadmpeg_ir::SketchGeometry
 pub cadmpeg_ir::SketchGeometry::Arc
 pub cadmpeg_ir::SketchGeometry::Arc::center: cadmpeg_ir::math::Point2

@@ -585,6 +585,29 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
 }
 
 #[test]
+fn decode_admits_binary_inch_principal_unit() {
+    let mut visible = visibgeom_payload(0, 0);
+    visible.extend_from_slice(b"_principal_sys_units_id\0\x36");
+    let data = build_prt("c", &[("VisibGeom", visible)]);
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode binary inch unit selector");
+
+    let source = result.ir().source.as_ref().expect("source metadata");
+    assert_eq!(
+        source.attributes.get("principal_unit").map(String::as_str),
+        Some("inLbmS")
+    );
+    assert_eq!(
+        source
+            .attributes
+            .get("source_length_scale_mm")
+            .map(String::as_str),
+        Some("25.4")
+    );
+}
+
+#[test]
 fn container_only_preserves_sections_without_transferring_entities() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

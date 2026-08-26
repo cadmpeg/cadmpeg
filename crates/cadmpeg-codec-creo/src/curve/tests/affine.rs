@@ -478,6 +478,25 @@ fn solves_unique_nonlinear_simultaneous_equations() {
 }
 
 #[test]
+fn rejects_nonlinear_roots_with_rank_deficient_jacobian() {
+    let lines = ["x=0", "SOLVE", "x*x*x=0", "FOR x"]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+    let evaluation =
+        evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+    assert!(evaluation.solve_solutions.is_empty());
+    assert_eq!(evaluation.assignments.len(), 1);
+    assert_eq!(evaluation.assignments[0].value, None);
+}
+
+#[test]
 fn leaves_nonlinear_systems_without_previous_values_unsolved() {
     let lines = ["SOLVE", "x*x*x=8", "FOR x"]
         .into_iter()
@@ -511,6 +530,24 @@ fn rejects_nonlinear_systems_with_multiple_roots() {
 
     assert!(evaluation.solve_solutions.is_empty());
     assert_eq!(evaluation.assignments.len(), 1);
+    assert_eq!(evaluation.assignments[0].value, None);
+}
+
+#[test]
+fn leaves_discrete_unary_not_forms_unsolved() {
+    let lines = ["x=1", "SOLVE", "~x=0", "x=1", "FOR x"]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+    let evaluation =
+        evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+    assert!(evaluation.solve_solutions.is_empty());
     assert_eq!(evaluation.assignments[0].value, None);
 }
 
@@ -725,6 +762,83 @@ fn solves_affine_systems_with_different_unknown_dimensions() {
             CurveExpressionValue::Length(6.0),
             quantity_value(2.0, RelationDimension::TIME),
         ]
+    );
+}
+
+#[test]
+fn infers_independent_dimensions_for_untyped_solve_variables() {
+    let lines = [
+        "speed=2[mm/s]",
+        "total=10[mm]",
+        "SOLVE",
+        "distance+speed*duration=total",
+        "duration=2[s]",
+        "FOR distance,duration",
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(offset, text)| CurveExpressionLine {
+        text: text.to_owned(),
+        offset,
+    })
+    .collect::<Vec<_>>();
+
+    let evaluation =
+        evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+    assert_eq!(
+        evaluation.solve_solutions[&2],
+        [
+            CurveExpressionValue::Length(6.0),
+            quantity_value(2.0, RelationDimension::TIME),
+        ]
+    );
+}
+
+#[test]
+fn infers_integral_dimensions_through_sqrt_for_untyped_variables() {
+    let block = CurveExpressionSolveBlock {
+        equations: vec![CurveExpressionEquation {
+            left: "sqrt(area)".to_owned(),
+            right: "length".to_owned(),
+            dependencies: vec!["area".to_owned(), "length".to_owned()],
+            offset: 0,
+        }],
+        assignments: Vec::new(),
+        variables: vec!["area".to_owned()],
+        solutions: vec![None],
+        offset: 0,
+        for_offset: 1,
+    };
+    let values = BTreeMap::from([("length".to_owned(), CurveExpressionValue::Length(2.0))]);
+
+    assert_eq!(
+        infer_solve_variable_dimensions(
+            &block,
+            &values,
+            &[None],
+            RelationEvaluationContext::default(),
+        ),
+        Some(vec![RelationDimension {
+            length: 2,
+            mass: 0,
+            time: 0,
+            angle: 0,
+            temperature: 0,
+        }]),
+    );
+
+    let mut non_integral = block;
+    non_integral.equations[0].left = "area".to_owned();
+    non_integral.equations[0].right = "sqrt(length)".to_owned();
+    assert_eq!(
+        infer_solve_variable_dimensions(
+            &non_integral,
+            &values,
+            &[None],
+            RelationEvaluationContext::default(),
+        ),
+        None,
     );
 }
 

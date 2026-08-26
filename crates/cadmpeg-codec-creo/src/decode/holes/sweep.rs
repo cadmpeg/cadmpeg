@@ -84,6 +84,17 @@ pub fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<Sim
     })
 }
 
+fn has_exact_materialized_surface_roster(
+    table: &crate::feature::FeatureEntityTable,
+    expected_ids: impl IntoIterator<Item = u32>,
+) -> bool {
+    let expected_ids = expected_ids.into_iter().collect::<Vec<_>>();
+    let expected_set = expected_ids.iter().copied().collect::<BTreeSet<_>>();
+    expected_ids.len() == expected_set.len()
+        && table.surface_ids.len() == expected_set.len()
+        && table.surface_ids.iter().copied().collect::<BTreeSet<_>>() == expected_set
+}
+
 pub fn compact_simple_hole_cylinder_id(
     feature_id: u32,
     tables: &[crate::feature::FeatureEntityTable],
@@ -185,7 +196,7 @@ pub fn compact_simple_hole_cylinder_id(
             };
             let mut expected_materialized = BTreeSet::from([side.entity_id]);
             expected_materialized.extend(*plane);
-            (table.surface_ids.iter().copied().collect::<BTreeSet<_>>() == expected_materialized
+            (has_exact_materialized_surface_roster(table, expected_materialized.iter().copied())
                 && topology_index < bottom_index
                 && bottom_index < side_index)
                 .then_some(side.entity_id)
@@ -289,24 +300,33 @@ pub fn single_cap_circular_sweep_geometry(
     let [table] = tables.as_slice() else {
         return None;
     };
-    let [rowless_cap, cap_id, profile_id, cylinder_id] = table.entries.as_slice() else {
+    let [first_cap, second_cap, profile_id, cylinder_id] = table.entries.as_slice() else {
         return None;
     };
-    ([
-        rowless_cap.class_id,
-        cap_id.class_id,
+    let (rowless_cap, cap_id) = match (
+        table.surface_ids.contains(&first_cap.entity_id),
+        table.surface_ids.contains(&second_cap.entity_id),
+    ) {
+        (true, false) => (second_cap, first_cap),
+        (false, true) => (first_cap, second_cap),
+        _ => return None,
+    };
+    if [
+        first_cap.class_id,
+        second_cap.class_id,
         profile_id.class_id,
         cylinder_id.class_id,
-    ] == [204, 203, 200, 200]
-        && profile_id.source_entity_id.is_some()
-        && cylinder_id.source_entity_id.is_none()
-        && table.surface_ids.contains(&cap_id.entity_id)
-        && table.surface_ids.contains(&cylinder_id.entity_id)
-        && table
+    ] != [204, 203, 200, 200]
+        || profile_id.source_entity_id.is_none()
+        || cylinder_id.source_entity_id.is_some()
+        || !has_exact_materialized_surface_roster(table, [cap_id.entity_id, cylinder_id.entity_id])
+        || !table
             .non_surface_entity_ids
             .contains(&rowless_cap.entity_id)
-        && table.non_surface_entity_ids.contains(&profile_id.entity_id))
-    .then_some(())?;
+        || !table.non_surface_entity_ids.contains(&profile_id.entity_id)
+    {
+        return None;
+    }
     crate::surface::unique_surface_row(&scan.surfaces.rows, cap_id.entity_id)
         .is_some_and(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
@@ -421,9 +441,14 @@ pub fn two_cap_circular_sweep_geometry(
         || second_plane_entry.source_entity_id.is_some()
         || profile_entry.source_entity_id.is_none()
         || cylinder_entry.source_entity_id.is_some()
-        || !table.surface_ids.contains(&first_plane_entry.entity_id)
-        || !table.surface_ids.contains(&second_plane_entry.entity_id)
-        || !table.surface_ids.contains(&cylinder_entry.entity_id)
+        || !has_exact_materialized_surface_roster(
+            table,
+            [
+                first_plane_entry.entity_id,
+                second_plane_entry.entity_id,
+                cylinder_entry.entity_id,
+            ],
+        )
         || table.surface_ids.contains(&profile_entry.entity_id)
         || !table
             .non_surface_entity_ids
@@ -578,3 +603,6 @@ pub fn blind_extrude_side(length: f64) -> ExtrudeSide {
         offset: None,
     }
 }
+
+#[cfg(test)]
+mod tests;

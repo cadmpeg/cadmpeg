@@ -2,19 +2,21 @@
 //! Round and chamfer radius reconstruction from support geometry.
 
 use super::super::analytic::{
-    circular_cone, cross, dot, placed_planes, solve_planes, ConeEquation, CylinderEquation,
-    PlaneEquation,
+    circular_cone, cross, dot, placed_planes, reconciled_model_plane, solve_planes, ConeEquation,
+    CylinderEquation, PlaneEquation,
 };
 use super::super::sketch::normalized;
 use super::super::surfaces::{prototype_scalar, unique_surface_prototype_associations};
 use super::super::uniqueness::exactly_one;
 use super::agreed_feature_geometry_ids;
 use crate::container::ContainerScan;
+use crate::legacy_feature::LegacyRoundRadius;
+use crate::surface::Type24RoundEnvelope;
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 const EPS_CYLINDER_FIT: f64 = 1.0e-8;
 const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
@@ -23,6 +25,10 @@ const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
 const EPS_CONE_ANGLE: f64 = 1.0e-10;
 const EPS_DENOMINATOR_ALIGNMENT: f64 = 1.0e-10;
 const EPS_SETBACK_NONZERO: f64 = 1.0e-12;
+const EPS_ROUND_CAP_GAP: f64 = 1.0e-9;
+const EPS_ROUND_CAP_PARALLEL: f64 = 1.0e-10;
+const EPS_ROUND_RADIUS_RECONCILIATION: f64 = 1.0e-9;
+const EPS_ROUND_SUPPORT_ORTHOGONAL: f64 = 1.0e-9;
 
 pub(in super::super) fn parallel_support_radius(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
@@ -129,7 +135,11 @@ pub(in super::super) fn slot_fillet_cylinder(
             {
                 continue;
             }
-            let origin = solve_planes(&[cap_planes[0], midplanes[first].0, midplanes[second].0])?;
+            let Some(origin) =
+                solve_planes(&[cap_planes[0], midplanes[first].0, midplanes[second].0])
+            else {
+                continue;
+            };
             let tangent_to_all = support_planes.iter().all(|plane| {
                 let Some(normal) = normalized(plane.normal) else {
                     return false;
@@ -315,33 +325,23 @@ pub(in super::super) fn prototype_round_radius(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Option<f64> {
-    (scan.framing.layout == crate::container::Layout::Nd).then_some(())?;
     let feature_id = rows.first()?.feature_id;
-    let prototype_radii = unique_surface_prototype_associations(scan)
-        .into_iter()
-        .filter(|(record, row, _)| {
-            record.family == crate::surface::SurfacePrototypeFamily::Torus
-                && row.feature_id == feature_id
-                && rows.iter().any(|candidate| candidate.offset == row.offset)
-        })
-        .filter_map(|(record, _, _)| {
-            Some((
-                prototype_scalar(record, "radius1")?,
-                prototype_scalar(record, "radius2")?,
-            ))
-        })
-        .collect::<Vec<_>>();
-    let &(radius1, radius2) = prototype_radii.first()?;
-    let scale = radius1.abs().max(radius2.abs()).max(1.0);
-    (radius1.is_finite()
-        && radius1 >= 0.0
-        && radius2.is_finite()
-        && radius2 > 0.0
-        && prototype_radii.iter().all(|candidate| {
-            (candidate.0 - radius1).abs() <= EPS_GEOMETRY_AGREEMENT * scale
-                && (candidate.1 - radius2).abs() <= EPS_GEOMETRY_AGREEMENT * scale
-        }))
-    .then_some(())?;
+    let (radius1, radius2) = exactly_one(
+        unique_surface_prototype_associations(scan)
+            .into_iter()
+            .filter(|(record, row, _)| {
+                record.family == crate::surface::SurfacePrototypeFamily::Torus
+                    && row.feature_id == feature_id
+                    && rows.iter().any(|candidate| candidate.offset == row.offset)
+            })
+            .filter_map(|(record, _, _)| {
+                Some((
+                    prototype_scalar(record, "radius1")?,
+                    prototype_scalar(record, "radius2")?,
+                ))
+            }),
+    )?;
+    (radius1.is_finite() && radius1 >= 0.0 && radius2.is_finite() && radius2 > 0.0).then_some(())?;
     rows.iter()
         .all(|row| {
             let Some(record) = unique_surface_parameter_record(scan, row) else {
@@ -373,10 +373,31 @@ pub(in super::super) fn round_constant_radius(
     ir: &CadIr,
     feature_id: u32,
 ) -> Option<f64> {
+    match scan
+        .features
+        .legacy_rounds
+        .iter()
+        .find(|round| round.feature_id == feature_id)
+        .map(|round| round.radius)
+    {
+        Some(LegacyRoundRadius::Constant(radius)) => {
+            if !legacy_round_radius_agrees(scan, ir, feature_id, radius) {
+                return None;
+            }
+            return Some(radius);
+        }
+        Some(LegacyRoundRadius::Ambiguous) => return None,
+        Some(LegacyRoundRadius::NotPresent) | None => {}
+    }
     if let Some(radius) = round_direct_radii(scan, feature_id)
         .as_deref()
         .and_then(unique_positive_length)
     {
+        if complete_direct_placed_cylinder_radius_agreement(scan, ir, feature_id)
+            .is_some_and(|agrees| !agrees)
+        {
+            return None;
+        }
         return Some(radius);
     }
     let generated_rows = scan
@@ -387,6 +408,9 @@ pub(in super::super) fn round_constant_radius(
         .collect::<Vec<_>>();
     if generated_rows.is_empty() {
         return round_support_radius(scan, ir, feature_id);
+    }
+    if let Some(radius) = round_replay_radius(scan, ir, feature_id) {
+        return Some(radius);
     }
     // Unequal decoded rolling-radius samples identify a variable-radius
     // round even when another generated row has no radius proof. A support
@@ -428,18 +452,103 @@ pub(in super::super) fn round_constant_radius(
         // witness from being assembled.
         return None;
     }
-    if cylinder_radii.len() == cylinder_rows.len()
-        && cylinder_rows.len()
-            == scan
-                .surfaces
-                .rows
-                .iter()
-                .filter(|row| row.feature_id == feature_id)
-                .count()
-    {
+    // A complete placed set of generated cylinder carriers is an independent
+    // radius witness when the remaining generated rows are cap or support
+    // planes. A toroidal or other rolling carrier still needs its own family
+    // proof, so it must not be hidden by the cylinder subset.
+    let non_radius_rows_are_planes = generated_rows.iter().all(|row| {
+        matches!(
+            row.kind,
+            crate::surface::SurfaceKind::Cylinder | crate::surface::SurfaceKind::Plane
+        )
+    });
+    if cylinder_radii.len() == cylinder_rows.len() && non_radius_rows_are_planes {
         return unique_positive_length(&cylinder_radii);
     }
     round_support_radius(scan, ir, feature_id)
+}
+
+fn round_replay_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
+    let mut samples = round_observed_radii(scan, feature_id);
+    samples.extend(round_placed_cylinder_radii(scan, ir, feature_id));
+    let radius = unique_positive_length(&samples)?;
+    let scale = radius.abs().max(1.0);
+    scan.features
+        .round_replay_scalars
+        .iter()
+        .filter(|candidate| candidate.feature_id == feature_id)
+        .any(|candidate| {
+            candidate.value > 0.0
+                && (candidate.value - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+        })
+        .then_some(radius)
+}
+
+fn legacy_round_radius_agrees(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    radius: f64,
+) -> bool {
+    if !radius.is_finite() || radius <= 0.0 {
+        return false;
+    }
+    let mut samples = round_observed_radii(scan, feature_id);
+    samples.extend(round_placed_cylinder_radii(scan, ir, feature_id));
+    if samples
+        .iter()
+        .any(|sample| !sample.is_finite() || *sample <= 0.0)
+    {
+        return false;
+    }
+    let scale = samples
+        .iter()
+        .copied()
+        .map(f64::abs)
+        .chain(std::iter::once(radius.abs()))
+        .fold(1.0, f64::max);
+    samples
+        .iter()
+        .all(|sample| (sample - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale)
+}
+
+fn complete_direct_placed_cylinder_radius_agreement(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<bool> {
+    let cylinder_rows = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+        })
+        .collect::<Vec<_>>();
+    let direct_radii = cylinder_rows
+        .iter()
+        .map(|row| {
+            unique_surface_parameter_record(scan, row)
+                .and_then(|record| record.type24_generated_round_radius(row.type_byte))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let placed_radii = cylinder_rows
+        .iter()
+        .map(|row| round_placed_cylinder_radius(ir, row))
+        .collect::<Option<Vec<_>>>()?;
+    Some(
+        direct_radii
+            .iter()
+            .zip(placed_radii)
+            .all(|(direct, placed)| {
+                let scale = direct.abs().max(placed.abs()).max(1.0);
+                direct.is_finite()
+                    && *direct > 0.0
+                    && placed.is_finite()
+                    && placed > 0.0
+                    && (direct - placed).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+            }),
+    )
 }
 
 pub(in super::super) fn mixed_round_radius_samples(
@@ -503,7 +612,7 @@ pub(in super::super) fn round_cylinder_radius(
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
     unique_surface_parameter_record(scan, row)
-        .and_then(|record| record.type24_round_radius(row.type_byte))
+        .and_then(|record| record.type24_generated_round_radius(row.type_byte))
         .or_else(|| round_placed_cylinder_radius(ir, row))
 }
 
@@ -517,26 +626,202 @@ pub(in super::super) fn round_support_radius(
         &scan.features.replay_affected_ids,
         feature_id,
     )?;
-    let support_ids = affected_ids.get(2..)?;
+    let [first_cap_id, second_cap_id, support_ids @ ..] = affected_ids else {
+        return None;
+    };
+    if first_cap_id == second_cap_id {
+        return None;
+    }
+    let local_planes = placed_planes(scan);
+    let first_cap = reconciled_model_plane(&local_planes, ir, *first_cap_id)?;
+    let second_cap = reconciled_model_plane(&local_planes, ir, *second_cap_id)?;
+    let first_cap_normal = normalized(first_cap.normal)?;
+    let second_cap_normal = normalized(second_cap.normal)?;
+    if (dot(first_cap_normal, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
+        return None;
+    }
+    let cap_gap = dot(
+        first_cap_normal,
+        std::array::from_fn(|index| second_cap.origin[index] - first_cap.origin[index]),
+    )
+    .abs();
+    if cap_gap <= EPS_ROUND_CAP_GAP {
+        return None;
+    }
     let support_planes = support_ids
         .iter()
-        .filter_map(|id| {
-            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{id}"));
-            let surface = ir
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == surface_id)?;
-            match &surface.geometry {
-                SurfaceGeometry::Plane { origin, normal, .. } => Some((
-                    [origin.x, origin.y, origin.z],
-                    [normal.x, normal.y, normal.z],
-                )),
-                _ => None,
-            }
+        .map(|id| reconciled_model_plane(&local_planes, ir, *id))
+        .collect::<Option<Vec<_>>>()?;
+    support_planes
+        .iter()
+        .all(|plane| {
+            normalized(plane.normal).is_some_and(|normal| {
+                dot(first_cap_normal, normal).abs() <= EPS_ROUND_SUPPORT_ORTHOGONAL
+            })
         })
+        .then_some(())?;
+    parallel_support_radius(
+        support_planes
+            .into_iter()
+            .map(|plane| (plane.origin, plane.normal)),
+    )
+}
+
+pub(in super::super) fn round_support_envelope_cylinder(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    envelope: Type24RoundEnvelope,
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    let ([first_cap, second_cap], support_planes) =
+        resolved_round_support_planes(scan, ir, feature_id)?;
+    let axis = normalized(first_cap.normal)?;
+    let second_cap_normal = normalized(second_cap.normal)?;
+    if (dot(axis, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
+        return None;
+    }
+    let cap_gap = dot(
+        axis,
+        std::array::from_fn(|index| second_cap.origin[index] - first_cap.origin[index]),
+    )
+    .abs();
+    if cap_gap <= EPS_ROUND_CAP_GAP {
+        return None;
+    }
+
+    let mut support_pairs = Vec::new();
+    for first in 0..support_planes.len() {
+        let first_normal = normalized(support_planes[first].normal)?;
+        for second in first + 1..support_planes.len() {
+            let second_normal = normalized(support_planes[second].normal)?;
+            if (dot(first_normal, second_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
+                continue;
+            }
+            let gap = dot(
+                first_normal,
+                std::array::from_fn(|index| {
+                    support_planes[second].origin[index] - support_planes[first].origin[index]
+                }),
+            )
+            .abs();
+            if gap <= EPS_ROUND_CAP_GAP {
+                continue;
+            }
+            if dot(first_normal, axis).abs() > EPS_ROUND_SUPPORT_ORTHOGONAL {
+                return None;
+            }
+            let first_offset = dot(first_normal, support_planes[first].origin);
+            let second_offset = dot(first_normal, support_planes[second].origin);
+            support_pairs.push((
+                first_normal,
+                0.5 * gap,
+                0.5 * (first_offset + second_offset),
+            ));
+        }
+    }
+    let (support_normal, radius, support_midpoint) = *support_pairs.first()?;
+    let scale = radius.max(cap_gap).max(1.0);
+    support_pairs
+        .iter()
+        .all(|(normal, candidate_radius, candidate_midpoint)| {
+            (candidate_radius - radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+                && (dot(*normal, support_normal).abs() - 1.0).abs() <= EPS_ROUND_CAP_PARALLEL
+                && (candidate_midpoint - support_midpoint).abs()
+                    <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+        })
+        .then_some(())?;
+
+    let [first_extent, second_extent] = envelope.extent_endpoints;
+    let extent_delta =
+        std::array::from_fn::<_, 3, _>(|index| second_extent[index] - first_extent[index]);
+    let radial_span = dot(support_normal, extent_delta).abs();
+    let axial_span = dot(axis, extent_delta).abs();
+    ((radial_span - 2.0 * radius).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+        && (axial_span - cap_gap).abs() <= EPS_ROUND_RADIUS_RECONCILIATION * scale
+        && radial_span > EPS_ROUND_CAP_GAP
+        && axial_span > EPS_ROUND_CAP_GAP)
+        .then_some(())?;
+
+    let cap_residual = |point: [f64; 3], cap: PlaneEquation| {
+        dot(
+            axis,
+            std::array::from_fn(|index| point[index] - cap.origin[index]),
+        )
+        .abs()
+    };
+    let first_on_first = cap_residual(first_extent, first_cap) <= EPS_ROUND_CAP_GAP * scale;
+    let second_on_first = cap_residual(second_extent, first_cap) <= EPS_ROUND_CAP_GAP * scale;
+    let first_on_second = cap_residual(first_extent, second_cap) <= EPS_ROUND_CAP_GAP * scale;
+    let second_on_second = cap_residual(second_extent, second_cap) <= EPS_ROUND_CAP_GAP * scale;
+    let start = match (
+        first_on_first && second_on_second,
+        second_on_first && first_on_second,
+    ) {
+        (true, false) => first_extent,
+        (false, true) => second_extent,
+        _ => return None,
+    };
+    let start_offset = dot(support_normal, start);
+    let origin = std::array::from_fn(|index| {
+        start[index] + support_normal[index] * (support_midpoint - start_offset)
+    });
+    Some(crate::surface::PositionalCylinderFrame {
+        origin,
+        axis,
+        ref_direction: support_normal,
+        radius,
+        length: Some(cap_gap),
+    })
+}
+
+fn resolved_round_support_planes(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<([PlaneEquation; 2], Vec<PlaneEquation>)> {
+    let affected_ids = agreed_feature_geometry_ids(
+        &scan.features.affected_ids,
+        &scan.features.replay_affected_ids,
+        feature_id,
+    )?;
+    let [first_cap_id, second_cap_id, support_ids @ ..] = affected_ids else {
+        return None;
+    };
+    if first_cap_id == second_cap_id {
+        return None;
+    }
+    let local_planes = placed_planes(scan);
+    let caps = [
+        reconciled_model_plane(&local_planes, ir, *first_cap_id)?,
+        reconciled_model_plane(&local_planes, ir, *second_cap_id)?,
+    ];
+    let first_cap_normal = normalized(caps[0].normal)?;
+    let second_cap_normal = normalized(caps[1].normal)?;
+    if (dot(first_cap_normal, second_cap_normal).abs() - 1.0).abs() > EPS_ROUND_CAP_PARALLEL {
+        return None;
+    }
+    let cap_gap = dot(
+        first_cap_normal,
+        std::array::from_fn(|index| caps[1].origin[index] - caps[0].origin[index]),
+    )
+    .abs();
+    if cap_gap <= EPS_ROUND_CAP_GAP {
+        return None;
+    }
+    let support_planes = support_ids
+        .iter()
+        .filter_map(|id| reconciled_model_plane(&local_planes, ir, *id))
         .collect::<Vec<_>>();
-    (support_planes.len() == support_ids.len()).then(|| parallel_support_radius(support_planes))?
+    (support_planes.len() >= 2).then_some(())?;
+    support_planes
+        .iter()
+        .all(|plane| {
+            normalized(plane.normal).is_some_and(|normal| {
+                dot(first_cap_normal, normal).abs() <= EPS_ROUND_SUPPORT_ORTHOGONAL
+            })
+        })
+        .then_some(())?;
+    Some((caps, support_planes))
 }
 
 pub(in super::super) fn round_placed_cylinder_radii(
@@ -559,14 +844,12 @@ pub(in super::super) fn round_placed_cylinder_radius(
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
     let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-    ir.model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == id)
-        .and_then(|surface| match surface.geometry {
+    exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id)).and_then(|surface| {
+        match surface.geometry {
             SurfaceGeometry::Cylinder { radius, .. } => Some(radius),
             _ => None,
-        })
+        }
+    })
 }
 
 pub(in super::super) fn round_direct_radii(
@@ -593,7 +876,7 @@ pub(in super::super) fn round_observed_radii(scan: &ContainerScan, feature_id: u
             let parameters = unique_surface_parameter_record(scan, row)?;
             match row.kind {
                 crate::surface::SurfaceKind::Cylinder => {
-                    parameters.type24_round_radius(row.type_byte)
+                    parameters.type24_generated_round_radius(row.type_byte)
                 }
                 crate::surface::SurfaceKind::TorusOrSphere => parameters
                     .torus_radius_overrides(row.type_byte)
@@ -678,8 +961,59 @@ pub(in super::super) fn equal_distance_chamfer_setback(
     unique_positive_length(&setbacks)
 }
 
+fn chamfer_cone_equation(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    row: &crate::surface::SurfaceRow,
+) -> Option<ConeEquation> {
+    let parameter_records = scan
+        .surfaces
+        .parameters
+        .iter()
+        .filter(|record| record.offset == row.offset)
+        .collect::<Vec<_>>();
+    if parameter_records.len() > 1 {
+        return None;
+    }
+    if let Some(frame) = parameter_records
+        .first()
+        .and_then(|record| record.positional_cone_frame)
+    {
+        return Some(ConeEquation {
+            origin: frame.apex,
+            axis: frame.axis,
+            ref_direction: frame.ref_direction,
+            radius: 0.0,
+            ratio: 1.0,
+            half_angle: frame.half_angle,
+        });
+    }
+    let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+    let surface = exactly_one(ir.model.surfaces.iter().filter(|surface| surface.id == id))?;
+    let SurfaceGeometry::Cone {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+        ratio,
+        half_angle,
+    } = &surface.geometry
+    else {
+        return None;
+    };
+    Some(ConeEquation {
+        origin: [origin.x, origin.y, origin.z],
+        axis: [axis.x, axis.y, axis.z],
+        ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+        radius: *radius,
+        ratio: *ratio,
+        half_angle: *half_angle,
+    })
+}
+
 pub(in super::super) fn chamfer_constant_distance(
     scan: &ContainerScan,
+    ir: &CadIr,
     feature_id: u32,
 ) -> Option<f64> {
     let rows = scan
@@ -693,51 +1027,57 @@ pub(in super::super) fn chamfer_constant_distance(
             .iter()
             .all(|row| row.kind == crate::surface::SurfaceKind::Cone))
     .then_some(())?;
-    let prototype_frames = unique_surface_prototype_associations(scan)
-        .into_iter()
-        .filter(|(_, row, _)| row.feature_id == feature_id)
-        .filter_map(|(prototype, row, _)| {
-            Some((row.offset, crate::surface::prototype_cone_frame(prototype)?))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let cones =
-        rows.iter()
-            .map(|row| {
-                let frame = prototype_frames.get(&row.offset).copied().or_else(|| {
-                    unique_surface_parameter_record(scan, row)?.positional_cone_frame
-                })?;
-                Some(ConeEquation {
-                    origin: frame.apex,
-                    axis: frame.axis,
-                    ref_direction: frame.ref_direction,
-                    radius: 0.0,
-                    ratio: 1.0,
-                    half_angle: frame.half_angle,
-                })
-            })
-            .collect::<Option<Vec<_>>>()?;
+    let cones = rows
+        .iter()
+        .map(|row| chamfer_cone_equation(scan, ir, row))
+        .collect::<Option<Vec<_>>>()?;
     let affected_ids = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
         &scan.features.replay_affected_ids,
         feature_id,
     )?;
-    let planes = placed_planes(scan);
-    let unplaced_affected_plane = affected_ids.iter().any(|id| {
-        scan.surfaces
+    let local_planes = placed_planes(scan);
+    let mut support_planes = Vec::new();
+    let mut support_plane_ids = BTreeSet::new();
+    for id in affected_ids {
+        let rows = scan
+            .surfaces
             .rows
             .iter()
-            .any(|row| row.id == *id && row.kind == crate::surface::SurfaceKind::Plane)
-            && !planes.contains_key(id)
-    });
-    (!unplaced_affected_plane).then_some(())?;
-    let support_plane_ids = affected_ids
-        .iter()
-        .copied()
-        .filter(|id| planes.contains_key(id))
-        .collect::<BTreeSet<_>>();
-    let support_planes = support_plane_ids
-        .into_iter()
-        .filter_map(|id| planes.get(&id).copied())
-        .collect::<Vec<_>>();
+            .filter(|row| row.id == *id)
+            .collect::<Vec<_>>();
+        let is_support_plane = match rows.as_slice() {
+            [] => {
+                let model_id = SurfaceId(format!("creo:visibgeom:surface#{id}"));
+                let model_surfaces = ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .filter(|surface| surface.id == model_id)
+                    .collect::<Vec<_>>();
+                match model_surfaces.as_slice() {
+                    [] => false,
+                    [surface] => matches!(&surface.geometry, SurfaceGeometry::Plane { .. }),
+                    _ => return None,
+                }
+            }
+            [row] => row.kind == crate::surface::SurfaceKind::Plane,
+            _ if rows
+                .iter()
+                .any(|row| row.kind == crate::surface::SurfaceKind::Plane) =>
+            {
+                return None;
+            }
+            _ => continue,
+        };
+        if !is_support_plane || !support_plane_ids.insert(*id) {
+            continue;
+        }
+        let plane = reconciled_model_plane(&local_planes, ir, *id)?;
+        support_planes.push(plane);
+    }
     equal_distance_chamfer_setback(&cones, &support_planes)
 }
+
+#[cfg(test)]
+mod tests;

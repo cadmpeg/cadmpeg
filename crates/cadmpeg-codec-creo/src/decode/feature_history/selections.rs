@@ -41,19 +41,34 @@ pub(in super::super) fn feature_edge_selection(
         ) {
             return None;
         }
-        let ids = agreed_feature_replay_edge_ids(&scan.features.replay_affected_ids, feature_id)?;
-        if ids.is_empty() {
-            let native = format!("creo:allfeatur:replay_edgs_affected#{feature_id}:");
-            return Some(EdgeSelection::Resolved {
-                edges: Vec::new(),
-                native,
-            });
+        if let Some(ids) =
+            agreed_feature_replay_edge_ids(&scan.features.replay_affected_ids, feature_id)
+        {
+            if ids.is_empty() {
+                let native = format!("creo:allfeatur:replay_edgs_affected#{feature_id}:");
+                return Some(EdgeSelection::Resolved {
+                    edges: Vec::new(),
+                    native,
+                });
+            }
+            let native = format!(
+                "creo:allfeatur:replay_edgs_affected#{feature_id}:{}",
+                ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+            );
+            (ids, native)
+        } else {
+            let round = scan
+                .features
+                .legacy_rounds
+                .iter()
+                .find(|round| round.feature_id == feature_id)?;
+            let ids = round.edge_ids.as_deref()?;
+            let native = format!(
+                "creo:legacy_ascii:feature_edges#{feature_id}:{}",
+                ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+            );
+            (ids, native)
         }
-        let native = format!(
-            "creo:allfeatur:replay_edgs_affected#{feature_id}:{}",
-            ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
-        );
-        (ids, native)
     };
     let result_edge_ids = feature_result_edge_ids_by_feature(&scan.curves.topology_rows);
     let edges = ids

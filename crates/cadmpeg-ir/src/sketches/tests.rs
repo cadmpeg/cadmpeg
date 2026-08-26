@@ -91,8 +91,8 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
-        SketchDistanceMeasurement, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-        SketchLocus, SketchOffsetPair,
+        SketchDistanceMeasurement, SketchDistancePair, SketchEntity, SketchEntityId,
+        SketchGeometry, SketchId, SketchLocus, SketchOffsetPair,
     };
 
     let entity = SketchEntityId("synthetic:test:entity#0".into());
@@ -160,6 +160,16 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
             parameter: parameter.clone(),
+        },
+        SketchConstraintDefinition::EqualDistance {
+            first: SketchDistancePair {
+                first: SketchLocus::Start(entity.clone()),
+                second: SketchLocus::End(entity.clone()),
+            },
+            second: SketchDistancePair {
+                first: SketchLocus::Center(entity.clone()),
+                second: SketchLocus::End(entity.clone()),
+            },
         },
         SketchConstraintDefinition::HorizontalDistance {
             first: SketchLocus::Start(entity.clone()),
@@ -288,6 +298,124 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     assert!(!report.findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(constraint_id.0.as_str())
             && finding.check == Check::GeometricConsistency
+    }));
+}
+
+#[test]
+fn coordinate_equation_constraints_round_trip_and_validate_geometry() {
+    use crate::features::Length;
+    use crate::math::{Point2, Point3, Vector3};
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+        SketchCoordinateAxis, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    };
+
+    let sketch = SketchId("synthetic:test:sketch#coordinate-equations".into());
+    let first = SketchEntityId("synthetic:test:coordinate-point#first".into());
+    let second = SketchEntityId("synthetic:test:coordinate-point#second".into());
+    let midpoint = SketchEntityId("synthetic:test:coordinate-point#midpoint".into());
+    let constraints = [
+        (
+            SketchConstraintId("synthetic:test:constraint#point-coordinates".into()),
+            SketchConstraintDefinition::PointCoordinateValues {
+                point: SketchLocus::Entity(midpoint.clone()),
+                values: [Length(2.0), Length(1.0)],
+            },
+        ),
+        (
+            SketchConstraintId("synthetic:test:constraint#mean-u".into()),
+            SketchConstraintDefinition::MidpointCoordinate {
+                first: SketchLocus::Entity(first.clone()),
+                second: SketchLocus::Entity(second.clone()),
+                axis: SketchCoordinateAxis::U,
+                value: Length(2.0),
+            },
+        ),
+        (
+            SketchConstraintId("synthetic:test:constraint#mean-v".into()),
+            SketchConstraintDefinition::MidpointCoordinate {
+                first: SketchLocus::Entity(first.clone()),
+                second: SketchLocus::Entity(second.clone()),
+                axis: SketchCoordinateAxis::V,
+                value: Length(1.0),
+            },
+        ),
+    ];
+    let mut ir = unit_cube();
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    ir.model.sketch_entities.extend(
+        [
+            (first.clone(), Point2::new(0.0, 0.0)),
+            (second.clone(), Point2::new(4.0, 2.0)),
+            (midpoint.clone(), Point2::new(2.0, 1.0)),
+        ]
+        .into_iter()
+        .map(|(id, position)| SketchEntity {
+            id,
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point { position },
+        }),
+    );
+    ir.model
+        .sketch_constraints
+        .extend(constraints.iter().map(|(id, definition)| SketchConstraint {
+            id: id.clone(),
+            sketch: sketch.clone(),
+            definition: definition.clone(),
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        }));
+    ir.finalize();
+    let report = validate_neutral(&ir, Vec::new());
+    assert!(!report.findings.iter().any(|finding| {
+        finding
+            .entity
+            .as_deref()
+            .is_some_and(|entity| entity.starts_with("synthetic:test:constraint#"))
+    }));
+    let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
+    assert_eq!(
+        round_trip.model.sketch_constraints,
+        ir.model.sketch_constraints
+    );
+
+    let midpoint_entity = ir
+        .model
+        .sketch_entities
+        .iter_mut()
+        .find(|entity| entity.id == midpoint)
+        .unwrap();
+    midpoint_entity.geometry = SketchGeometry::Point {
+        position: Point2::new(3.0, 1.0),
+    };
+    let report = validate_neutral(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some("synthetic:test:constraint#point-coordinates")
+            && finding.check == Check::Counts
     }));
 }
 

@@ -46,7 +46,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What slot transition does each other stateful `crv_pnt_arr f9 02 04` token encode?
 
-**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct eight-slot pcurve body and its endpoint order.
+**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct eight-slot pcurve body, its endpoint order, standalone zero slots, and the exact held-scalar wrapper.
 
 **Need.** We must know the other transitions to decode all pcurve endpoint arrays.
 
@@ -122,6 +122,22 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the value to solve the section variable.
 
+### SE-14. Other principal unit selectors
+
+**Question.** Which coordinate unit system does each `_principal_sys_units_id`
+value outside `51`, `54`, and `55` select?
+
+**Known.** `creo_prt.md` §1.3 "`_principal_sys_units_id` identifies the active
+coordinate unit system." gives `51` for millimeter-Newton-Second, `54` for
+inch-pound-mass-second, and `55` for millimeter-Kilogram-Second. Binary
+selector `54` stores lengths in inches and the neutral model multiplies every
+length-bearing value by `25.4` to produce canonical millimeters. `creo_prt.md`
+§1.3 "In legacy ASCII persistence, the unique type-10
+`principal_sys_units` scalar" gives the same inch system and conversion.
+
+**Need.** We must know each selector to give model coordinates their canonical
+length unit.
+
 ## 2. Curves and surfaces
 
 ### GS-01. Cone half-angle overrides
@@ -139,22 +155,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §3.3 "A `srf_prim_ptr(torus)` prototype stores" through `creo_prt.md` §3.3 "In named `radius`, `radius1`, and `radius2` fields" define the recognized torus and sphere radius forms and their carrier invariants.
 
 **Need.** We must know the override to construct the torus or sphere carrier.
-
-### GS-03. Later spline prototype joins
-
-**Question.** Which field joins a later positional spline row to its prototype?
-
-**Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Cylinder and cone prototype local systems are parameter templates" define named surface prototypes and the positional replay forms that have a proven join.
-
-**Need.** We must know the join to apply the correct spline degree, knots, control points, and weights.
-
-### GS-04. Spline intersection-curve joins
-
-**Question.** Which field joins a spline surface to each surface-intersection curve on that surface?
-
-**Known.** `creo_prt.md` §5 "An analytic" defines intersection-curve transfer when a surface pair and its endpoint witnesses select one candidate.
-
-**Need.** We must know the join to bind the trim curve to the spline surface.
 
 ### GS-05. Prototype-adjacent `tab_cyl` points
 
@@ -184,9 +184,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What role does each slot in an `fc 02` body have outside the defined short pcurve form?
 
-**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." identifies `fc 02` as a short pcurve-style endpoint family.
+**Known.** `creo_prt.md` §4.2 defines the complete short `fc 02` body as a
+seven-scalar one-sided path in the first topology face's chart with a bounded
+three-byte terminal operand. Other `fc 02` bodies do not satisfy that
+production.
 
-**Need.** We must know the roles to construct its curve and endpoints.
+**Need.** We must know the roles of the other `fc 02` body variants to
+construct their curves and endpoints.
 
 ### GS-09. Other `fc 05` variants
 
@@ -200,7 +204,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What is the complete body grammar for `fc 08`?
 
-**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." identifies `fc 08` as a world-coordinate control-polyline family. Recognized coordinate tokens and opaque spans partition its retained body.
+**Known.** `creo_prt.md` §4.2 "An `fc` prefix is resolved by exact body grammar." identifies `fc 08` as a world-coordinate control-polyline family. Recognized coordinate tokens and opaque spans partition its retained body.
 
 **Need.** We must know the grammar to construct the control polyline.
 
@@ -208,7 +212,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What role does each field in a full `fc 13` sample group have?
 
-**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." identifies `fc 13` as a held-cap-ordinate control polyline.
+**Known.** `creo_prt.md` §4.2 "An `fc` prefix is resolved by exact body grammar." identifies `fc 13` as a held-cap-ordinate control polyline.
 
 **Need.** We must know the roles to construct the control polyline.
 
@@ -224,7 +228,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What body grammar does each `fc 04`, `fc 07`, `fc 09`, and `fc 0a` subtype use?
 
-**Known.** `creo_prt.md` §4.2 "Non-eight-slot curve bodies begin with `fc <subtype>`. The subtype selects a body-grammar class." defines the common `fc <subtype>` opener and the recognized subtype families.
+**Known.** `creo_prt.md` §4.2 "An `fc` prefix is resolved by exact body grammar." defines the common `fc <subtype>` opener and the recognized subtype families.
 
 **Need.** We must know each grammar to construct its curve family.
 
@@ -254,19 +258,34 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GS-17. Other positional cylinders
 
-**Question.** What model-space equation does each positional cylinder body outside the defined local-system, compact axis-aligned, referenced planar-envelope, held-axis axial/radial, and repeated-diameter forms encode?
+**Question.** What model-space equation does each positional cylinder body outside the defined analytic and generated round-edge forms encode?
 
-**Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay." define the recognized cylinder row families and their placement invariants.
+**Known.** `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay." define the recognized cylinder row families and their placement invariants, including the `11 10 13` placement-witnessed inline cylinder and generated type-24 round-edge endpoint bodies. The first directrix-coordinate positive DICT lattice covers prefixes `4b..a3`.
+
+The selector-corner interval family reconstructs its unique axis line, radius,
+and extent from two directrix parameters, two XYZ corners, and the selector
+pair. Its split-selector and one-placeholder variants use the same equation.
+The four-bound inline family selects either the positional row outline lane or
+the signed first-directrix outline lane from its first outline token. Both
+forms reconstruct a complete carrier from the inline local-system suffix.
+Class-913 axial-interval corner bodies without a quadrant selector retain four
+axis-line candidates. A unique maximum count of adjacent tangent support planes
+selects the carrier; a tied or zero maximum does not.
+Their common transverse span is a rolling-radius sample. In a
+round-edge endpoint body, the unique pair of equal nonzero endpoint-coordinate
+deltas supplies the perpendicular-round radius. In a class-913 generated-round
+context, axial-interval and endpoint bodies do not fall through to scalar-frame
+or terminal-suffix radius grammars. Outside that context, a byte-compatible
+body does not establish endpoint ownership.
+
+Class-913 generated round-edge replays carry a radius candidate in a bounded
+`cr_flags_xar` positional record. Its `f2 f7 80 a0` opener, following
+`01 f6` compact-field terminator, first `0x29` short-form scalar, and next
+`f3 f7 80 97 e2` boundary are defined in `creo_prt.md` §3.2. The candidate
+is used only with agreeing observed rolling-radius and placed-cylinder
+witnesses; it does not by itself define the remaining carrier equation.
 
 **Need.** We must know the equation to construct the cylinder carrier.
-
-### GS-18. Other positional cones
-
-**Question.** What model-space equation does each positional cone body outside the support-apex suffix and planar-envelope forms encode?
-
-**Known.** `creo_prt.md` §3.2 "A repeated-diameter type-24 round body stores two scalar diameter endpoints" through `creo_prt.md` §3.2 "Positional cylinder rows store cap-plane point data rather than a `local_sys` replay. Their" define the recognized cone support, apex, axis, radial ratio, and half-angle construction.
-
-**Need.** We must know the equation to construct the cone carrier.
 
 ### GS-19. Positional cone station token
 
@@ -276,19 +295,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the value to preserve the native cone parameters.
 
-### GS-20. Other non-plane surface rows
-
-**Question.** What model-space equation does each non-plane surface row outside the defined analytic and spline families encode?
-
-**Known.** `creo_prt.md` §3.1 "A decoder must not infer the kind of a row without" defines the normalized surface-family mapping. `creo_prt.md` §3.2 "`srf_prim_ptr` records contain the surface prototype fields" through `creo_prt.md` §3.4 "A standard positional envelope is exactly ten contiguous scalar slots" define the surface prototypes and the recognized positional constructions.
-
-**Need.** We must know the equation to construct the remaining surface carriers.
-
 ### GS-21. Non-prismatic round radii
 
 **Question.** Which fields define the varying radius of a non-prismatic round?
 
-**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the recognized edge-treatment schemas, positional replay, and resolved constant-radius forms.
+**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the recognized edge-treatment schemas, positional replay, resolved constant-radius forms, and the legacy Sld_Features/Sld_FullData constant-radius join. That join does not define a varying-radius blend.
 
 **Need.** We must know the fields to construct the varying-radius blend.
 
@@ -336,9 +347,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SP-04. Other relation equations
 
-**Question.** What equation does each relation type outside signed type 0, type 5, and type 14 encode?
+**Question.** What equation does each relation type outside signed type 0, type 1 angular, type 5, type 6, and type 14 encode?
 
 **Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the recognized linear, radius, incidence, and entity-geometry relations. Complete `eqtn_arr` function-0, function-2, function-3, and function-35 rows define radial endpoint, scalar equality, unsigned coordinate distance, radius binding, and point-on-line equations when their positional row grammars are complete.
+The supported type-six relation form has sign `1`,
+`a=[first_point,second_point,0,1]`, `b=[center_point,0,0,0]`, and a complete
+four-slot `c` selector; it binds a complete linear dimension to the unique arc
+with the matching endpoint pair, center, and radius dimension index. Type four
+produces a diameter constraint; the other linear dimension types produce a
+radius constraint. An incomplete or ambiguous form remains native.
 Function-13 rows with two type-2 point ordinates and a zero type-7 auxiliary
 row define a same-coordinate equation.
 Function-33 rows with four type-1/type-2 coordinate pairs identifying two
@@ -357,7 +374,13 @@ coordinate difference is non-zero. Function-16 direct rows with two type-4
 angle rows, a type-0 result row, and a zero type-5 selector transfer the
 non-negative first-minus-second angle difference when it is at most π; a
 missing result transfers from the two finite angles. Other function-16 forms
-and other function-43 forms remain native.
+and other function-43 forms remain native. Function-10 seven-slot rows with
+same-type selected coordinates for two distinct points and a target, opposite
+type coordinates for the two reference points, and zero type-7 auxiliaries
+transfer the target's missing opposite ordinate to the shared reference
+ordinate when the selected ordinates differ and all other point identities and
+coordinates are complete and unambiguous. Other function-10 forms remain
+native.
 
 **Need.** We must know each equation to solve the section geometry.
 
@@ -428,16 +451,17 @@ the `var_arr` solver-variable identity. A complete `eqtn_arr` uses zero-based
 `var_arr` row ordinals for its argument slots. Function `2` transfers scalar
 equality between two referenced rows; for two type-1 rows or two type-2 rows,
 this transfers equality between the corresponding point coordinates. Function
-`3` transfers a complete non-negative linear dimension into an unsigned
-coordinate-difference constraint when its inline type-0 scalar agrees with the
-selected dimension row or its type-0 value is the dimension-driven sentinel.
-The selected complete dimension supplies that sentinel's resolved scalar. A
-function-2 type-3/type-0 pair binds a positive type-3 radius row to a type-3
-dimension row when the inline scalar agrees or the type-0 row is
-dimension-driven; the selected dimension supplies the resolved scalar and
-radius value. A function-5 type-6/type-6/type-5 row with a zero type-5 selector
-transfers direct equality between the two type-6 scalars; either finite scalar
-supplies the other row's dimension-driven sentinel.
+`3` transfers the magnitude of a complete linear dimension into an unsigned
+coordinate-difference constraint when its inline type-0 scalar agrees with
+that magnitude, its scalar-equality component resolves to that magnitude, or
+its type-0 value is the dimension-driven sentinel. The selected complete
+dimension supplies that sentinel's resolved magnitude. A function-2 type-3/type-0
+pair binds a positive type-3 radius row to a type-3 dimension row when the
+resolved scalar values agree or the type-0 row is dimension-driven; the
+selected dimension supplies the resolved scalar and radius value. A function-5
+type-6/type-6/type-5 row with a zero type-5 selector transfers direct equality
+between the two type-6 scalars; either finite scalar supplies the other row's
+dimension-driven sentinel.
 
 **Need.** We must know the remaining non-equality equation and relation joins
 that assign a dimension value to a dimension-driven solver variable.
@@ -457,14 +481,6 @@ that assign a dimension value to a dimension-driven solver variable.
 **Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the incidence forms that have a proven point, line, or axis structure.
 
 **Need.** We must know the constraint to transfer it without inventing an axis.
-
-### SP-15. Unary type-33 incidence
-
-**Question.** What neutral constraint does a unary type-33 `skamp_ptr` incidence with flags 34 and a sense-10 bounded-curve operand represent?
-
-**Known.** The decoder retains the type, flags, sense, and bounded-curve identity.
-
-**Need.** We must know the constraint to transfer its design intent.
 
 ### SP-16. Other `skamp_ptr` geometry families
 
@@ -580,6 +596,54 @@ retains no depth-to-tip state.
 have equal bore-radius and blind-depth envelopes, and identify the depth
 endpoint to set `HoleBottom::Angled`.
 
+### SP-40. `var_arr` scalar classes
+
+**Question.** What scalar class does each `var_arr` row `type` value outside
+`1`, `2`, and `3` denote?
+
+**Known.** `creo_prt.md` §5 "| `var_arr` | Solver-variable table keyed by `key`;"
+gives point `u` for type `1`, point `v` for type `2`, and radius for type `3`.
+`creo_prt.md` §5 "Function `0` has exactly six argument slots" gives type `4` or
+type `6` as an angle in that form. `creo_prt.md` §5 "Function `42` has three
+argument slots" gives type `6` as a coordinate mean in that form.
+`creo_prt.md` §5 "Function `16` has a direct four-slot form" gives type `4` as an
+angle operand and type `0` as a result. The argument position in the equation
+row, and not the row `type`, selects the role.
+
+**Need.** We must know each class to bind a solver row to its equation role
+without argument position.
+
+### SP-41. Drilled hole form declaration
+
+**Question.** Which field declares the form of a class-911 drilled hole?
+
+**Known.** `creo_prt.md` §6 "A cylindrical stepped entry has two source section
+entities" selects counterbore form from the paired generated-surface structure.
+`creo_prt.md` §6 "A split-patch class-29 counterbore table has exactly five
+unique" selects the same form from a second generated-surface shape. No known
+field declares the form, and counterbore is the only recognized stepped form.
+
+**Need.** We must know the declared form to separate a counterbore from a
+countersink and from other stepped forms, and to set the neutral hole kind.
+
+### SP-43. Structural `e3` separator
+
+**Question.** What separates a structural `e3` that starts an `ent_tab` replay
+row from an `e3` that is the tail byte of a two-byte compact identifier?
+
+**Known.** `creo_prt.md` §8.2 "`segtab` and `ent_tab` compact identifiers may
+use `e3` as the tail byte" gives both uses. It gives that the tail is data and
+not a row delimiter, and that an `ent_tab` replay row begins after a structural
+`e3`.
+
+**Need.** We must separate the two uses to frame `ent_tab` replay rows without
+a byte scan.
+
+**Conflict.** `saved_positional_generated_entities` in
+`src/feature/definitions.rs:5449-5471` accepts each `e3` byte as a row start
+when the following identifier joins a generated segment and an `e2` byte occurs
+in the next 24 bytes. The specification does not give this window.
+
 ## 4. Topology and appearance
 
 ### TP-01. DEPDB recipe-to-body binding
@@ -602,11 +666,17 @@ endpoint to set `HoleBottom::Angled`.
 
 **Question.** Which byte-backed field identifies an outer loop or an inner loop on a multi-loop face?
 
-**Known.** Parameter-space containment can classify loops only when complete pcurves and a surface chart are available.
+**Known.** Positional surface rows carry a contour chain after the local-system
+close. Each entry stores a two-byte curve-header reference, `trv`, four ordered
+parameter-space envelope slots, and an intermediate `e3` or terminal `e1`
+close; an optional `f7` separator reference may precede the next entry.
+Parameter-space containment can classify loops only when complete pcurves and a
+surface chart are available. The stored chain fields do not yet identify an
+outer or inner loop. A plane with complete two-edge typed circular loops can
+instead prove outer-to-inner order from a common center, distinct radii, and
+antipodal pcurve endpoints.
 
 **Need.** We must know the field to classify loops when containment is unavailable.
-
-**Note.** The closure commit derives a common plane from solved boundary vertices and uses geometric containment. It does not identify the byte-backed field asked by this item, and its hand-built point test does not establish that coplanarity is the native ownership rule. Reopen until a native topology witness settles loop ownership.
 
 ### TP-04. Vertex-coordinate binding
 
@@ -676,7 +746,7 @@ endpoint to set `HoleBottom::Angled`.
 
 **Question.** Which byte-backed relation assigns a shell to a body when face-adjacency components and body-count fields disagree?
 
-**Known.** Face adjacency gives connected shell components. A body-count field gives the expected body cardinality but not shell ownership.
+**Known.** Face adjacency gives connected shell components. A body-count field gives the expected body cardinality but not shell ownership. Legacy ASCII admission can identify eligible visible faces and retain a single admitted component; multiple admitted components still lack a shell-to-body join.
 
 **Need.** We must know the relation to construct the correct body membership.
 
@@ -728,6 +798,27 @@ endpoint to set `HoleBottom::Angled`.
 
 **Need.** We must know the prefix meanings and current-state selector to preserve the native state semantics and project one current candidate.
 
+**Conflict.** `operations` in `src/feature/operations.rs` projects the first
+same-ID candidate when none has a stored display name. When multiple candidates
+have stored display names, it uses the last candidate as the projection base,
+takes offsets from the first, and retains only selected fields on which the
+candidates agree. Stored order and display-name presence are not a decoded
+current-state selector, so neither projection establishes the current native
+state.
+
+### TP-19. `lo_array` roster semantics
+
+**Question.** Which fields in a positional `lo_array` row bind its native
+roster entry to a face, contour chain, curve header, and traversal orientation?
+
+**Known.** `creo_prt.md` §3.5 defines the `lo_array` frame header, named
+prototype fields, seven-field positional prefix, and bounded row body. The
+decoder retains complete frame and row bytes without assigning neutral loop or
+face meaning.
+
+**Need.** We must know the joins before `lo_array` rows can contribute to
+neutral loop ownership or face admission.
+
 ## 5. Packed persistence data
 
 ### PP-01. Packed `VisibGeom` records
@@ -776,9 +867,7 @@ endpoint to set `HoleBottom::Angled`.
 
 **Known.** `creo_prt.md` §7 "DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They" defines `1f 9d 10` Unix-compress streams. `creo_prt.md` §8.3 "Unix-compress streams with header `1f 9d 10` grow code width" states that code 256 is a literal dictionary entry and not a clear code.
 
-**Need.** We must know the initial state to decompress the table deterministically.
-
-**Note.** The closure tests generate compressed streams with the implementation's chosen dictionary and width rules and decode them with the same implementation. No native `DispDataTable` byte stream or independent compressor/parser evidence is recorded. Passing those tests cannot verify the initial dictionary or width transition. Reopen until the framing rule is evidenced.
+**Need.** We must define the initial dictionary, first available code, initial code width, and width-transition rule for this stream variant.
 
 ### PP-07. Compressed `DispDataTable` geometry binding
 
@@ -788,21 +877,13 @@ endpoint to set `HoleBottom::Angled`.
 
 **Need.** We must know the binding to apply display data to the correct entities.
 
-### PP-08. Configuration driver-table traversal
+### PP-09. Neutral family-table semantics
 
-**Question.** How do references traverse the configuration driver table selected by a non-null `FamilyInf.drv_tbl_ptr`?
+**Question.** Which family-table item types represent neutral parameters, dimensions, feature states, active instances, and configuration values?
 
-**Known.** `creo_prt.md` §8.3 "`FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table" defines the null and referenced pointer forms and the configuration-root identity. A null pointer means that the part has no family-table configurations.
+**Known.** `creo_prt.md` §8.3 defines the legacy object graph, ordered `items` and `instances` arrays, ordinal value join, complete row fields, and typed value forms 50, 51, and 52. The decoder retains a complete joined table in the native `configuration_driver_tables` arena.
 
-**Need.** We must know the traversal to enumerate all configuration rows.
-
-### PP-09. Configuration driver-table rows
-
-**Question.** What does each row and field in the configuration driver table represent?
-
-**Known.** A non-null pointer preserves the canonical driver-table entity identifier.
-
-**Need.** We must know the row semantics to transfer configuration parameters and values.
+**Need.** We must map the complete table columns and instance state to neutral configuration, parameter, feature-state, and active-configuration records without assigning a meaning to an item type or visibility flag that the source does not establish.
 
 ### PP-13. Legacy persistence bodies
 
@@ -834,9 +915,16 @@ without a null token. Neither type uses continuation rows.
 Type 6 uses the type-2 compact-real scalar and array grammar. Types 5, 7, 9,
 and 11 use unsigned decimal 32-bit scalars and dimension-complete run-length
 arrays; their one-element arrays can store the element in a direct child row.
+In `Sld_VisGeom.active_geom`, a complete direct-child `crv_array` object has
+one `crv_id`, `type`, `feat_id`, signed two-element `crv_pnt_dir`, two
+`crv_hdr_geom_ptr` face references, and two `next_crv_hdr_ptr` successor
+references. A complete `[N,4]` `crv_pnt_arr` type-2 array uses its first and
+last rows as the two endpoint pairs in the adjacent face charts. These rows
+join the native half-edge and face-loop graph when all carrier and vertex
+admission invariants hold.
 
 **Need.** We must know the semantic axis order of multidimensional type-2
-arrays, the character-set selection for non-UTF-8 type-10 strings, type-10
-continuation semantics,
-geometry and design-history graph joins, and non-attribute section grammar to
+arrays outside the settled geometry records, the character-set selection for
+non-UTF-8 type-10 strings, type-10 continuation semantics, remaining geometry
+and design-history graph joins, and non-attribute section grammar to
 transfer the rest of legacy persistence.

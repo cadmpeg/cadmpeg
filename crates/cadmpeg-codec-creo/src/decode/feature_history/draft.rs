@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema, thicken, datum, and sweep-admission feature definitions.
 
-use super::super::analytic::{cross, dot, placed_plane_surfaces, placed_planes};
+use super::super::analytic::{
+    cross, dot, placed_plane_surfaces, placed_planes, reconciled_model_plane,
+};
 use super::super::holes::{
     circular_sweep_feature_definition, circular_sweep_geometry, compact_simple_hole_cylinder_id,
     compact_simple_hole_geometry, counterbore_axis_placement, counterbore_dimensions,
@@ -23,17 +25,16 @@ use super::super::sweep::{
 };
 use super::super::uniqueness::{
     unique_feature_datum_plane, unique_feature_definition_for_transform,
-    unique_feature_profile_definition, unique_feature_profile_ref,
-    unique_feature_section_transform, unique_owned_feature_definition,
+    unique_feature_profile_ref, unique_feature_section_transform, unique_owned_feature_definition,
 };
 use super::{
     chamfer_constant_distance, differing_positive_lengths, draft_neutral_plane_selection,
     extrude_feature_definition_with_profile, feature_edge_selection, feature_parameters,
-    feature_reference_name, feature_result_surface_ids_by_feature, feature_surface_transitions,
-    filled_surface_feature_definition, full_turn_revolution_carrier_axis,
-    generated_surface_face_refs, knit_surface_feature_definition, model_feature_ids,
-    named_or_referenced_feature_definition, reference_named_feature_definition,
-    resolved_revolution_axis, round_constant_radius, round_observed_radii,
+    feature_reference_name, feature_result_surface_ids_by_feature,
+    feature_revolution_axis_for_transfer, feature_surface_transitions,
+    filled_surface_feature_definition, generated_surface_face_refs,
+    knit_surface_feature_definition, model_feature_ids, named_or_referenced_feature_definition,
+    reference_named_feature_definition, round_constant_radius, round_observed_radii,
     round_placed_cylinder_radii, schema_operation_kind, section_definition_for_history_feature,
     section_profile_ref, sweep_output_kind, sweep_solid, thicken_plane_offset,
     unresolved_extrude_extent,
@@ -41,7 +42,7 @@ use super::{
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, EdgeSelection, FaceSelection,
+    Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, Length, ProfileRef,
     RadiusForm, RadiusSpec, RevolutionConstruction, Termination,
 };
@@ -110,6 +111,59 @@ pub(in super::super) fn thicken_feature_definition(
         thickness: offset.map(|(magnitude, _)| Length(magnitude)),
         side: offset.map(|(_, side)| side),
     }
+}
+
+pub(in super::super) fn linear_extrusion_extent_and_direction(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let transforms = scan
+        .features
+        .section_transforms
+        .iter()
+        .filter(|transform| transform.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let definition = match transforms.as_slice() {
+        [transform] => {
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+        }
+        [] => unique_owned_feature_definition(&scan.features.definitions, feature_id),
+        _ => None,
+    };
+    let section = definition.and_then(|definition| definition.section_3d.as_ref());
+    let unique_transform = match transforms.as_slice() {
+        [] => Some(None),
+        [transform] => Some(Some(*transform)),
+        _ => None,
+    };
+    if let ([transform], Some(definition)) = (transforms.as_slice(), definition) {
+        if let Some(extent) = generated_arc_cylinder_extent(scan, ir, definition, transform)
+            .or_else(|| {
+                feature_plane_equations(scan, ir, feature_id).and_then(|planes| {
+                    extrusion_extent_and_direction(transform.origin, transform.normal, planes)
+                })
+            })
+        {
+            return Some(extent);
+        }
+    }
+    generated_cap_plane_extent(scan, ir, feature_id)
+        .or_else(|| {
+            unique_transform.and_then(|transform| {
+                generated_bounded_cylinder_extent(scan, ir, feature_id, transform)
+            })
+        })
+        .or_else(|| {
+            unique_transform.and_then(|transform| {
+                generated_nurbs_translation_extent(scan, ir, feature_id, transform)
+            })
+        })
+        .or_else(|| {
+            (transforms.is_empty())
+                .then_some(())
+                .and_then(|()| generated_rectilinear_plane_extent(scan, ir, feature_id, section))
+        })
 }
 
 pub(in super::super) fn schema_feature_definition(
@@ -368,7 +422,7 @@ pub(in super::super) fn schema_feature_definition(
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: feature_edge_selection(scan, ir, feature_id)
                     .unwrap_or(EdgeSelection::Unresolved),
-                spec: chamfer_constant_distance(scan, feature_id).map_or_else(
+                spec: chamfer_constant_distance(scan, ir, feature_id).map_or_else(
                     || ChamferSpec::Unresolved { form: None },
                     |distance| ChamferSpec::Distance {
                         distance: Length(distance),
@@ -424,26 +478,8 @@ pub(in super::super) fn schema_feature_definition(
     }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
         let extent = feature_revolution_extent(scan, feature_id);
-        let transforms = scan
-            .features
-            .section_transforms
-            .iter()
-            .filter(|transform| transform.feature_id == Some(feature_id))
-            .collect::<Vec<_>>();
-        let definition = unique_feature_profile_definition(
-            &scan.features.definitions,
-            &scan.features.section_transforms,
-            feature_id,
-        );
         let profile = unique_feature_profile_ref(scan, ir, feature_id);
-        let transform = match transforms.as_slice() {
-            [transform] => Some(*transform),
-            _ => None,
-        };
-        let axis = definition
-            .zip(transform)
-            .and_then(|(definition, transform)| resolved_revolution_axis(definition, transform))
-            .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent.as_ref()));
+        let axis = feature_revolution_axis_for_transfer(scan, ir, feature_id, extent.as_ref());
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
         return IrFeatureDefinition::Revolve {
             construction: RevolutionConstruction {
@@ -482,7 +518,6 @@ pub(in super::super) fn schema_feature_definition(
             [] => unique_owned_feature_definition(&scan.features.definitions, feature_id),
             _ => None,
         };
-        let section = definition.and_then(|definition| definition.section_3d.as_ref());
         let profile = definition.map(|definition| {
             section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
         });
@@ -493,37 +528,7 @@ pub(in super::super) fn schema_feature_definition(
             output_kind.is_some(),
             preceding_features_establish_body(ir),
         );
-        let unique_transform = match transforms.as_slice() {
-            [] => Some(None),
-            [transform] => Some(Some(*transform)),
-            _ => None,
-        };
-        let extent_and_direction =
-            if let ([transform], Some(definition)) = (transforms.as_slice(), definition) {
-                generated_arc_cylinder_extent(scan, definition, transform).or_else(|| {
-                    feature_plane_equations(scan, feature_id).and_then(|planes| {
-                        extrusion_extent_and_direction(transform.origin, transform.normal, planes)
-                    })
-                })
-            } else {
-                None
-            }
-            .or_else(|| generated_cap_plane_extent(scan, ir, feature_id))
-            .or_else(|| {
-                unique_transform.and_then(|transform| {
-                    generated_bounded_cylinder_extent(scan, ir, feature_id, transform)
-                })
-            })
-            .or_else(|| {
-                unique_transform.and_then(|transform| {
-                    generated_nurbs_translation_extent(scan, ir, feature_id, transform)
-                })
-            })
-            .or_else(|| {
-                (transforms.is_empty()).then_some(()).and_then(|()| {
-                    generated_rectilinear_plane_extent(scan, ir, feature_id, section)
-                })
-            });
+        let extent_and_direction = linear_extrusion_extent_and_direction(scan, ir, feature_id);
         let construction = extent_and_direction.map(|(extent, direction)| {
             (
                 Some(Vector3::new(direction[0], direction[1], direction[2])),
@@ -579,39 +584,8 @@ pub(in super::super) fn schema_feature_definition(
             if crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_none() {
                 return IrFeatureDefinition::DatumPlaneUnresolved;
             }
-            if let Some(plane) = placed_planes(scan).get(surface_id) {
-                let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
-                let u_axis = placed_plane_surfaces(scan).get(surface_id).map_or_else(
-                    || cadmpeg_ir::geometry::derive_reference_direction(normal),
-                    |(_, u_axis, _)| Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
-                );
-                return IrFeatureDefinition::DatumPlane {
-                    origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
-                    normal,
-                    u_axis,
-                };
-            }
-            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
-            let planes = ir
-                .model
-                .surfaces
-                .iter()
-                .filter(|surface| surface.id == surface_id)
-                .filter_map(|surface| match surface.geometry {
-                    SurfaceGeometry::Plane {
-                        origin,
-                        normal,
-                        u_axis,
-                    } => Some((origin, normal, u_axis)),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            if let [(origin, normal, u_axis)] = planes.as_slice() {
-                return IrFeatureDefinition::DatumPlane {
-                    origin: *origin,
-                    normal: *normal,
-                    u_axis: *u_axis,
-                };
+            if let Some(definition) = reconciled_datum_plane_definition(scan, ir, *surface_id) {
+                return definition;
             }
             return IrFeatureDefinition::DatumPlaneUnresolved;
         }
@@ -679,12 +653,14 @@ pub(in super::super) fn schema_feature_definition(
     if numbered_feature_name_has_family(kind, "Extrude")
         && !feature_is_sheet_extrusion(scan, feature_id)
     {
-        return extrude_feature_definition_with_profile(
-            scan,
-            ir,
-            feature_id,
-            BooleanOp::Unresolved,
+        let output_kind = sweep_output_kind(scan, ir, "extrusion", feature_id);
+        let op = section_sweep_boolean_operation(
+            feature_recipe_effect(scan, feature_id),
+            kind,
+            output_kind.is_some(),
+            preceding_features_establish_body(ir),
         );
+        return extrude_feature_definition_with_profile(scan, ir, feature_id, op);
     }
     if schema_class == 942
         && class_942_boundary_surface_entity_graph(
@@ -729,6 +705,40 @@ pub(in super::super) fn datum_plane_feature_definition(
     }
 }
 
+fn reconciled_datum_plane_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    surface_id: u32,
+) -> Option<IrFeatureDefinition> {
+    let plane = reconciled_model_plane(&placed_planes(scan), ir, surface_id)?;
+    let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+    let u_axis = placed_plane_surfaces(scan)
+        .get(&surface_id)
+        .map(|(_, u_axis, _)| Vector3::new(u_axis[0], u_axis[1], u_axis[2]))
+        .or_else(|| {
+            let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            let surfaces = ir
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.id == model_id)
+                .collect::<Vec<_>>();
+            let [surface] = surfaces.as_slice() else {
+                return None;
+            };
+            match &surface.geometry {
+                SurfaceGeometry::Plane { u_axis, .. } => Some(*u_axis),
+                _ => None,
+            }
+        })
+        .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
+    Some(IrFeatureDefinition::DatumPlane {
+        origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+        normal,
+        u_axis,
+    })
+}
+
 pub(in super::super) fn unbounded_feature_plane_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -749,29 +759,7 @@ pub(in super::super) fn unbounded_feature_plane_definition(
         && row.next_surface == 0
         && crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(*row))
     .then_some(())?;
-    let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| surface.id == id)
-        .collect::<Vec<_>>();
-    let [surface] = surfaces.as_slice() else {
-        return None;
-    };
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = surface.geometry
-    else {
-        return None;
-    };
-    Some(IrFeatureDefinition::DatumPlane {
-        origin,
-        normal,
-        u_axis,
-    })
+    reconciled_datum_plane_definition(scan, ir, row.id)
 }
 
 pub(in super::super) fn numbered_feature_name_has_family(name: &str, family: &str) -> bool {
@@ -917,3 +905,6 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
                     && entry.class_id == surface.id
         )
 }
+
+#[cfg(test)]
+mod tests;
