@@ -1380,28 +1380,77 @@ pub(crate) fn project_hole_position_sketches(
                     )
             })
             .collect::<Vec<_>>();
+        let mut unindexed_marker_ids = HashSet::new();
         let paired_marker_ids = if authored_markers.is_empty() {
             // Direct projection requires a complete alternate object roster.
             // An isolated pair among other coordinates can describe a
             // construction curve or dimension handle instead of a hole locus.
             let mut paired_marker_ids = HashSet::new();
             let mut complete_alternate_encoding = true;
+            let mut unindexed_locus: Option<&crate::records::SketchInputEntity> = None;
+            let mut complete_unindexed_encoding = true;
             for lane in matching_lanes {
                 let position_markers = lane
                     .sketch_entities
                     .iter()
                     .filter(|marker| {
                         marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
-                            && marker.object_index.is_some()
                             && marker.coordinates_m.is_some()
                     })
+                    .collect::<Vec<_>>();
+                let indexed_markers = position_markers
+                    .iter()
+                    .filter(|marker| marker.object_index.is_some())
                     .count();
                 let paired = paired_object_locus_markers(lane, position_feature.id.as_str());
-                complete_alternate_encoding &= paired.len() == position_markers;
+                complete_alternate_encoding &= paired.len() == indexed_markers;
                 paired_marker_ids.extend(paired.iter().map(|marker| marker.id.as_str()));
                 authored_markers.extend(paired);
+                if indexed_markers == 0
+                    && position_markers.iter().all(|marker| {
+                        matches!(
+                            marker.kind,
+                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                        )
+                    })
+                {
+                    let loci = position_markers.into_iter().filter(|marker| {
+                        marker
+                            .coordinates_m
+                            .is_some_and(|[u, v]| u != 0.0 || v != 0.0)
+                    });
+                    let mut loci = loci.collect::<Vec<_>>();
+                    if let [locus] = loci.as_mut_slice() {
+                        if unindexed_locus
+                            .is_some_and(|previous| previous.coordinates_m != locus.coordinates_m)
+                        {
+                            complete_unindexed_encoding = false;
+                        } else {
+                            unindexed_locus = Some(*locus);
+                        }
+                    } else {
+                        complete_unindexed_encoding = false;
+                    }
+                } else {
+                    complete_unindexed_encoding = false;
+                }
             }
-            if complete_alternate_encoding {
+            // Legacy position sketches omit object indexes from their point
+            // records. Accept one locus only when every matching lane has a
+            // point-only coordinate roster with exactly one non-origin point;
+            // zero points are relation anchors and do not identify a hole.
+            if complete_unindexed_encoding {
+                if let Some(marker) = unindexed_locus {
+                    unindexed_marker_ids.insert(marker.id.as_str());
+                    authored_markers.push(marker);
+                    HashSet::new()
+                } else if complete_alternate_encoding {
+                    paired_marker_ids
+                } else {
+                    authored_markers.clear();
+                    HashSet::new()
+                }
+            } else if complete_alternate_encoding {
                 paired_marker_ids
             } else {
                 authored_markers.clear();
@@ -1434,7 +1483,9 @@ pub(crate) fn project_hole_position_sketches(
                     };
                     position
                 }
-                None if paired_marker_ids.contains(marker.id.as_str()) => {
+                None if paired_marker_ids.contains(marker.id.as_str())
+                    || unindexed_marker_ids.contains(marker.id.as_str()) =>
+                {
                     let Some(transform) = marker_transform else {
                         resolved.clear();
                         break;
@@ -1531,6 +1582,30 @@ fn hole_position_feature<'a>(
     position_features.next().is_none().then_some(position)
 }
 
+/// Whether a hole has a configuration-local position source in the supplied
+/// lanes. A lane without this carrier inherits the document hole placements;
+/// a lane with one must retain unresolved placement state when projection
+/// cannot establish its authored loci.
+pub(crate) fn hole_position_carrier_present(
+    feature: &cadmpeg_ir::features::Feature,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> bool {
+    let Some(native_ref) = feature.native_ref.as_deref() else {
+        return false;
+    };
+    let Some(native) = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|candidate| candidate.id == native_ref)
+    else {
+        return false;
+    };
+    lanes
+        .iter()
+        .any(|lane| hole_position_sketch_source(native, lane).is_some())
+}
+
 pub(crate) fn project_spatial_hole_position_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     spatial_sketches: &[SpatialSketch],
@@ -1599,9 +1674,6 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     && marker.object_index.is_some()
             })
             .collect::<Vec<_>>();
-        if authored_markers.is_empty() {
-            continue;
-        }
         let radius = *diameter * 0.5;
         let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
         let axis_tolerance_squared = 1.0e-12;
@@ -3501,9 +3573,6 @@ fn match_marker_loci_to_bore_axes(
             })
             .collect::<Vec<_>>();
         candidates.sort_unstable_by_key(|(point, _, _)| *point);
-        if candidates.len() < marker_loci.len() {
-            continue;
-        }
         let candidate_loci = candidates
             .iter()
             .map(|([x, y, z], ..)| {
@@ -3514,6 +3583,40 @@ fn match_marker_loci_to_bore_axes(
                 )
             })
             .collect::<Vec<_>>();
+        if candidates.len() < marker_loci.len() {
+            // A position sketch can retain construction curves that have no
+            // current B-rep carrier. Accept the topology carrier set only
+            // when it consumes one unique congruent subset of those curves.
+            if !has_unique_marker_loci_subset(marker_loci, &candidate_loci) {
+                continue;
+            }
+            let placements = candidates
+                .iter()
+                .map(|(_, origin, axis)| HolePlacement::Axis {
+                    origin: *origin,
+                    axis: *axis,
+                })
+                .collect::<Vec<_>>();
+            let key = placements
+                .iter()
+                .map(|placement| match placement {
+                    HolePlacement::Axis { origin, axis } => [
+                        quantize_scalar(origin.x),
+                        quantize_scalar(origin.y),
+                        quantize_scalar(origin.z),
+                        quantize_scalar(axis.x),
+                        quantize_scalar(axis.y),
+                        quantize_scalar(axis.z),
+                    ],
+                    HolePlacement::Directed { .. } => [0; 6],
+                })
+                .collect::<Vec<_>>();
+            solutions.insert(key, placements);
+            if solutions.len() > 1 {
+                return None;
+            }
+            continue;
+        }
         let mut subsets = HashSet::new();
         if congruent_bore_axis_subsets(
             0,
@@ -3622,6 +3725,77 @@ fn congruent_bore_axis_subsets(
         used.remove(&candidate_index);
     }
     false
+}
+
+fn has_unique_marker_loci_subset(marker_loci: &[Point2], candidate_loci: &[Point3]) -> bool {
+    fn collect_subsets(
+        candidate_index: usize,
+        marker_loci: &[Point2],
+        candidate_loci: &[Point3],
+        assigned: &mut Vec<usize>,
+        used: &mut HashSet<usize>,
+        subsets: &mut HashSet<Vec<usize>>,
+    ) -> bool {
+        if candidate_index == candidate_loci.len() {
+            let mut subset = assigned.clone();
+            subset.sort_unstable();
+            subsets.insert(subset);
+            return subsets.len() > 1;
+        }
+        for marker_index in 0..marker_loci.len() {
+            if !used.insert(marker_index) {
+                continue;
+            }
+            let valid = assigned.iter().copied().enumerate().all(
+                |(previous_candidate, previous_marker)| {
+                    let marker_delta = Vector3::new(
+                        marker_loci[marker_index].u - marker_loci[previous_marker].u,
+                        marker_loci[marker_index].v - marker_loci[previous_marker].v,
+                        0.0,
+                    );
+                    let candidate_delta = Vector3::new(
+                        candidate_loci[candidate_index].x - candidate_loci[previous_candidate].x,
+                        candidate_loci[candidate_index].y - candidate_loci[previous_candidate].y,
+                        candidate_loci[candidate_index].z - candidate_loci[previous_candidate].z,
+                    );
+                    same_dimension_length(marker_delta.norm(), candidate_delta.norm())
+                },
+            );
+            if valid {
+                assigned.push(marker_index);
+                let ambiguous = collect_subsets(
+                    candidate_index + 1,
+                    marker_loci,
+                    candidate_loci,
+                    assigned,
+                    used,
+                    subsets,
+                );
+                assigned.pop();
+                used.remove(&marker_index);
+                if ambiguous {
+                    return true;
+                }
+                continue;
+            }
+            used.remove(&marker_index);
+        }
+        false
+    }
+
+    if candidate_loci.is_empty() || candidate_loci.len() > marker_loci.len() {
+        return false;
+    }
+    let mut subsets = HashSet::new();
+    collect_subsets(
+        0,
+        marker_loci,
+        candidate_loci,
+        &mut Vec::new(),
+        &mut HashSet::new(),
+        &mut subsets,
+    );
+    subsets.len() == 1
 }
 
 pub(super) fn feature_object_byte_ranges<'a>(

@@ -1,10 +1,12 @@
 //! Tests for the `bindings` module.
 
-use super::super::LEGACY_SKETCH_MARKER;
+use super::super::{LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::{
     bind_detached_legacy_sketch_objects, bind_mirror_surface_planes, bind_pattern_inputs,
     bind_resolved_curve_vertices, bind_scalar_operands, normalize_indexed_curve_entities,
+    represented_sketch_features,
 };
+use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
     FeatureInputComponentPathEntry, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane,
@@ -59,13 +61,21 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         .properties
         .insert("Description".into(), child.name.clone());
     let following = native_feature("following", "12", 2, "Following", "Feature", None);
+    let attribute = native_feature(
+        "attribute",
+        "-1",
+        3,
+        "Attribute-Definition",
+        "Feature",
+        None,
+    );
     let history = FeatureHistory {
         id: "history".into(),
         part_name: None,
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
-        features: vec![extrusion, child, following],
+        features: vec![extrusion, child, following, attribute],
     };
     let name = |id: &str, offset, object_id, value: &str| FeatureInputName {
         id: id.into(),
@@ -99,6 +109,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
             name("d5-name", 240, 20, "D5"),
             name("d6-name", 280, 21, "D6"),
             name("d7-name", 320, 22, "D7"),
+            name("attribute-name", 360, 99, "Attribute-Definition"),
             name("following-name", 400, 12, "Following"),
             name("later-name", 440, 23, "later"),
         ],
@@ -115,7 +126,20 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: Vec::new(),
-        sketch_entities: Vec::new(),
+        sketch_entities: vec![SketchInputEntity {
+            id: "sketch-marker".into(),
+            parent: "lane".into(),
+            feature_ref: None,
+            ordinal: 0,
+            offset: 370,
+            object_index: Some(1),
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: Some(1.0),
+            coordinates_m: Some([0.0, 0.0]),
+            links: Vec::new(),
+            link_selector: None,
+        }],
     };
 
     bind_scalar_operands(
@@ -127,6 +151,14 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         .iter()
         .all(|scalar| scalar.feature_ref.as_deref() == Some("extrusion")));
     assert_eq!(lane.scalars[3].feature_ref.as_deref(), Some("following"));
+    assert_eq!(
+        lane.sketch_entities[0].feature_ref.as_deref(),
+        Some("profile-child")
+    );
+    assert_eq!(
+        represented_sketch_features(std::slice::from_ref(&history), std::slice::from_ref(&lane)),
+        HashSet::from([String::from("profile-child")])
+    );
 }
 
 #[test]
@@ -139,6 +171,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         ordinal: 0,
         offset: 0,
         selector: 0,
+        endpoint_selector: None,
         object_name_ref: "name".into(),
         feature_ref: "mirror-native".into(),
         producer_feature_refs: Vec::new(),
@@ -456,6 +489,130 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
 }
 
 #[test]
+fn circular_pattern_axis_binds_from_unique_temporary_axis() {
+    let declaration = 120;
+    let mut payload = vec![0; 512];
+    payload[declaration + temporary_axis::CLASS_MARKER
+        ..declaration + temporary_axis::CLASS_MARKER + temporary_axis::CLASS_MARKER_VALUE.len()]
+        .copy_from_slice(&temporary_axis::CLASS_MARKER_VALUE);
+    payload
+        [declaration + temporary_axis::NAME_LENGTH..declaration + temporary_axis::NAME_LENGTH + 2]
+        .copy_from_slice(&temporary_axis::NAME_LENGTH_VALUE.to_le_bytes());
+    payload[declaration + temporary_axis::NAME
+        ..declaration + temporary_axis::NAME + temporary_axis::NAME_VALUE.len()]
+        .copy_from_slice(&temporary_axis::NAME_VALUE);
+    payload[declaration + temporary_axis::HANDLES
+        ..declaration + temporary_axis::HANDLES + temporary_axis::HANDLES_VALUE.len()]
+        .copy_from_slice(&temporary_axis::HANDLES_VALUE);
+    payload[declaration + temporary_axis::STREAM_ADDRESS
+        ..declaration + temporary_axis::STREAM_ADDRESS + 4]
+        .copy_from_slice(&5000u32.to_le_bytes());
+    for (index, value) in [0.012f64, -0.034, 0.056, 0.1, 0.2, 0.3, 0.0, 1.0, 0.0]
+        .into_iter()
+        .enumerate()
+    {
+        let offset = declaration + temporary_axis::AXIS_FRAME + index * 8;
+        payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    payload[declaration + temporary_axis::NEXT_CLASS_MARKER
+        ..declaration
+            + temporary_axis::NEXT_CLASS_MARKER
+            + temporary_axis::NEXT_CLASS_MARKER_VALUE.len()]
+        .copy_from_slice(&temporary_axis::NEXT_CLASS_MARKER_VALUE);
+
+    let native_pattern = NativeFeature {
+        id: "pattern-native".into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some("228".into()),
+        parent_source_id: None,
+        ordinal: 1,
+        name: "CirPattern1".into(),
+        kind: "CirPattern".into(),
+        input_class: Some("moCirPattern_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::from([
+            ("Angle".into(), "90deg".into()),
+            ("Count".into(), "4".into()),
+        ]),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![native_pattern],
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "pattern-name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 100,
+            object_id: Some(228),
+            value: "CirPattern1".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+    let mut features = vec![Feature {
+        id: FeatureId("pattern".into()),
+        ordinal: 0,
+        name: Some("CirPattern1".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: vec![FeatureId("seed".into())],
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Pattern {
+            seeds: vec![PatternSeed::Feature(FeatureId("seed".into()))],
+            pattern: PatternKind::Unresolved {
+                form: Some(PatternForm::Circular),
+            },
+        },
+        native_ref: Some("pattern-native".into()),
+    }];
+
+    bind_pattern_inputs(&mut features, std::slice::from_ref(&history), &[lane]);
+
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::Pattern {
+            pattern: PatternKind::Circular {
+                axis_origin,
+                axis_dir,
+                angle,
+                count,
+            },
+            ..
+        } if *axis_origin == Point3::new(12.0, -34.0, 56.0)
+            && *axis_dir == Vector3::new(0.0, 1.0, 0.0)
+            && angle.0 == std::f64::consts::FRAC_PI_2
+            && *count == 4
+    ));
+}
+
+#[test]
 fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
     let mut payload = vec![0; 104 + LEGACY_SKETCH_MARKER.len()];
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
@@ -528,6 +685,76 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
     bind_resolved_curve_vertices(&mut lane);
 
     assert_eq!(lane.sketch_entities[4].kind, SketchInputKind::Point);
+}
+
+#[test]
+fn local_link_promotes_a_coordinate_bearing_curve_to_a_profile_vertex() {
+    let mut payload = vec![0; 157];
+    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+    payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+    payload[82..86].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+    payload[86..88].copy_from_slice(&0xbc87u16.to_le_bytes());
+    payload[88..90].copy_from_slice(&22u16.to_le_bytes());
+    payload[90..94].fill(0xff);
+    payload[102..106].copy_from_slice(&(-2i32).to_le_bytes());
+    payload[152..].copy_from_slice(SKETCH_MARKER);
+    let entity = |id: &str, offset, local_id, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id,
+        kind,
+        state_value: None,
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let mut lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![
+            entity(
+                "line",
+                0,
+                Some(1),
+                SketchInputKind::LineOrCircle,
+                Some([2.0, 3.0]),
+            ),
+            entity(
+                "curve-vertex",
+                152,
+                Some(22),
+                SketchInputKind::LineOrCircle,
+                Some([4.0, 5.0]),
+            ),
+        ],
+    };
+
+    bind_resolved_curve_vertices(&mut lane);
+
+    assert_eq!(lane.sketch_entities[0].kind, SketchInputKind::LineOrCircle);
+    assert_eq!(lane.sketch_entities[1].kind, SketchInputKind::Point);
 }
 
 #[test]

@@ -1333,22 +1333,27 @@ fn parse_directory(
     let mut entries = Vec::with_capacity(entry_count);
     for raw in bytes.chunks_exact(128) {
         let object_type = raw[66];
-        if !matches!(object_type, 0 | 1 | 2 | 5) {
+        if object_type == 0 {
+            // An unallocated slot has no directory identity. Several writers
+            // leave stale bytes in such slots; preserve its index for links,
+            // but do not interpret any of those bytes as a live entry.
+            entries.push(DirectoryEntry {
+                name: String::new(),
+                object_type: 0,
+                color: 0,
+                left: NO_STREAM,
+                right: NO_STREAM,
+                child: NO_STREAM,
+                start_sector: FREE_SECTOR,
+                size: 0,
+            });
+            continue;
+        }
+        if !matches!(object_type, 1 | 2 | 5) {
             return malformed("invalid CFB directory object type");
         }
         let name_len = usize::from(le_u16(raw, 64).expect("directory name length"));
-        let name = if object_type == 0 {
-            if name_len != 0
-                || raw[..68].iter().any(|byte| *byte != 0)
-                || raw[68..80]
-                    .chunks_exact(4)
-                    .any(|word| word != NO_STREAM.to_le_bytes())
-                || raw[80..].iter().any(|byte| *byte != 0)
-            {
-                return malformed("invalid unallocated CFB directory entry");
-            }
-            String::new()
-        } else {
+        let name = {
             if !(2..=64).contains(&name_len)
                 || !name_len.is_multiple_of(2)
                 || raw[name_len - 2..name_len] != [0, 0]
@@ -1366,7 +1371,7 @@ fn parse_directory(
             name
         };
         let color = raw[67];
-        if object_type != 0 && color > 1 {
+        if color > 1 {
             return malformed("invalid CFB directory node color");
         }
         let mut size = le_u64(raw, 120).expect("directory stream size");
@@ -1914,11 +1919,15 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nonzero_unallocated_directory_fields() {
+    fn accepts_stale_unallocated_directory_fields() {
         let mut directory = vec![0_u8; 128];
         directory[68..80].fill(0xff);
         directory[8] = 1;
-        assert!(parse_directory(None, &directory, 3).is_err());
+        let entries = parse_directory(None, &directory, 3).expect("unallocated slot is skipped");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].object_type, 0);
+        assert_eq!(entries[0].left, NO_STREAM);
+        assert_eq!(entries[0].start_sector, FREE_SECTOR);
     }
 
     #[test]

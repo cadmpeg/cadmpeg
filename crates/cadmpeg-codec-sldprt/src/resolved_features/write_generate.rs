@@ -1,6 +1,7 @@
 //! Generated sketch marker, relation and scalar emission.
 
 use super::markers::marker_coordinates;
+use super::relation_geometry::is_reference_relation_parameter;
 use super::relation_loci::marker_accepts_locus;
 use super::selections::{operand_accepts_marker, operand_uses_compatible_ordinal};
 use super::transforms::{locus_entity, locus_key, sketch_entity_loci};
@@ -491,6 +492,28 @@ fn generated_dimension<'a>(
     ir: &cadmpeg_ir::CadIr,
     definition: &'a SketchConstraintDefinition,
 ) -> Option<Result<GeneratedDimension<'a>, cadmpeg_core::CodecError>> {
+    let parameter_id = match definition {
+        SketchConstraintDefinition::DistanceLoci { parameter, .. }
+        | SketchConstraintDefinition::Distance { parameter, .. }
+        | SketchConstraintDefinition::HorizontalDistance { parameter, .. }
+        | SketchConstraintDefinition::VerticalDistance { parameter, .. }
+        | SketchConstraintDefinition::Angle { parameter, .. }
+        | SketchConstraintDefinition::Radius { parameter, .. }
+        | SketchConstraintDefinition::Diameter { parameter, .. } => Some(parameter),
+        _ => None,
+    }?;
+    if let Some(parameter) = ir
+        .model
+        .parameters
+        .iter()
+        .find(|candidate| candidate.id == *parameter_id)
+        .filter(|parameter| is_reference_relation_parameter(parameter))
+    {
+        return Some(Err(cadmpeg_core::CodecError::NotImplemented(format!(
+            "source-less SLDPRT display-only relation parameter {} has no native scalar encoding",
+            parameter.id.0
+        ))));
+    }
     let unsupported = || {
         cadmpeg_core::CodecError::NotImplemented(
             "source-less SLDPRT distance dimensions require two entities or point/entity loci"

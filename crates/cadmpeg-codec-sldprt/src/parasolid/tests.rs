@@ -2,8 +2,40 @@
 //! Parasolid stream split, header, and mesh-polyline tests.
 #![allow(clippy::unwrap_used)]
 
+use std::io::Write as _;
+
 use crate::container;
 use crate::test_support::*;
+use flate2::{write::ZlibEncoder, Compression};
+
+fn zlib_member(bytes: &[u8]) -> Vec<u8> {
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(bytes).expect("write zlib frame");
+    encoder.finish().expect("finish zlib frame")
+}
+
+fn chained_payload(sections: &[Vec<Vec<u8>>]) -> (Vec<u8>, Vec<usize>) {
+    let mut payload = Vec::new();
+    let mut offsets = Vec::new();
+    for frames in sections {
+        let mut section = WRAPPED_MAGIC.to_vec();
+        for frame in frames {
+            let member = zlib_member(frame);
+            section.extend_from_slice(&(frame.len() as u32).to_le_bytes());
+            section.extend_from_slice(&(member.len() as u32).to_le_bytes());
+            section.extend_from_slice(&member);
+        }
+        section.extend_from_slice(&[0; 8]);
+        offsets.push(payload.len());
+        payload.extend_from_slice(&(section.len() as u32).to_le_bytes());
+        payload.extend_from_slice(&section);
+    }
+    (payload, offsets)
+}
+
+const WRAPPED_MAGIC: [u8; 16] = [
+    0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
+];
 
 #[test]
 fn parasolid_stream_header_is_parsed() {
@@ -34,6 +66,60 @@ fn parasolid_extracts_every_direct_stream_in_block() {
         .unwrap()
         .description
         .contains("deltas"));
+}
+
+#[test]
+fn parasolid_reassembles_chained_sections_before_header_parsing() {
+    let partition = parasolid_with_body("partition body", "SCH_SW_33103_11000", &vec![0x31; 5000]);
+    let deltas = parasolid_with_body("deltas body", "SCH_SW_33103_11000", &vec![0x42; 3000]);
+    let partition_split = 7;
+    let deltas_split = 19;
+    let (payload, offsets) = chained_payload(&[
+        vec![
+            partition[..partition_split].to_vec(),
+            partition[partition_split..].to_vec(),
+        ],
+        vec![
+            deltas[..deltas_split].to_vec(),
+            deltas[deltas_split..].to_vec(),
+        ],
+    ]);
+
+    let streams = crate::parasolid::extract_streams_with_offsets(&payload);
+    assert_eq!(streams.len(), 2);
+    assert_eq!(streams[0], (offsets[0], partition));
+    assert_eq!(streams[1], (offsets[1], deltas));
+}
+
+#[test]
+fn parasolid_reassembles_the_degenerate_one_frame_wrapper() {
+    let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
+    let member = zlib_member(&stream);
+    let mut payload = WRAPPED_MAGIC.to_vec();
+    payload.extend_from_slice(&(stream.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&(member.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&member);
+    payload.extend_from_slice(b"trailer!");
+
+    assert_eq!(
+        crate::parasolid::extract_streams_with_offsets(&payload),
+        vec![(0, stream)]
+    );
+}
+
+#[test]
+fn malformed_chained_continuation_is_not_emitted_as_a_prefix_stream() {
+    let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
+    let member = zlib_member(&stream);
+    let mut section = WRAPPED_MAGIC.to_vec();
+    section.extend_from_slice(&(stream.len() as u32).to_le_bytes());
+    section.extend_from_slice(&(member.len() as u32).to_le_bytes());
+    section.extend_from_slice(&member);
+    section.extend_from_slice(b"bad");
+    let mut payload = (section.len() as u32).to_le_bytes().to_vec();
+    payload.extend_from_slice(&section);
+
+    assert!(crate::parasolid::extract_streams(&payload).is_empty());
 }
 
 #[test]

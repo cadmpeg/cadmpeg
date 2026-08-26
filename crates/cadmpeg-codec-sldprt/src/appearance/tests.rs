@@ -345,8 +345,14 @@ fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
 fn decode_binds_entity53_color_to_face() {
     use cadmpeg_ir::appearance::AppearanceTarget;
     let mut body = Vec::new();
+    body.extend(face_color_definition());
     body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
-    body.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    body.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
     body.extend(entity53_color(900, [0.25, 0.5, 0.75]));
     body.extend(owned_triangle(0, 700, 0.0));
     let mut cur = Cursor::new(sldprt_with_body(&body));
@@ -386,9 +392,20 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     let mut body = Vec::new();
-    body.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    body.extend(face_color_definition());
+    body.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
     body.extend(entity53_color(900, [0.25, 0.5, 0.75]));
-    body.extend(entity51(1, 701, 0x0015, &[0, 0, 0, 0, 0, 901]));
+    body.extend(entity51(
+        1,
+        701,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 901],
+    ));
     body.extend(entity53_color(901, [0.75, 0.5, 0.25]));
     body.extend(owned_triangle(0, 700, 0.0));
     body.extend(plane_carrier(
@@ -424,8 +441,14 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
 fn decode_binds_adjacent_entity53_color_to_disc14_face() {
     use cadmpeg_ir::appearance::AppearanceTarget;
     let mut body = Vec::new();
+    body.extend(face_color_definition());
     body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
-    body.extend(entity51(1, 700, 0x0014, &[0, 0, 0, 0, 0, 0]));
+    body.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 0],
+    ));
     body.extend(entity53_color(901, [1.0, 0.125, 0.0]));
     body.extend(owned_triangle(0, 700, 0.0));
     let mut cur = Cursor::new(sldprt_with_body(&body));

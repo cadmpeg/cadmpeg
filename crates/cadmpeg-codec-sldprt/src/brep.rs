@@ -33,6 +33,7 @@ pub(crate) mod spline;
 mod subset;
 mod sweep;
 pub(crate) mod topology;
+pub(crate) mod typed;
 
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
 pub(crate) const LEN_TO_MM: f64 = 1000.0;
@@ -42,6 +43,18 @@ pub(crate) use self::spline::{patch_nurbs_curve, patch_nurbs_surface};
 pub(crate) use self::topology::patch_point;
 
 mod graph;
+
+/// The native persistent identity shared by B-rep face attributes and display
+/// tessellation references.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct PersistentFaceIdentity {
+    /// Native history-feature object identifier.
+    pub(crate) feature_source_id: u32,
+    /// Face identity local to the producing feature.
+    pub(crate) local_id: u32,
+    /// Optional signed path fields stored as their native u32 bit patterns.
+    pub(crate) trailing_fields: Vec<u32>,
+}
 
 fn scale_point(v: &[f64]) -> Point3 {
     Point3::new(v[0] * LEN_TO_MM, v[1] * LEN_TO_MM, v[2] * LEN_TO_MM)

@@ -405,6 +405,70 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
             .as_ref(),
         Some(&parameter.id)
     );
+    let mut mismatched_parameter = parameter.clone();
+    mismatched_parameter.value = Some(ParameterValue::Length(Length(20.0)));
+    assert_eq!(
+        relation_parameter_by_display_name(
+            &relation,
+            &lane,
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&mismatched_parameter),
+        )
+        .map(|parameter| &parameter.id),
+        None
+    );
+    let mut synthesized_parameters = vec![mismatched_parameter.clone()];
+    crate::resolved_features::projections::synthesize_display_relation_parameters(
+        &mut synthesized_parameters,
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&FeatureInputLane {
+            relation_instances: vec![relation.clone()],
+            ..lane.clone()
+        }),
+    );
+    let synthetic = synthesized_parameters
+        .iter()
+        .find(|parameter| {
+            parameter.properties.get("sldprt_relation_parameter_role") == Some(&"reference".into())
+        })
+        .expect("display-only relation parameter");
+    assert_eq!(synthetic.value, Some(ParameterValue::Length(Length(12.0))));
+    assert!(synthetic.native_ref.is_none());
+    let nested_relation = FeatureInputRelationInstance {
+        id: "sldprt:feature-input:relation-instance#lane:10".into(),
+        ..relation.clone()
+    };
+    let mut nested_parameters = vec![mismatched_parameter];
+    crate::resolved_features::projections::synthesize_display_relation_parameters(
+        &mut nested_parameters,
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&FeatureInputLane {
+            relation_instances: vec![nested_relation],
+            ..lane.clone()
+        }),
+    );
+    let nested = nested_parameters
+        .iter()
+        .find(|parameter| {
+            parameter.properties.get("sldprt_relation_parameter_role") == Some(&"reference".into())
+        })
+        .expect("nested display-only relation parameter");
+    assert_eq!(
+        nested.id,
+        ParameterId("sldprt:model:parameter#reference:lane:10".into())
+    );
+    assert_eq!(
+        owned_relation_parameters(
+            std::slice::from_ref(&feature),
+            &synthesized_parameters,
+            std::slice::from_ref(&FeatureInputLane {
+                relation_instances: vec![relation.clone()],
+                ..lane.clone()
+            }),
+        )["relation"]
+            .as_ref(),
+        Some(&synthetic.id)
+    );
     let mut exact_parameter = parameter.clone();
     exact_parameter.native_ref = Some("scalar".into());
     let mut exact_lane = lane.clone();
@@ -581,6 +645,42 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
         marker_transforms_with_frame_fallback(&[], &sketch, 1.0e-8),
         vec![transform]
     );
+}
+
+#[test]
+fn marker_transform_reports_the_profile_axis_for_each_native_axis() {
+    const SCALE: i64 = 1_000_000_000_000;
+
+    let swapped = MarkerTransform {
+        swap: true,
+        u_sign: -1,
+        v_sign: 1,
+        affine_matrix: None,
+        translation: (0, 0),
+    };
+    assert_eq!(swapped.profile_axis_for_native(0), Some(ProfileAxis::V));
+    assert_eq!(swapped.profile_axis_for_native(1), Some(ProfileAxis::U));
+
+    let direct = MarkerTransform {
+        swap: false,
+        u_sign: 1,
+        v_sign: -1,
+        affine_matrix: None,
+        translation: (0, 0),
+    };
+    assert_eq!(direct.profile_axis_for_native(0), Some(ProfileAxis::U));
+    assert_eq!(direct.profile_axis_for_native(1), Some(ProfileAxis::V));
+
+    let rotated = MarkerTransform {
+        swap: false,
+        u_sign: 1,
+        v_sign: 1,
+        affine_matrix: Some([SCALE / 2, -SCALE / 2, SCALE / 2, SCALE / 2]),
+        translation: (0, 0),
+    };
+    assert_eq!(rotated.profile_axis_for_native(0), None);
+    assert_eq!(rotated.profile_axis_for_native(1), None);
+    assert_eq!(direct.profile_axis_for_native(2), None);
 }
 
 #[test]

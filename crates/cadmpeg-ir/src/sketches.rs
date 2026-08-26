@@ -537,6 +537,15 @@ pub enum SpatialSketchConstraintDefinition {
         /// Driving distance parameter.
         parameter: crate::features::ParameterId,
     },
+    /// Distance from a model-space point to an infinite model-space line.
+    PointLineDistance {
+        /// Measured point.
+        point: SpatialSketchEntityId,
+        /// Bounded entity supplying the infinite line carrier.
+        line: SpatialSketchEntityId,
+        /// Driving distance parameter.
+        parameter: crate::features::ParameterId,
+    },
     /// Endpoint-to-endpoint length of one bounded model-space sketch line.
     LineLength {
         /// Measured line.

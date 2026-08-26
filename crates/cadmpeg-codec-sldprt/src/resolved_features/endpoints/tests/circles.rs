@@ -186,6 +186,65 @@ fn extended_full_circle_uses_center_and_radial_point_roster() {
 }
 
 #[test]
+fn extended_geometry_kind_one_full_circle_uses_explicit_center_index() {
+    let mut payload = vec![0; 104 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..31].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..60].copy_from_slice(&[0x02, 0x00, 0x02, 0x00]);
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[72..76].copy_from_slice(&(-1i32).to_le_bytes());
+    payload[76..78].copy_from_slice(&1u16.to_le_bytes());
+    payload[78..94].copy_from_slice(&[
+        0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff,
+        0xff,
+    ]);
+    payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let entities = [
+        entity("circle", 0, SketchInputKind::LineOrCircle, None),
+        entity("before", 1, SketchInputKind::Point, Some([9.0, 9.0])),
+        entity("center", 2, SketchInputKind::Point, Some([0.0, 0.0])),
+        entity("radial", 3, SketchInputKind::Point, Some([0.0, 4.0])),
+    ];
+    let markers = entities.iter().collect::<Vec<_>>();
+
+    assert_eq!(
+        extended_geometry_full_circle(&payload, &entities[0], &markers),
+        Some(([0.0, 0.0], 4.0))
+    );
+    payload[76..78].copy_from_slice(&2u16.to_le_bytes());
+    assert_eq!(
+        extended_geometry_full_circle(&payload, &entities[0], &markers),
+        None
+    );
+    payload[76..78].copy_from_slice(&1u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&1u16.to_le_bytes());
+    assert_eq!(
+        extended_geometry_full_circle(&payload, &entities[0], &markers),
+        None
+    );
+}
+
+#[test]
 fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     let mut payload = vec![0; 104 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
     payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -258,6 +317,20 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
         super::compact_profile_full_circle(&payload, &current_circle, &markers),
         Some(([0.0, 0.0], 3.0))
     );
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    let mut current_kind_one_entities = entities.clone();
+    current_kind_one_entities[1].object_index = None;
+    let current_kind_one_markers = current_kind_one_entities.iter().collect::<Vec<_>>();
+    let current_kind_one_circle = &current_kind_one_entities[3];
+    assert_eq!(
+        super::compact_profile_full_circle(
+            &payload,
+            current_kind_one_circle,
+            &current_kind_one_markers,
+        ),
+        Some(([0.0, 0.0], 3.0))
+    );
+    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
     payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     payload[56..60].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);
@@ -277,6 +350,81 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     let markers = conflicting.iter().collect::<Vec<_>>();
     assert_eq!(
         super::compact_profile_full_circle(&payload, &conflicting[3], &markers),
+        None
+    );
+}
+
+#[test]
+fn current_profile_circle_dimension_uses_one_based_radial_roster() {
+    let mut payload = vec![0; 145 + SKETCH_MARKER.len()];
+    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+    payload[29..31].copy_from_slice(&1u16.to_le_bytes());
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&2u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&2u16.to_le_bytes());
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[72..76].copy_from_slice(&(-1i32).to_le_bytes());
+    payload[78..94].copy_from_slice(&[
+        0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff,
+        0xff,
+    ]);
+    payload[126..128].copy_from_slice(&4u16.to_le_bytes());
+    payload[128..132].copy_from_slice(CLASS_MARKER);
+    payload[132..134].copy_from_slice(&11u16.to_le_bytes());
+    payload[134..145].copy_from_slice(b"sgCircleDim");
+    payload[145..].copy_from_slice(SKETCH_MARKER);
+
+    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let center = entity("center", 10, SketchInputKind::Point, Some([0.0, 0.0]));
+    let radial = entity("radial", 20, SketchInputKind::Point, Some([3.0, 4.0]));
+    let circle = entity("circle", 0, SketchInputKind::LineOrCircle, None);
+    let entities = [center, radial, circle];
+    let markers = entities.iter().collect::<Vec<_>>();
+
+    assert_eq!(
+        super::current_profile_circle_dimension(&payload, &entities[2], &markers),
+        Some(([0.0, 0.0], 5.0))
+    );
+    payload[134] = b'x';
+    assert_eq!(
+        super::current_profile_circle_dimension(&payload, &entities[2], &markers),
+        None
+    );
+    payload[134] = b's';
+    payload[58..60].copy_from_slice(&3u16.to_le_bytes());
+    assert_eq!(
+        super::current_profile_circle_dimension(&payload, &entities[2], &markers),
+        None
+    );
+    payload[58..60].copy_from_slice(&2u16.to_le_bytes());
+    let zero_radius = [
+        entities[0].clone(),
+        entity("radial", 20, SketchInputKind::Point, Some([0.0, 0.0])),
+        entities[2].clone(),
+    ];
+    let zero_markers = zero_radius.iter().collect::<Vec<_>>();
+    assert_eq!(
+        super::current_profile_circle_dimension(&payload, &zero_radius[2], &zero_markers),
         None
     );
 }

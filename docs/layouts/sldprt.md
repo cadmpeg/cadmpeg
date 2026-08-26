@@ -8,11 +8,12 @@ Source of truth: [`docs/formats/sldprt.md`](../../docs/formats/sldprt.md).
 Table source: `docs/layouts/sldprt.toml`.
 
 Covers the container envelopes (§1, §1.1-§1.3), the typed topology tag
-inventory (§4), the entity common header (§5), the class-root directory (§6),
-and the Parasolid geometry carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
-layouts in prose; the fixed-offset profile, sketch-input, and reference-plane
-layouts are tabulated below, and the remaining layouts are listed under "Not
-tabulated" with a coverage note.
+inventory (§4), the entity common header (§5), and the Parasolid geometry
+carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
+layouts in prose; the fixed-offset profile, sketch-input, reference-plane,
+temporary-axis, and
+cosmetic-thread carrier layouts are tabulated below, and the remaining layouts
+are listed under "Not tabulated" with a coverage note.
 
 Endianness is stated per lane: §1 container words are little-endian, §4-§7
 Parasolid payload words are big-endian. Where a §1 field states no endianness
@@ -22,12 +23,30 @@ the table says `unstated` and says so in the field note.
 
 | Tag | Name | Payload | Meaning | Spec |
 | --- | ---- | ------: | ------- | ---- |
-| `00 0e` | bridge | 37 B | face-use → surface link; magic at body +8; bare record length 37 | §4 |
+| `00 0e` | bridge | 37 B | face-use → surface link; attr u16 BE at body +0; sequence u32 BE at body +2; magic at body +8; bare record length 37 | §4 |
 | `00 0f` | loop head | variable | bare record length is at least 14; no magic | §4 |
-| `00 10` | edge-use | 28 B | bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells; deltas cell 2 carries the curve and direction uses the unique same-edge 0x2b coedge | §4 |
+| `00 10` | edge-use | 28 B | sequence u32 BE at body +2; bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells; deltas cell 2 carries the curve and direction uses the unique same-edge 0x2b coedge | §4 |
 | `00 11` | oriented coedge | 21 B | bare body has no magic; deltas refs are nine [hi][lo][01] cells and the marker follows | §4 |
-| `00 12` | vertex-use | 24 B | magic at body +16 | §4 |
+| `00 12` | vertex-use | 24 B | sequence u32 BE at body +2; magic at body +16 | §4 |
 | `00 1d` | world point | 38 B | no magic; four references at body +6 and xyz as three f64 BE at body +14 | §4 |
+
+## `feature_input_shifted_scalar_trailer`
+
+Spec §2 · layout: byte offsets · size: 35 B
+
+The value-only scalar's fixed trailer prefix. Variable-count feature_input_operand_cell12 records follow at +35.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/relation_records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 3 | `zero_prefix` | `bytes[3]` | little | spec | three zero bytes |
+| 3 | 4 | `object_id` | `u32` | little | spec | little-endian u32 object identifier at trailer +3 |
+| 7 | 14 | `zero_object_tail` | `bytes[14]` | little | spec | fourteen zero bytes at trailer +7 |
+| 21 | 6 | `layout_marker` | `bytes[6]` | little | spec | `01 00 00 00 02 00` at trailer +21 |
+| 27 | 1 | `role` | `u8` | little | spec | a role byte at trailer +27 |
+| 28 | 7 | `zero_tail` | `bytes[7]` | little | spec | seven zero bytes at trailer +28 |
 
 ## `feature_input_operand_cell12`
 
@@ -120,6 +139,34 @@ Parsed by:
 | 16 | 4 | `uncompressed_size` | `u32` | little | spec | followed by the uncompressed byte count as u32 LE |
 | 20 | 4 | `zlib_member_size` | `u32` | little | spec | the complete zlib-member byte count as u32 LE |
 
+## `parasolid_chain_section_header`
+
+Spec §1 · layout: byte offsets · size: 20 B
+
+The chain length is followed by the wrapper magic; frame headers and zero padding follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/parasolid.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `chain_len` | `u32` | little | spec | `chain_len` is the number of bytes after the `chain_len` field and before the next `chain_len` field, or the end of the payload |
+| 4 | 16 | `magic` | `bytes[16]` | little | spec | The magic is the same 16-byte value as the compound wrapper. · value `[35, 29, 213, 113, 218, 129, 72, 162, 168, 88, 152, 178, 27, 137, 239, 153]` |
+
+## `parasolid_chain_frame_header`
+
+Spec §1 · layout: byte offsets · size: 8 B
+
+The zlib member immediately follows this fixed header and occupies the declared member size.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/parasolid.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `uncompressed_size` | `u32` | little | spec | Each frame inflates to exactly `uncompressed_size` |
+| 4 | 4 | `zlib_member_size` | `u32` | little | spec | the declared member extent is the complete zlib member |
+
 ## `world_point`
 
 Spec §4 · layout: byte offsets · size: 38 B
@@ -128,8 +175,8 @@ Offsets are body-relative, i.e. after the two-byte `00 1d` tag. Attrs `0` and `1
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 6 | 8 | `refs` | `u16[4]` | big | spec | four references at body +6 |
-| 14 | 24 | `xyz` | `f64[3]` | big | spec | stores xyz as three f64 BE at body +14, in metres |
+| 6 | 8 | `refs` | `u16[4]` | big | spec | `00 1d` record has four references at body +6 |
+| 14 | 24 | `xyz` | `f64[3]` | big | spec | stores xyz as three f64 BE at body +14 |
 
 Unstated regions:
 
@@ -139,7 +186,7 @@ Unstated regions:
 
 Spec §5 · layout: byte offsets · size: 12 B
 
-Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Slot values follow at +12 with the schema, disc, and flo count table in specification section 5.
+Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. `disc` points to the ATTRIB_DEF node. Bare ATTRIBUTE slots follow at +12 and total `5 + flo`.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -152,40 +199,18 @@ Body-relative, after the two-byte family tag. An optional `ff` byte can occur be
 
 Spec §5 · layout: byte offsets · size: 14 B
 
-Body-relative. Node references follow from body +14 until the next record tag. The +0..+6 region is the common-header `flags` and `attr` of the same record.
+Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 6 | 2 | `zero_selector` | `u16` | big | spec | whose u16 at body +6 is zero |
-| 10 | 2 | `definition_node_id` | `u16` | big | spec | carries the u16 definition node id at body +10 |
-| 12 | 2 | `owner_attribute_id` | `u16` | big | spec | and, at body +12, the attribute id of the entity it hangs on |
+| 10 | 2 | `definition_node_id` | `u16` | big | spec | definition node id at body +10 |
+| 12 | 2 | `owner_attribute_id` | `u16` | big | spec | owner attribute at body +12 |
 
 Unstated regions:
 
 - `0..6` (6 B): Common-header `flags` and `attr`; §5 states no attribute-instance-specific field here.
 - `8..10` (2 B): §5 states no field between the +6 selector and the +10 definition node id.
-
-## `class_root_directory_prefix`
-
-Spec §6 · layout: byte offsets · size: 44 B
-
-Fixed prefix only. The root vector contains root_count u16 BE attributes from +44.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `signature` | `bytes[2]` | big | spec | +0 signature bytes[2] ; CI |
-| 2 | 1 | `name_len` | `u8` | big | spec | +2 name_len u8 ; 16 |
-| 3 | 16 | `field_name` | `bytes[16]` | big | spec | +3 field_name bytes[16] ; index_map_offset |
-| 19 | 6 | `instance_marker` | `bytes[6]` | big | spec | +19 instance_marker bytes[6] ; 00 00 00 01 01 64 |
-| 25 | 3 | `ccz` | `bytes[3]` | big | spec | +25 ccz bytes[3] ; CCZ |
-| 28 | 4 | `type_tag` | `u32` | big | spec | +28 type_tag u32 BE ; 20 |
-| 32 | 2 | `class_token` | `u16` | big | spec | +32 class_token u16 BE |
-| 34 | 4 | `root_count` | `u32` | big | spec | +34 root_count u32 BE |
-| 38 | 6 | `roots_preamble` | `bytes[6]` | big | spec | +38 roots_preamble bytes[6] ; 00 00 00 00 00 01 |
-
-Cross-checked against code:
-
-- `crates/cadmpeg-codec-sldprt/src/brep/entity.rs` — The parser matches the fixed signature through type_tag before it reads the variable token and root count.
 
 ## `compact_analytic_header`
 
@@ -481,6 +506,37 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/brep/offset.rs` — The parser identifies the type-60 carrier by its exact tag.
 
+## `current_extended_zero_tail_92_profile_curve`
+
+Spec §2 · layout: byte offsets · size: 92 B
+
+Endpoint values are zero-based positions in the feature-owned coordinate-bearing geometry roster; the following bytes may be relation payload.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A current- or extended-prefix zero-tail 92-byte profile curve |
+| 5 | 12 | `header` | `bytes[12]` | little | spec | A coordinate-bearing marker has the 12-byte prefix · value `[255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 128, 191]` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value `0`, `1`, or `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` · value `[4, 0, 2, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | state u16 `1` · value `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_scalar` | `f64` | little | spec | f64 `1` · value `1.0` |
+| 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | zero bytes at marker +56 through +63 · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 64 | 2 | `endpoint_first` | `u16` | little | spec | zero-based positions in the feature-owned coordinate-bearing geometry roster |
+| 66 | 2 | `endpoint_second` | `u16` | little | spec | zero-based positions in the feature-owned coordinate-bearing geometry roster |
+| 68 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` · value `1` |
+| 72 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` · value `-1.0` |
+| 80 | 12 | `zero_tail` | `bytes[12]` | little | spec | twelve zero bytes at marker +80 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+Unstated regions:
+
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `extended_wide_104_profile_curve`
 
 Spec §2 · layout: byte offsets · size: 104 B
@@ -494,7 +550,7 @@ The endpoint fields are zero-based ordinals in the feature-owned coordinate-bear
 | 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
 | 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
 | 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
-| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 31 | 8 | `profile_selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
 | 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
 | 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | zero bytes at marker +56 through +63 and +80 through +87 |
 | 64 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
@@ -506,6 +562,77 @@ The endpoint fields are zero-based ordinals in the feature-owned coordinate-bear
 | 92 | 4 | `trailer_tag1` | `bytes[4]` | little | spec | `00 00 01 00` at marker +88 and +92 |
 | 96 | 4 | `zero_trailer_suffix` | `bytes[4]` | little | spec | zero bytes at marker +96 through +99 |
 | 100 | 4 | `identity` | `u32` | little | spec | u32 `1` at marker +100 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this profile layout.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `legacy_wide_112_profile_roster_curve`
+
+Spec §2 · layout: byte offsets · size: 112 B
+
+The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster; this state-zero trailer is distinct from the object-index wide curve trailer.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix 112-byte profile-roster curve |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native kind u32 `0`, `1`, or `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | eight zero bytes at marker +56 |
+| 64 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 66 | 2 | `endpoint_second` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 68 | 4 | `endpoint_selector` | `u32` | little | spec | Marker +68 stores u32 `1` |
+| 72 | 8 | `signed_selector` | `f64` | little | spec | marker +72 stores f64 `-1` |
+| 80 | 4 | `trailer_selector` | `i32` | little | spec | marker +80 stores selector i32 `-1` or `1` |
+| 84 | 2 | `local_state` | `u16` | little | spec | marker +84 stores zero u16 |
+| 86 | 16 | `reference_sentinels` | `i32[4]` | little | spec | Four i32 `-2` reference sentinels occupy marker +86 through +101 |
+| 102 | 2 | `zero_trailer` | `bytes[2]` | little | spec | marker +102 stores zero u16 |
+| 104 | 4 | `identity_first` | `u32` | little | spec | distinct non-sentinel u32 identities occupy marker +104 and +108 |
+| 108 | 4 | `identity_second` | `u32` | little | spec | distinct non-sentinel u32 identities occupy marker +104 and +108 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this profile layout.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `legacy_wide_104_profile_roster_curve`
+
+Spec §2 · layout: byte offsets · size: 104 B
+
+The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix 104-byte profile-roster curve |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native kind u32 `0`, `1`, or `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | eight zero bytes at marker +56 |
+| 64 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 66 | 2 | `endpoint_second` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 68 | 4 | `endpoint_selector` | `u32` | little | spec | Marker +68 stores u32 `1` |
+| 72 | 8 | `signed_selector` | `f64` | little | spec | marker +72 stores f64 `-1` |
+| 80 | 8 | `zero_trailer_prefix` | `bytes[8]` | little | spec | marker +80 through +87 are zero |
+| 88 | 4 | `local_id` | `u32` | little | spec | marker +88 stores the marker local identifier |
+| 92 | 4 | `zero_trailer_gap` | `bytes[4]` | little | spec | marker +92 through +95 are zero |
+| 96 | 4 | `trailer_tag` | `u32` | little | spec | marker +96 stores u32 `4` |
+| 100 | 4 | `next_object_index` | `u32` | little | spec | marker +100 stores u32 `1` |
 
 Unstated regions:
 
@@ -544,6 +671,178 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `extended_geometry_104_indexed_circle`
+
+Spec §2 · layout: byte offsets · size: 104 B
+
+Equal radial indices use the explicit center index in the complete coordinate-bearing geometry roster.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended-prefix kind `1` geometry-locus 104-byte record |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind `1` geometry-locus · value `1` |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry-locus 104-byte record · value `[5, 0, 1, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | same fixed header · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | same fixed header |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_value` | `f64` | little | spec | state · value `1.0` |
+| 56 | 2 | `radial_index` | `u16` | little | spec | same nonzero zero-based radial index |
+| 58 | 2 | `radial_index_repeat` | `u16` | little | spec | same nonzero zero-based radial index |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | endpoint selector · value `1` |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | signed-radius selector · value `-1.0` |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | signed selector `-1` or `1` |
+| 76 | 2 | `center_index` | `u16` | little | spec | zero-based center index |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | reference sentinels · value `[254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255]` |
+| 94 | 2 | `terminator` | `u16` | little | spec | zero terminator · value `0` |
+| 96 | 8 | `trailer_identities` | `u32[2]` | little | spec | trailer identities |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this geometry-locus layout.
+- `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `current_profile_104_indexed_circle`
+
+Spec §2 · layout: byte offsets · size: 104 B
+
+The repeated radial index uses the unique direct-object or one-based point-roster resolution rule.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | 104-byte compact profile-locus full circle |
+| 17 | 4 | `native_kind` | `u32` | little | spec | current prefix with native code `1` · value `1` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile-locus full circle · value `[4, 0, 2, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | u16 `1` at marker +29 · value `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_scalar` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `radial_index` | `u16` | little | spec | equal nonzero u16 values at marker +56 and marker +58 |
+| 58 | 2 | `radial_index_repeat` | `u16` | little | spec | equal nonzero u16 values at marker +56 and marker +58 |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 · value `1` |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | f64 `-1` at marker +64 · value `-1.0` |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | signed selector `1` or `-1` |
+| 76 | 2 | `auxiliary_index` | `u16` | little | spec | four `fe ff ff ff` sentinels |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | four `fe ff ff ff` sentinels · value `[254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255]` |
+| 94 | 2 | `terminator` | `u16` | little | spec | zero u16 at marker +94 · value `0` |
+| 96 | 8 | `trailer_identities` | `u32[2]` | little | spec | trailer identities |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `current_profile_circle_dimension`
+
+Spec §2 · layout: byte offsets · size: 145 B
+
+The repeated one-based point-roster index selects the radial point; the first point is the center.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | current-prefix kind `1` profile-locus circle-dimension record |
+| 17 | 4 | `native_kind` | `u32` | little | spec | current-prefix kind `1` profile-locus circle-dimension record · value `1` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile-locus · value `[4, 0, 2, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | u16 `1` at marker +29 · value `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_scalar` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `radial_index` | `u16` | little | spec | equal nonzero u16 values at marker +56 and marker +58 |
+| 58 | 2 | `radial_index_repeat` | `u16` | little | spec | equal nonzero u16 values at marker +56 and marker +58 |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 · value `1` |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | f64 `-1` at marker +64 · value `-1.0` |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | signed selector `1` or `-1` at marker +72 |
+| 76 | 2 | `auxiliary_index` | `u16` | little | spec | marker +78 through marker +93 store four `fe ff ff ff` sentinels |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | four `fe ff ff ff` sentinels · value `[254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255]` |
+| 94 | 32 | `zero_trailer` | `bytes[32]` | little | spec | Marker +94 through marker +125 are zero · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 126 | 2 | `dimension_kind` | `u16` | little | spec | Marker +126 stores u16 `2` or `4` |
+| 128 | 4 | `class_marker` | `bytes[4]` | little | spec | the class marker · value `[255, 255, 1, 0]` |
+| 132 | 2 | `class_length` | `u16` | little | spec | length `11` · value `11` |
+| 134 | 11 | `class_name` | `bytes[11]` | little | spec | class name `sgCircleDim` · value `[115, 103, 67, 105, 114, 99, 108, 101, 68, 105, 109]` |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `extended_profile_104_indexed_arc`
+
+Spec §2 · layout: byte offsets · size: 104 B
+
+Distinct endpoint indices define a minor arc; one less than the smaller endpoint index selects the center under the profile-locus fallback rules.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended-prefix kind `0` bounded curve in the 104-byte compact indexed layout |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind `0` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | The profile-locus form carries selector `00 00 04 00` at marker +35 · value `[4, 0, 2, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | role u16 `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster endpoint indices at marker +56 and +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | zero-based coordinate-roster endpoint indices at marker +56 and +58 |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 · value `1` |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | f64 `-1` at marker +64 · value `-1.0` |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | signed selector `1` or `-1` at marker +72 |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | four i32 `-2` cells · value `[255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254]` |
+| 94 | 2 | `terminator` | `u16` | little | spec | marker +94 is zero u16 · value `0` |
+| 96 | 8 | `trailer_identities` | `u32[2]` | little | spec | two u32 trailer identities are at marker +96 and +100 |
+
+Unstated regions:
+
+- `76..78` (2 B): The profile-locus arc does not use the geometry-locus center-index field.
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this profile-locus layout.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `extended_profile_terminal_102_indexed_arc`
+
+Spec §2 · layout: byte offsets · size: 102 B
+
+The terminal record uses the same center resolution as the 104-byte compact indexed profile arc and has no following sketch marker.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended-prefix kind `0` profile-locus terminal 102-byte bounded-arc record |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind `0` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile-locus · value `[4, 0, 2, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | role u16 `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | the same header · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_value` | `f64` | little | spec | same header · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc · value `1` |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc · value `-1.0` |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | same header, endpoint indices, arc selectors, and reference sentinels as the 104-byte compact indexed arc · value `[255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254, 255, 255, 255, 254]` |
+| 94 | 8 | `zero_tail` | `bytes[8]` | little | spec | Marker +94 through marker +101 are zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+
+Unstated regions:
+
+- `76..78` (2 B): The profile-locus arc does not use the geometry-locus center-index field.
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this profile-locus layout.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `extended_geometry_116_indexed_arc`
 
 Spec §2 · layout: byte offsets · size: 116 B
@@ -574,6 +873,107 @@ The relation tail is bounded by the following sketch marker at +116.
 Unstated regions:
 
 - `5..17` (12 B): The marker header does not define bytes +5 through +16 for this geometry-locus layout.
+- `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `compact_indexed_curve_continuation120`
+
+Spec §2 · layout: byte offsets · size: 122 B
+
+A valid class declaration may begin at the record boundary +122.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended- or current-prefix compact indexed curve |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind u32 `0`, `1`, or `2` |
+| 23 | 4 | `locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster ordinals at marker +56 and +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | zero-based coordinate-roster ordinals at marker +56 and +58 |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +64 |
+| 72 | 48 | `continuation_padding` | `bytes[48]` | little | spec | 48 zero bytes from marker +72 through +119 |
+| 120 | 2 | `continuation_kind` | `u16` | little | spec | Marker +120 stores a nonzero, non-null u16 continuation discriminator |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this indexed curve layout.
+- `21..23` (2 B): The locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `compact_legacy_140_relation_display_curve`
+
+Spec §2 · layout: byte offsets · size: 140 B
+
+The endpoint ordinals use the complete feature-local marker roster; relation endpoints make this a display carrier.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix 140-byte relation-display profile curve |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | Its header at marker +5 is eight `ff` bytes · value `[255, 255, 255, 255, 255, 255, 255, 255]` |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | shared selector at marker +13 is `00 00 80 bf` · value `[0, 0, 128, 191]` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native code `1` · value `1` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` · value `[4, 0, 2, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 `1` at marker +27 and +29 · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 `1` at marker +27 and +29 · value `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_scalar` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | distinct u16 endpoint ordinals at marker +56 and +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | distinct u16 endpoint ordinals at marker +56 and +58 |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 · value `1` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +64 · value `-1.0` |
+| 72 | 48 | `continuation_padding` | `bytes[48]` | little | spec | zero bytes from marker +72 through +119 |
+| 120 | 2 | `continuation_kind` | `u16` | little | spec | nonzero, non-null u16 at marker +120 |
+| 122 | 2 | `continuation_selector` | `bytes[2]` | little | spec | nonzero, non-null two-byte selector at marker +122 |
+| 124 | 4 | `zero_selector_prefix` | `bytes[4]` | little | spec | four zero bytes at marker +124 · value `[0, 0, 0, 0]` |
+| 128 | 4 | `relation_selectors` | `bytes[4]` | little | spec | two distinct nonzero, non-null two-byte selector tags at marker +128 |
+| 132 | 8 | `continuation_tail` | `bytes[8]` | little | spec | `ff fe ff 02 44 00 31 00` at marker +132 · value `[255, 254, 255, 2, 68, 0, 49, 0]` |
+
+Unstated regions:
+
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `current_terminal_relation_carrier`
+
+Spec §2 · layout: byte offsets · size: 136 B
+
+The class declaration begins at the record boundary +136 and is owned by the matching feature relation.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A current-prefix terminal relation carrier |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind u32 `2` |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | eight zero bytes at marker +56 |
+| 64 | 4 | `terminal_header` | `bytes[4]` | little | spec | `01 00 01 00` at marker +64 |
+| 68 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +68 |
+| 72 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +72 |
+| 80 | 4 | `terminal_selector` | `u32` | little | spec | u32 `1` at marker +80 |
+| 84 | 2 | `terminal_state` | `u16` | little | spec | zero u16 at marker +84 |
+| 86 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | four i32 `-2` cells at marker +86 |
+| 102 | 32 | `zero_tail` | `bytes[32]` | little | spec | 32 zero bytes at marker +102 |
+| 134 | 2 | `terminal_tag` | `u16` | little | spec | u16 `3` at marker +134 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this relation carrier.
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
@@ -734,6 +1134,123 @@ The record emits a point. The fixed layout includes the single-incidence and sha
 | 132 | 4 | `trailer_middle` | `bytes[4]` | little | spec | A paired trailer can also use the marker +128 identity and zero bytes at marker +132 through +135 |
 | 136 | 4 | `identity_second` | `u32` | little | spec | a distinct nonzero, non-null u32 identity at marker +136 |
 
+## `legacy_144_single_incidence_profile_point`
+
+Spec §2 · layout: byte offsets · size: 144 B
+
+The record emits a point. Its terminal identity and next-marker boundary are four bytes beyond the 140-byte shared-f32 form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | 144-byte shared-f32 single-incidence profile point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native code `1` · value `1` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 through +22 |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `zero_state` | `u16` | little | spec | zero state u16 at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 39 | 9 | `zero_state_prefix` | `bytes[9]` | little | spec | f64 `1` at marker +48 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +56 |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite f64 coordinates at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite f64 coordinates at marker +58 and +66 |
+| 74 | 2 | `zero_link_prefix` | `u16` | little | spec | Marker +74 is zero |
+| 76 | 2 | `link_state` | `u16` | little | spec | link-state u16 `1`, `2`, or `3` |
+| 78 | 12 | `incidence_cell` | `bytes[12]` | little | spec | One 12-byte incidence cell at marker +78 |
+| 90 | 4 | `zero_post_cell` | `bytes[4]` | little | spec | Four zero bytes occupy marker +90 through +93 |
+| 94 | 6 | `link_terminator` | `bytes[6]` | little | spec | The terminator `fe ff ff ff 00 00` begins at marker +94 |
+| 100 | 40 | `trailer_prefix` | `bytes[40]` | little | spec | zero bytes from marker +100 through +139 |
+| 140 | 4 | `identity` | `u32` | little | spec | a nonzero, non-null u32 identity at marker +140 |
+
+## `legacy_geometry_locus_alternate_134_point`
+
+Spec §2 · layout: byte offsets · size: 134 B
+
+The two fixed tails select an alternate-tag coordinate point; the next sketch marker begins at +134.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix geometry-locus alternate-tag point family |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value `0`, `1`, or `2` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 and +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state` | `u16` | little | spec | state u16 `1` at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` or `00 00 80 bf 00 00 05 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes from marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `12 00`, `13 00`, or `16 00` at marker +56 |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 74 | 10 | `tail_selector` | `bytes[10]` | little | spec | The 134-byte forms store either a nonzero, non-null u16 count at marker +74 |
+| 84 | 4 | `tail_sentinel` | `i32` | little | spec | Both forms store i32 `-2` at marker +84 · value `-2` |
+| 88 | 42 | `zero_trailer` | `bytes[42]` | little | spec | zero bytes from marker +88 through +129 |
+| 130 | 4 | `identity` | `u32` | little | spec | a u32 value other than `ffff` at marker +130 |
+
+## `legacy_geometry_locus_alternate_138_point`
+
+Spec §2 · layout: byte offsets · size: 138 B
+
+The repeated identity at +134 is the following marker's object identifier.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix geometry-locus alternate-tag point family |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value `0`, `1`, or `2` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 and +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state` | `u16` | little | spec | state u16 `1` at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` or `00 00 80 bf 00 00 05 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes from marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `12 00`, `13 00`, or `16 00` at marker +56 |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 74 | 10 | `zero_and_state` | `bytes[10]` | little | spec | The 138-byte form stores zero at marker +74 |
+| 84 | 4 | `tail_sentinel` | `i32` | little | spec | i32 `-2` at marker +84 · value `-2` |
+| 88 | 36 | `zero_identity_prefix` | `bytes[36]` | little | spec | zero bytes from marker +88 through +123 |
+| 124 | 4 | `identity_first` | `u32` | little | spec | nonzero non-null u32 identities at marker +124 and +130 |
+| 128 | 2 | `zero_before_identity_second` | `bytes[2]` | little | spec | zero bytes at marker +128 and +129 |
+| 130 | 4 | `identity_second` | `u32` | little | spec | nonzero non-null u32 identities at marker +124 and +130 |
+| 134 | 4 | `following_identity` | `u32` | little | spec | the marker +130 identity again at marker +134 |
+
+## `legacy_geometry_locus_alternate_154_point`
+
+Spec §2 · layout: byte offsets · size: 154 B
+
+The two mixed-selector incidence cells identify the point record; they do not define curve endpoints.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix geometry-locus alternate-tag point family |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value `0`, `1`, or `2` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 and +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state` | `u16` | little | spec | state u16 `1` at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` or `00 00 80 bf 00 00 05 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes from marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `12 00`, `13 00`, or `16 00` at marker +56 |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 74 | 2 | `zero_link_prefix` | `bytes[2]` | little | spec | The 154-byte form stores zero at marker +74 |
+| 76 | 2 | `link_count` | `u16` | little | spec | link count u16 `2` at marker +76 · value `2` |
+| 78 | 12 | `incidence_first` | `bytes[12]` | little | spec | two typed 12-byte incidence cells at marker +78 and +90 |
+| 90 | 12 | `incidence_second` | `bytes[12]` | little | spec | two typed 12-byte incidence cells at marker +78 and +90 |
+| 102 | 6 | `link_terminator` | `bytes[6]` | little | spec | The terminator `00 00 fe ff ff ff` begins at marker +102 |
+| 108 | 42 | `zero_trailer` | `bytes[42]` | little | spec | marker +108 through +149 are zero |
+| 150 | 4 | `record_identity` | `u32` | little | spec | marker +150 stores a u32 value other than `ffff` |
+
 ## `extended_scaled_146_profile_point`
 
 Spec §2 · layout: byte offsets · size: 146 B
@@ -868,6 +1385,141 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `compact_legacy_96_profile_roster_curve`
+
+Spec §2 · layout: byte offsets · size: 96 B
+
+The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing geometry-marker roster.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A compact-legacy 96-byte profile-roster curve |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | Its header at marker +5 is eight `ff` bytes or |
+| 13 | 4 | `shared_selector` | `f32` | little | spec | marker +13 stores f32 `-1` · value `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | A compact-legacy 96-byte profile-roster curve has native kind u32 `1` · value `1` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `state_at_29` | `u16` | little | spec | zero state u16 at marker +29 · value `0` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 0c 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | Marker +48 stores f64 `1` · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | marker +56 and marker +58 store distinct zero-based ordinals |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | marker +56 and marker +58 store distinct zero-based ordinals |
+| 60 | 4 | `zero_endpoint_prefix` | `bytes[4]` | little | spec | marker +60 is zero u32 · value `[0, 0, 0, 0]` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | marker +64 is f64 `-1` · value `-1.0` |
+| 72 | 10 | `zero_selector_trailer` | `bytes[10]` | little | spec | marker +72 through +81 are zero · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 82 | 2 | `tail_state` | `u16` | little | spec | Marker +82 stores a nonzero, non-null u16 state |
+| 84 | 2 | `tail_state_prefix` | `u16` | little | spec | marker +84 is zero u16 · value `0` |
+| 86 | 2 | `tail_state_marker` | `u16` | little | spec | marker +86 is u16 `1` · value `1` |
+| 88 | 4 | `zero_tail_identity` | `u32` | little | spec | marker +88 is zero u32 · value `0` |
+| 92 | 4 | `one_tail_identity` | `u32` | little | spec | marker +92 is u32 `1` · value `1` |
+
+Unstated regions:
+
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `compact_legacy_84_construction_line`
+
+Spec §2 · layout: byte offsets · size: 84 B
+
+The endpoint fields are direct feature-local point-object identifiers.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A compact-legacy 84-byte construction line |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | Its header at marker +5 is either eight `ff` bytes or |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | A coordinate-bearing marker has the 12-byte prefix |
+| 17 | 4 | `native_kind` | `u32` | little | spec | A compact-legacy 84-byte construction line has value u32 `2` · value `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `2` · value `2` |
+| 29 | 2 | `state_at_29` | `u16` | little | spec | zero state at marker +29 · value `0` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 0c 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | distinct nonzero u16 point-object identifiers at marker +56 and marker +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | distinct nonzero u16 point-object identifiers at marker +56 and marker +58 |
+| 60 | 4 | `zero_endpoint_prefix` | `bytes[4]` | little | spec | Marker +60 is zero u32 · value `[0, 0, 0, 0]` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | marker +64 stores f64 `-1` · value `-1.0` |
+| 72 | 4 | `trailer_state` | `bytes[4]` | little | spec | State `00 00 01 00` at marker +72 pairs with zero at marker +76 |
+| 76 | 4 | `identity_first` | `u32` | little | spec | State `00 00 00 00` pairs with the same nonzero, non-null u32 identity at marker +76 and marker +80 |
+| 80 | 4 | `identity_second` | `u32` | little | spec | a nonzero, non-null u32 identity at marker +80 |
+
+Unstated regions:
+
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `compact_legacy_84_coordinate_roster_curve`
+
+Spec §2 · layout: byte offsets · size: 84 B
+
+The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing marker roster.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An 84-byte compact-legacy roster curve |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | Its header at marker +5 is either eight `ff` bytes or |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | A coordinate-bearing marker has the 12-byte prefix |
+| 17 | 4 | `native_kind` | `u32` | little | spec | An 84-byte compact-legacy roster curve uses native/role/selector combinations |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | An 84-byte compact-legacy roster curve uses native/role/selector combinations |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | An 84-byte compact-legacy roster curve uses native/role/selector combinations |
+| 48 | 8 | `state_value` | `f64` | little | spec | with f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | Its distinct endpoint u16 values at marker +56 and +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | Its distinct endpoint u16 values at marker +56 and +58 |
+| 60 | 4 | `zero_endpoint_prefix` | `bytes[4]` | little | spec | zero u32 at marker +60 · value `[0, 0, 0, 0]` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +64 · value `-1.0` |
+| 72 | 4 | `trailer_state` | `bytes[4]` | little | spec | Profile curves use trailer state `00 00 00 00` |
+| 76 | 4 | `identity_first` | `u32` | little | spec | selected construction curves use state `00 00 01 00` |
+| 80 | 4 | `identity_second` | `u32` | little | spec | one repeated nonzero non-null identity |
+
+Unstated regions:
+
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `29..31` (2 B): The selector begins at +31; bytes +29 through +30 are zero.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `compact_legacy_84_geometry_indexed_curve`
+
+Spec §2 · layout: byte offsets · size: 84 B
+
+The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing marker roster.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix 84-byte geometry-locus indexed curve |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value u32 `2` at marker +17 · value `2` |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1`, state u16 `2` at marker +29 · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | state u16 `2` at marker +29 · value `2` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_scalar` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | distinct endpoint u16 values at marker +56 and +58 |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | distinct endpoint u16 values at marker +56 and +58 |
+| 60 | 4 | `record_state` | `u32` | little | spec | Marker +60 stores u32 `1` · value `1` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | marker +64 stores f64 `-1` · value `-1.0` |
+| 72 | 4 | `trailer_state` | `u32` | little | spec | marker +72 stores zero u32 · value `0` |
+| 76 | 4 | `identity_first` | `u32` | little | spec | distinct nonzero, non-null u32 identities occupy marker +76 and +80 |
+| 80 | 4 | `identity_second` | `u32` | little | spec | distinct nonzero, non-null u32 identities occupy marker +76 and +80 |
+
+Unstated regions:
+
+- `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are zero.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are zero.
+
 ## `compact_legacy_68_profile_variant_curve`
 
 Spec §2 · layout: byte offsets · size: 68 B
@@ -928,6 +1580,45 @@ Unstated regions:
 - `17..19` (2 B): The geometry-locus prefix stores zero bytes at marker +17 through +18 before the locus.
 - `27..31` (4 B): The geometry-locus body stores zero bytes at marker +27 through +30 before the body tag.
 - `62..64` (2 B): Bytes +62 through +63 are not interpreted by this fixed form.
+
+## `compact_legacy_142_profile_curve`
+
+Spec §2 · layout: byte offsets · size: 142 B
+
+The auxiliary pair is the arc-center candidate. Equal positive endpoint radii select a minor arc; otherwise the two endpoint pairs define a line. A four-byte separator may follow the 142-byte body before the next sketch marker.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | The compact `ff ff 07 00 01` generation |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `shared_selector` | `f32` | little | spec | f32 `-1` at marker +13 · value `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value u32 `2`, profile locus `04 00 02 00` · value `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 64 | 2 | `curve_tag` | `bytes[2]` | little | spec | Marker +64 stores `12 00`, `16 00`, or `1a 00` |
+| 66 | 8 | `auxiliary_first` | `f64` | little | spec | the finite auxiliary pair is at marker +66 and +74 |
+| 74 | 8 | `auxiliary_second` | `f64` | little | spec | the finite auxiliary pair is at marker +66 and +74 |
+| 82 | 4 | `body_kind` | `u32` | little | spec | Marker +82 stores u32 `11` · value `11` |
+| 92 | 4 | `variant` | `u32` | little | spec | marker +92 stores an opaque variant u32 |
+| 96 | 8 | `start_first` | `f64` | little | spec | The finite start and end pairs are at marker +96/+104 and marker +112/+120 |
+| 104 | 8 | `start_second` | `f64` | little | spec | The finite start and end pairs are at marker +96/+104 and marker +112/+120 |
+| 112 | 8 | `end_first` | `f64` | little | spec | The finite start and end pairs are at marker +96/+104 and marker +112/+120 |
+| 120 | 8 | `end_second` | `f64` | little | spec | The finite start and end pairs are at marker +96/+104 and marker +112/+120 |
+| 138 | 4 | `identity` | `u32` | little | spec | marker +138 stores a nonzero, non-null feature-local identity |
+
+Unstated regions:
+
+- `21..23` (2 B): Zero bytes at marker +21 through +22.
+- `29..31` (2 B): Zero bytes at marker +29 through +30.
+- `39..48` (9 B): The state value begins at marker +48; bytes +39 through +47 are reserved.
+- `56..64` (8 B): Zero bytes at marker +56 through +63.
+- `86..92` (6 B): Zero bytes at marker +86 through +91.
+- `128..138` (10 B): Zero bytes at marker +128 through +137.
 
 ## `compact_legacy_code_two_profile_point`
 
@@ -1009,6 +1700,262 @@ The radial ordinal is zero-based in the feature-owned raw coordinate roster, inc
 | 104 | 4 | `class_marker` | `bytes[4]` | little | spec | the terminal class declaration is `ff ff 01 00` |
 | 108 | 2 | `class_length` | `u16` | little | spec | u16 length `11` |
 | 110 | 11 | `class_name` | `bytes[11]` | little | spec | class name `sgCircleDim` at marker +110 |
+
+## `legacy_geometry_locus_alternate_170_line_handle_point`
+
+Spec §2 · layout: byte offsets · size: 170 B
+
+The line-handle declaration makes the coordinate-bearing marker a point; the next sketch marker begins at +170.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix geometry-locus alternate-tag line-handle point is a 170-byte record |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value `0`, `1`, or `2` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 and +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state` | `u16` | little | spec | state u16 `1` at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` or `00 00 80 bf 00 00 05 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes from marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | The alternate coordinate tags are valid in these handle records |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 74 | 2 | `zero_handle_prefix` | `bytes[2]` | little | spec | handle state u16 `2` or `3` at marker +76 |
+| 76 | 2 | `handle_state` | `u16` | little | spec | handle state u16 `2` or `3` at marker +76 |
+| 78 | 6 | `class_marker_and_length` | `bytes[6]` | little | spec | `ff ff 01 00 0c 00` and `sgLineHandle` at marker +78 and +84 |
+| 84 | 12 | `class_name` | `bytes[12]` | little | spec | `ff ff 01 00 0c 00` and `sgLineHandle` at marker +78 and +84 |
+| 96 | 2 | `handle_identifier` | `u16` | little | spec | a non-`ffff` u16 handle identifier at marker +96 |
+| 98 | 8 | `reference_tail` | `bytes[8]` | little | spec | The reference and terminator fields are `ff ff ff ff 00 00 00 00` at marker +98 |
+| 106 | 4 | `zero_before_sentinel` | `bytes[4]` | little | spec | The reference and terminator fields are `ff ff ff ff 00 00 00 00` at marker +98 |
+| 110 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | `ff ff ff ff` at marker +110 |
+| 114 | 4 | `reference_zero_tail` | `bytes[4]` | little | spec | `ff ff ff ff 00 00 00 00` at marker +98 |
+| 118 | 6 | `terminator` | `bytes[6]` | little | spec | `00 00 fe ff ff ff` at marker +118 |
+| 124 | 38 | `zero_trailer_prefix` | `bytes[38]` | little | spec | Zero bytes from marker +124 through +165 |
+| 162 | 4 | `identity` | `u32` | little | spec | a complete identity trailer |
+| 166 | 4 | `following_object_index` | `u32` | little | spec | the next sketch marker begins at marker +170 |
+
+## `legacy_geometry_locus_alternate_169_arc_handle_point`
+
+Spec §2 · layout: byte offsets · size: 169 B
+
+The arc-handle declaration makes the coordinate-bearing marker a point; the next sketch marker begins at +169.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | The corresponding 169-byte arc-handle point has native value `1` or `2` |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value `1` or `2` |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 and +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` at marker +23 |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state_before_handle` | `bytes[2]` | little | spec | handle state u16 `2` at marker +76 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` or `00 00 80 bf 00 00 05 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes from marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | The alternate coordinate tags are valid in these handle records |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates are at marker +58 and +66 |
+| 74 | 2 | `zero_handle_prefix` | `bytes[2]` | little | spec | handle state u16 `2` at marker +76 |
+| 76 | 2 | `handle_state` | `u16` | little | spec | handle state u16 `2` at marker +76 · value `2` |
+| 78 | 4 | `reference_cell` | `bytes[4]` | little | spec | a selector and u16 identifier at marker +78 |
+| 82 | 8 | `reference_tail` | `bytes[8]` | little | spec | `ff ff ff ff 00 00 00 00` at marker +82 |
+| 90 | 6 | `class_marker_and_length` | `bytes[6]` | little | spec | `ff ff 01 00 0b 00` and `sgArcHandle` at marker +90 and +96 |
+| 96 | 11 | `class_name` | `bytes[11]` | little | spec | `ff ff 01 00 0b 00` and `sgArcHandle` at marker +90 and +96 |
+| 107 | 2 | `handle_identifier` | `u16` | little | spec | zero u16 at marker +107 · value `0` |
+| 109 | 8 | `reference_sentinel_and_zero_tail` | `bytes[8]` | little | spec | `ff ff ff ff 00 00 00 00` at marker +109 |
+| 117 | 6 | `terminator` | `bytes[6]` | little | spec | `00 00 fe ff ff ff` at marker +117 |
+| 123 | 42 | `zero_trailer` | `bytes[42]` | little | spec | 42 zero bytes at marker +123 |
+| 165 | 4 | `identity` | `u32` | little | spec | a nonzero, non-null u32 identity at marker +165 |
+
+## `legacy_geometry_locus_shifted_162_line_handle_point`
+
+Spec §2 · layout: byte offsets · size: 162 B
+
+The coordinate tag is admitted as a line-handle point only with the child declaration and the following marker boundary.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `prefix_sentinel` | `f32` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native code `2` requires |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 27 | 2 | `role` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 29 | 2 | `state` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 48 | 8 | `state_value` | `f64` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 56 | 8 | `zero_before_coordinate_tag` | `bytes[8]` | little | spec | eight zero bytes at marker +56 through +63 |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +64 |
+| 66 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 74 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 84 | 2 | `handle_state` | `u16` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 86 | 6 | `child_class_header` | `bytes[6]` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 92 | 12 | `child_class_name` | `bytes[12]` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 112 | 4 | `sentinel` | `bytes[4]` | little | spec | sentinels at marker +112 and +128 |
+| 116 | 42 | `zero_trailer` | `bytes[42]` | little | spec | The following sketch marker begins at the record size |
+| 158 | 4 | `identity` | `u32` | little | spec | The following sketch marker begins at the record size |
+
+Unstated regions:
+
+- `82..84` (2 B): The shifted line declaration state begins at marker +84.
+- `104..112` (8 B): The short child-reference body precedes the framed sentinel.
+
+## `legacy_geometry_locus_shifted_177_arc_handle_point`
+
+Spec §2 · layout: byte offsets · size: 177 B
+
+The arc child declaration and the following marker boundary make the coordinate-bearing marker a point.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `prefix_sentinel` | `f32` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native code `1` requires |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 27 | 2 | `role` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 29 | 2 | `state` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 48 | 8 | `state_value` | `f64` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 56 | 8 | `zero_before_coordinate_tag` | `bytes[8]` | little | spec | eight zero bytes at marker +56 through +63 |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +64 |
+| 66 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 74 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 84 | 2 | `handle_state` | `u16` | little | spec | `sgArcHandle` child declaration at marker +98 |
+| 98 | 6 | `child_class_header` | `bytes[6]` | little | spec | `sgArcHandle` child declaration at marker +98 |
+| 104 | 11 | `child_class_name` | `bytes[11]` | little | spec | `sgArcHandle` child declaration at marker +98 |
+| 127 | 4 | `sentinel` | `bytes[4]` | little | spec | sentinel at marker +127 |
+| 131 | 42 | `zero_trailer` | `bytes[42]` | little | spec | The following sketch marker begins at the record size |
+| 173 | 4 | `identity` | `u32` | little | spec | The following sketch marker begins at the record size |
+
+Unstated regions:
+
+- `82..84` (2 B): The shifted arc declaration state begins at marker +84.
+- `86..98` (12 B): The arc child reference body precedes its class declaration.
+- `115..127` (12 B): The arc child-reference body precedes the framed sentinel.
+
+## `legacy_geometry_locus_shifted_178_line_handle_point`
+
+Spec §2 · layout: byte offsets · size: 178 B
+
+The extended line child body and the following marker boundary make the coordinate-bearing marker a point.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `prefix_sentinel` | `f32` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native code `2` requires |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 27 | 2 | `role` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 29 | 2 | `state` | `u16` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 48 | 8 | `state_value` | `f64` | little | spec | A legacy-prefix shifted geometry-locus handle point |
+| 56 | 8 | `zero_before_coordinate_tag` | `bytes[8]` | little | spec | eight zero bytes at marker +56 through +63 |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +64 |
+| 66 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 74 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 84 | 2 | `handle_state` | `u16` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 86 | 6 | `child_class_header` | `bytes[6]` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 92 | 12 | `child_class_name` | `bytes[12]` | little | spec | `sgLineHandle` child declaration at marker +86 |
+| 128 | 4 | `sentinel` | `bytes[4]` | little | spec | sentinels at marker +112 and +128 |
+| 132 | 42 | `zero_trailer` | `bytes[42]` | little | spec | The following sketch marker begins at the record size |
+| 174 | 4 | `identity` | `u32` | little | spec | The following sketch marker begins at the record size |
+
+Unstated regions:
+
+- `82..84` (2 B): The shifted line declaration state begins at marker +84.
+- `104..128` (24 B): The extended child-reference body precedes the framed sentinel.
+
+## `current_geometry_locus_arc_handle_point`
+
+Spec §2 · layout: byte offsets · size: 167 B
+
+The record includes the following marker's object index at +163; the following marker begins at +167.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | current-prefix 167-byte geometry-locus arc-handle point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | `00 00 80 bf` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value u32 `0` at marker +17 · value `0` |
+| 21 | 2 | `zero_locus_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 through +22 |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 29 | 2 | `zero_state` | `bytes[2]` | little | spec | zero bytes at marker +29 through +30 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 39 | 9 | `zero_before_state_value` | `bytes[9]` | little | spec | zero bytes at marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 8 | `zero_before_coordinate` | `bytes[8]` | little | spec | zero bytes at marker +56 through +63 |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +64 |
+| 66 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 74 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 82 | 4 | `handle_prefix` | `bytes[4]` | little | spec | Marker +82 and marker +84 store `02 00` |
+| 86 | 4 | `class_marker` | `bytes[4]` | little | spec | class declaration marker `ff ff 01 00` |
+| 90 | 2 | `class_length` | `u16` | little | spec | marker +90 stores u16 class length `11` · value `11` |
+| 92 | 11 | `class_name` | `bytes[11]` | little | spec | marker +92 stores `sgArcHandle` |
+| 103 | 2 | `handle_id` | `u16` | little | spec | Marker +103 stores a u16 handle identifier |
+| 105 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | marker +105 stores `ff ff ff ff` |
+| 109 | 8 | `zero_reference_tail` | `bytes[8]` | little | spec | marker +109 through +116 are zero |
+| 117 | 4 | `terminator` | `bytes[4]` | little | spec | marker +117 stores `fe ff ff ff` |
+| 121 | 42 | `zero_trailer` | `bytes[42]` | little | spec | marker +121 through +162 are zero |
+| 163 | 4 | `following_object_index` | `u32` | little | spec | The following marker's object index is at marker +163 |
+
+## `current_geometry_locus_arc_handle_point_terminal`
+
+Spec §2 · layout: byte offsets · size: 171 B
+
+The record includes a four-byte zero separator at +163, the following marker's object index at +167, and the following marker begins at +171.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | current-prefix 167-byte geometry-locus arc-handle point |
+| 13 | 4 | `shared_selector` | `bytes[4]` | little | spec | `00 00 80 bf` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value u32 `0` at marker +17 · value `0` |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` · value `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 64 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +64 |
+| 66 | 8 | `coordinate_first` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 74 | 8 | `coordinate_second` | `f64` | little | spec | finite planar coordinates at marker +66 and +74 |
+| 82 | 4 | `handle_prefix` | `bytes[4]` | little | spec | Marker +82 and marker +84 store `02 00` |
+| 86 | 4 | `class_marker` | `bytes[4]` | little | spec | class declaration marker `ff ff 01 00` |
+| 90 | 2 | `class_length` | `u16` | little | spec | marker +90 stores u16 class length `11` · value `11` |
+| 92 | 11 | `class_name` | `bytes[11]` | little | spec | marker +92 stores `sgArcHandle` |
+| 103 | 2 | `handle_id` | `u16` | little | spec | Marker +103 stores a u16 handle identifier |
+| 105 | 4 | `reference_sentinel` | `bytes[4]` | little | spec | marker +105 stores `ff ff ff ff` |
+| 109 | 8 | `zero_reference_tail` | `bytes[8]` | little | spec | marker +109 through +116 are zero |
+| 117 | 4 | `terminator` | `bytes[4]` | little | spec | marker +117 stores `fe ff ff ff` |
+| 121 | 46 | `zero_trailer` | `bytes[46]` | little | spec | marker +121 through +162 are zero |
+| 167 | 4 | `following_object_index` | `u32` | little | spec | stores the following object index at marker +167 |
+
+Unstated regions:
+
+- `5..13` (8 B): The fixed eight-byte header is the same as the non-terminal variant.
+- `21..23` (2 B): The zero prefix before the geometry locus is the same as the non-terminal variant.
+- `29..31` (2 B): The zero state before the selector is the same as the non-terminal variant.
+- `39..48` (9 B): The zero bytes before the state value are the same as the non-terminal variant.
+- `56..64` (8 B): The zero bytes before the coordinate tag are the same as the non-terminal variant.
 
 ## `reference_point_short_solved_cache`
 
@@ -1285,15 +2232,15 @@ Spec §2 · layout: byte offsets · size: 29 B
 
 Spec §2 · layout: byte offsets · size: 97 B
 
-Offsets begin immediately after the data-class name. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix.
+Offsets begin immediately after the data-class name. The pairwise-orthogonal form uses both basis triples; the `moFixedRefPlnData_c` repeated-normal form uses one in-plane triple and duplicates the normal in the other. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 24 | `origin` | `f64[3]` | little | spec | Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres |
 | 24 | 24 | `normal` | `f64[3]` | little | spec | Three f64 values at `+24`, `+32`, and `+40` store the unit normal |
 | 48 | 1 | `frame_marker` | `u8` | little | spec | Byte `+48` is `1` in the 97-byte frame |
-| 49 | 24 | `u_axis` | `f64[3]` | little | spec | Unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
-| 73 | 24 | `v_axis` | `f64[3]` | little | spec | Unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
+| 49 | 24 | `u_axis` | `f64[3]` | little | spec | In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
+| 73 | 24 | `v_axis` | `f64[3]` | little | spec | In the pairwise-orthogonal form, unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89` |
 
 ## `constructed_reference_plane_matrix_frame`
 
@@ -1307,6 +2254,123 @@ Offsets begin immediately after the `moConstraintCoincLineAtAnglePlaneRefplaneDa
 | 24 | 24 | `normal` | `f64[3]` | little | spec | Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame |
 | 48 | 1 | `frame_marker` | `u8` | little | spec | Its origin, normal, and byte `1` use offsets `+0` through `+48` of the 97-byte frame |
 | 49 | 72 | `basis_matrix` | `f64[9]` | little | spec | A right-handed orthonormal 3×3 matrix occupies the unaligned f64 fields at offsets `+49` through `+113` in row-major order |
+
+## `component_face_nested_reference_prefix`
+
+Spec §2 · layout: byte offsets · size: 102 B
+
+Offsets begin at the `moCompFace_c` body. The nested class declaration is variable within the fixed region; the component-path entries follow the marker tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_token` | `u16` | little | spec | class token at `+0` |
+| 2 | 4 | `record_version` | `u32` | little | spec | u32 `2` at `+2` |
+| 6 | 2 | `flags` | `bytes[2]` | little | spec | zero flags at `+6` |
+| 84 | 16 | `component_marker` | `bytes[16]` | little | spec | component marker at `+84` |
+| 100 | 2 | `marker_tail` | `u16` | little | spec | zero marker tail at `+100..+101` |
+
+Unstated regions:
+
+- `8..84` (76 B): The nested `moFaceRef_c` class declaration occupies a variable position before the component marker.
+
+## `component_face_compact_reference_prefix`
+
+Spec §2 · layout: byte offsets · size: 82 B
+
+Offsets begin at the `moCompFace_c` body. The component-path entries follow the marker tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_token` | `u16` | little | spec | class token at `+0` |
+| 2 | 4 | `record_version` | `u32` | little | spec | u32 `2` at `+2` |
+| 6 | 2 | `flags` | `bytes[2]` | little | spec | fixed zero-flag prefix |
+| 64 | 16 | `component_marker` | `bytes[16]` | little | spec | component-path marker 64 bytes after the body start |
+| 80 | 2 | `marker_tail` | `u16` | little | spec | zero marker tail at `+80..+81` |
+
+Unstated regions:
+
+- `8..64` (56 B): Fixed carrier bytes before the component marker.
+
+## `component_face_flagged_operation_prefix`
+
+Spec §2 · layout: byte offsets · size: 86 B
+
+Offsets begin at the `moCompFace_c` body. The component-path entries follow the marker tail.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `class_token` | `u16` | little | spec | class token at `+0` |
+| 2 | 4 | `record_version` | `u32` | little | spec | u32 `2` at `+2` |
+| 6 | 2 | `flags` | `bytes[2]` | little | spec | `40 00` flags at `+6..+7` |
+| 68 | 16 | `component_marker` | `bytes[16]` | little | spec | component-path marker 68 bytes after the body start |
+| 84 | 2 | `marker_tail` | `u16` | little | spec | zero marker tail at `+84..+85` |
+
+Unstated regions:
+
+- `8..68` (60 B): Fixed carrier bytes before the component marker.
+
+## `temporary_axis_reference_nine_scalar`
+
+Spec §2 · layout: byte offsets · size: 316 B
+
+Offsets begin at the class declaration. The carrier body ends at +311; a following class marker at +312 terminates the record after zero padding of at most 24 bytes.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `class_marker` | `bytes[4]` | little | spec | The declaration starts with `ff ff 01 00` · value `[255, 255, 1, 0]` |
+| 4 | 2 | `name_length` | `u16` | little | spec | name length `15` at `+4` · value `15` |
+| 6 | 15 | `name` | `bytes[15]` | little | spec | class name `moTempAxisRef_w` at `+6` · value `[109, 111, 84, 101, 109, 112, 65, 120, 105, 115, 82, 101, 102, 95, 119]` |
+| 223 | 8 | `handles` | `bytes[8]` | little | spec | two `c7 cf ff ff` handle words at declaration offsets `+223` and `+227` · value `[199, 207, 255, 255, 199, 207, 255, 255]` |
+| 231 | 4 | `zero_before_address` | `bytes[4]` | little | spec | followed by a zero u32 and a nonzero stream address · value `[0, 0, 0, 0]` |
+| 235 | 4 | `stream_address` | `u32` | little | spec | followed by a zero u32 and a nonzero stream address |
+| 239 | 72 | `axis_frame` | `f64[9]` | little | spec | Nine little-endian f64 values at declaration offset `+239` store the axis point in metres in the first xyz triple and the unit axis direction in the final xyz triple. |
+| 312 | 4 | `next_class_marker` | `bytes[4]` | little | spec | the next class declaration starts at `+312` · value `[255, 255, 1, 0]` |
+
+Unstated regions:
+
+- `21..223` (202 B): Undecoded class-body bytes between the class name and the handle pair.
+- `311..312` (1 B): One byte separates the final f64 scalar from the next class marker.
+
+## `cosmetic_thread_component_edge_wrapper_prefix`
+
+Spec §2 · layout: byte offsets · size: 17 B
+
+Offsets begin at the component-edge body. The compact edge-selection vector or the immediate edge-reference child follows this fixed wrapper prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `inner_class_token` | `u16` | little | spec | inner high-bit u16 class token at body +0 |
+| 2 | 7 | `wrapper_flags` | `bytes[7]` | little | spec | byte `02` at +2, zero bytes at +3..+8 · value `[2, 0, 0, 0, 0, 0, 0]` |
+| 9 | 4 | `component_count` | `u32` | little | spec | equal nonzero little-endian u32 component counts at +9 and +13 |
+| 13 | 4 | `component_count_copy` | `u32` | little | spec | equal nonzero little-endian u32 component counts at +9 and +13 |
+
+## `cosmetic_thread_repeated_edge_ref_prefix`
+
+Spec §2 · layout: byte offsets · size: 8 B
+
+Offsets begin at the body opened by the repeated edge-reference class token.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `prefix` | `bytes[8]` | little | spec | `01 00 00 00 00 00 00 00` · value `[1, 0, 0, 0, 0, 0, 0, 0]` |
 
 ## `display_lists_scene_source_binding`
 
@@ -1484,6 +2548,116 @@ Unstated regions:
 - `24..120` (96 B): Twelve finite f64 LE values; the final three do not form a unit vector in this form.
 - `120..129` (9 B): Zero-byte extended-form discriminator.
 
+## `current_indexed_spatial_xyz_point_prefix`
+
+Spec §2 · layout: byte offsets · size: 96 B
+
+The fixed prefix ends at the relation terminator. An ordinary geometry point uses tail words `8`, `1`; a relation point uses `1`, `0`. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator, or by the terminal reference-table prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A current-prefix indexed XYZ spatial point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes |
+| 13 | 4 | `sentinel` | `f32` | little | spec | little-endian f32 `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | admitted native-kind/locus pairs |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `profile_role` | `u16` | little | spec | profile role u16 `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `0e 00` at marker +56 |
+| 58 | 24 | `coordinates` | `f64[3]` | little | spec | xyz coordinates at marker +58 |
+| 82 | 2 | `tail_word_0` | `u16` | little | spec | u16 `8` for an ordinary point or `1` for a relation point at marker +82 |
+| 84 | 2 | `tail_word_1` | `u16` | little | spec | u16 `1` for an ordinary point or `0` for a relation point at marker +84 |
+| 86 | 6 | `tail_zero` | `bytes[6]` | little | spec | six zero bytes at marker +86 |
+| 92 | 4 | `terminator` | `bytes[4]` | little | spec | `fe ff ff ff` at marker +92 |
+
+Unstated regions:
+
+- `21..23` (2 B): Reserved bytes before the profile locus.
+- `29..31` (2 B): Zero state prefix.
+- `39..48` (9 B): Reserved bytes before the state value.
+
+## `current_indexed_spatial_xyz_terminal_reference_prefix_short`
+
+Spec §2 · layout: byte offsets · size: 330 B
+
+The terminal prefix starts after the relation terminator. Its ten-byte alignment suffix places the table header at marker +232; the variable reference-table body follows the fixed control sequence.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 82 | 2 | `tail_word_0` | `u16` | little | spec | u16 `1` at marker +82 |
+| 84 | 2 | `tail_word_1` | `u16` | little | spec | u16 `0` at marker +84 |
+| 92 | 4 | `terminator` | `bytes[4]` | little | spec | `fe ff ff ff` at marker +92 |
+| 96 | 124 | `zero_after_terminator` | `bytes[124]` | little | spec | zero bytes from marker +96 through +219 |
+| 220 | 2 | `terminal_tag` | `bytes[2]` | little | spec | `08 80` at marker +220 |
+| 222 | 10 | `zero_alignment_suffix` | `bytes[10]` | little | spec | short alignment form has ten zero alignment bytes |
+| 232 | 4 | `table_header` | `bytes[4]` | little | spec | `01 00 01 00` |
+| 236 | 4 | `first_count` | `u32` | little | spec | u32 values `1`, `2` |
+| 240 | 4 | `second_count` | `u32` | little | spec | u32 values `1`, `2` |
+| 244 | 48 | `one_run` | `bytes[48]` | little | spec | twelve u32 values `1` |
+| 292 | 4 | `zero_after_one_run` | `u32` | little | spec | u32 `0`, u32 `1` |
+| 296 | 4 | `one_after_zero` | `u32` | little | spec | u32 `1`, u32 `0` |
+| 300 | 6 | `zero_before_control` | `bytes[6]` | little | spec | u32 `0`, two zero bytes |
+| 306 | 24 | `control_sequence` | `bytes[24]` | little | spec | fixed terminal control sequence |
+
+Unstated regions:
+
+- `0..82` (82 B): The shared indexed XYZ point prefix ends after the xyz coordinates.
+- `86..92` (6 B): Six zero bytes follow the terminal tail words.
+
+## `current_indexed_spatial_xyz_terminal_reference_prefix_long`
+
+Spec §2 · layout: byte offsets · size: 334 B
+
+The terminal prefix starts after the relation terminator. Its fourteen-byte alignment suffix places the table header at marker +236; the variable reference-table body follows the fixed control sequence.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 82 | 2 | `tail_word_0` | `u16` | little | spec | u16 `1` at marker +82 |
+| 84 | 2 | `tail_word_1` | `u16` | little | spec | u16 `0` at marker +84 |
+| 92 | 4 | `terminator` | `bytes[4]` | little | spec | `fe ff ff ff` at marker +92 |
+| 96 | 124 | `zero_after_terminator` | `bytes[124]` | little | spec | zero bytes from marker +96 through +219 |
+| 220 | 2 | `terminal_tag` | `bytes[2]` | little | spec | `08 80` at marker +220 |
+| 222 | 14 | `zero_alignment_suffix` | `bytes[14]` | little | spec | long form has fourteen zero alignment bytes |
+| 236 | 4 | `table_header` | `bytes[4]` | little | spec | `01 00 01 00` |
+| 240 | 4 | `first_count` | `u32` | little | spec | u32 values `1`, `2` |
+| 244 | 4 | `second_count` | `u32` | little | spec | u32 values `1`, `2` |
+| 248 | 48 | `one_run` | `bytes[48]` | little | spec | twelve u32 values `1` |
+| 296 | 4 | `zero_after_one_run` | `u32` | little | spec | u32 `0`, u32 `1` |
+| 300 | 4 | `one_after_zero` | `u32` | little | spec | u32 `1`, u32 `0` |
+| 304 | 6 | `zero_before_control` | `bytes[6]` | little | spec | u32 `0`, two zero bytes |
+| 310 | 24 | `control_sequence` | `bytes[24]` | little | spec | fixed terminal control sequence |
+
+Unstated regions:
+
+- `0..82` (82 B): The shared indexed XYZ point prefix ends after the xyz coordinates.
+- `86..92` (6 B): Six zero bytes follow the terminal tail words.
+
+## `compact_current_spatial_marker_point`
+
+Spec §2 · layout: byte offsets · size: 82 B
+
+The compact point prefix ends after the third coordinate. The compact form is complete only at a next sketch marker at +82, at a next marker after a four-byte separator at +86, or at the feature-input lane end.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A current-prefix compact profile-locus spatial point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes |
+| 13 | 4 | `sentinel` | `f32` | little | spec | little-endian f32 `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native kind u32 `0` or `1` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `profile_role` | `u16` | little | spec | profile role u16 `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `0e 00` at marker +56 |
+| 58 | 24 | `coordinates` | `f64[3]` | little | spec | xyz coordinates at marker +58 |
+
+Unstated regions:
+
+- `21..23` (2 B): Reserved bytes before the profile locus.
+- `29..31` (2 B): The state prefix is reserved in this compact point form.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `wide_spatial_marker_coordinate_prefix`
 
 Spec §2 · layout: byte offsets · size: 90 B
@@ -1513,7 +2687,7 @@ Unstated regions:
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
 | ResolvedFeatures sketch and feature-input markers (§2) | §2 | The remaining marker layouts are about 125 distinct records, each one prose paragraph stating marker-relative offsets for a specific record length. The fixed-offset layouts above cover the currently tabulated profile, sketch-input, and reference-plane forms; the remaining paragraphs are transcribable in principle and can be added incrementally. |
-| Body records (§6) | §6 | Apart from the class-root directory, §6 states slot-reference graphs and population invariants over about thirty named disc layouts. Those layouts state no byte offsets; their slot values are reached through the §5 common header and the §10 framing arithmetic. |
-| Inline record framing (§10) | §10 | Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. Specification section 5 gives the supported schema, disc, and flo slot-count table. |
+| Body records (§6) | §6 | The typed BODY, SHELL, REGION, and FACE nodes use variable-length pointer fields; no fixed-offset table describes their complete records. |
+| Inline record framing (§10) | §10 | Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*(5 + flo)` for a bare ATTRIBUTE. Specification section 5 gives the stored value-count rule. |
 | SWIFT semantic PMI object graph (§2.1) | §2.1 | Token-framed variable-length grammar. Every entity and section is delimited by Pascal-string tokens and counted key/value or relation rosters; no field has a fixed offset from the stream or entity start. |
 | Compound File Binary directory entry (§1) | §1 | The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding. |

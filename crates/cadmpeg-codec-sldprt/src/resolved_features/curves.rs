@@ -18,11 +18,22 @@ use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::{alloc_filled, bounded_len, View};
 use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry};
+use cadmpeg_ir::sketches::{
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+};
 use std::collections::{HashMap, HashSet};
 
 pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
 pub(super) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
+
+#[derive(Clone, Debug)]
+struct CircularArcWitness {
+    index: usize,
+    sketch: SketchId,
+    endpoint_refs: Vec<String>,
+    center: Point2,
+    radius: f64,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum SketchPlaneUAxisSource {
@@ -707,6 +718,150 @@ pub(super) fn resolve_slot_marker_arcs(
     entities[*target].geometry = geometry;
 }
 
+fn closed_cycle_marker_arc_geometry(
+    target_index: usize,
+    target: &SketchEntity,
+    entities: &[SketchEntity],
+    point_by_ref: &HashMap<&str, Point2>,
+    circular_witnesses: &[CircularArcWitness],
+    tolerance: f64,
+) -> Option<SketchGeometry> {
+    if !matches!(
+        target.geometry,
+        SketchGeometry::Native { ref native_kind }
+            if native_kind == "sldprt:marker-geometry:2"
+    ) || target.construction
+        || target.endpoint_refs.len() != 2
+    {
+        return None;
+    }
+    let [target_start, target_end] = target.endpoint_refs.as_slice() else {
+        return None;
+    };
+    let target_endpoints = [target_start.as_str(), target_end.as_str()];
+    let (Some(target_start_point), Some(target_end_point)) = (
+        point_by_ref.get(target_start.as_str()),
+        point_by_ref.get(target_end.as_str()),
+    ) else {
+        return None;
+    };
+    let mut candidates = circular_witnesses.iter().filter_map(|witness| {
+        if witness.index == target_index
+            || witness.sketch != target.sketch
+            || witness.endpoint_refs.len() != 2
+            || !witness.radius.is_finite()
+            || witness.radius <= 0.0
+        {
+            return None;
+        }
+        let [witness_start, witness_end] = witness.endpoint_refs.as_slice() else {
+            return None;
+        };
+        let witness_endpoints = [witness_start.as_str(), witness_end.as_str()];
+        if target_endpoints
+            .iter()
+            .any(|endpoint| witness_endpoints.contains(endpoint))
+        {
+            return None;
+        }
+        let (Some(witness_start_point), Some(witness_end_point)) = (
+            point_by_ref.get(witness_start.as_str()),
+            point_by_ref.get(witness_end.as_str()),
+        ) else {
+            return None;
+        };
+        let on_witness_circle = |point: Point2| {
+            same_dimension_length(
+                (point.u - witness.center.u).hypot(point.v - witness.center.v),
+                witness.radius,
+            )
+        };
+        if !on_witness_circle(*witness_start_point)
+            || !on_witness_circle(*witness_end_point)
+            || !on_witness_circle(*target_start_point)
+            || !on_witness_circle(*target_end_point)
+        {
+            return None;
+        }
+        let connecting_lines = entities
+            .iter()
+            .enumerate()
+            .filter(|(_, entity)| {
+                !entity.construction
+                    && entity.sketch == target.sketch
+                    && entity.endpoint_refs.len() == 2
+                    && matches!(entity.geometry, SketchGeometry::Line { .. })
+                    && entity
+                        .endpoint_refs
+                        .iter()
+                        .any(|endpoint| target_endpoints.contains(&endpoint.as_str()))
+                    && entity
+                        .endpoint_refs
+                        .iter()
+                        .any(|endpoint| witness_endpoints.contains(&endpoint.as_str()))
+                    && match (entity.endpoint_refs.as_slice(), &entity.geometry) {
+                        ([first_ref, second_ref], SketchGeometry::Line { start, end }) => {
+                            let (Some(first), Some(second)) = (
+                                point_by_ref.get(first_ref.as_str()),
+                                point_by_ref.get(second_ref.as_str()),
+                            ) else {
+                                return false;
+                            };
+                            (same_dimension_length(start.u, first.u)
+                                && same_dimension_length(start.v, first.v)
+                                && same_dimension_length(end.u, second.u)
+                                && same_dimension_length(end.v, second.v))
+                                || (same_dimension_length(start.u, second.u)
+                                    && same_dimension_length(start.v, second.v)
+                                    && same_dimension_length(end.u, first.u)
+                                    && same_dimension_length(end.v, first.v))
+                        }
+                        _ => false,
+                    }
+            })
+            .collect::<Vec<_>>();
+        if connecting_lines.len() != 2
+            || connecting_lines.iter().any(|(_, line)| {
+                let [first, second] = line.endpoint_refs.as_slice() else {
+                    return true;
+                };
+                first == second
+                    || (target_endpoints.contains(&first.as_str())
+                        && target_endpoints.contains(&second.as_str()))
+                    || (witness_endpoints.contains(&first.as_str())
+                        && witness_endpoints.contains(&second.as_str()))
+            })
+        {
+            return None;
+        }
+        let mut connected_targets = connecting_lines
+            .iter()
+            .flat_map(|(_, line)| line.endpoint_refs.iter())
+            .filter(|endpoint| target_endpoints.contains(&endpoint.as_str()))
+            .collect::<Vec<_>>();
+        connected_targets.sort_unstable();
+        connected_targets.dedup();
+        let mut connected_witnesses = connecting_lines
+            .iter()
+            .flat_map(|(_, line)| line.endpoint_refs.iter())
+            .filter(|endpoint| witness_endpoints.contains(&endpoint.as_str()))
+            .collect::<Vec<_>>();
+        connected_witnesses.sort_unstable();
+        connected_witnesses.dedup();
+        if connected_targets.len() != 2 || connected_witnesses.len() != 2 {
+            return None;
+        }
+        minor_arc_geometry(
+            *target_start_point,
+            *target_end_point,
+            witness.center,
+            tolerance,
+        )
+    });
+    let geometry = candidates.next()?;
+    candidates.next().is_none().then_some(geometry)
+}
+
 pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) {
     let points = entities
         .iter()
@@ -752,6 +907,49 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
         })
         .collect::<Vec<_>>();
     for (index, geometry) in center_replacements {
+        entities[index].geometry = geometry;
+    }
+    let circular_witnesses = entities
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entity)| {
+            let SketchGeometry::Arc { center, radius, .. } = entity.geometry else {
+                return None;
+            };
+            (!entity.construction && entity.endpoint_refs.len() == 2).then_some(
+                CircularArcWitness {
+                    index,
+                    sketch: entity.sketch.clone(),
+                    endpoint_refs: entity.endpoint_refs.clone(),
+                    center,
+                    radius: radius.0,
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    let point_by_ref = entities
+        .iter()
+        .filter_map(|entity| match entity.geometry {
+            SketchGeometry::Point { position } => Some((entity.native_ref.as_deref()?, position)),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    let cycle_replacements = entities
+        .iter()
+        .enumerate()
+        .filter_map(|(target_index, target)| {
+            closed_cycle_marker_arc_geometry(
+                target_index,
+                target,
+                entities,
+                &point_by_ref,
+                &circular_witnesses,
+                tolerance,
+            )
+            .map(|geometry| (target_index, geometry))
+        })
+        .collect::<Vec<_>>();
+    for (index, geometry) in cycle_replacements {
         entities[index].geometry = geometry;
     }
     let arcs = entities

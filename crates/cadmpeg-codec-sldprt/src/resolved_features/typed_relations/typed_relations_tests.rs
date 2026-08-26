@@ -161,6 +161,58 @@ fn current_coordinate_line_uses_its_single_local_link() {
 }
 
 #[test]
+fn current_coordinate_line_accepts_a_coordinate_bearing_curve_vertex() {
+    let mut payload = vec![0; 157];
+    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[5..13].copy_from_slice(&[0xff; 8]);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+    payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+    payload[82..86].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+    payload[86..88].copy_from_slice(&0xbc87u16.to_le_bytes());
+    payload[88..90].copy_from_slice(&22u16.to_le_bytes());
+    payload[90..94].fill(0xff);
+    payload[102..106].copy_from_slice(&(-2i32).to_le_bytes());
+    payload[152..].copy_from_slice(SKETCH_MARKER);
+    let entity = |id: &str, offset, local_id, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id,
+        kind,
+        state_value: None,
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let line = entity(
+        "line",
+        0,
+        Some(1),
+        SketchInputKind::LineOrCircle,
+        Some([2.0, 3.0]),
+    );
+    let endpoint = entity(
+        "curve-vertex",
+        153,
+        Some(22),
+        SketchInputKind::LineOrCircle,
+        Some([4.0, 5.0]),
+    );
+    assert_eq!(
+        current_coordinate_linked_line_endpoints(&payload, &line, &[&line, &endpoint]),
+        Some([&line, &endpoint])
+    );
+}
+
+#[test]
 fn extended_wide_selected_axis_uses_object_ids_then_one_based_point_roster() {
     let mut payload = vec![0; 92 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
     payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);

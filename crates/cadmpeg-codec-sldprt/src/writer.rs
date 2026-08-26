@@ -20,6 +20,7 @@ use crate::SourceRecord;
 use crate::container::MARKER;
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+const TYPED_BODY_LINEAR_RESOLUTION: f64 = 1.0e-8;
 
 pub(crate) const SWOBJECTS_LOCAL_DIGEST_ATTRIBUTE: &str = "sldprt_swobjects_local_sha256";
 pub(crate) const SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE: &str =
@@ -2465,6 +2466,13 @@ pub(crate) fn brep_body(
         .into_iter()
         .map(|face| Ok((face.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let face_color_definition = if color_attrs.is_empty() {
+        None
+    } else {
+        let key_node = take_attr(&mut next)?;
+        let definition_node = take_attr(&mut next)?;
+        Some((key_node, definition_node))
+    };
     for point in &ir.model.points {
         tag(&mut out, 0x1d);
         be16(&mut out, points[&point.id]);
@@ -2588,8 +2596,10 @@ pub(crate) fn brep_body(
     write_body_hierarchy(
         ir,
         &faces,
+        &surfaces,
         &face_owners,
         &color_attrs,
+        face_color_definition,
         schema_32001,
         &mut next,
         &mut out,
@@ -2602,11 +2612,14 @@ pub(crate) fn brep_body(
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)] // The native and typed hierarchy writers share these identity maps.
 fn write_body_hierarchy(
     ir: &CadIr,
     faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
     face_owners: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
     color_attrs: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    face_color_definition: Option<(u16, u16)>,
     schema_32001: bool,
     next: &mut u16,
     out: &mut Vec<u8>,
@@ -2702,18 +2715,223 @@ fn write_body_hierarchy(
             "face is not assigned to a body".into(),
         ));
     }
+    write_typed_body_hierarchy(ir, faces, surfaces, next, out)?;
+    if let Some((key_node, definition_node)) = face_color_definition {
+        attribute_definition(out, key_node, definition_node);
+    }
     let mut face_owner_items = face_owners.iter().collect::<Vec<_>>();
     face_owner_items.sort_by_key(|(left, _)| *left);
     for (face, owner) in face_owner_items {
         let mut refs = [0; 6];
         refs[5] = color_attrs.get(face).copied().unwrap_or(0);
-        entity51(
+        let disc = if color_attrs.contains_key(face) {
+            face_color_definition
+                .map(|(_, definition_node)| definition_node)
+                .ok_or_else(|| {
+                    CodecError::Malformed("colored face has no color attribute definition".into())
+                })?
+        } else if schema_32001 {
+            0x001f
+        } else {
+            0x0015
+        };
+        entity51(out, 1, *owner, disc, &refs);
+    }
+    Ok(())
+}
+
+/// Write the typed XT ownership graph used by the decoder for body membership.
+///
+/// The compact topology records use the same transmit attributes as the
+/// neutral arenas.  BODY, REGION, and SHELL receive fresh attributes because
+/// those nodes are ownership records rather than compact topology identities;
+/// FACE keeps the compact bridge attribute so the two record families join
+/// without a second identity map.
+fn write_typed_body_hierarchy(
+    ir: &CadIr,
+    faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
+    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
+    next: &mut u16,
+    out: &mut Vec<u8>,
+) -> Result<(), CodecError> {
+    let body_attrs = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| Ok((body.id.clone(), take_attr(next)?)))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let region_attrs = ir
+        .model
+        .regions
+        .iter()
+        .map(|region| Ok((region.id.clone(), take_attr(next)?)))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let shell_attrs = ir
+        .model
+        .shells
+        .iter()
+        .map(|shell| Ok((shell.id.clone(), take_attr(next)?)))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let mut face_shells = HashMap::new();
+    for shell in &ir.model.shells {
+        let shell_attr = shell_attrs[&shell.id];
+        for face in &shell.faces {
+            if face_shells.insert(face.clone(), shell_attr).is_some() {
+                return Err(CodecError::Malformed(
+                    "face belongs to multiple typed shells".into(),
+                ));
+            }
+        }
+    }
+
+    for (index, body) in ir.model.bodies.iter().enumerate() {
+        let body_attr = body_attrs[&body.id];
+        let first_region = body
+            .regions
+            .first()
+            .ok_or_else(|| CodecError::Malformed("body has no typed region".into()))?;
+        let first_region = region_attrs[first_region];
+        let first_shell = ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.id.0 == body.regions[0].0)
+            .and_then(|region| region.shells.first())
+            .map(|shell| shell_attrs[shell])
+            .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
+        typed_prefix(out, 0x0c, body_attr, 0x1000_0000 + index as u32);
+        for value in [5_u32, 6, 1, 1, 1, 1] {
+            typed_ref(out, value)?;
+        }
+        bef64(out, 1000.0);
+        bef64(out, TYPED_BODY_LINEAR_RESOLUTION);
+        for value in [1_u32, 1, 1] {
+            typed_ref(out, value)?;
+        }
+        out.push(1);
+        typed_ref(out, 2_u32)?;
+        out.push(match body.kind {
+            BodyKind::Solid => 1,
+            BodyKind::Wire => 2,
+            BodyKind::Sheet => 3,
+            BodyKind::General => 6,
+        });
+        out.push(1);
+        for value in [first_shell, 1, 1, 1, 1, 1, 1] {
+            typed_ref(out, value)?;
+        }
+        for value in [first_region, 1, 1, 1] {
+            typed_ref(out, value)?;
+        }
+    }
+
+    for (index, shell) in ir.model.shells.iter().enumerate() {
+        let body = ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
+            .map(|region| &region.body)
+            .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
+        let region = ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
+            .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
+        typed_prefix(
             out,
-            1,
-            *owner,
-            if schema_32001 { 0x001f } else { 0x0015 },
-            &refs,
+            0x0d,
+            shell_attrs[&shell.id],
+            0x2000_0000 + index as u32,
         );
+        for value in [1, body_attrs[body], 1, 1, 1, 1, region_attrs[&region.id], 1] {
+            typed_ref(out, value)?;
+        }
+    }
+
+    for (index, region) in ir.model.regions.iter().enumerate() {
+        let body = body_attrs[&region.body];
+        let body_regions = ir
+            .model
+            .bodies
+            .iter()
+            .find(|candidate| candidate.id == region.body)
+            .ok_or_else(|| CodecError::Malformed("typed region has no body".into()))?;
+        let position = body_regions
+            .regions
+            .iter()
+            .position(|candidate| candidate == &region.id)
+            .ok_or_else(|| CodecError::Malformed("body does not reference typed region".into()))?;
+        let next_region = body_regions
+            .regions
+            .get(position + 1)
+            .map_or(1, |id| region_attrs[id]);
+        let previous_region = position
+            .checked_sub(1)
+            .and_then(|position| body_regions.regions.get(position))
+            .map_or(1, |id| region_attrs[id]);
+        let shell_head = region
+            .shells
+            .first()
+            .map(|id| shell_attrs[id])
+            .ok_or_else(|| CodecError::Malformed("typed region has no shell".into()))?;
+        typed_prefix(
+            out,
+            0x13,
+            region_attrs[&region.id],
+            0x3000_0000 + index as u32,
+        );
+        for value in [1, body, next_region, previous_region, shell_head] {
+            typed_ref(out, value)?;
+        }
+        out.push(b'S');
+    }
+
+    for (index, face) in ir.model.faces.iter().enumerate() {
+        let shell = face_shells
+            .get(&face.id)
+            .copied()
+            .ok_or_else(|| CodecError::Malformed("typed face has no shell".into()))?;
+        typed_prefix(out, 0x0e, faces[&face.id], 0x4000_0000 + index as u32);
+        typed_ref(out, 1_u32)?;
+        out.extend_from_slice(&MAGIC);
+        for value in [1, 1, 0, shell, surfaces[&face.surface]] {
+            typed_ref(out, value)?;
+        }
+        out.push(match face.sense {
+            Sense::Forward => 0x2b,
+            Sense::Reversed => 0x2d,
+        });
+    }
+    Ok(())
+}
+
+fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
+    tag(out, kind);
+    out.push(0xff);
+    be16(out, attr);
+    be32(out, node_id);
+}
+
+/// Emit one Parasolid XT pointer in its compact or extended two-cell form.
+///
+/// The high bit of the first cell is the form discriminator, so `0x7fff` is
+/// the first value that requires two cells. Two u16 cells provide 31 payload
+/// bits; refusing a larger value keeps the writer from emitting a truncated
+/// pointer.
+fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError> {
+    let value = value.into();
+    if value > 0x7fff_ffff {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
+        ));
+    }
+    if value <= 0x7ffe {
+        be16(out, value as u16);
+    } else {
+        be16(out, 0x8000 | (value as u16 & 0x7fff));
+        be16(out, (value >> 15) as u16);
     }
     Ok(())
 }
@@ -2769,6 +2987,17 @@ fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     for value in [color.r, color.g, color.b] {
         bef64(out, f64::from(value));
     }
+}
+
+fn attribute_definition(out: &mut Vec<u8>, key_node: u16, definition_node: u16) {
+    const FAMILY: &[u8] = b"SDL/TYSA_COLOUR";
+    tag(out, 0x4f);
+    be32(out, FAMILY.len() as u32);
+    be16(out, key_node);
+    out.extend_from_slice(FAMILY);
+    tag(out, 0x50);
+    be32(out, 2);
+    be16(out, definition_node);
 }
 
 fn write_face_list(
@@ -3568,6 +3797,26 @@ mod nurbs_write_tests {
             ),
             (3, 4, 2, 1)
         );
+    }
+
+    #[test]
+    fn writes_typed_reference_boundaries() {
+        for (value, expected) in [
+            (0x7ffe_u32, vec![0x7f, 0xfe]),
+            (0x7fff_u32, vec![0xff, 0xff, 0, 0]),
+            (0x8000_u32, vec![0x80, 0, 0, 1]),
+            (0x7fff_ffff_u32, vec![0xff, 0xff, 0xff, 0xff]),
+        ] {
+            let mut bytes = Vec::new();
+            typed_ref(&mut bytes, value).expect("reference is representable");
+            assert_eq!(bytes, expected, "encoded reference {value:#x}");
+        }
+
+        assert!(matches!(
+            typed_ref(&mut Vec::new(), 0x8000_0000_u32),
+            Err(CodecError::NotImplemented(message))
+                if message.contains("31-bit XT pointer range")
+        ));
     }
 
     #[test]

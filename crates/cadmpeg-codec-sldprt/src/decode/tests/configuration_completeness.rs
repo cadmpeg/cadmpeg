@@ -204,6 +204,46 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
 }
 
 #[test]
+fn metadata_only_native_feature_does_not_report_missing_operation() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.features.push(Feature {
+        id: FeatureId("metadata-only".into()),
+        ordinal: 0,
+        name: Some("Localized tree item".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some("Feature".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Native {
+            kind: "Localized tree item".into(),
+            parameters: BTreeMap::new(),
+            properties: BTreeMap::new(),
+        },
+        native_ref: None,
+    });
+    let mut report = DecodeReport {
+        format: "sldprt".into(),
+        container_only: false,
+        geometry_transferred: true,
+        coverage: BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+    };
+
+    append_design_losses(&ir, &mut report);
+
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("retain their native kind")));
+}
+
+#[test]
 fn active_configuration_inherits_late_feature_resolutions() {
     let mut ir = CadIr::empty(Units::default());
     let feature_id = FeatureId("mirror".into());

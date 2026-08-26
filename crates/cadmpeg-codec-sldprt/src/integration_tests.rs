@@ -186,7 +186,7 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
         .push(coincident.id.clone());
     decoded.ir_mut().model.faces.push(coincident);
 
-    let _ = crate::tessellation::assign_unique_analytic_owners(&mut decoded.ir_mut().model);
+    let _ = crate::tessellation::assign_unique_surface_owners(&mut decoded.ir_mut().model);
 
     assert!(decoded.ir().model.tessellations[0].body.is_none());
     assert!(decoded.ir().model.tessellations[0].faces.is_empty());

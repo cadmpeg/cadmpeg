@@ -15,6 +15,5 @@ mod nurbs_surfaces;
 mod partition_merge;
 mod pcurves;
 mod round_trip;
-mod schema_shells;
 mod site_keys;
 mod sketch_losses;

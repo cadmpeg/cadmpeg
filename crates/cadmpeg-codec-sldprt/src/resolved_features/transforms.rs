@@ -73,6 +73,12 @@ pub(super) struct MarkerTransform {
     translation: (i64, i64),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ProfileAxis {
+    U,
+    V,
+}
+
 impl MarkerTransform {
     pub(super) fn apply_axes(self, point: (i64, i64)) -> Option<(i64, i64)> {
         if let Some([uu, uv, vu, vv]) = self.affine_matrix {
@@ -98,6 +104,30 @@ impl MarkerTransform {
             point.0.checked_add(self.translation.0)?,
             point.1.checked_add(self.translation.1)?,
         ))
+    }
+
+    pub(super) fn profile_axis_for_native(self, native_axis: usize) -> Option<ProfileAxis> {
+        if native_axis > 1 {
+            return None;
+        }
+        if let Some([uu, uv, vu, vv]) = self.affine_matrix {
+            const SCALE: i64 = 1_000_000_000_000;
+            let (u, v) = match native_axis {
+                0 => (uu, vu),
+                1 => (uv, vv),
+                _ => unreachable!("native axis was bounded above"),
+            };
+            return match (u, v) {
+                (u, 0) if u.abs() == SCALE => Some(ProfileAxis::U),
+                (0, v) if v.abs() == SCALE => Some(ProfileAxis::V),
+                _ => None,
+            };
+        }
+        Some(match (self.swap, native_axis) {
+            (false, 0) | (true, 1) => ProfileAxis::U,
+            (false, 1) | (true, 0) => ProfileAxis::V,
+            _ => unreachable!("native axis was bounded above"),
+        })
     }
 }
 

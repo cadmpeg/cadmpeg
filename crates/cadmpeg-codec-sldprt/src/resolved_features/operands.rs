@@ -82,6 +82,72 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
     excluded: &HashSet<String>,
 ) -> Option<&'a SketchInputEntity> {
     let entities = entities.into_iter().collect::<Vec<_>>();
+    if kind == FeatureInputOperandKind::Native(0x81dd) {
+        let mut points = entities
+            .iter()
+            .copied()
+            .filter(|entity| {
+                matches!(
+                    entity.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                ) && entity
+                    .coordinates_m
+                    .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
+            })
+            .collect::<Vec<_>>();
+        points.sort_unstable_by_key(|entity| entity.offset);
+        return points
+            .get(usize::from(address))
+            .copied()
+            .filter(|entity| !excluded.contains(&entity.id));
+    }
+    if kind == FeatureInputOperandKind::Native(0x81e7) {
+        // In scalar relations, 81e7 addresses the solver-line roster formed
+        // from coordinate points; it does not directly resolve a line marker.
+        return None;
+    }
+    if kind == FeatureInputOperandKind::Native(0x810f) {
+        // An 810f cell belongs to the declared line-distance family. Its
+        // address is an object index when that index is present, or a local
+        // identifier otherwise. A coordinate-bearing point can share either
+        // address with a line handle, but it is not a line operand. Keep only
+        // line/arc markers, relation handles, and coordinate-less point
+        // proxies; reject every ambiguous candidate set.
+        let accepts = |entity: &SketchInputEntity| {
+            matches!(
+                entity.kind,
+                SketchInputKind::LineOrCircle | SketchInputKind::Arc | SketchInputKind::Relation(_)
+            ) || (matches!(
+                entity.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) && entity.coordinates_m.is_none())
+        };
+        let indexed = entities
+            .iter()
+            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| accepts(entity))
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        if entities
+            .iter()
+            .any(|entity| entity.object_index == Some(u32::from(address)) && accepts(entity))
+        {
+            return match indexed.as_slice() {
+                [entity] => Some(*entity),
+                _ => None,
+            };
+        }
+        let local = entities
+            .iter()
+            .filter(|entity| entity.local_id == Some(u32::from(address)))
+            .filter(|entity| accepts(entity))
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        return match local.as_slice() {
+            [entity] => Some(*entity),
+            _ => None,
+        };
+    }
     if kind == FeatureInputOperandKind::Native(0xbc7c) {
         let indexed = entities
             .iter()
@@ -121,9 +187,28 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             return Some(*entity);
         }
     }
+    if kind == FeatureInputOperandKind::Native(0x814c) {
+        let indexed = entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| entity.coordinates_m.is_some())
+            .filter(|entity| {
+                matches!(
+                    entity.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+            })
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        return match indexed.as_slice() {
+            [entity] => Some(*entity),
+            _ => None,
+        };
+    }
     if matches!(
         kind,
-        FeatureInputOperandKind::Native(0x80cc | 0x8152 | 0x8ab6 | 0x8dcb | 0x929d | 0xbd69)
+        FeatureInputOperandKind::Native(0x80cc | 0x8152 | 0x8ab6 | 0x8dcb | 0x929d | 0xbd69,)
     ) {
         let indexed = entities
             .iter()
@@ -134,6 +219,41 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             .filter(|entity| !excluded.contains(&entity.id))
             .collect::<Vec<_>>();
         if let [entity] = indexed.as_slice() {
+            return Some(*entity);
+        }
+    }
+    if matches!(
+        kind,
+        FeatureInputOperandKind::Native(0x80ac | 0x80d5 | 0x8138)
+    ) {
+        // These class-scoped relation cells use the same address precedence
+        // as point references, but may also name a relation handle whose
+        // links resolve to a point locus. A line or arc sharing the address
+        // is not a candidate for this operand family.
+        let indexed = entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| operand_accepts_marker(kind, entity.kind))
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        if entities.iter().any(|entity| {
+            entity.object_index == Some(u32::from(address))
+                && operand_accepts_marker(kind, entity.kind)
+        }) {
+            return match indexed.as_slice() {
+                [entity] => Some(*entity),
+                _ => None,
+            };
+        }
+        let local = entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.local_id == Some(u32::from(address)))
+            .filter(|entity| operand_accepts_marker(kind, entity.kind))
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        if let [entity] = local.as_slice() {
             return Some(*entity);
         }
     }

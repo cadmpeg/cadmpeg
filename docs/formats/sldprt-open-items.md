@@ -18,26 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Body classification
 
-### BC-01. Other class-root layouts
-
-**Question.** Which class-root record layouts and ownership relations select bodies outside the supported class-root chain form?
-
-**Known.** `sldprt.md` §6 defines the supported class-root index prefix, chain heads, and the byte intervals used to associate entity records with a class-root body. Other class-root layouts remain unresolved.
-
-**Need.** We must know the class-root grammar and body ownership rule to decode every body without assigning entities from one body to another.
-
-**Note.** The closure evidence is limited to synthetic byte builders in `src/tests.rs:6889-6917` and `6921-6957`. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:258-271` accepts one distinct class-root vector, and `:473-558` assigns records by head-offset intervals. If a file has two valid heads with an unrelated face record between them, interval membership can bind that face to the wrong body; no stored relation is checked. The specification now states this interval grammar, but the closure did not establish it from an independent specimen or a native ownership field.
-
-### BC-02. Deltas faces outside partition intervals
-
-**Question.** Which class-root body owns a deltas face that is outside every selected partition head interval?
-
-**Known.** `sldprt.md` §6 defines class-root interval ownership for selected partition records. A deltas face outside all selected intervals remains unresolved.
-
-**Need.** We must know the ownership relation to retain faces that do not fall inside a partition interval.
-
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:473-558` partitions entity records by class-root head offsets, and `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1439-1468` emits only faces claimed by the selected body relation. The closure test at `src/tests.rs:6921-6957` contains one controlled class-root chain and one deltas face. It does not establish ownership for a face outside all intervals. A multi-chain file can therefore withhold a valid deltas face or leave it attached to an arbitrary fallback body while the specification presents the interval rule as settled.
-
 ### BC-03. Superseded partition faces
 
 **Question.** How does a deltas topology record replace a partition face when the replacement has a different bridge or owner identity?
@@ -45,8 +25,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `sldprt.md` §6 states that partition topology has precedence for shared identities and that a complete deltas record can supersede a partition face when the native record identifies the replacement.
 
 **Need.** We must know the replacement relation to avoid retaining a superseded partition face or emitting both faces.
-
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep/topology.rs:359-383` retains an existing partition bridge and merges only missing selected deltas bridges. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:775-809` orders partition streams before deltas. The test `partition_topology_wins_when_deltas_reuse_a_bridge_identity` covers only one reused identity; it does not prove replacement under a new attribute or owner. If a full deltas bridge is the replacement, the partition bridge remains because no replacement relation is decoded. The specification's supersession rule is therefore a promotion of an unverified precedence assumption.
 
 ### BC-04. Duplicate topology record identities
 
@@ -56,27 +34,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must select the authoritative topology record to avoid silently changing body connectivity or vertex positions when a duplicate identity is present.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep/topology.rs:626-699` inserts bridges, vertex uses, and points by attribute, so a later valid occurrence replaces the earlier one. `:403-447` keeps the latest candidate occurrence for edge and coedge attributes. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:477-484` and `:565-573` likewise keep the record with the greatest sequence for duplicate entity attributes. If two complete records share an attribute but point to different loops or coordinates, the later or highest-sequence record controls the emitted topology without a decoded native conflict rule. Candidate evidence rejects some ambiguous edge and coedge shapes, but the other tables have no uniqueness gate.
+### BC-08. Truncated persistent face identity
 
-### BC-05. Extended topology reference form
+**Question.** Which consumers must compare the optional path tail of an `ATOM_ID_2001` persistent face identity, and when does that tail separate two faces of one producer?
 
-**Question.** Does a SolidWorks Parasolid topology stream encode a reference wider than `u16`?
+**Known.** `sldprt.md` §5 "`ATOM_ID_2001` instances hang on face bridge records" gives the complete persistent identity as value 1, value 4, and the ordered optional tail. `crates/cadmpeg-codec-sldprt/src/decode.rs:2417-2440` makes two projections of the same face atoms. The complete projection keeps the tail and goes to the tessellation owner assignment only. The truncated projection keeps value 1 and value 4 only and goes to four consumers: the topology selection binding, the mirror-plane binding, the generated hole-axis projection, and the configuration topology selection binding. The topology selection binding sets a face to unresolved when two faces share the truncated pair.
 
-**Known.** Typed topology records store `refs` as big-endian `u16` values at fixed strides in `brep/topology.rs`. The `u16` ceiling is real for every settled fixed-offset call site. Siemens NX encodes an extended XMT form as a negative signed remainder plus a quotient (`quotient * 32767 + remainder`).
+**Need.** We must know whether the tail separates faces, because a truncated comparison binds no face where the complete identity binds one, and the hole-axis projection collects every face with the truncated pair.
 
-**Need.** Corpus bytes that exercise a topology reference above `65535` before any encoding change. A confirmed extended form changes record length and turns the fixed-offset call sites into a running cursor.
-
-**Note.** The NX extended form is a hypothesis for SolidWorks, not evidence. Do not invent the encoding without corpus bytes.
+**Conflict.** The specification gives the tail as part of the identity. Four consumers compare identities without it, while a fifth consumer in the same function compares the complete identity.
 
 ## 2. Geometry carriers
-
-### GC-01. Non-isoparametric B-spline trim UV
-
-**Question.** How do we derive the UV curve for a non-isoparametric trim on a B-spline face?
-
-**Known.** `sldprt.md` §7.1 "00 TT [ff]?" through `sldprt.md` §7.3 "The chart is a solved cache" define exact pcurves for the supported analytic, boundary-isocurve, affine-axis interior-isocurve, polar-NURBS, ruled-surface, and complete intersection-cache cases. The affine-axis constructions apply symmetrically to the `u` and `v` axes. A complete width-4 intersection witness supplies co-parameterized solved UV caches for both support surfaces. The Parasolid stream does not store a general two-dimensional NURBS trim control array.
-
-**Need.** We must know the convention to construct the trim in the surface parameter space.
 
 ### GC-02. Missing intersection witnesses
 
@@ -102,33 +70,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the carrier grammar and field semantics to construct the exact offset surface and preserve its orientation.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep/offset.rs:22-85` accepts the `00 3c` shape, discriminator bytes `V`, `I`, or `U`, a flag, a support attribute, and a finite distance. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1507-1615` evaluates it as the same signed normal offset and uses it before blend and sweep fallbacks. The parser and nested-offset tests use synthetic records in `src/tests.rs:357-371`, `8549-8592`, and `8691-8715`; identical offset semantics for all discriminators and flags have not been verified against corpus records. A valid carrier with another meaning would be silently decoded as the same offset surface.
-
 ### GC-05. Variable-radius blend carriers
 
 **Question.** Which native carrier stores the result and radius law of a variable-radius blend, and how does it bind to the feature history?
 
-**Known.** `sldprt.md` §7.4 states that a variable-radius result uses a `00 7c` B-spline surface-use wrapper or NURBS carrier and that feature history carries its design intent.
+**Known.** `sldprt.md` §7.4 defines the generic `00 7c` B-spline surface-use wrapper and NURBS carrier. Feature history separately carries variable-radius design intent.
 
-**Need.** We must know the carrier and relation to reconstruct variable-radius blend geometry and its radius law.
-
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep/spline.rs:814-960` parses generic `00 7c` NURBS surface carriers, but does not identify a variable-radius blend. The variable-radius Keywords feature in `history.rs` carries history data only. The test `src/tests.rs:13308-13383` uses a synthetic Keywords feature and does not contain a native B-rep result carrier. If multiple generic `00 7c` surfaces exist, the decoder emits generic NURBS without a radius-law identity or a native history binding. The specification promotes an unverified association.
-
-### GC-06. Surface-intersection surface carriers
-
-**Question.** Which record carries surface-intersection surface geometry, and what is its payload grammar?
-
-**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," defines curve carriers for the intersection of two surfaces. It does not define a surface carrier for this geometry family.
-
-**Need.** We must know the carrier to construct the exact surface.
-
-### GC-07. Spline-on-surface carriers
-
-**Question.** Which record carries spline-on-surface surface geometry, and what is its payload grammar?
-
-**Known.** `sldprt.md` §7.1 "Stream-scope" defines B-spline surface and curve carriers. It does not define the relation that makes a spline a curve on a support surface.
-
-**Need.** We must know the carrier and relation to construct the exact surface geometry.
+**Need.** We must define the native relation that binds one variable-radius history feature and its radius law to one result carrier.
 
 ### GC-08. Duplicate geometry carrier identities
 
@@ -138,17 +86,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must select the authoritative carrier without silently changing geometry when a duplicate record is present.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep.rs:180-190` overwrites analytic carriers with `HashMap::insert`; `brep/blend.rs:135-155` keeps the first blend/support pair with `or_insert`; `brep/offset.rs:77-85` keeps the last offset carrier; and `brep/spline.rs:267-309`, `:732-747`, and `:814-960` keep the first descriptor or carrier. If two structurally valid records share an attribute but carry different geometry, the selected record depends on carrier family and byte order. The maps apply structural filters, but no native uniqueness or precedence relation is decoded.
-
 ### GC-09. Conflicting surface carrier families
 
 **Question.** Which surface carrier family owns a face when analytic, offset, blend, or sweep candidates are all structurally valid for the same surface attribute?
 
 **Known.** `sldprt.md` §7 defines analytic and procedural surface carriers, but does not define a conflict rule between valid carrier families.
 
-**Need.** We must know the native family discriminator or ownership relation to select the exact face support.
-
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1507-1635` accepts an analytic surface first, then evaluates an offset, blend, and later sweep fallback. It does not prove that the rejected families are invalid when the first candidate is valid. If a face has valid carriers from two families, the branch order selects one without a native ownership field. Offset support and cycle checks reject some malformed candidates, but they do not settle the conflict when multiple candidates pass.
+**Need.** We must define the native family discriminator or ownership relation that selects one exact face support when several carrier families are structurally valid.
 
 ## 3. Container metadata
 
@@ -184,18 +128,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the fill semantics to validate and write the tail directory.
 
-### CM-05. Other inline entity families
-
-**Question.** What fixed slot count does each bare inline entity family outside the canonical face families use in each Parasolid schema?
-
-**Known.** `sldprt.md` §5 "Top-level entity families include" defines the common entity header. `sldprt.md` §5 "Bare entity framing is defined for schema revisions" defines the supported schema revisions, disc families, and six-, seven-, and nine-slot forms. `sldprt.md` §10 "Bare inline `00 51` subrecords use a fixed slot count" defines bare record boundaries. A prefixed record is self-delimiting because its `[01][hi][lo]` slot run ends at the first `00` byte.
-
-**Need.** We must know each bare slot count to find bare record boundaries without treating payload bytes as delimiters.
-
-The decoder uses the schema revision and an explicit `(disc, flo) -> slot count` table for the bare entity families consumed by its body-layout recognizers. An unlisted schema revision or family remains unresolved. Prefixed records do not use the table because their zero terminator frames the reference run.
-
-The attribute scanner accepts only the exact supported family names followed immediately by a `00 50` definition. It accepts only the list widths that the supported family grammars define: one, or five through seven. A name or list must fit in the remaining stream bytes. Name, definition, and list nodes must be nonsentinel. Duplicate definition and list identities must be byte-equivalent; the decoder withholds a conflicting identity. An instance becomes a relation only when its target survives as an emitted face or an explicit body.
-
 ### CM-06. Partition and deltas precedence
 
 **Question.** Which topology record is authoritative when partition and deltas streams describe the same site with different valid records?
@@ -204,8 +136,6 @@ The attribute scanner accepts only the exact supported family names followed imm
 
 **Need.** We must know the native precedence relation to merge partition and deltas topology without retaining stale or duplicate faces.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:775-809` sorts streams by whether their description contains `deltas`, and `brep/topology.rs:359-383` preserves the partition bridge while merging missing deltas records. The only closure test, `partition_topology_wins_when_deltas_reuse_a_bridge_identity`, uses the same bridge identity. It does not establish precedence for equal-site records with different valid topology. The stream description and iteration order are not evidence of a native precedence field.
-
 ### CM-07. `moTransRefPlaneData_c` gap
 
 **Question.** What does the byte run between the `moTransRefPlaneData_c` class token and the first of its nine f64 values encode, and what fixes its length?
@@ -213,18 +143,6 @@ The attribute scanner accepts only the exact supported family names followed imm
 **Known.** The decoder requires an eight-byte `ff` prefix and reads nine little-endian f64 values after it. The values are the plane center, two in-plane directions, and their normal. A valid transformed reference plane record follows the plane center xyz.
 
 **Need.** We must know the gap to write the record back without moving or inventing undecoded bytes.
-
-**Note.** `crates/cadmpeg-codec-sldprt/src/metadata.rs:43-89` still validates the f64 block by finite-value and extent checks after the fixed prefix. Commit `058e16cbf` changed the scan from the first plausible offset to the `ff` prefix and added the synthetic rejection test `src/tests.rs:22953-22972`; the generated fixture supplies the observed bytes. The prefix-and-nine-values rule has not been verified against corpus records or against complete record framing. Another token occurrence with the same prefix and bounded numbers can be emitted as a plane, while a valid revision with a different gap is skipped.
-
-### CM-09. Active body stream selection
-
-**Question.** Which field identifies the active B-rep stream when no configuration record selects one?
-
-**Known.** The active configuration's `SourceIndex=N` selects `Config-N-Partition`. `Config-N-Deltas`, `Config-N-GhostPartition`, and `Config-N-ResolvedFeatures` do not substitute for that partition. Without an explicit active source index, a sole non-ghost partition is active. Multiple partitions leave active geometry identity unresolved. Stream size and container order do not select one.
-
-**Need.** We must know whether another stored field selects one partition when multiple partitions exist and no configuration record supplies `SourceIndex`.
-
-**Note.** `crates/cadmpeg-codec-sldprt/src/decode.rs:1918-1947` selects `max_by_key((faces, bodies, points, reverse(index)))` when `container::select_active_parasolid` returns no unique candidate. If a file has two non-ghost partition sites and no `SourceIndex`, the richer site is selected without a native identity field. The container selector itself requires an unambiguous candidate, but the decode fallback bypasses that unresolved state.
 
 ### CM-10. Parasolid stream boundary
 
@@ -250,9 +168,9 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does a B-rep face attribute select its triangle range in a DisplayLists block?
 
-**Known.** `sldprt.md` §7.3 "**`00 28` chart**" defines the DisplayLists descriptor table, strip lengths, and triangle-count relations. `sldprt.md` §5 "Face records use these families:" defines B-rep face identities. `sldprt.md` §8 defines unambiguous ownership from incidence with one analytic face support and from complete convex planar trims with circular inner loops. Other coincident trims and non-analytic supports do not supply the stored face-range mapping.
+**Known.** `sldprt.md` §7.3 "**`00 28` chart**" defines the DisplayLists descriptor table, strip lengths, and triangle-count relations. `sldprt.md` §4 "Primary ownership chain:" defines the B-rep face topology. `sldprt.md` §8 defines the complete persistent identity path carried by matching B-rep attributes and DisplayLists references, as well as unambiguous ownership from incidence with one analytic or NURBS face support and from complete bounded planar, cylindrical, and conical trims. Procedural, polygonal, opaque, and non-exact NURBS supports, other coincident trims, and tables without a complete matching identity do not supply the stored face-range mapping.
 
-**Need.** We must know the stored mapping to attach tables whose support is ambiguous or non-analytic.
+**Need.** We must know the stored mapping to attach tables whose support is ambiguous or unsupported, including non-exact NURBS caches, and carry no complete matching persistent identity.
 
 ### AL-03. DisplayLists extended table-header token
 
@@ -269,8 +187,6 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 **Known.** `sldprt.md` §2 defines the supported helix input as a counted XYZ polyline. It does not define a native rule that ranks multiple candidate arrays by point count.
 
 **Need.** We must know the polyline identity to bind the helix to the correct input geometry.
-
-**Note.** `crates/cadmpeg-codec-sldprt/src/parasolid.rs:183-243` scans every `00 22` array, retains finite XYZ candidates, sorts by scalar count, and selects the largest; equal-size candidates are rejected. If a feature-input payload contains a mesh array and an unrelated finite point array, the largest array is selected even when no native field binds it to the helix. The finite/count shape gate and tie rejection are counter-evidence against arbitrary byte acceptance, but they do not establish the largest-array rule.
 
 ### AL-05. Appearance ownership beyond DisplayLists
 
@@ -374,11 +290,9 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** Which native field marks dimensioned circular geometry as construction geometry when absent from the selected profile stream?
 
-**Known.** The exact compact legacy and extended radial layouts, their native code and role fields, and the `sgSlot` relation identify the supported dimensioned-circle roster. The selected profile stream can omit construction circles.
+**Known.** The exact compact legacy and extended radial layouts, their native code and role fields, the `sgSlot` relation, and the current-prefix geometry-locus `sgArcHandle` point carrier identify supported dimensioned-circle records. A declared `sgEntHandle` operand that references the exact point carrier supplies its center even when no radial record is present. Tags `d4 80` and `d5 80` directly carry a finite same-feature point or constrained-point center whose local identifier equals the operand address; their explicit identity takes precedence over pair and radius searches. Other native `sgCircleDim` tags use that same explicit point identity only after no declared pair, child, geometry-locus, or unique circular-witness carrier resolves. The reference must resolve in the unique declaring `sgEntHandle` lane to a finite same-feature point or constrained-point marker whose local identifier equals the operand address. A point that is the radial member of a declared pair cannot supply this fallback center; an invalid or ambiguous identity remains native. A declared `sgEntHandle` operand also accepts an adjacent center/radial point pair when the center local identifier equals the radial object index; the radial local identifier is either absent or zero in the ordinary form, or nonzero in the indexed point form. Tag `6e 83` uses an unreferenced lane-local `sgEntHandle` to select an indexed adjacent point pair from an even coordinate-bearing roster; every pair must carry the center-local-to-radial-object join and a nonzero radial local identifier. A declared `sgEntHandle` operand with an explicit `sgSlot_c` marker accepts one unique scoped `sgSlotHandle` class with exactly two current `e7 88` cells: the first cell identifies the slot and the second identifies one of the slot's selected center points. That form carries a construction circle centered at the selected point. A coordinate-less `line_or_circle` marker before the operand with exactly two identical links to one earlier same-feature `Arc` marker is also an arc carrier when both local identifiers match and the arc passes its endpoint or unique-later-radial-witness validation. Multiple, mismatched, or invalid linked carriers remain native. The selected profile stream can omit construction circles.
 
-**Need.** We must know the discriminator to prevent an omitted construction circle from becoming profile geometry.
-
-**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/dimensions.rs` now joins each omitted dimension center to the native radial-circle roster and propagates the radial record's role-2 construction state through dimension-carrier, point-witness, and circle-only-carrier projections. A non-empty lane with no unique radial role or with conflicting role matches remains native instead of becoming profile geometry. The remaining unknown is the native discriminator for a dimension carrier that has no recoverable radial record at all.
+**Need.** We must know the discriminator for dimensioned-circle operands that have no radial record, do not reference the exact geometry-locus `sgArcHandle` carrier, and do not use the settled point, pair, slot, or duplicate-link arc identities.
 
 ### DI-13. Marker-only profile placement
 
@@ -400,7 +314,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** Which endpoint does the u32 selector in an up-to-vertex code-`3` edge-endpoint reference select?
 
-**Known.** The point-reference form retains the edge and endpoint selector. `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" states how ordinary point-reference object indices resolve.
+**Known.** The point-reference form retains the edge and endpoint selector. The decoder retains the little-endian u32 at four bytes before the duplicated selection-vector marker as `endpoint_selector`. `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" states how ordinary point-reference object indices resolve.
 
 **Need.** We must know the selector values to terminate the extrusion at the correct edge endpoint.
 
@@ -440,7 +354,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** What is the disposition of a feature-local face identity when no surviving face carries that identity?
 
-**Known.** `sldprt.md` §2 "An extrusion object-name record is followed by four zero bytes, a little-endian u16 family word," through `sldprt.md` §2 "When operation objects and their dimension children form separate ordered groups, a blind" define the `moSingleFaceRef_w` path forms and their feature-local face selection. `sldprt.md` §5 "Face records" defines how the terminal owner and feature-local face identity select the surviving face through `ATOM_ID_2001`.
+**Known.** `sldprt.md` §2 "An extrusion object-name record is followed by four zero bytes, a little-endian u16 family word," through `sldprt.md` §2 "When operation objects and their dimension children form separate ordered groups, a blind" define the `moSingleFaceRef_w` path forms and their feature-local face selection. `sldprt.md` §4.1 "The fourth FACE reference is the owning SHELL." defines the typed face relation, and §5 defines how the terminal owner and feature-local face identity select the surviving face through `ATOM_ID_2001`.
 
 **Need.** We must distinguish a face consumed by a later operation from a face whose owner or identity attribute was not decoded.
 
@@ -464,7 +378,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does a body selected by a compact `moCombineBodies_c` target or tool path map to a body in the final B-rep?
 
-**Known.** The compact paths identify generated feature-local bodies. A complete target or tool path projects to one generated body reference whose feature is the terminal path producer, whose local identity is the ordered path-local sequence, and whose dependencies include every uniquely identified traversed history feature. `sldprt.md` §4.2 "00 01 00 01" through `sldprt.md` §6 "The disc22-disc12-face layout uses one `0x22/flo2` region with a slot-1 sentinel and the chain" define final B-rep body identities and ownership. `ATOM_ID_2001` carries face identities and does not bind a feature-local body identity.
+**Known.** The compact paths identify generated feature-local bodies. A complete target or tool path projects to one generated body reference whose feature is the terminal path producer, whose local identity is the ordered path-local sequence, and whose dependencies include every uniquely identified traversed history feature. `sldprt.md` §4.3 "00 01 00 01" through `sldprt.md` §6 "Body membership is the typed XT ownership graph." define final B-rep body identities and ownership. `ATOM_ID_2001` carries face identities and does not bind a feature-local body identity.
 
 **Need.** We must know the mapping to bind the Boolean target and tool bodies.
 
@@ -472,7 +386,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does an `moDeleteBody_c` regeneration-input-local body identity map to a body in the final B-rep?
 
-**Known.** The compact record retains the regeneration-input-local identity. `sldprt.md` §4.2 "00 01 00 01" through `sldprt.md` §6 "The disc22-disc12-face layout uses one `0x22/flo2` region with a slot-1 sentinel and the chain" define final B-rep body identities and ownership.
+**Known.** The compact record retains the regeneration-input-local identity. `sldprt.md` §4.3 "00 01 00 01" through `sldprt.md` §6 "Body membership is the typed XT ownership graph." define final B-rep body identities and ownership.
 
 **Need.** We must know the mapping to delete the selected final body.
 
@@ -480,7 +394,7 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Question.** How does an edge selected by an entry-form `moCompEdge_c` path map to an edge in the final B-rep?
 
-**Known.** The entry path identifies a generated feature-local edge. `sldprt.md` §3.2 "An attribute" through `sldprt.md` §4 "**Bridge `00 0e`:** `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact" define final B-rep edge identity and direction. `ATOM_ID_2001` carries no edge identity. The `EDGE_PERM_ID_2_2003` attribute grammar is not defined.
+**Known.** The entry path identifies a generated feature-local edge. `sldprt.md` §3.2 "An attribute" through `sldprt.md` §4 "**Bridge `00 0e`:** `attr` is u16 BE at body +0" define final B-rep edge identity and direction. `ATOM_ID_2001` carries no edge identity. The `EDGE_PERM_ID_2_2003` attribute grammar is not defined.
 
 **Need.** We must know the mapping to bind the selected operation edge.
 
@@ -491,14 +405,6 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 **Known.** `sldprt.md` §2 defines the duplicated-marker framing, count, lane-local selector, typed and reference-list entry forms, separators, terminal slots, and lane-local type signatures. The decoder retains the ordered compact vector and its producer-feature paths. The terminal component identifies a feature-local generated edge, but it does not by itself identify the final B-rep edge.
 
 **Need.** We must define the topology join from the retained compact edge identity to the final B-rep edge before projecting the selected edge.
-
-### DI-27. Component-surface-body reconciliation
-
-**Question.** How does a face selected by an `moCompSurfaceBody_c` path map to a face in the final B-rep?
-
-**Known.** The path identifies a generated feature-local face. `sldprt.md` §4.2 "Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a `[hi][lo][01]`" defines final B-rep face identities.
-
-**Need.** We must know the mapping to bind the selected surface-body faces.
 
 ### DI-28. Unbound general-curve references
 
@@ -540,8 +446,6 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the record width and direction field to decode each line reference without choosing a candidate by plausibility.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs` collects every structurally valid direction candidate for an addressed width and rejects the record when distinct candidates disagree. The documented specific-layout precedence remains only when the candidates agree; the native authoritative width and trailer semantics remain unknown.
-
 ### DI-34. SWIFT implicit nominal construction
 
 **Question.** Which nominal-geometry rule applies to each remaining feature-size annotation whose `Nominal` field is zero and whose `Dimension` field is absent or zero?
@@ -566,33 +470,61 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** Distinguish the wrapper selector byte and the tail words between the surface-body identity pair and the termination sentinels with labeled parts cut to opposite sides before assigning the reverse value.
 
-### DI-37. Circular-pattern axis carrier
+### DI-39. `moTempAxisRef_w` carrier end and middle triple
 
-**Question.** Which native record supplies the axis origin and direction for an `moCirPattern_c` interval after its seed identity resolves?
+**Question.** What fixes the end of a `moTempAxisRef_w` nine-scalar carrier, and what do its scalars at `+263`, `+271`, and `+279` hold?
 
-**Known.** `sldprt.md` defines the `moCirPatternSurfIdRep_c` generated-surface identity path and its seed join. The interval retains the circular count and angle parameters. The identity path does not contain a complete axis frame, so the neutral circular-pattern axis remains unresolved.
+**Known.** `sldprt.md` §2 "An `moCirPattern_c` interval retains its repeated seed" gives the carrier at offsets `+0` through `+311`, the axis origin at `+239`, the axis direction at `+287`, and zero padding of at most 24 bytes before the next class declaration. `crates/cadmpeg-codec-sldprt/src/resolved_features/axes.rs:786-863` searches that 24-byte window for the next class marker and rejects the carrier when the search fails. The specification gives no stored field that fixes the padding length. The decoder reads the three scalars between the origin and the direction, tests them for a finite value, and then discards them.
 
-**Need.** We must recover the axis frame to construct `PatternKind::Circular` and replay the pattern.
+**Need.** We must know the field that ends the carrier, so the record does not need a tuned search window, and the middle triple, so the complete axis frame is decoded.
 
-### DI-33. SWIFT feature-to-topology identity
+### DI-40. Extrusion profile identity without an explicit profile relation
 
-**Question.** How does each `GdtAnalysis.CadRef.CadIdentifier` select a Parasolid body, face, edge, or vertex identity?
+**Question.** Which native relation binds the profile of a classless
+`Extrusion` or `DissectableRoot` extrusion when `Profile` and
+`DissectableChildren` do not identify a sketch?
 
-**Known.** `sldprt.md` §2.1 defines the SWIFT annotation-to-feature graph. Each semantic feature can own a `CadReferences` collection. Each `CadRef` stores a `CadIdentifier`. An empty identifier supplies no topology identity. The annotation target remains the stable GDT-analysis feature identity when that identifier does not resolve to one neutral topology object.
+**Known.** An explicit `Profile` attribute or a single dissected sketch child
+binds the profile. Source identifiers order feature records, but ordering alone
+does not establish that an earlier sketch is the extrusion's regeneration
+input.
 
-**Need.** We must know the identity conversion to attach semantic PMI to the exact neutral topology object.
+**Need.** We must decode the profile dependency before projecting the extrusion
+with a neutral sketch profile.
 
-## 6. Write-path evidence
+**Conflict.** `project_extrude` in `src/history/project/solid.rs` selects the
+non-origin sketch with the greatest source identifier smaller than the
+extrusion's source identifier for the supported profile-less forms. An
+unrelated intervening sketch can therefore be projected as the extrusion
+profile solely because it is nearest in source order.
 
-### EV-03. Regenerated `SWObjects` record content
+### DI-41. Pattern seed identity without a resolved seed relation
 
-**Question.** What do the undecoded bytes of a regenerated `SWObjects` metadata record hold?
+**Question.** Which native relation binds the seed of a linear or mirror pattern
+when its component vectors and persistent generated-surface identities do not
+resolve a seed feature?
 
-**Known.** The semantic writer computes machine-local digests over the decoded metadata attributes, their source identities, and the material state represented by `SWObjects`. When that state is unchanged, it replays every retained `SWObjects` section byte-for-byte. It patches decoded fixed-width metadata fields in place while preserving every other byte. It refuses material edits, record-set changes, and variable-width edits because replacing or shifting a retained record would discard or relocate undecoded bytes. A source-less document uses the generated record forms.
+**Known.** Complete component paths and generated-surface identities can bind a
+pattern seed directly. A derived cosmetic-thread output identifies a generated
+child, not by itself the input feature that the pattern repeats. Feature order
+does not establish seed ownership.
 
-The decoder reads configuration-manager fields at `+66`, `+107`, and `+117`, two fields of `moPart_c`, and the colour and name of `moVisualProperties_c`. The source-less writer emits a 125-byte configuration-manager record with every other byte zero, a 13-byte `moPart_c` record, and the constant `0x00c0_c0c0` inside each material record. That constant is not in `sldprt.md`. The two record lengths are not fixed by any field or specification sentence.
+**Need.** We must decode the seed relation before assigning a preceding history
+feature as the repeated neutral feature.
 
-The metadata attributes carry `Exactness::ByteExact`. Retained-section replay satisfies that contract for an unchanged decoded state.
+**Conflict.** `bind_pattern_inputs` in `src/resolved_features/bindings.rs`
+uses the nearest preceding sibling `moCosmeticThread_c` feature when a pattern
+has a derived cosmetic-thread output and no resolved seed. Another fallback
+uses the immediately preceding feature-input object. Either rule can assign an
+unrelated preceding feature as the pattern seed.
+
+## 6. Container record semantics
+
+### EV-03. `SWObjects` record content
+
+**Question.** What fields and relations occupy the unresolved bytes of each `SWObjects` metadata record?
+
+**Known.** Configuration-manager values occur at offsets `+66`, `+107`, and `+117`; `moPart_c` has two defined fields; and `moVisualProperties_c` defines colour and name fields. The remaining bytes, the complete record lengths, and the role of `0x00c0_c0c0` in material records are undefined.
 
 **Need.** We must know what the undecoded bytes hold before the writer can edit a retained record or claim that a generated record is complete.
 
@@ -600,8 +532,6 @@ The metadata attributes carry `Exactness::ByteExact`. Retained-section replay sa
 
 **Question.** Which value does a tail-directory entry's 14-byte descriptor hold?
 
-**Known.** `sldprt.md` §1.3 "The file tail carries an **OPC package section directory**" states that the 6-byte trailer "has one value for all entries in a file, for example `e5 4b 57 5b 00 00`", and that its first four bytes are the directory separator.
-
-The decoder retains each descriptor and trailer. A rewritten existing entry retains its descriptor. Every generated entry uses the source directory's unique trailer, so one directory does not mix separators.
+**Known.** `sldprt.md` §1.3 defines a 14-byte descriptor and a 6-byte trailer for each tail-directory entry. The trailer has one value for all entries in a file, and its first four bytes are the directory separator.
 
 **Need.** We must know the descriptor semantics before a new entry can derive a nonzero descriptor without a same-name source entry.

@@ -317,6 +317,10 @@ pub struct FeatureInputSurfaceSelection {
     /// Low selector subtype stored in the vector header.
     #[serde(default)]
     pub selector: u8,
+    /// Opaque endpoint selector stored four bytes before an edge-endpoint
+    /// `ToVertex` selection vector marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint_selector: Option<u32>,
     /// Feature-input name record owning this selection.
     pub object_name_ref: String,
     /// Native history feature owning this selection.

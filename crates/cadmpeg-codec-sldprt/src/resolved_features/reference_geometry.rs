@@ -2176,20 +2176,61 @@ pub(super) fn legacy_offset_plane_face_alias(payload: &[u8]) -> Option<(usize, u
 
 pub(super) const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = 81;
 const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
+const ANGLED_REFERENCE_PLANE_FRAME_LEN: usize = 121;
+const REFERENCE_PLANE_FRAME_TOLERANCE: f64 = 1.0e-9;
 
 pub(super) fn explicit_reference_plane_frame(
     payload: &[u8],
 ) -> Result<Option<(Point3, Vector3, Vector3)>, ()> {
     let matrix_candidates = matrix_reference_plane_frame_candidates(payload);
     let fixed_candidates = fixed_reference_plane_frame_candidates(payload, &matrix_candidates);
+    let compact_candidates = compact_reference_plane_frame_candidates(payload);
+    let angled_candidates = angled_reference_plane_frame_candidates(payload);
+    let strong_ranges = matrix_candidates
+        .iter()
+        .map(|(offset, _)| (*offset, matrix_plane::LEN))
+        .chain(
+            fixed_candidates
+                .iter()
+                .map(|(offset, _)| (*offset, fixed_plane::LEN)),
+        )
+        .collect::<Vec<_>>();
     let mut frames = matrix_candidates
         .iter()
         .map(|(_, frame)| *frame)
         .collect::<Vec<_>>();
     frames.extend(fixed_candidates.iter().map(|(_, frame)| *frame));
-    frames.extend(angled_reference_plane_frame(payload));
+    frames.extend(
+        angled_candidates
+            .iter()
+            .filter(|(offset, _)| {
+                strong_ranges.iter().all(|(strong_offset, strong_len)| {
+                    !ranges_overlap(
+                        *offset,
+                        ANGLED_REFERENCE_PLANE_FRAME_LEN,
+                        *strong_offset,
+                        *strong_len,
+                    )
+                })
+            })
+            .map(|(_, frame)| *frame),
+    );
     frames.extend(minimal_reference_plane_frame(payload));
-    frames.extend(compact_reference_plane_frame(payload));
+    frames.extend(
+        compact_candidates
+            .iter()
+            .filter(|(offset, _)| {
+                strong_ranges.iter().all(|(strong_offset, strong_len)| {
+                    !ranges_overlap(
+                        *offset,
+                        COMPACT_REFERENCE_PLANE_FRAME_LEN,
+                        *strong_offset,
+                        *strong_len,
+                    )
+                })
+            })
+            .map(|(_, frame)| *frame),
+    );
     frames.sort_by_key(reference_plane_frame_key);
     frames.dedup_by(|left, right| left == right);
     match frames.as_slice() {
@@ -2209,10 +2250,17 @@ pub(super) fn constraint_reference_plane_frame(
         "moConstraintCoincLineAtAnglePlaneRefplaneData_c" => {
             matrix_reference_plane_frame(payload.get(body..body + matrix_plane::LEN)?)
         }
-        "moConstraintPerpPlnTanOneCylinderRefplaneData_c"
+        "moConstraintCoincLineParallelPlaneRefplaneData_c"
+        | "moConstraintPerpPlnTanOneCylinderRefplaneData_c"
         | "moFacePtRefPlnData_c"
         | "moFixedRefPlnData_c" => {
-            fixed_reference_plane_frame(payload.get(body..body + fixed_plane::LEN)?)
+            let frame = payload.get(body..body + fixed_plane::LEN)?;
+            if class_name == "moFixedRefPlnData_c" {
+                fixed_reference_plane_frame(frame)
+                    .or_else(|| repeated_normal_reference_plane_frame(frame))
+            } else {
+                fixed_reference_plane_frame(frame)
+            }
         }
         "moDefaultRefPlnData_c" | "moConstraintPrllPlnTanOneCylinderRefplaneData_c" => {
             minimal_reference_plane_frame(
@@ -2283,11 +2331,59 @@ pub(super) fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vecto
     );
     ([normal, u_axis, v_axis]
         .into_iter()
-        .all(|vector| (vector.norm() - 1.0).abs() <= 1.0e-9)
-        && normal.dot(u_axis).abs() <= 1.0e-9
-        && normal.dot(v_axis).abs() <= 1.0e-9
-        && u_axis.dot(v_axis).abs() <= 1.0e-9)
+        .all(|vector| (vector.norm() - 1.0).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE)
+        && normal.dot(u_axis).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE
+        && normal.dot(v_axis).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE
+        && u_axis.dot(v_axis).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE)
         .then_some((origin, normal, u_axis))
+}
+
+fn repeated_normal_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    if bytes.len() != fixed_plane::LEN || bytes.get(fixed_plane::FRAME_MARKER) != Some(&1) {
+        return None;
+    }
+    let scalar = |offset| {
+        let value = View::f64_le_at(bytes, offset)?;
+        value.is_finite().then_some(value)
+    };
+    let origin = Point3::new(
+        scalar(fixed_plane::ORIGIN)? * NATIVE_TO_IR,
+        scalar(fixed_plane::ORIGIN + 8)? * NATIVE_TO_IR,
+        scalar(fixed_plane::ORIGIN + 16)? * NATIVE_TO_IR,
+    );
+    let normal = Vector3::new(
+        scalar(fixed_plane::NORMAL)?,
+        scalar(fixed_plane::NORMAL + 8)?,
+        scalar(fixed_plane::NORMAL + 16)?,
+    );
+    let first_axis = Vector3::new(
+        scalar(fixed_plane::U_AXIS)?,
+        scalar(fixed_plane::U_AXIS + 8)?,
+        scalar(fixed_plane::U_AXIS + 16)?,
+    );
+    let second_axis = Vector3::new(
+        scalar(fixed_plane::V_AXIS)?,
+        scalar(fixed_plane::V_AXIS + 8)?,
+        scalar(fixed_plane::V_AXIS + 16)?,
+    );
+    let unit = |vector: Vector3| (vector.norm() - 1.0).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE;
+    let plane_axis = |vector: Vector3| {
+        unit(vector) && normal.dot(vector).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE
+    };
+    let repeated_normal = |vector: Vector3| {
+        unit(vector)
+            && (normal.dot(vector).abs() - 1.0).abs() <= REFERENCE_PLANE_FRAME_TOLERANCE
+            && normal.cross(vector).norm() <= REFERENCE_PLANE_FRAME_TOLERANCE
+    };
+    let u_axis = if plane_axis(first_axis) && repeated_normal(second_axis) {
+        first_axis
+    } else if plane_axis(second_axis) && repeated_normal(first_axis) {
+        second_axis
+    } else {
+        return None;
+    };
+    Some((origin, normal, u_axis))
 }
 
 type ReferencePlaneFrame = (Point3, Vector3, Vector3);
@@ -2305,7 +2401,9 @@ fn fixed_reference_plane_frame_candidates(
                 .all(|(matrix_offset, _)| matrix_offset != offset)
         })
         .filter_map(|(offset, bytes)| {
-            fixed_reference_plane_frame(bytes).map(|frame| (offset, frame))
+            fixed_reference_plane_frame(bytes)
+                .or_else(|| repeated_normal_reference_plane_frame(bytes))
+                .map(|frame| (offset, frame))
         })
         .collect()
 }
@@ -2397,9 +2495,7 @@ pub(super) fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vecto
             .then_some(offset + record_len)
         })
         .filter_map(|body| {
-            if payload.get(body..body + 8)?.iter().any(|byte| *byte != 0) {
-                return None;
-            }
+            payload.get(body..body + 8)?;
             let scalar = |relative| {
                 let value = View::f64_le_at(payload, body + relative)?;
                 value.is_finite().then_some(value)
@@ -2466,8 +2562,9 @@ pub(super) fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vecto
     Some(*frame)
 }
 
-pub(super) fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
-    const RECORD_LEN: usize = 121;
+fn angled_reference_plane_frame_candidates(
+    payload: &[u8],
+) -> Vec<(usize, (Point3, Vector3, Vector3))> {
     let scalar = |bytes: &[u8], relative| {
         let value = View::f64_le_at(bytes, relative)?;
         value.is_finite().then_some(value)
@@ -2477,20 +2574,21 @@ pub(super) fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Ve
         .enumerate()
         .filter_map(|(offset, bytes)| {
             fixed_reference_plane_frame(bytes)
+                .or_else(|| repeated_normal_reference_plane_frame(bytes))
                 .is_some()
                 .then_some(offset..offset + fixed_plane::LEN)
         })
         .collect::<Vec<_>>();
-    let mut frames = payload
-        .windows(RECORD_LEN)
+    let frames = payload
+        .windows(ANGLED_REFERENCE_PLANE_FRAME_LEN)
         .enumerate()
         .filter(|(offset, _)| {
-            let range = *offset..*offset + RECORD_LEN;
+            let range = *offset..*offset + ANGLED_REFERENCE_PLANE_FRAME_LEN;
             fixed_ranges
                 .iter()
                 .all(|fixed| range.end <= fixed.start || range.start >= fixed.end)
         })
-        .filter_map(|(_, bytes)| {
+        .filter_map(|(offset, bytes)| {
             if bytes.get(16) != Some(&1)
                 || bytes.get(89..113)?.iter().any(|byte| *byte != 0)
                 || scalar(bytes, 113)? != 1.0
@@ -2512,24 +2610,10 @@ pub(super) fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Ve
             {
                 return None;
             }
-            Some((Point3::new(0.0, 0.0, 0.0), normal, u_axis))
+            Some((offset, (Point3::new(0.0, 0.0, 0.0), normal, u_axis)))
         })
         .collect::<Vec<_>>();
-    frames.sort_by_key(|(_, normal, u_axis)| {
-        [
-            normal.x.to_bits(),
-            normal.y.to_bits(),
-            normal.z.to_bits(),
-            u_axis.x.to_bits(),
-            u_axis.y.to_bits(),
-            u_axis.z.to_bits(),
-        ]
-    });
-    frames.dedup();
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+    frames
 }
 
 pub(super) fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
@@ -2653,6 +2737,21 @@ pub(super) fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
 }
 
 pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    let mut frames = compact_reference_plane_frame_candidates(payload)
+        .into_iter()
+        .map(|(_, frame)| frame)
+        .collect::<Vec<_>>();
+    frames.sort_by_key(reference_plane_frame_key);
+    frames.dedup();
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    Some(*frame)
+}
+
+fn compact_reference_plane_frame_candidates(
+    payload: &[u8],
+) -> Vec<(usize, (Point3, Vector3, Vector3))> {
     const NATIVE_TO_IR: f64 = 1000.0;
     let scalar = |bytes: &[u8], relative| {
         let value = View::f64_le_at(bytes, relative)?;
@@ -2660,8 +2759,9 @@ pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
     };
     let mut frames = payload
         .windows(COMPACT_REFERENCE_PLANE_FRAME_LEN)
-        .filter(|bytes| bytes[64] == 0 && bytes[81] == 0)
-        .flat_map(|bytes| {
+        .enumerate()
+        .filter(|(_, bytes)| bytes[64] == 0 && bytes[81] == 0)
+        .flat_map(|(offset, bytes)| {
             let Some(origin) = (|| {
                 Some(Point3::new(
                     scalar(bytes, 0)? * NATIVE_TO_IR,
@@ -2703,29 +2803,23 @@ pub(super) fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, V
                         && (normal.dot(normal) - 1.0).abs() <= 1.0e-9
                         && (normal.x - normal_xy.0).abs() <= 1.0e-9
                         && (normal.y - normal_xy.1).abs() <= 1.0e-9)
-                        .then_some((origin, normal, u_axis))
+                        .then_some((offset, (origin, normal, u_axis)))
                 })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    frames.sort_by_key(|(origin, normal, u_axis)| {
-        [
-            origin.x.to_bits(),
-            origin.y.to_bits(),
-            origin.z.to_bits(),
-            normal.x.to_bits(),
-            normal.y.to_bits(),
-            normal.z.to_bits(),
-            u_axis.x.to_bits(),
-            u_axis.y.to_bits(),
-            u_axis.z.to_bits(),
-        ]
-    });
-    frames.dedup();
-    let [frame] = frames.as_slice() else {
-        return None;
-    };
-    Some(*frame)
+    frames.sort_by_key(|(offset, frame)| (*offset, reference_plane_frame_key(frame)));
+    frames
+}
+
+fn ranges_overlap(
+    left_offset: usize,
+    left_len: usize,
+    right_offset: usize,
+    right_len: usize,
+) -> bool {
+    left_offset < right_offset.saturating_add(right_len)
+        && right_offset < left_offset.saturating_add(left_len)
 }
 
 #[cfg(test)]
@@ -2733,3 +2827,6 @@ mod reference_geometry_tests;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod frame_ownership;

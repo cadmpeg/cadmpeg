@@ -836,37 +836,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 pub(crate) fn active_parasolid_summary(
     scan: &ContainerScan,
 ) -> Option<(String, usize, crate::parasolid::StreamHeader)> {
-    if let Some((block, header)) = select_active_parasolid(scan) {
-        return Some((
-            block
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", block.offset)),
-            block.ps_stream.as_ref()?.len(),
-            header,
-        ));
-    }
-    let candidates = scan
-        .compound_streams
-        .iter()
-        .flat_map(|stream| {
-            stream.ps_streams.iter().filter_map(move |payload| {
-                let header = crate::parasolid::stream_header(payload)?;
-                let path = stream.path.to_ascii_lowercase();
-                let description = header.description.to_ascii_lowercase();
-                (crate::parasolid::is_body_stream(&header)
-                    && !path.contains("ghost")
-                    && !description.contains("ghost")
-                    && (path.contains("partition") || description.contains("partition"))
-                    && !path.contains("deltas")
-                    && !description.contains("deltas"))
-                .then_some((stream.path.clone(), payload.len(), header))
-            })
-        })
-        .collect::<Vec<_>>();
-    (candidates.len() == 1)
-        .then(|| candidates.into_iter().next())
-        .flatten()
+    let selected = select_active_parasolid_site(scan)?;
+    Some((selected.name(), selected.payload.len(), selected.header))
 }
 
 /// Test whether either outer envelope carries a framed Parasolid body stream.
@@ -886,54 +857,145 @@ pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
 /// Select the unique Parasolid partition block for the active configuration.
 ///
 /// An explicit active configuration index is authoritative. Without one, the
-/// block envelope must contain exactly one non-ghost partition candidate.
+/// available body sites must contain exactly one non-ghost partition candidate.
+/// This compatibility API returns only a block-envelope site; the decoder uses
+/// [`select_active_parasolid_site`] so both envelopes retain their source site.
 pub fn select_active_parasolid<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Option<(&'a Block, crate::parasolid::StreamHeader)> {
+    let selected = select_active_parasolid_site(scan)?;
+    match selected.origin {
+        ActiveParasolidOrigin::Block(block) => Some((block, selected.header)),
+        ActiveParasolidOrigin::Compound(_) => None,
+    }
+}
+
+/// The source site of one selected Parasolid partition stream.
+#[derive(Clone, Copy)]
+pub(crate) enum ActiveParasolidOrigin<'a> {
+    /// A native block-envelope block.
+    Block(&'a Block),
+    /// A Compound File Binary stream.
+    Compound(&'a CompoundStream),
+}
+
+impl ActiveParasolidOrigin<'_> {
+    fn site_key(self) -> String {
+        match self {
+            Self::Block(block) => format!("block@{}", block.offset),
+            Self::Compound(stream) => format!("compound@{}", stream.directory_id),
+        }
+    }
+}
+
+/// One selected Parasolid partition stream and its source site.
+pub(crate) struct ActiveParasolidSite<'a> {
+    pub(crate) origin: ActiveParasolidOrigin<'a>,
+    pub(crate) payload: &'a [u8],
+    pub(crate) header: crate::parasolid::StreamHeader,
+}
+
+impl ActiveParasolidSite<'_> {
+    pub(crate) fn name(&self) -> String {
+        match self.origin {
+            ActiveParasolidOrigin::Block(block) => block
+                .section
+                .clone()
+                .unwrap_or_else(|| format!("block@{}", block.offset)),
+            ActiveParasolidOrigin::Compound(stream) => stream.path.clone(),
+        }
+    }
+
+    pub(crate) fn site_key(&self) -> String {
+        self.origin.site_key()
+    }
+}
+
+/// Select the unique Parasolid partition stream for the active configuration.
+///
+/// The selector is shared by native and Compound File Binary envelopes. A
+/// body stream is admissible only when its source name and header identify it
+/// as a non-ghost, non-deltas partition. A manifest or explicit source index
+/// narrows the candidates; with no index exactly one candidate is required.
+pub(crate) fn select_active_parasolid_site<'a>(
+    scan: &'a ContainerScan<'_>,
+) -> Option<ActiveParasolidSite<'a>> {
     let active_configuration = active_configuration_index(scan);
-    let candidates = scan
-        .blocks
-        .iter()
-        .flat_map(|block| {
-            let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
-            let section_is_partition = section.contains("partition")
-                && !section.contains("ghost")
-                && !section.contains("deltas")
-                && !section.contains("resolvedfeatures");
-            let section_is_admissible = !section.contains("ghost")
-                && !section.contains("deltas")
-                && !section.contains("resolvedfeatures");
-            let body_streams = block
-                .ps_streams
-                .iter()
-                .filter_map(|payload| {
-                    let header = crate::parasolid::stream_header(payload)?;
-                    crate::parasolid::is_body_stream(&header).then_some(header)
-                })
-                .collect::<Vec<_>>();
-            let sole_body_stream = body_streams.len() == 1;
-            body_streams
-                .into_iter()
-                .filter(move |header| {
-                    let description = header.description.to_ascii_lowercase();
-                    section_is_admissible
-                        && !description.contains("ghost")
-                        && !description.contains("deltas")
-                        && (description.contains("partition")
-                            || sole_body_stream && section_is_partition)
-                })
-                .map(move |header| (block, header))
-                .collect::<Vec<_>>()
-        })
-        .filter(|(block, _)| {
-            active_configuration.is_none_or(|active| {
-                block.section.as_deref().and_then(configuration_index) == Some(active)
+    let mut candidates = Vec::new();
+    for block in &scan.blocks {
+        let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
+        let section_is_partition = section.contains("partition")
+            && !section.contains("ghost")
+            && !section.contains("deltas")
+            && !section.contains("resolvedfeatures");
+        let section_is_admissible = !section.contains("ghost")
+            && !section.contains("deltas")
+            && !section.contains("resolvedfeatures");
+        let body_streams = block
+            .ps_streams
+            .iter()
+            .filter_map(|payload| {
+                let header = crate::parasolid::stream_header(payload)?;
+                crate::parasolid::is_body_stream(&header).then_some((payload, header))
             })
-        })
-        .collect::<Vec<_>>();
-    (candidates.len() == 1)
-        .then(|| candidates.into_iter().next())
-        .flatten()
+            .collect::<Vec<_>>();
+        let sole_body_stream = body_streams.len() == 1;
+        for (payload, header) in body_streams {
+            let description = header.description.to_ascii_lowercase();
+            if !section_is_admissible
+                || description.contains("ghost")
+                || description.contains("deltas")
+                || !(description.contains("partition") || sole_body_stream && section_is_partition)
+                || active_configuration.is_some_and(|active| {
+                    block.section.as_deref().and_then(configuration_index) != Some(active)
+                })
+            {
+                continue;
+            }
+            candidates.push(ActiveParasolidSite {
+                origin: ActiveParasolidOrigin::Block(block),
+                payload,
+                header,
+            });
+        }
+    }
+    for stream in &scan.compound_streams {
+        let path = stream.path.to_ascii_lowercase();
+        let section_is_partition = path.contains("partition")
+            && !path.contains("ghost")
+            && !path.contains("deltas")
+            && !path.contains("resolvedfeatures");
+        let section_is_admissible = !path.contains("ghost")
+            && !path.contains("deltas")
+            && !path.contains("resolvedfeatures");
+        let body_streams = stream
+            .ps_streams
+            .iter()
+            .filter_map(|payload| {
+                let header = crate::parasolid::stream_header(payload)?;
+                crate::parasolid::is_body_stream(&header).then_some((payload, header))
+            })
+            .collect::<Vec<_>>();
+        let sole_body_stream = body_streams.len() == 1;
+        for (payload, header) in body_streams {
+            let description = header.description.to_ascii_lowercase();
+            if !section_is_admissible
+                || description.contains("ghost")
+                || description.contains("deltas")
+                || !(description.contains("partition") || sole_body_stream && section_is_partition)
+                || active_configuration
+                    .is_some_and(|active| configuration_index(&stream.path) != Some(active))
+            {
+                continue;
+            }
+            candidates.push(ActiveParasolidSite {
+                origin: ActiveParasolidOrigin::Compound(stream),
+                payload,
+                header,
+            });
+        }
+    }
+    (candidates.len() == 1).then(|| candidates.remove(0))
 }
 
 pub(crate) fn configuration_index(section: &str) -> Option<usize> {
@@ -946,49 +1008,189 @@ pub(crate) fn configuration_index(section: &str) -> Option<usize> {
 }
 
 pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
-    let active_names = scan
-        .blocks
-        .iter()
-        .filter_map(|block| std::str::from_utf8(&block.payload).ok())
-        .filter_map(|text| roxmltree::Document::parse(text).ok())
-        .filter(|document| document.root_element().has_tag_name("swSolidWorks"))
-        .flat_map(|document| {
+    explicit_active_configuration_index(scan)
+        .or_else(|| manifest_active_configuration(scan).map(|(index, _)| index))
+}
+
+/// Return the active configuration's unique manifest identity, when one
+/// manifest row provides it. A manifest with zero or several `YES` rows is
+/// deliberately not an index source.
+pub(crate) fn manifest_active_configuration(
+    scan: &ContainerScan<'_>,
+) -> Option<(usize, Option<String>)> {
+    let mut candidate = None;
+    for section in scan.sections() {
+        if !is_features_manifest(section) {
+            continue;
+        }
+        let Some(text) = xml_text(section.payload()) else {
+            continue;
+        };
+        let Ok(document) = roxmltree::Document::parse(&text) else {
+            continue;
+        };
+        if document.root_element().tag_name().name() != "swSolidWorks" {
+            continue;
+        }
+        let configurations = document
+            .descendants()
+            .filter(|node| node.is_element() && node.tag_name().name() == "swConfiguration")
+            .collect::<Vec<_>>();
+        if configurations.is_empty() {
+            continue;
+        }
+        let rows = configurations
+            .into_iter()
+            .filter(|node| node.attribute("swMostRecentConfiguration") == Some("YES"))
+            .collect::<Vec<_>>();
+        let [row] = rows.as_slice() else {
+            return None;
+        };
+        let id = row.attribute("swID")?;
+        if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        let index = id.parse::<usize>().ok()?;
+        let name = manifest_configuration_name(&document, *row, id);
+        let current = (index, name);
+        match candidate.as_mut() {
+            None => candidate = Some(current),
+            Some((previous_index, previous_name)) => {
+                if *previous_index != index {
+                    return None;
+                }
+                if let (Some(previous), Some(current)) =
+                    (previous_name.as_deref(), current.1.as_deref())
+                {
+                    if previous != current {
+                        return None;
+                    }
+                }
+                if previous_name.is_none() {
+                    *previous_name = current.1;
+                }
+            }
+        }
+    }
+    candidate
+}
+
+fn is_features_manifest(section: Section<'_>) -> bool {
+    section
+        .name()
+        .and_then(|name| name.rsplit('/').next())
+        .is_some_and(|name| name.eq_ignore_ascii_case("Features"))
+}
+
+/// Resolve a manifest row to its configuration name without depending on XML
+/// namespace prefixes or on the order of the model rows.
+fn manifest_configuration_name(
+    document: &roxmltree::Document<'_>,
+    row: roxmltree::Node<'_, '_>,
+    id: &str,
+) -> Option<String> {
+    let direct = row
+        .attribute("swName")
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let model = row
+        .attribute("swModelRef")
+        .and_then(|reference| {
+            document.descendants().find(|node| {
+                node.tag_name().name() == "swModel" && node.attribute("id") == Some(reference)
+            })
+        })
+        .or_else(|| {
+            document.descendants().find(|node| {
+                node.tag_name().name() == "swModel"
+                    && node.attribute("swConfigurationId") == Some(id)
+            })
+        });
+    direct.or_else(|| {
+        model
+            .and_then(|node| node.attribute("swConfigurationName"))
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
+}
+
+fn explicit_active_configuration_index(scan: &ContainerScan<'_>) -> Option<usize> {
+    let active = active_configuration_name(scan)?;
+    let mut indices = Vec::new();
+    for section in scan.sections() {
+        let Some(text) = xml_text(section.payload()) else {
+            continue;
+        };
+        let Ok(document) = roxmltree::Document::parse(&text) else {
+            continue;
+        };
+        if !document
+            .root_element()
+            .tag_name()
+            .name()
+            .contains("Keywords")
+        {
+            continue;
+        }
+        indices.extend(
             document
                 .descendants()
-                .filter(|node| node.has_tag_name("swModel"))
-                .filter_map(|node| node.attribute("swConfigurationName").map(str::to_string))
-                .collect::<Vec<_>>()
-        })
-        .collect::<BTreeSet<_>>();
-    let active = (active_names.len() == 1).then(|| active_names.first().cloned())??;
-    let indices = scan
-        .blocks
-        .iter()
-        .filter_map(|block| std::str::from_utf8(&block.payload).ok())
-        .filter_map(|text| roxmltree::Document::parse(text).ok())
-        .filter(|document| {
-            document
-                .root_element()
-                .tag_name()
-                .name()
-                .contains("Keywords")
-        })
-        .flat_map(|document| {
-            document
-                .root_element()
-                .children()
                 .filter(|node| {
-                    node.has_tag_name("Configuration")
+                    node.is_element()
+                        && node.tag_name().name() == "Configuration"
                         && node.attribute("Name") == Some(active.as_str())
                 })
-                .map(|node| {
-                    node.attribute("SourceIndex")
-                        .and_then(|value| value.parse::<usize>().ok())
+                .filter_map(|node| node.attribute("SourceIndex"))
+                .filter(|value| {
+                    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
                 })
-                .collect::<Vec<_>>()
+                .filter_map(|value| value.parse::<usize>().ok()),
+        );
+    }
+    (indices.len() == 1).then(|| indices[0])
+}
+
+pub(crate) fn active_configuration_name(scan: &ContainerScan<'_>) -> Option<String> {
+    manifest_active_configuration(scan)
+        .and_then(|(_, name)| name)
+        .or_else(|| {
+            let mut names = BTreeSet::new();
+            for section in scan.sections() {
+                let Some(text) = xml_text(section.payload()) else {
+                    continue;
+                };
+                let Ok(document) = roxmltree::Document::parse(&text) else {
+                    continue;
+                };
+                if document.root_element().tag_name().name() != "swSolidWorks" {
+                    continue;
+                }
+                names.extend(
+                    document
+                        .descendants()
+                        .filter(|node| node.tag_name().name() == "swModel")
+                        .filter_map(|node| node.attribute("swConfigurationName"))
+                        .map(str::to_string),
+                );
+            }
+            (names.len() == 1)
+                .then(|| names.into_iter().next())
+                .flatten()
         })
-        .collect::<Vec<_>>();
-    (indices.len() == 1).then(|| indices[0]).flatten()
+}
+
+pub(crate) fn xml_text(bytes: &[u8]) -> Option<String> {
+    let bytes = bytes.strip_prefix(&[0x86]).unwrap_or(bytes);
+    if bytes.starts_with(&[0xff, 0xfe]) {
+        let mut view = View::over_retained(&bytes[2..]);
+        let mut units = Vec::new();
+        while let Some(unit) = view.u16_le() {
+            units.push(unit);
+        }
+        Some(String::from_utf16_lossy(&units))
+    } else {
+        std::str::from_utf8(bytes).ok().map(str::to_string)
+    }
 }
 
 #[cfg(test)]

@@ -331,6 +331,24 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         }],
     });
     assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    native.feature_histories[0].features[0].input_class = None;
+    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    native.feature_histories[0].features[0].xml_tag = "Sketch".into();
+    native.feature_histories[0].features[0].kind = "Sketch".into();
+    native.feature_histories[0].features[0].name = "Profile".into();
+    lane.classes[0].name = "moProfileFeature_c".into();
+    lane.names[0].offset = 10 + 6 + "moProfileFeature_c".len() as u64;
+    lane.names[0].value = "Profile".into();
+    native.feature_input_lanes = vec![lane.clone()];
+    assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+    native.feature_histories[0].features[0].xml_tag = "Extrusion".into();
+    native.feature_histories[0].features[0].kind = "Extrusion".into();
+    native.feature_histories[0].features[0].name = "Boss".into();
+    native.feature_histories[0].features[0].input_class = Some(class_name.into());
+    lane.classes[0].name = class_name.into();
+    lane.names[0].offset = 10 + 6 + class_name.len() as u64;
+    lane.names[0].value = "Boss".into();
+    native.feature_input_lanes = vec![lane.clone()];
     native.feature_histories[0].features[0].input_class = Some("moSweep_c".into());
     assert_eq!(unbound_feature_input_operation_objects(&native), 1);
     native.feature_histories[0].features[0].input_class = Some(class_name.into());

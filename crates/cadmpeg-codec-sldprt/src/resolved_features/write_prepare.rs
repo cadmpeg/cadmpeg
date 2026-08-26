@@ -4,7 +4,7 @@ use super::bindings::bind_scalar_operands;
 use super::hashes::{constraint_hash, lane_hash, sketch_hash};
 use super::markers::{
     marker_spatial_coordinate_offset, reference_cells, relation_bindings, sketch_input_entities,
-    spatial_sketches, spatial_vertex_offsets,
+    spatial_relation_marker_coordinates, spatial_sketches, spatial_vertex_offsets,
 };
 use super::names::{class_declarations, object_names};
 use super::scalars::{feature_object_name, named_scalars};
@@ -177,21 +177,30 @@ fn patch_spatial_sketches(
                         .iter()
                         .find(|marker| marker.id == native_ref)?;
                     let offset = usize::try_from(marker.offset).ok()?;
-                    marker_spatial_coordinate_offset(&lane.native_payload, offset)?;
-                    Some((lane_index, offset))
+                    let coordinate_offset =
+                        marker_spatial_coordinate_offset(&lane.native_payload, offset);
+                    if coordinate_offset.is_none()
+                        && !spatial_relation_marker_coordinates(&lane.native_payload, offset)
+                            .is_some_and(|native| native == position)
+                    {
+                        return None;
+                    }
+                    Some((lane_index, offset, coordinate_offset))
                 })
                 .collect::<Vec<_>>();
-            let [(lane_index, offset)] = candidates.as_slice() else {
+            let [(lane_index, offset, coordinate_offset)] = candidates.as_slice() else {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch point {} does not resolve to one native marker",
                     entity.id.0
                 )));
             };
-            patch_spatial_marker_point(
-                &mut native.feature_input_lanes[*lane_index].native_payload,
-                *offset,
-                position,
-            )?;
+            if coordinate_offset.is_some() {
+                patch_spatial_marker_point(
+                    &mut native.feature_input_lanes[*lane_index].native_payload,
+                    *offset,
+                    position,
+                )?;
+            }
         }
         let line_entities = entities
             .iter()
@@ -204,7 +213,12 @@ fn patch_spatial_sketches(
                 sketch.id.0
             )));
         }
-        if line_entities.is_empty() {
+        let native_line_entities = line_entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.endpoint_refs.is_empty())
+            .collect::<Vec<_>>();
+        if native_line_entities.is_empty() {
             continue;
         }
         let candidates = native
@@ -227,7 +241,7 @@ fn patch_spatial_sketches(
                     .unwrap_or(lane.native_payload.len());
                 let offsets =
                     spatial_vertex_offsets(lane.native_payload.get(object_start..object_end)?);
-                if line_entities
+                if native_line_entities
                     .len()
                     .checked_mul(2)
                     .is_none_or(|expected| offsets.len() != expected)
@@ -250,7 +264,7 @@ fn patch_spatial_sketches(
             )));
         };
         let payload = &mut native.feature_input_lanes[*lane_index].native_payload;
-        for (entity, offsets) in line_entities.iter().zip(offsets.chunks_exact(2)) {
+        for (entity, offsets) in native_line_entities.iter().zip(offsets.chunks_exact(2)) {
             let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
                 return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                     "SLDPRT spatial sketch {} supports retained line geometry only",
@@ -269,9 +283,18 @@ fn patch_spatial_sketches(
     }
 
     let mut features = crate::history::project_features(&native.feature_histories);
-    let (projected_sketches, projected_entities) = spatial_sketches(
+    let (projected_sketches, mut projected_entities) = spatial_sketches(
         &mut features,
         &native.feature_histories,
+        &native.feature_input_lanes,
+    );
+    let mut projected_constraints = Vec::new();
+    super::relation_geometry::project_spatial_relation_bindings(
+        &mut projected_constraints,
+        &mut projected_entities,
+        &projected_sketches,
+        &features,
+        &ir.model.parameters,
         &native.feature_input_lanes,
     );
     if ir.model.spatial_sketches != projected_sketches

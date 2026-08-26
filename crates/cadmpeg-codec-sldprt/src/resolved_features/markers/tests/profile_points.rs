@@ -3,7 +3,11 @@
 use super::super::super::selections::coordinate_marker_local_links;
 use super::super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::super::*;
+use crate::layout::legacy_140_single_incidence_profile_point as point_140;
+use crate::layout::legacy_144_single_incidence_profile_point as point_144;
 use crate::records::{SketchInputEntity, SketchInputKind};
+
+const EPS_POINT_COORDINATE: f64 = 1e-12;
 
 #[test]
 fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
@@ -90,6 +94,93 @@ fn extended_indexed_profile_point_decodes_compact_coordinates() {
         payload[offset + size..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
 
         assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
+    }
+}
+
+#[test]
+fn shifted_geometry_locus_coordinates_require_the_record_trailer() {
+    let offset = 4;
+    let record_len = 142;
+    let mut payload = vec![0; offset + record_len + LEGACY_SKETCH_MARKER.len()];
+    payload[..offset].copy_from_slice(&11u32.to_le_bytes());
+    payload[offset..offset + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[offset + 5..offset + 13].fill(0xff);
+    payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[offset + 17..offset + 21].copy_from_slice(&1u32.to_le_bytes());
+    payload[offset + 23..offset + 29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[offset + 31..offset + 39]
+        .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[offset + 64..offset + 66].copy_from_slice(&[0x12, 0x00]);
+    payload[offset + 66..offset + 74].copy_from_slice(&0.022_224_980_75f64.to_le_bytes());
+    payload[offset + 74..offset + 82].copy_from_slice(&0.0f64.to_le_bytes());
+    payload[offset + 92..offset + 96].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+    payload[offset + 138..offset + 142].copy_from_slice(&7u32.to_le_bytes());
+    payload[offset + record_len..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    assert_eq!(
+        marker_coordinates(&payload, offset),
+        Some([0.022_224_980_75, 0.0])
+    );
+    let entities = sketch_input_entities(&payload, "lane");
+    let [entity] = entities.as_slice() else {
+        panic!("expected one sketch marker");
+    };
+    assert_eq!(entity.kind, SketchInputKind::LineOrCircle);
+    assert_eq!(entity.coordinates_m, Some([0.022_224_980_75, 0.0]));
+    assert_eq!(entity.object_index, Some(11));
+    assert_eq!(entity.local_id, Some(7));
+
+    payload[offset + 92] = 0;
+    assert_eq!(marker_coordinates(&payload, offset), None);
+}
+
+#[test]
+fn shifted_geometry_handle_children_are_points() {
+    for (record_len, code, tag, sentinel, declaration_offset, declaration) in [
+        (162, 2u32, [0x1e, 0x00], 112, 86, b"sgLineHandle".as_slice()),
+        (178, 2u32, [0x1e, 0x00], 128, 86, b"sgLineHandle".as_slice()),
+        (178, 2u32, [0x13, 0x00], 128, 86, b"sgLineHandle".as_slice()),
+        (177, 1u32, [0x12, 0x00], 127, 98, b"sgArcHandle".as_slice()),
+    ] {
+        let offset = 4;
+        let mut payload = vec![0; offset + record_len + LEGACY_SKETCH_MARKER.len()];
+        payload[..offset].copy_from_slice(&11u32.to_le_bytes());
+        payload[offset..offset + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[offset + 5..offset + 13].fill(0xff);
+        payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[offset + 17..offset + 21].copy_from_slice(&code.to_le_bytes());
+        payload[offset + 23..offset + 29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[offset + 31..offset + 39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[offset + 64..offset + 66].copy_from_slice(&tag);
+        payload[offset + 66..offset + 74].copy_from_slice(&1.25f64.to_le_bytes());
+        payload[offset + 74..offset + 82].copy_from_slice(&(-2.5f64).to_le_bytes());
+        payload[offset + 84..offset + 86].copy_from_slice(&2u16.to_le_bytes());
+        let declaration_prefix = if declaration == b"sgLineHandle" {
+            [0xff, 0xff, 0x01, 0x00, 0x0c, 0x00]
+        } else {
+            [0xff, 0xff, 0x01, 0x00, 0x0b, 0x00]
+        };
+        payload[offset + declaration_offset..offset + declaration_offset + 6]
+            .copy_from_slice(&declaration_prefix);
+        payload
+            [offset + declaration_offset + 6..offset + declaration_offset + 6 + declaration.len()]
+            .copy_from_slice(declaration);
+        payload[offset + sentinel..offset + sentinel + 4]
+            .copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+        payload[offset + record_len..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        let entities = sketch_input_entities(&payload, "lane");
+        let [entity] = entities.as_slice() else {
+            panic!("expected one sketch marker");
+        };
+        assert_eq!(entity.kind, SketchInputKind::Point);
+        assert_eq!(entity.coordinates_m, Some([1.25, -2.5]));
+
+        payload[offset + sentinel] = 0;
+        assert_eq!(shifted_geometry_handle_coordinates(&payload, offset), None);
     }
 }
 
@@ -1190,6 +1281,70 @@ fn legacy_140_profile_point_variant_decodes_link_state_and_shifted_trailers() {
     payload[136..140].copy_from_slice(&25u32.to_le_bytes());
     assert_eq!(
         legacy_140_profile_point_variant_coordinates(&payload, 0),
+        None
+    );
+}
+
+#[test]
+fn legacy_144_profile_point_variant_decodes_shifted_terminal() {
+    let record_end = point_144::LEN;
+    let mut payload = vec![0; record_end + LEGACY_SKETCH_MARKER.len()];
+    payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[point_144::HEADER..point_144::SENTINEL].fill(0xff);
+    payload[point_144::SENTINEL..point_144::NATIVE_KIND].copy_from_slice(&(-1.0f32).to_le_bytes());
+    payload[point_144::NATIVE_KIND..point_144::ZERO_PREFIX]
+        .copy_from_slice(&point_144::NATIVE_KIND_VALUE.to_le_bytes());
+    payload[point_144::PROFILE_LOCUS..point_144::ZERO_STATE]
+        .copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+    payload[point_144::SELECTOR..point_144::ZERO_STATE_PREFIX]
+        .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[point_144::STATE_VALUE..point_144::COORDINATE_TAG]
+        .copy_from_slice(&point_144::STATE_VALUE_VALUE.to_le_bytes());
+    payload[point_144::COORDINATE_TAG..point_144::COORDINATE_FIRST].copy_from_slice(&[0x1e, 0x00]);
+    payload[point_144::COORDINATE_FIRST..point_144::COORDINATE_SECOND]
+        .copy_from_slice(&0.125f64.to_le_bytes());
+    payload[point_144::COORDINATE_SECOND..point_144::ZERO_LINK_PREFIX]
+        .copy_from_slice(&(-0.25f64).to_le_bytes());
+    payload[point_144::LINK_STATE..point_144::INCIDENCE_CELL].copy_from_slice(&1u16.to_le_bytes());
+    payload[point_144::INCIDENCE_CELL..point_144::ZERO_POST_CELL].copy_from_slice(&[
+        0x04, 0x81, 0x03, 0x00, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+    ]);
+    payload[point_144::ZERO_POST_CELL..point_144::LINK_TERMINATOR].fill(0);
+    payload[point_144::LINK_TERMINATOR..point_144::TRAILER_PREFIX]
+        .copy_from_slice(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00]);
+    payload[point_144::IDENTITY..record_end].copy_from_slice(&25u32.to_le_bytes());
+    payload[record_end..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    let coordinates = legacy_144_profile_point_variant_coordinates(&payload, 0)
+        .expect("the shifted point trailer should decode");
+    assert!((coordinates[0] - 0.125).abs() < EPS_POINT_COORDINATE);
+    assert!((coordinates[1] + 0.25).abs() < EPS_POINT_COORDINATE);
+    let coordinates = marker_coordinates(&payload, 0).expect("marker coordinates should decode");
+    assert!((coordinates[0] - 0.125).abs() < EPS_POINT_COORDINATE);
+    assert!((coordinates[1] + 0.25).abs() < EPS_POINT_COORDINATE);
+    let entity = &sketch_input_entities(&payload, "lane")[0];
+    assert_eq!(entity.kind, SketchInputKind::Point);
+    let coordinates = entity
+        .coordinates_m
+        .expect("the shifted point should remain coordinate-bearing");
+    assert!((coordinates[0] - 0.125).abs() < EPS_POINT_COORDINATE);
+    assert!((coordinates[1] + 0.25).abs() < EPS_POINT_COORDINATE);
+
+    assert_eq!(
+        legacy_140_profile_point_variant_coordinates(&payload, 0),
+        None
+    );
+    let mut old_boundary = payload.clone();
+    old_boundary[point_140::LINK_TERMINATOR..point_140::TRAILER_PREFIX]
+        .copy_from_slice(&[0xfe, 0xff, 0xff, 0xff, 0x00, 0x00]);
+    old_boundary[point_140::TRAILER_PREFIX..point_140::IDENTITY_SECOND].fill(0);
+    old_boundary[point_140::IDENTITY_SECOND..point_144::IDENTITY]
+        .copy_from_slice(&24u32.to_le_bytes());
+    let old_marker_end = point_144::IDENTITY + LEGACY_SKETCH_MARKER.len();
+    old_boundary[point_144::IDENTITY..old_marker_end].copy_from_slice(LEGACY_SKETCH_MARKER);
+    assert!(legacy_140_profile_point_variant_coordinates(&old_boundary, 0).is_some());
+    assert_eq!(
+        legacy_144_profile_point_variant_coordinates(&old_boundary, 0),
         None
     );
 }

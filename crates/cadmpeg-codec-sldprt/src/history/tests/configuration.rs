@@ -36,6 +36,45 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
 }
 
 #[test]
+fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        id: cadmpeg_ir::ids::SurfaceId("model-surface".into()),
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        bodies: ConfigurationBodies::Unresolved,
+        ..design_configuration("unresolved", 0, Some(0), None)
+    });
+
+    assert_eq!(configuration_surface_carriers(&ir, 0), ir.model.surfaces,);
+}
+
+#[test]
+fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        id: cadmpeg_ir::ids::SurfaceId("model-surface".into()),
+        geometry: cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model
+        .configurations
+        .push(design_configuration("empty", 0, Some(0), None));
+
+    assert!(configuration_surface_carriers(&ir, 0).is_empty());
+}
+
+#[test]
 fn changing_shadowed_ordinal_does_not_steal_stored_id_lane() {
     let native_configurations = vec![
         native_with_configuration_id(native_configuration("explicit-native", 0, Some(7)), 1),
@@ -571,6 +610,66 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
 }
 
 #[test]
+fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
+    use cadmpeg_ir::features::{
+        ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition, FeatureId,
+    };
+    use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
+
+    let feature_id = FeatureId("sldprt:model:feature#scoped-spatial".into());
+    let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#scoped-spatial".into());
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(NeutralFeature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: Some("scoped-spatial".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::SpatialSketch {
+            sketch: Some(sketch_id.clone()),
+        },
+        native_ref: Some("scoped-spatial-native".into()),
+    });
+    ir.model.spatial_sketches.push(SpatialSketch {
+        id: sketch_id.clone(),
+        name: Some("scoped-spatial".into()),
+        configuration: Some("1".into()),
+        visible: None,
+        profiles: Vec::new(),
+        native_ref: Some("supplemental-lane".into()),
+    });
+    let mut configuration =
+        with_configuration_id(design_configuration("configuration", 0, Some(1), None), 1);
+    configuration.feature_states.insert(
+        feature_id.clone(),
+        ConfigurationFeatureState {
+            suppressed: false,
+            dependencies: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::SpatialSketch { sketch: None },
+        },
+    );
+    ir.model.configurations.push(configuration);
+
+    let lanes = [feature_input_lane("resolved-lane", Some("1"))];
+    let mut annotations = cadmpeg_ir::Annotations::default();
+    project_configuration_sketch_states(&mut ir, &[], &lanes, &mut annotations);
+
+    assert!(matches!(
+        &ir.model.configurations[0].feature_states[&feature_id].definition,
+        FeatureDefinition::SpatialSketch {
+            sketch: Some(projected),
+        } if projected == &sketch_id
+    ));
+}
+
+#[test]
 fn supplemental_edge_paths_project_into_matching_configuration_state() {
     use cadmpeg_ir::features::{
         ChamferGroup, ChamferSpec, ConfigurationFeatureState, DesignConfiguration, EdgeSelection,
@@ -754,6 +853,84 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
 }
 
 #[test]
+fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
+    use cadmpeg_ir::features::{FeatureDefinition, HoleKind, HolePlacement, Length, Termination};
+
+    let placement = HolePlacement::Axis {
+        origin: cadmpeg_ir::math::Point3::new(9.0, 8.0, 7.0),
+        axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+    };
+    let base = FeatureDefinition::Hole {
+        profile: None,
+        profile_filter: None,
+        face: None,
+        position: None,
+        direction: None,
+        placements: vec![HolePlacement::Axis {
+            origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        }],
+        kind: HoleKind::Counterbore {
+            diameter: Length(8.0),
+            depth: Length(4.0),
+        },
+        exit_kind: None,
+        diameter: Some(Length(5.0)),
+        extent: Some(Termination::Blind {
+            length: Length(12.0),
+        }),
+        bottom: None,
+        taper_angle: None,
+        specification: None,
+        allow_multi_profile_faces: None,
+    };
+    let mut local = FeatureDefinition::Hole {
+        profile: None,
+        profile_filter: None,
+        face: None,
+        position: None,
+        direction: None,
+        placements: vec![placement.clone()],
+        kind: HoleKind::Simple,
+        exit_kind: None,
+        diameter: None,
+        extent: None,
+        bottom: None,
+        taper_angle: None,
+        specification: None,
+        allow_multi_profile_faces: None,
+    };
+
+    inherit_configuration_hole_semantics(&mut local, &base, false);
+
+    let FeatureDefinition::Hole {
+        placements,
+        kind,
+        diameter,
+        extent,
+        ..
+    } = local
+    else {
+        panic!("hole definition changed variant");
+    };
+    assert_eq!(placements, [placement]);
+    assert_eq!(
+        kind,
+        HoleKind::Counterbore {
+            diameter: Length(8.0),
+            depth: Length(4.0),
+        }
+    );
+    assert_eq!(diameter, Some(Length(5.0)));
+    assert_eq!(
+        extent,
+        Some(Termination::Blind {
+            length: Length(12.0),
+        })
+    );
+}
+
+#[test]
 fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     use cadmpeg_ir::features::{
         ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition, FeatureId,
@@ -920,6 +1097,247 @@ fn configuration_offset_plane_replaces_only_an_unresolved_face() {
 }
 
 #[test]
+fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
+    use cadmpeg_ir::features::{
+        DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
+        FeatureId, Length,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let plane_id = FeatureId("test:model:feature#plane".into());
+    let offset_id = FeatureId("test:model:feature#offset".into());
+    let neutral_feature = |id: FeatureId, ordinal, definition| NeutralFeature {
+        id,
+        ordinal,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    let base_plane = neutral_feature(
+        plane_id.clone(),
+        0,
+        FeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, -1.0),
+        },
+    );
+    let base_offset = neutral_feature(
+        offset_id.clone(),
+        1,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(plane_id.clone())),
+            distance: Length(12.0),
+        },
+    );
+    let unresolved_reference = || DatumPlaneReference::Face {
+        face: FaceSelection::Unresolved,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(1.0, 0.0, 0.0),
+        u_axis: Vector3::new(0.0, 0.0, -1.0),
+    };
+    let mut configured = neutral_feature(
+        offset_id.clone(),
+        1,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(unresolved_reference()),
+            distance: Length(12.0),
+        },
+    );
+
+    inherit_configuration_reference_plane_semantics(
+        std::slice::from_mut(&mut configured),
+        &[base_plane.clone(), base_offset.clone()],
+    );
+
+    assert_eq!(configured.dependencies, vec![plane_id.clone()]);
+    assert!(matches!(
+        configured.definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(reference)),
+            ..
+        } if reference == plane_id
+    ));
+
+    let mut mismatched = neutral_feature(
+        offset_id,
+        1,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            }),
+            distance: Length(12.0),
+        },
+    );
+    inherit_configuration_reference_plane_semantics(
+        std::slice::from_mut(&mut mismatched),
+        &[base_plane, base_offset],
+    );
+    assert!(matches!(
+        mismatched.definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                ..
+            }),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
+    use cadmpeg_ir::features::{
+        DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
+        FeatureId, Length,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let plane_id = FeatureId("test:model:feature#plane".into());
+    let offset_id = FeatureId("test:model:feature#offset".into());
+    let neutral_feature = |id: FeatureId, definition| NeutralFeature {
+        id,
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    let base_plane = neutral_feature(
+        plane_id.clone(),
+        FeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+    );
+    let base_offset = neutral_feature(
+        offset_id.clone(),
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(plane_id.clone())),
+            distance: Length(6.0),
+        },
+    );
+    let mut configured = neutral_feature(
+        offset_id.clone(),
+        FeatureDefinition::DatumOffsetPlane {
+            reference: None,
+            distance: Length(6.0),
+        },
+    );
+
+    inherit_configuration_reference_plane_semantics(
+        std::slice::from_mut(&mut configured),
+        &[base_plane.clone(), base_offset.clone()],
+    );
+
+    assert_eq!(configured.dependencies, vec![plane_id]);
+    assert!(matches!(
+        configured.definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature(reference)),
+            distance: Length(6.0),
+        } if reference == FeatureId("test:model:feature#plane".into())
+    ));
+
+    let unresolved_base = neutral_feature(
+        offset_id.clone(),
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Unresolved,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            }),
+            distance: Length(6.0),
+        },
+    );
+    let mut remains_unresolved = neutral_feature(
+        offset_id,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: None,
+            distance: Length(6.0),
+        },
+    );
+    inherit_configuration_reference_plane_semantics(
+        std::slice::from_mut(&mut remains_unresolved),
+        &[unresolved_base],
+    );
+    assert!(matches!(
+        remains_unresolved.definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: None,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn scoped_offset_plane_inherits_a_matching_resolved_face_reference() {
+    use cadmpeg_ir::features::{
+        DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
+        FeatureId, Length,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let id = FeatureId("test:model:feature#face-offset".into());
+    let neutral_feature = |definition| NeutralFeature {
+        id: id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    let frame = |face| DatumPlaneReference::Face {
+        face,
+        origin: Point3::new(2.0, 3.0, 4.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let base = neutral_feature(FeatureDefinition::DatumOffsetPlane {
+        reference: Some(frame(FaceSelection::Faces(vec!["face#1".into()]))),
+        distance: Length(7.0),
+    });
+    let mut configured = neutral_feature(FeatureDefinition::DatumOffsetPlane {
+        reference: Some(frame(FaceSelection::Unresolved)),
+        distance: Length(7.0),
+    });
+
+    inherit_configuration_reference_plane_semantics(
+        std::slice::from_mut(&mut configured),
+        std::slice::from_ref(&base),
+    );
+
+    assert_eq!(configured.definition, base.definition);
+}
+
+#[test]
 fn configuration_numeric_override_inherits_parameter_dimension() {
     use cadmpeg_ir::features::{
         ConfigurationId, DesignConfiguration, DesignParameter, FeatureId, ParameterId,
@@ -1009,4 +1427,189 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
     assert!(!ir.model.configurations[0]
         .parameter_values
         .contains_key(&count_id));
+}
+
+#[test]
+fn configuration_topology_binding_updates_snapshot_face_selection() {
+    use cadmpeg_ir::features::{
+        DatumPlaneReference, FaceSelection, Feature as NeutralFeature, FeatureDefinition,
+        FeatureId, Length,
+    };
+    use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
+    use cadmpeg_ir::topology::{Face, Sense};
+
+    let feature_id = FeatureId("test:model:feature#offset".into());
+    let feature_ref = "test:history:feature#offset";
+    let mut type_signature = [0_u8; 12];
+    type_signature[4..8].copy_from_slice(&7_u32.to_le_bytes());
+    let components = vec![crate::records::FeatureInputComponentPathEntry {
+        instance: Some(0x8001),
+        type_signature,
+        local_id: Some(11),
+    }];
+    let native =
+        crate::resolved_features::terminations::compact_surface_selection_value(&components);
+    let selection = || crate::records::FeatureInputSurfaceSelection {
+        id: "selection".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 0,
+        selector: 0,
+        endpoint_selector: None,
+        object_name_ref: String::new(),
+        feature_ref: feature_ref.into(),
+        producer_feature_refs: Vec::new(),
+        terminal_feature_ref: None,
+        components: components.clone(),
+    };
+    let definition = || FeatureDefinition::DatumOffsetPlane {
+        reference: Some(DatumPlaneReference::Face {
+            face: FaceSelection::Native(native.clone()),
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        }),
+        distance: Length(4.0),
+    };
+    let feature = NeutralFeature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: definition(),
+        native_ref: Some(feature_ref.into()),
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(feature);
+    ir.model.faces.push(Face {
+        id: FaceId("face".into()),
+        shell: ShellId("shell".into()),
+        surface: SurfaceId("surface".into()),
+        sense: Sense::Forward,
+        loops: vec![LoopId("loop".into())],
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    ir.model.configurations.push(with_configuration_id(
+        design_configuration("config", 0, Some(0), None),
+        1,
+    ));
+    ir.model.configurations[0].feature_states.insert(
+        feature_id,
+        cadmpeg_ir::features::ConfigurationFeatureState {
+            suppressed: false,
+            dependencies: Vec::new(),
+            outputs: Vec::new(),
+            definition: definition(),
+        },
+    );
+    let mut lane = feature_input_lane("lane", Some("1"));
+    lane.surface_selections.push(selection());
+
+    bind_configuration_topology_selections(&mut ir, &[], &[lane], &[("face".into(), 7, 11)]);
+
+    assert!(matches!(
+        &ir.model.configurations[0].feature_states.values().next().unwrap().definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Resolved { faces, native: resolved_native },
+                ..
+            }),
+            ..
+        } if faces == &[FaceId("face".into())] && resolved_native == &native
+    ));
+}
+
+#[test]
+fn configuration_frame_alias_binds_without_body_membership() {
+    use cadmpeg_ir::features::{
+        ConfigurationBodies, DatumPlaneReference, FaceSelection, Feature as NeutralFeature,
+        FeatureDefinition, FeatureId, Length,
+    };
+    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
+    use cadmpeg_ir::topology::{Face, Sense};
+
+    let feature_id = FeatureId("test:model:feature#offset".into());
+    let native = "sldprt:feature-input:legacy-face-alias#lane:40:200";
+    let definition = || FeatureDefinition::DatumOffsetPlane {
+        reference: Some(DatumPlaneReference::Face {
+            face: FaceSelection::Native(native.into()),
+            origin: Point3::new(0.0, 0.0, 5.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        }),
+        distance: Length(4.0),
+    };
+    let feature = NeutralFeature {
+        id: feature_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: definition(),
+        native_ref: None,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(feature);
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId("surface".into()),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 5.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    ir.model.faces.push(Face {
+        id: FaceId("face".into()),
+        shell: ShellId("shell".into()),
+        surface: SurfaceId("surface".into()),
+        sense: Sense::Forward,
+        loops: vec![LoopId("loop".into())],
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    let mut configuration = design_configuration("config", 0, None, None);
+    configuration.bodies = ConfigurationBodies::Unresolved;
+    configuration.properties.insert("id".into(), "3".into());
+    ir.model.configurations.push(configuration);
+    ir.model.configurations[0].feature_states.insert(
+        feature_id,
+        cadmpeg_ir::features::ConfigurationFeatureState {
+            suppressed: false,
+            dependencies: Vec::new(),
+            outputs: Vec::new(),
+            definition: definition(),
+        },
+    );
+
+    let lane = feature_input_lane("lane", Some("3"));
+    bind_configuration_topology_selections(&mut ir, &[], &[lane], &[]);
+
+    assert!(matches!(
+        &ir.model.configurations[0].feature_states.values().next().unwrap().definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Face {
+                face: FaceSelection::Resolved { faces, native: resolved_native },
+                ..
+            }),
+            ..
+        } if faces == &[FaceId("face".into())] && resolved_native == native
+    ));
 }

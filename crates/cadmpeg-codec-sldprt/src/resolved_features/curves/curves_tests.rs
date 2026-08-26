@@ -1206,6 +1206,102 @@ fn connected_marker_arc_with_mirror_centers_remains_native() {
 }
 
 #[test]
+fn connected_marker_arc_uses_one_resolved_arc_in_a_closed_cycle() {
+    let sketch = SketchId("sketch".into());
+    let point = |id: &str, position| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(id.into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let line = |id: &str, start: &str, end: &str, start_position, end_position| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(id.into()),
+        geometry_ref: None,
+        endpoint_refs: vec![start.into(), end.into()],
+        geometry: SketchGeometry::Line {
+            start: start_position,
+            end: end_position,
+        },
+    };
+    let center = Point2::new(9.5, 0.0);
+    let radius = (9.5_f64.powi(2) + 2.0_f64.powi(2)).sqrt();
+    let mut entities = vec![
+        point("left-top", Point2::new(0.0, 2.0)),
+        point("left-bottom", Point2::new(0.0, -2.0)),
+        point("right-top", Point2::new(19.0, 2.0)),
+        point("right-bottom", Point2::new(19.0, -2.0)),
+        line(
+            "top",
+            "left-top",
+            "right-top",
+            Point2::new(0.0, 2.0),
+            Point2::new(19.0, 2.0),
+        ),
+        line(
+            "bottom",
+            "right-bottom",
+            "left-bottom",
+            Point2::new(19.0, -2.0),
+            Point2::new(0.0, -2.0),
+        ),
+        SketchEntity {
+            id: SketchEntityId("left-arc".into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: Some("left-arc".into()),
+            geometry_ref: None,
+            endpoint_refs: vec!["left-top".into(), "left-bottom".into()],
+            geometry: SketchGeometry::Arc {
+                center,
+                radius: Length(radius),
+                start_angle: Angle((2.0_f64).atan2(-9.5)),
+                end_angle: Angle((-2.0_f64).atan2(-9.5)),
+            },
+        },
+        SketchEntity {
+            id: SketchEntityId("right-arc".into()),
+            sketch,
+            construction: false,
+            native_ref: Some("right-arc".into()),
+            geometry_ref: None,
+            endpoint_refs: vec!["right-top".into(), "right-bottom".into()],
+            geometry: SketchGeometry::Native {
+                native_kind: "sldprt:marker-geometry:2".into(),
+            },
+        },
+    ];
+
+    let mut ambiguous_entities = entities.clone();
+    let mut duplicate_witness = ambiguous_entities[6].clone();
+    duplicate_witness.id = SketchEntityId("left-arc-duplicate".into());
+    duplicate_witness.native_ref = Some("left-arc-duplicate".into());
+    ambiguous_entities.push(duplicate_witness);
+    super::resolve_connected_marker_arcs(&mut ambiguous_entities, 1.0e-9);
+    assert!(matches!(
+        ambiguous_entities[7].geometry,
+        SketchGeometry::Native { ref native_kind }
+            if native_kind == "sldprt:marker-geometry:2"
+    ));
+
+    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+
+    assert!(matches!(
+        entities[7].geometry,
+        SketchGeometry::Arc {
+            center: actual_center,
+            radius: Length(actual_radius),
+            ..
+        } if actual_center == center && actual_radius == radius
+    ));
+}
+
+#[test]
 fn packed_slot_descriptor_run_is_not_independent_geometry() {
     let slot_offset = 22;
     let mut payload = vec![0; slot_offset + 252];

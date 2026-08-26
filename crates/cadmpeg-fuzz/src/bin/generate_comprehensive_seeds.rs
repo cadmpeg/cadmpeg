@@ -7,7 +7,6 @@ use std::io::Write;
 
 include!("../seed_paths.rs");
 
-use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use flate2::write::DeflateEncoder;
 use flate2::Compression;
@@ -1127,6 +1126,8 @@ fn generate_nx_seeds() -> Result<(), CodecError> {
 }
 
 mod nx {
+    use cadmpeg_core::decode::alloc_filled;
+    use cadmpeg_core::CodecError;
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
     use std::io::Write;
@@ -1396,14 +1397,14 @@ mod nx {
     }
 
     pub fn topology_part_prt() -> Result<Vec<u8>, CodecError> {
-        Ok(prt_with_partition(&topology_partition_stream()?))
+        prt_with_partition(&topology_partition_stream()?)
     }
     pub fn bspline_part_prt() -> Result<Vec<u8>, CodecError> {
-        Ok(prt_with_partition(&bspline_partition_stream()?))
+        prt_with_partition(&bspline_partition_stream()?)
     }
 
-    fn prt_with_partition(stream: &[u8]) -> Vec<u8> {
-        let mut f = single_part_prt();
+    fn prt_with_partition(stream: &[u8]) -> Result<Vec<u8>, CodecError> {
+        let mut f = single_part_prt()?;
         let compressed = zlib_compress(stream);
         let len = f.len();
         f.truncate(len - compressed.len());
@@ -1413,7 +1414,7 @@ mod nx {
         f[off_idx..size_idx].copy_from_slice(&blob_off.to_le_bytes());
         f[size_idx..].copy_from_slice(&(compressed.len() as u64).to_le_bytes());
         f.extend_from_slice(&compressed);
-        f
+        Ok(f)
     }
 
     pub fn assembly_prt() -> Vec<u8> {

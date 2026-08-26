@@ -136,6 +136,59 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
 }
 
 #[test]
+fn active_configuration_name_binds_partition_without_fabricating_body_membership() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.source = Some(cadmpeg_ir::document::SourceMeta {
+        attributes: BTreeMap::from([
+            (
+                "active_parasolid_block".into(),
+                "Contents/Config-3-Partition".into(),
+            ),
+            ("sw_configuration_name".into(), "Default".into()),
+        ]),
+        ..Default::default()
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId("configuration".into()),
+        ordinal: 0,
+        active: false.into(),
+        source_index: None,
+        name: "Default".into(),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
+        parameter_values: BTreeMap::new(),
+        suppressed_features: Vec::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: Some("native:configuration".into()),
+    });
+
+    assign_configuration_bodies(&mut ir, &[]);
+    mark_active_configuration(&mut ir);
+
+    let configuration = &ir.model.configurations[0];
+    assert_eq!(configuration.source_index, Some(3));
+    assert!(configuration.bodies.is_unresolved());
+    assert!(configuration.active.is_active());
+
+    let mut report = DecodeReport {
+        format: "sldprt".into(),
+        container_only: false,
+        geometry_transferred: false,
+        coverage: BTreeMap::new(),
+        transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+    };
+    append_design_losses(&ir, &mut report);
+    assert!(!report.losses.iter().any(|loss| {
+        loss.message
+            == "active configuration identity does not resolve to active geometry partition 3."
+    }));
+}
+
+#[test]
 fn duplicate_configuration_partition_identities_are_reported() {
     let mut ir = CadIr::empty(Units::default());
     for id in ["first", "second"] {
