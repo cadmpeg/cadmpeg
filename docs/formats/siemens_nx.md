@@ -670,7 +670,34 @@ the combined control and first-data-block span:
 printable text length plus two. Store metadata may precede the header inside
 either bounded block.
 
-Class definitions before the boundary array use `declared_length:u8 + "UGS::" name bytes + trailing_code:u8`, where `declared_length` includes the trailing code. Bytes between the trailing code and the next class declaration form that declaration's registry suffix; an empty suffix is valid. An 11–14-byte suffix consists of a 2–5-byte layout prefix, an eight-byte schema fingerprint, and one terminal layout byte. Member definitions in the same indexed schema use the same framing with an `m_` name. Declaration order supplies section-local class and member identity.
+Class and member declarations before the boundary array use
+`declared_length:u8 + name[declared_length-1] + first_registry_byte`, where
+`declared_length` includes the first registry byte after the name. A registry token is one
+of the following forms:
+
+```text
+direct       = value:u8                         # 00..7f
+compact      = prefix:u8, low:u8                 # 80..8f
+wide         = prefix:u8, value:u16 BE           # 90, a0..af, or f1
+null         = ff
+```
+
+Direct tokens decode to their byte. Compact tokens decode to
+`(prefix - 0x80) * 256 + low + 1`. Wide tokens decode to
+`((prefix & 0x0f) * 65536) + value + 1`. The `+1` belongs to this registry
+token family only; operation-header compact indices use their own zero-based
+encoding. A null token has no value and consumes one byte.
+
+A complete `UGS::` class declaration has one storage token, one base token,
+an eight-byte schema fingerprint, and one reference token in that order. A
+complete `m_` member declaration begins with one storage token and one owner
+token in that order. The decoded token values are registry metadata, not
+object-record identities or field values. Bytes after a complete member head
+remain in the declaration suffix until the next length-framed `m_` declaration
+or the section boundary. Plain identifiers such as `first_record_area` do not
+declare members. Incomplete or legacy declarations retain their raw trailing
+bytes without being promoted to a complete registry layout. Declaration order
+supplies section-local class and member identity.
 
 Class and member declaration ordinals are local to one OM section. The containing
 section base plus the declaration ordinal forms their identity; equal ordinals in

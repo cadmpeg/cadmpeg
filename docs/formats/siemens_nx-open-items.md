@@ -260,6 +260,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `siemens_nx.md` §7.1 "UG_PART begins with a 12-byte row table" and `siemens_nx.md` §7.1 "A labeled feature-history operation record begins at the fixed operation-header marker" define OM section boundaries, class and member declarations, store identities, compact indices, and expression records. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines typed fields for selected construction families.
 
+The registry token family and the complete class/member declaration heads are
+also defined in `siemens_nx.md` §7.1. The native decoder retains their raw
+suffixes and exposes decoded registry metadata when the complete token heads
+are present.
+
 **Need.** We must know the remaining class grammars to decode feature history, constraints, attributes, and material bindings as typed fields.
 
 ### OM-02. `SKETCH` scalar-pair geometry
@@ -305,29 +310,36 @@ or history relations only; they do not assign an origin or axis.
 
 **Question.** What does the trailing byte in an OM class or member declaration mean?
 
-**Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the declaration length, `UGS::` or `m_` name, trailing-code boundary, and following registry suffix.
+**Known.** `siemens_nx.md` §7.1 defines the declaration length, `UGS::` or
+`m_` name, and the registry-token byte sequence that follows the name. The
+legacy `trailing_code` field retains the first byte of that sequence.
 
 **Need.** We must know the code domain and the relation between the trailing
 byte and the declared class or member semantics.
 
-**Conflict.** The declaration grammar identifies the trailing byte as the
-single byte after the printable `UGS::` or `m_` name and before the bounded
-registry suffix. The name and suffix delimit the declaration but do not assign
-a type, ownership, visibility, or field-role meaning to that byte.
+**Conflict.** The byte after the printable `UGS::` or `m_` name is not one
+standalone code domain: it is a direct, compact, wide, or null registry-token
+prefix, and its width depends on that prefix. The decoded token positions do
+not assign a type, visibility, field-value grammar, or object-record binding.
 
 ### OM-06. OM registry suffix fields
 
 **Question.** What does each byte in a bounded OM field-registry suffix mean?
 
-**Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the suffix boundary and the 11-to-14-byte prefix, fingerprint, and terminal-byte decomposition.
+**Known.** `siemens_nx.md` §7.1 defines the registry token family, the
+complete class tail (storage token, base token, eight-byte fingerprint, and
+reference token), and the complete member head (storage token and owner
+token). The native decoder retains the exact declaration suffix and decodes
+these token values when their required bytes are present.
 
 **Need.** We must know the semantic field roles represented by the layout
-prefix, schema fingerprint, and terminal byte.
+prefix, schema fingerprint, terminal byte, and remaining member-suffix bytes.
 
 **Conflict.** The 11–14-byte suffix decomposes into a 2–5-byte prefix,
-eight-byte fingerprint, and one terminal byte for both class and member
-declarations. The decomposition does not assign a member type, cardinality,
-ownership, or access role.
+eight-byte fingerprint, and one terminal byte for some legacy declarations,
+but that heuristic is not the complete registry grammar. The registry token
+positions do not assign an OM object record to a class or provide the value
+grammar, cardinality, access role, or semantic meaning of each member.
 
 ### OM-08. Blend-created faces
 

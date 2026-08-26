@@ -1751,6 +1751,8 @@
                 "id": "nx:om-entry-0:field#109",
                 "name": "m_target",
                 "ordinal": 0,
+                "registry_owner_class": 2,
+                "registry_storage_code": 2,
                 "registry_suffix": [
                   1,
                   2

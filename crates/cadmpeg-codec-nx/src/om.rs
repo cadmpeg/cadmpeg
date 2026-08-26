@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use cadmpeg_core::decode::View;
 
+pub(crate) mod registry;
+
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EntityRecord<'a> {
@@ -27,7 +29,7 @@ pub struct TypeDefinition<'a> {
     pub offset: usize,
     /// Registered `UGS::` class name.
     pub name: &'a str,
-    /// Declaration code following the name.
+    /// First registry-token byte following the name (legacy field name).
     pub trailing_code: u8,
     /// Bytes between this declaration core and the next class declaration.
     pub registry_suffix: &'a [u8],
@@ -40,10 +42,30 @@ pub struct FieldDefinition<'a> {
     pub offset: usize,
     /// Registered `m_` member name.
     pub name: &'a str,
-    /// Declaration code immediately following the name.
+    /// First registry-token byte following the name (legacy field name).
     pub trailing_code: u8,
     /// Bytes between this declaration core and the next member declaration.
     pub registry_suffix: &'a [u8],
+}
+
+impl TypeDefinition<'_> {
+    /// Decode the complete registry tail of this class declaration.
+    ///
+    /// The source representation keeps the first tail byte in
+    /// `trailing_code` for compatibility. Registry tokens are decoded from
+    /// the logical concatenation of that byte and `registry_suffix`; the
+    /// generic operation compact-index family is deliberately not reused.
+    pub(crate) fn class_registry_layout(&self) -> Option<registry::ClassRegistryLayout> {
+        registry::class_registry_layout(self.trailing_code, self.registry_suffix)
+    }
+}
+
+impl FieldDefinition<'_> {
+    /// Decode the storage and owner tokens at the head of this member
+    /// declaration.
+    pub(crate) fn field_registry_layout(&self) -> Option<registry::FieldRegistryLayout> {
+        registry::field_registry_layout(self.trailing_code, self.registry_suffix)
+    }
 }
 
 /// One self-framed printable string value in an NX OM entity.
@@ -1337,13 +1359,13 @@ impl IndexedSectionLayout {
             types: self
                 .types
                 .iter()
-                .map(|layout| materialize_type_definition(bytes, layout))
+                .map(|layout| registry::materialize_type_definition(bytes, layout))
                 .collect::<Vec<_>>()
                 .into(),
             fields: self
                 .fields
                 .iter()
-                .map(|layout| materialize_field_definition(bytes, layout))
+                .map(|layout| registry::materialize_field_definition(bytes, layout))
                 .collect::<Vec<_>>()
                 .into(),
             control: self.control.as_ref().map(materialize_record),
@@ -1359,54 +1381,6 @@ impl IndexedSectionLayout {
                 .collect::<Vec<_>>()
                 .into(),
         }
-    }
-}
-
-fn materialize_registry_suffix(bytes: &[u8], range: Option<IndexedByteRange>) -> &[u8] {
-    range.map_or(&bytes[..0], |range| {
-        bytes
-            .get(range.start..range.end)
-            .expect("cached indexed registry suffix remains in source")
-    })
-}
-
-fn materialize_type_definition<'a>(
-    bytes: &'a [u8],
-    layout: &IndexedDefinitionLayout,
-) -> TypeDefinition<'a> {
-    let name_start = layout.offset + 1;
-    let name_end = name_start + layout.name_len;
-    let name = std::str::from_utf8(
-        bytes
-            .get(name_start..name_end)
-            .expect("cached indexed declaration name remains in source"),
-    )
-    .expect("cached indexed declaration name remains UTF-8");
-    TypeDefinition {
-        offset: layout.offset,
-        name,
-        trailing_code: layout.trailing_code,
-        registry_suffix: materialize_registry_suffix(bytes, layout.registry_suffix),
-    }
-}
-
-fn materialize_field_definition<'a>(
-    bytes: &'a [u8],
-    layout: &IndexedDefinitionLayout,
-) -> FieldDefinition<'a> {
-    let name_start = layout.offset + 1;
-    let name_end = name_start + layout.name_len;
-    let name = std::str::from_utf8(
-        bytes
-            .get(name_start..name_end)
-            .expect("cached indexed declaration name remains in source"),
-    )
-    .expect("cached indexed declaration name remains UTF-8");
-    FieldDefinition {
-        offset: layout.offset,
-        name,
-        trailing_code: layout.trailing_code,
-        registry_suffix: materialize_registry_suffix(bytes, layout.registry_suffix),
     }
 }
 
@@ -1459,8 +1433,8 @@ impl SectionLayout {
         Self {
             offset: section.offset,
             byte_len: section.byte_len,
-            types: type_definition_layouts(&section.types),
-            fields: field_definition_layouts(&section.fields),
+            types: registry::type_definition_layouts(&section.types),
+            fields: registry::field_definition_layouts(&section.fields),
             record_area_offset: section.record_area_offset,
             record_area,
             operation_labels: operation_label_layouts(&section.cached_operation_labels),
@@ -1488,13 +1462,13 @@ impl SectionLayout {
             types: self
                 .types
                 .iter()
-                .map(|layout| materialize_type_definition(bytes, layout))
+                .map(|layout| registry::materialize_type_definition(bytes, layout))
                 .collect::<Vec<_>>()
                 .into(),
             fields: self
                 .fields
                 .iter()
-                .map(|layout| materialize_field_definition(bytes, layout))
+                .map(|layout| registry::materialize_field_definition(bytes, layout))
                 .collect::<Vec<_>>()
                 .into(),
             record_area_offset: self.record_area_offset,
@@ -1502,38 +1476,6 @@ impl SectionLayout {
             cached_operation_labels,
         }
     }
-}
-
-fn type_definition_layouts(definitions: &[TypeDefinition<'_>]) -> Vec<IndexedDefinitionLayout> {
-    definitions
-        .iter()
-        .enumerate()
-        .map(|(index, definition)| IndexedDefinitionLayout {
-            offset: definition.offset,
-            name_len: definition.name.len(),
-            trailing_code: definition.trailing_code,
-            registry_suffix: (index + 1 < definitions.len()).then(|| IndexedByteRange {
-                start: definition.offset + definition.name.len() + 2,
-                end: definitions[index + 1].offset,
-            }),
-        })
-        .collect()
-}
-
-fn field_definition_layouts(definitions: &[FieldDefinition<'_>]) -> Vec<IndexedDefinitionLayout> {
-    definitions
-        .iter()
-        .enumerate()
-        .map(|(index, definition)| IndexedDefinitionLayout {
-            offset: definition.offset,
-            name_len: definition.name.len(),
-            trailing_code: definition.trailing_code,
-            registry_suffix: (index + 1 < definitions.len()).then(|| IndexedByteRange {
-                start: definition.offset + definition.name.len() + 2,
-                end: definitions[index + 1].offset,
-            }),
-        })
-        .collect()
 }
 
 /// A feature operation name in a size-framed feature-history record area.
@@ -8938,7 +8880,7 @@ pub(crate) fn sections_with_operation_label_layouts<'a>(
             at = offset + 4;
             continue;
         }
-        let types = type_definitions(bytes, offset + 16, end);
+        let types = registry::type_definitions(bytes, offset + 16, end);
         let field_start = types.last().map_or(offset + 16, |definition| {
             definition.offset + definition.name.len() + 2
         });
@@ -8949,11 +8891,11 @@ pub(crate) fn sections_with_operation_label_layouts<'a>(
         let (fields, record_area_offset) =
             if let Some((record_area_offset, pointer_offset)) = record_area_pointer {
                 (
-                    all_field_definitions(bytes, field_start, pointer_offset),
+                    registry::all_field_definitions(bytes, field_start, pointer_offset),
                     Some(record_area_offset),
                 )
             } else {
-                (field_definitions(bytes, field_start, end), None)
+                (registry::field_definitions(bytes, field_start, end), None)
             };
         let record_area = record_area_offset.map(|start| &bytes[start..end]);
         let cached_operation_labels = match (record_area, record_area_offset) {
@@ -9212,8 +9154,8 @@ fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> I
                 base,
                 entity_index_offset: entity_index_start,
                 object_id_table_offset,
-                types: type_definitions(bytes, base, entity_index_start).into(),
-                fields: all_field_definitions(bytes, base, entity_index_start).into(),
+                types: registry::type_definitions(bytes, base, entity_index_start).into(),
+                fields: registry::all_field_definitions(bytes, base, entity_index_start).into(),
                 control: None,
                 column_storage: None,
                 records: records.into(),
@@ -9247,8 +9189,8 @@ fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> I
                 base: 0,
                 entity_index_offset: entity_index_start,
                 object_id_table_offset,
-                types: type_definitions(bytes, 0, entity_index_start).into(),
-                fields: all_field_definitions(bytes, 0, entity_index_start).into(),
+                types: registry::type_definitions(bytes, 0, entity_index_start).into(),
+                fields: registry::all_field_definitions(bytes, 0, entity_index_start).into(),
                 control: Some(EntityRecord {
                     object_id: None,
                     object_id_offset: None,
@@ -9694,101 +9636,6 @@ pub fn offset_store_control_form(
         (_, Some(form)) => Some(form),
         (None, None) => None,
     }
-}
-
-fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {
-    let mut out = Vec::new();
-    let mut at = start;
-    while at < end {
-        let declared = usize::from(bytes[at]);
-        let Some(length) = declared.checked_sub(1) else {
-            at += 1;
-            continue;
-        };
-        let name_start = at + 1;
-        let name_end = name_start.saturating_add(length);
-        let Some(raw) = bytes.get(name_start..name_end) else {
-            at += 1;
-            continue;
-        };
-        let valid = raw.starts_with(b"UGS::")
-            && raw.iter().all(|byte| (0x20..0x7f).contains(byte))
-            && name_end < end;
-        if valid {
-            let name = std::str::from_utf8(raw)
-                .expect("invariant: validated printable ASCII is valid UTF-8");
-            out.push(TypeDefinition {
-                offset: at,
-                name,
-                trailing_code: bytes[name_end],
-                registry_suffix: &[],
-            });
-            at = name_end + 1;
-        } else {
-            at += 1;
-        }
-    }
-    for index in 0..out.len().saturating_sub(1) {
-        let suffix_start = out[index].offset + out[index].name.len() + 2;
-        let suffix_end = out[index + 1].offset;
-        out[index].registry_suffix = &bytes[suffix_start..suffix_end];
-    }
-    out
-}
-
-fn field_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<FieldDefinition<'_>> {
-    let mut out = Vec::new();
-    let mut search = start;
-    let mut limit = start.saturating_add(256).min(end);
-    while let Some((definition, at)) = (search..limit)
-        .find_map(|at| field_definition_at(bytes, at, end).map(|definition| (definition, at)))
-    {
-        let next = at + definition.name.len() + 2;
-        search = next;
-        limit = search.saturating_add(256).min(end);
-        out.push(definition);
-    }
-    bound_field_registry_suffixes(bytes, &mut out);
-    out
-}
-
-fn all_field_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<FieldDefinition<'_>> {
-    let mut out = Vec::new();
-    let mut at = start;
-    while at < end {
-        if let Some(definition) = field_definition_at(bytes, at, end) {
-            at += definition.name.len() + 2;
-            out.push(definition);
-        } else {
-            at += 1;
-        }
-    }
-    bound_field_registry_suffixes(bytes, &mut out);
-    out
-}
-
-fn bound_field_registry_suffixes<'a>(bytes: &'a [u8], definitions: &mut [FieldDefinition<'a>]) {
-    for index in 0..definitions.len().saturating_sub(1) {
-        let suffix_start = definitions[index].offset + definitions[index].name.len() + 2;
-        let suffix_end = definitions[index + 1].offset;
-        definitions[index].registry_suffix = &bytes[suffix_start..suffix_end];
-    }
-}
-
-fn field_definition_at(bytes: &[u8], at: usize, end: usize) -> Option<FieldDefinition<'_>> {
-    let declared = usize::from(*bytes.get(at)?);
-    let length = declared.checked_sub(1)?;
-    let name_start = at.checked_add(1)?;
-    let name_end = name_start.checked_add(length)?;
-    (name_end < end).then_some(())?;
-    let raw = bytes.get(name_start..name_end)?;
-    (raw.starts_with(b"m_") && raw.iter().all(|byte| (0x20..0x7f).contains(byte))).then_some(())?;
-    Some(FieldDefinition {
-        offset: at,
-        name: std::str::from_utf8(raw).ok()?,
-        trailing_code: bytes[name_end],
-        registry_suffix: &[],
-    })
 }
 
 fn numeric_expression_at(

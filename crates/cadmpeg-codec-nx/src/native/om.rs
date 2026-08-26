@@ -7,6 +7,7 @@ use super::*;
 use cadmpeg_core::decode::View;
 
 use crate::native::segments::segment_om_links;
+use crate::om::TypeDefinition as OmTypeDefinition;
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -995,8 +996,18 @@ pub struct ClassDefinition {
     pub name: String,
     /// Zero-based declaration ordinal used as class identity.
     pub ordinal: u32,
-    /// Declaration code serialized after the class name.
+    /// First registry-token byte serialized after the class name (legacy field name).
     pub trailing_code: u8,
+    /// Decoded storage token from the complete class registry tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_storage_code: Option<u32>,
+    /// One-based base-class ordinal from the complete class registry tail.
+    /// Zero denotes the registry root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_base_class: Option<u32>,
+    /// One-based reference-list ordinal from the complete class registry tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_reference: Option<u32>,
     /// Exact bytes between this declaration core and the next class declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub registry_suffix: Vec<u8>,
@@ -1026,8 +1037,14 @@ pub struct FieldDefinition {
     pub name: String,
     /// Zero-based declaration ordinal within its section.
     pub ordinal: u32,
-    /// Declaration code serialized immediately after the name.
+    /// First registry-token byte serialized immediately after the name (legacy field name).
     pub trailing_code: u8,
+    /// Decoded storage token from the complete member registry head.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_storage_code: Option<u32>,
+    /// One-based declaring-class ordinal from the complete member registry head.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registry_owner_class: Option<u32>,
     /// Exact bytes between this declaration core and the next member declaration.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub registry_suffix: Vec<u8>,
@@ -2808,8 +2825,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
             .expect("OM entry belongs to container");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
-            let (layout_prefix, schema_fingerprint, layout_terminal) =
-                registry_layout_fields(definition.registry_suffix);
+            let registry_fields = class_registry_fields(&definition);
             definitions.insert(
                 (entry_index, definition.offset),
                 ClassDefinition {
@@ -2817,10 +2833,13 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
+                    registry_storage_code: registry_fields.storage_code,
+                    registry_base_class: registry_fields.base_class,
+                    registry_reference: registry_fields.reference,
                     registry_suffix: definition.registry_suffix.to_vec(),
-                    layout_prefix,
-                    schema_fingerprint,
-                    layout_terminal,
+                    layout_prefix: registry_fields.layout_prefix,
+                    schema_fingerprint: registry_fields.schema_fingerprint,
+                    layout_terminal: registry_fields.layout_terminal,
                     section_offset: entry_offset + section.offset as u64,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -2837,8 +2856,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let section_offset = entry_offset + section.base_offset() as u64;
         for (ordinal, definition) in section.types.iter().cloned().enumerate() {
-            let (layout_prefix, schema_fingerprint, layout_terminal) =
-                registry_layout_fields(definition.registry_suffix);
+            let registry_fields = class_registry_fields(&definition);
             definitions
                 .entry((entry_index, definition.offset))
                 .or_insert_with(|| ClassDefinition {
@@ -2846,10 +2864,13 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
+                    registry_storage_code: registry_fields.storage_code,
+                    registry_base_class: registry_fields.base_class,
+                    registry_reference: registry_fields.reference,
                     registry_suffix: definition.registry_suffix.to_vec(),
-                    layout_prefix,
-                    schema_fingerprint,
-                    layout_terminal,
+                    layout_prefix: registry_fields.layout_prefix,
+                    schema_fingerprint: registry_fields.schema_fingerprint,
+                    layout_terminal: registry_fields.layout_terminal,
                     section_offset,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -2873,6 +2894,31 @@ fn registry_layout_fields(suffix: &[u8]) -> (Vec<u8>, Option<[u8; 8]>, Option<u8
     )
 }
 
+struct ClassRegistryFields {
+    layout_prefix: Vec<u8>,
+    schema_fingerprint: Option<[u8; 8]>,
+    layout_terminal: Option<u8>,
+    storage_code: Option<u32>,
+    base_class: Option<u32>,
+    reference: Option<u32>,
+}
+
+fn class_registry_fields(definition: &OmTypeDefinition<'_>) -> ClassRegistryFields {
+    let (layout_prefix, legacy_fingerprint, layout_terminal) =
+        registry_layout_fields(definition.registry_suffix);
+    let registry = definition.class_registry_layout();
+    ClassRegistryFields {
+        layout_prefix,
+        schema_fingerprint: registry
+            .map(|layout| layout.schema_fingerprint)
+            .or(legacy_fingerprint),
+        layout_terminal,
+        storage_code: registry.map(|layout| layout.storage_code.value),
+        base_class: registry.map(|layout| layout.base_class),
+        reference: registry.map(|layout| layout.reference),
+    }
+}
+
 /// Decode member definitions from every framed OM section.
 pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
     let mut definitions = BTreeMap::new();
@@ -2886,6 +2932,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
             let (layout_prefix, schema_fingerprint, layout_terminal) =
                 registry_layout_fields(definition.registry_suffix);
+            let registry = definition.field_registry_layout();
             definitions.insert(
                 (entry_index, definition.offset),
                 FieldDefinition {
@@ -2893,6 +2940,8 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
+                    registry_storage_code: registry.map(|layout| layout.storage_code.value),
+                    registry_owner_class: registry.map(|layout| layout.owner_class),
                     registry_suffix: definition.registry_suffix.to_vec(),
                     layout_prefix,
                     schema_fingerprint,
@@ -2915,6 +2964,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
         for (ordinal, definition) in section.fields.iter().cloned().enumerate() {
             let (layout_prefix, schema_fingerprint, layout_terminal) =
                 registry_layout_fields(definition.registry_suffix);
+            let registry = definition.field_registry_layout();
             definitions
                 .entry((entry_index, definition.offset))
                 .or_insert_with(|| FieldDefinition {
@@ -2922,6 +2972,8 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
+                    registry_storage_code: registry.map(|layout| layout.storage_code.value),
+                    registry_owner_class: registry.map(|layout| layout.owner_class),
                     registry_suffix: definition.registry_suffix.to_vec(),
                     layout_prefix,
                     schema_fingerprint,
@@ -6180,6 +6232,8 @@ mod tests {
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].name, "m_target");
         assert_eq!(fields[0].ordinal, 0);
+        assert_eq!(fields[0].registry_storage_code, Some(2));
+        assert_eq!(fields[0].registry_owner_class, Some(2));
         assert_eq!(fields[0].registry_suffix, [0x01, 0x02]);
         assert_eq!(fields[0].layout_prefix, Vec::<u8>::new());
         assert_eq!(fields[0].schema_fingerprint, None);
@@ -6210,6 +6264,44 @@ mod tests {
             Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
         );
         assert_eq!(classes[0].layout_terminal, Some(0x06));
+    }
+
+    #[test]
+    fn class_registry_metadata_requires_a_complete_tail() {
+        let legacy_definition = crate::om::TypeDefinition {
+            offset: 0,
+            name: "UGS::FEATURE_RECORD",
+            trailing_code: 0xa0,
+            registry_suffix: &[
+                0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
+            ],
+        };
+
+        let legacy = super::class_registry_fields(&legacy_definition);
+        assert_eq!(legacy.storage_code, None);
+        assert_eq!(legacy.base_class, None);
+        assert_eq!(legacy.reference, None);
+        assert_eq!(
+            legacy.schema_fingerprint,
+            Some([0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef])
+        );
+        assert_eq!(legacy.layout_terminal, Some(0x06));
+
+        let complete_definition = crate::om::TypeDefinition {
+            offset: 0,
+            name: "UGS::FEATURE_RECORD",
+            trailing_code: 0x38,
+            registry_suffix: &[0x05, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x02],
+        };
+        let complete = super::class_registry_fields(&complete_definition);
+        assert_eq!(complete.storage_code, Some(0x38));
+        assert_eq!(complete.base_class, Some(0x05));
+        assert_eq!(complete.reference, Some(0x02));
+        assert_eq!(
+            complete.schema_fingerprint,
+            Some([0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80])
+        );
+        assert_eq!(complete.layout_terminal, None);
     }
 
     #[test]
