@@ -3,6 +3,7 @@
 use super::assembly::is_supplemental_config_lane;
 #[cfg(test)]
 use super::bindings::bind_detached_legacy_sketch_objects;
+use super::bindings::history_metadata_ids;
 use super::compact_reference_planes::CompactReferencePlaneIndex;
 use super::curves::{
     closed_marker_profiles, closed_marker_profiles_allowing_shared_endpoints,
@@ -21,7 +22,8 @@ use super::endpoints::{
     compact_legacy_terminal_diameter_circle, compact_profile_full_circle, coordinate_circle_radius,
     coordinate_ellipse_axes, coordinate_roster_arc_center, coordinate_roster_full_circle,
     current_compact_roster_selected_axis, current_indexed_arc_reverses_center_sweep,
-    equal_index_coordinate_roster_full_circle, extended_declared_inline_line_endpoints,
+    current_profile_circle_dimension, equal_index_coordinate_roster_full_circle,
+    extended_declared_inline_line_endpoints, extended_geometry_full_circle,
     extended_identity_inline_line_endpoints, extended_linked_inline_line_endpoints,
     extended_wide_construction_line_roster_indices, implicit_coordinate_roster_curve_endpoints,
     implicit_profile_chain_closure_endpoints, indexed_arc_uses_coordinate_center,
@@ -31,11 +33,12 @@ use super::endpoints::{
     legacy_unlocated_geometry_handle, marker_is_selected_construction_line,
     marker_profile_curve_role, minor_arc_geometry, output_curve_endpoint_markers,
     packed_compact_legacy_curve_endpoint_indices, relation_reference_curve_record,
-    unique_arc_center_marker, wide_coordinate_roster_full_circle,
+    terminal_relation_class_offset, unique_arc_center_marker, wide_coordinate_roster_full_circle,
 };
 use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
 use super::markers::{
-    inline_arc_coordinates, legacy_140_profile_point_variant_coordinates, marker_is_geometry_locus,
+    compact_legacy_142_profile_curve_endpoints, inline_arc_coordinates,
+    legacy_140_profile_point_variant_coordinates, marker_is_geometry_locus,
 };
 use super::projections::bind_circular_profile_by_dimension;
 use super::reference_geometry::reference_plane_frame_key;
@@ -80,6 +83,7 @@ pub(crate) fn bind_sketch_profiles(
 ) {
     let declared_carriers = declared_entity_handle_circular_carriers(features, parameters, lanes);
     let mut superseded = HashSet::new();
+    let metadata_ids = history_metadata_ids(histories);
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -88,6 +92,9 @@ pub(crate) fn bind_sketch_profiles(
     for lane in lanes {
         let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
         for feature in native_features.values() {
+            if metadata_ids.contains(&feature.id) {
+                continue;
+            }
             let Some(name) = feature_object_name(feature, lane) else {
                 continue;
             };
@@ -283,6 +290,7 @@ pub(crate) fn project_compact_sketch_profiles(
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let metadata_ids = history_metadata_ids(histories);
 
     let native_features = histories
         .iter()
@@ -294,6 +302,7 @@ pub(crate) fn project_compact_sketch_profiles(
         let plane_index = CompactReferencePlaneIndex::new(&lane.native_payload);
         let mut objects = native_features
             .values()
+            .filter(|feature| !metadata_ids.contains(&feature.id))
             .filter_map(|feature| {
                 let start = feature_object_name(feature, lane)
                     .map(|name| name.offset)
@@ -686,6 +695,35 @@ pub(crate) fn project_compact_sketch_profiles(
     }
 }
 
+fn terminal_relation_display_carrier(lane: &FeatureInputLane, marker: &SketchInputEntity) -> bool {
+    if !matches!(
+        marker.kind,
+        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+    ) || marker.coordinates_m.is_some()
+    {
+        return false;
+    }
+    let Some(feature_ref) = marker.feature_ref.as_deref() else {
+        return false;
+    };
+    let Some(offset) = usize::try_from(marker.offset).ok() else {
+        return false;
+    };
+    let Some(class_offset) = terminal_relation_class_offset(&lane.native_payload, offset) else {
+        return false;
+    };
+    let Some(class) = lane
+        .classes
+        .iter()
+        .find(|class| class.offset == class_offset as u64)
+    else {
+        return false;
+    };
+    lane.relation_instances
+        .iter()
+        .any(|relation| relation.feature_ref == feature_ref && relation.class_ref == class.id)
+}
+
 pub(crate) fn project_marker_backed_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
@@ -695,12 +733,18 @@ pub(crate) fn project_marker_backed_sketches(
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let metadata_ids = history_metadata_ids(histories);
 
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
+    let marker_owners = lanes
+        .iter()
+        .flat_map(|lane| &lane.sketch_entities)
+        .filter_map(|marker| marker.feature_ref.as_deref())
+        .collect::<HashSet<_>>();
     let feature_frames = sketch_feature_frames(features, histories, lanes);
     project_detached_legacy_config_sketches(
         features,
@@ -720,6 +764,7 @@ pub(crate) fn project_marker_backed_sketches(
             .collect::<HashMap<_, _>>();
         let mut objects = native_features
             .values()
+            .filter(|feature| !metadata_ids.contains(&feature.id))
             .filter_map(|feature| {
                 let start = feature_object_name(feature, lane)
                     .map(|name| name.offset)
@@ -766,30 +811,6 @@ pub(crate) fn project_marker_backed_sketches(
                         && marker.offset < end
                 })
                 .collect::<Vec<_>>();
-            let markers = object_markers
-                .iter()
-                .copied()
-                .filter(|marker| {
-                    matches!(
-                        marker.kind,
-                        SketchInputKind::Point
-                            | SketchInputKind::ConstrainedPoint
-                            | SketchInputKind::LineOrCircle
-                            | SketchInputKind::Arc
-                    ) && usize::try_from(marker.offset).ok().is_none_or(|offset| {
-                        !legacy_unlocated_geometry_handle(&lane.native_payload, offset)
-                            && !auxiliary_profile_record(&lane.native_payload, offset)
-                            && !relation_reference_curve_record(
-                                &lane.native_payload,
-                                marker,
-                                &object_markers,
-                            )
-                    })
-                })
-                .collect::<Vec<_>>();
-            if markers.is_empty() {
-                continue;
-            }
             let context_start = object_index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))
@@ -826,6 +847,68 @@ pub(crate) fn project_marker_backed_sketches(
                 "sldprt:model:sketch#markers:{lane_key}:{}",
                 native_feature.ordinal
             ));
+            let markers = object_markers
+                .iter()
+                .copied()
+                .filter(|marker| {
+                    matches!(
+                        marker.kind,
+                        SketchInputKind::Point
+                            | SketchInputKind::ConstrainedPoint
+                            | SketchInputKind::LineOrCircle
+                            | SketchInputKind::Arc
+                    ) && usize::try_from(marker.offset).ok().is_none_or(|offset| {
+                        !legacy_unlocated_geometry_handle(&lane.native_payload, offset)
+                            && !auxiliary_profile_record(&lane.native_payload, offset)
+                            && !relation_reference_curve_record(
+                                &lane.native_payload,
+                                marker,
+                                &object_markers,
+                            )
+                            && !terminal_relation_display_carrier(lane, marker)
+                    })
+                })
+                .collect::<Vec<_>>();
+            if markers.is_empty() {
+                let has_unbound_marker = lane
+                    .sketch_entities
+                    .iter()
+                    .any(|marker| marker.offset > start as u64 && marker.offset < end as u64);
+                if object_markers.is_empty()
+                    && !has_unbound_marker
+                    && !marker_owners.contains(native_feature.id.as_str())
+                    && bound_sketch.is_none()
+                    && !block_definition
+                {
+                    if !sketches.iter().any(|sketch| sketch.id == sketch_id) {
+                        let sketch = Sketch {
+                            id: sketch_id.clone(),
+                            name: Some(native_feature.name.clone()),
+                            configuration: lane.configuration.clone(),
+                            visible: None,
+                            placement: frame.map_or(
+                                cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+                                |(origin, normal, u_axis)| {
+                                    cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                                        origin,
+                                        normal,
+                                        u_axis,
+                                    }
+                                },
+                            ),
+                            profiles: Vec::new(),
+                            native_ref: Some(lane.id.clone()),
+                        };
+                        sketches.push(sketch);
+                    }
+                    features[feature_index].definition =
+                        cadmpeg_ir::features::FeatureDefinition::Sketch {
+                            space: cadmpeg_ir::features::SketchSpace::Planar,
+                            sketch: Some(sketch_id),
+                        };
+                }
+                continue;
+            }
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
                 features[feature_index].definition = if block_definition {
                     cadmpeg_ir::features::FeatureDefinition::SketchBlockDefinition {
@@ -920,6 +1003,13 @@ pub(crate) fn project_marker_backed_sketches(
                                 )
                             })
                             .or_else(|| {
+                                current_profile_circle_dimension(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                )
+                            })
+                            .or_else(|| {
                                 compact_legacy_terminal_diameter_circle(
                                     &lane.native_payload,
                                     marker,
@@ -928,6 +1018,13 @@ pub(crate) fn project_marker_backed_sketches(
                             })
                             .or_else(|| {
                                 compact_legacy_profile_full_circle(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                )
+                            })
+                            .or_else(|| {
+                                extended_geometry_full_circle(
                                     &lane.native_payload,
                                     marker,
                                     &object_markers,
@@ -1028,6 +1125,12 @@ pub(crate) fn project_marker_backed_sketches(
                                             &lane.native_payload,
                                             marker,
                                             &object_markers,
+                                        )
+                                    })
+                                    .or_else(|| {
+                                        compact_legacy_142_profile_curve_endpoints(
+                                            &lane.native_payload,
+                                            usize::try_from(marker.offset).ok()?,
                                         )
                                     })
                                 {
@@ -2575,7 +2678,11 @@ fn legacy_config_collinear_sketch(
 #[cfg(test)]
 mod detached_legacy_sketch_tests {
     use super::*;
-    use crate::records::{Feature, FeatureHistory};
+    use crate::layout::current_terminal_relation_carrier as terminal;
+    use crate::records::{
+        Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
+        FeatureInputRelationFamily, FeatureInputRelationInstance,
+    };
 
     fn feature() -> Feature {
         Feature {
@@ -2636,6 +2743,110 @@ mod detached_legacy_sketch_tests {
         }
     }
 
+    fn current_terminal_relation_payload() -> Vec<u8> {
+        const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
+        const CLASS: &[u8] = b"sgCircleDim";
+        let mut payload = vec![0; terminal::LEN];
+        payload[terminal::MARKER..terminal::MARKER + super::super::SKETCH_MARKER.len()]
+            .copy_from_slice(super::super::SKETCH_MARKER);
+        payload[terminal::NATIVE_KIND..terminal::NATIVE_KIND + 4]
+            .copy_from_slice(&2u32.to_le_bytes());
+        payload[terminal::GEOMETRY_LOCUS..terminal::GEOMETRY_LOCUS + 4]
+            .copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[terminal::ROLE..terminal::ROLE + 2].copy_from_slice(&1u16.to_le_bytes());
+        payload[terminal::STATE..terminal::STATE + 2].copy_from_slice(&1u16.to_le_bytes());
+        payload[terminal::SELECTOR..terminal::SELECTOR + 8]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[terminal::STATE_VALUE..terminal::STATE_VALUE + 8]
+            .copy_from_slice(&1.0f64.to_le_bytes());
+        payload[terminal::TERMINAL_HEADER..terminal::TERMINAL_HEADER + 4]
+            .copy_from_slice(&[1, 0, 1, 0]);
+        payload[terminal::ENDPOINT_SELECTOR..terminal::ENDPOINT_SELECTOR + 4]
+            .copy_from_slice(&1u32.to_le_bytes());
+        payload[terminal::SIGNED_SELECTOR..terminal::SIGNED_SELECTOR + 8]
+            .copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[terminal::TERMINAL_SELECTOR..terminal::TERMINAL_SELECTOR + 4]
+            .copy_from_slice(&1u32.to_le_bytes());
+        for relative in
+            (terminal::REFERENCE_SENTINELS..terminal::REFERENCE_SENTINELS + 16).step_by(4)
+        {
+            payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[terminal::TERMINAL_TAG..terminal::TERMINAL_TAG + 2]
+            .copy_from_slice(&3u16.to_le_bytes());
+        let class_offset = payload.len();
+        payload.resize(class_offset + 6 + CLASS.len(), 0);
+        payload[class_offset..class_offset + CLASS_MARKER.len()].copy_from_slice(CLASS_MARKER);
+        payload[class_offset + 4..class_offset + 6]
+            .copy_from_slice(&(CLASS.len() as u16).to_le_bytes());
+        payload[class_offset + 6..class_offset + 6 + CLASS.len()].copy_from_slice(CLASS);
+        payload
+    }
+
+    #[test]
+    fn terminal_relation_display_carrier_requires_same_feature_and_class() {
+        let lane_id = "lane";
+        let feature_id = "feature";
+        let class_id = "class";
+        let mut carrier = marker(0, None, SketchInputKind::LineOrCircle, None);
+        carrier.offset = 0;
+        let lane = FeatureInputLane {
+            id: lane_id.into(),
+            configuration: None,
+            native_payload: current_terminal_relation_payload(),
+            classes: vec![FeatureInputClass {
+                id: class_id.into(),
+                parent: lane_id.into(),
+                ordinal: 0,
+                offset: terminal::LEN as u64,
+                name: "sgCircleDim".into(),
+                role: FeatureInputClassRole::SketchConstraint,
+            }],
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: vec![FeatureInputRelationInstance {
+                id: "relation".into(),
+                parent: lane_id.into(),
+                ordinal: 0,
+                offset: 200,
+                family: FeatureInputRelationFamily::CircleDiameter,
+                class_ref: class_id.into(),
+                feature_ref: feature_id.into(),
+                scalar_refs: Vec::new(),
+                parameter_scalar_ref: None,
+                display_scalar_ref: None,
+                operands: Vec::new(),
+            }],
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        assert!(terminal_relation_display_carrier(&lane, &carrier));
+
+        let mut wrong_feature = lane.relation_instances[0].clone();
+        wrong_feature.feature_ref = "other-feature".into();
+        let mut wrong_feature_lane = lane.clone();
+        wrong_feature_lane.relation_instances = vec![wrong_feature];
+        assert!(!terminal_relation_display_carrier(
+            &wrong_feature_lane,
+            &carrier
+        ));
+
+        let mut wrong_class = lane.relation_instances[0].clone();
+        wrong_class.class_ref = "other-class".into();
+        let mut wrong_class_lane = lane;
+        wrong_class_lane.relation_instances = vec![wrong_class];
+        assert!(!terminal_relation_display_carrier(
+            &wrong_class_lane,
+            &carrier
+        ));
+    }
+
     #[test]
     fn detached_object_without_legacy_dimension_handle_binds_to_unique_sketch() {
         let history = FeatureHistory {
@@ -2676,6 +2887,151 @@ mod detached_legacy_sketch_tests {
             lane.sketch_entities[0].feature_ref.as_deref(),
             Some("feature")
         );
+    }
+
+    #[test]
+    fn empty_named_sketch_is_projected_without_geometry_markers() {
+        let mut native_feature = feature();
+        native_feature.kind = "Sketch".into();
+        native_feature.input_class = Some("moProfileFeature_c".into());
+        native_feature.name = "empty".into();
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![native_feature],
+        };
+        let lane_id = "sldprt:feature-input:resolved-features#1";
+        let lane = FeatureInputLane {
+            id: lane_id.into(),
+            configuration: None,
+            native_payload: vec![0; 64],
+            classes: Vec::new(),
+            names: vec![crate::records::FeatureInputName {
+                id: "name".into(),
+                parent: lane_id.into(),
+                ordinal: 0,
+                offset: 8,
+                object_id: Some(30),
+                value: "empty".into(),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let expected_sketch = SketchId("sldprt:model:sketch#markers:1:30".into());
+        let mut neutral_feature = cadmpeg_ir::features::Feature::new(
+            cadmpeg_ir::features::FeatureId("neutral".into()),
+            30,
+            FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: None,
+            },
+        );
+        neutral_feature.name = Some("empty".into());
+        neutral_feature.native_ref = Some("feature".into());
+        let mut features = vec![neutral_feature];
+        let mut sketches = Vec::new();
+        let mut sketch_entities = Vec::new();
+
+        project_marker_backed_sketches(
+            &mut features,
+            &mut sketches,
+            &mut sketch_entities,
+            &[history],
+            &[lane],
+        );
+
+        assert_eq!(sketches.len(), 1);
+        assert_eq!(sketches[0].id, expected_sketch);
+        assert_eq!(sketches[0].profiles, Vec::<Vec<SketchEntityUse>>::new());
+        assert_eq!(sketches[0].placement, SketchPlacement::Unresolved);
+        assert!(sketch_entities.is_empty());
+        assert!(matches!(
+            &features[0].definition,
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } if sketch == &expected_sketch
+        ));
+    }
+
+    #[test]
+    fn unbound_marker_keeps_empty_sketch_unresolved() {
+        let mut native_feature = feature();
+        native_feature.kind = "Sketch".into();
+        native_feature.input_class = Some("moProfileFeature_c".into());
+        native_feature.name = "empty".into();
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![native_feature],
+        };
+        let lane_id = "sldprt:feature-input:resolved-features#1";
+        let mut unbound = marker(0, Some(1), SketchInputKind::Point, Some([0.0, 0.0]));
+        unbound.feature_ref = None;
+        unbound.offset = 20;
+        let lane = FeatureInputLane {
+            id: lane_id.into(),
+            configuration: None,
+            native_payload: vec![0; 64],
+            classes: Vec::new(),
+            names: vec![crate::records::FeatureInputName {
+                id: "name".into(),
+                parent: lane_id.into(),
+                ordinal: 0,
+                offset: 8,
+                object_id: Some(30),
+                value: "empty".into(),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![unbound],
+        };
+        let mut neutral_feature = cadmpeg_ir::features::Feature::new(
+            cadmpeg_ir::features::FeatureId("neutral".into()),
+            30,
+            FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: None,
+            },
+        );
+        neutral_feature.name = Some("empty".into());
+        neutral_feature.native_ref = Some("feature".into());
+        let mut features = vec![neutral_feature];
+        let mut sketches = Vec::new();
+        let mut sketch_entities = Vec::new();
+
+        project_marker_backed_sketches(
+            &mut features,
+            &mut sketches,
+            &mut sketch_entities,
+            &[history],
+            &[lane],
+        );
+
+        assert!(sketches.is_empty());
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Sketch { sketch: None, .. }
+        ));
     }
 
     #[test]

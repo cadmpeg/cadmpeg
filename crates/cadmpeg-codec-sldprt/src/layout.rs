@@ -26,6 +26,30 @@ pub(crate) mod token {
     pub(crate) const WORLD_POINT: [u8; 2] = [0x00, 0x1d];
 }
 
+/// Byte offsets for the `feature_input_shifted_scalar_trailer` record.
+///
+/// Spec §2. Record length 35 B.
+///
+/// ```text
+/// The value-only scalar's fixed trailer prefix. Variable-count feature_input_operand_cell12 records follow at +35.
+/// ```
+pub(crate) mod feature_input_shifted_scalar_trailer {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 35;
+    /// Offset of `zero_prefix` (`bytes[3]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 0;
+    /// Offset of `object_id` (`u32`, little-endian). Spec §2.
+    pub(crate) const OBJECT_ID: usize = 3;
+    /// Offset of `zero_object_tail` (`bytes[14]`). Spec §2.
+    pub(crate) const ZERO_OBJECT_TAIL: usize = 7;
+    /// Offset of `layout_marker` (`bytes[6]`). Spec §2.
+    pub(crate) const LAYOUT_MARKER: usize = 21;
+    /// Offset of `role` (`u8`). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `zero_tail` (`bytes[7]`). Spec §2.
+    pub(crate) const ZERO_TAIL: usize = 28;
+}
+
 /// Byte offsets for the `feature_input_operand_cell12` record.
 ///
 /// Spec §2. Record length 12 B.
@@ -153,6 +177,43 @@ pub(crate) mod zlb_wrapper_header {
     pub(crate) const ZLIB_MEMBER_SIZE: usize = 20;
 }
 
+/// Byte offsets for the `parasolid_chain_section_header` record.
+///
+/// Spec §1. Record length 20 B.
+///
+/// ```text
+/// The chain length is followed by the wrapper magic; frame headers and zero padding follow.
+/// ```
+pub(crate) mod parasolid_chain_section_header {
+    /// Record length in bytes. Spec §1.
+    pub(crate) const LEN: usize = 20;
+    /// Offset of `chain_len` (`u32`, little-endian). Spec §1.
+    pub(crate) const CHAIN_LEN: usize = 0;
+    /// Offset of `magic` (`bytes[16]`). Spec §1.
+    pub(crate) const MAGIC: usize = 4;
+    /// Stated value of `magic` (`bytes[16]`). Spec §1.
+    pub(crate) const MAGIC_VALUE: [u8; 16] = [
+        0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef,
+        0x99,
+    ];
+}
+
+/// Byte offsets for the `parasolid_chain_frame_header` record.
+///
+/// Spec §1. Record length 8 B.
+///
+/// ```text
+/// The zlib member immediately follows this fixed header and occupies the declared member size.
+/// ```
+pub(crate) mod parasolid_chain_frame_header {
+    /// Record length in bytes. Spec §1.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `uncompressed_size` (`u32`, little-endian). Spec §1.
+    pub(crate) const UNCOMPRESSED_SIZE: usize = 0;
+    /// Offset of `zlib_member_size` (`u32`, little-endian). Spec §1.
+    pub(crate) const ZLIB_MEMBER_SIZE: usize = 4;
+}
+
 /// Byte offsets for the `world_point` record.
 ///
 /// Spec §4. Record length 38 B.
@@ -174,7 +235,7 @@ pub(crate) mod world_point {
 /// Spec §5. Record length 12 B.
 ///
 /// ```text
-/// Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Slot values follow at +12 with the schema, disc, and flo count table in specification section 5.
+/// Body-relative, after the two-byte family tag. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. `disc` points to the ATTRIB_DEF node. Bare ATTRIBUTE slots follow at +12 and total `5 + flo`.
 /// ```
 pub(crate) mod entity_common_header {
     /// Record length in bytes. Spec §5.
@@ -194,7 +255,7 @@ pub(crate) mod entity_common_header {
 /// Spec §5. Record length 14 B.
 ///
 /// ```text
-/// Body-relative. Node references follow from body +14 until the next record tag. The +0..+6 region is the common-header `flags` and `attr` of the same record.
+/// Body-relative prefix. `definition_node_id` selects the same-stream ATTRIB_DEF; ATTRIBUTE slots begin at body +14. Bare framing uses `5 + flo` u16 slots; prefixed framing uses terminated `[01][hi][lo]` triples. The +0..+6 region is the common-header `flags` and `attr` of the same record.
 /// ```
 pub(crate) mod attribute_instance_00_51 {
     /// Record length in bytes. Spec §5.
@@ -205,36 +266,6 @@ pub(crate) mod attribute_instance_00_51 {
     pub(crate) const DEFINITION_NODE_ID: usize = 10;
     /// Offset of `owner_attribute_id` (`u16`, big-endian). Spec §5.
     pub(crate) const OWNER_ATTRIBUTE_ID: usize = 12;
-}
-
-/// Byte offsets for the `class_root_directory_prefix` record.
-///
-/// Spec §6. Record length 44 B.
-///
-/// ```text
-/// Fixed prefix only. The root vector contains root_count u16 BE attributes from +44.
-/// ```
-pub(crate) mod class_root_directory_prefix {
-    /// Record length in bytes. Spec §6.
-    pub(crate) const LEN: usize = 44;
-    /// Offset of `signature` (`bytes[2]`). Spec §6.
-    pub(crate) const SIGNATURE: usize = 0;
-    /// Offset of `name_len` (`u8`). Spec §6.
-    pub(crate) const NAME_LEN: usize = 2;
-    /// Offset of `field_name` (`bytes[16]`). Spec §6.
-    pub(crate) const FIELD_NAME: usize = 3;
-    /// Offset of `instance_marker` (`bytes[6]`). Spec §6.
-    pub(crate) const INSTANCE_MARKER: usize = 19;
-    /// Offset of `ccz` (`bytes[3]`). Spec §6.
-    pub(crate) const CCZ: usize = 25;
-    /// Offset of `type_tag` (`u32`, big-endian). Spec §6.
-    pub(crate) const TYPE_TAG: usize = 28;
-    /// Offset of `class_token` (`u16`, big-endian). Spec §6.
-    pub(crate) const CLASS_TOKEN: usize = 32;
-    /// Offset of `root_count` (`u32`, big-endian). Spec §6.
-    pub(crate) const ROOT_COUNT: usize = 34;
-    /// Offset of `roots_preamble` (`bytes[6]`). Spec §6.
-    pub(crate) const ROOTS_PREAMBLE: usize = 38;
 }
 
 /// Byte offsets for the `compact_analytic_header` record.
@@ -441,6 +472,71 @@ pub(crate) mod offset_surface_00_3c {
     pub(crate) const DISTANCE: usize = 21;
 }
 
+/// Byte offsets for the `current_extended_zero_tail_92_profile_curve` record.
+///
+/// Spec §2. Record length 92 B.
+///
+/// ```text
+/// Endpoint values are zero-based positions in the feature-owned coordinate-bearing geometry roster; the following bytes may be relation payload.
+/// ```
+pub(crate) mod current_extended_zero_tail_92_profile_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 92;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[12]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Stated value of `header` (`bytes[12]`). Spec §2.
+    pub(crate) const HEADER_VALUE: [u8; 12] = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x80, 0xbf,
+    ];
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Stated value of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS_VALUE: [u8; 4] = [0x04, 0x00, 0x02, 0x00];
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Stated value of `state` (`u16`). Spec §2.
+    pub(crate) const STATE_VALUE: u16 = 0x0001;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Stated value of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR_VALUE: [u8; 8] = [0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00];
+    /// Offset of `state_scalar` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_SCALAR: usize = 48;
+    /// Stated value of `state_scalar` (`f64`). Spec §2.
+    pub(crate) const STATE_SCALAR_VALUE: f64 = 1.0;
+    /// Offset of `zero_endpoint_prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX: usize = 56;
+    /// Stated value of `zero_endpoint_prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX_VALUE: [u8; 8] =
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 64;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 66;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 68;
+    /// Stated value of `endpoint_selector` (`u32`). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR_VALUE: u32 = 0x0000_0001;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 72;
+    /// Stated value of `signed_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `zero_tail` (`bytes[12]`). Spec §2.
+    pub(crate) const ZERO_TAIL: usize = 80;
+    /// Stated value of `zero_tail` (`bytes[12]`). Spec §2.
+    pub(crate) const ZERO_TAIL_VALUE: [u8; 12] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+}
+
 /// Byte offsets for the `extended_wide_104_profile_curve` record.
 ///
 /// Spec §2. Record length 104 B.
@@ -449,6 +545,100 @@ pub(crate) mod offset_surface_00_3c {
 /// The endpoint fields are zero-based ordinals in the feature-owned coordinate-bearing geometry roster.
 /// ```
 pub(crate) mod extended_wide_104_profile_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 104;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `profile_selector` (`bytes[8]`). Spec §2.
+    pub(crate) const PROFILE_SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `zero_endpoint_prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX: usize = 56;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 64;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 66;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 68;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 72;
+    /// Offset of `zero_trailer_prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_TRAILER_PREFIX: usize = 80;
+    /// Offset of `trailer_tag0` (`bytes[4]`). Spec §2.
+    pub(crate) const TRAILER_TAG0: usize = 88;
+    /// Offset of `trailer_tag1` (`bytes[4]`). Spec §2.
+    pub(crate) const TRAILER_TAG1: usize = 92;
+    /// Offset of `zero_trailer_suffix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_TRAILER_SUFFIX: usize = 96;
+    /// Offset of `identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY: usize = 100;
+}
+
+/// Byte offsets for the `legacy_wide_112_profile_roster_curve` record.
+///
+/// Spec §2. Record length 112 B.
+///
+/// ```text
+/// The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster; this state-zero trailer is distinct from the object-index wide curve trailer.
+/// ```
+pub(crate) mod legacy_wide_112_profile_roster_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 112;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `zero_endpoint_prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX: usize = 56;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 64;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 66;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 68;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 72;
+    /// Offset of `trailer_selector` (`i32`, little-endian). Spec §2.
+    pub(crate) const TRAILER_SELECTOR: usize = 80;
+    /// Offset of `local_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const LOCAL_STATE: usize = 84;
+    /// Offset of `reference_sentinels` (`i32[4]`, little-endian). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS: usize = 86;
+    /// Offset of `zero_trailer` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_TRAILER: usize = 102;
+    /// Offset of `identity_first` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_FIRST: usize = 104;
+    /// Offset of `identity_second` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_SECOND: usize = 108;
+}
+
+/// Byte offsets for the `legacy_wide_104_profile_roster_curve` record.
+///
+/// Spec §2. Record length 104 B.
+///
+/// ```text
+/// The endpoint fields are zero-based ordinals in the complete feature-owned coordinate-bearing geometry roster.
+/// ```
+pub(crate) mod legacy_wide_104_profile_roster_curve {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 104;
     /// Offset of `marker` (`bytes[5]`). Spec §2.
@@ -477,14 +667,14 @@ pub(crate) mod extended_wide_104_profile_curve {
     pub(crate) const SIGNED_SELECTOR: usize = 72;
     /// Offset of `zero_trailer_prefix` (`bytes[8]`). Spec §2.
     pub(crate) const ZERO_TRAILER_PREFIX: usize = 80;
-    /// Offset of `trailer_tag0` (`bytes[4]`). Spec §2.
-    pub(crate) const TRAILER_TAG0: usize = 88;
-    /// Offset of `trailer_tag1` (`bytes[4]`). Spec §2.
-    pub(crate) const TRAILER_TAG1: usize = 92;
-    /// Offset of `zero_trailer_suffix` (`bytes[4]`). Spec §2.
-    pub(crate) const ZERO_TRAILER_SUFFIX: usize = 96;
-    /// Offset of `identity` (`u32`, little-endian). Spec §2.
-    pub(crate) const IDENTITY: usize = 100;
+    /// Offset of `local_id` (`u32`, little-endian). Spec §2.
+    pub(crate) const LOCAL_ID: usize = 88;
+    /// Offset of `zero_trailer_gap` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_TRAILER_GAP: usize = 92;
+    /// Offset of `trailer_tag` (`u32`, little-endian). Spec §2.
+    pub(crate) const TRAILER_TAG: usize = 96;
+    /// Offset of `next_object_index` (`u32`, little-endian). Spec §2.
+    pub(crate) const NEXT_OBJECT_INDEX: usize = 100;
 }
 
 /// Byte offsets for the `extended_geometry_104_indexed_arc` record.
@@ -529,6 +719,341 @@ pub(crate) mod extended_geometry_104_indexed_arc {
     pub(crate) const TERMINATOR: usize = 94;
     /// Offset of `trailer_identities` (`u32[2]`, little-endian). Spec §2.
     pub(crate) const TRAILER_IDENTITIES: usize = 96;
+}
+
+/// Byte offsets for the `extended_geometry_104_indexed_circle` record.
+///
+/// Spec §2. Record length 104 B.
+///
+/// ```text
+/// Equal radial indices use the explicit center index in the complete coordinate-bearing geometry roster.
+/// ```
+pub(crate) mod extended_geometry_104_indexed_circle {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 104;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Stated value of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS_VALUE: [u8; 4] = [0x05, 0x00, 0x01, 0x00];
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Stated value of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR_VALUE: [u8; 8] = [0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00];
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `radial_index` (`u16`, little-endian). Spec §2.
+    pub(crate) const RADIAL_INDEX: usize = 56;
+    /// Offset of `radial_index_repeat` (`u16`, little-endian). Spec §2.
+    pub(crate) const RADIAL_INDEX_REPEAT: usize = 58;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 60;
+    /// Stated value of `endpoint_selector` (`u32`). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR_VALUE: u32 = 0x0000_0001;
+    /// Offset of `signed_radius_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_RADIUS_SELECTOR: usize = 64;
+    /// Stated value of `signed_radius_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_RADIUS_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `arc_selector` (`i32`, little-endian). Spec §2.
+    pub(crate) const ARC_SELECTOR: usize = 72;
+    /// Offset of `center_index` (`u16`, little-endian). Spec §2.
+    pub(crate) const CENTER_INDEX: usize = 76;
+    /// Offset of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS: usize = 78;
+    /// Stated value of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS_VALUE: [u8; 16] = [
+        0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff,
+        0xff,
+    ];
+    /// Offset of `terminator` (`u16`, little-endian). Spec §2.
+    pub(crate) const TERMINATOR: usize = 94;
+    /// Stated value of `terminator` (`u16`). Spec §2.
+    pub(crate) const TERMINATOR_VALUE: u16 = 0x0000;
+    /// Offset of `trailer_identities` (`u32[2]`, little-endian). Spec §2.
+    pub(crate) const TRAILER_IDENTITIES: usize = 96;
+}
+
+/// Byte offsets for the `current_profile_104_indexed_circle` record.
+///
+/// Spec §2. Record length 104 B.
+///
+/// ```text
+/// The repeated radial index uses the unique direct-object or one-based point-roster resolution rule.
+/// ```
+pub(crate) mod current_profile_104_indexed_circle {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 104;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Stated value of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS_VALUE: [u8; 4] = [0x04, 0x00, 0x02, 0x00];
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Stated value of `state` (`u16`). Spec §2.
+    pub(crate) const STATE_VALUE: u16 = 0x0001;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Stated value of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR_VALUE: [u8; 8] = [0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00];
+    /// Offset of `state_scalar` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_SCALAR: usize = 48;
+    /// Stated value of `state_scalar` (`f64`). Spec §2.
+    pub(crate) const STATE_SCALAR_VALUE: f64 = 1.0;
+    /// Offset of `radial_index` (`u16`, little-endian). Spec §2.
+    pub(crate) const RADIAL_INDEX: usize = 56;
+    /// Offset of `radial_index_repeat` (`u16`, little-endian). Spec §2.
+    pub(crate) const RADIAL_INDEX_REPEAT: usize = 58;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 60;
+    /// Stated value of `endpoint_selector` (`u32`). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR_VALUE: u32 = 0x0000_0001;
+    /// Offset of `signed_radius_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_RADIUS_SELECTOR: usize = 64;
+    /// Stated value of `signed_radius_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_RADIUS_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `arc_selector` (`i32`, little-endian). Spec §2.
+    pub(crate) const ARC_SELECTOR: usize = 72;
+    /// Offset of `auxiliary_index` (`u16`, little-endian). Spec §2.
+    pub(crate) const AUXILIARY_INDEX: usize = 76;
+    /// Offset of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS: usize = 78;
+    /// Stated value of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS_VALUE: [u8; 16] = [
+        0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff,
+        0xff,
+    ];
+    /// Offset of `terminator` (`u16`, little-endian). Spec §2.
+    pub(crate) const TERMINATOR: usize = 94;
+    /// Stated value of `terminator` (`u16`). Spec §2.
+    pub(crate) const TERMINATOR_VALUE: u16 = 0x0000;
+    /// Offset of `trailer_identities` (`u32[2]`, little-endian). Spec §2.
+    pub(crate) const TRAILER_IDENTITIES: usize = 96;
+}
+
+/// Byte offsets for the `current_profile_circle_dimension` record.
+///
+/// Spec §2. Record length 145 B.
+///
+/// ```text
+/// The repeated one-based point-roster index selects the radial point; the first point is the center.
+/// ```
+pub(crate) mod current_profile_circle_dimension {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 145;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Stated value of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS_VALUE: [u8; 4] = [0x04, 0x00, 0x02, 0x00];
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Stated value of `state` (`u16`). Spec §2.
+    pub(crate) const STATE_VALUE: u16 = 0x0001;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Stated value of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR_VALUE: [u8; 8] = [0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00];
+    /// Offset of `state_scalar` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_SCALAR: usize = 48;
+    /// Stated value of `state_scalar` (`f64`). Spec §2.
+    pub(crate) const STATE_SCALAR_VALUE: f64 = 1.0;
+    /// Offset of `radial_index` (`u16`, little-endian). Spec §2.
+    pub(crate) const RADIAL_INDEX: usize = 56;
+    /// Offset of `radial_index_repeat` (`u16`, little-endian). Spec §2.
+    pub(crate) const RADIAL_INDEX_REPEAT: usize = 58;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 60;
+    /// Stated value of `endpoint_selector` (`u32`). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR_VALUE: u32 = 0x0000_0001;
+    /// Offset of `signed_radius_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_RADIUS_SELECTOR: usize = 64;
+    /// Stated value of `signed_radius_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_RADIUS_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `arc_selector` (`i32`, little-endian). Spec §2.
+    pub(crate) const ARC_SELECTOR: usize = 72;
+    /// Offset of `auxiliary_index` (`u16`, little-endian). Spec §2.
+    pub(crate) const AUXILIARY_INDEX: usize = 76;
+    /// Offset of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS: usize = 78;
+    /// Stated value of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS_VALUE: [u8; 16] = [
+        0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff,
+        0xff,
+    ];
+    /// Offset of `zero_trailer` (`bytes[32]`). Spec §2.
+    pub(crate) const ZERO_TRAILER: usize = 94;
+    /// Stated value of `zero_trailer` (`bytes[32]`). Spec §2.
+    pub(crate) const ZERO_TRAILER_VALUE: [u8; 32] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+    ];
+    /// Offset of `dimension_kind` (`u16`, little-endian). Spec §2.
+    pub(crate) const DIMENSION_KIND: usize = 126;
+    /// Offset of `class_marker` (`bytes[4]`). Spec §2.
+    pub(crate) const CLASS_MARKER: usize = 128;
+    /// Stated value of `class_marker` (`bytes[4]`). Spec §2.
+    pub(crate) const CLASS_MARKER_VALUE: [u8; 4] = [0xff, 0xff, 0x01, 0x00];
+    /// Offset of `class_length` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_LENGTH: usize = 132;
+    /// Stated value of `class_length` (`u16`). Spec §2.
+    pub(crate) const CLASS_LENGTH_VALUE: u16 = 0x000b;
+    /// Offset of `class_name` (`bytes[11]`). Spec §2.
+    pub(crate) const CLASS_NAME: usize = 134;
+    /// Stated value of `class_name` (`bytes[11]`). Spec §2.
+    pub(crate) const CLASS_NAME_VALUE: [u8; 11] = *b"sgCircleDim";
+}
+
+/// Byte offsets for the `extended_profile_104_indexed_arc` record.
+///
+/// Spec §2. Record length 104 B.
+///
+/// ```text
+/// Distinct endpoint indices define a minor arc; one less than the smaller endpoint index selects the center under the profile-locus fallback rules.
+/// ```
+pub(crate) mod extended_profile_104_indexed_arc {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 104;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Stated value of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS_VALUE: [u8; 4] = [0x04, 0x00, 0x02, 0x00];
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Stated value of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR_VALUE: [u8; 8] = [0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00];
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 56;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 58;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 60;
+    /// Stated value of `endpoint_selector` (`u32`). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR_VALUE: u32 = 0x0000_0001;
+    /// Offset of `signed_radius_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_RADIUS_SELECTOR: usize = 64;
+    /// Stated value of `signed_radius_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_RADIUS_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `arc_selector` (`i32`, little-endian). Spec §2.
+    pub(crate) const ARC_SELECTOR: usize = 72;
+    /// Offset of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS: usize = 78;
+    /// Stated value of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS_VALUE: [u8; 16] = [
+        0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff,
+        0xfe,
+    ];
+    /// Offset of `terminator` (`u16`, little-endian). Spec §2.
+    pub(crate) const TERMINATOR: usize = 94;
+    /// Stated value of `terminator` (`u16`). Spec §2.
+    pub(crate) const TERMINATOR_VALUE: u16 = 0x0000;
+    /// Offset of `trailer_identities` (`u32[2]`, little-endian). Spec §2.
+    pub(crate) const TRAILER_IDENTITIES: usize = 96;
+}
+
+/// Byte offsets for the `extended_profile_terminal_102_indexed_arc` record.
+///
+/// Spec §2. Record length 102 B.
+///
+/// ```text
+/// The terminal record uses the same center resolution as the 104-byte compact indexed profile arc and has no following sketch marker.
+/// ```
+pub(crate) mod extended_profile_terminal_102_indexed_arc {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 102;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Stated value of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS_VALUE: [u8; 4] = [0x04, 0x00, 0x02, 0x00];
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Stated value of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR_VALUE: [u8; 8] = [0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00];
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 56;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 58;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 60;
+    /// Stated value of `endpoint_selector` (`u32`). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR_VALUE: u32 = 0x0000_0001;
+    /// Offset of `signed_radius_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_RADIUS_SELECTOR: usize = 64;
+    /// Stated value of `signed_radius_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_RADIUS_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `arc_selector` (`i32`, little-endian). Spec §2.
+    pub(crate) const ARC_SELECTOR: usize = 72;
+    /// Offset of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS: usize = 78;
+    /// Stated value of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS_VALUE: [u8; 16] = [
+        0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff,
+        0xfe,
+    ];
+    /// Offset of `zero_tail` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_TAIL: usize = 94;
+    /// Stated value of `zero_tail` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_TAIL_VALUE: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
 
 /// Byte offsets for the `extended_geometry_116_indexed_arc` record.
@@ -577,6 +1102,163 @@ pub(crate) mod extended_geometry_116_indexed_arc {
     pub(crate) const RELATION_PADDING: usize = 106;
     /// Offset of `following_object_index` (`u32`, little-endian). Spec §2.
     pub(crate) const FOLLOWING_OBJECT_INDEX: usize = 112;
+}
+
+/// Byte offsets for the `compact_indexed_curve_continuation120` record.
+///
+/// Spec §2. Record length 122 B.
+///
+/// ```text
+/// A valid class declaration may begin at the record boundary +122.
+/// ```
+pub(crate) mod compact_indexed_curve_continuation120 {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 122;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `locus` (`bytes[4]`). Spec §2.
+    pub(crate) const LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 56;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 58;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 60;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 64;
+    /// Offset of `continuation_padding` (`bytes[48]`). Spec §2.
+    pub(crate) const CONTINUATION_PADDING: usize = 72;
+    /// Offset of `continuation_kind` (`u16`, little-endian). Spec §2.
+    pub(crate) const CONTINUATION_KIND: usize = 120;
+}
+
+/// Byte offsets for the `compact_legacy_140_relation_display_curve` record.
+///
+/// Spec §2. Record length 140 B.
+///
+/// ```text
+/// The endpoint ordinals use the complete feature-local marker roster; relation endpoints make this a display carrier.
+/// ```
+pub(crate) mod compact_legacy_140_relation_display_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 140;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Stated value of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER_VALUE: [u8; 8] = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+    /// Offset of `shared_selector` (`bytes[4]`). Spec §2.
+    pub(crate) const SHARED_SELECTOR: usize = 13;
+    /// Stated value of `shared_selector` (`bytes[4]`). Spec §2.
+    pub(crate) const SHARED_SELECTOR_VALUE: [u8; 4] = [0x00, 0x00, 0x80, 0xbf];
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Stated value of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS_VALUE: [u8; 4] = [0x04, 0x00, 0x02, 0x00];
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Stated value of `state` (`u16`). Spec §2.
+    pub(crate) const STATE_VALUE: u16 = 0x0001;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Stated value of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR_VALUE: [u8; 8] = [0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00];
+    /// Offset of `state_scalar` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_SCALAR: usize = 48;
+    /// Stated value of `state_scalar` (`f64`). Spec §2.
+    pub(crate) const STATE_SCALAR_VALUE: f64 = 1.0;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 56;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 58;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 60;
+    /// Stated value of `endpoint_selector` (`u32`). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR_VALUE: u32 = 0x0000_0001;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 64;
+    /// Stated value of `signed_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `continuation_padding` (`bytes[48]`). Spec §2.
+    pub(crate) const CONTINUATION_PADDING: usize = 72;
+    /// Offset of `continuation_kind` (`u16`, little-endian). Spec §2.
+    pub(crate) const CONTINUATION_KIND: usize = 120;
+    /// Offset of `continuation_selector` (`bytes[2]`). Spec §2.
+    pub(crate) const CONTINUATION_SELECTOR: usize = 122;
+    /// Offset of `zero_selector_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_SELECTOR_PREFIX: usize = 124;
+    /// Stated value of `zero_selector_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_SELECTOR_PREFIX_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Offset of `relation_selectors` (`bytes[4]`). Spec §2.
+    pub(crate) const RELATION_SELECTORS: usize = 128;
+    /// Offset of `continuation_tail` (`bytes[8]`). Spec §2.
+    pub(crate) const CONTINUATION_TAIL: usize = 132;
+    /// Stated value of `continuation_tail` (`bytes[8]`). Spec §2.
+    pub(crate) const CONTINUATION_TAIL_VALUE: [u8; 8] =
+        [0xff, 0xfe, 0xff, 0x02, 0x44, 0x00, 0x31, 0x00];
+}
+
+/// Byte offsets for the `current_terminal_relation_carrier` record.
+///
+/// Spec §2. Record length 136 B.
+///
+/// ```text
+/// The class declaration begins at the record boundary +136 and is owned by the matching feature relation.
+/// ```
+pub(crate) mod current_terminal_relation_carrier {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 136;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `zero_endpoint_prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX: usize = 56;
+    /// Offset of `terminal_header` (`bytes[4]`). Spec §2.
+    pub(crate) const TERMINAL_HEADER: usize = 64;
+    /// Offset of `endpoint_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SELECTOR: usize = 68;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 72;
+    /// Offset of `terminal_selector` (`u32`, little-endian). Spec §2.
+    pub(crate) const TERMINAL_SELECTOR: usize = 80;
+    /// Offset of `terminal_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const TERMINAL_STATE: usize = 84;
+    /// Offset of `reference_sentinels` (`bytes[16]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINELS: usize = 86;
+    /// Offset of `zero_tail` (`bytes[32]`). Spec §2.
+    pub(crate) const ZERO_TAIL: usize = 102;
+    /// Offset of `terminal_tag` (`u16`, little-endian). Spec §2.
+    pub(crate) const TERMINAL_TAG: usize = 134;
 }
 
 /// Byte offsets for the `extended_geometry_terminal_circle_dimension_tail` record.
@@ -819,6 +1501,234 @@ pub(crate) mod legacy_140_single_incidence_profile_point {
     pub(crate) const IDENTITY_SECOND: usize = 136;
 }
 
+/// Byte offsets for the `legacy_144_single_incidence_profile_point` record.
+///
+/// Spec §2. Record length 144 B.
+///
+/// ```text
+/// The record emits a point. Its terminal identity and next-marker boundary are four bytes beyond the 140-byte shared-f32 form.
+/// ```
+pub(crate) mod legacy_144_single_incidence_profile_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 144;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 21;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `zero_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const ZERO_STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `zero_state_prefix` (`bytes[9]`). Spec §2.
+    pub(crate) const ZERO_STATE_PREFIX: usize = 39;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 58;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 66;
+    /// Offset of `zero_link_prefix` (`u16`, little-endian). Spec §2.
+    pub(crate) const ZERO_LINK_PREFIX: usize = 74;
+    /// Offset of `link_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const LINK_STATE: usize = 76;
+    /// Offset of `incidence_cell` (`bytes[12]`). Spec §2.
+    pub(crate) const INCIDENCE_CELL: usize = 78;
+    /// Offset of `zero_post_cell` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_POST_CELL: usize = 90;
+    /// Offset of `link_terminator` (`bytes[6]`). Spec §2.
+    pub(crate) const LINK_TERMINATOR: usize = 94;
+    /// Offset of `trailer_prefix` (`bytes[40]`). Spec §2.
+    pub(crate) const TRAILER_PREFIX: usize = 100;
+    /// Offset of `identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY: usize = 140;
+}
+
+/// Byte offsets for the `legacy_geometry_locus_alternate_134_point` record.
+///
+/// Spec §2. Record length 134 B.
+///
+/// ```text
+/// The two fixed tails select an alternate-tag coordinate point; the next sketch marker begins at +134.
+/// ```
+pub(crate) mod legacy_geometry_locus_alternate_134_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 134;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `zero_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 21;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `zero_before_state_value` (`bytes[9]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_STATE_VALUE: usize = 39;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 58;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 66;
+    /// Offset of `tail_selector` (`bytes[10]`). Spec §2.
+    pub(crate) const TAIL_SELECTOR: usize = 74;
+    /// Offset of `tail_sentinel` (`i32`, little-endian). Spec §2.
+    pub(crate) const TAIL_SENTINEL: usize = 84;
+    /// Stated value of `tail_sentinel` (`i32`). Spec §2.
+    pub(crate) const TAIL_SENTINEL_VALUE: i32 = -2;
+    /// Offset of `zero_trailer` (`bytes[42]`). Spec §2.
+    pub(crate) const ZERO_TRAILER: usize = 88;
+    /// Offset of `identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY: usize = 130;
+}
+
+/// Byte offsets for the `legacy_geometry_locus_alternate_138_point` record.
+///
+/// Spec §2. Record length 138 B.
+///
+/// ```text
+/// The repeated identity at +134 is the following marker's object identifier.
+/// ```
+pub(crate) mod legacy_geometry_locus_alternate_138_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 138;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `zero_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 21;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `zero_before_state_value` (`bytes[9]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_STATE_VALUE: usize = 39;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 58;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 66;
+    /// Offset of `zero_and_state` (`bytes[10]`). Spec §2.
+    pub(crate) const ZERO_AND_STATE: usize = 74;
+    /// Offset of `tail_sentinel` (`i32`, little-endian). Spec §2.
+    pub(crate) const TAIL_SENTINEL: usize = 84;
+    /// Stated value of `tail_sentinel` (`i32`). Spec §2.
+    pub(crate) const TAIL_SENTINEL_VALUE: i32 = -2;
+    /// Offset of `zero_identity_prefix` (`bytes[36]`). Spec §2.
+    pub(crate) const ZERO_IDENTITY_PREFIX: usize = 88;
+    /// Offset of `identity_first` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_FIRST: usize = 124;
+    /// Offset of `zero_before_identity_second` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_IDENTITY_SECOND: usize = 128;
+    /// Offset of `identity_second` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_SECOND: usize = 130;
+    /// Offset of `following_identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const FOLLOWING_IDENTITY: usize = 134;
+}
+
+/// Byte offsets for the `legacy_geometry_locus_alternate_154_point` record.
+///
+/// Spec §2. Record length 154 B.
+///
+/// ```text
+/// The two mixed-selector incidence cells identify the point record; they do not define curve endpoints.
+/// ```
+pub(crate) mod legacy_geometry_locus_alternate_154_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 154;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `zero_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 21;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `zero_before_state_value` (`bytes[9]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_STATE_VALUE: usize = 39;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 58;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 66;
+    /// Offset of `zero_link_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_LINK_PREFIX: usize = 74;
+    /// Offset of `link_count` (`u16`, little-endian). Spec §2.
+    pub(crate) const LINK_COUNT: usize = 76;
+    /// Stated value of `link_count` (`u16`). Spec §2.
+    pub(crate) const LINK_COUNT_VALUE: u16 = 0x0002;
+    /// Offset of `incidence_first` (`bytes[12]`). Spec §2.
+    pub(crate) const INCIDENCE_FIRST: usize = 78;
+    /// Offset of `incidence_second` (`bytes[12]`). Spec §2.
+    pub(crate) const INCIDENCE_SECOND: usize = 90;
+    /// Offset of `link_terminator` (`bytes[6]`). Spec §2.
+    pub(crate) const LINK_TERMINATOR: usize = 102;
+    /// Offset of `zero_trailer` (`bytes[42]`). Spec §2.
+    pub(crate) const ZERO_TRAILER: usize = 108;
+    /// Offset of `record_identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const RECORD_IDENTITY: usize = 150;
+}
+
 /// Byte offsets for the `extended_scaled_146_profile_point` record.
 ///
 /// Spec §2. Record length 146 B.
@@ -1021,6 +1931,243 @@ pub(crate) mod extended_geometry_locus_96_construction_line {
     pub(crate) const IDENTITY_SECOND: usize = 92;
 }
 
+/// Byte offsets for the `compact_legacy_96_profile_roster_curve` record.
+///
+/// Spec §2. Record length 96 B.
+///
+/// ```text
+/// The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing geometry-marker roster.
+/// ```
+pub(crate) mod compact_legacy_96_profile_roster_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 96;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `shared_selector` (`f32`, little-endian). Spec §2.
+    pub(crate) const SHARED_SELECTOR: usize = 13;
+    /// Stated value of `shared_selector` (`f32`). Spec §2.
+    pub(crate) const SHARED_SELECTOR_VALUE: f32 = -1.0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `state_at_29` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE_AT_29: usize = 29;
+    /// Stated value of `state_at_29` (`u16`). Spec §2.
+    pub(crate) const STATE_AT_29_VALUE: u16 = 0x0000;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 56;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 58;
+    /// Offset of `zero_endpoint_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX: usize = 60;
+    /// Stated value of `zero_endpoint_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 64;
+    /// Stated value of `signed_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `zero_selector_trailer` (`bytes[10]`). Spec §2.
+    pub(crate) const ZERO_SELECTOR_TRAILER: usize = 72;
+    /// Stated value of `zero_selector_trailer` (`bytes[10]`). Spec §2.
+    pub(crate) const ZERO_SELECTOR_TRAILER_VALUE: [u8; 10] =
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `tail_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_STATE: usize = 82;
+    /// Offset of `tail_state_prefix` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_STATE_PREFIX: usize = 84;
+    /// Stated value of `tail_state_prefix` (`u16`). Spec §2.
+    pub(crate) const TAIL_STATE_PREFIX_VALUE: u16 = 0x0000;
+    /// Offset of `tail_state_marker` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_STATE_MARKER: usize = 86;
+    /// Stated value of `tail_state_marker` (`u16`). Spec §2.
+    pub(crate) const TAIL_STATE_MARKER_VALUE: u16 = 0x0001;
+    /// Offset of `zero_tail_identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO_TAIL_IDENTITY: usize = 88;
+    /// Stated value of `zero_tail_identity` (`u32`). Spec §2.
+    pub(crate) const ZERO_TAIL_IDENTITY_VALUE: u32 = 0x0000_0000;
+    /// Offset of `one_tail_identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const ONE_TAIL_IDENTITY: usize = 92;
+    /// Stated value of `one_tail_identity` (`u32`). Spec §2.
+    pub(crate) const ONE_TAIL_IDENTITY_VALUE: u32 = 0x0000_0001;
+}
+
+/// Byte offsets for the `compact_legacy_84_construction_line` record.
+///
+/// Spec §2. Record length 84 B.
+///
+/// ```text
+/// The endpoint fields are direct feature-local point-object identifiers.
+/// ```
+pub(crate) mod compact_legacy_84_construction_line {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 84;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `shared_selector` (`bytes[4]`). Spec §2.
+    pub(crate) const SHARED_SELECTOR: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0002;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0002;
+    /// Offset of `state_at_29` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE_AT_29: usize = 29;
+    /// Stated value of `state_at_29` (`u16`). Spec §2.
+    pub(crate) const STATE_AT_29_VALUE: u16 = 0x0000;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 56;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 58;
+    /// Offset of `zero_endpoint_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX: usize = 60;
+    /// Stated value of `zero_endpoint_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 64;
+    /// Stated value of `signed_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `trailer_state` (`bytes[4]`). Spec §2.
+    pub(crate) const TRAILER_STATE: usize = 72;
+    /// Offset of `identity_first` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_FIRST: usize = 76;
+    /// Offset of `identity_second` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_SECOND: usize = 80;
+}
+
+/// Byte offsets for the `compact_legacy_84_coordinate_roster_curve` record.
+///
+/// Spec §2. Record length 84 B.
+///
+/// ```text
+/// The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing marker roster.
+/// ```
+pub(crate) mod compact_legacy_84_coordinate_roster_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 84;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `shared_selector` (`bytes[4]`). Spec §2.
+    pub(crate) const SHARED_SELECTOR: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 56;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 58;
+    /// Offset of `zero_endpoint_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX: usize = 60;
+    /// Stated value of `zero_endpoint_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_ENDPOINT_PREFIX_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 64;
+    /// Stated value of `signed_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `trailer_state` (`bytes[4]`). Spec §2.
+    pub(crate) const TRAILER_STATE: usize = 72;
+    /// Offset of `identity_first` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_FIRST: usize = 76;
+    /// Offset of `identity_second` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_SECOND: usize = 80;
+}
+
+/// Byte offsets for the `compact_legacy_84_geometry_indexed_curve` record.
+///
+/// Spec §2. Record length 84 B.
+///
+/// ```text
+/// The endpoint fields are zero-based ordinals in the complete feature-local coordinate-bearing marker roster.
+/// ```
+pub(crate) mod compact_legacy_84_geometry_indexed_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 84;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `shared_selector` (`bytes[4]`). Spec §2.
+    pub(crate) const SHARED_SELECTOR: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0002;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Stated value of `state` (`u16`). Spec §2.
+    pub(crate) const STATE_VALUE: u16 = 0x0002;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_scalar` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_SCALAR: usize = 48;
+    /// Stated value of `state_scalar` (`f64`). Spec §2.
+    pub(crate) const STATE_SCALAR_VALUE: f64 = 1.0;
+    /// Offset of `endpoint_first` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_FIRST: usize = 56;
+    /// Offset of `endpoint_second` (`u16`, little-endian). Spec §2.
+    pub(crate) const ENDPOINT_SECOND: usize = 58;
+    /// Offset of `record_state` (`u32`, little-endian). Spec §2.
+    pub(crate) const RECORD_STATE: usize = 60;
+    /// Stated value of `record_state` (`u32`). Spec §2.
+    pub(crate) const RECORD_STATE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `signed_selector` (`f64`, little-endian). Spec §2.
+    pub(crate) const SIGNED_SELECTOR: usize = 64;
+    /// Stated value of `signed_selector` (`f64`). Spec §2.
+    pub(crate) const SIGNED_SELECTOR_VALUE: f64 = -1.0;
+    /// Offset of `trailer_state` (`u32`, little-endian). Spec §2.
+    pub(crate) const TRAILER_STATE: usize = 72;
+    /// Stated value of `trailer_state` (`u32`). Spec §2.
+    pub(crate) const TRAILER_STATE_VALUE: u32 = 0x0000_0000;
+    /// Offset of `identity_first` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_FIRST: usize = 76;
+    /// Offset of `identity_second` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY_SECOND: usize = 80;
+}
+
 /// Byte offsets for the `compact_legacy_68_profile_variant_curve` record.
 ///
 /// Spec §2. Record length 68 B.
@@ -1117,6 +2264,64 @@ pub(crate) mod compact_legacy_90_geometry_line {
     pub(crate) const IDENTITY_FIRST: usize = 82;
     /// Offset of `identity_second` (`u32`, little-endian). Spec §2.
     pub(crate) const IDENTITY_SECOND: usize = 86;
+}
+
+/// Byte offsets for the `compact_legacy_142_profile_curve` record.
+///
+/// Spec §2. Record length 142 B.
+///
+/// ```text
+/// The auxiliary pair is the arc-center candidate. Equal positive endpoint radii select a minor arc; otherwise the two endpoint pairs define a line. A four-byte separator may follow the 142-byte body before the next sketch marker.
+/// ```
+pub(crate) mod compact_legacy_142_profile_curve {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 142;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `shared_selector` (`f32`, little-endian). Spec §2.
+    pub(crate) const SHARED_SELECTOR: usize = 13;
+    /// Stated value of `shared_selector` (`f32`). Spec §2.
+    pub(crate) const SHARED_SELECTOR_VALUE: f32 = -1.0;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0002;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `curve_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const CURVE_TAG: usize = 64;
+    /// Offset of `auxiliary_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const AUXILIARY_FIRST: usize = 66;
+    /// Offset of `auxiliary_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const AUXILIARY_SECOND: usize = 74;
+    /// Offset of `body_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const BODY_KIND: usize = 82;
+    /// Stated value of `body_kind` (`u32`). Spec §2.
+    pub(crate) const BODY_KIND_VALUE: u32 = 0x0000_000b;
+    /// Offset of `variant` (`u32`, little-endian). Spec §2.
+    pub(crate) const VARIANT: usize = 92;
+    /// Offset of `start_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const START_FIRST: usize = 96;
+    /// Offset of `start_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const START_SECOND: usize = 104;
+    /// Offset of `end_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const END_FIRST: usize = 112;
+    /// Offset of `end_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const END_SECOND: usize = 120;
+    /// Offset of `identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY: usize = 138;
 }
 
 /// Byte offsets for the `compact_legacy_code_two_profile_point` record.
@@ -1261,6 +2466,434 @@ pub(crate) mod compact_legacy_terminal_diameter_circle {
     pub(crate) const CLASS_LENGTH: usize = 108;
     /// Offset of `class_name` (`bytes[11]`). Spec §2.
     pub(crate) const CLASS_NAME: usize = 110;
+}
+
+/// Byte offsets for the `legacy_geometry_locus_alternate_170_line_handle_point` record.
+///
+/// Spec §2. Record length 170 B.
+///
+/// ```text
+/// The line-handle declaration makes the coordinate-bearing marker a point; the next sketch marker begins at +170.
+/// ```
+pub(crate) mod legacy_geometry_locus_alternate_170_line_handle_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 170;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `zero_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 21;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `zero_before_state_value` (`bytes[9]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_STATE_VALUE: usize = 39;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 58;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 66;
+    /// Offset of `zero_handle_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_HANDLE_PREFIX: usize = 74;
+    /// Offset of `handle_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const HANDLE_STATE: usize = 76;
+    /// Offset of `class_marker_and_length` (`bytes[6]`). Spec §2.
+    pub(crate) const CLASS_MARKER_AND_LENGTH: usize = 78;
+    /// Offset of `class_name` (`bytes[12]`). Spec §2.
+    pub(crate) const CLASS_NAME: usize = 84;
+    /// Offset of `handle_identifier` (`u16`, little-endian). Spec §2.
+    pub(crate) const HANDLE_IDENTIFIER: usize = 96;
+    /// Offset of `reference_tail` (`bytes[8]`). Spec §2.
+    pub(crate) const REFERENCE_TAIL: usize = 98;
+    /// Offset of `zero_before_sentinel` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_SENTINEL: usize = 106;
+    /// Offset of `reference_sentinel` (`bytes[4]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINEL: usize = 110;
+    /// Offset of `reference_zero_tail` (`bytes[4]`). Spec §2.
+    pub(crate) const REFERENCE_ZERO_TAIL: usize = 114;
+    /// Offset of `terminator` (`bytes[6]`). Spec §2.
+    pub(crate) const TERMINATOR: usize = 118;
+    /// Offset of `zero_trailer_prefix` (`bytes[38]`). Spec §2.
+    pub(crate) const ZERO_TRAILER_PREFIX: usize = 124;
+    /// Offset of `identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY: usize = 162;
+    /// Offset of `following_object_index` (`u32`, little-endian). Spec §2.
+    pub(crate) const FOLLOWING_OBJECT_INDEX: usize = 166;
+}
+
+/// Byte offsets for the `legacy_geometry_locus_alternate_169_arc_handle_point` record.
+///
+/// Spec §2. Record length 169 B.
+///
+/// ```text
+/// The arc-handle declaration makes the coordinate-bearing marker a point; the next sketch marker begins at +169.
+/// ```
+pub(crate) mod legacy_geometry_locus_alternate_169_arc_handle_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 169;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `zero_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 21;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state_before_handle` (`bytes[2]`). Spec §2.
+    pub(crate) const STATE_BEFORE_HANDLE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `zero_before_state_value` (`bytes[9]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_STATE_VALUE: usize = 39;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 58;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 66;
+    /// Offset of `zero_handle_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_HANDLE_PREFIX: usize = 74;
+    /// Offset of `handle_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const HANDLE_STATE: usize = 76;
+    /// Stated value of `handle_state` (`u16`). Spec §2.
+    pub(crate) const HANDLE_STATE_VALUE: u16 = 0x0002;
+    /// Offset of `reference_cell` (`bytes[4]`). Spec §2.
+    pub(crate) const REFERENCE_CELL: usize = 78;
+    /// Offset of `reference_tail` (`bytes[8]`). Spec §2.
+    pub(crate) const REFERENCE_TAIL: usize = 82;
+    /// Offset of `class_marker_and_length` (`bytes[6]`). Spec §2.
+    pub(crate) const CLASS_MARKER_AND_LENGTH: usize = 90;
+    /// Offset of `class_name` (`bytes[11]`). Spec §2.
+    pub(crate) const CLASS_NAME: usize = 96;
+    /// Offset of `handle_identifier` (`u16`, little-endian). Spec §2.
+    pub(crate) const HANDLE_IDENTIFIER: usize = 107;
+    /// Stated value of `handle_identifier` (`u16`). Spec §2.
+    pub(crate) const HANDLE_IDENTIFIER_VALUE: u16 = 0x0000;
+    /// Offset of `reference_sentinel_and_zero_tail` (`bytes[8]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINEL_AND_ZERO_TAIL: usize = 109;
+    /// Offset of `terminator` (`bytes[6]`). Spec §2.
+    pub(crate) const TERMINATOR: usize = 117;
+    /// Offset of `zero_trailer` (`bytes[42]`). Spec §2.
+    pub(crate) const ZERO_TRAILER: usize = 123;
+    /// Offset of `identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY: usize = 165;
+}
+
+/// Byte offsets for the `legacy_geometry_locus_shifted_162_line_handle_point` record.
+///
+/// Spec §2. Record length 162 B.
+///
+/// ```text
+/// The coordinate tag is admitted as a line-handle point only with the child declaration and the following marker boundary.
+/// ```
+pub(crate) mod legacy_geometry_locus_shifted_162_line_handle_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 162;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `prefix_sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const PREFIX_SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `zero_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 21;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `zero_before_state_value` (`bytes[9]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_STATE_VALUE: usize = 39;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `zero_before_coordinate_tag` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 64;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 66;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 74;
+    /// Offset of `handle_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const HANDLE_STATE: usize = 84;
+    /// Offset of `child_class_header` (`bytes[6]`). Spec §2.
+    pub(crate) const CHILD_CLASS_HEADER: usize = 86;
+    /// Offset of `child_class_name` (`bytes[12]`). Spec §2.
+    pub(crate) const CHILD_CLASS_NAME: usize = 92;
+    /// Offset of `sentinel` (`bytes[4]`). Spec §2.
+    pub(crate) const SENTINEL: usize = 112;
+    /// Offset of `zero_trailer` (`bytes[42]`). Spec §2.
+    pub(crate) const ZERO_TRAILER: usize = 116;
+    /// Offset of `identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY: usize = 158;
+}
+
+/// Byte offsets for the `legacy_geometry_locus_shifted_177_arc_handle_point` record.
+///
+/// Spec §2. Record length 177 B.
+///
+/// ```text
+/// The arc child declaration and the following marker boundary make the coordinate-bearing marker a point.
+/// ```
+pub(crate) mod legacy_geometry_locus_shifted_177_arc_handle_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 177;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `prefix_sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const PREFIX_SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `zero_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 21;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `zero_before_state_value` (`bytes[9]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_STATE_VALUE: usize = 39;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `zero_before_coordinate_tag` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 64;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 66;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 74;
+    /// Offset of `handle_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const HANDLE_STATE: usize = 84;
+    /// Offset of `child_class_header` (`bytes[6]`). Spec §2.
+    pub(crate) const CHILD_CLASS_HEADER: usize = 98;
+    /// Offset of `child_class_name` (`bytes[11]`). Spec §2.
+    pub(crate) const CHILD_CLASS_NAME: usize = 104;
+    /// Offset of `sentinel` (`bytes[4]`). Spec §2.
+    pub(crate) const SENTINEL: usize = 127;
+    /// Offset of `zero_trailer` (`bytes[42]`). Spec §2.
+    pub(crate) const ZERO_TRAILER: usize = 131;
+    /// Offset of `identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY: usize = 173;
+}
+
+/// Byte offsets for the `legacy_geometry_locus_shifted_178_line_handle_point` record.
+///
+/// Spec §2. Record length 178 B.
+///
+/// ```text
+/// The extended line child body and the following marker boundary make the coordinate-bearing marker a point.
+/// ```
+pub(crate) mod legacy_geometry_locus_shifted_178_line_handle_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 178;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `prefix_sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const PREFIX_SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `zero_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_PREFIX: usize = 21;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Offset of `state` (`u16`, little-endian). Spec §2.
+    pub(crate) const STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `zero_before_state_value` (`bytes[9]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_STATE_VALUE: usize = 39;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `zero_before_coordinate_tag` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 64;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 66;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 74;
+    /// Offset of `handle_state` (`u16`, little-endian). Spec §2.
+    pub(crate) const HANDLE_STATE: usize = 84;
+    /// Offset of `child_class_header` (`bytes[6]`). Spec §2.
+    pub(crate) const CHILD_CLASS_HEADER: usize = 86;
+    /// Offset of `child_class_name` (`bytes[12]`). Spec §2.
+    pub(crate) const CHILD_CLASS_NAME: usize = 92;
+    /// Offset of `sentinel` (`bytes[4]`). Spec §2.
+    pub(crate) const SENTINEL: usize = 128;
+    /// Offset of `zero_trailer` (`bytes[42]`). Spec §2.
+    pub(crate) const ZERO_TRAILER: usize = 132;
+    /// Offset of `identity` (`u32`, little-endian). Spec §2.
+    pub(crate) const IDENTITY: usize = 174;
+}
+
+/// Byte offsets for the `current_geometry_locus_arc_handle_point` record.
+///
+/// Spec §2. Record length 167 B.
+///
+/// ```text
+/// The record includes the following marker's object index at +163; the following marker begins at +167.
+/// ```
+pub(crate) mod current_geometry_locus_arc_handle_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 167;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `shared_selector` (`bytes[4]`). Spec §2.
+    pub(crate) const SHARED_SELECTOR: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0000;
+    /// Offset of `zero_locus_prefix` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_LOCUS_PREFIX: usize = 21;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `zero_state` (`bytes[2]`). Spec §2.
+    pub(crate) const ZERO_STATE: usize = 29;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `zero_before_state_value` (`bytes[9]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_STATE_VALUE: usize = 39;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `zero_before_coordinate` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_COORDINATE: usize = 56;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 64;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 66;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 74;
+    /// Offset of `handle_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const HANDLE_PREFIX: usize = 82;
+    /// Offset of `class_marker` (`bytes[4]`). Spec §2.
+    pub(crate) const CLASS_MARKER: usize = 86;
+    /// Offset of `class_length` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_LENGTH: usize = 90;
+    /// Stated value of `class_length` (`u16`). Spec §2.
+    pub(crate) const CLASS_LENGTH_VALUE: u16 = 0x000b;
+    /// Offset of `class_name` (`bytes[11]`). Spec §2.
+    pub(crate) const CLASS_NAME: usize = 92;
+    /// Offset of `handle_id` (`u16`, little-endian). Spec §2.
+    pub(crate) const HANDLE_ID: usize = 103;
+    /// Offset of `reference_sentinel` (`bytes[4]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINEL: usize = 105;
+    /// Offset of `zero_reference_tail` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_REFERENCE_TAIL: usize = 109;
+    /// Offset of `terminator` (`bytes[4]`). Spec §2.
+    pub(crate) const TERMINATOR: usize = 117;
+    /// Offset of `zero_trailer` (`bytes[42]`). Spec §2.
+    pub(crate) const ZERO_TRAILER: usize = 121;
+    /// Offset of `following_object_index` (`u32`, little-endian). Spec §2.
+    pub(crate) const FOLLOWING_OBJECT_INDEX: usize = 163;
+}
+
+/// Byte offsets for the `current_geometry_locus_arc_handle_point_terminal` record.
+///
+/// Spec §2. Record length 171 B.
+///
+/// ```text
+/// The record includes a four-byte zero separator at +163, the following marker's object index at +167, and the following marker begins at +171.
+/// ```
+pub(crate) mod current_geometry_locus_arc_handle_point_terminal {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 171;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `shared_selector` (`bytes[4]`). Spec §2.
+    pub(crate) const SHARED_SELECTOR: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Stated value of `native_kind` (`u32`). Spec §2.
+    pub(crate) const NATIVE_KIND_VALUE: u32 = 0x0000_0000;
+    /// Offset of `geometry_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const GEOMETRY_LOCUS: usize = 23;
+    /// Offset of `role` (`u16`, little-endian). Spec §2.
+    pub(crate) const ROLE: usize = 27;
+    /// Stated value of `role` (`u16`). Spec §2.
+    pub(crate) const ROLE_VALUE: u16 = 0x0001;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Stated value of `state_value` (`f64`). Spec §2.
+    pub(crate) const STATE_VALUE_VALUE: f64 = 1.0;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 64;
+    /// Offset of `coordinate_first` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_FIRST: usize = 66;
+    /// Offset of `coordinate_second` (`f64`, little-endian). Spec §2.
+    pub(crate) const COORDINATE_SECOND: usize = 74;
+    /// Offset of `handle_prefix` (`bytes[4]`). Spec §2.
+    pub(crate) const HANDLE_PREFIX: usize = 82;
+    /// Offset of `class_marker` (`bytes[4]`). Spec §2.
+    pub(crate) const CLASS_MARKER: usize = 86;
+    /// Offset of `class_length` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_LENGTH: usize = 90;
+    /// Stated value of `class_length` (`u16`). Spec §2.
+    pub(crate) const CLASS_LENGTH_VALUE: u16 = 0x000b;
+    /// Offset of `class_name` (`bytes[11]`). Spec §2.
+    pub(crate) const CLASS_NAME: usize = 92;
+    /// Offset of `handle_id` (`u16`, little-endian). Spec §2.
+    pub(crate) const HANDLE_ID: usize = 103;
+    /// Offset of `reference_sentinel` (`bytes[4]`). Spec §2.
+    pub(crate) const REFERENCE_SENTINEL: usize = 105;
+    /// Offset of `zero_reference_tail` (`bytes[8]`). Spec §2.
+    pub(crate) const ZERO_REFERENCE_TAIL: usize = 109;
+    /// Offset of `terminator` (`bytes[4]`). Spec §2.
+    pub(crate) const TERMINATOR: usize = 117;
+    /// Offset of `zero_trailer` (`bytes[46]`). Spec §2.
+    pub(crate) const ZERO_TRAILER: usize = 121;
+    /// Offset of `following_object_index` (`u32`, little-endian). Spec §2.
+    pub(crate) const FOLLOWING_OBJECT_INDEX: usize = 167;
 }
 
 /// Byte offsets for the `reference_point_short_solved_cache` record.
@@ -1654,7 +3287,7 @@ pub(crate) mod coordinate_system_xy_tail {
 /// Spec §2. Record length 97 B.
 ///
 /// ```text
-/// Offsets begin immediately after the data-class name. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix.
+/// Offsets begin immediately after the data-class name. The pairwise-orthogonal form uses both basis triples; the `moFixedRefPlnData_c` repeated-normal form uses one in-plane triple and duplicates the normal in the other. A valid 121-byte matrix frame at the same offset owns this 97-byte prefix.
 /// ```
 pub(crate) mod constructed_reference_plane_fixed_frame {
     /// Record length in bytes. Spec §2.
@@ -1689,6 +3322,150 @@ pub(crate) mod constructed_reference_plane_matrix_frame {
     pub(crate) const FRAME_MARKER: usize = 48;
     /// Offset of `basis_matrix` (`f64[9]`, little-endian). Spec §2.
     pub(crate) const BASIS_MATRIX: usize = 49;
+}
+
+/// Byte offsets for the `component_face_nested_reference_prefix` record.
+///
+/// Spec §2. Record length 102 B.
+///
+/// ```text
+/// Offsets begin at the `moCompFace_c` body. The nested class declaration is variable within the fixed region; the component-path entries follow the marker tail.
+/// ```
+pub(crate) mod component_face_nested_reference_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 102;
+    /// Offset of `class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_TOKEN: usize = 0;
+    /// Offset of `record_version` (`u32`, little-endian). Spec §2.
+    pub(crate) const RECORD_VERSION: usize = 2;
+    /// Offset of `flags` (`bytes[2]`). Spec §2.
+    pub(crate) const FLAGS: usize = 6;
+    /// Offset of `component_marker` (`bytes[16]`). Spec §2.
+    pub(crate) const COMPONENT_MARKER: usize = 84;
+    /// Offset of `marker_tail` (`u16`, little-endian). Spec §2.
+    pub(crate) const MARKER_TAIL: usize = 100;
+}
+
+/// Byte offsets for the `component_face_compact_reference_prefix` record.
+///
+/// Spec §2. Record length 82 B.
+///
+/// ```text
+/// Offsets begin at the `moCompFace_c` body. The component-path entries follow the marker tail.
+/// ```
+pub(crate) mod component_face_compact_reference_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 82;
+    /// Offset of `class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_TOKEN: usize = 0;
+    /// Offset of `record_version` (`u32`, little-endian). Spec §2.
+    pub(crate) const RECORD_VERSION: usize = 2;
+    /// Offset of `flags` (`bytes[2]`). Spec §2.
+    pub(crate) const FLAGS: usize = 6;
+    /// Offset of `component_marker` (`bytes[16]`). Spec §2.
+    pub(crate) const COMPONENT_MARKER: usize = 64;
+    /// Offset of `marker_tail` (`u16`, little-endian). Spec §2.
+    pub(crate) const MARKER_TAIL: usize = 80;
+}
+
+/// Byte offsets for the `component_face_flagged_operation_prefix` record.
+///
+/// Spec §2. Record length 86 B.
+///
+/// ```text
+/// Offsets begin at the `moCompFace_c` body. The component-path entries follow the marker tail.
+/// ```
+pub(crate) mod component_face_flagged_operation_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 86;
+    /// Offset of `class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const CLASS_TOKEN: usize = 0;
+    /// Offset of `record_version` (`u32`, little-endian). Spec §2.
+    pub(crate) const RECORD_VERSION: usize = 2;
+    /// Offset of `flags` (`bytes[2]`). Spec §2.
+    pub(crate) const FLAGS: usize = 6;
+    /// Offset of `component_marker` (`bytes[16]`). Spec §2.
+    pub(crate) const COMPONENT_MARKER: usize = 68;
+    /// Offset of `marker_tail` (`u16`, little-endian). Spec §2.
+    pub(crate) const MARKER_TAIL: usize = 84;
+}
+
+/// Byte offsets for the `temporary_axis_reference_nine_scalar` record.
+///
+/// Spec §2. Record length 316 B.
+///
+/// ```text
+/// Offsets begin at the class declaration. The carrier body ends at +311; a following class marker at +312 terminates the record after zero padding of at most 24 bytes.
+/// ```
+pub(crate) mod temporary_axis_reference_nine_scalar {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 316;
+    /// Offset of `class_marker` (`bytes[4]`). Spec §2.
+    pub(crate) const CLASS_MARKER: usize = 0;
+    /// Stated value of `class_marker` (`bytes[4]`). Spec §2.
+    pub(crate) const CLASS_MARKER_VALUE: [u8; 4] = [0xff, 0xff, 0x01, 0x00];
+    /// Offset of `name_length` (`u16`, little-endian). Spec §2.
+    pub(crate) const NAME_LENGTH: usize = 4;
+    /// Stated value of `name_length` (`u16`). Spec §2.
+    pub(crate) const NAME_LENGTH_VALUE: u16 = 0x000f;
+    /// Offset of `name` (`bytes[15]`). Spec §2.
+    pub(crate) const NAME: usize = 6;
+    /// Stated value of `name` (`bytes[15]`). Spec §2.
+    pub(crate) const NAME_VALUE: [u8; 15] = *b"moTempAxisRef_w";
+    /// Offset of `handles` (`bytes[8]`). Spec §2.
+    pub(crate) const HANDLES: usize = 223;
+    /// Stated value of `handles` (`bytes[8]`). Spec §2.
+    pub(crate) const HANDLES_VALUE: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    /// Offset of `zero_before_address` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_ADDRESS: usize = 231;
+    /// Stated value of `zero_before_address` (`bytes[4]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_ADDRESS_VALUE: [u8; 4] = [0x00, 0x00, 0x00, 0x00];
+    /// Offset of `stream_address` (`u32`, little-endian). Spec §2.
+    pub(crate) const STREAM_ADDRESS: usize = 235;
+    /// Offset of `axis_frame` (`f64[9]`, little-endian). Spec §2.
+    pub(crate) const AXIS_FRAME: usize = 239;
+    /// Offset of `next_class_marker` (`bytes[4]`). Spec §2.
+    pub(crate) const NEXT_CLASS_MARKER: usize = 312;
+    /// Stated value of `next_class_marker` (`bytes[4]`). Spec §2.
+    pub(crate) const NEXT_CLASS_MARKER_VALUE: [u8; 4] = [0xff, 0xff, 0x01, 0x00];
+}
+
+/// Byte offsets for the `cosmetic_thread_component_edge_wrapper_prefix` record.
+///
+/// Spec §2. Record length 17 B.
+///
+/// ```text
+/// Offsets begin at the component-edge body. The compact edge-selection vector or the immediate edge-reference child follows this fixed wrapper prefix.
+/// ```
+pub(crate) mod cosmetic_thread_component_edge_wrapper_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 17;
+    /// Offset of `inner_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const INNER_CLASS_TOKEN: usize = 0;
+    /// Offset of `wrapper_flags` (`bytes[7]`). Spec §2.
+    pub(crate) const WRAPPER_FLAGS: usize = 2;
+    /// Stated value of `wrapper_flags` (`bytes[7]`). Spec §2.
+    pub(crate) const WRAPPER_FLAGS_VALUE: [u8; 7] = [0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `component_count` (`u32`, little-endian). Spec §2.
+    pub(crate) const COMPONENT_COUNT: usize = 9;
+    /// Offset of `component_count_copy` (`u32`, little-endian). Spec §2.
+    pub(crate) const COMPONENT_COUNT_COPY: usize = 13;
+}
+
+/// Byte offsets for the `cosmetic_thread_repeated_edge_ref_prefix` record.
+///
+/// Spec §2. Record length 8 B.
+///
+/// ```text
+/// Offsets begin at the body opened by the repeated edge-reference class token.
+/// ```
+pub(crate) mod cosmetic_thread_repeated_edge_ref_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 8;
+    /// Offset of `prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const PREFIX: usize = 0;
+    /// Stated value of `prefix` (`bytes[8]`). Spec §2.
+    pub(crate) const PREFIX_VALUE: [u8; 8] = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
 
 /// Byte offsets for the `display_lists_scene_source_binding` record.
@@ -1935,6 +3712,158 @@ pub(crate) mod draft_extended_direction_frame {
     pub(crate) const ADDRESS: usize = 12;
     /// Offset of `pull_direction` (`f64[3]`, little-endian). Spec §2.
     pub(crate) const PULL_DIRECTION: usize = 129;
+}
+
+/// Byte offsets for the `current_indexed_spatial_xyz_point_prefix` record.
+///
+/// Spec §2. Record length 96 B.
+///
+/// ```text
+/// The fixed prefix ends at the relation terminator. An ordinary geometry point uses tail words `8`, `1`; a relation point uses `1`, `0`. The following native tail is bounded by a sketch marker at +158 or +162 after a four-byte separator, or by the terminal reference-table prefix.
+/// ```
+pub(crate) mod current_indexed_spatial_xyz_point_prefix {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 96;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `profile_role` (`u16`, little-endian). Spec §2.
+    pub(crate) const PROFILE_ROLE: usize = 27;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinates` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const COORDINATES: usize = 58;
+    /// Offset of `tail_word_0` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_WORD_0: usize = 82;
+    /// Offset of `tail_word_1` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_WORD_1: usize = 84;
+    /// Offset of `tail_zero` (`bytes[6]`). Spec §2.
+    pub(crate) const TAIL_ZERO: usize = 86;
+    /// Offset of `terminator` (`bytes[4]`). Spec §2.
+    pub(crate) const TERMINATOR: usize = 92;
+}
+
+/// Byte offsets for the `current_indexed_spatial_xyz_terminal_reference_prefix_short` record.
+///
+/// Spec §2. Record length 330 B.
+///
+/// ```text
+/// The terminal prefix starts after the relation terminator. Its ten-byte alignment suffix places the table header at marker +232; the variable reference-table body follows the fixed control sequence.
+/// ```
+pub(crate) mod current_indexed_spatial_xyz_terminal_reference_prefix_short {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 330;
+    /// Offset of `tail_word_0` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_WORD_0: usize = 82;
+    /// Offset of `tail_word_1` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_WORD_1: usize = 84;
+    /// Offset of `terminator` (`bytes[4]`). Spec §2.
+    pub(crate) const TERMINATOR: usize = 92;
+    /// Offset of `zero_after_terminator` (`bytes[124]`). Spec §2.
+    pub(crate) const ZERO_AFTER_TERMINATOR: usize = 96;
+    /// Offset of `terminal_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const TERMINAL_TAG: usize = 220;
+    /// Offset of `zero_alignment_suffix` (`bytes[10]`). Spec §2.
+    pub(crate) const ZERO_ALIGNMENT_SUFFIX: usize = 222;
+    /// Offset of `table_header` (`bytes[4]`). Spec §2.
+    pub(crate) const TABLE_HEADER: usize = 232;
+    /// Offset of `first_count` (`u32`, little-endian). Spec §2.
+    pub(crate) const FIRST_COUNT: usize = 236;
+    /// Offset of `second_count` (`u32`, little-endian). Spec §2.
+    pub(crate) const SECOND_COUNT: usize = 240;
+    /// Offset of `one_run` (`bytes[48]`). Spec §2.
+    pub(crate) const ONE_RUN: usize = 244;
+    /// Offset of `zero_after_one_run` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO_AFTER_ONE_RUN: usize = 292;
+    /// Offset of `one_after_zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ONE_AFTER_ZERO: usize = 296;
+    /// Offset of `zero_before_control` (`bytes[6]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_CONTROL: usize = 300;
+    /// Offset of `control_sequence` (`bytes[24]`). Spec §2.
+    pub(crate) const CONTROL_SEQUENCE: usize = 306;
+}
+
+/// Byte offsets for the `current_indexed_spatial_xyz_terminal_reference_prefix_long` record.
+///
+/// Spec §2. Record length 334 B.
+///
+/// ```text
+/// The terminal prefix starts after the relation terminator. Its fourteen-byte alignment suffix places the table header at marker +236; the variable reference-table body follows the fixed control sequence.
+/// ```
+pub(crate) mod current_indexed_spatial_xyz_terminal_reference_prefix_long {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 334;
+    /// Offset of `tail_word_0` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_WORD_0: usize = 82;
+    /// Offset of `tail_word_1` (`u16`, little-endian). Spec §2.
+    pub(crate) const TAIL_WORD_1: usize = 84;
+    /// Offset of `terminator` (`bytes[4]`). Spec §2.
+    pub(crate) const TERMINATOR: usize = 92;
+    /// Offset of `zero_after_terminator` (`bytes[124]`). Spec §2.
+    pub(crate) const ZERO_AFTER_TERMINATOR: usize = 96;
+    /// Offset of `terminal_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const TERMINAL_TAG: usize = 220;
+    /// Offset of `zero_alignment_suffix` (`bytes[14]`). Spec §2.
+    pub(crate) const ZERO_ALIGNMENT_SUFFIX: usize = 222;
+    /// Offset of `table_header` (`bytes[4]`). Spec §2.
+    pub(crate) const TABLE_HEADER: usize = 236;
+    /// Offset of `first_count` (`u32`, little-endian). Spec §2.
+    pub(crate) const FIRST_COUNT: usize = 240;
+    /// Offset of `second_count` (`u32`, little-endian). Spec §2.
+    pub(crate) const SECOND_COUNT: usize = 244;
+    /// Offset of `one_run` (`bytes[48]`). Spec §2.
+    pub(crate) const ONE_RUN: usize = 248;
+    /// Offset of `zero_after_one_run` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO_AFTER_ONE_RUN: usize = 296;
+    /// Offset of `one_after_zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ONE_AFTER_ZERO: usize = 300;
+    /// Offset of `zero_before_control` (`bytes[6]`). Spec §2.
+    pub(crate) const ZERO_BEFORE_CONTROL: usize = 304;
+    /// Offset of `control_sequence` (`bytes[24]`). Spec §2.
+    pub(crate) const CONTROL_SEQUENCE: usize = 310;
+}
+
+/// Byte offsets for the `compact_current_spatial_marker_point` record.
+///
+/// Spec §2. Record length 82 B.
+///
+/// ```text
+/// The compact point prefix ends after the third coordinate. The compact form is complete only at a next sketch marker at +82, at a next marker after a four-byte separator at +86, or at the feature-input lane end.
+/// ```
+pub(crate) mod compact_current_spatial_marker_point {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 82;
+    /// Offset of `marker` (`bytes[5]`). Spec §2.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `header` (`bytes[8]`). Spec §2.
+    pub(crate) const HEADER: usize = 5;
+    /// Offset of `sentinel` (`f32`, little-endian). Spec §2.
+    pub(crate) const SENTINEL: usize = 13;
+    /// Offset of `native_kind` (`u32`, little-endian). Spec §2.
+    pub(crate) const NATIVE_KIND: usize = 17;
+    /// Offset of `profile_locus` (`bytes[4]`). Spec §2.
+    pub(crate) const PROFILE_LOCUS: usize = 23;
+    /// Offset of `profile_role` (`u16`, little-endian). Spec §2.
+    pub(crate) const PROFILE_ROLE: usize = 27;
+    /// Offset of `selector` (`bytes[8]`). Spec §2.
+    pub(crate) const SELECTOR: usize = 31;
+    /// Offset of `state_value` (`f64`, little-endian). Spec §2.
+    pub(crate) const STATE_VALUE: usize = 48;
+    /// Offset of `coordinate_tag` (`bytes[2]`). Spec §2.
+    pub(crate) const COORDINATE_TAG: usize = 56;
+    /// Offset of `coordinates` (`f64[3]`, little-endian). Spec §2.
+    pub(crate) const COORDINATES: usize = 58;
 }
 
 /// Byte offsets for the `wide_spatial_marker_coordinate_prefix` record.
