@@ -1207,6 +1207,10 @@ pub enum FeatureDefinition {
     LoftUnresolved,
     /// Freeform surface whose control geometry remains unresolved.
     FreeformSurfaceUnresolved,
+    /// Linear extrusion whose profile, extent, and result semantics remain unresolved.
+    ExtrudeUnresolved,
+    /// Profile revolution whose axis, extent, and result semantics remain unresolved.
+    RevolveUnresolved,
     /// Loft through an ordered sequence of profile or point sections.
     Loft {
         /// Ordered cross-sections from the loft start to end.
@@ -1288,6 +1292,8 @@ pub enum FeatureDefinition {
         /// Ordered edge groups and their radius laws.
         groups: Vec<FilletGroup>,
     },
+    /// Edge fillet whose edge groups and radius laws remain unresolved.
+    FilletUnresolved,
     /// Full-round fillet built from a center-face selection and two side-face sets.
     FullRoundFillet {
         /// Ordered full-round face groups.
@@ -1740,6 +1746,8 @@ impl FeatureDefinition {
             Self::Block { .. } => Some("block"),
             Self::ExtractBody { .. } => Some("extract body"),
             Self::Loft { .. } => Some("loft"),
+            Self::ExtrudeUnresolved => Some("extrude"),
+            Self::RevolveUnresolved => Some("revolve"),
             Self::TrimSurface { .. } => Some("trim surface"),
             Self::ExtendSurface { .. } => Some("extend surface"),
             Self::RuledSurface { .. } => Some("ruled surface"),
@@ -1747,6 +1755,7 @@ impl FeatureDefinition {
             Self::Rib { .. } => Some("rib"),
             Self::Chamfer { .. } => Some("chamfer"),
             Self::Fillet { .. } => Some("fillet"),
+            Self::FilletUnresolved => Some("fillet"),
             Self::FullRoundFillet { .. } => Some("fillet"),
             Self::FaceBlend { .. } => Some("face blend"),
             Self::SewBodies { .. } => Some("sew bodies"),

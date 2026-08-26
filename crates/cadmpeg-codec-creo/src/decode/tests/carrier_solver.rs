@@ -284,6 +284,13 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_sphere_circle"))
             if center == Point3::new(0.0, 0.0, 0.0) && radius == 2.0
     ));
+    let cylinder_sphere_tangent_candidates =
+        coaxial_cylinder_sphere_circle_candidates(cylinder, sphere);
+    assert!(matches!(
+        cylinder_sphere_tangent_candidates.as_slice(),
+        [(CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_sphere_tangent_circle")]
+            if *center == Point3::new(0.0, 0.0, 0.0) && *radius == 2.0
+    ));
     assert_eq!(
         solve_carriers(&[cylinder, sphere, tangent]),
         Some([2.0, 0.0, 0.0])
@@ -517,6 +524,13 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cone_sphere_tangent_circle"))
             if (center.z + 1.0).abs() < 1.0e-12 && (radius - 1.0).abs() < 1.0e-12
     ));
+    let cone_sphere_tangent_candidates =
+        coaxial_cone_sphere_circle_candidates(cone, cone_tangent_sphere);
+    assert!(matches!(
+        cone_sphere_tangent_candidates.as_slice(),
+        [(CurveGeometry::Circle { center, radius, .. }, "coaxial_cone_sphere_tangent_circle")]
+            if center.z == -1.0 && *radius == 1.0
+    ));
     let cone_sphere_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [1.0, 0.0, 0.0],
         normal: [1.0, 0.0, 0.0],
@@ -651,11 +665,25 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         Some((CurveGeometry::Circle { center, radius, .. }, "plane_torus_secant_circle"))
             if center == Point3::new(0.0, 0.0, 0.0) && radius == 7.0
     ));
+    let plane_torus_tangent_candidates =
+        axis_normal_plane_torus_circle_candidates(torus_tangent, torus);
+    assert!(matches!(
+        plane_torus_tangent_candidates.as_slice(),
+        [(CurveGeometry::Circle { center, radius, .. }, "plane_torus_tangent_circle")]
+            if *center == Point3::new(0.0, 0.0, 2.0) && *radius == 5.0
+    ));
     let outer_tangent_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 7.0);
     assert!(matches!(
         carrier_intersection_curve(outer_tangent_cylinder, torus),
         Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_torus_tangent_circle"))
             if center == Point3::new(0.0, 0.0, 0.0) && radius == 7.0
+    ));
+    let cylinder_torus_tangent_candidates =
+        coaxial_cylinder_torus_circle_candidates(outer_tangent_cylinder, torus);
+    assert!(matches!(
+        cylinder_torus_tangent_candidates.as_slice(),
+        [(CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_torus_tangent_circle")]
+            if *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
     ));
     let secant_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 6.0);
     let cylinder_torus_candidates =
@@ -691,6 +719,13 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         carrier_intersection_curve(torus_tangent_sphere, torus),
         Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_sphere_torus_tangent_circle"))
             if center == Point3::new(0.0, 0.0, 0.0) && (radius - 3.0).abs() < 1.0e-12
+    ));
+    let sphere_torus_tangent_candidates =
+        coaxial_sphere_torus_circle_candidates(torus_tangent_sphere, torus);
+    assert!(matches!(
+        sphere_torus_tangent_candidates.as_slice(),
+        [(CurveGeometry::Circle { center, radius, .. }, "coaxial_sphere_torus_tangent_circle")]
+            if *center == Point3::new(0.0, 0.0, 0.0) && *radius == 3.0
     ));
     let torus_secant_sphere = CarrierEquation::Sphere(SphereEquation {
         center: [0.0, 0.0, 0.0],
@@ -771,6 +806,12 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         carrier_intersection_curve(torus, second_torus),
         Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_tori_tangent_circle"))
             if center == Point3::new(0.0, 0.0, 0.0) && (radius - 7.0).abs() < 1.0e-12
+    ));
+    let tori_tangent_candidates = coaxial_tori_circle_candidates(torus, second_torus);
+    assert!(matches!(
+        tori_tangent_candidates.as_slice(),
+        [(CurveGeometry::Circle { center, radius, .. }, "coaxial_tori_tangent_circle")]
+            if *center == Point3::new(0.0, 0.0, 0.0) && *radius == 7.0
     ));
     let secant_torus = CarrierEquation::Torus(TorusEquation {
         center: [0.0, 0.0, 0.0],

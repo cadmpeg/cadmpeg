@@ -75,22 +75,119 @@ pub(crate) fn persistent_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
     }
 }
 
-pub(crate) fn allocation_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
+/// Addressing form carried by one allocation reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AllocationReferenceEncoding {
+    /// `4n+1`: backward framed-record distance.
+    BackwardDistance,
+    /// `4n+3`: zero-based ordinal in the immediately owned allocation.
+    OwnedChild,
+    /// `4w` followed by a `w`-byte little-endian value.
+    WidthCoded,
+    /// `4n+2`, excluding the tagged `0x06` and `0x0a` forms.
+    Selector2,
+    /// `06 <u8>`.
+    TaggedU8,
+    /// `0a <u16le>`.
+    TaggedU16,
+}
+
+/// One allocation reference with its addressing form retained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AllocationReference {
+    pub(crate) value: u32,
+    pub(crate) encoding: AllocationReferenceEncoding,
+}
+
+/// Read one allocation reference without discarding its addressing form.
+pub(crate) fn allocation_reference(bytes: &[u8], at: &mut usize) -> Option<AllocationReference> {
     match *bytes.get(*at)? {
         0x06 => {
             let value = u32::from(*bytes.get(*at + 1)?);
             *at += 2;
-            Some(value)
+            Some(AllocationReference {
+                value,
+                encoding: AllocationReferenceEncoding::TaggedU8,
+            })
         }
         0x0a => {
             let value = u32::from(View::u16_le_at(bytes, *at + 1)?);
             *at += 3;
-            Some(value)
+            Some(AllocationReference {
+                value,
+                encoding: AllocationReferenceEncoding::TaggedU16,
+            })
         }
         byte if byte != 0 && matches!(byte % 4, 2 | 3) => {
             *at += 1;
-            Some(u32::from(byte))
+            Some(AllocationReference {
+                value: u32::from(byte >> 2),
+                encoding: if byte % 4 == 3 {
+                    AllocationReferenceEncoding::OwnedChild
+                } else {
+                    AllocationReferenceEncoding::Selector2
+                },
+            })
         }
-        _ => compact_int(bytes, at),
+        byte if byte % 4 == 1 => {
+            let value = compact_int(bytes, at)?;
+            Some(AllocationReference {
+                value,
+                encoding: AllocationReferenceEncoding::BackwardDistance,
+            })
+        }
+        byte if byte != 0 => {
+            let value = compact_int(bytes, at)?;
+            Some(AllocationReference {
+                value,
+                encoding: AllocationReferenceEncoding::WidthCoded,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Read one allocation reference and discard its wire addressing form.
+pub(crate) fn allocation_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
+    Some(allocation_reference(bytes, at)?.value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{allocation_ref, allocation_reference, AllocationReferenceEncoding};
+
+    #[test]
+    fn allocation_refs_strip_single_byte_dialect_bits() {
+        for (token, expected) in [(0x03, 0), (0x0b, 2), (0x22, 8), (0x23, 8)] {
+            let mut at = 0;
+            assert_eq!(allocation_ref(&[token], &mut at), Some(expected));
+            assert_eq!(at, 1);
+        }
+    }
+
+    #[test]
+    fn allocation_references_retain_addressing_forms() {
+        for (token, value, encoding) in [
+            (
+                &[0x15][..],
+                5,
+                AllocationReferenceEncoding::BackwardDistance,
+            ),
+            (&[0x0b], 2, AllocationReferenceEncoding::OwnedChild),
+            (&[0x04, 0xb0], 176, AllocationReferenceEncoding::WidthCoded),
+            (&[0x06, 0x8b], 139, AllocationReferenceEncoding::TaggedU8),
+            (
+                &[0x0a, 0xc1, 0x01],
+                449,
+                AllocationReferenceEncoding::TaggedU16,
+            ),
+        ] {
+            let mut at = 0;
+            assert_eq!(
+                allocation_reference(token, &mut at),
+                Some(super::AllocationReference { value, encoding })
+            );
+            assert_eq!(at, token.len());
+        }
     }
 }

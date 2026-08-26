@@ -781,6 +781,17 @@ fn decode_standard_transfers_exact_rolling_ball_jet() {
     let [procedural] = decoded.ir().model.procedural_surfaces.as_slice() else {
         panic!("one rolling-ball construction");
     };
+    let surface = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == procedural.surface)
+        .expect("rolling-ball surface");
+    assert!(matches!(
+        &surface.geometry,
+        SurfaceGeometry::Procedural { construction } if construction == &procedural.id
+    ));
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
         degree,
         knots,

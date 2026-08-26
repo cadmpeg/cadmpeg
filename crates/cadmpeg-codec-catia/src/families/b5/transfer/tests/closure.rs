@@ -1,19 +1,29 @@
+#![allow(unused_imports)]
+
 use super::super::super::graph::{
-    bounded_occurrence_range, edge_pcurve_parameters, B5ExtrusionDirectrix, B5ExtrusionSurface,
-    B5Face, B5Graph, B5Loop, B5OffsetSurface, B5ParameterIncidence, B5Pcurve, B5SupportedSurface,
-    B5SupportedSurfaceParameters, B5Surface,
+    bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, pcurve_parameter_domain,
+    B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop, B5LoopMetadata,
+    B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5PcurveParameterization,
+    B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters,
+    B5Surface,
 };
 use super::super::edges::{
     b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
-    ordered_subrange, orient_b5_supports_to_edge,
+    merge_curve_plan, ordered_subrange, orient_b5_supports_to_edge,
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
-use super::super::surfaces::{rational_arc, revolve_nurbs};
+use super::super::pcurves::{
+    cylinder_helix, cylinder_point, isocurve_endpoint_parameters, lifted_curve_geometry,
+    neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
+    sphere_great_circle_geometry, sphere_great_circle_pcurve,
+};
+use super::super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
 use super::super::unit;
 use super::super::vertices::transfer_vertex_tolerances;
 use super::super::*;
 use super::*;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::surface_point;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
 };
@@ -103,21 +113,15 @@ fn explicit_pcurve_range_must_be_a_subrange_of_its_knot_domain() {
         control_points: vec![[0.0, 0.0], [1.0, 0.0]],
         weights: None,
         parameter_range: Some([2.0, 8.0]),
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
-    let knots = vec![0.0, 0.0, 10.0, 10.0];
-    assert_eq!(
-        native_pcurve_parameter_range(&pcurve, &knots),
-        Some([2.0, 8.0])
-    );
+    assert_eq!(pcurve_parameter_domain(&pcurve), Some([2.0, 8.0]));
     pcurve.parameter_range = None;
-    assert_eq!(
-        native_pcurve_parameter_range(&pcurve, &knots),
-        Some([0.0, 10.0])
-    );
+    assert_eq!(pcurve_parameter_domain(&pcurve), Some([0.0, 10.0]));
     pcurve.parameter_range = Some([-1.0, 8.0]);
-    assert_eq!(native_pcurve_parameter_range(&pcurve, &knots), None);
+    assert_eq!(pcurve_parameter_domain(&pcurve), None);
 }
 
 #[test]
@@ -285,6 +289,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         control_points: vec![[0.0, 0.0], [1.0, 0.0]],
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
@@ -422,6 +427,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
                 control_points: vec![[0.0, 0.0], [1.0, 0.0]],
                 weights: None,
                 parameter_range: None,
+                parameterization: B5PcurveParameterization::Native,
                 class_21_suffix_scalar: None,
                 lifted_endpoints: None,
             },

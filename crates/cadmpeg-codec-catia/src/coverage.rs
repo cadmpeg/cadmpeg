@@ -474,6 +474,8 @@ pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT: Cove
     CoverageKey("transferred_native_operation_definition_chain_value_count");
 pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT: CoverageKey =
     CoverageKey("transferred_native_operation_definition_value_count");
+pub(crate) const TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT: CoverageKey =
+    CoverageKey("transferred_native_operation_range_count");
 pub(crate) const TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT: CoverageKey =
     CoverageKey("transferred_native_operation_parameter_count");
 pub(crate) const TRANSFERRED_OBJECT_STREAM_FACE_COUNT: CoverageKey =
@@ -482,6 +484,8 @@ pub(crate) const TRANSFERRED_OBJECT_STREAM_LOOP_COUNT: CoverageKey =
     CoverageKey("transferred_object_stream_loop_count");
 pub(crate) const TRANSFERRED_PARAMETER_COUNT: CoverageKey =
     CoverageKey("transferred_parameter_count");
+pub(crate) const TRANSFERRED_PMI_DIMENSION_COUNT: CoverageKey =
+    CoverageKey("transferred_pmi_dimension_count");
 pub(crate) const TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT: CoverageKey =
     CoverageKey("transferred_relation_program_input_parameter_count");
 pub(crate) const TRANSFERRED_SKETCH_CONSTRAINT_COUNT: CoverageKey =
@@ -855,10 +859,12 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TRANSFERRED_NATIVE_OPERATION_COUNT,
     TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT,
     TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT,
+    TRANSFERRED_NATIVE_OPERATION_RANGE_COUNT,
     TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT,
     TRANSFERRED_OBJECT_STREAM_FACE_COUNT,
     TRANSFERRED_OBJECT_STREAM_LOOP_COUNT,
     TRANSFERRED_PARAMETER_COUNT,
+    TRANSFERRED_PMI_DIMENSION_COUNT,
     TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT,
     TRANSFERRED_SKETCH_CONSTRAINT_COUNT,
     TRANSFERRED_SKETCH_COUNT,

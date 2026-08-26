@@ -96,6 +96,62 @@ fn scan_withholds_repeated_native_model_names() {
 }
 
 #[test]
+fn scan_decodes_binary_model_name_field_without_cmnm_header() {
+    let data = build_prt(
+        "test",
+        &[(
+            "BasicData",
+            b"e0\x0amodel_name\0\xf1WIDGET_ROOT\0e0\x00disp_outl_info\0".to_vec(),
+        )],
+    );
+
+    let scan = container::scan_bytes(data.clone());
+    assert_eq!(scan.framing.model_name.as_deref(), Some("WIDGET_ROOT"));
+    let model_name_offset = data
+        .windows(b"WIDGET_ROOT".len())
+        .position(|window| window == b"WIDGET_ROOT")
+        .expect("model name offset");
+    assert_eq!(scan.framing.model_name_offset, Some(model_name_offset));
+
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(
+        result
+            .ir()
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("model_name"))
+            .map(String::as_str),
+        Some("WIDGET_ROOT")
+    );
+}
+
+#[test]
+fn scan_skips_empty_binary_model_name_fields() {
+    let data = build_prt(
+        "test",
+        &[(
+            "BasicData",
+            b"e0\x0amodel_name\0\xe1e0\x0amodel_name\0ROOT\0".to_vec(),
+        )],
+    );
+
+    let scan = container::scan_bytes(data);
+    assert_eq!(scan.framing.model_name.as_deref(), Some("ROOT"));
+}
+
+#[test]
+fn relation_model_name_accepts_binary_root_name() {
+    assert_eq!(
+        super::relation_model_name("DRILL_BIT_10D0_SUPPRESSED_FEAT"),
+        Some("DRILL_BIT_10D0_SUPPRESSED_FEAT")
+    );
+    assert_eq!(super::relation_model_name("widget.PrT "), Some("widget"));
+    assert_eq!(super::relation_model_name("widget.step"), None);
+}
+
+#[test]
 fn scan_enumerates_and_classifies_sections() {
     let data = build_prt(
         "test",
@@ -115,6 +171,18 @@ fn scan_enumerates_and_classifies_sections() {
     assert_eq!(scan.framing.sections[1].role, role::MODEL_DATA);
     assert_eq!(scan.framing.sections[2].role, role::THUMBNAIL);
     assert!(container::has_thumbnail(&scan));
+}
+
+#[test]
+fn scan_finds_curve_expression_in_feature_definition_section() {
+    let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+        \xe0\x0aexpression\0\xf8\x01value=5\0"
+        .to_vec();
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+
+    assert_eq!(scan.curves.expressions.len(), 1);
+    assert_eq!(scan.curves.expressions[0].entity_id, 7);
+    assert_eq!(scan.curves.expressions[0].lines[0].text, "value=5");
 }
 
 #[test]
@@ -250,6 +318,65 @@ fn scan_reads_geomlists_first_quilt_discriminator() {
     ));
 
     assert_eq!(scan.framing.first_quilt_ptr, Some(0));
+}
+
+#[test]
+fn scan_reads_legacy_geom_depend_first_quilt_discriminator() {
+    let data = b"#UGC:2 PART c\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
+@Sld_GeomDepend 1 0\n0 1 ->\n\
+@first_quilt_ptr 4 1\n1 4 0\n\
+#END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n"
+        .to_vec();
+
+    let scan = container::scan_bytes(data);
+
+    assert_eq!(scan.framing.layout, Layout::LegacyAscii);
+    assert_eq!(scan.framing.first_quilt_ptr, Some(0));
+}
+
+#[test]
+fn legacy_geom_depend_discriminator_withholds_distinct_values() {
+    let root = crate::legacy::ObjectRecord {
+        id: "root".to_string(),
+        name: "Sld_GeomDepend".to_string(),
+        attribute_id: 1,
+        scope_offset: 0,
+        parent: None,
+        depth: 0,
+        payload: crate::legacy::ObjectPayload::Arrow,
+        offset: 0,
+    };
+    let persistence = crate::legacy::Persistence {
+        objects: vec![root],
+        integer_values: vec![
+            crate::legacy::IntegerRecord {
+                id: "first".to_string(),
+                name: "first_quilt_ptr".to_string(),
+                attribute_id: 4,
+                scope_offset: 0,
+                parent: Some("root".to_string()),
+                depth: 1,
+                payload: crate::legacy::NumericPayload::Scalar { value: 0 },
+                offset: 1,
+            },
+            crate::legacy::IntegerRecord {
+                id: "second".to_string(),
+                name: "first_quilt_ptr".to_string(),
+                attribute_id: 4,
+                scope_offset: 0,
+                parent: Some("root".to_string()),
+                depth: 1,
+                payload: crate::legacy::NumericPayload::Scalar { value: 7 },
+                offset: 2,
+            },
+        ],
+        ..Default::default()
+    };
+
+    assert_eq!(
+        super::legacy_geom_depend_value(&persistence, "first_quilt_ptr"),
+        None
+    );
 }
 
 #[test]

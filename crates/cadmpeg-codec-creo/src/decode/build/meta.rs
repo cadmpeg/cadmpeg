@@ -80,10 +80,8 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
     }
     if let Some(unit) = &scan.framing.principal_unit {
         attributes.insert("principal_unit".to_string(), unit.token());
-        if scan.framing.layout == crate::container::Layout::LegacyAscii {
-            if let Some(scale) = unit.length_scale_mm() {
-                attributes.insert("source_length_scale_mm".to_string(), scale.to_string());
-            }
+        if let Some(scale) = unit.length_scale_mm().filter(|scale| *scale != 1.0) {
+            attributes.insert("source_length_scale_mm".to_string(), scale.to_string());
         }
     }
     if scan.framing.layout == crate::container::Layout::LegacyAscii {
@@ -455,6 +453,19 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
         "decoded_configuration_driver_table_reference_count".to_string(),
         configuration_driver_table_reference_count,
     );
+    let legacy_family_table = scan.framing.legacy_family_table.as_ref();
+    coverage.insert(
+        "decoded_legacy_configuration_driver_table_count".to_string(),
+        usize::from(legacy_family_table.is_some()),
+    );
+    coverage.insert(
+        "decoded_legacy_configuration_item_count".to_string(),
+        legacy_family_table.map_or(0, |table| table.items.len()),
+    );
+    coverage.insert(
+        "decoded_legacy_configuration_instance_count".to_string(),
+        legacy_family_table.map_or(0, |table| table.instances.len()),
+    );
     coverage.insert(
         "transferred_configuration_driver_table_count".to_string(),
         0,
@@ -462,6 +473,10 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
     coverage.insert(
         "decoded_pcurve_count".to_string(),
         scan.curves.pcurves.len(),
+    );
+    coverage.insert(
+        "decoded_two_chart_pcurve_count".to_string(),
+        scan.curves.two_chart_pcurves.len(),
     );
     coverage.insert(
         "decoded_fc_curve_coordinate_record_count".to_string(),

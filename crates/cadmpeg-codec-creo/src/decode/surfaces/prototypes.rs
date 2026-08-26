@@ -10,6 +10,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
+use crate::legacy_geometry::LegacySurfaceNamespace;
 
 use super::super::analytic::{cross, dot};
 use super::super::native::annotate;
@@ -91,6 +92,7 @@ pub(in super::super) fn prototype_local_frame(
     };
     let slots = values.iter().copied().collect::<Option<Vec<_>>>()?;
     let slots: [f64; 12] = slots.try_into().ok()?;
+    slots.iter().all(|value| value.is_finite()).then_some(())?;
     let first: [f64; 3] = slots[0..3].try_into().ok()?;
     let middle: [f64; 3] = slots[3..6].try_into().ok()?;
     let third: [f64; 3] = slots[6..9].try_into().ok()?;
@@ -116,7 +118,8 @@ pub(in super::super) fn prototype_local_frame(
     let second = second_candidates.next()?;
     second_candidates.next().is_none().then_some(())?;
     let axis = normalized(cross(reference, second))?;
-    let origin = slots[9..12].try_into().ok()?;
+    let origin: [f64; 3] = slots[9..12].try_into().ok()?;
+    origin.into_iter().all(f64::is_finite).then_some(())?;
     Some((origin, axis, reference))
 }
 
@@ -142,6 +145,35 @@ pub(in super::super) fn first_instance_surface_row(
     rows.into_iter()
         .filter(|row| row.offset > prototype_offset && row.kind == row_kind)
         .min_by_key(|row| row.offset)
+}
+
+pub(in super::super) fn surface_prototype_frame_bounds(
+    scan: &ContainerScan<'_>,
+    section: &crate::container::Section,
+    prototype_offset: usize,
+) -> Option<(usize, usize)> {
+    if scan.framing.data.is_empty() {
+        return Some((
+            section.offset,
+            section.offset.saturating_add(section.length),
+        ));
+    }
+    let section_end = section
+        .offset
+        .saturating_add(section.length)
+        .min(scan.framing.data.len());
+    let payload = scan.framing.data.get(section.offset..section_end)?;
+    let relative_prototype_offset = prototype_offset.checked_sub(section.offset)?;
+    let mut matches = crate::surface::complete_surface_array_bounds(payload)
+        .into_iter()
+        .filter(|(start, end)| {
+            relative_prototype_offset >= *start && relative_prototype_offset < *end
+        });
+    let (start, end) = matches.next()?;
+    matches.next().is_none().then_some((
+        section.offset.saturating_add(start),
+        section.offset.saturating_add(end),
+    ))
 }
 
 pub(in super::super) fn unique_surface_prototype_associations<'a>(
@@ -171,28 +203,10 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         }) else {
             continue;
         };
-        let section_limit = section.offset.saturating_add(section.length);
-        let frame_bounds = if section.offset < scan.framing.data.len() {
-            let section_end = section_limit.min(scan.framing.data.len());
-            crate::surface::complete_surface_array_bounds(
-                &scan.framing.data[section.offset..section_end],
-            )
-        } else {
-            Vec::new()
-        };
-        let (adjacent_start, adjacent_end) = if frame_bounds.is_empty() {
-            if !scan.framing.data.is_empty() {
-                continue;
-            }
-            (section.offset, section_limit)
-        } else {
-            let relative_record_offset = record.offset.saturating_sub(section.offset);
-            let Some((start, end)) = frame_bounds.into_iter().find(|(start, end)| {
-                relative_record_offset >= *start && relative_record_offset < *end
-            }) else {
-                continue;
-            };
-            (section.offset + start, section.offset + end)
+        let Some((adjacent_start, adjacent_end)) =
+            surface_prototype_frame_bounds(scan, section, record.offset)
+        else {
+            continue;
         };
         let Some(row) = first_instance_surface_row(
             &scan.surfaces.rows,
@@ -264,7 +278,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let point = Point3::new(origin[0], origin[1], origin[2]);
                 let axis = Vector3::new(axis[0], axis[1], axis[2]);
                 let reference = Vector3::new(reference[0], reference[1], reference[2]);
-                let radii = match (
+                let prototype_radii = match (
                     prototype_scalar(record, "radius1")
                         .filter(|radius| radius.is_finite() && *radius >= 0.0),
                     prototype_scalar(record, "radius2")
@@ -273,6 +287,12 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     (Some(radius1), Some(radius2)) => Some([radius1, radius2]),
                     _ => None,
                 };
+                let radii =
+                    crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
+                        .filter(|parameter| parameter.offset == row.offset)
+                        .and_then(|parameter| parameter.torus_radius_overrides(row.type_byte))
+                        .map(|overrides| [overrides.radius1, overrides.radius2])
+                        .or(prototype_radii);
                 let Some([radius1, radius2]) = radii else {
                     continue;
                 };
@@ -347,3 +367,271 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     }
     transferred
 }
+
+pub(in super::super) fn transfer_positional_spline_replays(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    if scan.framing.layout != crate::container::Layout::Nd {
+        return 0;
+    }
+    let mut transferred = 0;
+    for parameter in &scan.surfaces.parameters {
+        if parameter.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
+            continue;
+        }
+        let Some(row) =
+            crate::surface::unique_surface_row(&scan.surfaces.rows, parameter.surface_id)
+        else {
+            continue;
+        };
+        if row.kind != crate::surface::SurfaceKind::Spline || row.offset != parameter.offset {
+            continue;
+        }
+        let sections = scan
+            .framing
+            .sections
+            .iter()
+            .filter(|section| {
+                row.offset >= section.offset
+                    && row.offset < section.offset.saturating_add(section.length)
+            })
+            .collect::<Vec<_>>();
+        let [section] = sections.as_slice() else {
+            continue;
+        };
+        let section_end = section
+            .offset
+            .saturating_add(section.length)
+            .min(scan.framing.data.len());
+        let Some(payload) = scan.framing.data.get(section.offset..section_end) else {
+            continue;
+        };
+        let Some(relative_row_offset) = row.offset.checked_sub(section.offset) else {
+            continue;
+        };
+        let relative_row = {
+            let mut row = row.clone();
+            row.offset = relative_row_offset;
+            row
+        };
+        let relative_rows = scan
+            .surfaces
+            .rows
+            .iter()
+            .filter(|candidate| {
+                candidate.offset >= section.offset
+                    && candidate.offset < section.offset.saturating_add(section.length)
+            })
+            .filter_map(|candidate| {
+                let mut candidate = candidate.clone();
+                candidate.offset = candidate.offset.checked_sub(section.offset)?;
+                Some(candidate)
+            })
+            .collect::<Vec<_>>();
+        let Some(prototype) = crate::surface::positional_spline_replay_prototype(
+            payload,
+            &relative_rows,
+            &relative_row,
+        ) else {
+            continue;
+        };
+        let cache = crate::scalar::ScalarCache::from_section(payload);
+        let Some(replay) =
+            crate::surface::decode_positional_spline_replay(&parameter.body, &prototype, &cache)
+        else {
+            continue;
+        };
+        let Some(nurbs) = interpolation_spline_surface(
+            &replay.points,
+            &replay.u_parameters,
+            &replay.v_parameters,
+            &replay.u_derivatives,
+            &replay.v_derivatives,
+            &replay.mixed_derivatives,
+        ) else {
+            continue;
+        };
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            &section.name,
+            parameter.body_offset as u64,
+            "positional_spline_prototype_replay",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Nurbs(nurbs),
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("{}:{}", section.name, row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
+pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    if scan.framing.layout != crate::container::Layout::LegacyAscii {
+        return 0;
+    }
+    let mut carrier_counts = BTreeMap::<u32, usize>::new();
+    for carrier in &scan.surfaces.legacy_carriers {
+        *carrier_counts.entry(carrier.surface_id).or_default() += 1;
+    }
+
+    let mut transferred = 0;
+    for carrier in &scan.surfaces.legacy_carriers {
+        if carrier_counts.get(&carrier.surface_id) != Some(&1) {
+            continue;
+        }
+        let rows = match carrier.namespace {
+            LegacySurfaceNamespace::Visible => &scan.surfaces.rows,
+            LegacySurfaceNamespace::NonVisible => &scan.surfaces.nonvisible_rows,
+        };
+        let Some(row) = crate::surface::unique_surface_row(rows, carrier.surface_id) else {
+            continue;
+        };
+        let geometry = match &carrier.geometry {
+            crate::legacy_geometry::LegacySurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis,
+            } if row.kind == crate::surface::SurfaceKind::Plane => SurfaceGeometry::Plane {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
+                normal: Vector3::new(normal[0], normal[1], normal[2]),
+                u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+            },
+            crate::legacy_geometry::LegacySurfaceGeometry::Cylinder {
+                origin,
+                axis,
+                ref_direction,
+                radius,
+            } if row.kind == crate::surface::SurfaceKind::Cylinder => SurfaceGeometry::Cylinder {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
+                axis: Vector3::new(axis[0], axis[1], axis[2]),
+                ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                radius: *radius,
+            },
+            crate::legacy_geometry::LegacySurfaceGeometry::Cone {
+                apex,
+                axis,
+                ref_direction,
+                half_angle,
+                ..
+            } if row.kind == crate::surface::SurfaceKind::Cone => SurfaceGeometry::Cone {
+                origin: Point3::new(apex[0], apex[1], apex[2]),
+                axis: Vector3::new(axis[0], axis[1], axis[2]),
+                ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                radius: 0.0,
+                ratio: 1.0,
+                half_angle: *half_angle,
+            },
+            crate::legacy_geometry::LegacySurfaceGeometry::Torus {
+                center,
+                axis,
+                ref_direction,
+                major_radius,
+                minor_radius,
+            } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => SurfaceGeometry::Torus {
+                center: Point3::new(center[0], center[1], center[2]),
+                axis: Vector3::new(axis[0], axis[1], axis[2]),
+                ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+                major_radius: *major_radius,
+                minor_radius: *minor_radius,
+            },
+            crate::legacy_geometry::LegacySurfaceGeometry::Sphere {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } if row.kind == crate::surface::SurfaceKind::TorusOrSphere => {
+                SurfaceGeometry::Sphere {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    ref_direction: Vector3::new(
+                        ref_direction[0],
+                        ref_direction[1],
+                        ref_direction[2],
+                    ),
+                    radius: *radius,
+                }
+            }
+            crate::legacy_geometry::LegacySurfaceGeometry::Spline {
+                points,
+                u_parameters,
+                v_parameters,
+                u_derivatives,
+                v_derivatives,
+                mixed_derivatives,
+            } if row.kind == crate::surface::SurfaceKind::Spline => {
+                let Some(nurbs) = interpolation_spline_surface(
+                    points,
+                    u_parameters,
+                    v_parameters,
+                    u_derivatives,
+                    v_derivatives,
+                    mixed_derivatives,
+                ) else {
+                    continue;
+                };
+                SurfaceGeometry::Nurbs(nurbs)
+            }
+            _ => continue,
+        };
+        let id = SurfaceId(format!(
+            "{}{}",
+            carrier.namespace.ir_prefix(),
+            carrier.surface_id
+        ));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "legacy_ascii",
+            carrier.offset as u64,
+            "legacy_surface_prototype_carrier",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry,
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!(
+                    "{}{}",
+                    carrier.namespace.source_prefix(),
+                    carrier.surface_id
+                ),
+                name: None,
+                color: None,
+                visible: Some(carrier.namespace.is_visible()),
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
+#[cfg(test)]
+mod tests;

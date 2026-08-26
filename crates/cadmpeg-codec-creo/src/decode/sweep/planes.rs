@@ -1,15 +1,54 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature plane equations and generated cylinder and cap extents.
 
-use super::super::analytic::{canonical_plane, dot, PlaneEquation};
+use super::super::analytic::{
+    canonical_plane, dot, placed_planes, reconciled_model_plane, PlaneEquation,
+};
 use super::super::holes::blind_extrude_side;
 use super::super::sketch::normalized;
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+const EPS_CYLINDER_CARRIER: f64 = 1.0e-9;
+
+fn feature_local_plane(scan: &ContainerScan, surface_id: u32) -> Result<Option<PlaneEquation>, ()> {
+    if crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id).is_none() {
+        return Err(());
+    }
+    let outlines = scan
+        .planes
+        .outlines
+        .iter()
+        .filter(|plane| plane.surface_id == surface_id)
+        .collect::<Vec<_>>();
+    match outlines.as_slice() {
+        [plane] => Ok(Some(PlaneEquation {
+            origin: plane.origin,
+            normal: plane.normal,
+        })),
+        [] => {
+            let frames = scan
+                .planes
+                .local_systems
+                .iter()
+                .filter(|frame| frame.surface_id == surface_id)
+                .collect::<Vec<_>>();
+            match frames.as_slice() {
+                [] => Ok(None),
+                [frame] => Ok(frame
+                    .origin
+                    .zip(frame.normal)
+                    .map(|(origin, normal)| PlaneEquation { origin, normal })),
+                _ => Err(()),
+            }
+        }
+        _ => Err(()),
+    }
+}
 
 const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
@@ -17,6 +56,7 @@ const EPS_SIGNED_LENGTH: f64 = 1.0e-9;
 
 pub(in super::super) fn feature_plane_equations(
     scan: &ContainerScan,
+    ir: &CadIr,
     feature_id: u32,
 ) -> Option<Vec<([f64; 3], [f64; 3])>> {
     let ids = scan
@@ -28,31 +68,20 @@ pub(in super::super) fn feature_plane_equations(
         })
         .map(|row| row.id)
         .collect::<BTreeSet<_>>();
+    let mut local_planes = BTreeMap::new();
+    for id in &ids {
+        match feature_local_plane(scan, *id) {
+            Ok(Some(plane)) => {
+                local_planes.insert(*id, plane);
+            }
+            Ok(None) => {}
+            Err(()) => return None,
+        }
+    }
     ids.into_iter()
         .map(|id| {
-            crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
-            let outlines = scan
-                .planes
-                .outlines
-                .iter()
-                .filter(|plane| plane.surface_id == id)
-                .collect::<Vec<_>>();
-            match outlines.as_slice() {
-                [plane] => Some((plane.origin, plane.normal)),
-                [] => {
-                    let frames = scan
-                        .planes
-                        .local_systems
-                        .iter()
-                        .filter(|frame| frame.surface_id == id)
-                        .collect::<Vec<_>>();
-                    let [frame] = frames.as_slice() else {
-                        return None;
-                    };
-                    Some((frame.origin?, frame.normal?))
-                }
-                _ => None,
-            }
+            let plane = reconciled_model_plane(&local_planes, ir, id)?;
+            Some((plane.origin, plane.normal))
         })
         .collect()
 }
@@ -129,6 +158,7 @@ pub(in super::super) fn feature_outline_planes(
 
 pub(in super::super) fn generated_arc_cylinder_extent(
     scan: &ContainerScan,
+    ir: &CadIr,
     definition: &crate::feature::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
@@ -163,10 +193,85 @@ pub(in super::super) fn generated_arc_cylinder_extent(
         };
         surface_ids.insert(row.id).then_some(())?;
     }
-    let frames =
-        unique_available_positional_cylinder_frames(&surface_ids, &scan.surfaces.parameters)?;
-    (!frames.is_empty()).then_some(())?;
+    let frame_records = unique_available_positional_cylinder_frame_records(
+        &surface_ids,
+        &scan.surfaces.parameters,
+    )?;
+    (!frame_records.is_empty()).then_some(())?;
+    frame_records
+        .iter()
+        .all(|(surface_id, frame)| cylinder_frame_agrees_with_model(ir, *surface_id, frame))
+        .then_some(())?;
+    let frames = frame_records
+        .into_iter()
+        .map(|(_, frame)| frame)
+        .collect::<Vec<_>>();
     agreed_generated_cylinder_extent(transform, &frames)
+}
+
+fn cylinder_frame_agrees_with_model(
+    ir: &CadIr,
+    surface_id: u32,
+    frame: &crate::surface::PositionalCylinderFrame,
+) -> bool {
+    let model_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+    let model_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| surface.id == model_id)
+        .collect::<Vec<_>>();
+    let surface = match model_surfaces.as_slice() {
+        [] => return true,
+        [surface] => surface,
+        _ => return false,
+    };
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+    } = &surface.geometry
+    else {
+        return matches!(surface.geometry, SurfaceGeometry::Unknown { .. });
+    };
+    let (Some(frame_axis), Some(model_axis), Some(frame_ref), Some(model_ref)) = (
+        normalized(frame.axis),
+        normalized([axis.x, axis.y, axis.z]),
+        normalized(frame.ref_direction),
+        normalized([ref_direction.x, ref_direction.y, ref_direction.z]),
+    ) else {
+        return false;
+    };
+    if !radius.is_finite() || *radius <= 0.0 {
+        return false;
+    }
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= EPS_CYLINDER_CARRIER * left.abs().max(right.abs()).max(1.0)
+    };
+    if !frame_axis
+        .into_iter()
+        .zip(model_axis)
+        .all(|(left, right)| close(left, right))
+        || !frame_ref
+            .into_iter()
+            .zip(model_ref)
+            .all(|(left, right)| close(left, right))
+        || !close(frame.radius, *radius)
+    {
+        return false;
+    }
+    let model_origin = [origin.x, origin.y, origin.z];
+    let relative = std::array::from_fn(|index| model_origin[index] - frame.origin[index]);
+    let axial = dot(relative, frame_axis);
+    let radial = std::array::from_fn(|index| relative[index] - axial * frame_axis[index]);
+    let scale = frame
+        .origin
+        .into_iter()
+        .chain(model_origin)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    dot(radial, radial).sqrt() <= EPS_CYLINDER_CARRIER * scale
 }
 
 pub(in super::super) fn ordered_parallel_cap_extent(
@@ -237,36 +342,20 @@ pub(in super::super) fn generated_cap_plane_extent(
         && table.surface_ids.contains(&start_id?)
         && table.surface_ids.contains(&end_id?))
     .then_some(())?;
+    let local_planes = placed_planes(scan);
     let plane = |surface_id: u32| {
         let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
         (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
             .then_some(())?;
-        let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
-        let surfaces = ir
-            .model
-            .surfaces
-            .iter()
-            .filter(|surface| surface.id == id)
-            .collect::<Vec<_>>();
-        let [Surface {
-            geometry: SurfaceGeometry::Plane { origin, normal, .. },
-            ..
-        }] = surfaces.as_slice()
-        else {
-            return None;
-        };
-        Some(PlaneEquation {
-            origin: [origin.x, origin.y, origin.z],
-            normal: [normal.x, normal.y, normal.z],
-        })
+        reconciled_model_plane(&local_planes, ir, surface_id)
     };
     ordered_parallel_cap_extent(plane(start_id?)?, plane(end_id?)?)
 }
 
-pub(in super::super) fn unique_available_positional_cylinder_frames(
+pub(in super::super) fn unique_available_positional_cylinder_frame_records(
     surface_ids: &BTreeSet<u32>,
     parameters: &[crate::surface::SurfaceParameterRecord],
-) -> Option<Vec<crate::surface::PositionalCylinderFrame>> {
+) -> Option<Vec<(u32, crate::surface::PositionalCylinderFrame)>> {
     let mut frames = Vec::new();
     for surface_id in surface_ids {
         let mut matching = parameters
@@ -277,7 +366,7 @@ pub(in super::super) fn unique_available_positional_cylinder_frames(
             return None;
         }
         if let Some(frame) = first.and_then(|record| record.positional_cylinder_frame) {
-            frames.push(frame);
+            frames.push((*surface_id, frame));
         }
     }
     Some(frames)
@@ -328,3 +417,6 @@ pub(in super::super) fn agreed_generated_cylinder_extent(
         direction,
     ))
 }
+
+#[cfg(test)]
+mod tests;

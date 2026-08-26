@@ -6,8 +6,8 @@ use super::super::sketch::normalized;
 use super::super::sketch_ids::model_sketch_id;
 use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use super::{
-    feature_entity_producers, feature_result_edge_ids, model_feature_ids, surface_merge_quilt_ids,
-    unique_positive_length,
+    feature_result_edge_ids, model_feature_ids, preceding_feature_entity_producers,
+    surface_merge_quilt_ids, surface_merge_quilt_state_offset, unique_positive_length,
 };
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
@@ -107,9 +107,8 @@ pub(in super::super) fn class_100_operand_producers(
                             let position = (table.offset, entry.offset, table_index, entry_index);
                             (position < consumer_position
                                 && entry.class_id == 200
-                                && entry.entity_id == entity_id
-                                && entry.source_entity_id.is_some())
-                            .then_some(owner)
+                                && entry.entity_id == entity_id)
+                                .then_some(owner)
                         })
                         .collect::<Vec<_>>()
                 })
@@ -158,28 +157,43 @@ pub(in super::super) fn knit_operand_surface_ids(
     feature_id: u32,
     quilt_ids: &[u32],
 ) -> Option<Vec<u32>> {
-    let producers = feature_entity_producers(&scan.features.entity_tables);
+    let consumer_offset = surface_merge_quilt_state_offset(
+        &scan.features.affected_ids,
+        &scan.features.surface_merge_replay_affected_ids,
+        feature_id,
+        quilt_ids,
+    )?;
     let surface_ids = quilt_ids
         .iter()
         .map(|quilt_id| {
-            let mut owners = producers.get(quilt_id)?.iter().copied();
-            let producer = owners.next()?;
-            if owners.next().is_some() || producer == feature_id {
+            let producers = preceding_feature_entity_producers(
+                &scan.features.entity_tables,
+                *quilt_id,
+                consumer_offset,
+            );
+            let [producer] = producers.as_slice() else {
+                return None;
+            };
+            if *producer == feature_id {
                 return None;
             }
             let matching_entries = scan
                 .features
                 .entity_tables
                 .iter()
-                .filter(|table| table.feature_id == Some(producer) && table.table_class_id == 100)
+                .filter(|table| {
+                    table.feature_id == Some(*producer)
+                        && table.table_class_id == 100
+                        && table.offset < consumer_offset
+                })
                 .flat_map(|table| table.entries.iter())
-                .filter(|entry| entry.entity_id == *quilt_id)
+                .filter(|entry| entry.entity_id == *quilt_id && entry.offset < consumer_offset)
                 .collect::<Vec<_>>();
             let [entry] = matching_entries.as_slice() else {
                 return None;
             };
             let surface = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.class_id)?;
-            (surface.feature_id == producer).then_some(entry.class_id)
+            (surface.feature_id == *producer).then_some(entry.class_id)
         })
         .collect::<Option<Vec<_>>>()?;
     (surface_ids.iter().collect::<BTreeSet<_>>().len() == surface_ids.len()).then_some(surface_ids)
@@ -252,7 +266,13 @@ pub(in super::super) fn draft_neutral_plane_selection(
     ) else {
         return FaceSelection::Unresolved;
     };
-    if !table.surface_ids.contains(&entry.entity_id) {
+    if table
+        .surface_ids
+        .iter()
+        .filter(|surface_id| **surface_id == entry.entity_id)
+        .count()
+        != 1
+    {
         return FaceSelection::Unresolved;
     }
     let Some(surface) = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
@@ -303,7 +323,12 @@ pub(in super::super) fn feature_surface_transitions(
     for (output_table, output) in outputs {
         let intermediate_id = output.related_entity_id?;
         if output.related_entity_state != Some(0)
-            || !output_table.surface_ids.contains(&output.entity_id)
+            || output_table
+                .surface_ids
+                .iter()
+                .filter(|surface_id| **surface_id == output.entity_id)
+                .count()
+                != 1
             || crate::surface::unique_surface_row(surface_rows, output.entity_id)
                 .is_none_or(|row| row.feature_id != feature_id)
             || !output_ids.insert(output.entity_id)
@@ -528,3 +553,6 @@ pub(in super::super) fn emit_feature_result_topologies(
     }
     emitted
 }
+
+#[cfg(test)]
+mod tests;

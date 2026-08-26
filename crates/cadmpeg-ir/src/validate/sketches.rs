@@ -5,11 +5,16 @@
 use super::*;
 use crate::geometry::knots_nondecreasing;
 use crate::sketches::{
-    SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus,
+    SketchConstraintDefinition as Constraint, SketchDistancePair, SketchGeometry, SketchLocus,
     SpatialSketchConstraintDefinition as SpatialConstraint, SpatialSketchGeometry,
 };
 use std::collections::{HashMap, HashSet};
 
+const EPS_EQUAL_DISTANCE: f64 = 1.0e-9;
+const EPS_COORDINATE_VALUE: f64 = 1.0e-9;
+const EPS_DISTANCE_VALUE: f64 = 1.0e-9;
+const EPS_POLAR_ANGLE: f64 = 1.0e-9;
+const EPS_POLAR_ZERO: f64 = 1.0e-12;
 const SPATIAL_LINE_DEGENERACY_EPSILON: f64 = 1.0e-12;
 const EPS_SKETCHES_VALID_SPATIAL_CIRCLE_FRAME_E9: f64 = 1e-9;
 const EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9: f64 = 1e-9;
@@ -1625,6 +1630,158 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,
             Constraint::Distance { entities, .. } => !entities.is_empty(),
+            Constraint::EqualDistance { first, second } => {
+                let measured_distance = |pair: &SketchDistancePair| {
+                    let first = sketch_locus_point(&pair.first, &geometry)?;
+                    let second = sketch_locus_point(&pair.second, &geometry)?;
+                    Some(distance2(first, second))
+                };
+                measured_distance(first)
+                    .zip(measured_distance(second))
+                    .is_none_or(|(first, second)| {
+                        (first - second).abs()
+                            <= ir
+                                .tolerances
+                                .linear
+                                .max(EPS_EQUAL_DISTANCE * (1.0 + first.abs().max(second.abs())))
+                    })
+            }
+            Constraint::DistanceLociValue {
+                first,
+                second,
+                distance,
+                parameter,
+            } => {
+                let measured_points =
+                    sketch_locus_point(first, &geometry).zip(sketch_locus_point(second, &geometry));
+                let distance_matches = measured_points.as_ref().is_none_or(|(first, second)| {
+                    let measured = distance2(*first, *second);
+                    (measured - distance.0).abs()
+                        <= ir
+                            .tolerances
+                            .linear
+                            .max(EPS_DISTANCE_VALUE * (1.0 + measured.abs().max(distance.0)))
+                });
+                let parameter_matches = parameter.as_ref().is_none_or(|parameter| {
+                    let Some(Some(crate::features::ParameterValue::Length(value))) =
+                        parameter_values.get(parameter)
+                    else {
+                        return false;
+                    };
+                    let expected = value.0.abs();
+                    (expected - distance.0).abs()
+                        <= ir
+                            .tolerances
+                            .linear
+                            .max(EPS_DISTANCE_VALUE * (1.0 + expected.max(distance.0)))
+                });
+                distance.0.is_finite() && distance.0 >= 0.0 && distance_matches && parameter_matches
+            }
+            Constraint::PointCoordinateValues { point, values } => {
+                let coordinate_matches = sketch_locus_point(point, &geometry).is_none_or(|point| {
+                    [point.u, point.v]
+                        .into_iter()
+                        .zip(values)
+                        .all(|(measured, expected)| {
+                            expected.0.is_finite()
+                                && (measured - expected.0).abs()
+                                    <= ir.tolerances.linear.max(
+                                        EPS_COORDINATE_VALUE
+                                            * (1.0 + measured.abs().max(expected.0.abs())),
+                                    )
+                        })
+                });
+                values.iter().all(|value| value.0.is_finite()) && coordinate_matches
+            }
+            Constraint::MidpointCoordinate {
+                first,
+                second,
+                axis,
+                value,
+            } => {
+                let coordinate_matches = sketch_locus_point(first, &geometry)
+                    .zip(sketch_locus_point(second, &geometry))
+                    .is_none_or(|(first, second)| {
+                        let measured = match axis {
+                            crate::sketches::SketchCoordinateAxis::U => {
+                                f64::midpoint(first.u, second.u)
+                            }
+                            crate::sketches::SketchCoordinateAxis::V => {
+                                f64::midpoint(first.v, second.v)
+                            }
+                        };
+                        (measured - value.0).abs()
+                            <= ir.tolerances.linear.max(
+                                EPS_COORDINATE_VALUE * (1.0 + measured.abs().max(value.0.abs())),
+                            )
+                    });
+                value.0.is_finite() && coordinate_matches
+            }
+            Constraint::PolarDistance {
+                first,
+                second,
+                distance,
+                angle,
+                distance_parameter,
+            } => {
+                let measured_points =
+                    sketch_locus_point(first, &geometry).zip(sketch_locus_point(second, &geometry));
+                let distance_matches = measured_points.as_ref().is_none_or(|(first, second)| {
+                    let measured = distance2(*first, *second);
+                    (measured - distance.0).abs()
+                        <= ir
+                            .tolerances
+                            .linear
+                            .max(EPS_POLAR_ANGLE * (1.0 + measured.abs().max(distance.0)))
+                });
+                let angle_matches = match (distance.0 <= EPS_POLAR_ZERO, angle.as_ref()) {
+                    (true, None) => true,
+                    (false, Some(angle)) => {
+                        angle.0.is_finite()
+                            && measured_points.as_ref().is_none_or(|(first, second)| {
+                                let measured = (second.v - first.v).atan2(second.u - first.u);
+                                let difference =
+                                    (angle.0 - measured).rem_euclid(std::f64::consts::TAU);
+                                difference.min(std::f64::consts::TAU - difference)
+                                    <= EPS_POLAR_ANGLE
+                            })
+                    }
+                    _ => false,
+                };
+                let parameter_matches = distance_parameter.as_ref().is_none_or(|parameter| {
+                    let Some(Some(crate::features::ParameterValue::Length(value))) =
+                        parameter_values.get(parameter)
+                    else {
+                        return false;
+                    };
+                    let expected = value.0.abs();
+                    (expected - distance.0).abs()
+                        <= ir
+                            .tolerances
+                            .linear
+                            .max(EPS_POLAR_ANGLE * (1.0 + expected.max(distance.0)))
+                });
+                distance.0.is_finite()
+                    && distance.0 >= 0.0
+                    && distance_matches
+                    && angle_matches
+                    && parameter_matches
+            }
+            Constraint::AngleDifference {
+                first,
+                second,
+                difference,
+                value,
+            } => {
+                first.variable_type == 4
+                    && second.variable_type == 4
+                    && difference.variable_type == 0
+                    && value.0.is_finite()
+                    && (0.0..=std::f64::consts::PI).contains(&value.0)
+            }
+            Constraint::ScalarEquality { first, second } => {
+                first.variable_type == 6 && second.variable_type == 6 && first.key != second.key
+            }
             Constraint::RepeatedDistance { measurements, .. } => {
                 let mut entities = HashSet::new();
                 !measurements.is_empty()
@@ -2042,14 +2199,53 @@ fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
     }
 }
 
+fn sketch_locus_point(
+    locus: &SketchLocus,
+    geometry: &HashMap<&crate::sketches::SketchEntityId, &SketchGeometry>,
+) -> Option<crate::math::Point2> {
+    let entity_geometry = geometry.get(locus_entity(locus))?;
+    match locus {
+        SketchLocus::Entity(_) => match entity_geometry {
+            SketchGeometry::Point { position } => Some(*position),
+            _ => None,
+        },
+        SketchLocus::Start(_) | SketchLocus::End(_) => {
+            let (start, end) = oriented_endpoints(entity_geometry, false)?;
+            Some(if matches!(locus, SketchLocus::Start(_)) {
+                start
+            } else {
+                end
+            })
+        }
+        SketchLocus::Center(_) => match entity_geometry {
+            SketchGeometry::Circle { center, .. }
+            | SketchGeometry::Arc { center, .. }
+            | SketchGeometry::Ellipse { center, .. }
+            | SketchGeometry::Hyperbola { center, .. } => Some(*center),
+            SketchGeometry::Parabola { vertex, .. } => Some(*vertex),
+            _ => None,
+        },
+    }
+}
+
 fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
     match definition {
         Constraint::CoincidentLoci { loci } => loci.iter().collect(),
-        Constraint::Midpoint { point, .. } | Constraint::PointOnObject { point, .. } => vec![point],
+        Constraint::Midpoint { point, .. }
+        | Constraint::PointOnObject { point, .. }
+        | Constraint::PointCoordinateValues { point, .. } => vec![point],
         Constraint::Symmetric { first, second, .. } => vec![first, second],
         Constraint::DistanceLoci { first, second, .. }
+        | Constraint::DistanceLociValue { first, second, .. }
+        | Constraint::MidpointCoordinate { first, second, .. }
+        | Constraint::PolarDistance { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
         | Constraint::VerticalDistance { first, second, .. } => vec![first, second],
+        Constraint::EqualDistance { first, second } => {
+            [&first.first, &first.second, &second.first, &second.second]
+                .into_iter()
+                .collect()
+        }
         Constraint::RepeatedDistance { measurements, .. } => measurements
             .iter()
             .flat_map(|measurement| {

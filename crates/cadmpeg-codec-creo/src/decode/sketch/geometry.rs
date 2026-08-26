@@ -10,7 +10,8 @@ use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchId};
 
 use super::super::sketch_ids::sketch_entity_id;
 use super::super::sketch_transfer::{
-    section_saved_entity, semantic_saved_section_entities, unique_saved_section_internal_ids,
+    saved_section_ordinary_geometry_allowed, section_saved_entity, semantic_saved_section_entities,
+    unique_saved_section_internal_ids,
 };
 use super::radii::trim_segment_id;
 use super::skamp::section_line_entity_fixed_coordinate;
@@ -203,6 +204,7 @@ pub(crate) fn saved_section_line_geometry(
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    saved_section_ordinary_geometry_allowed(definition, segment).then_some(())?;
     let order_table = definition.order_table.as_ref()?;
     let internal_id = order_table
         .internal_id(segment.external_id)
@@ -301,6 +303,7 @@ pub(crate) fn saved_section_arc_record<'a>(
 ) -> Option<&'a crate::feature::FeatureSavedArc> {
     (segment.kind == crate::feature::FeatureSegmentKind::Arc && segment.arc_orientation == Some(0))
         .then_some(())?;
+    saved_section_ordinary_geometry_allowed(definition, segment).then_some(())?;
     let internal_id = definition
         .order_table
         .as_ref()?
@@ -448,8 +451,7 @@ pub(crate) fn saved_section_circle_values(
     segment: &crate::feature::FeatureCircleSegment,
 ) -> Option<([f64; 2], f64)> {
     let segments = definition.segments.as_ref()?;
-    (segments.is_complete() && segments.external_id_count(segment.external_id) == 1)
-        .then_some(())?;
+    (segments.external_id_count(segment.external_id) == 1).then_some(())?;
     let entity = section_saved_entity(definition, segment.external_id)?;
     let (_, geometry, _) = saved_section_entity_geometry(entity)?;
     let SketchGeometry::Circle { center, radius } = geometry else {

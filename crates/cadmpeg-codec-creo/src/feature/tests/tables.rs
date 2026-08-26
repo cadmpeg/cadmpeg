@@ -574,6 +574,25 @@ fn equation_table_replays_direct_and_counted_rows() {
 }
 
 #[test]
+fn equation_table_accepts_final_row_at_table_separator() {
+    let payload = b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\
+            \xe0\x05fcn_id\0\x02\
+            \xe0\x08arg_arr\0\xf8\x02\x11\x12\
+            \xe0\x01aux_data\0\xf6\
+            \xf1\xf7\x80\x9f\xe2\
+            \x01\x04\x11\x12\xf6\xf2\xf7\x39\x99\x88\
+            \xe0\x02scale\0\x99\x88";
+
+    let table = equation_table(payload, 0, payload.len()).expect("eqtn_arr table");
+
+    assert_eq!(table.declared_count, 2);
+    assert_eq!(table.rows.len(), 1);
+    assert_eq!(table.rows[0].equation_id, 1);
+    assert_eq!(table.rows[0].body, [1, 4, 0x11, 0x12, 0xf6]);
+}
+
+#[test]
 fn positional_relation_table_replays_rows_after_its_prototype() {
     let payload = b"prefix\xf8\x03\xf7\x64\xfb\xe2\xf7\x65\
             prototype\xf1\xf7\x64\xe2\
@@ -652,6 +671,71 @@ fn positional_skamp_table_replays_counted_nested_items() {
 }
 
 #[test]
+fn positional_skamp_table_replays_consecutive_single_item_rows() {
+    let payload = b"\xf8\x03\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\xe2\
+            \x02\x01\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x07\x00\xe2\
+            \x03\x02\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x08\x00";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 3);
+    assert_eq!(
+        skamps
+            .iter()
+            .map(|skamp| (skamp.id, skamp.kind, skamp.items[0].entity_id))
+            .collect::<Vec<_>>(),
+        [(1, 0, 6), (2, 1, 7), (3, 2, 8)]
+    );
+}
+
+#[test]
+fn positional_skamp_table_accepts_a_following_table_wrapper_boundary() {
+    let payload = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\xe2\
+            \x02\x01\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\
+            \x07\x00\xf1\xf7\x60\xe2\x08\x02\
+            \xf4\x04\xf7\x64\xf8\x01\xf7\x64\xfb\xe2";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 2);
+    assert_eq!(skamps[1].items.len(), 2);
+    assert_eq!(
+        skamps[1]
+            .items
+            .iter()
+            .map(|item| (item.entity_id, item.sense))
+            .collect::<Vec<_>>(),
+        [(7, 0), (8, 2)]
+    );
+}
+
+#[test]
+fn positional_skamp_table_accepts_a_following_table_header_boundary() {
+    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\
+            \xf8\x02\xf7\x64\xfb\xe2\xf7\x65";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 1);
+    assert_eq!(skamps[0].items[0].entity_id, 6);
+}
+
+#[test]
+fn positional_skamp_table_accepts_a_following_wrapper_body_boundary() {
+    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\
+            \xf4\x04\xf7\x64\xe1\xe1\xe3";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert_eq!(skamps.len(), 1);
+    assert_eq!(skamps[0].items[0].entity_id, 6);
+}
+
+#[test]
 fn positional_skamp_table_skips_row_auxiliary_frames() {
     let payload = b"\xf8\x03\xf7\x58\xfb\xe2\xf7\x59\
             \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\
@@ -683,6 +767,18 @@ fn positional_skamp_table_rejects_ambiguous_nested_item_arrays() {
 
     assert_eq!(skamps.len(), 1);
     assert_eq!(skamps[0].id, 1);
+}
+
+#[test]
+fn positional_skamp_table_rejects_multiple_matching_nested_item_arrays() {
+    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00\
+            \xf8\x01\xf7\x62\xfb\xe2\xf7\x63\x07\x00\
+            \xf3\xf7\x58\xe2";
+
+    let skamps = positional_feature_skamps(payload, 0, payload.len(), 88);
+
+    assert!(skamps.is_empty());
 }
 
 #[test]
@@ -725,6 +821,40 @@ fn named_solver_tables_retain_complete_prefix_rows() {
     let rows = feature_relation_triples(triples, 0, triples.len());
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].relation_id, Some(7));
+}
+
+#[test]
+fn named_solver_tables_accept_direct_prototype_item_schema_close() {
+    let skamps = b"skamp_ptr\0\xf1\xf8\x02\xf7\x6b\xfb\xe2\
+            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\
+            \xf3\xf7\x6b\xe2\
+            \x07\x02\x03\x23\xf8\x01\xf7\x6c\xfb\xe2\
+            \xf7\x6d\x2a\x01\xe2";
+
+    let rows = feature_skamps(skamps, 0, skamps.len());
+
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].id, 5);
+    assert_eq!(
+        rows[0].items,
+        vec![FeatureSkampItem {
+            entity_id: 42,
+            sense: 1
+        }]
+    );
+    assert_eq!(rows[1].id, 7);
+    assert_eq!(rows[1].kind, 2);
+    assert_eq!(rows[1].flags, 3);
+    assert_eq!(rows[1].status, 35);
+    assert_eq!(
+        rows[1].items,
+        vec![FeatureSkampItem {
+            entity_id: 42,
+            sense: 1
+        }]
+    );
 }
 
 #[test]
@@ -1061,14 +1191,27 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     };
 
     assert_eq!(
-        entity_intersection([9, 10], Some(&segments), Some(&variables)),
+        entity_intersection(&[9, 10], Some(&segments), Some(&variables)),
+        Some([3.0, 4.0])
+    );
+
+    let mut incomplete_segments = segments.clone();
+    incomplete_segments.declared_count += 1;
+    assert!(!incomplete_segments.is_complete());
+    assert!(incomplete_segments.segment(9).is_none());
+    assert_eq!(
+        incomplete_segments.unique_segment(9),
+        Some(&segments.rows[0])
+    );
+    assert_eq!(
+        entity_intersection(&[9, 10], Some(&incomplete_segments), Some(&variables)),
         Some([3.0, 4.0])
     );
 
     let mut duplicate_segments = segments.clone();
     duplicate_segments.rows.push(segments.rows[0].clone());
     assert!(duplicate_segments.segment(9).is_none());
-    assert!(entity_intersection([9, 10], Some(&duplicate_segments), Some(&variables)).is_none());
+    assert!(entity_intersection(&[9, 10], Some(&duplicate_segments), Some(&variables)).is_none());
 
     let mut duplicate_points = variables.clone();
     duplicate_points.points.push(variables.points[0].clone());
@@ -1077,12 +1220,12 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
         Some(&[Some(3.0), Some(4.0)])
     );
     assert_eq!(
-        entity_intersection([9, 10], Some(&segments), Some(&duplicate_points)),
+        entity_intersection(&[9, 10], Some(&segments), Some(&duplicate_points)),
         Some([3.0, 4.0])
     );
     duplicate_points.points[1].u = Some(5.0);
     assert!(duplicate_points.reconciled_points().1.contains(&2));
-    assert!(entity_intersection([9, 10], Some(&segments), Some(&duplicate_points)).is_none());
+    assert!(entity_intersection(&[9, 10], Some(&segments), Some(&duplicate_points)).is_none());
     let row = |variable_type, value, offset| FeatureVariableRow {
         variable_type,
         key: 2,
@@ -1110,6 +1253,250 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     );
     repeated_raw.rows[1].value = Some(5.0);
     assert!(repeated_raw.reconciled_points().1.contains(&2));
+}
+
+#[test]
+fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
+    let segment = |kind, point_ids, center_id, radius_ref, external_id| FeatureSegment {
+        kind,
+        directions: [None; 3],
+        point_ids,
+        center_id,
+        arc_orientation: center_id.map(|_| 0),
+        vertical_horizontal: None,
+        radius_ref,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let segment_table = |rows: Vec<FeatureSegment>| FeatureSegmentTable {
+        declared_count: rows.len() as u32,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows,
+        circle_rows: Vec::new(),
+        point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
+        reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
+        conic_rows: Vec::new(),
+        opaque_rows: Vec::new(),
+        offset: 0,
+    };
+    let point = |point_id, u, v| FeatureSectionPoint {
+        point_id,
+        u: Some(u),
+        v: Some(v),
+    };
+    let radius = |key, value| FeatureVariableRow {
+        variable_type: 3,
+        key,
+        value: Some(value),
+        value_body: Vec::new(),
+        guess: None,
+        guess_body: Vec::new(),
+        guess_dimension_driven: false,
+        known: None,
+        homogeneity: None,
+        uvar_id: None,
+        dimension_driven: false,
+        offset: 0,
+    };
+    let variables =
+        |points: Vec<FeatureSectionPoint>, rows: Vec<FeatureVariableRow>| FeatureVariableTable {
+            declared_count: rows.len() as u32,
+            entity_ref: None,
+            rows,
+            points,
+            offset: 0,
+        };
+
+    let bounded_unique = segment_table(vec![
+        segment(FeatureSegmentKind::Line, [1, 2], None, None, 9),
+        segment(FeatureSegmentKind::Arc, [3, 4], Some(5), Some(6), 10),
+    ]);
+    let bounded_unique_variables = variables(
+        vec![
+            point(1, 0.0, 0.0),
+            point(2, 2.0, 0.0),
+            point(3, 0.0, 1.0),
+            point(4, 0.0, -1.0),
+            point(5, 0.0, 0.0),
+        ],
+        vec![radius(6, 1.0)],
+    );
+    assert_eq!(
+        entity_intersection(
+            &[9, 10],
+            Some(&bounded_unique),
+            Some(&bounded_unique_variables),
+        ),
+        Some([1.0, 0.0])
+    );
+    let mut incomplete_bounded_unique = bounded_unique.clone();
+    incomplete_bounded_unique.declared_count += 1;
+    assert_eq!(
+        entity_intersection(
+            &[9, 10],
+            Some(&incomplete_bounded_unique),
+            Some(&bounded_unique_variables),
+        ),
+        Some([1.0, 0.0])
+    );
+    let mut derived_radius = bounded_unique_variables.clone();
+    derived_radius.rows.clear();
+    derived_radius.declared_count = 0;
+    assert_eq!(
+        entity_intersection(&[9, 10], Some(&bounded_unique), Some(&derived_radius)),
+        Some([1.0, 0.0])
+    );
+    let conflicting_radius = variables(
+        bounded_unique_variables.points.clone(),
+        vec![radius(6, 2.0)],
+    );
+    assert!(
+        entity_intersection(&[9, 10], Some(&bounded_unique), Some(&conflicting_radius),).is_none()
+    );
+
+    let secant = segment_table(vec![
+        segment(FeatureSegmentKind::Line, [1, 2], None, None, 9),
+        segment(FeatureSegmentKind::Arc, [3, 4], Some(5), Some(6), 10),
+    ]);
+    let secant_variables = variables(
+        vec![
+            point(1, -2.0, 0.0),
+            point(2, 2.0, 0.0),
+            point(3, 0.0, 1.0),
+            point(4, 0.0, -1.0),
+            point(5, 0.0, 0.0),
+        ],
+        vec![radius(6, 1.0)],
+    );
+    assert!(entity_intersection(&[9, 10], Some(&secant), Some(&secant_variables)).is_none());
+
+    let tangent_circles = segment_table(vec![
+        segment(FeatureSegmentKind::Arc, [1, 2], Some(5), Some(6), 9),
+        segment(FeatureSegmentKind::Arc, [3, 4], Some(7), Some(8), 10),
+    ]);
+    let tangent_circle_variables = variables(
+        vec![
+            point(1, 1.0, 0.0),
+            point(2, -1.0, 0.0),
+            point(3, 3.0, 0.0),
+            point(4, 1.0, 0.0),
+            point(5, 0.0, 0.0),
+            point(7, 2.0, 0.0),
+        ],
+        vec![radius(6, 1.0), radius(8, 1.0)],
+    );
+    assert_eq!(
+        entity_intersection(
+            &[9, 10],
+            Some(&tangent_circles),
+            Some(&tangent_circle_variables),
+        ),
+        Some([1.0, 0.0])
+    );
+
+    let secant_circles = segment_table(vec![
+        segment(FeatureSegmentKind::Arc, [1, 2], Some(5), Some(6), 9),
+        segment(FeatureSegmentKind::Arc, [3, 4], Some(7), Some(8), 10),
+    ]);
+    let secant_circle_variables = variables(
+        vec![
+            point(1, 1.0, 0.0),
+            point(2, -1.0, 0.0),
+            point(3, 1.0, 1.0),
+            point(4, 1.0, -1.0),
+            point(5, 0.0, 0.0),
+            point(7, 1.0, 0.0),
+        ],
+        vec![radius(6, 1.0), radius(8, 1.0)],
+    );
+    assert!(entity_intersection(
+        &[9, 10],
+        Some(&secant_circles),
+        Some(&secant_circle_variables),
+    )
+    .is_none());
+}
+
+#[test]
+fn trim_vertex_intersection_requires_complete_pairwise_junctions() {
+    let segment = |point_ids, external_id| FeatureSegment {
+        kind: FeatureSegmentKind::Line,
+        directions: [None; 3],
+        point_ids,
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let segments = FeatureSegmentTable {
+        declared_count: 3,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: vec![segment([1, 2], 9), segment([3, 4], 10), segment([5, 6], 11)],
+        circle_rows: Vec::new(),
+        point_rows: Vec::new(),
+        centered_line_rows: Vec::new(),
+        reference_line_rows: Vec::new(),
+        bounded_curve_rows: Vec::new(),
+        conic_rows: Vec::new(),
+        opaque_rows: Vec::new(),
+        offset: 0,
+    };
+    let variables = FeatureVariableTable {
+        declared_count: 0,
+        entity_ref: None,
+        rows: Vec::new(),
+        points: vec![
+            FeatureSectionPoint {
+                point_id: 1,
+                u: Some(-1.0),
+                v: Some(-1.0),
+            },
+            FeatureSectionPoint {
+                point_id: 2,
+                u: Some(1.0),
+                v: Some(1.0),
+            },
+            FeatureSectionPoint {
+                point_id: 3,
+                u: Some(-1.0),
+                v: Some(1.0),
+            },
+            FeatureSectionPoint {
+                point_id: 4,
+                u: Some(1.0),
+                v: Some(-1.0),
+            },
+            FeatureSectionPoint {
+                point_id: 5,
+                u: Some(0.0),
+                v: Some(-2.0),
+            },
+            FeatureSectionPoint {
+                point_id: 6,
+                u: Some(0.0),
+                v: Some(2.0),
+            },
+        ],
+        offset: 0,
+    };
+    assert_eq!(
+        entity_intersection(&[9, 10, 11], Some(&segments), Some(&variables)),
+        Some([0.0, 0.0])
+    );
+
+    let mut incomplete = variables.clone();
+    incomplete.declared_count = 1;
+    assert!(entity_intersection(&[9, 10, 11], Some(&segments), Some(&incomplete)).is_none());
 }
 
 #[test]

@@ -141,6 +141,31 @@ fn fbb_only_pipeline_attaches_complete_boundary_topology() {
 }
 
 #[test]
+fn fbb_only_pipeline_solves_an_unmatched_complete_run_with_mesh_incidence() {
+    let topology = fbb_only_quad_unmatched_edge_topology_stream();
+    assert!(crate::families::standard::topology::parse_fbb(&topology).is_none());
+
+    let result = decode(fbb_only_quad_unmatched_edge_catpart());
+    assert!(result.report().geometry_transferred);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 4);
+    assert_eq!(
+        result
+            .report()
+            .coverage_count(crate::coverage::ATTACHED_STANDARD_TOPOLOGY_COUNT),
+        1
+    );
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.severity == Severity::Blocking
+            && matches!(
+                loss.code.category(),
+                LossCategory::Geometry | LossCategory::Topology
+            )
+    }));
+    assert_valid(&result);
+}
+
+#[test]
 fn zero_entity_pipeline_binds_parametric_support_without_a_cached_curve() {
     let bytes = zero_entity_cylinder_parametric_support_catpart();
     assert_eq!(

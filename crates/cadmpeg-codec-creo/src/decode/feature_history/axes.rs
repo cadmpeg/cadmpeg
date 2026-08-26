@@ -3,6 +3,7 @@
 
 use super::super::analytic::{cross, dot};
 use super::super::sketch::{normalized, resolved_section_points, section_point_in_model};
+use super::super::uniqueness::{exactly_one, unique_feature_profile_definition};
 use crate::container::ContainerScan;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -180,14 +181,43 @@ pub(in super::super) fn revolution_axis_for_transfer(
         .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent))
 }
 
+pub(in super::super) fn feature_revolution_axis_for_transfer(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    extent: Option<&RevolveExtent>,
+) -> Option<RevolutionAxis> {
+    let definition = unique_feature_profile_definition(
+        &scan.features.definitions,
+        &scan.features.section_transforms,
+        feature_id,
+    );
+    let transforms = scan
+        .features
+        .section_transforms
+        .iter()
+        .filter(|transform| transform.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let transform = match transforms.as_slice() {
+        [transform] => Some(*transform),
+        _ => None,
+    };
+    definition
+        .zip(transform)
+        .and_then(|(definition, transform)| {
+            revolution_axis_for_transfer(scan, ir, feature_id, definition, transform, extent)
+        })
+        .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent))
+}
+
 pub(in super::super) fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {
     let sketch_id = SketchId(native_ref.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1));
-    let Some(sketch) = ir
-        .model
-        .sketches
-        .iter()
-        .find(|sketch| sketch.id == sketch_id)
-    else {
+    let Some(sketch) = exactly_one(
+        ir.model
+            .sketches
+            .iter()
+            .filter(|sketch| sketch.id == sketch_id),
+    ) else {
         return ProfileRef::Native(native_ref);
     };
     if sketch.profiles.is_empty() {

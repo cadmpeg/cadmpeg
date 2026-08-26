@@ -30,9 +30,9 @@ use crate::decode::sweep::{
 use crate::decode::uniqueness::unique_feature_profile_definition;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, Length, PathRef,
-    ProfileRef, RevolutionConstruction, SurfaceBoundary, Termination, ThickenSide,
+    Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide,
+    FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    Length, PathRef, ProfileRef, RevolutionConstruction, SurfaceBoundary, Termination, ThickenSide,
 };
 use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
@@ -44,6 +44,8 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::units::Units;
 use std::collections::BTreeMap;
+
+const EPS_FULL_TURN: f64 = 1e-12;
 
 #[test]
 fn interpolation_spline_remains_a_closed_extrusion_profile() {
@@ -949,6 +951,26 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
         ));
     }
 
+    scan.features
+        .revolution_extents
+        .push(crate::feature::FeatureRevolutionExtent {
+            feature_id: 822,
+            kind: crate::feature::FeatureRevolutionExtentKind::FullTurn,
+            offset: 1,
+        });
+    assert!(matches!(
+        named_feature_definition(&scan, &ir, 822, "Revolve"),
+        Some(IrFeatureDefinition::Revolve {
+            construction: RevolutionConstruction {
+                extent: Some(cadmpeg_ir::features::RevolveExtent::OneSided {
+                    termination: Termination::Angle { angle: Angle(value) },
+                }),
+                ..
+            },
+            ..
+        }) if (value - std::f64::consts::TAU).abs() < EPS_FULL_TURN
+    ));
+
     let sketch = SketchId("creo:model:sketch#822".to_string());
     ir.model.sketches.push(Sketch {
         id: sketch.clone(),
@@ -977,6 +999,77 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             ..
         }
     ));
+}
+
+#[test]
+fn named_linear_sweep_reuses_materialized_cap_extent() {
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id,
+        source_entity_id,
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: false,
+        offset: 0,
+        end_offset: 0,
+    };
+    let entries = vec![
+        entry(31, 204, None),
+        entry(32, 203, None),
+        entry(33, 200, Some(11)),
+    ];
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(7),
+            table_class_id: 29,
+            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
+            surface_ids: vec![31, 32],
+            non_surface_entity_ids: vec![33],
+            entries,
+            offset: 0,
+        });
+    let row = |id| crate::surface::SurfaceRow {
+        id,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 7,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    scan.surfaces.rows.extend([row(31), row(32)]);
+    let plane = |id, z| Surface {
+        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, z),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    };
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
+
+    let IrFeatureDefinition::Extrude {
+        direction: ExtrudeDirection::Explicit(direction),
+        extent:
+            ExtrudeExtent::OneSided {
+                side:
+                    ExtrudeSide {
+                        termination: Termination::Blind { length },
+                        ..
+                    },
+            },
+        ..
+    } = named_feature_definition(&scan, &ir, 7, "Protrusion").expect("named sweep")
+    else {
+        panic!("named sweep did not resolve the cap extent");
+    };
+    assert_eq!(direction, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(length, Length(6.0));
 }
 
 #[test]

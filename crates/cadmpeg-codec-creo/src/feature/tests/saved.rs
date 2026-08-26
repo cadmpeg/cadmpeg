@@ -606,6 +606,17 @@ fn saved_arc_replay_uses_order_table_row_boundaries() {
     assert_eq!(arc.center, [Some(0.0); 3]);
     assert_eq!(arc.radius, Some(0.0));
     assert_eq!(arc.body, payload[1..payload.len() - 1]);
+    let mut incomplete_segments = segments.clone();
+    incomplete_segments.declared_count += 1;
+    let incomplete_entities = saved_positional_generated_entities(
+        &payload,
+        0,
+        payload.len(),
+        &scalar::ScalarCache::default(),
+        Some(&order),
+        Some(&incomplete_segments),
+    );
+    assert_eq!(incomplete_entities, entities);
     let section = positional_saved_section(
         &payload,
         0,
@@ -815,6 +826,25 @@ fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
     assert_eq!(current.identifier_keyword, None);
     assert_eq!(current.stored_name_prefix, None);
     assert!(current.display_state_conflict);
+}
+
+#[test]
+fn conflicting_inline_recipes_across_display_states_remain_conflicting() {
+    let payload = b"\xe3protextrude\0Extrude id 7\0\xe3cutextrude\0Extrude id 7\0";
+
+    let states = operation_states(payload);
+    assert_eq!(states.len(), 2);
+    assert_eq!(states[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
+    assert_eq!(states[1].recipe, Some(FeatureRecipe::CutExtrude));
+
+    let current_operations = operations(payload);
+    let [current] = current_operations.as_slice() else {
+        panic!("one consensus operation");
+    };
+    assert_eq!(current.kind, "Extrude");
+    assert!(current.display_state_conflict);
+    assert!(current.recipe_conflict);
+    assert_eq!(current.recipe, None);
 }
 
 #[test]

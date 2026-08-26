@@ -53,6 +53,7 @@ pub(crate) mod loss;
 pub(crate) mod native;
 pub(crate) mod nurbs;
 pub(crate) mod object_graph;
+pub(crate) mod pmi;
 pub(crate) mod sketch;
 pub(crate) mod solve;
 pub(crate) mod value_block;

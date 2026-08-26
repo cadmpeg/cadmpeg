@@ -570,6 +570,11 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     payload.extend_from_slice(b"\xe0\x02dum_array\0\xf8\x03\x01\x02\x03\x04");
     payload.extend_from_slice(b"\xe0\x00frst_cntr_crv_hdr_ptr\0\x2f");
     payload.extend_from_slice(b"\xe0\x01trv\0\x00");
+    payload.extend_from_slice(b"\xe0\x00frst_cntr_ptr\0\x30");
+    payload.extend_from_slice(b"\xe0\x00envlp\0\xf7\x03");
+    payload.extend_from_slice(b"\xe0\x00outline\0\xf7\x04");
+    payload.extend_from_slice(b"\xe0\x00next_cntr_ptr\0\x31");
+    payload.extend_from_slice(b"\xe0\x00srf_flip_dat\0\xf7\x05");
     payload.extend_from_slice(b"\xe0\x01tan_spline\0");
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
@@ -649,6 +654,26 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
         prototype.field("trv").map(|field| &field.value),
         Some(&crate::surface::SurfaceNamedValue::CompactInt(0))
     );
+    assert_eq!(
+        prototype.field("frst_cntr_ptr").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::CompactInt(48))
+    );
+    assert_eq!(
+        prototype.field("envlp").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::Opaque(vec![0xf7, 0x03]))
+    );
+    assert_eq!(
+        prototype.field("outline").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::Opaque(vec![0xf7, 0x04]))
+    );
+    assert_eq!(
+        prototype.field("next_cntr_ptr").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::CompactInt(49))
+    );
+    assert_eq!(
+        prototype.field("srf_flip_dat").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::Opaque(vec![0xf7, 0x05]))
+    );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -691,10 +716,20 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     assert_eq!(native.fields()["parameters"][9]["compact_values"][0], 47);
     assert_eq!(native.fields()["parameters"][10]["name"], "trv");
     assert_eq!(native.fields()["parameters"][10]["compact_values"][0], 0);
-    assert_eq!(native.fields()["parameters"][11]["name"], "tan_spline");
-    assert_eq!(native.fields()["parameters"][11]["value_kind"], "empty");
+    assert_eq!(native.fields()["parameters"][11]["name"], "frst_cntr_ptr");
+    assert_eq!(native.fields()["parameters"][11]["compact_values"][0], 48);
+    assert_eq!(native.fields()["parameters"][12]["name"], "envlp");
+    assert_eq!(native.fields()["parameters"][12]["value_kind"], "opaque");
+    assert_eq!(native.fields()["parameters"][13]["name"], "outline");
+    assert_eq!(native.fields()["parameters"][13]["value_kind"], "opaque");
+    assert_eq!(native.fields()["parameters"][14]["name"], "next_cntr_ptr");
+    assert_eq!(native.fields()["parameters"][14]["compact_values"][0], 49);
+    assert_eq!(native.fields()["parameters"][15]["name"], "srf_flip_dat");
+    assert_eq!(native.fields()["parameters"][15]["value_kind"], "opaque");
+    assert_eq!(native.fields()["parameters"][16]["name"], "tan_spline");
+    assert_eq!(native.fields()["parameters"][16]["value_kind"], "empty");
     assert_eq!(
-        native.fields()["parameters"][11]["body"]
+        native.fields()["parameters"][16]["body"]
             .as_array()
             .map(Vec::len),
         Some(0)
@@ -705,6 +740,28 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
             .as_deref(),
         Some("surface_prototype_record")
     );
+}
+
+#[test]
+fn surface_prototype_field_rejects_duplicate_names() {
+    let mut payload = visibgeom_payload(0, 0);
+    payload.extend_from_slice(b"srf_prim_ptr(cylinder)\0");
+    payload.extend_from_slice(b"\xe0\x01radius\0\xe4");
+    payload.extend_from_slice(b"\xe0\x01radius\0\xe4");
+    payload.extend_from_slice(b"\xe0\x00tan_spline\0");
+
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let prototype = &scan.surfaces.prototype_records[0];
+
+    assert_eq!(
+        prototype
+            .parameters
+            .iter()
+            .filter(|field| field.name == "radius")
+            .count(),
+        2
+    );
+    assert!(prototype.field("radius").is_none());
 }
 
 #[test]

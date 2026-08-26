@@ -1618,6 +1618,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             Definition::Midpoint { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)
             }
+            Definition::PointCoordinateValues { point, .. } => {
+                (vec![locus_entity(point).clone()], None)
+            }
+            Definition::MidpointCoordinate { first, second, .. } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                None,
+            ),
             Definition::AtIntersection {
                 point,
                 first,
@@ -1660,6 +1667,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 second,
                 parameter,
             }
+            | Definition::PolarDistance {
+                first,
+                second,
+                distance_parameter: Some(parameter),
+                ..
+            }
+            | Definition::DistanceLociValue {
+                first,
+                second,
+                parameter: Some(parameter),
+                ..
+            }
             | Definition::HorizontalDistance {
                 first,
                 second,
@@ -1672,6 +1691,35 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             } => (
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
                 Some(parameter.0.as_str()),
+            ),
+            Definition::PolarDistance {
+                first,
+                second,
+                distance_parameter: None,
+                ..
+            } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                None,
+            ),
+            Definition::DistanceLociValue {
+                first,
+                second,
+                parameter: None,
+                ..
+            } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                None,
+            ),
+            Definition::AngleDifference { .. } => (Vec::new(), None),
+            Definition::ScalarEquality { .. } => (Vec::new(), None),
+            Definition::EqualDistance { first, second } => (
+                vec![
+                    locus_entity(&first.first).clone(),
+                    locus_entity(&first.second).clone(),
+                    locus_entity(&second.first).clone(),
+                    locus_entity(&second.second).clone(),
+                ],
+                None,
             ),
             Definition::RepeatedDistance {
                 measurements,
@@ -2469,7 +2517,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             | FeatureDefinition::DatumCoordinateSystemUnresolved
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
-            | FeatureDefinition::BoundarySurfaceUnresolved => {}
+            | FeatureDefinition::BoundarySurfaceUnresolved
+            | FeatureDefinition::ExtrudeUnresolved
+            | FeatureDefinition::RevolveUnresolved
+            | FeatureDefinition::FilletUnresolved => {}
             FeatureDefinition::ReferenceImage {
                 asset,
                 origin,

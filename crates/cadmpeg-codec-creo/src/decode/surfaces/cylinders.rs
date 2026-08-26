@@ -11,18 +11,55 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 
-use super::super::analytic::{dot, is_axis_aligned, PlaneEquation};
+use super::super::analytic::{
+    cross, dot, is_axis_aligned, placed_planes, plane_intersection_line, reconciled_model_plane,
+    PlaneEquation,
+};
 use super::super::feature_history::{
     agreed_feature_affected_ids, agreed_feature_replay_geometry_ids, has_feature_affected_ids,
-    section_sweep_allows_linear_extrusion, slot_fillet_cylinder,
+    round_constant_radius, round_support_envelope_cylinder, section_sweep_allows_linear_extrusion,
+    slot_fillet_cylinder,
 };
 use super::super::holes::{
-    circular_sweep_geometry, counterbore_patch_geometries,
-    cylinder_from_complementary_outline_bounds, simple_hole_geometry,
+    circular_sweep_geometry, counterbore_dimension_tuple_matches_radius, counterbore_dimensions,
+    counterbore_patch_geometries, cylinder_from_complementary_outline_bounds, simple_hole_geometry,
 };
 use super::super::native::annotate;
 use super::super::sketch::normalized;
-use super::super::sketch_transfer::{feature_recipe, feature_section_sweep_semantics_conflict};
+use super::super::sketch_transfer::{
+    feature_recipe, feature_schema_class, feature_section_sweep_semantics_conflict,
+};
+use super::super::uniqueness::exactly_one;
+
+const EPS_ROUND_EDGE_RELATIVE: f64 = 1.0e-9;
+const EPS_ROUND_EDGE_PLANE_RESIDUAL: f64 = 1.0e-8;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(in super::super) struct PositionalCylinderTransferSummary {
+    pub transferred: usize,
+    pub round_edge_complete_envelopes: usize,
+    pub round_edge_missing_support_planes: usize,
+    pub round_edge_unsolved_carriers: usize,
+    pub round_edge_solved_carriers: usize,
+    pub round_edge_transferred_carriers: usize,
+    pub round_edge_no_perpendicular_support_pair: usize,
+    pub round_edge_endpoint_incidence_mismatch: usize,
+    pub round_edge_radius_projection_mismatch: usize,
+    pub round_edge_nonunique_radius: usize,
+    pub round_edge_carrier_validation_failure: usize,
+    pub round_edge_replay_conflict: usize,
+    pub axial_interval_corner_envelopes: usize,
+    pub axial_interval_corner_solved_carriers: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PerpendicularRoundEdgeFailure {
+    NoPerpendicularSupportPair,
+    EndpointIncidenceMismatch,
+    RadiusProjectionMismatch,
+    NonuniqueRadius,
+    CarrierValidationFailure,
+}
 
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
@@ -41,19 +78,69 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
             let [first, second, rowless, cylinder] = table.entry_ids.as_slice() else {
                 return None;
             };
-            rows.iter().any(|row| row.id == *first).then_some(())?;
-            rows.iter().any(|row| row.id == *second).then_some(())?;
+            crate::surface::unique_surface_row(rows, *first)
+                .is_some()
+                .then_some(())?;
+            crate::surface::unique_surface_row(rows, *second)
+                .is_some()
+                .then_some(())?;
             (!rows.iter().any(|row| row.id == *rowless)).then_some(())?;
-            rows.iter()
-                .any(|row| {
-                    row.id == *cylinder
-                        && row.feature_id == feature_id
+            crate::surface::unique_surface_row(rows, *cylinder)
+                .is_some_and(|row| {
+                    row.feature_id == feature_id
                         && row.kind == crate::surface::SurfaceKind::Cylinder
                 })
                 .then_some(())?;
             Some((*rowless, *cylinder, table.offset))
         })
         .collect()
+}
+
+pub(in super::super) fn transfer_active_datum_cylinders(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for datum in &scan.planes.datum_cylinders {
+        let id = super::native_surface_id(scan, datum.id);
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        let frame = datum.frame;
+        annotate(
+            annotations,
+            &id,
+            "ActDatums",
+            datum.offset_in_payload as u64,
+            "active_datum_cylinder",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
+                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                ref_direction: Vector3::new(
+                    frame.ref_direction[0],
+                    frame.ref_direction[1],
+                    frame.ref_direction[2],
+                ),
+                radius: frame.radius,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("ActDatums:{}", datum.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
 }
 
 pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
@@ -93,27 +180,14 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         if support_ids.len() < 4 {
             continue;
         }
-        let planes = affected
+        let local_planes = placed_planes(scan);
+        let Some(planes) = affected
             .iter()
-            .filter_map(|id| {
-                let surface_id = SurfaceId(format!("creo:visibgeom:surface#{id}"));
-                let surface = ir
-                    .model
-                    .surfaces
-                    .iter()
-                    .find(|surface| surface.id == surface_id)?;
-                match surface.geometry {
-                    SurfaceGeometry::Plane { origin, normal, .. } => Some(PlaneEquation {
-                        origin: [origin.x, origin.y, origin.z],
-                        normal: [normal.x, normal.y, normal.z],
-                    }),
-                    _ => None,
-                }
-            })
-            .collect::<Vec<_>>();
-        if planes.len() != affected.len() {
+            .map(|id| reconciled_model_plane(&local_planes, ir, *id))
+            .collect::<Option<Vec<_>>>()
+        else {
             continue;
-        }
+        };
         let cap_planes: [PlaneEquation; 2] = planes[..cap_ids.len()].try_into().expect("two caps");
         let Some(cylinder) = slot_fillet_cylinder(cap_planes, &planes[cap_ids.len()..]) else {
             continue;
@@ -169,6 +243,9 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
     transferred
 }
 
+#[cfg(test)]
+mod tests;
+
 pub(in super::super) fn transfer_rowless_round_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -193,12 +270,13 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             axis,
             ref_direction,
             radius,
-        }) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == sibling)
-            .map(|surface| &surface.geometry)
+        }) = exactly_one(
+            ir.model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.id == sibling),
+        )
+        .map(|surface| &surface.geometry)
         else {
             continue;
         };
@@ -298,12 +376,11 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
-    let rows = scan
-        .surfaces
-        .rows
-        .iter()
+    let rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
+        .into_iter()
         .map(|row| (row.id, row))
         .collect::<BTreeMap<_, _>>();
+    let local_planes = placed_planes(scan);
     let mut cylinders_by_plane = BTreeMap::<(u32, u32), BTreeSet<u32>>::new();
     for edge in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
         if edge.type_byte != 0 {
@@ -356,16 +433,16 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         else {
             continue;
         };
-        let plane_id = SurfaceId(format!("creo:visibgeom:surface#{plane_id}"));
-        let Some(plane) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == plane_id)
-        else {
+        let Some(plane) = reconciled_model_plane(&local_planes, ir, plane_id) else {
             continue;
         };
-        let Some(geometry) = cylinder_from_complementary_outline_bounds(&plane.geometry, bounds)
+        let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+        let plane_geometry = SurfaceGeometry::Plane {
+            origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+            normal,
+            u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+        };
+        let Some(geometry) = cylinder_from_complementary_outline_bounds(&plane_geometry, bounds)
         else {
             continue;
         };
@@ -402,12 +479,401 @@ pub(in super::super) fn transfer_split_outline_cylinders(
     transferred
 }
 
+fn round_edge_cylinder_frame(
+    envelope: crate::surface::Type24RoundEdgeEnvelope,
+    radius: f64,
+    support_planes: &[PlaneEquation],
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    if !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let [first, second] = envelope.vertices;
+    if !first.into_iter().chain(second).all(f64::is_finite) {
+        return None;
+    }
+    let close_to_radius =
+        |value: f64| (value - radius).abs() <= EPS_ROUND_EDGE_RELATIVE * radius.max(1.0);
+    let plane_contains = |point: [f64; 3], plane: PlaneEquation| {
+        let scale = point
+            .into_iter()
+            .chain(plane.origin)
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        (dot(plane.normal, point) - dot(plane.normal, plane.origin)).abs()
+            <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+    };
+    let distance_from_axis = |point: [f64; 3], origin: [f64; 3], axis: [f64; 3]| {
+        let relative = std::array::from_fn(|index| point[index] - origin[index]);
+        let radial =
+            std::array::from_fn(|index| relative[index] - axis[index] * dot(relative, axis));
+        dot(radial, radial).sqrt()
+    };
+    let mut candidates = Vec::new();
+    for (first_index, first_support) in support_planes.iter().copied().enumerate() {
+        let Some(first_normal) = normalized(first_support.normal) else {
+            continue;
+        };
+        let first_support = PlaneEquation {
+            origin: first_support.origin,
+            normal: first_normal,
+        };
+        for second_support in support_planes.iter().copied().skip(first_index + 1) {
+            let Some(second_normal) = normalized(second_support.normal) else {
+                continue;
+            };
+            let second_support = PlaneEquation {
+                origin: second_support.origin,
+                normal: second_normal,
+            };
+            let cross_norm_squared = dot(
+                cross(first_normal, second_normal),
+                cross(first_normal, second_normal),
+            );
+            if cross_norm_squared <= EPS_ROUND_EDGE_RELATIVE {
+                continue;
+            }
+            let first_on_first = plane_contains(first, first_support);
+            let first_on_second = plane_contains(first, second_support);
+            let second_on_first = plane_contains(second, first_support);
+            let second_on_second = plane_contains(second, second_support);
+            if !((first_on_first && second_on_second) || (first_on_second && second_on_first)) {
+                continue;
+            }
+            for first_sign in [-1.0, 1.0] {
+                for second_sign in [-1.0, 1.0] {
+                    let first_offset = PlaneEquation {
+                        origin: std::array::from_fn(|index| {
+                            first_support.origin[index] + first_sign * radius * first_normal[index]
+                        }),
+                        normal: first_normal,
+                    };
+                    let second_offset = PlaneEquation {
+                        origin: std::array::from_fn(|index| {
+                            second_support.origin[index]
+                                + second_sign * radius * second_normal[index]
+                        }),
+                        normal: second_normal,
+                    };
+                    let Some((origin, axis)) = plane_intersection_line(first_offset, second_offset)
+                    else {
+                        continue;
+                    };
+                    let first_distance = distance_from_axis(first, origin, axis);
+                    let second_distance = distance_from_axis(second, origin, axis);
+                    if !close_to_radius(first_distance) || !close_to_radius(second_distance) {
+                        continue;
+                    }
+                    let relative = std::array::from_fn(|index| first[index] - origin[index]);
+                    let radial = std::array::from_fn(|index| {
+                        relative[index] - axis[index] * dot(relative, axis)
+                    });
+                    let Some(ref_direction) = normalized(radial) else {
+                        continue;
+                    };
+                    let axial_span = dot(
+                        std::array::from_fn(|index| second[index] - first[index]),
+                        axis,
+                    )
+                    .abs();
+                    let frame = crate::surface::PositionalCylinderFrame {
+                        origin,
+                        axis,
+                        ref_direction,
+                        radius,
+                        length: (axial_span > EPS_ROUND_EDGE_RELATIVE * radius.max(1.0))
+                            .then_some(axial_span),
+                    };
+                    if !frame.is_valid() {
+                        continue;
+                    }
+                    let same_line = candidates.iter().any(
+                        |candidate: &crate::surface::PositionalCylinderFrame| {
+                            let parallel = dot(candidate.axis, frame.axis).abs();
+                            let origin_distance =
+                                distance_from_axis(candidate.origin, frame.origin, frame.axis);
+                            parallel >= 1.0 - EPS_ROUND_EDGE_RELATIVE
+                                && origin_distance <= EPS_ROUND_EDGE_RELATIVE * radius.max(1.0)
+                        },
+                    );
+                    if !same_line {
+                        candidates.push(frame);
+                    }
+                }
+            }
+        }
+    }
+    let [frame] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*frame)
+}
+
+fn unique_tangent_axial_interval_corner_frame(
+    candidates: &[crate::surface::PositionalCylinderFrame],
+    support_planes: &[PlaneEquation],
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    let scored = candidates
+        .iter()
+        .copied()
+        .filter_map(|candidate| {
+            let axis = normalized(candidate.axis)?;
+            let score = support_planes
+                .iter()
+                .filter(|plane| {
+                    let Some(normal) = normalized(plane.normal) else {
+                        return false;
+                    };
+                    if dot(axis, normal).abs() > EPS_ROUND_EDGE_RELATIVE {
+                        return false;
+                    }
+                    let distance =
+                        (dot(normal, candidate.origin) - dot(normal, plane.origin)).abs();
+                    (distance - candidate.radius).abs()
+                        <= EPS_ROUND_EDGE_PLANE_RESIDUAL * candidate.radius.max(1.0)
+                })
+                .count();
+            (score != 0).then_some((candidate, score))
+        })
+        .collect::<Vec<_>>();
+    let maximum = scored.iter().map(|(_, score)| *score).max()?;
+    let mut best = scored
+        .into_iter()
+        .filter_map(|(candidate, score)| (score == maximum).then_some(candidate));
+    let candidate = best.next()?;
+    best.next().is_none().then_some(candidate)
+}
+
+fn unique_support_tangent_cylinder_frame(
+    stored: crate::surface::PositionalCylinderFrame,
+    support_planes: &[PlaneEquation],
+) -> Option<crate::surface::PositionalCylinderFrame> {
+    let axis = normalized(stored.axis)?;
+    let mut origins = vec![stored.origin];
+    let mut witnessed_axis = [false; 3];
+    let mut witnessed_planes = Vec::new();
+    for plane in support_planes {
+        let normal = normalized(plane.normal)?;
+        if dot(axis, normal).abs() > EPS_ROUND_EDGE_RELATIVE {
+            return None;
+        }
+        let [axis_index] = (0..3)
+            .filter(|index| {
+                normal[*index].abs() > 1.0 - EPS_ROUND_EDGE_RELATIVE
+                    && (0..3)
+                        .filter(|other| *other != *index)
+                        .all(|other| normal[other].abs() <= EPS_ROUND_EDGE_RELATIVE)
+            })
+            .collect::<Vec<_>>()
+            .as_slice()
+            .try_into()
+            .ok()?;
+        let plane_offset = dot(normal, plane.origin);
+        let candidates = [
+            (plane_offset - stored.radius) / normal[axis_index],
+            (plane_offset + stored.radius) / normal[axis_index],
+        ]
+        .into_iter()
+        .filter(|coordinate| coordinate.is_finite())
+        .filter(|coordinate| {
+            let scale = coordinate
+                .abs()
+                .max(stored.origin[axis_index].abs())
+                .max(stored.radius)
+                .max(1.0);
+            (coordinate.abs() - stored.origin[axis_index].abs()).abs()
+                <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+        })
+        .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            continue;
+        }
+        witnessed_axis[axis_index] = true;
+        witnessed_planes.push(PlaneEquation {
+            origin: plane.origin,
+            normal,
+        });
+        let mut next = Vec::new();
+        for origin in &origins {
+            for coordinate in &candidates {
+                let mut candidate = *origin;
+                candidate[axis_index] = *coordinate;
+                if !next.iter().any(|known: &[f64; 3]| {
+                    known.iter().zip(candidate).all(|(left, right)| {
+                        (left - right).abs()
+                            <= EPS_ROUND_EDGE_PLANE_RESIDUAL * left.abs().max(right.abs()).max(1.0)
+                    })
+                }) {
+                    next.push(candidate);
+                }
+            }
+        }
+        origins = next;
+    }
+    witnessed_axis
+        .into_iter()
+        .any(|witnessed| witnessed)
+        .then_some(())?;
+    let mut frames = Vec::new();
+    for origin in origins {
+        let tangent_to_all = witnessed_planes.iter().all(|plane| {
+            let normal = plane.normal;
+            let distance = (dot(normal, origin) - dot(normal, plane.origin)).abs();
+            let scale = distance.max(stored.radius).max(1.0);
+            (distance - stored.radius).abs() <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+        });
+        if !tangent_to_all {
+            continue;
+        }
+        let candidate = crate::surface::PositionalCylinderFrame { origin, ..stored };
+        if candidate.is_valid()
+            && !frames
+                .iter()
+                .any(|known: &crate::surface::PositionalCylinderFrame| {
+                    crate::surface::positional_cylinder_frames_agree(*known, candidate)
+                })
+        {
+            frames.push(candidate);
+        }
+    }
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    Some(*frame)
+}
+
+fn perpendicular_round_edge_cylinder_frame(
+    envelope: crate::surface::Type24RoundEdgeEnvelope,
+    support_planes: &[PlaneEquation],
+) -> Result<crate::surface::PositionalCylinderFrame, PerpendicularRoundEdgeFailure> {
+    let [first, second] = envelope.vertices;
+    let delta = std::array::from_fn::<_, 3, _>(|index| second[index] - first[index]);
+    let plane_contains = |point: [f64; 3], plane: PlaneEquation| {
+        let scale = point
+            .into_iter()
+            .chain(plane.origin)
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+        (dot(plane.normal, point) - dot(plane.normal, plane.origin)).abs()
+            <= EPS_ROUND_EDGE_PLANE_RESIDUAL * scale
+    };
+    let mut radii = Vec::new();
+    let mut has_perpendicular_support_pair = false;
+    let mut has_endpoint_incidence = false;
+    let mut has_equal_radius_projections = false;
+    for (first_index, first_support) in support_planes.iter().copied().enumerate() {
+        let Some(first_normal) = normalized(first_support.normal) else {
+            continue;
+        };
+        let first_support = PlaneEquation {
+            origin: first_support.origin,
+            normal: first_normal,
+        };
+        for second_support in support_planes.iter().copied().skip(first_index + 1) {
+            let Some(second_normal) = normalized(second_support.normal) else {
+                continue;
+            };
+            if dot(first_normal, second_normal).abs() > EPS_ROUND_EDGE_RELATIVE {
+                continue;
+            }
+            has_perpendicular_support_pair = true;
+            let second_support = PlaneEquation {
+                origin: second_support.origin,
+                normal: second_normal,
+            };
+            for (first_plane, first_plane_normal, second_plane, second_plane_normal) in [
+                (first_support, first_normal, second_support, second_normal),
+                (second_support, second_normal, first_support, first_normal),
+            ] {
+                if !plane_contains(first, first_plane) || !plane_contains(second, second_plane) {
+                    continue;
+                }
+                has_endpoint_incidence = true;
+                let first_radius = dot(delta, first_plane_normal).abs();
+                let second_radius = dot(delta, second_plane_normal).abs();
+                let scale = first_radius.max(second_radius).max(1.0);
+                if first_radius <= EPS_ROUND_EDGE_RELATIVE * scale
+                    || (first_radius - second_radius).abs() > EPS_ROUND_EDGE_RELATIVE * scale
+                {
+                    continue;
+                }
+                has_equal_radius_projections = true;
+                if !radii.iter().any(|radius: &f64| {
+                    (*radius - first_radius).abs() <= EPS_ROUND_EDGE_RELATIVE * scale
+                }) {
+                    radii.push(first_radius);
+                }
+            }
+        }
+    }
+    let [radius] = radii.as_slice() else {
+        return Err(if !has_perpendicular_support_pair {
+            PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair
+        } else if !has_endpoint_incidence {
+            PerpendicularRoundEdgeFailure::EndpointIncidenceMismatch
+        } else if !has_equal_radius_projections {
+            PerpendicularRoundEdgeFailure::RadiusProjectionMismatch
+        } else {
+            PerpendicularRoundEdgeFailure::NonuniqueRadius
+        });
+    };
+    round_edge_cylinder_frame(envelope, *radius, support_planes)
+        .ok_or(PerpendicularRoundEdgeFailure::CarrierValidationFailure)
+}
+
 pub(in super::super) fn transfer_positional_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> usize {
-    let mut transferred = 0;
+) -> PositionalCylinderTransferSummary {
+    let constant_round_radii = scan
+        .surfaces
+        .rows
+        .iter()
+        .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+        .map(|row| row.feature_id)
+        .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(913))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|feature_id| {
+            round_constant_radius(scan, ir, feature_id).map(|radius| (feature_id, radius))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let local_planes = placed_planes(scan);
+    let unique_rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows)
+        .into_iter()
+        .map(|row| (row.id, row))
+        .collect::<BTreeMap<_, _>>();
+    let mut adjacent_plane_ids = BTreeMap::<u32, BTreeSet<u32>>::new();
+    for edge in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+        let [left, right] = edge.faces;
+        for (surface_id, other_id) in [(left, right), (right, left)] {
+            if unique_rows
+                .get(&surface_id)
+                .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+                && unique_rows
+                    .get(&other_id)
+                    .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
+            {
+                adjacent_plane_ids
+                    .entry(surface_id)
+                    .or_default()
+                    .insert(other_id);
+            }
+        }
+    }
+    let round_edge_support_planes = adjacent_plane_ids
+        .into_iter()
+        .map(|(surface_id, plane_ids)| {
+            (
+                surface_id,
+                plane_ids
+                    .into_iter()
+                    .filter_map(|plane_id| reconciled_model_plane(&local_planes, ir, plane_id))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut summary = PositionalCylinderTransferSummary::default();
     for record in &scan.surfaces.parameters {
         if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
             != Some(record)
@@ -419,6 +885,124 @@ pub(in super::super) fn transfer_positional_cylinders(
         else {
             continue;
         };
+        let feature_class = feature_schema_class(scan, row.feature_id);
+        let inline_non_plane = record.has_inline_non_plane_envelope()
+            || record.has_inline_non_plane_local_system_suffix(row.type_byte);
+        let selector_corner_interval = record
+            .selector_corner_interval_cylinder_frame(row.type_byte)
+            .is_some();
+        let axial_interval_corner_candidates =
+            if feature_class == Some(913) && !inline_non_plane && !selector_corner_interval {
+                record.type24_axial_interval_corner_candidates(row.type_byte)
+            } else {
+                Vec::new()
+            };
+        let round_edge_envelope = (feature_class == Some(913) && !selector_corner_interval)
+            .then(|| record.type24_round_edge_envelope(row.type_byte))
+            .flatten();
+        if round_edge_envelope.is_some() {
+            summary.round_edge_complete_envelopes += 1;
+        }
+        let round_support_frame = (feature_class == Some(913))
+            .then(|| record.type24_scalar_frame_round_envelope(row.type_byte))
+            .flatten()
+            .and_then(|envelope| {
+                round_support_envelope_cylinder(scan, ir, row.feature_id, envelope)
+            });
+        let support_planes = round_edge_support_planes.get(&row.id);
+        let support_tangent_frame = (!selector_corner_interval)
+            .then(|| {
+                let stored = record.positional_cylinder_frame?;
+                let support_planes = support_planes?;
+                unique_support_tangent_cylinder_frame(stored, support_planes)
+            })
+            .flatten();
+        if !axial_interval_corner_candidates.is_empty() {
+            summary.axial_interval_corner_envelopes += 1;
+        }
+        let axial_interval_corner_frame = support_planes.and_then(|planes| {
+            unique_tangent_axial_interval_corner_frame(&axial_interval_corner_candidates, planes)
+        });
+        if axial_interval_corner_frame.is_some() {
+            summary.axial_interval_corner_solved_carriers += 1;
+        }
+        let perpendicular_result =
+            support_planes
+                .zip(round_edge_envelope)
+                .map(|(support_planes, envelope)| {
+                    perpendicular_round_edge_cylinder_frame(envelope, support_planes)
+                });
+        let round_edge_frame = support_planes.and_then(|support_planes| {
+            round_edge_envelope.and_then(|envelope| {
+                let replay = constant_round_radii
+                    .get(&row.feature_id)
+                    .copied()
+                    .and_then(|radius| round_edge_cylinder_frame(envelope, radius, support_planes));
+                let perpendicular = perpendicular_result.as_ref()?.as_ref().ok().copied();
+                match (replay, perpendicular) {
+                    (Some(replay), Some(perpendicular))
+                        if crate::surface::positional_cylinder_frames_agree(
+                            replay,
+                            perpendicular,
+                        ) =>
+                    {
+                        Some(replay)
+                    }
+                    (Some(frame), None) | (None, Some(frame)) => Some(frame),
+                    _ => None,
+                }
+            })
+        });
+        if round_edge_envelope.is_some() {
+            if support_planes.is_none_or(|planes| planes.len() < 2) {
+                summary.round_edge_missing_support_planes += 1;
+            } else if round_edge_frame.is_some() {
+                summary.round_edge_solved_carriers += 1;
+            } else {
+                summary.round_edge_unsolved_carriers += 1;
+                if let Some(Err(failure)) = perpendicular_result {
+                    match failure {
+                        PerpendicularRoundEdgeFailure::NoPerpendicularSupportPair => {
+                            summary.round_edge_no_perpendicular_support_pair += 1;
+                        }
+                        PerpendicularRoundEdgeFailure::EndpointIncidenceMismatch => {
+                            summary.round_edge_endpoint_incidence_mismatch += 1;
+                        }
+                        PerpendicularRoundEdgeFailure::RadiusProjectionMismatch => {
+                            summary.round_edge_radius_projection_mismatch += 1;
+                        }
+                        PerpendicularRoundEdgeFailure::NonuniqueRadius => {
+                            summary.round_edge_nonunique_radius += 1;
+                        }
+                        PerpendicularRoundEdgeFailure::CarrierValidationFailure => {
+                            summary.round_edge_carrier_validation_failure += 1;
+                        }
+                    }
+                } else {
+                    summary.round_edge_replay_conflict += 1;
+                }
+            }
+        }
+        // Section-cut rows can use the same type-24 selector and scalar-frame
+        // shape as a repeated-diameter round. The row body alone does not
+        // establish a cylinder carrier in that feature context; section
+        // geometry transfer owns the interpretation.
+        // The same type-24 shape is only a neutral cylinder for class 913
+        // when its complete generated set proves one constant radius or this
+        // row has an independent cap/support-envelope cylinder proof.
+        if row.type_byte == 0x24
+            && !inline_non_plane
+            && !selector_corner_interval
+            && (matches!(feature_class, Some(916))
+                || matches!(feature_class, Some(913))
+                    && !constant_round_radii.contains_key(&row.feature_id)
+                    && round_support_frame.is_none()
+                    && round_edge_frame.is_none()
+                    && support_tangent_frame.is_none()
+                    && axial_interval_corner_frame.is_none())
+        {
+            continue;
+        }
         let reference_bound_frame = || {
             let entity_ids = scan
                 .features
@@ -451,17 +1035,92 @@ pub(in super::super) fn transfer_positional_cylinders(
             reference_cap_bound_round_frame(envelope, &circles)
                 .map(|frame| (frame, "round_reference_cap_cylinder_frame"))
         };
-        let (frame, mechanism) = match record.positional_cylinder_frame {
-            Some(frame) => (frame, "positional_cylinder_frame"),
-            None => {
-                let Some(frame) = reference_bound_frame() else {
-                    continue;
-                };
-                frame
-            }
+        let (frame, mechanism) = if selector_corner_interval {
+            let Some(frame) = record.positional_cylinder_frame else {
+                continue;
+            };
+            (frame, "selector_corner_interval_cylinder")
+        } else if let Some(frame) = round_edge_frame {
+            (frame, "round_edge_endpoint_cylinder")
+        } else if let Some(frame) = support_tangent_frame {
+            (frame, "support_tangent_cylinder")
+        } else if inline_non_plane {
+            let Some(frame) = record.positional_cylinder_frame else {
+                continue;
+            };
+            (frame, "inline_positional_surface_row")
+        } else if let Some(frame) = round_support_frame {
+            (frame, "round_support_envelope_cylinder")
+        } else if let Some(frame) = axial_interval_corner_frame {
+            (frame, "axial_interval_corner_cylinder")
+        } else if let Some(frame) = record.positional_cylinder_frame {
+            (frame, "positional_cylinder_frame")
+        } else {
+            let Some(frame) = reference_bound_frame() else {
+                continue;
+            };
+            frame
         };
+        let stored_frame_agrees = record
+            .positional_cylinder_frame
+            .is_some_and(|stored| crate::surface::positional_cylinder_frames_agree(stored, frame));
+        let witnessed_frame_replaces_stored = matches!(
+            mechanism,
+            "round_edge_endpoint_cylinder" | "support_tangent_cylinder"
+        );
+        let row_local_frame_selected = (stored_frame_agrees || witnessed_frame_replaces_stored)
+            && (feature_class != Some(913)
+                || matches!(
+                    mechanism,
+                    "inline_positional_surface_row"
+                        | "selector_corner_interval_cylinder"
+                        | "round_edge_endpoint_cylinder"
+                        | "support_tangent_cylinder"
+                ));
+        if feature_class == Some(911)
+            && counterbore_dimensions(scan, ir, row.feature_id).is_some_and(|dimensions| {
+                !counterbore_dimension_tuple_matches_radius(dimensions, frame.radius)
+            })
+        {
+            continue;
+        }
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            if row_local_frame_selected
+                && ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .filter(|surface| surface.id == id)
+                    .count()
+                    == 1
+            {
+                if let Some(surface) = ir
+                    .model
+                    .surfaces
+                    .iter_mut()
+                    .find(|surface| surface.id == id)
+                {
+                    surface.geometry = SurfaceGeometry::Cylinder {
+                        origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
+                        axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                        ref_direction: Vector3::new(
+                            frame.ref_direction[0],
+                            frame.ref_direction[1],
+                            frame.ref_direction[2],
+                        ),
+                        radius: frame.radius,
+                    };
+                    annotate(
+                        annotations,
+                        &id,
+                        "VisibGeom",
+                        row.offset as u64,
+                        "positional_cylinder_frame_reconciled",
+                        Exactness::Derived,
+                    );
+                }
+            }
             continue;
         }
         annotate(
@@ -494,9 +1153,11 @@ pub(in super::super) fn transfer_positional_cylinders(
                 instance_path: Vec::new(),
             }),
         });
-        transferred += 1;
+        summary.transferred += 1;
+        summary.round_edge_transferred_carriers +=
+            usize::from(mechanism == "round_edge_endpoint_cylinder");
     }
-    transferred
+    summary
 }
 
 pub(in super::super) fn reference_circle_pair_cylinder_frame(
@@ -548,12 +1209,16 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
         radius,
         length: Some(length),
     })
+    .filter(crate::surface::PositionalCylinderFrame::is_valid)
 }
 
 pub(in super::super) fn reference_cap_bound_round_frame(
     envelope: crate::surface::Type24RoundEnvelope,
     circles: &[&crate::reference::ReferenceCircle],
 ) -> Option<crate::surface::PositionalCylinderFrame> {
+    let [_, _] = circles else {
+        return None;
+    };
     let [first, second] = envelope.extent_endpoints;
     let scale = first
         .iter()
@@ -627,7 +1292,7 @@ pub(in super::super) fn reference_cap_bound_round_frame(
     let [frame] = candidates.as_slice() else {
         return None;
     };
-    Some(*frame)
+    Some(*frame).filter(crate::surface::PositionalCylinderFrame::is_valid)
 }
 
 pub(in super::super) fn transfer_positional_cones(

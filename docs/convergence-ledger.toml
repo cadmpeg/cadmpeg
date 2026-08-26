@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "383f1a25bf7c00a4d30926a0511231754fab7027"
+measured_at = "a5742f2ebca776d74fa13f9c1f3ce419457043c4"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. bare tolerance literals count at use sites; named const/static numeric initializers are declarations and are excluded. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -30,15 +30,16 @@ production_line_debt = 0
 from_endian_bytes = 47
 codec_error_malformed_format = 0
 loss_note_struct_literals = 0
-bare_tolerance_literals = 124
-nonliteral_vec_repeat = 1
+bare_tolerance_literals = 184
+nonliteral_vec_repeat = 37
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 207
-production_line_debt = 0
+test_line_debt = 362
+production_line_debt = 704
 
 [reasons]
 from_endian_bytes = "The remaining 47 calls are intentional exceptions retained after merging the mainline codec work. None reads a bounded decode window as a standard-width scalar."
-bare_tolerance_literals = "The merged mainline codec work adds 124 inline scientific-notation tolerances that the branch's stricter scanner now detects."
-nonliteral_vec_repeat = "The merged mainline SLDPRT scope-admission path retains one nonliteral vector repeat."
-test_line_debt = "The merged mainline SLDPRT level-6 work adds 207 lines above the per-file test-size ceilings across five semantic test modules."
+bare_tolerance_literals = "Merging the Creo level-6 work adds 60 inline scientific-notation tolerances to the 124 already present after the CATIA and SLDPRT merges; the distinct thresholds remain until they are hoisted to intent-named constants without collapsing their values."
+nonliteral_vec_repeat = "merging the SLDPRT level-6 branch adds its one remaining parsed-count repeat to the 36 sites on the long-running CATIA level-6 branch"
+test_line_debt = "merging the SLDPRT level-6 branch combines its 207 lines of oversized-test debt with the 155 lines in crates/cadmpeg-codec-catia/src/families/b2/tests.rs"
+production_line_debt = "merged the long-running CATIA level-6 solver branch after main introduced production-file line-debt accounting; crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs contains the branch's coupled quotient search and contributes the measured 704 lines above the convergence threshold"

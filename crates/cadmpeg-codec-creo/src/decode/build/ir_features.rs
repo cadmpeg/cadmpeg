@@ -31,6 +31,37 @@ use super::super::sketch_transfer::{
 };
 use super::super::uniqueness::unique_feature_datum_plane;
 
+fn refresh_feature_outputs(scan: &ContainerScan, ir: &mut CadIr) {
+    let output_updates = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let feature_id = feature
+                .id
+                .as_str()
+                .strip_prefix("creo:model:feature#")
+                .and_then(|value| value.parse::<u32>().ok())?;
+            Some((
+                feature.id.clone(),
+                feature_output_bodies(scan, ir, feature_id),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for feature in &mut ir.model.features {
+        if let Some(outputs) = output_updates.get(&feature.id) {
+            feature.outputs.clone_from(outputs);
+        }
+    }
+}
+
+fn ordered_row_feature_ids(rows: &[crate::feature::FeatureRow]) -> Vec<u32> {
+    let mut seen = BTreeSet::new();
+    rows.iter()
+        .filter_map(|row| seen.insert(row.feature_id).then_some(row.feature_id))
+        .collect()
+}
+
 pub(super) fn emit_model_features(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -81,12 +112,7 @@ pub(super) fn emit_model_features(
             native_ref: None,
         });
     }
-    let row_feature_ids = scan
-        .features
-        .rows
-        .iter()
-        .map(|row| row.feature_id)
-        .collect::<BTreeSet<_>>();
+    let row_feature_ids = ordered_row_feature_ids(&scan.features.rows);
     let mut geometry_generator_feature_count = 0;
     for generator in geometry_generator_features(scan) {
         let feature_id = generator.feature_id;
@@ -114,9 +140,19 @@ pub(super) fn emit_model_features(
             source_text: None,
             source_content: Vec::new(),
             outputs: feature_output_bodies(scan, ir, feature_id),
-            definition: IrFeatureDefinition::StoredGeometry,
+            definition: if scan
+                .features
+                .legacy_rounds
+                .iter()
+                .any(|round| round.feature_id == feature_id)
+            {
+                schema_feature_definition(scan, ir, feature_id, 913, "Fillet")
+            } else {
+                IrFeatureDefinition::StoredGeometry
+            },
             native_ref: None,
         });
+        refresh_feature_outputs(scan, ir);
         geometry_generator_feature_count += 1;
     }
     let operation_ordinal_base = ir.model.features.len();
@@ -220,6 +256,16 @@ pub(super) fn emit_model_features(
             .iter_mut()
             .find(|feature| feature.id == id)
         {
+            let upgrade_legacy_round = scan
+                .features
+                .legacy_rounds
+                .iter()
+                .any(|round| round.feature_id == operation.feature_id)
+                && matches!(&definition, IrFeatureDefinition::Fillet { .. })
+                && matches!(existing.definition, IrFeatureDefinition::StoredGeometry);
+            if upgrade_legacy_round {
+                existing.definition = definition;
+            }
             if name.is_some() {
                 existing.name = name;
             }
@@ -243,6 +289,7 @@ pub(super) fn emit_model_features(
                     existing.outputs.push(output);
                 }
             }
+            refresh_feature_outputs(scan, ir);
             continue;
         }
         let (operation_annotation_kind, operation_exactness) = if operation.display_state_conflict {
@@ -275,6 +322,7 @@ pub(super) fn emit_model_features(
             definition,
             native_ref,
         });
+        refresh_feature_outputs(scan, ir);
     }
     for feature_id in row_feature_ids {
         let id = IrFeatureId(format!("creo:model:feature#{feature_id}"));
@@ -365,6 +413,7 @@ pub(super) fn emit_model_features(
             definition,
             native_ref: owning_feature_definition_ref(scan, feature_id),
         });
+        refresh_feature_outputs(scan, ir);
     }
     geometry_generator_feature_count
 }
@@ -607,3 +656,6 @@ pub(super) fn finish_feature_transfers(
     close_sketch_constraint_parameter_references(ir);
     (feature_result_topology_count, feature_result_edge_count)
 }
+
+#[cfg(test)]
+mod tests;

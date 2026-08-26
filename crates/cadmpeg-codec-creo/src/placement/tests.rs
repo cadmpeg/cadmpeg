@@ -96,6 +96,32 @@ fn unique_complete_local_system_supplies_section_plane_equation() {
 }
 
 #[test]
+fn unique_complete_local_system_rejects_nonfinite_values() {
+    let mut definition = blank_definition();
+    definition.parameter_frames = vec![FeatureParameterFrame {
+        kind: FeatureParameterFrameKind::LocalSystem,
+        body: Vec::new(),
+        decoded_values: Some(vec![
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            f64::NAN,
+            0.0,
+            0.0,
+        ]),
+        offset: 1,
+    }];
+
+    assert_eq!(unique_complete_local_system(&definition), None);
+}
+
+#[test]
 fn unresolved_local_system_does_not_hide_a_complete_outline_plane() {
     let unresolved = PlaneLocalSystem {
         surface_id: 7,
@@ -270,6 +296,58 @@ fn resolves_reference_flip_from_selected_positional_row() {
 }
 
 #[test]
+fn rejects_duplicate_selected_positional_reference_rows() {
+    let mut definition = blank_definition();
+    definition.section_3d = Some(FeatureSection3d {
+        sketch_plane_entity_id: Some(2),
+        sketch_plane_flip: Some(BinaryFlag::Clear),
+        reference_plane_entity_ids: vec![3, 4],
+        reference_plane_rows: vec![
+            FeatureSectionReferencePlane {
+                plane_entity_id: 4,
+                reference_type: Some(5),
+                external_reference_id: None,
+                segment_id: Some(4),
+                sub_index: None,
+                reference_flip: Some(BinaryFlag::Clear),
+            },
+            FeatureSectionReferencePlane {
+                plane_entity_id: 4,
+                reference_type: Some(5),
+                external_reference_id: None,
+                segment_id: Some(5),
+                sub_index: None,
+                reference_flip: Some(BinaryFlag::Set),
+            },
+        ],
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: 100,
+    });
+
+    assert!(resolve(
+        &[definition],
+        &PlacementSources {
+            datums: &[
+                datum(2, [1.0, 0.0, 0.0], 2.0),
+                datum(3, [1.0, 0.0, 0.0], 1.0),
+                datum(4, [0.0, 0.0, 1.0], 3.0),
+            ],
+            surface_rows: &[],
+            model_planes: &[],
+            outline_planes: &[],
+            plane_envelopes: &[],
+            surface_parameters: &[],
+            geometry_tables: &[],
+            affected_ids: &[],
+        },
+        &[],
+    )
+    .is_empty());
+}
+
+#[test]
 fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
     let mut definition = blank_definition();
     definition.parameter_frames = vec![FeatureParameterFrame {
@@ -310,8 +388,8 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
             definition_id: 42,
             feature_id: Some(42),
             origin: [-3.0, -4.0, 0.0],
-            u_axis: [0.0, 1.0, 0.0],
-            v_axis: [0.0, 0.0, 1.0],
+            u_axis: [0.0, 0.0, 1.0],
+            v_axis: [0.0, -1.0, 0.0],
             normal: [1.0, 0.0, 0.0],
             offset: 100,
         }]
@@ -1151,6 +1229,81 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
             normal: [-0.0, 1.0, 0.0],
             offset: 200,
         })
+    );
+
+    let mut oriented_definition = definition;
+    oriented_definition.section_3d = Some(FeatureSection3d {
+        sketch_plane_entity_id: Some(999),
+        sketch_plane_flip: None,
+        reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation {
+            section_flip: Some(BinaryFlag::Set),
+            reference_flip: Some(BinaryFlag::Clear),
+            ..FeatureSectionOrientation::default()
+        },
+        dimension_ids: Vec::new(),
+        offset: 200,
+    });
+    assert_eq!(
+        resolve(&[oriented_definition.clone()], &sources, &tables),
+        vec![FeatureSectionTransform {
+            definition_id: 917,
+            feature_id: Some(10),
+            origin: [0.0, 0.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 0.0, 1.0],
+            normal: [0.0, -1.0, 0.0],
+            offset: 200,
+        }]
+    );
+
+    let mut row_flipped_definition = oriented_definition.clone();
+    let row_flipped_section = row_flipped_definition
+        .section_3d
+        .as_mut()
+        .expect("test section");
+    row_flipped_section.orientation.section_flip = Some(BinaryFlag::Clear);
+    row_flipped_section.reference_plane_entity_ids = vec![1];
+    row_flipped_section.reference_plane_rows = vec![FeatureSectionReferencePlane {
+        plane_entity_id: 1,
+        reference_type: None,
+        external_reference_id: None,
+        segment_id: None,
+        sub_index: None,
+        reference_flip: Some(BinaryFlag::Set),
+    }];
+    assert_eq!(
+        resolve(&[row_flipped_definition], &sources, &tables),
+        vec![FeatureSectionTransform {
+            definition_id: 917,
+            feature_id: Some(10),
+            origin: [0.0, 0.0, 0.0],
+            u_axis: [-1.0, -0.0, -0.0],
+            v_axis: [0.0, 0.0, 1.0],
+            normal: [0.0, 1.0, 0.0],
+            offset: 200,
+        }]
+    );
+
+    let mut doubly_flipped_definition = oriented_definition;
+    doubly_flipped_definition
+        .section_3d
+        .as_mut()
+        .expect("test section")
+        .sketch_plane_flip = Some(BinaryFlag::Set);
+    assert_eq!(
+        resolve(&[doubly_flipped_definition], &sources, &tables),
+        vec![FeatureSectionTransform {
+            definition_id: 917,
+            feature_id: Some(10),
+            origin: [0.0, 0.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 0.0, -1.0],
+            normal: [-0.0, 1.0, 0.0],
+            offset: 200,
+        }]
     );
 }
 

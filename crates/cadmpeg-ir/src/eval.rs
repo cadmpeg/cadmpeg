@@ -4071,6 +4071,240 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
     surface_second_partials_inner(geometry, u, v, 0).map(|partials| partials.point)
 }
 
+const ROLLING_BALL_JET_RADIUS_TOLERANCE: f64 = 1e-8;
+
+/// Evaluate a quintic rolling-ball jet at spine parameter `t` and arc
+/// fraction `s`.
+///
+/// The jet stores value, first-derivative, and second-derivative rows for the
+/// two limiting points, centre, and opening angle. Each scalar channel is
+/// interpolated with the unique quintic Hermite polynomial on its knot span.
+/// The interpolated limiting points then define the circular section whose
+/// fixed radius is taken from the first stored station.
+pub fn rolling_ball_jet_point(
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+) -> Option<Point3> {
+    let ProceduralSurfaceDefinition::RollingBallJet {
+        degree,
+        knots,
+        multiplicities,
+        sites,
+    } = definition
+    else {
+        return None;
+    };
+    if *degree != 5
+        || knots.len() < 2
+        || knots.len() != multiplicities.len()
+        || knots.len() != sites.len()
+        || multiplicities.first() != Some(&(*degree + 1))
+        || multiplicities.last() != Some(&(*degree + 1))
+        || multiplicities
+            .iter()
+            .skip(1)
+            .take(multiplicities.len().saturating_sub(2))
+            .any(|multiplicity| *multiplicity != 3)
+        || knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] >= pair[1])
+        || !t.is_finite()
+        || !s.is_finite()
+        || !(0.0..=1.0).contains(&s)
+    {
+        return None;
+    }
+    let radius = sites[0].first_limit.distance(sites[0].center);
+    if !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    if sites.iter().any(|site| {
+        let first_radius = site.first_limit.distance(site.center);
+        let second_radius = site.second_limit.distance(site.center);
+        !first_radius.is_finite()
+            || !second_radius.is_finite()
+            || first_radius <= 0.0
+            || second_radius <= 0.0
+            || (first_radius - radius).abs()
+                > ROLLING_BALL_JET_RADIUS_TOLERANCE * first_radius.abs().max(radius.abs()).max(1.0)
+            || (first_radius - second_radius).abs()
+                > ROLLING_BALL_JET_RADIUS_TOLERANCE
+                    * first_radius.abs().max(second_radius.abs()).max(1.0)
+            || ![
+                site.first_limit.x,
+                site.first_limit.y,
+                site.first_limit.z,
+                site.second_limit.x,
+                site.second_limit.y,
+                site.second_limit.z,
+                site.center.x,
+                site.center.y,
+                site.center.z,
+                site.angle,
+                site.first_derivative.first_limit.x,
+                site.first_derivative.first_limit.y,
+                site.first_derivative.first_limit.z,
+                site.first_derivative.second_limit.x,
+                site.first_derivative.second_limit.y,
+                site.first_derivative.second_limit.z,
+                site.first_derivative.center.x,
+                site.first_derivative.center.y,
+                site.first_derivative.center.z,
+                site.first_derivative.angle,
+                site.second_derivative.first_limit.x,
+                site.second_derivative.first_limit.y,
+                site.second_derivative.first_limit.z,
+                site.second_derivative.second_limit.x,
+                site.second_derivative.second_limit.y,
+                site.second_derivative.second_limit.z,
+                site.second_derivative.center.x,
+                site.second_derivative.center.y,
+                site.second_derivative.center.z,
+                site.second_derivative.angle,
+            ]
+            .into_iter()
+            .all(f64::is_finite)
+    }) {
+        return None;
+    }
+    let span = knots
+        .windows(2)
+        .position(|pair| t >= pair[0] && t <= pair[1])?;
+    let span_width = knots[span + 1] - knots[span];
+    if !span_width.is_finite() || span_width <= 0.0 {
+        return None;
+    }
+    let fraction = ((t - knots[span]) / span_width).clamp(0.0, 1.0);
+    let first = &sites[span];
+    let second = &sites[span + 1];
+    let first_limit = rolling_ball_jet_interpolate_point(
+        [first.first_limit, second.first_limit],
+        [
+            first.first_derivative.first_limit,
+            second.first_derivative.first_limit,
+        ],
+        [
+            first.second_derivative.first_limit,
+            second.second_derivative.first_limit,
+        ],
+        fraction,
+        span_width,
+    );
+    let second_limit = rolling_ball_jet_interpolate_point(
+        [first.second_limit, second.second_limit],
+        [
+            first.first_derivative.second_limit,
+            second.first_derivative.second_limit,
+        ],
+        [
+            first.second_derivative.second_limit,
+            second.second_derivative.second_limit,
+        ],
+        fraction,
+        span_width,
+    );
+    let center = rolling_ball_jet_interpolate_point(
+        [first.center, second.center],
+        [
+            first.first_derivative.center,
+            second.first_derivative.center,
+        ],
+        [
+            first.second_derivative.center,
+            second.second_derivative.center,
+        ],
+        fraction,
+        span_width,
+    );
+    let angle = rolling_ball_jet_interpolate_scalar(
+        [first.angle, second.angle],
+        [first.first_derivative.angle, second.first_derivative.angle],
+        [
+            first.second_derivative.angle,
+            second.second_derivative.angle,
+        ],
+        fraction,
+        span_width,
+    );
+    if !angle.is_finite() {
+        return None;
+    }
+    let first_radius = first_limit.vector_from(center);
+    let first_direction = first_radius.scale(1.0 / radius);
+    let first_direction_squared = first_direction.dot(first_direction);
+    if !first_direction_squared.is_finite() || first_direction_squared <= f64::EPSILON {
+        return None;
+    }
+    let second_radius = second_limit.vector_from(center);
+    let second_direction = (second_radius
+        - first_direction.scale(second_radius.dot(first_direction) / first_direction_squared))
+    .unit()?;
+    let radial =
+        first_direction.scale((s * angle).cos()) + second_direction.scale((s * angle).sin());
+    let point = center.translated(radial, radius);
+    [point.x, point.y, point.z]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(point)
+}
+
+fn rolling_ball_jet_interpolate_point(
+    values: [Point3; 2],
+    first_derivatives: [Vector3; 2],
+    second_derivatives: [Vector3; 2],
+    fraction: f64,
+    span_width: f64,
+) -> Point3 {
+    Point3::new(
+        rolling_ball_jet_interpolate_scalar(
+            [values[0].x, values[1].x],
+            [first_derivatives[0].x, first_derivatives[1].x],
+            [second_derivatives[0].x, second_derivatives[1].x],
+            fraction,
+            span_width,
+        ),
+        rolling_ball_jet_interpolate_scalar(
+            [values[0].y, values[1].y],
+            [first_derivatives[0].y, first_derivatives[1].y],
+            [second_derivatives[0].y, second_derivatives[1].y],
+            fraction,
+            span_width,
+        ),
+        rolling_ball_jet_interpolate_scalar(
+            [values[0].z, values[1].z],
+            [first_derivatives[0].z, first_derivatives[1].z],
+            [second_derivatives[0].z, second_derivatives[1].z],
+            fraction,
+            span_width,
+        ),
+    )
+}
+
+fn rolling_ball_jet_interpolate_scalar(
+    values: [f64; 2],
+    first_derivatives: [f64; 2],
+    second_derivatives: [f64; 2],
+    fraction: f64,
+    span_width: f64,
+) -> f64 {
+    let s2 = fraction * fraction;
+    let s3 = s2 * fraction;
+    let s4 = s3 * fraction;
+    let s5 = s4 * fraction;
+    let h00 = 1.0 - 10.0 * s3 + 15.0 * s4 - 6.0 * s5;
+    let h10 = fraction - 6.0 * s3 + 8.0 * s4 - 3.0 * s5;
+    let h20 = 0.5 * s2 - 1.5 * s3 + 1.5 * s4 - 0.5 * s5;
+    let h01 = 10.0 * s3 - 15.0 * s4 + 6.0 * s5;
+    let h11 = -4.0 * s3 + 7.0 * s4 - 3.0 * s5;
+    let h21 = 0.5 * s3 - s4 + 0.5 * s5;
+    values[0] * h00
+        + first_derivatives[0] * span_width * h10
+        + second_derivatives[0] * span_width * span_width * h20
+        + values[1] * h01
+        + first_derivatives[1] * span_width * h11
+        + second_derivatives[1] * span_width * span_width * h21
+}
+
 /// Evaluate a directly stored surface and its exact first partial derivatives.
 pub fn surface_partials(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<SurfacePartials> {
     surface_second_partials_inner(geometry, u, v, 0).map(|partials| SurfacePartials {
@@ -4400,6 +4634,9 @@ pub fn model_surface_point(
             u,
             v,
         ),
+        ProceduralSurfaceDefinition::RollingBallJet { .. } => {
+            rolling_ball_jet_point(&procedural.definition, u, v)
+        }
         _ => None,
     }
 }
@@ -5847,6 +6084,12 @@ pub fn model_surface_point_by_id(
                     None
                 }
             }
+            Some(ProceduralSurfaceDefinition::RollingBallJet { .. }) => procedural
+                .and_then(|procedural| rolling_ball_jet_point(&procedural.definition, u, v))
+                .map(|point| SurfaceEvaluation {
+                    point,
+                    oriented_normal: None,
+                }),
             Some(ProceduralSurfaceDefinition::CurveBounded { support, .. }) => {
                 evaluate(index, support, u, v, visiting)
             }
