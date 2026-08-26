@@ -20,6 +20,7 @@ use crate::loss::F3dLossCode;
 const ENTRY_MARKER: &str = "/TSplines.BlobParts/";
 const CAGE_COORDINATE_SCALE: f64 = 10.0;
 const FULL_CREASE_SHARPNESS: f64 = 1.0;
+const EDGE_KNOT_MIRROR_RELATIVE_EPS: f64 = 1e-12;
 const SYMMETRY_FRAME_EPS: f64 = 1e-9;
 
 #[derive(Clone, Copy)]
@@ -709,6 +710,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut face_roots: Vec<Option<usize>> = Vec::new();
     let mut edge_roots: Vec<Option<usize>> = Vec::new();
     let mut edge_knot_intervals: Vec<Option<f64>> = Vec::new();
+    let mut edge_knot_records = Vec::new();
     let mut vertex_roots: Vec<Option<(usize, SubdGripDirection)>> = Vec::new();
     let mut vertex_live: Vec<bool> = Vec::new();
     let mut half_edges: Vec<Option<HalfEdge>> = Vec::new();
@@ -717,6 +719,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut grip_points: Vec<Option<GripPoint>> = Vec::new();
     let mut in_grip_map = false;
     let mut declarations = BTreeSet::new();
+    let mut end_conditions = None;
     let mut derived_grips = Vec::new();
     let mut selected_edges = BTreeSet::new();
     let mut selected_vertices = BTreeSet::new();
@@ -738,8 +741,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 declarations.insert("degree");
             }
             Some(declaration @ ("cap-type" | "end-conditions" | "star-knot-rule")) => {
-                if fields.next().is_none() {
-                    return Err(malformed(name, format!("missing {declaration} value")));
+                let value = fields
+                    .next()
+                    .ok_or_else(|| malformed(name, format!("missing {declaration} value")))?;
+                if declaration == "end-conditions" {
+                    end_conditions = Some(value);
                 }
                 require_end(name, fields, declaration)?;
                 declarations.insert(declaration);
@@ -779,6 +785,10 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     require_end(name, fields, "edge")?;
                 }
             },
+            Some("106ek") => {
+                edge_knot_records.push(parse_f64(name, fields.next(), "106ek value")?);
+                require_end(name, fields, "106ek")?;
+            }
             Some("v") => match fields.next() {
                 None => {
                     vertex_live.push(false);
@@ -1039,6 +1049,25 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     }
     if let Some(block) = current_symmetry {
         symmetry_blocks.push(block);
+    }
+
+    let edge_knot_mirror = !edge_knot_records.is_empty()
+        && end_conditions == Some("SUBD_CREASES")
+        && edge_knot_records.len() == edge_roots.len()
+        && edge_knot_records
+            .iter()
+            .zip(&edge_knot_intervals)
+            .all(|(record, interval)| match interval {
+                Some(interval) => {
+                    *record > 0.0
+                        && (*record - interval).abs()
+                            <= EDGE_KNOT_MIRROR_RELATIVE_EPS
+                                * record.abs().max(interval.abs()).max(1.0)
+                }
+                None => *record == -1.0,
+            });
+    if !edge_knot_records.is_empty() && !edge_knot_mirror {
+        *unknown_record_kinds.entry("106ek".to_owned()).or_default() += edge_knot_records.len();
     }
 
     let live_vertices = vertex_live.iter().filter(|live| **live).count();
@@ -1610,6 +1639,45 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
                 .iter()
                 .all(|sharpness| (*sharpness - 1.0).abs() < EPS_KNOT_INTERVAL));
         }
+    }
+
+    #[test]
+    fn validates_the_subd_creases_edge_knot_mirror() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}106ek 0.9999999999999\n106ek 1\n106ek 1\n106ek 1\n\
+                     0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
+        );
+        let cage = parse_cage(source.as_bytes()).expect("edge-knot mirror");
+        assert!(cage.unknown_record_kinds.is_empty());
+        assert_eq!(cage.surface.edges.len(), 4);
+    }
+
+    #[test]
+    fn validates_deleted_slots_in_the_subd_creases_edge_knot_mirror() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}e\n106ek 1\n106ek 1\n106ek 1\n106ek 1\n106ek -1\n\
+                     0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
+        );
+        let cage = parse_cage(source.as_bytes()).expect("deleted edge-knot slot");
+        assert!(cage.unknown_record_kinds.is_empty());
+        assert_eq!(cage.surface.edges.len(), 4);
+    }
+
+    #[test]
+    fn retains_the_unresolved_edge_knot_state_form() {
+        let source = format!(
+            "#TS0200\n{}106ek 0\n106ek 1\n106ek 0\n106ek 1\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n",
+            QUAD_TOPOLOGY.replace(
+                "end-conditions SUBD_CREASES",
+                "end-conditions MULTIPLE_KNOTS"
+            )
+        );
+        let cage = parse_cage(source.as_bytes()).expect("unresolved edge-knot state");
+        assert_eq!(
+            cage.unknown_record_kinds,
+            std::collections::BTreeMap::from([("106ek".to_string(), 4)])
+        );
     }
 
     #[test]

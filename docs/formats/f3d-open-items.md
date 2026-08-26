@@ -340,10 +340,12 @@ without assigning a semantic role to that record.
 
 **Conflict.** Treating every radial operand as a local topology slot rejects valid large cages and assigns some native IDs to unrelated neutral elements.
 
-### TS-07. `106ek` edge-slot values
+### TS-07. `106ek` edge-slot state form
 
-**Question.** What edge state does each signed `106ek` value carry?
+**Question.** What state does a non-interval `106ek` run carry?
 
-**Known.** A `106ek value` run follows a `105sym 0` correspondence block. It has exactly one record per `e` slot in edge-record order, including deleted slots. The value is the signed integer `-1`, `0`, or `1`. A deleted edge slot carries `-1`, but populated slots also carry `-1`. The values do not equal crease state, boundary state, symmetry-plane side, or the edge's knot interval. The complete run is retained in the source T-spline program and is reported by opcode when it has no typed neutral carrier.
+**Known.** In `SUBD_CREASES` cages, the `106ek value` run is a positional mirror of the `e` knot intervals, including `-1` for deleted `e` slots. A distinct form occurs with `MULTIPLE_KNOTS`: it also has one value per `e` slot, including deleted slots, but its populated values are signed `-1`, `0`, or `1` and do not equal the `e` knot intervals. The value is not assigned to crease state, boundary state, or symmetry-plane side.
 
-**Need.** A cage with one controlled editor operation that changes `106ek` while topology, symmetry, crease tags, knot intervals, and selection stay fixed must identify the state. The reader can then bind each value to its positional neutral edge, and the writer can regenerate the run after an edit.
+**Need.** A controlled operation that changes the `MULTIPLE_KNOTS` `106ek` values while topology, symmetry, crease tags, knot intervals, and selection stay fixed must identify the state. The reader can then bind each value to the positional neutral edge, and the writer can regenerate the run after an edit.
+
+**Conflict.** Treating the `MULTIPLE_KNOTS` values as knot intervals, crease flags, boundary flags, or symmetry-plane sides assigns a field that the record does not carry.
