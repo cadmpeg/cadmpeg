@@ -1269,6 +1269,58 @@ fn planar_boundary_samples(
 ) -> Option<(Vec<Point2>, f64)> {
     match curve {
         CurveGeometry::Line { .. } => Some((vec![frame.project(start)], 0.0)),
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            let axis = axis.unit()?;
+            let reference = (*ref_direction - axis.scale(ref_direction.dot(axis))).unit()?;
+            let transverse = axis.cross(reference).unit()?;
+            if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                || !radius.is_finite()
+                || *radius <= tolerance
+                || analytic_surface_residual(surface, *center)? > tolerance
+            {
+                return None;
+            }
+            let endpoint_tolerance = tolerance.max(sampling_tolerance);
+            let start_parameter = ellipse_parameter(
+                start,
+                *center,
+                reference,
+                transverse,
+                *radius,
+                *radius,
+                endpoint_tolerance,
+            )?;
+            let end_parameter = ellipse_parameter(
+                end,
+                *center,
+                reference,
+                transverse,
+                *radius,
+                *radius,
+                endpoint_tolerance,
+            )?;
+            let span = shortest_arc_span(start_parameter, end_parameter)?;
+            PlanarArc {
+                center: *center,
+                first_direction: reference,
+                second_direction: transverse,
+                first_radius: *radius,
+                second_radius: *radius,
+            }
+            .samples(
+                start_parameter,
+                span,
+                surface,
+                frame,
+                tolerance,
+                sampling_tolerance,
+            )
+        }
         CurveGeometry::Ellipse {
             center,
             axis,
@@ -1312,31 +1364,67 @@ fn planar_boundary_samples(
                 endpoint_tolerance,
             )?;
             let span = shortest_arc_span(start_parameter, end_parameter)?;
-            let radius = major_radius.max(*minor_radius);
-            let (segments, boundary_tolerance) =
-                planar_arc_segments(span, radius, sampling_tolerance);
-            let points = (0..segments)
-                .map(|index| {
-                    let parameter = start_parameter
-                        + span * f64::from(index as u32) / f64::from(segments as u32);
-                    let point = center
-                        .translated(major_direction, major_radius * parameter.cos())
-                        .translated(minor_direction, minor_radius * parameter.sin());
-                    (point, frame.project(point))
-                })
-                .collect::<Vec<_>>();
-            if points.iter().any(|(point, _)| {
-                analytic_surface_residual(surface, *point)
-                    .is_none_or(|residual| residual > tolerance)
-            }) {
-                return None;
+            PlanarArc {
+                center: *center,
+                first_direction: major_direction,
+                second_direction: minor_direction,
+                first_radius: *major_radius,
+                second_radius: *minor_radius,
             }
-            Some((
-                points.into_iter().map(|(_, projected)| projected).collect(),
-                boundary_tolerance,
-            ))
+            .samples(
+                start_parameter,
+                span,
+                surface,
+                frame,
+                tolerance,
+                sampling_tolerance,
+            )
         }
         _ => None,
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PlanarArc {
+    center: Point3,
+    first_direction: Vector3,
+    second_direction: Vector3,
+    first_radius: f64,
+    second_radius: f64,
+}
+
+impl PlanarArc {
+    fn samples(
+        self,
+        start_parameter: f64,
+        span: f64,
+        surface: &SurfaceGeometry,
+        frame: PlaneFrame,
+        tolerance: f64,
+        sampling_tolerance: f64,
+    ) -> Option<(Vec<Point2>, f64)> {
+        let radius = self.first_radius.max(self.second_radius);
+        let (segments, boundary_tolerance) = planar_arc_segments(span, radius, sampling_tolerance);
+        let points = (0..segments)
+            .map(|index| {
+                let parameter =
+                    start_parameter + span * f64::from(index as u32) / f64::from(segments as u32);
+                let point = self
+                    .center
+                    .translated(self.first_direction, self.first_radius * parameter.cos())
+                    .translated(self.second_direction, self.second_radius * parameter.sin());
+                (point, frame.project(point))
+            })
+            .collect::<Vec<_>>();
+        if points.iter().any(|(point, _)| {
+            analytic_surface_residual(surface, *point).is_none_or(|residual| residual > tolerance)
+        }) {
+            return None;
+        }
+        Some((
+            points.into_iter().map(|(_, projected)| projected).collect(),
+            boundary_tolerance,
+        ))
     }
 }
 

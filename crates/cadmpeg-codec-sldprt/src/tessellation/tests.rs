@@ -1704,6 +1704,102 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
 }
 
 #[test]
+fn planar_boundary_accepts_bounded_circle_arcs() {
+    const SAMPLE_TOLERANCE: f64 = 1.0e-4;
+    let surface = SurfaceGeometry::Plane {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let frame = plane_frame(&surface).unwrap();
+    let curve = CurveGeometry::Circle {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 2.0,
+    };
+    let (samples, boundary_tolerance) = planar_boundary_samples(
+        &curve,
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+        &surface,
+        frame,
+        EPS_DISPLAY_QUANTIZATION,
+        SAMPLE_TOLERANCE,
+    )
+    .unwrap();
+
+    assert!(samples.len() > 1);
+    assert!(boundary_tolerance <= SAMPLE_TOLERANCE);
+    assert_eq!(samples.first(), Some(&Point2::new(2.0, 0.0)));
+}
+
+#[test]
+fn circular_arc_trim_disambiguates_coincident_planar_supports() {
+    let mut model = model_with_body();
+    let target = add_square_face(&mut model, "arc-target", 0.0);
+    let competitor = add_face(
+        &mut model,
+        "arc-competitor",
+        SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        [
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+        ],
+    );
+    for (curve_id, radius) in [
+        ("curve-arc-competitor-0", 2.0),
+        ("curve-arc-competitor-2", 1.0),
+    ] {
+        model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id.0 == curve_id)
+            .unwrap()
+            .geometry = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        };
+    }
+    model.shells[0].faces = vec![target.clone(), competitor];
+    model.tessellations.push(Tessellation {
+        id: "arc-trim-mesh".into(),
+        body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
+        source_object: None,
+        vertices: vec![
+            Point3::new(0.25, -0.75, 0.0),
+            Point3::new(1.75, -0.75, 0.0),
+            Point3::new(1.0, -0.25, 0.0),
+        ],
+        triangles: vec![[0, 1, 2]],
+        feature_edges: Vec::new(),
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        corner_normals: Vec::new(),
+        triangle_groups: Vec::new(),
+        texture_assignments: Vec::new(),
+        channels: Vec::new(),
+    });
+
+    assert_eq!(
+        assign_unique_surface_owners(&mut model),
+        vec!["arc-trim-mesh"]
+    );
+    assert_eq!(model.tessellations[0].faces, vec![target]);
+    assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+}
+
+#[test]
 fn planar_trim_accepts_concave_simple_loops_and_rejects_crossings() {
     const CONTAINMENT_TOLERANCE: f64 = 1.0e-9;
     let concave = vec![
