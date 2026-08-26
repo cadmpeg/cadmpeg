@@ -1957,6 +1957,30 @@ pub struct OperationStateJournalGroup<'a> {
     pub end_offset: usize,
 }
 
+/// One complete row in an audit-trail record area.
+///
+/// Audit rows share the tagged-value width family with feature-history state,
+/// but they are a separate record-area grammar. Their optional four-byte
+/// selector envelope is retained without assigning an event or suppression
+/// meaning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuditTrailRow<'a> {
+    /// Absolute byte offset of the opening `04` marker.
+    pub offset: usize,
+    /// Monotone audit-row ordinal and its exact token.
+    pub ordinal: OperationStateIndex<'a>,
+    /// Optional selector byte in the exact `04 05 selector 00` envelope.
+    pub frame_selector: Option<u8>,
+    /// Big-endian timestamp following the `e0` marker.
+    pub timestamp: u32,
+    /// Tagged value following the timestamp.
+    pub value: OperationStateTaggedValue<'a>,
+    /// Exact complete row bytes.
+    pub raw: &'a [u8],
+    /// Exclusive absolute end offset after the tagged value.
+    pub end_offset: usize,
+}
+
 /// One length-framed UTF-8 string in a bounded operation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationPayloadString<'a> {
@@ -3222,6 +3246,39 @@ impl<'a> Section<'a> {
     /// the roll-forward table or counter-map boundary.
     pub fn operation_state_messages(&self) -> Option<Vec<OperationStateMessage<'a>>> {
         Some(self.operation_state_block()?.messages)
+    }
+
+    /// Decode complete rows in an audit-trail record area.
+    ///
+    /// The registry role check prevents the same compact byte patterns in
+    /// feature-history and model areas from being interpreted as audit data.
+    /// Unknown bytes before, between, and after complete rows remain outside
+    /// this typed view.
+    pub fn audit_trail_rows(&self) -> Option<Vec<AuditTrailRow<'a>>> {
+        let has_audit_marker = self
+            .types
+            .iter()
+            .any(|definition| definition.name == "UGS::OM::SaveAuditTrail");
+        let has_specialized_marker = self.types.iter().any(|definition| {
+            matches!(
+                definition.name,
+                "UGS::FEATURE_RECORD" | "UGS::EXP_expression" | "UGS::Solid::Topol"
+            )
+        });
+        if !has_audit_marker || has_specialized_marker {
+            return None;
+        }
+        let bytes = self.record_area?;
+        let base_offset = self.record_area_offset?;
+        let header = self.record_area_header()?;
+        let product = header.product.offset.checked_sub(base_offset)?;
+        let product_end = record_area_product_end(bytes, product)?;
+        let start = bytes
+            .get(product_end..)?
+            .windows(2)
+            .position(|window| window == [0x41, 0x00])?
+            .checked_add(product_end + 2)?;
+        audit_trail_rows(bytes, start, bytes.len(), base_offset)
     }
 
     /// Decode unambiguous primary body references from bounded operation records.
@@ -8074,6 +8131,88 @@ fn operation_state_journal_row_at(
         ordinal,
         end_offset: base_offset.checked_add(row_end)?,
     })
+}
+
+fn audit_trail_row_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<AuditTrailRow<'_>> {
+    let bytes = bytes.get(..end)?;
+    if bytes.get(at) != Some(&0x04) {
+        return None;
+    }
+    let ordinal = operation_state_index_at(bytes, at.checked_add(1)?, base_offset)?;
+    ordinal.value?;
+    let mut cursor = at.checked_add(1 + ordinal.raw.len())?;
+    if bytes.get(cursor) != Some(&0x13) {
+        return None;
+    }
+    cursor += 1;
+
+    let frame_selector = if bytes
+        .get(cursor..cursor + 4)
+        .is_some_and(|frame| frame[0] == 0x04 && frame[1] == 0x05 && frame[3] == 0x00)
+    {
+        let selector = *bytes.get(cursor + 2)?;
+        cursor += 4;
+        Some(selector)
+    } else {
+        None
+    };
+
+    if bytes.get(cursor) != Some(&0xe0) {
+        return None;
+    }
+    let timestamp = View::u32_be_at(bytes, cursor + 1)?;
+    cursor = cursor.checked_add(5)?;
+    let value = operation_state_tagged_value_at(bytes, cursor, base_offset)?;
+    let row_end = cursor.checked_add(value.raw.len())?;
+    Some(AuditTrailRow {
+        offset: base_offset.checked_add(at)?,
+        ordinal,
+        frame_selector,
+        timestamp,
+        value,
+        raw: bytes.get(at..row_end)?,
+        end_offset: base_offset.checked_add(row_end)?,
+    })
+}
+
+/// Decode complete audit-trail rows from a bounded record-area suffix.
+///
+/// A row scan is admitted only when its ordinal tokens are strictly increasing
+/// in source order. This rejects a coincidental inner match instead of
+/// assigning a second interpretation to a row sequence. Bytes that do not
+/// complete the row grammar are left untyped.
+#[allow(dead_code)] // Direct bounded parser entry point retained for focused tests.
+pub fn audit_trail_rows(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    base_offset: usize,
+) -> Option<Vec<AuditTrailRow<'_>>> {
+    if start >= end || end > bytes.len() {
+        return None;
+    }
+    let mut rows = Vec::new();
+    let mut at = start;
+    let mut previous_ordinal = None;
+    while at < end {
+        let Some(row) = audit_trail_row_at(bytes, at, end, base_offset) else {
+            at += 1;
+            continue;
+        };
+        let ordinal = row.ordinal.value?;
+        if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
+            return None;
+        }
+        previous_ordinal = Some(ordinal);
+        at = row.end_offset.checked_sub(base_offset)?;
+        rows.push(row);
+    }
+    Some(rows)
 }
 
 fn operation_state_journal_group_at(

@@ -1602,6 +1602,17 @@ feature suppression from a status code, group endpoint, common-frame byte, or
 empty collection without both serialized operation-to-state-object and
 state-object-to-value relations.
 
+An audit-trail record area is consumed only from an OM section whose role is
+`audit_trail`. After the record-area product header and its `41 00` marker, a
+complete audit row is `04, ordinal, 13, [04 05 selector:u8 00], e0,
+timestamp:u32 BE, tagged_value`. The ordinal is a non-null operation-state
+object-index token. The optional selector envelope is admitted only in the
+shown four-byte form. The timestamp marker is `e0`; the tagged value uses the
+state-value forms above. Audit rows are retained in source order with strictly
+increasing ordinals, exact row bytes, and the offsets of every retained token.
+Bytes outside complete rows remain untyped. This grammar does not assign event
+or feature-suppression meaning to a row.
+
 A `SKETCH` operation carries one ordered counted-reference field beginning `01 00, nonempty:u8`. When `nonempty` is one, `declared_count:u8` follows and is nonzero, followed by `declared_count - 1` contiguous indices. When `nonempty` is zero, the declared count is zero and no leading indices follow. The field then contains `00 00`, one terminal index, and `01 00 00 00`. Each index uses a canonical width marker: `f0, value:u8` represents `0..255`, while `f1, value:u16 BE` represents `256..65535`. Each reference retains the exact two- or three-byte index token and its width-marker offset. The indices address offset-only OM data blocks; resolution is retained only when one indexed store contains the addressed block.
 
 A complete sketch construction-input record requires exactly one joined sketch operation record, a consistent declared count, contiguous reference ordinals, exactly `max(declared_count-1, 0)` leading member references, one final terminal reference, and unique data-block resolution for every reference. It retains the leading member lane and separated terminal reference as distinct ordered fields. Any missing, duplicated, inconsistent, noncontiguous, multiply terminal, or unresolved field is rejected atomically.

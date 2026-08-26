@@ -292,6 +292,11 @@ impl ContainerNoted for OmRecordArea {
         (&self.id, self.source_offset)
     }
 }
+impl ContainerNoted for OmAuditTrailRow {
+    fn container_note(&self) -> (&str, u64) {
+        (&self.id, self.source_offset)
+    }
+}
 impl ContainerNoted for OmOperationStateJournalGroup {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
@@ -1823,6 +1828,16 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
         note: Some(|m, r, a| note_container(&m.om.om_record_areas, r, a)),
         emit: |m, r, ns| emit_arena(&m.om.om_record_areas, r, ns),
         len: |m| m.om.om_record_areas.len(),
+        counts_toward_emptiness: true,
+    },
+    CatalogueRow {
+        arena: "om_audit_trail_rows",
+        tag: Some("OM_AUDIT_TRAIL_ROW"),
+        exactness: Exactness::ByteExact,
+        phase: Phase::GroupA,
+        note: Some(|m, r, a| note_container(&m.om.audit_trail_rows, r, a)),
+        emit: |m, r, ns| emit_arena(&m.om.audit_trail_rows, r, ns),
+        len: |m| m.om.audit_trail_rows.len(),
         counts_toward_emptiness: true,
     },
     CatalogueRow {

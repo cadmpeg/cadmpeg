@@ -264,6 +264,7 @@ pub(crate) struct FeatureRecords {
 /// Records extracted from the `om` domain.
 pub(crate) struct OmRecords {
     pub(crate) om_record_areas: Vec<OmRecordArea>,
+    pub(crate) audit_trail_rows: Vec<OmAuditTrailRow>,
     pub(crate) operation_state_journal_groups: Vec<OmOperationStateJournalGroup>,
     pub(crate) operation_state_counters: Vec<OmOperationStateCounter>,
     pub(crate) operation_state_groups: Vec<OmRollForwardStateGroup>,
@@ -532,6 +533,7 @@ impl NativeModel {
             &parasolid_attribute_class_uses,
         );
         let om_record_areas = om_record_areas(container);
+        let audit_trail_rows = audit_trail_rows(container);
         let operation_state_journal_groups = operation_state_journal_groups(container);
         let operation_state_counters = operation_state_counters(container);
         let operation_state_groups = operation_state_groups(container);
@@ -1269,6 +1271,7 @@ impl NativeModel {
             },
             om: OmRecords {
                 om_record_areas,
+                audit_trail_rows,
                 operation_state_journal_groups,
                 operation_state_counters,
                 operation_state_groups,

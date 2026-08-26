@@ -47,6 +47,38 @@ pub struct OmRecordArea {
     pub source_offset: u64,
 }
 
+/// One complete row retained from an audit-trail record area.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OmAuditTrailRow {
+    /// Globally unique audit-row identity.
+    pub id: String,
+    /// Owning audit-trail section link.
+    pub section_link: String,
+    /// Monotone row ordinal.
+    pub ordinal: u32,
+    /// Exact serialized ordinal token.
+    pub raw_ordinal: Vec<u8>,
+    /// Optional selector in the `04 05 selector 00` envelope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_selector: Option<u8>,
+    /// Big-endian row timestamp.
+    pub timestamp: u32,
+    /// Tagged row-value marker.
+    pub value_marker: u8,
+    /// Decoded tagged row value.
+    pub value: u32,
+    /// Exact serialized tagged row value.
+    pub raw_value: Vec<u8>,
+    /// Exact complete row bytes.
+    pub raw: Vec<u8>,
+    /// Directory entry containing the audit-trail section.
+    pub source_entry: String,
+    /// Absolute file offset of the row's opening `04` marker.
+    pub source_offset: u64,
+    /// Absolute exclusive end offset after the tagged value.
+    pub end_offset: u64,
+}
+
 /// One row from the feature-history state journal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OmOperationStateJournalRow {
@@ -361,6 +393,53 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
                 sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                 source_offset: entry_offset + header.offset as u64,
             })
+        })
+        .collect()
+}
+
+/// Decode complete rows from audit-trail record areas.
+pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
+    let sections = container.om_sections();
+    segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::AuditTrail)
+        .enumerate()
+        .flat_map(|(section_ordinal, link)| {
+            let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+                entry
+                    .file_span
+                    .map_or(section.offset as u64, |(offset, _)| {
+                        offset + section.offset as u64
+                    })
+                    == link.section_offset
+            }) else {
+                return Vec::new();
+            };
+            let Some(rows) = section.audit_trail_rows() else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let section_key = format!("{section_ordinal:010}");
+            rows.into_iter()
+                .filter_map(move |row| {
+                    let ordinal = row.ordinal.value?;
+                    Some(OmAuditTrailRow {
+                        id: format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
+                        section_link: link.id.clone(),
+                        ordinal,
+                        raw_ordinal: row.ordinal.raw.to_vec(),
+                        frame_selector: row.frame_selector,
+                        timestamp: row.timestamp,
+                        value_marker: row.value.marker,
+                        value: row.value.value,
+                        raw_value: row.value.raw.to_vec(),
+                        raw: row.raw.to_vec(),
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + row.offset as u64,
+                        end_offset: entry_offset + row.end_offset as u64,
+                    })
+                })
+                .collect()
         })
         .collect()
 }

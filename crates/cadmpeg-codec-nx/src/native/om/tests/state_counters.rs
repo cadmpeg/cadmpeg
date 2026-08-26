@@ -7,17 +7,19 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::container;
 use crate::native::features::FeatureOperationStateJournalUse;
 use crate::native::om::{
-    operation_state_counters, operation_state_groups, operation_state_journal_groups,
-    operation_state_messages, operation_state_slot_lanes, operation_state_statuses,
-    OmOperationStateCounter, OmOperationStateJournalGroup, OmOperationStateMessage,
-    OmOperationStateMessageSeverity, OmOperationStateSlotLane, OmOperationStateStatus,
-    OmRollForwardStateGroup, OmRollForwardStateRow,
+    audit_trail_rows, operation_state_counters, operation_state_groups,
+    operation_state_journal_groups, operation_state_messages, operation_state_slot_lanes,
+    operation_state_statuses, OmAuditTrailRow, OmOperationStateCounter,
+    OmOperationStateJournalGroup, OmOperationStateMessage, OmOperationStateMessageSeverity,
+    OmOperationStateSlotLane, OmOperationStateStatus, OmRollForwardStateGroup,
+    OmRollForwardStateRow,
 };
 use crate::test_support::{
     composed_feature_history_payload_with_operation_state_statuses,
     composed_feature_history_payload_with_state_journal, prt_with_named_payloads,
     segment_om_record_area_with_state_counter_map,
     segment_om_record_area_with_state_groups_and_counter_map,
+    size_framed_audit_trail_section_with_record_area,
 };
 use crate::NxCodec;
 
@@ -72,6 +74,51 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
         .arena_as::<OmOperationStateCounter>("om_operation_state_counters")
         .expect("state-counter arena");
     assert_eq!(emitted, rows.as_slice());
+}
+
+#[test]
+fn native_catalog_emits_role_gated_audit_trail_rows() {
+    let payload = audit_trail_test_payload();
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    let container = container::scan_bytes(file).expect("required invariant");
+
+    let rows = audit_trail_rows(&container);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].ordinal, 2);
+    assert_eq!(rows[0].frame_selector, None);
+    assert_eq!(rows[0].value_marker, 0xe0);
+    assert_eq!(rows[1].ordinal, 3);
+    assert_eq!(rows[1].frame_selector, Some(7));
+    assert_eq!(rows[1].value_marker, 0xc0);
+    assert!(rows[1].source_offset > rows[0].source_offset);
+
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_named_payloads(&[(
+                "/Root/UG_PART/UG_PART",
+                audit_trail_test_payload(),
+            )])),
+            &DecodeOptions::default(),
+        )
+        .expect("native decode");
+    let emitted = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<OmAuditTrailRow>("om_audit_trail_rows")
+        .expect("audit-trail row arena");
+    assert_eq!(emitted, rows.as_slice());
+}
+
+fn audit_trail_test_payload() -> Vec<u8> {
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend_from_slice(&size_framed_audit_trail_section_with_record_area());
+    payload
 }
 
 #[test]

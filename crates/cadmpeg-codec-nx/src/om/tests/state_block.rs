@@ -384,3 +384,31 @@ fn operation_state_journal_start_accepts_count_token_runs() {
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].rows[0].ordinal.value, Some(0x2a));
 }
+
+#[test]
+fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes() {
+    let bytes = [
+        0x41, 0x00, 0x03, 0x05, 0x01, 0x04, 0x00, 0x04, 0x02, 0x13, 0xe0, 0x65, 0x53, 0x4d, 0x20,
+        0xe0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x13, 0x04, 0x05, 0x07, 0x00, 0xe0, 0x65, 0x53,
+        0x4d, 0x21, 0xc0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x13, 0x04, 0x00,
+    ];
+    let rows = super::audit_trail_rows(&bytes, 2, bytes.len(), 900).expect("audit rows");
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].ordinal.value, Some(2));
+    assert_eq!(rows[0].frame_selector, None);
+    assert_eq!(rows[0].timestamp, 0x6553_4d20);
+    assert_eq!(rows[0].value.form, OperationStateTaggedValueForm::Four);
+    assert_eq!(rows[0].value.value, 0x0102_0304);
+    assert_eq!(rows[0].offset, 900 + 7);
+    assert_eq!(rows[0].raw, &bytes[7..20]);
+    assert_eq!(rows[1].ordinal.value, Some(3));
+    assert_eq!(rows[1].frame_selector, Some(7));
+    assert_eq!(rows[1].value.form, OperationStateTaggedValueForm::Three);
+    assert_eq!(rows[1].value.value, 0x0001_0203);
+    assert_eq!(rows[1].raw, &bytes[20..36]);
+    assert_eq!(rows[1].end_offset, 900 + 36);
+
+    let truncated = super::audit_trail_rows(&bytes, 2, 35, 900).expect("bounded audit rows");
+    assert_eq!(truncated.len(), 1);
+    assert_eq!(truncated[0].raw, &bytes[7..20]);
+}

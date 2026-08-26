@@ -829,6 +829,54 @@ pub(crate) fn size_framed_om_section() -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn size_framed_audit_trail_section_with_record_area() -> Vec<u8> {
+    let mut bytes = vec![0xff; 16];
+    bytes[4..8].fill(0);
+    bytes[12..14].copy_from_slice(b"OM");
+    bytes.extend_from_slice(&[0, 1, 2]);
+    for (index, (name, code)) in [
+        (b"UGS::OM::SaveAuditTrail".as_slice(), 0xa0),
+        (b"UGS::ModlUtils::BooleanComponent".as_slice(), 0x65),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        bytes.push((name.len() + 1) as u8);
+        bytes.extend_from_slice(name);
+        bytes.push(code);
+        if index == 0 {
+            bytes.extend_from_slice(&[
+                0x81, 0x21, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x06,
+            ]);
+        }
+    }
+    for (name, code, suffix) in [
+        (b"m_target".as_slice(), 0x80, [0x01, 0x02]),
+        (b"m_tools".as_slice(), 0x81, [0x03, 0x04]),
+    ] {
+        bytes.push((name.len() + 1) as u8);
+        bytes.extend_from_slice(name);
+        bytes.push(code);
+        bytes.extend_from_slice(&suffix);
+    }
+    bytes.extend_from_slice(b"unframed UGS::PayloadText");
+    let record_area = bytes.len() + 20;
+    bytes.extend_from_slice(&(record_area as u32).to_le_bytes());
+    bytes.resize(record_area, 0);
+    bytes.extend_from_slice(&13u32.to_le_bytes());
+    bytes.extend_from_slice(&14u32.to_le_bytes());
+    bytes.extend_from_slice(&44u32.to_le_bytes());
+    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0");
+    bytes.extend_from_slice(&[
+        0x41, 0x00, 0x03, 0x05, 0x01, 0x04, 0x00, 0x04, 0x02, 0x13, 0xe0, 0x65, 0x53, 0x4d, 0x20,
+        0xe0, 0x01, 0x02, 0x03, 0x04, 0x04, 0x03, 0x13, 0x04, 0x05, 0x07, 0x00, 0xe0, 0x65, 0x53,
+        0x4d, 0x21, 0xc0, 0x01, 0x02, 0x03,
+    ]);
+    let payload_len = (bytes.len() - 16) as u32;
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    bytes
+}
+
 pub(crate) fn size_framed_om_section_with_record_area() -> Vec<u8> {
     let mut bytes = size_framed_om_section();
     let record_area = bytes.len() + 20;
