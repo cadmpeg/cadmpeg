@@ -459,7 +459,7 @@ fn decode_field_value(raw: &toml::Value, ty: &str, width: Option<u64>) -> Result
                 .as_float()
                 .or_else(|| raw.as_integer().map(|i| i as f64))
                 .ok_or_else(|| "float value required".to_string())?;
-            Ok(format!("{element} = {n}"))
+            Ok(format!("{element} = {n:?}"))
         }
         _ => Err(format!("value is not supported on type `{ty}`")),
     }

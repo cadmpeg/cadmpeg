@@ -10,8 +10,9 @@ use super::endpoints::{
     wide_indexed_curve_record_is_complete, CompactIndexedCurveRecordEnd,
 };
 use super::markers::{
-    finite_coordinate_pair, inline_arc_coordinates, legacy_extended_profile_curve_kind,
-    marker_is_geometry_locus, marker_native_code, sketch_marker_prefix_at,
+    compact_legacy_142_profile_curve_endpoints, finite_coordinate_pair, inline_arc_coordinates,
+    legacy_extended_profile_curve_kind, marker_is_geometry_locus, marker_native_code,
+    sketch_marker_prefix_at,
 };
 use super::relation_loci::{
     canonical_profile_loci, line_line_distance, linked_midpoint_operands, linked_single_arc_entity,
@@ -166,11 +167,11 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             return Some(SketchConstraintDefinition::Fixed { entity });
         }
     }
-    if matches!(kind, Horizontal | Vertical)
-        && relation_owner_markers(marker, markers_by_id).is_empty()
-    {
+    if matches!(kind, Horizontal | Vertical) {
         // Point targets disambiguate these operands when a local/object index
         // happens to collide with the relation handle's index.
+        // Forward point links are explicit operands. Reverse incidences are
+        // ownership metadata and must not suppress those operands.
         let point_links = marker
             .links
             .iter()
@@ -562,21 +563,18 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 return Some(native());
             };
             if !sketch_entities.is_empty() {
-                let Some(first_entity) = sketch_entities
+                let Some(_first_entity) = sketch_entities
                     .iter()
                     .find(|candidate| candidate.id == *first)
                 else {
                     return Some(native());
                 };
-                let Some(second_entity) = sketch_entities
+                let Some(_second_entity) = sketch_entities
                     .iter()
                     .find(|candidate| candidate.id == *second)
                 else {
                     return Some(native());
                 };
-                if !binary_relation_matches_evaluated_geometry(kind, first_entity, second_entity) {
-                    return Some(native());
-                }
             }
             match kind {
                 Parallel => SketchConstraintDefinition::Parallel {
@@ -617,20 +615,12 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if loci.len() < 2 {
                 return Some(native());
             }
-            if !sketch_entities.is_empty() {
-                let Some(points) = loci
+            if !sketch_entities.is_empty()
+                && loci
                     .iter()
-                    .map(|locus| profile_locus_point(locus, sketch_entities))
-                    .collect::<Option<Vec<_>>>()
-                else {
-                    return Some(native());
-                };
-                if points.iter().skip(1).any(|point| {
-                    !same_dimension_length(point.u, points[0].u)
-                        || !same_dimension_length(point.v, points[0].v)
-                }) {
-                    return Some(native());
-                }
+                    .any(|locus| profile_locus_point(locus, sketch_entities).is_none())
+            {
+                return Some(native());
             }
             SketchConstraintDefinition::CoincidentLoci { loci }
         }
@@ -1233,6 +1223,8 @@ fn axis_relation_point_loci(
         return None;
     }
     let mut loci = Vec::new();
+    // Forward relation links are the solver handle's explicit operands. Reverse
+    // incidences describe owners and are only a fallback for incomplete links.
     collect_axis_relation_point_loci(
         relation,
         sketch,
@@ -1241,12 +1233,35 @@ fn axis_relation_point_loci(
         loci_by_marker,
         &mut HashSet::new(),
         &mut loci,
+        false,
+    );
+    loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    loci.dedup();
+    if loci.len() == 2 {
+        return loci.try_into().ok();
+    }
+    if loci.len() > 2 {
+        return None;
+    }
+    loci.clear();
+    collect_axis_relation_point_loci(
+        relation,
+        sketch,
+        sketch_entities,
+        markers_by_id,
+        loci_by_marker,
+        &mut HashSet::new(),
+        &mut loci,
+        true,
     );
     loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
     loci.dedup();
     loci.try_into().ok()
 }
 
+// The collector keeps the sketch, marker indexes, and locus indexes separate
+// because each lookup has a distinct ownership boundary.
+#[allow(clippy::too_many_arguments)]
 fn collect_axis_relation_point_loci(
     relation: &SketchInputEntity,
     sketch: &SketchId,
@@ -1255,6 +1270,7 @@ fn collect_axis_relation_point_loci(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     visited: &mut HashSet<String>,
     loci: &mut Vec<SketchLocus>,
+    include_reverse_owners: bool,
 ) {
     if !visited.insert(relation.id.clone()) {
         return;
@@ -1286,23 +1302,26 @@ fn collect_axis_relation_point_loci(
                 loci_by_marker,
                 visited,
                 loci,
+                include_reverse_owners,
             ),
             _ => {}
         }
     }
-    for owner in relation_owner_markers(relation, markers_by_id) {
-        if matches!(
-            owner.kind,
-            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-        ) {
-            append_axis_relation_point_locus(
-                &owner.id,
-                sketch,
-                sketch_entities,
-                markers_by_id,
-                loci_by_marker,
-                loci,
-            );
+    if include_reverse_owners {
+        for owner in relation_owner_markers(relation, markers_by_id) {
+            if matches!(
+                owner.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) {
+                append_axis_relation_point_locus(
+                    &owner.id,
+                    sketch,
+                    sketch_entities,
+                    markers_by_id,
+                    loci_by_marker,
+                    loci,
+                );
+            }
         }
     }
 }
@@ -1367,11 +1386,40 @@ pub(crate) fn marker_owns_constraint(
     marker: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
 ) -> bool {
+    let mut axis_point_links = marker
+        .links
+        .iter()
+        .filter(|link| link.entity_ref != marker.id)
+        .filter(|link| {
+            !matches!(
+                markers_by_id
+                    .get(link.entity_ref.as_str())
+                    .map(|linked| linked.kind),
+                Some(SketchInputKind::Relation(_))
+            )
+        });
+    let axis_point_pair = matches!(
+        marker.kind,
+        SketchInputKind::Relation(
+            crate::records::SketchRelationKind::Horizontal
+                | crate::records::SketchRelationKind::Vertical
+        )
+    ) && relation_owner_markers(marker, markers_by_id).is_empty()
+        && axis_point_links.clone().count() == 2
+        && axis_point_links.all(|link| {
+            matches!(
+                markers_by_id
+                    .get(link.entity_ref.as_str())
+                    .map(|linked| linked.kind),
+                Some(SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
+            )
+        });
     marker.kind.owns_constraint()
-        && (marker
-            .links
-            .iter()
-            .any(|link| !relation_link_identifies_owner(marker, link))
+        && (axis_point_pair
+            || marker
+                .links
+                .iter()
+                .any(|link| !relation_link_identifies_owner(marker, link))
             || !relation_owner_markers(marker, markers_by_id).is_empty())
 }
 
@@ -1379,9 +1427,7 @@ pub(super) fn relation_link_identifies_owner(
     relation: &SketchInputEntity,
     link: &crate::records::SketchInputLink,
 ) -> bool {
-    link.entity_ref == relation.id
-        || relation.local_id == Some(u32::from(link.local_id))
-        || relation.object_index == Some(u32::from(link.local_id))
+    link.entity_ref == relation.id || relation.local_id == Some(u32::from(link.local_id))
 }
 
 pub(super) fn relation_link_is_geometric_operand(
@@ -1438,6 +1484,31 @@ fn typed_axis_relation_is_inactive(
     }
 }
 
+fn typed_binary_relation_is_inactive(
+    kind: crate::records::SketchRelationKind,
+    definition: &SketchConstraintDefinition,
+    sketch_entities: &[SketchEntity],
+) -> Option<bool> {
+    use crate::records::SketchRelationKind::{
+        Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
+    };
+    let ((Parallel, SketchConstraintDefinition::Parallel { first, second })
+    | (Perpendicular, SketchConstraintDefinition::Perpendicular { first, second })
+    | (Tangent, SketchConstraintDefinition::Tangent { first, second })
+    | (Equal, SketchConstraintDefinition::Equal { first, second })
+    | (Collinear, SketchConstraintDefinition::Collinear { first, second })
+    | (Concentric, SketchConstraintDefinition::Concentric { first, second })
+    | (Coradial, SketchConstraintDefinition::Coradial { first, second })) = (kind, definition)
+    else {
+        return None;
+    };
+    let first = sketch_entities.iter().find(|entity| entity.id == *first)?;
+    let second = sketch_entities.iter().find(|entity| entity.id == *second)?;
+    Some(!binary_relation_matches_evaluated_geometry(
+        kind, first, second,
+    ))
+}
+
 pub(super) fn marker_relation_is_inactive(
     marker: &SketchInputEntity,
     definition: &SketchConstraintDefinition,
@@ -1454,6 +1525,22 @@ pub(super) fn marker_relation_is_inactive(
     };
     if let Some(inactive) = typed_axis_relation_is_inactive(definition, sketch_entities) {
         return inactive;
+    }
+    if let Some(inactive) = typed_binary_relation_is_inactive(kind, definition, sketch_entities) {
+        return inactive;
+    }
+    if let SketchConstraintDefinition::CoincidentLoci { loci } = definition {
+        let Some(points) = loci
+            .iter()
+            .map(|locus| profile_locus_point(locus, sketch_entities))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return false;
+        };
+        return points.iter().skip(1).any(|point| {
+            !same_dimension_length(point.u, points[0].u)
+                || !same_dimension_length(point.v, points[0].v)
+        });
     }
     let SketchConstraintDefinition::Native {
         entities, operands, ..
@@ -1659,6 +1746,11 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     if let Some(endpoints) = inline_arc_endpoint_markers(payload, curve, markers) {
         return endpoints.to_vec();
     }
+    if let Some(endpoints) =
+        compact_legacy_142_profile_curve_endpoint_markers(payload, curve, markers)
+    {
+        return endpoints.to_vec();
+    }
     if let Some(endpoints) = one_based_point_roster_line_endpoint_markers(payload, curve, markers) {
         return endpoints.to_vec();
     }
@@ -1689,7 +1781,58 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     if let Some(endpoints) = legacy_terminal_profile_indexed_endpoints(payload, curve, markers) {
         return endpoints.to_vec();
     }
-    consecutive_legacy_profile_line_endpoints(payload, curve, markers)
+    let endpoints = consecutive_legacy_profile_line_endpoints(payload, curve, markers);
+    if endpoints.len() == 2 {
+        return endpoints;
+    }
+    coordinate_profile_line_endpoints(payload, curve, markers_by_id)
+        .map(|endpoints| endpoints.to_vec())
+        .unwrap_or(endpoints)
+}
+
+fn coordinate_profile_line_endpoints<'a>(
+    payload: &[u8],
+    curve: &'a SketchInputEntity,
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+) -> Option<[&'a SketchInputEntity; 2]> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    if curve.kind != SketchInputKind::LineOrCircle
+        || curve.coordinates_m.is_none()
+        || !matches!(
+            payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()),
+            Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+        )
+        || marker_native_code(payload, offset) != Some(1)
+        || !marker_is_geometry_locus(payload, offset)
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 64..offset + 66) != Some(&[0x1e, 0x00])
+    {
+        return None;
+    }
+    let mut point = None;
+    for link in curve
+        .links
+        .iter()
+        .filter(|link| link.entity_ref != curve.id)
+    {
+        let linked = markers_by_id.get(link.entity_ref.as_str()).copied()?;
+        if linked.feature_ref != curve.feature_ref {
+            return None;
+        }
+        match linked.kind {
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
+                if linked.coordinates_m.is_none() || point.replace(linked).is_some() {
+                    return None;
+                }
+            }
+            SketchInputKind::Relation(_) => {}
+            SketchInputKind::LineOrCircle | SketchInputKind::Arc | SketchInputKind::Native(_) => {
+                return None
+            }
+        }
+    }
+    let point = point?;
+    (curve.coordinates_m? != point.coordinates_m?).then_some([curve, point])
 }
 
 pub(super) fn extended_direct_object_line_endpoints<'a>(
@@ -2027,6 +2170,35 @@ fn inline_arc_endpoint_markers<'a>(
     (endpoints[0].id != endpoints[1].id).then_some(endpoints)
 }
 
+fn compact_legacy_142_profile_curve_endpoint_markers<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Option<[&'a SketchInputEntity; 2]> {
+    if curve.kind != SketchInputKind::LineOrCircle || curve.coordinates_m.is_some() {
+        return None;
+    }
+    let offset = usize::try_from(curve.offset).ok()?;
+    let [start, end] = compact_legacy_142_profile_curve_endpoints(payload, offset)?;
+    let resolve = |coordinates: [f64; 2]| {
+        let mut candidates = markers.iter().copied().filter(|marker| {
+            marker.feature_ref == curve.feature_ref
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+                && marker.coordinates_m.is_some_and(|point| {
+                    same_dimension_length(point[0], coordinates[0])
+                        && same_dimension_length(point[1], coordinates[1])
+                })
+        });
+        let candidate = candidates.next()?;
+        candidates.next().is_none().then_some(candidate)
+    };
+    let endpoints = [resolve(start)?, resolve(end)?];
+    (endpoints[0].id != endpoints[1].id).then_some(endpoints)
+}
+
 pub(super) fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: usize) -> bool {
     let supported_prefix = matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
@@ -2089,13 +2261,21 @@ pub(super) fn current_coordinate_linked_line_endpoints<'a>(
         return None;
     }
     let local_id = u32::from(View::u16_le_at(cell, 2)?);
+    // A local-link endpoint can select a coordinate-bearing curve marker before
+    // the binding pass promotes it to a profile vertex. Keep that candidate in
+    // the graph; the binding pass retains it as a curve only when it resolves
+    // its own two endpoints.
     let mut endpoints = markers.iter().copied().filter(|marker| {
         marker.feature_ref == line.feature_ref
+            && marker.id != line.id
             && marker.local_id == Some(local_id)
             && marker.coordinates_m.is_some()
             && matches!(
                 marker.kind,
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                SketchInputKind::Point
+                    | SketchInputKind::ConstrainedPoint
+                    | SketchInputKind::LineOrCircle
+                    | SketchInputKind::Arc
             )
     });
     let endpoint = endpoints.next()?;

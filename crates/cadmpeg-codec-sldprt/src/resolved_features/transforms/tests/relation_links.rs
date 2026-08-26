@@ -94,7 +94,7 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
             entity_ref: collision.id.clone(),
         },
         SketchInputLink {
-            local_id: 8,
+            local_id: 7,
             entity_ref: collision.id.clone(),
         },
     ];
@@ -111,9 +111,101 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
 }
 
 #[test]
+fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
+    let sketch = SketchId("sketch".into());
+    let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.local_id = Some(7);
+    relation.object_index = Some(8);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: "first-point".into(),
+        },
+        SketchInputLink {
+            local_id: 8,
+            entity_ref: "second-point".into(),
+        },
+    ];
+    let first = marker("first-point", Some([0.0, 0.0]));
+    let second = marker("second-point", Some([1.0, 0.0]));
+    let markers = HashMap::from([
+        (relation.id.as_str(), &relation),
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+    ]);
+    let first_entity = SketchEntity {
+        id: SketchEntityId("first-entity".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(first.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 0.0),
+        },
+    };
+    let second_entity = SketchEntity {
+        id: SketchEntityId("second-entity".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(second.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(1.0, 0.0),
+        },
+    };
+    let entities = vec![first_entity.clone(), second_entity.clone()];
+
+    assert!(marker_owns_constraint(&relation, &markers));
+    assert_eq!(
+        typed_marker_relation_definition_in_sketch(
+            &relation,
+            &sketch,
+            &entities,
+            &markers,
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(first_entity.id),
+            second: SketchLocus::Entity(second_entity.id),
+        })
+    );
+}
+
+#[test]
+fn object_index_collision_remains_a_forward_curve_operand() {
+    let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.local_id = Some(2);
+    relation.object_index = Some(1);
+    relation.links = vec![SketchInputLink {
+        local_id: 1,
+        entity_ref: "line".into(),
+    }];
+    let mut line = marker("line", None);
+    line.kind = SketchInputKind::LineOrCircle;
+    line.local_id = Some(1);
+    let markers = HashMap::from([(relation.id.as_str(), &relation), (line.id.as_str(), &line)]);
+    let loci = HashMap::from([(
+        line.id.clone(),
+        vec![SketchLocus::Entity(SketchEntityId("line-entity".into()))],
+    )]);
+
+    assert_eq!(
+        typed_marker_relation_definition(&relation, &markers, &loci),
+        Some(SketchConstraintDefinition::Horizontal {
+            entity: SketchEntityId("line-entity".into()),
+        })
+    );
+}
+
+#[test]
 fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::ArcAngle90);
+    relation.local_id = Some(7);
     relation.object_index = Some(7);
     relation.links = vec![
         SketchInputLink {
@@ -158,6 +250,7 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
 fn self_identifying_forward_link_is_not_a_relation_locus() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
+    relation.local_id = Some(1);
     relation.object_index = Some(1);
     relation.links = vec![SketchInputLink {
         local_id: 1,
@@ -555,76 +648,78 @@ fn horizontal_relation_requires_one_line_or_two_points() {
 
 #[test]
 fn driving_point_distances_resolve_omitted_solver_points() {
-    let mut origin = marker("origin", Some([0.0, 0.0]));
-    origin.offset = 0;
-    let mut negative = marker("negative", Some([-0.007, 0.0]));
-    negative.offset = 1;
-    let mut first_center = marker("first-center", Some([0.008, 0.0]));
-    first_center.offset = 2;
-    let mut second_center = marker("second-center", Some([0.0015, 0.0]));
-    second_center.offset = 3;
-    let operand = |index, marker: Option<&str>| FeatureInputOperand {
-        offset: u64::from(index),
-        reference_ref: format!("reference-{index}"),
-        kind: FeatureInputOperandKind::Native(0x820f),
-        entity_index: index,
-        entity_ref: marker.map(str::to_string),
-    };
-    let scalar = |id: &str, value, operands| FeatureInputScalar {
-        id: id.into(),
-        parent: "lane".into(),
-        feature_ref: Some("feature-native".into()),
-        ordinal: 0,
-        offset: 0,
-        object_id: 0,
-        name: "name".into(),
-        value,
-        role: FeatureInputScalarRole::Driving,
-        entity_indices: Vec::new(),
-        operands,
-    };
-    let lane = FeatureInputLane {
-        id: "lane".into(),
-        configuration: None,
-        native_payload: Vec::new(),
-        classes: Vec::new(),
-        names: Vec::new(),
-        scalars: vec![
-            scalar(
-                "center-1",
-                0.008,
-                vec![operand(13, None), operand(3, Some("first-center"))],
-            ),
-            scalar(
-                "center-2",
-                0.0015,
-                vec![operand(13, None), operand(4, Some("second-center"))],
-            ),
-            scalar(
-                "terminal",
-                0.007,
-                vec![operand(12, None), operand(13, None)],
-            ),
-        ],
-        relation_bindings: Vec::new(),
-        relation_instances: Vec::new(),
-        body_selections: Vec::new(),
-        edge_selections: Vec::new(),
-        surface_selections: Vec::new(),
-        generated_surface_identities: Vec::new(),
-        references: Vec::new(),
-        sketch_entities: vec![origin, negative, first_center, second_center],
-    };
+    for tag in [0x8100, 0x820f] {
+        let mut origin = marker("origin", Some([0.0, 0.0]));
+        origin.offset = 0;
+        let mut negative = marker("negative", Some([-0.007, 0.0]));
+        negative.offset = 1;
+        let mut first_center = marker("first-center", Some([0.008, 0.0]));
+        first_center.offset = 2;
+        let mut second_center = marker("second-center", Some([0.0015, 0.0]));
+        second_center.offset = 3;
+        let operand = |index, marker: Option<&str>| FeatureInputOperand {
+            offset: u64::from(index),
+            reference_ref: format!("reference-{index}"),
+            kind: FeatureInputOperandKind::Native(tag),
+            entity_index: index,
+            entity_ref: marker.map(str::to_string),
+        };
+        let scalar = |id: &str, value, operands| FeatureInputScalar {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature-native".into()),
+            ordinal: 0,
+            offset: 0,
+            object_id: 0,
+            name: "name".into(),
+            value,
+            role: FeatureInputScalarRole::Driving,
+            entity_indices: Vec::new(),
+            operands,
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: vec![
+                scalar(
+                    "center-1",
+                    0.008,
+                    vec![operand(13, None), operand(3, Some("first-center"))],
+                ),
+                scalar(
+                    "center-2",
+                    0.0015,
+                    vec![operand(13, None), operand(4, Some("second-center"))],
+                ),
+                scalar(
+                    "terminal",
+                    0.007,
+                    vec![operand(12, None), operand(13, None)],
+                ),
+            ],
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![origin, negative, first_center, second_center],
+        };
 
-    assert_eq!(
-        inferred_point_coordinates_by_index(&lane, "feature-native"),
-        HashMap::from([
-            (3, [0.008, 0.0]),
-            (4, [0.0015, 0.0]),
-            (12, [-0.007, 0.0]),
-            (13, [0.0, 0.0]),
-        ])
-    );
+        assert_eq!(
+            inferred_point_coordinates_by_index(&lane, "feature-native"),
+            HashMap::from([
+                (3, [0.008, 0.0]),
+                (4, [0.0015, 0.0]),
+                (12, [-0.007, 0.0]),
+                (13, [0.0, 0.0]),
+            ])
+        );
+    }
 }
 
 #[test]
@@ -638,7 +733,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
     let operand = |index| FeatureInputOperand {
         offset: u64::from(index),
         reference_ref: format!("reference-{index}"),
-        kind: FeatureInputOperandKind::Native(0x820f),
+        kind: FeatureInputOperandKind::Native(0x8100),
         entity_index: index,
         entity_ref: None,
     };

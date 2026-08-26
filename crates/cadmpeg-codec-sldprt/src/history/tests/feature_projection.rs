@@ -87,6 +87,30 @@ fn blind_extrusion_uses_its_sole_dimension_as_depth() {
 }
 
 #[test]
+fn modern_extrusion_with_one_source_dimension_defaults_to_blind() {
+    let mut feature = feature("sldprt:history:feature#1:2", Some("12"), 2);
+    feature.xml_tag = "Extrusion".into();
+    feature.input_class = Some("moExtrusion_c".into());
+    feature.content = vec![FeatureContent::Dimension("m".into())];
+    feature.parameters.insert("m".into(), "6.4".into());
+
+    assert!(matches!(
+        project_extrude(&feature, &HashMap::new(), &HashMap::new()),
+        Some(FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(6.4)
+                    },
+                    ..
+                }
+            },
+            ..
+        })
+    ));
+}
+
+#[test]
 fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
     let mut profile = feature("sldprt:history:feature#1:0", Some("9"), 0);
     profile.xml_tag = "Sketch".into();
@@ -132,6 +156,69 @@ fn legacy_history_extrusion_uses_preceding_profile_and_sole_source_depth() {
                 }
             },
             op: BooleanOp::Join,
+            ..
+        } if profile_ref == &profile.id
+    ));
+}
+
+#[test]
+fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
+    let mut early_profile = feature("sldprt:history:feature#1:0", Some("9"), 0);
+    early_profile.xml_tag = "Sketch".into();
+    early_profile.kind = "Sketch".into();
+
+    let mut origin_profile = feature("sldprt:history:feature#1:1", Some("18"), 1);
+    origin_profile.xml_tag = "Sketch".into();
+    origin_profile.kind = "Sketch".into();
+    origin_profile.input_class = Some("moOriginProfileFeature_c".into());
+
+    let mut preceding_profile = feature("sldprt:history:feature#1:2", Some("19"), 2);
+    preceding_profile.xml_tag = "Sketch".into();
+    preceding_profile.kind = "Sketch".into();
+
+    let mut extrusion = feature("sldprt:history:feature#1:3", Some("20"), 3);
+    extrusion.xml_tag = "Extrusion".into();
+    extrusion.kind = "Cut-Extrude".into();
+    extrusion.input_class = Some("moICE_c".into());
+    extrusion
+        .properties
+        .insert("DissectableRoot".into(), "true".into());
+    extrusion
+        .properties
+        .insert("EndCondition".into(), "Blind".into());
+    extrusion.parameters.insert("D1".into(), "4.2".into());
+    extrusion.content = vec![FeatureContent::Dimension("D1".into())];
+
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![extrusion, early_profile, origin_profile, preceding_profile],
+    };
+
+    let projected = project_features(&[history]);
+    let extrusion = projected
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:3"))
+        .expect("root extrusion feature");
+    let profile = projected
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some("sldprt:history:feature#1:2"))
+        .expect("preceding extrusion profile");
+
+    assert!(matches!(
+        &extrusion.definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Feature(profile_ref),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind { length: Length(4.2) },
+                    ..
+                }
+            },
+            op: BooleanOp::Cut,
             ..
         } if profile_ref == &profile.id
     ));
@@ -1549,6 +1636,7 @@ fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
             ordinal: 0,
             offset: 0,
             selector: 0,
+            endpoint_selector: None,
             object_name_ref: "thread-name".into(),
             feature_ref: thread_id,
             producer_feature_refs: vec![hole_id.clone()],

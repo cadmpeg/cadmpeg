@@ -145,6 +145,18 @@ pub(super) fn extrusion_operation(class: Option<&str>, code: u32) -> Option<Bool
     }
 }
 
+/// Bind operation discriminators shared by geometry and metadata decode.
+pub(crate) fn bind_feature_operations(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+    form_padding: Option<FormCodePadding>,
+) {
+    bind_extrusion_operations(features, histories, lanes, form_padding);
+    bind_revolution_operations(features, histories, lanes, form_padding);
+    bind_sweep_operations(features, histories, lanes, form_padding);
+}
+
 /// Project revolution Boolean form words from declared and compact objects.
 pub(crate) fn bind_revolution_operations(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -260,10 +272,27 @@ pub(super) fn feature_inline_operation_fields(
                     && suffix[sparse_tr::OPTIONAL_IDENTITY - sparse_tr::SPARSE_ZERO_PREFIX
                         ..sparse_tr::ZERO_BEFORE_FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX]
                         != [0xff; 4]
-                    && suffix[sparse_tr::ZERO_BEFORE_FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX
+                    // The common sparse form places its second token at +38.
+                    // Older files use u64(1) in the otherwise-zero field at +30.
+                    && (suffix[sparse_tr::ZERO_BEFORE_FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX
                         ..sparse_tr::FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX]
                         == [0; 8]
-                    && suffix[sparse_tr::FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX..] != [0, 0])
+                        || suffix[sparse_tr::ZERO_BEFORE_FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX
+                            ..sparse_tr::FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX]
+                            == [1, 0, 0, 0, 0, 0, 0, 0])
+                    && suffix[sparse_tr::FINAL_TOKEN - sparse_tr::SPARSE_ZERO_PREFIX..]
+                        != [0, 0])
+                    // A compact continuation retains a secondary family word
+                    // in the first two bytes before the marker.
+                    || (suffix[..4] == [0; 4]
+                        && matches!(
+                            View::u16_le_at(suffix, 4),
+                            Some(0x00b2 | 0x00b3)
+                        )
+                        && suffix[6..8] == [1, 0]
+                        && suffix[8..12] != [0; 4]
+                        && suffix[12..22] == [0; 10]
+                        && suffix[22..24] != [0, 0])
                     || (suffix[..4] == [0, 0, 1, 0]
                         && suffix[4..8] != [0; 4]
                         && suffix[8..18] == [0; 10]
@@ -343,6 +372,124 @@ pub(crate) fn bind_extrusion_operations(
             *op = first;
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum OperationKind {
+    Extrusion,
+    Revolution,
+}
+
+/// Preserve a Boolean operation that is invariant across a configuration lane
+/// when that lane carries no independent operation carrier.
+pub(crate) fn inherit_configuration_operations(
+    features: &mut [cadmpeg_ir::features::Feature],
+    base_features: &[cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+    form_padding: Option<FormCodePadding>,
+) {
+    let history_by_id = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let base_definitions = base_features
+        .iter()
+        .map(|feature| (&feature.id, &feature.definition))
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let Some(base_definition) = base_definitions.get(&feature.id) else {
+            continue;
+        };
+        let Some(history) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| history_by_id.get(native).copied())
+        else {
+            continue;
+        };
+        let operation_kind = match (&feature.definition, *base_definition) {
+            (
+                FeatureDefinition::Extrude { op, .. },
+                FeatureDefinition::Extrude { op: base_op, .. },
+            ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
+                OperationKind::Extrusion
+            }
+            (
+                FeatureDefinition::Revolve { op, .. },
+                FeatureDefinition::Revolve { op: base_op, .. },
+            ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
+                OperationKind::Revolution
+            }
+            _ => continue,
+        };
+        if lanes
+            .iter()
+            .any(|lane| operation_carrier_present(operation_kind, history, lane, form_padding))
+        {
+            continue;
+        }
+        match (&mut feature.definition, operation_kind, *base_definition) {
+            (
+                FeatureDefinition::Extrude { op, .. },
+                OperationKind::Extrusion,
+                FeatureDefinition::Extrude { op: base_op, .. },
+            )
+            | (
+                FeatureDefinition::Revolve { op, .. },
+                OperationKind::Revolution,
+                FeatureDefinition::Revolve { op: base_op, .. },
+            ) if *op == BooleanOp::Unresolved && *base_op != BooleanOp::Unresolved => {
+                *op = *base_op;
+            }
+            _ => {}
+        }
+    }
+}
+
+fn operation_carrier_present(
+    kind: OperationKind,
+    feature: &Feature,
+    lane: &FeatureInputLane,
+    form_padding: Option<FormCodePadding>,
+) -> bool {
+    let source_matches = feature
+        .source_id
+        .as_deref()
+        .and_then(|value| value.parse::<u32>().ok())
+        .map(|source_id| {
+            lane.names
+                .iter()
+                .filter(|name| name.object_id == Some(source_id))
+                .collect::<Vec<_>>()
+        })
+        .filter(|matches| !matches.is_empty());
+    let candidates = source_matches.unwrap_or_else(|| {
+        lane.names
+            .iter()
+            .filter(|name| name.value == feature.name)
+            .collect::<Vec<_>>()
+    });
+    let [name] = candidates.as_slice() else {
+        return candidates.len() > 1;
+    };
+    if matches!(kind, OperationKind::Extrusion)
+        && feature_inline_operation_fields(lane, name).is_some()
+    {
+        return true;
+    }
+    let Some(code) =
+        feature_operation_code(lane, name, feature.input_class.as_deref(), form_padding)
+    else {
+        return false;
+    };
+    matches!(kind, OperationKind::Revolution)
+        || !(code == 11
+            && matches!(
+                feature.input_class.as_deref(),
+                Some("moExtrusion_c" | "moICE_c" | "moCut_c")
+            ))
 }
 
 /// Establish projected split-line mode and source sketch from each

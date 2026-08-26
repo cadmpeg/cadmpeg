@@ -13,7 +13,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+    SketchLocus, SketchPlacement,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -1099,6 +1100,345 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         std::slice::from_ref(&lane),
     );
     assert_eq!(constraints.len(), 2);
+}
+
+#[test]
+fn roster_point_line_distance_materializes_one_solver_line() {
+    let sketch = SketchId("sketch".into());
+    let feature = Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: Some(sketch.clone()),
+        },
+        native_ref: Some("feature-native".into()),
+    };
+    let coordinates = [
+        [0.006, -0.005],
+        [0.036, -0.082],
+        [0.036, -0.005],
+        [0.0, -0.005],
+        [0.036, -0.005],
+        [0.036, -0.15],
+        [0.036, -0.162],
+        [-0.014, -0.162],
+    ];
+    let markers = coordinates
+        .into_iter()
+        .enumerate()
+        .map(|(index, coordinates_m)| {
+            let mut marker = marker(&format!("point-{index}"), Some(coordinates_m));
+            marker.offset = index as u64;
+            marker
+        })
+        .collect::<Vec<_>>();
+    let mut entities = coordinates
+        .into_iter()
+        .take(3)
+        .enumerate()
+        .map(|(index, [u, v])| SketchEntity {
+            id: SketchEntityId(format!("bound-point-{index}")),
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: Some(format!("point-{index}")),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(u * 1000.0, v * 1000.0),
+            },
+        })
+        .collect::<Vec<_>>();
+    let relation = FeatureInputRelationInstance {
+        id: "relation-point-line".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 100,
+        family: FeatureInputRelationFamily::PointLineDistance,
+        class_ref: "class".into(),
+        feature_ref: "feature-native".into(),
+        scalar_refs: vec!["scalar".into()],
+        parameter_scalar_ref: Some("scalar".into()),
+        display_scalar_ref: None,
+        operands: vec![
+            FeatureInputOperand {
+                offset: 101,
+                reference_ref: "point-reference".into(),
+                kind: FeatureInputOperandKind::Native(0x81dd),
+                entity_index: 0,
+                entity_ref: Some("point-0".into()),
+            },
+            FeatureInputOperand {
+                offset: 102,
+                reference_ref: "line-reference".into(),
+                kind: FeatureInputOperandKind::Native(0x81e7),
+                entity_index: 2,
+                entity_ref: None,
+            },
+        ],
+    };
+    let lane = FeatureInputLane {
+        id: "lane#test".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: vec![relation],
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: markers,
+    };
+    let parameter = DesignParameter {
+        id: ParameterId("parameter".into()),
+        owner: Some(feature.id.clone()),
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "30mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(Length(30.0))),
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: Some("scalar".into()),
+    };
+    project_relation_solved_line_geometry(
+        &mut entities,
+        &[],
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&parameter),
+        std::slice::from_ref(&lane),
+    );
+    let solver_line = entities
+        .iter()
+        .find(|entity| entity.geometry_ref.as_deref() == Some("feature-native:solver-line:2"))
+        .expect("point-line solver line");
+    assert!(matches!(
+        solver_line.geometry,
+        SketchGeometry::Line { start, end }
+            if start == Point2::new(36.0, -5.0) && end == Point2::new(36.0, -150.0)
+    ));
+    let solver_line_id = solver_line.id.clone();
+
+    let mut constraints = Vec::new();
+    project_relation_bindings(
+        &mut constraints,
+        &[],
+        std::slice::from_ref(&feature),
+        &entities,
+        std::slice::from_ref(&parameter),
+        std::slice::from_ref(&lane),
+    );
+    let [constraint] = constraints.as_slice() else {
+        panic!("one point-line constraint");
+    };
+    let SketchConstraintDefinition::DistanceLoci {
+        first,
+        second,
+        parameter: parameter_ref,
+    } = &constraint.definition
+    else {
+        panic!("typed point-line constraint");
+    };
+    assert_eq!(
+        first,
+        &SketchLocus::Entity(SketchEntityId("bound-point-0".into()))
+    );
+    assert_eq!(second, &SketchLocus::Entity(solver_line_id));
+    assert_eq!(parameter_ref, &parameter.id);
+}
+
+#[test]
+fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguous() {
+    let sketch_id = SketchId("sketch".into());
+    let sketch = Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    };
+    let feature = Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: Some(sketch_id.clone()),
+        },
+        native_ref: Some("feature-native".into()),
+    };
+    let line = |id: &str, start: [f64; 2], end: [f64; 2]| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(start[0], start[1]),
+            end: Point2::new(end[0], end[1]),
+        },
+    };
+    let mut entities = vec![
+        line("profile-bottom", [0.0, -20.0], [70.0, -20.0]),
+        line("profile-top", [0.0, 0.0], [70.0, 0.0]),
+        line("profile-left", [0.0, -20.0], [0.0, 0.0]),
+        line("profile-right", [70.0, 0.0], [70.0, -20.0]),
+        SketchEntity {
+            id: SketchEntityId("resolved-point".into()),
+            sketch: sketch_id.clone(),
+            construction: true,
+            native_ref: Some("point-4".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(85.0, -10.0),
+            },
+        },
+    ];
+    let coordinates_m = [
+        [0.0, 0.0],
+        [0.07, 0.0],
+        [0.0, -0.02],
+        [0.0, 0.0],
+        [0.015, -0.01],
+    ];
+    let markers = coordinates_m
+        .into_iter()
+        .enumerate()
+        .map(|(index, coordinates_m)| {
+            let mut marker = marker(&format!("point-{index}"), Some(coordinates_m));
+            marker.offset = index as u64;
+            marker
+        })
+        .collect::<Vec<_>>();
+    let relation = FeatureInputRelationInstance {
+        id: "relation-point-line-ambiguous".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 100,
+        family: FeatureInputRelationFamily::PointLineDistance,
+        class_ref: "class".into(),
+        feature_ref: "feature-native".into(),
+        scalar_refs: vec!["scalar".into()],
+        parameter_scalar_ref: Some("scalar".into()),
+        display_scalar_ref: None,
+        operands: vec![
+            FeatureInputOperand {
+                offset: 101,
+                reference_ref: "point-reference".into(),
+                kind: FeatureInputOperandKind::Native(0x81dd),
+                entity_index: 4,
+                entity_ref: Some("point-4".into()),
+            },
+            FeatureInputOperand {
+                offset: 102,
+                reference_ref: "line-reference".into(),
+                kind: FeatureInputOperandKind::Native(0x81e7),
+                entity_index: 1,
+                entity_ref: None,
+            },
+        ],
+    };
+    let lane = FeatureInputLane {
+        id: "lane#test".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: vec![relation],
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: markers,
+    };
+    let parameter = DesignParameter {
+        id: ParameterId("parameter".into()),
+        owner: Some(feature.id.clone()),
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "15mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(Length(15.0))),
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: Some("scalar".into()),
+    };
+    let transforms =
+        crate::resolved_features::relation_loci::marker_transform_candidates_by_feature(
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&sketch),
+            &entities,
+            std::slice::from_ref(&lane),
+        );
+    assert!(transforms["feature-native"].len() > 1);
+    project_relation_solved_line_geometry(
+        &mut entities,
+        std::slice::from_ref(&sketch),
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&parameter),
+        std::slice::from_ref(&lane),
+    );
+    let solver_line = entities
+        .iter()
+        .find(|entity| entity.geometry_ref.as_deref() == Some("feature-native:solver-line:1"))
+        .expect("resolved point selects one solver line");
+    assert!(matches!(
+        solver_line.geometry,
+        SketchGeometry::Line { start, end }
+            if start == Point2::new(70.0, -20.0) && end == Point2::new(70.0, 0.0)
+    ));
+    let mut constraints = Vec::new();
+    project_relation_bindings(
+        &mut constraints,
+        std::slice::from_ref(&sketch),
+        std::slice::from_ref(&feature),
+        &entities,
+        std::slice::from_ref(&parameter),
+        std::slice::from_ref(&lane),
+    );
+    let [constraint] = constraints.as_slice() else {
+        panic!("one point-line constraint");
+    };
+    assert!(matches!(
+        &constraint.definition,
+        SketchConstraintDefinition::DistanceLoci { first, second, .. }
+            if first == &SketchLocus::Entity(SketchEntityId("resolved-point".into()))
+                && second == &SketchLocus::Entity(solver_line.id.clone())
+    ));
 }
 
 #[test]
