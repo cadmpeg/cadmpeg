@@ -1171,6 +1171,7 @@ fn range_nominal_framing_name(framing: CatiaRangeNominalFraming) -> &'static str
         CatiaRangeNominalFraming::D8Token8193 => "D8Token8193",
         CatiaRangeNominalFraming::D8Token81DB => "D8Token81DB",
         CatiaRangeNominalFraming::DCToken81DB => "DCToken81DB",
+        CatiaRangeNominalFraming::DFToken8192 => "DFToken8192",
     }
 }
 

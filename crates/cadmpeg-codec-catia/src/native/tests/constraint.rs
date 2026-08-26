@@ -651,6 +651,23 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
     assert_eq!(d8_nominal.bits, d8_nominal_bits);
     assert_eq!(d8_nominal.evaluation_opcode_offset, 4);
 
+    let df_nominal_bits = 31.75_f64.to_bits();
+    let mut df_suffix = vec![0x84, 0x96, 0x82, 0xdf, 0xe6];
+    df_suffix.extend_from_slice(&df_nominal_bits.to_le_bytes());
+    df_suffix.extend_from_slice(&[0x81, 0x92]);
+    let df_native = crate::native::CatiaNative::decode(&standard_catpart_with_range_interval(
+        &encoded_range,
+        &df_suffix,
+    ));
+    let df_range = df_native.entity_records[0]
+        .range_interval
+        .as_ref()
+        .expect("complete DF/81 92 Range interval");
+    let df_nominal = df_range.nominal.as_ref().expect("finite DF nominal");
+    assert_eq!(df_nominal.framing, CatiaRangeNominalFraming::DFToken8192);
+    assert_eq!(df_nominal.bits, df_nominal_bits);
+    assert_eq!(df_nominal.evaluation_opcode_offset, 4);
+
     let decoded = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("decode range interval");
@@ -813,11 +830,8 @@ fn dimension_constraint_ranges_accept_db_terminated_dc_frames() {
     let mut suffix = vec![0x84, 0x96, 0x82, 0xdc, 0xe6];
     suffix.extend_from_slice(&bits.to_le_bytes());
     suffix.extend_from_slice(&[0x81, 0xdb]);
-    let native = crate::native::CatiaNative::decode(&standard_catpart_with_two_selector_value(
-        "Range",
-        "CstAttr_Dimension",
-        &suffix,
-    ));
+    let file = standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &suffix);
+    let native = crate::native::CatiaNative::decode(&file);
     let entity = &native.entity_records[0];
     let range = entity
         .constraint_range
@@ -843,6 +857,71 @@ fn dimension_constraint_ranges_accept_db_terminated_dc_frames() {
         },
         vec![0x84, 0x96, 0x82, 0xdc, 0xe7],
         vec![0x84, 0x96, 0x82, 0xc1, 0xe7, 0x81, 0xdb],
+    ] {
+        let native = crate::native::CatiaNative::decode(&standard_catpart_with_two_selector_value(
+            "Range",
+            "CstAttr_Dimension",
+            &suffix,
+        ));
+        assert!(native.entity_records[0].constraint_range.is_none());
+    }
+}
+
+#[test]
+fn dimension_constraint_ranges_accept_8192_terminated_df_frames() {
+    use crate::native::{
+        CatiaConstraintRangeFraming, CatiaEntityEvaluation, CatiaEntitySuffixTrailer,
+    };
+
+    let bits = 22.225_f64.to_bits();
+    let mut suffix = vec![0x84, 0x96, 0x82, 0xdf, 0xe6];
+    suffix.extend_from_slice(&bits.to_le_bytes());
+    suffix.extend_from_slice(&[0x81, 0x92]);
+    let file = standard_catpart_with_two_selector_value("Range", "CstAttr_Dimension", &suffix);
+    let native = crate::native::CatiaNative::decode(&file);
+    let entity = &native.entity_records[0];
+    let range = entity
+        .constraint_range
+        .as_ref()
+        .expect("81 92-terminated dimension range");
+    assert_eq!(range.framing, CatiaConstraintRangeFraming::DimensionDF);
+    assert_eq!(range.evaluation, CatiaEntityEvaluation::Scalar { bits });
+    assert_eq!(
+        entity
+            .suffix_value
+            .as_ref()
+            .expect("81 92-terminated suffix value")
+            .trailer,
+        CatiaEntitySuffixTrailer::Token8192
+    );
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode 81 92-terminated dimension range");
+    assert_eq!(
+        decoded
+            .report()
+            .coverage_count(crate::coverage::DECODED_DIMENSION_CONSTRAINT_RANGE_COUNT),
+        1
+    );
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::CatiaLossCode::AttributesDimensionQuantityUnresolved.kind()
+            && loss.message.contains("1 finite")
+    }));
+
+    for suffix in [
+        {
+            let mut suffix = vec![0x84, 0x96, 0x82, 0xdf, 0xe6];
+            suffix.extend_from_slice(&bits.to_le_bytes());
+            suffix.extend_from_slice(&[0x81, 0xdb]);
+            suffix
+        },
+        {
+            let mut suffix = vec![0x84, 0x96, 0x82, 0xdc, 0xe6];
+            suffix.extend_from_slice(&bits.to_le_bytes());
+            suffix.extend_from_slice(&[0x81, 0x92]);
+            suffix
+        },
     ] {
         let native = crate::native::CatiaNative::decode(&standard_catpart_with_two_selector_value(
             "Range",

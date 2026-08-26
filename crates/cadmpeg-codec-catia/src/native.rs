@@ -22,7 +22,7 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 286;
+pub const CATIA_NATIVE_VERSION: u32 = 287;
 /// Native schema version that links width-coded owner-chart supports to alias rows.
 #[cfg(test)]
 pub(crate) const CATIA_OWNER_CHART_ALIAS_VERSION: u32 = 286;
@@ -1621,6 +1621,8 @@ pub enum CatiaEntitySuffixTrailer {
     Token8152,
     /// Exact trailer token `81 DB`.
     Token81DB,
+    /// Exact trailer token `81 92`.
+    Token8192,
     /// Exact trailer token `81 93`.
     Token8193,
     /// Exact fixed trailer `FE F6 00{16}`.
@@ -1789,6 +1791,8 @@ pub enum CatiaRangeNominalFraming {
     D8Token81DB,
     /// Prefix code `DC` and trailer `81 DB`.
     DCToken81DB,
+    /// Prefix code `DF` and trailer `81 92`.
+    DFToken8192,
 }
 
 /// One finite nominal associated with a complete `Range` interval.
@@ -1814,6 +1818,8 @@ pub enum CatiaConstraintRangeFraming {
     DimensionC1,
     /// `CstAttr_Dimension` selected with prefix code `DC`.
     DimensionDC,
+    /// `CstAttr_Dimension` selected with prefix code `DF` and trailer `81 92`.
+    DimensionDF,
     /// `ComplexCst` selected with prefix code `C9`.
     ComplexC9,
 }
@@ -3378,6 +3384,9 @@ fn constraint_range(
         ("CstAttr_Dimension", 0xdc, CatiaEntitySuffixTrailer::Token81DB) => {
             CatiaConstraintRangeFraming::DimensionDC
         }
+        ("CstAttr_Dimension", 0xdf, CatiaEntitySuffixTrailer::Token8192) => {
+            CatiaConstraintRangeFraming::DimensionDF
+        }
         ("ComplexCst", 0xc9, CatiaEntitySuffixTrailer::Empty) => {
             CatiaConstraintRangeFraming::ComplexC9
         }
@@ -3500,6 +3509,7 @@ fn range_nominal(suffix_value: Option<&CatiaEntitySuffixValue>) -> Option<CatiaR
         (0xd8, CatiaEntitySuffixTrailer::Token8193) => CatiaRangeNominalFraming::D8Token8193,
         (0xd8, CatiaEntitySuffixTrailer::Token81DB) => CatiaRangeNominalFraming::D8Token81DB,
         (0xdc, CatiaEntitySuffixTrailer::Token81DB) => CatiaRangeNominalFraming::DCToken81DB,
+        (0xdf, CatiaEntitySuffixTrailer::Token8192) => CatiaRangeNominalFraming::DFToken8192,
         _ => return None,
     };
     let CatiaEntitySuffixPayload::Evaluation {
@@ -3735,6 +3745,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         [0x81, 0x4a] => CatiaEntitySuffixTrailer::Token814A,
         [0x81, 0x52] => CatiaEntitySuffixTrailer::Token8152,
         [0x81, 0xdb] => CatiaEntitySuffixTrailer::Token81DB,
+        [0x81, 0x92] => CatiaEntitySuffixTrailer::Token8192,
         [0x81, 0x93] => CatiaEntitySuffixTrailer::Token8193,
         [0xfe, 0xf6, rest @ ..] if rest.len() == 16 && rest.iter().all(|byte| *byte == 0) => {
             CatiaEntitySuffixTrailer::FixedZeroFrame

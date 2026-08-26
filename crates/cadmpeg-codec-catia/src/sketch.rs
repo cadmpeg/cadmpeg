@@ -902,6 +902,7 @@ fn framing_name(framing: crate::native::CatiaConstraintRangeFraming) -> &'static
         crate::native::CatiaConstraintRangeFraming::DimensionB8 => "DimensionB8",
         crate::native::CatiaConstraintRangeFraming::DimensionC1 => "DimensionC1",
         crate::native::CatiaConstraintRangeFraming::DimensionDC => "DimensionDC",
+        crate::native::CatiaConstraintRangeFraming::DimensionDF => "DimensionDF",
         crate::native::CatiaConstraintRangeFraming::ComplexC9 => "ComplexC9",
     }
 }

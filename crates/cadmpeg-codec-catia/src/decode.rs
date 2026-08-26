@@ -836,7 +836,8 @@ fn finish_decode(
                 let (dimensions, complex) = match range.framing {
                     crate::native::CatiaConstraintRangeFraming::DimensionB8
                     | crate::native::CatiaConstraintRangeFraming::DimensionC1
-                    | crate::native::CatiaConstraintRangeFraming::DimensionDC => {
+                    | crate::native::CatiaConstraintRangeFraming::DimensionDC
+                    | crate::native::CatiaConstraintRangeFraming::DimensionDF => {
                         (dimensions + 1, complex)
                     }
                     crate::native::CatiaConstraintRangeFraming::ComplexC9 => {
@@ -860,6 +861,7 @@ fn finish_decode(
                 crate::native::CatiaConstraintRangeFraming::DimensionB8
                     | crate::native::CatiaConstraintRangeFraming::DimensionC1
                     | crate::native::CatiaConstraintRangeFraming::DimensionDC
+                    | crate::native::CatiaConstraintRangeFraming::DimensionDF
             ) && match range.evaluation {
                 crate::native::CatiaEntityEvaluation::Scalar { bits } => {
                     f64::from_bits(bits).is_finite()
