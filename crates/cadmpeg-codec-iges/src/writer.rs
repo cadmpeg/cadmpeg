@@ -283,11 +283,15 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             append_curve_entity(
                 &mut entities,
                 ir,
-                curve_id,
-                &geometry,
-                Some(&span),
-                Sense::Forward,
-                "00000000",
+                CurveEntityRequest {
+                    version,
+                    curve_id,
+                    geometry: &geometry,
+                    span: Some(&span),
+                    sense: Sense::Forward,
+                    status: "00000000",
+                    reference_offset: 0,
+                },
             )?;
             mark_curve_descendants(ir, curve_id, &mut consumed_curves, &mut BTreeSet::new())?;
             consumed_points.insert(vertex_point_id(ir, &edge.start)?);
@@ -304,11 +308,15 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             append_curve_entity(
                 &mut entities,
                 ir,
-                &curve.id,
-                &geometry,
-                None,
-                Sense::Forward,
-                "00000000",
+                CurveEntityRequest {
+                    version,
+                    curve_id: &curve.id,
+                    geometry: &geometry,
+                    span: None,
+                    sense: Sense::Forward,
+                    status: "00000000",
+                    reference_offset: 0,
+                },
             )?;
             mark_curve_descendants(ir, &curve.id, &mut consumed_curves, &mut BTreeSet::new())?;
         }
@@ -402,7 +410,7 @@ impl TargetProfile {
                         | 143
                         | 144,
                     0
-                ) | (104, 2 | 3)
+                ) | (104, 1..=3)
             ),
             crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
                 match entity.type_code {
@@ -1242,11 +1250,15 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
         let index = append_curve_entity(
             &mut entities,
             ir,
-            curve_id,
-            &geometry,
-            Some(&span),
-            Sense::Forward,
-            "00000000",
+            CurveEntityRequest {
+                version,
+                curve_id,
+                geometry: &geometry,
+                span: Some(&span),
+                sense: Sense::Forward,
+                status: "00000000",
+                reference_offset: 0,
+            },
         )?;
         edge_curve_indices.insert(edge.id.as_str().to_owned(), index);
         mark_curve_descendants(ir, curve_id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
@@ -1264,11 +1276,15 @@ fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>,
         append_curve_entity(
             &mut entities,
             ir,
-            &curve.id,
-            &geometry,
-            None,
-            Sense::Forward,
-            "00000000",
+            CurveEntityRequest {
+                version,
+                curve_id: &curve.id,
+                geometry: &geometry,
+                span: None,
+                sense: Sense::Forward,
+                status: "00000000",
+                reference_offset: 0,
+            },
         )?;
         mark_curve_descendants(ir, &curve.id, &mut consumed_curve_ids, &mut BTreeSet::new())?;
     }
@@ -2015,11 +2031,15 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
         let index = append_curve_entity(
             &mut entities,
             ir,
-            curve_id,
-            &geometry,
-            Some(&span),
-            Sense::Forward,
-            PHYSICALLY_DEPENDENT_STATUS,
+            CurveEntityRequest {
+                version,
+                curve_id,
+                geometry: &geometry,
+                span: Some(&span),
+                sense: Sense::Forward,
+                status: PHYSICALLY_DEPENDENT_STATUS,
+                reference_offset: 0,
+            },
         )?;
         edge_indices.insert(edge.id.as_str().to_owned(), index);
         mark_curve_descendants(ir, curve_id, &mut consumed_curves, &mut BTreeSet::new())?;
@@ -2039,11 +2059,15 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
         append_curve_entity(
             &mut entities,
             ir,
-            &curve.id,
-            &geometry,
-            None,
-            Sense::Forward,
-            "00000000",
+            CurveEntityRequest {
+                version,
+                curve_id: &curve.id,
+                geometry: &geometry,
+                span: None,
+                sense: Sense::Forward,
+                status: "00000000",
+                reference_offset: 0,
+            },
         )?;
         mark_curve_descendants(ir, &curve.id, &mut consumed_curves, &mut BTreeSet::new())?;
     }
@@ -2121,12 +2145,15 @@ fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Enti
             } else {
                 let curve_on_surface = curve_on_surface_entity(
                     ir,
-                    loop_,
-                    surface_index,
-                    &surface.geometry,
-                    &edge_indices,
-                    &pcurve_indices,
                     &mut entities,
+                    CurveOnSurfaceEntityRequest {
+                        version,
+                        loop_,
+                        surface_index,
+                        surface: &surface.geometry,
+                        edge_indices: &edge_indices,
+                        pcurve_indices: &pcurve_indices,
+                    },
                 )?;
                 let index = entities.len();
                 entities.push(curve_on_surface);
@@ -2782,15 +2809,29 @@ fn boundary_entity(
     })
 }
 
+#[derive(Clone, Copy)]
+struct CurveOnSurfaceEntityRequest<'a> {
+    version: crate::IgesVersion,
+    loop_: &'a Loop,
+    surface_index: usize,
+    surface: &'a SurfaceGeometry,
+    edge_indices: &'a BTreeMap<String, usize>,
+    pcurve_indices: &'a BTreeMap<String, usize>,
+}
+
 fn curve_on_surface_entity(
     ir: &CadIr,
-    loop_: &Loop,
-    surface_index: usize,
-    surface: &SurfaceGeometry,
-    edge_indices: &BTreeMap<String, usize>,
-    pcurve_indices: &BTreeMap<String, usize>,
     entities: &mut Vec<Entity>,
+    request: CurveOnSurfaceEntityRequest<'_>,
 ) -> Result<Entity, CodecError> {
+    let CurveOnSurfaceEntityRequest {
+        version,
+        loop_,
+        surface_index,
+        surface,
+        edge_indices,
+        pcurve_indices,
+    } = request;
     let mut model_children = Vec::with_capacity(loop_.coedges.len());
     let mut pcurve_children = Vec::new();
     for coedge_id in &loop_.coedges {
@@ -2846,11 +2887,15 @@ fn curve_on_surface_entity(
             append_curve_entity(
                 entities,
                 ir,
-                curve_id,
-                &geometry,
-                Some(&span),
-                coedge.sense,
-                PHYSICALLY_DEPENDENT_STATUS,
+                CurveEntityRequest {
+                    version,
+                    curve_id,
+                    geometry: &geometry,
+                    span: Some(&span),
+                    sense: coedge.sense,
+                    status: PHYSICALLY_DEPENDENT_STATUS,
+                    reference_offset: 0,
+                },
             )?
         };
         model_children.push(model_index);
@@ -3043,9 +3088,10 @@ fn oriented_curve_entity(
     geometry: &CurveGeometry,
     span: &CurveSpan,
     sense: Sense,
+    version: crate::IgesVersion,
 ) -> Result<Entity, CodecError> {
     if sense == Sense::Forward {
-        let mut entity = curve_entity(geometry, Some(span))?;
+        let mut entity = curve_entity(geometry, Some(span), version)?;
         entity.status = PHYSICALLY_DEPENDENT_STATUS;
         return Ok(entity);
     }
@@ -3055,14 +3101,18 @@ fn oriented_curve_entity(
         end: span.start,
     };
     let mut entity = match geometry {
-        CurveGeometry::Line { .. } => curve_entity(geometry, Some(&reversed_span))?,
+        CurveGeometry::Line { .. } => curve_entity(geometry, Some(&reversed_span), version)?,
         CurveGeometry::Nurbs(nurbs) => {
             let (reversed, range) = reverse_nurbs(nurbs, span.range)?;
             let reversed_span = CurveSpan {
                 range,
                 ..reversed_span
             };
-            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+            curve_entity(
+                &CurveGeometry::Nurbs(reversed),
+                Some(&reversed_span),
+                version,
+            )?
         }
         CurveGeometry::Circle {
             center,
@@ -3087,7 +3137,11 @@ fn oriented_curve_entity(
                 range,
                 ..reversed_span
             };
-            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+            curve_entity(
+                &CurveGeometry::Nurbs(reversed),
+                Some(&reversed_span),
+                version,
+            )?
         }
         CurveGeometry::Ellipse {
             center,
@@ -3114,7 +3168,11 @@ fn oriented_curve_entity(
                 range,
                 ..reversed_span
             };
-            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+            curve_entity(
+                &CurveGeometry::Nurbs(reversed),
+                Some(&reversed_span),
+                version,
+            )?
         }
         CurveGeometry::Parabola {
             vertex,
@@ -3139,7 +3197,11 @@ fn oriented_curve_entity(
                 range,
                 ..reversed_span
             };
-            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+            curve_entity(
+                &CurveGeometry::Nurbs(reversed),
+                Some(&reversed_span),
+                version,
+            )?
         }
         CurveGeometry::Polyline {
             points, parameters, ..
@@ -3157,7 +3219,11 @@ fn oriented_curve_entity(
                 range,
                 ..reversed_span
             };
-            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+            curve_entity(
+                &CurveGeometry::Nurbs(reversed),
+                Some(&reversed_span),
+                version,
+            )?
         }
         CurveGeometry::Hyperbola {
             center,
@@ -3188,7 +3254,7 @@ fn oriented_curve_entity(
                 start: span.end,
                 end: span.start,
             };
-            curve_entity(&reversed_geometry, Some(&reversed_span))?
+            curve_entity(&reversed_geometry, Some(&reversed_span), version)?
         }
         _ => {
             return Err(CodecError::NotImplemented(format!(
@@ -4429,10 +4495,10 @@ fn surface_entities_for_ir(
                 })?;
             match procedural.definition {
                 ProceduralSurfaceDefinition::Revolution { .. } => {
-                    revolution_surface_entities(ir, construction, base_index)
+                    revolution_surface_entities(ir, construction, base_index, version)
                 }
                 ProceduralSurfaceDefinition::Extrusion { .. } => {
-                    extrusion_surface_entities(ir, construction, base_index)
+                    extrusion_surface_entities(ir, construction, base_index, version)
                 }
                 _ => Err(CodecError::NotImplemented(
                     "IGES semantic writer only encodes procedural Revolution and Extrusion surfaces as native entities".into(),
@@ -4447,6 +4513,7 @@ fn extrusion_surface_entities(
     ir: &CadIr,
     construction: &cadmpeg_ir::ids::ProceduralSurfaceId,
     base_index: usize,
+    version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let procedural = ir
         .model
@@ -4560,6 +4627,7 @@ fn extrusion_surface_entities(
         &mut entities,
         ir,
         CurveEntityRequest {
+            version,
             curve_id: directrix,
             geometry: &geometry,
             span: Some(&directrix_span),
@@ -4593,6 +4661,7 @@ fn revolution_surface_entities(
     ir: &CadIr,
     construction: &cadmpeg_ir::ids::ProceduralSurfaceId,
     base_index: usize,
+    version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let procedural = ir
         .model
@@ -4701,8 +4770,8 @@ fn revolution_surface_entities(
         .checked_add(1)
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     Ok(vec![
-        curve_entity(&axis_geometry, Some(&axis_span))?,
-        curve_entity(&geometry, Some(&generatrix_span))?,
+        curve_entity(&axis_geometry, Some(&axis_span), version)?,
+        curve_entity(&geometry, Some(&generatrix_span), version)?,
         Entity {
             type_code: 120,
             form: 0,
@@ -5122,6 +5191,7 @@ fn vertex_position(ir: &CadIr, vertex_id: &VertexId) -> Option<Point3> {
 
 #[derive(Clone, Copy)]
 struct CurveEntityRequest<'a> {
+    version: crate::IgesVersion,
     curve_id: &'a CurveId,
     geometry: &'a CurveGeometry,
     span: Option<&'a CurveSpan>,
@@ -5133,24 +5203,9 @@ struct CurveEntityRequest<'a> {
 fn append_curve_entity(
     entities: &mut Vec<Entity>,
     ir: &CadIr,
-    curve_id: &CurveId,
-    geometry: &CurveGeometry,
-    span: Option<&CurveSpan>,
-    sense: Sense,
-    status: &'static str,
+    request: CurveEntityRequest<'_>,
 ) -> Result<usize, CodecError> {
-    append_curve_entity_with_reference_offset(
-        entities,
-        ir,
-        CurveEntityRequest {
-            curve_id,
-            geometry,
-            span,
-            sense,
-            status,
-            reference_offset: 0,
-        },
-    )
+    append_curve_entity_with_reference_offset(entities, ir, request)
 }
 
 fn append_curve_entity_with_reference_offset(
@@ -5162,6 +5217,7 @@ fn append_curve_entity_with_reference_offset(
         entities,
         ir,
         active: BTreeSet::new(),
+        version: request.version,
         reference_offset: request.reference_offset,
     };
     emitter.append(
@@ -5177,6 +5233,7 @@ struct CurveEntityEmitter<'a> {
     entities: &'a mut Vec<Entity>,
     ir: &'a CadIr,
     active: BTreeSet<CurveId>,
+    version: crate::IgesVersion,
     reference_offset: usize,
 }
 
@@ -5213,14 +5270,14 @@ impl CurveEntityEmitter<'_> {
             }
             _ => {
                 let mut entity = match sense {
-                    Sense::Forward => curve_entity(geometry, span)?,
+                    Sense::Forward => curve_entity(geometry, span, self.version)?,
                     Sense::Reversed => {
                         let span = span.ok_or_else(|| {
                             CodecError::NotImplemented(format!(
                                 "IGES reversed curve {curve_id} requires a parameter range"
                             ))
                         })?;
-                        oriented_curve_entity(geometry, span, Sense::Reversed)?
+                        oriented_curve_entity(geometry, span, Sense::Reversed, self.version)?
                     }
                 };
                 entity.status = status;
@@ -5625,7 +5682,11 @@ fn default_range(geometry: &CurveGeometry) -> Result<[f64; 2], CodecError> {
     }
 }
 
-fn curve_entity(geometry: &CurveGeometry, span: Option<&CurveSpan>) -> Result<Entity, CodecError> {
+fn curve_entity(
+    geometry: &CurveGeometry,
+    span: Option<&CurveSpan>,
+    version: crate::IgesVersion,
+) -> Result<Entity, CodecError> {
     let range = span.map_or_else(|| default_range(geometry), |span| Ok(span.range))?;
     if range.iter().any(|value| !value.is_finite()) || range[0] > range[1] {
         return Err(CodecError::Malformed(
@@ -5718,9 +5779,13 @@ fn curve_entity(geometry: &CurveGeometry, span: Option<&CurveSpan>) -> Result<En
             } else {
                 [major_radius * range[1].cos(), minor_radius * range[1].sin()]
             };
+            // V5.0 identifies the coefficient-defined ellipse as Form 1.  The
+            // Parameter Data is identical to the compatibility Form 0 used by
+            // V4.0 and V5.1 through V5.3.
+            let form = i64::from(version == crate::IgesVersion::V5_0);
             Ok(Entity {
                 type_code: 104,
-                form: 0,
+                form,
                 label: "CONIC",
                 status: "00000000",
                 parameters: format!(

@@ -470,6 +470,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
     assert!(ensure_version_support(&[entity((108, 0))], IgesVersion::V4_0).is_ok());
     assert!(ensure_version_support(&[entity((120, 0))], IgesVersion::V4_0).is_ok());
     assert!(ensure_version_support(&[entity((122, 0))], IgesVersion::V4_0).is_ok());
+    assert!(ensure_version_support(&[entity((104, 1))], IgesVersion::V5_0).is_ok());
     for unsupported in [(104, 0), (123, 0), (186, 0), (190, 1)] {
         assert!(matches!(
             ensure_version_support(&[entity(unsupported)], IgesVersion::V5_0),
@@ -620,7 +621,7 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
         start: curve_point(&geometry, range[0]).expect("start evaluates"),
         end: curve_point(&geometry, range[1]).expect("end evaluates"),
     };
-    let entity = oriented_curve_entity(&geometry, &span, Sense::Reversed)
+    let entity = oriented_curve_entity(&geometry, &span, Sense::Reversed, IgesVersion::V5_3)
         .expect("a bounded hyperbola can be reversed exactly");
     assert_eq!((entity.type_code, entity.form), (104, 2));
     assert_eq!(
@@ -736,7 +737,7 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
         radius: 2.0,
     };
-    let entity = curve_entity(&geometry, None).expect("full circle is writable");
+    let entity = curve_entity(&geometry, None, IgesVersion::V5_3).expect("full circle is writable");
     let parameters = String::from_utf8(entity.parameters).expect("parameters are ASCII");
     let values = parameters
         .trim_end_matches(';')
@@ -758,7 +759,7 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 0.0, 0.0),
     };
-    let error = curve_entity(&geometry, Some(&span))
+    let error = curve_entity(&geometry, Some(&span), IgesVersion::V5_3)
         .err()
         .expect("zero-length span must not become a full revolution");
     assert!(error.to_string().contains("non-zero ordered span"));
