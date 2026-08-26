@@ -192,6 +192,13 @@ class PatternFilters(unittest.TestCase):
             list(ratchet.iter_vec_repeat_counts(text)), ["len", "outer_len"]
         )
 
+    def test_existing_collection_lengths_are_admitted_repeat_sizes(self) -> None:
+        self.assertIsNotNone(ratchet.ADMITTED_LEN_REPEAT.fullmatch("records.len()"))
+        self.assertIsNotNone(
+            ratchet.ADMITTED_LEN_REPEAT.fullmatch("self.records.len() + 1")
+        )
+        self.assertIsNone(ratchet.ADMITTED_LEN_REPEAT.fullmatch("parsed_count"))
+
     def test_from_endian_counts_non_codec_crates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

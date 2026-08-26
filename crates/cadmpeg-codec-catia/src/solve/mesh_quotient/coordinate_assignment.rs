@@ -270,7 +270,13 @@ pub(super) fn close_coordinate_roots_with_incidence(
                     return false;
                 }
                 let missing = domain.missing_edges.iter().copied().collect::<HashSet<_>>();
-                let mut edge_points = vec![[0; 2]; global_edge_count];
+                let Ok(mut edge_points) = alloc_filled(
+                    global_edge_count,
+                    [0; 2],
+                    "catia coordinate assignment edge points",
+                ) else {
+                    return false;
+                };
                 for (&edge, &points) in &selected {
                     edge_points[edge] = points;
                 }
@@ -1318,6 +1324,14 @@ pub(super) fn close_coordinate_roots_with_incidence(
         let mut states = 0;
         let mut exhausted = false;
         let mut base_degrees = HashMap::new();
+        let mut local_assignment = alloc_filled(
+            component.len(),
+            None,
+            "catia coordinate component assignment",
+        )
+        .ok()?;
+        let mut point_degrees =
+            alloc_filled(point_count, 0, "catia coordinate point degrees").ok()?;
         walk(
             &local_domains,
             &local_edges,
@@ -1330,8 +1344,8 @@ pub(super) fn close_coordinate_roots_with_incidence(
             closed_faces.as_deref(),
             incidence.map(|(_, boundary_domains)| boundary_domains),
             &component_points,
-            &mut vec![None; component.len()],
-            &mut vec![0; point_count],
+            &mut local_assignment,
+            &mut point_degrees,
             &mut solutions,
             &mut states,
             state_limit,

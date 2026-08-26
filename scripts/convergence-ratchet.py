@@ -12,7 +12,8 @@ Patterns (production filter — see ``docs/convergence-ledger.toml``):
   at use sites in ``crates/**/src``; the numeric initializer of a named
   ``const`` or ``static`` is the declaration that gives the threshold its
   required intent
-* non-literal ``vec![value; count]`` repeats (parsed-count allocations)
+* unchecked ``vec![value; count]`` repeats where ``count`` is not a literal or
+  the admitted length of an existing collection (parsed-count allocations)
 
 Modes:
 
@@ -86,6 +87,10 @@ NAMED_TOLERANCE_DECL = re.compile(
 # inside nested arrays, strings, comments, or format arguments.
 VEC_MACRO = re.compile(r"\bvec!\s*\[")
 VEC_REPEAT_LITERAL = re.compile(r"^(?:0x[0-9a-fA-F]+|\d+)$")
+ADMITTED_LEN_REPEAT = re.compile(
+    r"^(?:[A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z_][A-Za-z0-9_]*\.len\(\)"
+    r"(?:\s*[+-]\s*\d+)?$"
+)
 CFG_TEST_ATTR = re.compile(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]")
 CFG_ATTR = re.compile(r"#\s*\[\s*cfg\s*\((.*)\)\s*\]\s*$", re.DOTALL)
 PATH_ATTR = re.compile(r'#\s*\[\s*path\s*=\s*"([^"]+)"\s*\]\s*$', re.DOTALL)
@@ -95,11 +100,14 @@ MOD_DECL = re.compile(
 
 FILTER_DESCRIPTION = (
     "legacy metrics: production .rs under crates/**/src via is_production_rs; "
-    "exclude tests/ and benches/ path segments; exclude files named tests.rs or "
+    "exclude test, test-support, golden, integration, and bench path segments; "
+    "exclude files named tests.rs or "
     "*test*.rs; lexically mask Rust comments and literals, then strip "
     "cfg(test)-attributed items with blank-preserving elision. "
     "bare tolerance literals count at use sites; named const/static numeric "
     "initializers are declarations and are excluded. "
+    "nonliteral vec repeats exclude literal sizes and sizes derived from an "
+    "existing collection's admitted len(). "
     "from_endian_bytes uses that same crates/**/src glob (not codec crates only). "
     "Placement metrics: scan crates/**/*.rs by ownership, structural entry "
     "points, standard mod resolution, and test-only #[path] ancestry; "
@@ -389,7 +397,9 @@ def count_nonliteral_vec_repeat() -> int:
     for path in iter_src_files("crates/**/src/**/*.rs"):
         text = metric_source_text(path)
         for count_expr in iter_vec_repeat_counts(text):
-            if VEC_REPEAT_LITERAL.fullmatch(count_expr):
+            if VEC_REPEAT_LITERAL.fullmatch(count_expr) or ADMITTED_LEN_REPEAT.fullmatch(
+                count_expr
+            ):
                 continue
             total += 1
     return total
@@ -547,6 +557,7 @@ def collect_legacy_contributors() -> dict[str, list[dict[str, object]]]:
             "bare_tolerance_literals": count_bare_tolerance_literals(text),
             "nonliteral_vec_repeat": sum(
                 not VEC_REPEAT_LITERAL.fullmatch(count)
+                and not ADMITTED_LEN_REPEAT.fullmatch(count)
                 for count in iter_vec_repeat_counts(text)
             ),
         }
