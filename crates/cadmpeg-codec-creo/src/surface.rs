@@ -7183,6 +7183,24 @@ fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usiz
     separator_close
 }
 
+fn plane_local_system_compound_close(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<usize> {
+    // Keep the established structural boundary when it exists. Some local
+    // systems contain an e0 byte inside a numeric token; in that case the
+    // generic scanner can stop without finding the following e3. Validate a
+    // complete frame only as the recovery path for that false boundary.
+    if let Some(close) = first_compound_close(payload, start, end) {
+        return Some(close);
+    }
+    (start..end)
+        .filter(|close| payload.get(*close) == Some(&psb::token::COMPOUND_CLOSE))
+        .find(|close| complete_plane_local_system(&payload[start..*close], cache).is_some())
+}
+
 fn named_spline_scalar_slots(
     family: &SurfacePrototypeFamily,
     name: &str,
@@ -7627,7 +7645,8 @@ fn plane_envelope_boundary_has_local_system(
     if local_system_start == body.len() {
         return false;
     }
-    let Some(local_system_close) = first_compound_close(body, local_system_start, body.len())
+    let Some(local_system_close) =
+        plane_local_system_compound_close(body, local_system_start, body.len(), cache)
     else {
         return false;
     };
@@ -7983,7 +8002,9 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Plan
         let mut row_systems = Vec::new();
         for envelope_close in envelope_closes {
             let chunk_start = envelope_close + 1;
-            let Some(chunk_end) = first_compound_close(payload, chunk_start, row_end) else {
+            let chunk_end =
+                plane_local_system_compound_close(payload, chunk_start, row_end, &cache);
+            let Some(chunk_end) = chunk_end else {
                 continue;
             };
             if chunk_end <= chunk_start {

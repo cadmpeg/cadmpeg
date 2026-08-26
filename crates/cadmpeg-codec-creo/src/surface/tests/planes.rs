@@ -915,6 +915,28 @@ fn outline_separator_precedes_compact_integer_alias_of_compound_close() {
 }
 
 #[test]
+fn plane_local_system_close_validates_past_an_e0_numeric_byte() {
+    let mut payload = vec![
+        0x4e, 0xf0, 0, 0, 0, 0, 0xe0, // finite first support coordinate
+        0x18, // zero second coordinate
+        0x4c, 0xf0, 0, 0, 0, 0, 0, // finite third coordinate
+        0x10, 0x10, 0x10, // zero-rank triple
+        0x10, 0x10, 0x4c, 0xf0, 0, 0, 0, 0, 0, // second support triple
+        0x10, 0x10, 0x18, // origin
+    ];
+    let close = payload.len();
+    payload.push(psb::token::COMPOUND_CLOSE);
+    payload.extend_from_slice(&[psb::token::NAMED_RECORD, 0x01, b'x', 0]);
+    let cache = scalar::ScalarCache::from_section(&payload);
+
+    assert_eq!(first_compound_close(&payload, 0, payload.len()), None);
+    assert_eq!(
+        plane_local_system_compound_close(&payload, 0, payload.len(), &cache),
+        Some(close)
+    );
+}
+
+#[test]
 fn positional_plane_frame_decodes_rank_two_image_before_null_tail() {
     let body = [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1];
 
