@@ -56,6 +56,49 @@ one rule that the three resolvers share. Add a witness with an anchor named
 `part`, one parameter `<#part>`, and one parameter `<part>`, and show which
 parameter takes the anchor value.
 
+## 2. Geometry and curves
+
+### GC-16. Invalid placement with a fabricated reference direction
+
+**Question.** What geometry, if any, can an invalid `AXIS2_PLACEMENT_3D`
+transfer when its supplied `ref_direction` is parallel or anti-parallel to its
+`axis`?
+
+**Known.** ISO 10303-42 `build_axes` uses the default projected axis only when
+`ref_direction` is absent. `AXIS2_PLACEMENT_3D` WR4 rejects a supplied
+reference direction that is parallel to the axis. `step.md` §8 instead defines
+a salvage rule: the decoder reports `geometry.placement-reference-inferred`,
+discards the supplied reference direction, and constructs the default
+orthogonal reference. `crates/cadmpeg-codec-step/src/reader/geometry.rs:568-584`
+implements that rule and inserts the resulting placement into the ordinary
+placement map. Geometry and transformations that reference it then consume the
+fabricated frame as their carrier.
+
+**Need.** The source does not define the rotation about the placement axis, and
+the STEP default for an absent attribute does not repair an invalid supplied
+attribute. The answer either keeps geometry that depends on this placement on
+the opaque path, or defines an explicit inferred-carrier representation that a
+consumer cannot mistake for the placement declared by the source.
+
+### GC-17. Substitution for a missing `TRIMMED_CURVE` master selector
+
+**Question.** Can a `TRIMMED_CURVE` transfer when the selector form named by
+`master_representation` is absent?
+
+**Known.** A trim select can contain parameter values, Cartesian points, or
+both, and `master_representation` identifies the preferred representation.
+`crates/cadmpeg-codec-step/src/reader/geometry.rs:3532-3570` uses the requested
+form when it is present. When it is absent, the decoder evaluates the other
+form and uses that result as the trim endpoint. It reports the substitution in
+a document warning, but the resulting neutral curve carries no per-curve
+indication that its declared master selector was unavailable.
+
+**Need.** The substituted selector can select a parameter only through the
+decoder's geometric inversion and tolerance policy. The answer states whether
+the other selector is authoritative in this malformed case. If it is a salvage
+result, its status must remain attached to the transferred curve and not only
+to a document warning.
+
 ## 3. Containers and other encodings
 
 ### CE-10. Repeated forwarding of a root ANCHOR resource
@@ -237,4 +280,51 @@ range. Give the range rule and its loss, or count each finite value as the
 specification gives. Add a witness with one out-of-range value, and a witness
 with one value inside the range and one value outside it.
 
+### AP-16. Projection of distinct positive and negative surface styles
+
+**Question.** How must CADIR retain a STEP surface whose positive and negative
+sides have different appearances?
+
+**Known.** ISO 10303-46 defines `.POSITIVE.`, `.NEGATIVE.`, and `.BOTH.` as
+surface-side applicability. It defines no precedence between valid styles on
+opposite sides. `step.md` §8 instead defines a scalar projection that ranks
+`.BOTH.` before `.POSITIVE.` before `.NEGATIVE.` because one neutral surface
+color cannot express two sided appearances.
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:1103-1104` and
+`crates/cadmpeg-codec-step/src/reader/presentation.rs:1301-1325` assign and use
+that rank. A lower-ranked valid appearance remains in retained source data and
+appearance bindings, but the ordinary scalar surface color presents the
+higher-ranked branch as the surface appearance.
+
+**Need.** The ranking is an IR projection, not STEP format semantics. A consumer
+that reads only the scalar appearance cannot distinguish a genuinely
+single-style surface from a two-sided surface whose other appearance lost the
+projection. The answer gives sided appearance a neutral representation, or
+makes the lossy scalar projection and both source sides explicitly queryable as
+one semantic result.
+
 ## 8. Product structure and placement
+
+### PS-16. Occurrence placement inferred without a STEP occurrence association
+
+**Question.** Can a parent representation's `MAPPED_ITEM` place a
+`NEXT_ASSEMBLY_USAGE_OCCURRENCE` when no STEP relationship associates that
+mapped item with the occurrence?
+
+**Known.** The occurrence-specific mapped-item assembly form uses an additional
+shape representation linked to the occurrence through
+`SHAPE_DEFINITION_REPRESENTATION` and `PRODUCT_DEFINITION_SHAPE`.
+`step.md` §8 also defines an implicit parent-representation salvage path and
+states that it is not a STEP occurrence association.
+`crates/cadmpeg-codec-step/src/reader/product.rs:986-1039` searches the parent
+definition's representations for mapped items whose mapped representation
+resolves to the child definition. It assigns the transform when the child
+definition has one matching usage and the search finds one distinct transform.
+The uniqueness checks make the result independent of aggregate and record
+order, but they do not create a source relationship between the mapped item and
+the occurrence.
+
+**Need.** The neutral occurrence receives a placement that the source graph does
+not assign to it. The answer either requires an occurrence association before
+the placement transfers, or represents the inferred association explicitly so
+that it cannot be mistaken for a STEP-declared occurrence placement.

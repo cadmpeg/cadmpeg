@@ -130,12 +130,12 @@ fn validate_component_reference_data(scan: &ContainerScan) -> Result<(), CodecEr
 
 fn parse_component_reference_data(bytes: &[u8]) -> Result<serde_json::Value, CodecError> {
     let value: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "{COMPONENT_REFERENCE_ENTRY} is not valid JSON: {error}"
         ))
     })?;
     if !value.is_object() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "{COMPONENT_REFERENCE_ENTRY} must contain a top-level JSON object"
         )));
     }
@@ -159,7 +159,9 @@ pub fn decode(scan: &ContainerScan) -> Result<Option<XrefTable>, CodecError> {
 /// Parse `RedirectionsStream.dat` bytes into an [`XrefTable`].
 pub fn parse(bytes: &[u8]) -> Result<XrefTable, CodecError> {
     let parsed: RedirectionsJson = serde_json::from_slice(bytes).map_err(|error| {
-        CodecError::Malformed(format!("{REDIRECTIONS_ENTRY} is not valid JSON: {error}"))
+        CodecError::malformed(format_args!(
+            "{REDIRECTIONS_ENTRY} is not valid JSON: {error}"
+        ))
     })?;
     let designs = parsed
         .designs

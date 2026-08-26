@@ -137,7 +137,7 @@ pub(crate) fn parse_property_set_stream<'a>(
 ) -> Result<PropertySetStream<'a>, CodecError> {
     let bytes = source.window();
     if bytes.len() > MAX_STREAM_SIZE {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "OLE property-set stream exceeds {MAX_STREAM_SIZE} bytes"
         )));
     }
@@ -149,7 +149,7 @@ pub(crate) fn parse_property_set_stream<'a>(
     }
     let version = cursor.u16("version")?;
     if !matches!(version, 0 | 1) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "OLE property-set version {version} is invalid"
         )));
     }
@@ -242,13 +242,13 @@ fn parse_section<'a>(
     for _ in 0..property_count {
         let id = cursor.u32("property id")?;
         if !ids.insert(id) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "OLE property set duplicates property id {id}"
             )));
         }
         let offset = cursor.offset("property offset")?;
         if offset < directory_end || offset % 4 != 0 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "OLE property {id} has an invalid offset"
             )));
         }
@@ -274,7 +274,7 @@ fn parse_section<'a>(
                 .get(index + 1)
                 .map_or(bytes.len(), |(offset, _)| *offset);
             if end > bytes.len() || *start >= end {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "OLE property {id} range is invalid"
                 )));
             }
@@ -517,7 +517,7 @@ fn parse_scalar<'a>(
 
 fn child<'a>(raw: View<'a>, start: usize, end: usize, field: &str) -> Result<View<'a>, CodecError> {
     raw.child(raw.start() + start, raw.start() + end)
-        .ok_or_else(|| CodecError::Malformed(format!("OLE {field} view is invalid")))
+        .ok_or_else(|| CodecError::malformed(format_args!("OLE {field} view is invalid")))
 }
 
 fn require_zero_range(
@@ -526,11 +526,11 @@ fn require_zero_range(
     end: usize,
     field: &str,
 ) -> Result<(), CodecError> {
-    let gap = bytes
-        .get(start..end)
-        .ok_or_else(|| CodecError::Malformed(format!("OLE property-set {field} is invalid")))?;
+    let gap = bytes.get(start..end).ok_or_else(|| {
+        CodecError::malformed(format_args!("OLE property-set {field} is invalid"))
+    })?;
     if gap.iter().any(|byte| *byte != 0) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "OLE property-set {field} is nonzero"
         )));
     }
@@ -566,7 +566,7 @@ fn decode_code_page(bytes: &[u8], code_page: Option<u16>) -> Result<String, Code
     })?;
     let (decoded, _, malformed) = encoding.decode(content);
     if malformed {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "OLE code-page {} string is malformed",
             code_page.unwrap_or(1252)
         )));
@@ -603,7 +603,7 @@ fn require_and_remove_null(value: String, field: &str) -> Result<String, CodecEr
     value
         .strip_suffix('\0')
         .map(str::to_owned)
-        .ok_or_else(|| CodecError::Malformed(format!("{field} has no null terminator")))
+        .ok_or_else(|| CodecError::malformed(format_args!("{field} has no null terminator")))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -634,12 +634,12 @@ impl<'a> Cursor<'a> {
     }
 
     fn truncated(&self, field: &str) -> CodecError {
-        CodecError::Malformed(format!("truncated {} {field}", self.scope))
+        CodecError::malformed(format_args!("truncated {} {field}", self.scope))
     }
 
     fn take(&mut self, len: usize, field: &str) -> Result<&'a [u8], CodecError> {
         if self.view.position().checked_add(len).is_none() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "{} {field} range overflows",
                 self.scope
             )));
@@ -682,7 +682,7 @@ impl<'a> Cursor<'a> {
     fn count(&mut self, field: &str, maximum: usize) -> Result<usize, CodecError> {
         let value = self.offset(field)?;
         if value > maximum {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "{} {field} exceeds {maximum}",
                 self.scope
             )));
@@ -692,13 +692,13 @@ impl<'a> Cursor<'a> {
 
     fn offset(&mut self, field: &str) -> Result<usize, CodecError> {
         usize::try_from(self.u32(field)?)
-            .map_err(|_| CodecError::Malformed(format!("{} {field} is too large", self.scope)))
+            .map_err(|_| CodecError::malformed(format_args!("{} {field} is too large", self.scope)))
     }
 
     fn align4(&mut self, field: &str) -> Result<(), CodecError> {
         let padding = (4 - self.position() % 4) % 4;
         if self.take(padding, field)?.iter().any(|byte| *byte != 0) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "{} {field} is nonzero",
                 self.scope
             )));
@@ -715,7 +715,7 @@ impl<'a> Cursor<'a> {
     ) -> Result<String, CodecError> {
         let byte_len = if code_page == Some(1200) {
             size.checked_mul(2).ok_or_else(|| {
-                CodecError::Malformed(format!("{} {field} length overflows", self.scope))
+                CodecError::malformed(format_args!("{} {field} length overflows", self.scope))
             })?
         } else {
             size
@@ -731,14 +731,14 @@ impl<'a> Cursor<'a> {
         field: &str,
     ) -> Result<String, CodecError> {
         let byte_len = count.checked_mul(2).ok_or_else(|| {
-            CodecError::Malformed(format!("{} {field} length overflows", self.scope))
+            CodecError::malformed(format_args!("{} {field} length overflows", self.scope))
         })?;
         ctx.charge_retained(byte_len as u64, "retain OLE Unicode property string", None)?;
         let value = self.view.utf16_le(count).ok_or_else(|| {
             if self.view.remaining() < byte_len {
                 self.truncated(field)
             } else {
-                CodecError::Malformed(format!("{} {field} is not UTF-16", self.scope))
+                CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
             }
         })?;
         require_and_remove_null(value, field)
@@ -753,7 +753,7 @@ impl<'a> Cursor<'a> {
         {
             Ok(())
         } else {
-            Err(CodecError::Malformed(format!(
+            Err(CodecError::malformed(format_args!(
                 "{} has nonzero trailing bytes",
                 self.scope
             )))

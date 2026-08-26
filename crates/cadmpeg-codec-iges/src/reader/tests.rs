@@ -123,6 +123,51 @@ fn semantic_decode_applies_delegated_nmi_factor() {
 }
 
 #[test]
+fn v5_0_receiver_product_default_is_retained_in_inspection_summary() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(point_file_with_global(global)),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+
+    assert!(summary.notes.contains(&"receiver_product=product".into()));
+}
+
+#[test]
+fn post_terminate_records_follow_the_declared_dialect() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,11,0,0H,0H;";
+
+    let mut v4_bytes = point_file_with_global(global_v4);
+    v4_bytes.extend_from_slice(b"transport padding\r\n");
+    let v4 = IgesCodec
+        .decode(&mut Cursor::new(v4_bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        v4.report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::GlobalNoncanonicalFraming.kind())
+            .count(),
+        1
+    );
+
+    let mut v5_bytes = point_file_with_global(global_v5);
+    v5_bytes.extend_from_slice(b"transport padding\r\n");
+    let v5 = IgesCodec
+        .decode(&mut Cursor::new(v5_bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(v5
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != IgesLossCode::GlobalNoncanonicalFraming.kind()));
+}
+
+#[test]
 fn decode_publishes_global_minimum_resolution_to_neutral_tolerance() {
     for (global, expected) in [
         (

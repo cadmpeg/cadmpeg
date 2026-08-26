@@ -201,7 +201,7 @@ pub(crate) fn patch_payload(
         return Ok(());
     };
     let native = crate::native::SldprtNative::load(namespace).map_err(|error| {
-        cadmpeg_core::CodecError::Malformed(format!("invalid SLDPRT native PMI: {error}"))
+        cadmpeg_core::CodecError::malformed(format_args!("invalid SLDPRT native PMI: {error}"))
     })?;
     let records_by_id = native
         .pmi_dimensions
@@ -228,7 +228,7 @@ pub(crate) fn patch_payload(
             continue;
         };
         if parameters.next().is_some() {
-            return Err(cadmpeg_core::CodecError::Malformed(format!(
+            return Err(cadmpeg_core::CodecError::malformed(format_args!(
                 "multiple parameters reference PMI record {}",
                 record.id
             )));
@@ -317,17 +317,19 @@ fn patch_bytes(
     record: &str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let start = usize::try_from(offset).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed(format!(
+        cadmpeg_core::CodecError::malformed(format_args!(
             "SLDPRT PMI record {record} exceeds address space"
         ))
     })?;
     let end = start.checked_add(bytes.len()).ok_or_else(|| {
-        cadmpeg_core::CodecError::Malformed(format!("SLDPRT PMI record {record} offset overflows"))
+        cadmpeg_core::CodecError::malformed(format_args!(
+            "SLDPRT PMI record {record} offset overflows"
+        ))
     })?;
     payload
         .get_mut(start..end)
         .ok_or_else(|| {
-            cadmpeg_core::CodecError::Malformed(format!(
+            cadmpeg_core::CodecError::malformed(format_args!(
                 "SLDPRT PMI record {record} lies outside its block"
             ))
         })?

@@ -194,7 +194,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || !end.is_finite()
                 || start >= end
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has an invalid equation curve",
                     feature.id
                 )));
@@ -237,13 +237,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let sketch_sources = self.sketch_sources;
         Ok({
             let source = path_source(source, record_sources, sketch_sources).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} references a missing projection source",
                     feature.id
                 ))
             })?;
             let target_faces = face_selection_value(target_faces).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no projection target faces",
                     feature.id
                 ))
@@ -296,7 +296,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let sketch_sources = self.sketch_sources;
         Ok({
             if segments.is_empty() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no composite-curve segments",
                     feature.id
                 )));
@@ -306,7 +306,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .iter()
                 .map(|segment| {
                     path_source(segment, record_sources, sketch_sources).ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "SLDPRT feature {} references a missing composite segment",
                             feature.id
                         ))
@@ -364,7 +364,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || *revolutions <= 0.0
                 || !start_angle.0.is_finite()
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has invalid helix geometry",
                     feature.id
                 )));
@@ -413,7 +413,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 || *revolutions <= 0.0
                 || !start_angle.0.is_finite()
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has invalid native-axis helix geometry",
                     feature.id
                 )));

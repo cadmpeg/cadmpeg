@@ -43,7 +43,7 @@ impl<T> ExactVec<T> {
         if self.values.len() == self.capacity {
             Ok(self.values)
         } else {
-            Err(CodecError::Malformed(format!(
+            Err(CodecError::malformed(format_args!(
                 "fixed-capacity vector contains {} of {} values",
                 self.values.len(),
                 self.capacity

@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
+use cadmpeg_core::decode::alloc_filled;
 use clap::{Args, Subcommand};
 
 use crate::LimitProfile;
@@ -335,7 +336,7 @@ fn read_window(path: &Path, offset: u64, len: u64) -> Result<Vec<u8>> {
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     file.seek(SeekFrom::Start(offset))
         .with_context(|| format!("seeking to 0x{offset:x} in {}", path.display()))?;
-    let mut buffer = vec![0u8; want];
+    let mut buffer = alloc_filled(want, 0_u8, "cli inspect read window")?;
     file.read_exact(&mut buffer).with_context(|| {
         format!(
             "reading {want} bytes at 0x{offset:x} from {}",

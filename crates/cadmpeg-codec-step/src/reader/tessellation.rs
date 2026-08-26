@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Vector3;
@@ -324,7 +325,19 @@ pub(super) fn decode(
             normal_rows(inherited_parameter(record, base_kind, 2)).unwrap_or_default();
         let mut normals = match source_normals.len() {
             0 => Vec::new(),
-            1 => vec![source_normals[0]; local_vertices.len()],
+            1 => match alloc_filled(
+                local_vertices.len(),
+                source_normals[0],
+                "STEP tessellation normal rows",
+            ) {
+                Ok(normals) => normals,
+                Err(error) => {
+                    warnings.push(format!(
+                        "{kind} #{id} normal-row allocation refused: {error}"
+                    ));
+                    Vec::new()
+                }
+            },
             count if count == local_vertices.len() => source_normals,
             count if pnindex.is_empty() && count == vertices.len() => coordinate_indices
                 .expect("coordinate indices exist without pnindex")

@@ -3498,7 +3498,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
 
 pub(crate) fn entity_suffix_framing(suffix: &[u8]) -> Option<CatiaEntitySuffixFraming> {
     match suffix {
-        [0x80, word @ .., state] => {
+        [0x80, _, _, _, _, state] => {
             let state = match state {
                 0x00 => CatiaEntitySuffixEscapedWordState::State00,
                 0x01 => CatiaEntitySuffixEscapedWordState::State01,
@@ -3509,7 +3509,7 @@ pub(crate) fn entity_suffix_framing(suffix: &[u8]) -> Option<CatiaEntitySuffixFr
             };
             Some(CatiaEntitySuffixFraming::EscapedWord(
                 CatiaEntitySuffixEscapedWord {
-                    word: u32::from_le_bytes(word.try_into().ok()?),
+                    word: View::u32_le_at(suffix, 1)?,
                     state,
                 },
             ))

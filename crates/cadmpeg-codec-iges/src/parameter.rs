@@ -3,7 +3,7 @@
 
 use crate::card::{CardScan, FramingDefect, FramingRecoveries, PhysicalLine, Section};
 use crate::directory::{DirectoryEntry, QuarantinedDirectoryRecord};
-use crate::global::{RealPrecision, ResolvedGlobal};
+use crate::global::{Dialect, NumericLimits, RealPrecision, ResolvedGlobal};
 use crate::loss::IgesLossCode;
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
 use cadmpeg_core::CodecError;
@@ -334,18 +334,106 @@ impl ParameterRecord {
     }
 }
 
+/// Whether any successfully tokenized ordinary Parameter Data real uses the
+/// IGES double-precision exponent spelling.
+pub(crate) fn uses_double_precision(records: &[ParameterRecord]) -> bool {
+    records.iter().any(|record| {
+        record.tokens.iter().any(|token| {
+            matches!(&token.value, TokenValue::Real(_))
+                && record
+                    .bytes
+                    .get(token.span.clone())
+                    .is_some_and(|bytes| bytes.iter().any(|byte| matches!(byte, b'D' | b'd')))
+        })
+    })
+}
+
+fn analyze_trailing_pointer_groups_for_dialect(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
+) -> TrailingPointerAnalysis {
+    if directory
+        .get(&record.directory_sequence)
+        .is_some_and(|entry| entry.entity_type == 306)
+    {
+        return TrailingPointerAnalysis {
+            candidate_count: 0,
+            valid_candidate_count: 0,
+            groups: None,
+        };
+    }
+    analyze_trailing_pointer_groups_from_end(
+        record,
+        directory,
+        entity_primary_end_for_dialect(record, directory, dialect),
+    )
+}
+
+#[cfg(test)]
+// Existing boundary fixtures use the fully specified later-profile default;
+// every production caller supplies the resolved file dialect explicitly.
 pub(crate) fn analyze_trailing_pointer_groups(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
+) -> TrailingPointerAnalysis {
+    analyze_trailing_pointer_groups_for_dialect(record, directory, Dialect::V5_3)
+}
+
+fn analyze_trailing_pointer_groups_with_records_for_dialect(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
+) -> TrailingPointerAnalysis {
+    if directory
+        .get(&record.directory_sequence)
+        .is_some_and(|entry| entry.entity_type == 306)
+    {
+        return TrailingPointerAnalysis {
+            candidate_count: 0,
+            valid_candidate_count: 0,
+            groups: None,
+        };
+    }
+    let is_attribute_table_instance = directory
+        .get(&record.directory_sequence)
+        .is_some_and(|entry| entry.entity_type == 422 && matches!(entry.form, 0 | 1));
+    if !is_attribute_table_instance {
+        return analyze_trailing_pointer_groups_for_dialect(record, directory, dialect);
+    }
+    let primary_end =
+        entity_primary_end_with_records_for_dialect(record, directory, records, dialect);
+    analyze_trailing_pointer_groups_from_end(record, directory, primary_end)
+}
+
+#[cfg(test)]
+fn analyze_trailing_pointer_groups_with_records(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> TrailingPointerAnalysis {
+    analyze_trailing_pointer_groups_with_records_for_dialect(
+        record,
+        directory,
+        records,
+        Dialect::V5_3,
+    )
+}
+
+fn analyze_trailing_pointer_groups_from_end(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    primary_end: Option<usize>,
 ) -> TrailingPointerAnalysis {
     // IGES defines the group order and pointer classes, but the entity table
     // supplies NV when it defines the primary layout. Use that table boundary
     // before applying the generic CADIR recovery for an entity without a
     // registered layout.
-    let candidates = match entity_primary_end(record, directory) {
+    let candidates = match primary_end {
         Some(start) => {
             let prefix = non_integer_prefix(record);
-            pointer_group_candidate_with_prefix(record, start, &prefix)
+            pointer_group_candidate_with_prefix(record, start, &prefix, true)
                 .into_iter()
                 .collect()
         }
@@ -387,8 +475,13 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 402 Form 6 fixes index 1 to one, puts the visible-entity count `N1` at
 /// index 2, and lists the view plus `N1` entities, so its groups start at
 /// token `4 + N1`.
-/// Type 402 Form 12 puts the positive entry count `N` at index 1 and stores a
-/// name/pointer pair per entry, so its groups start at token `2 + 2*N`.
+/// Type 402 Form 3 puts positive `N1` and nonnegative `N2` at indexes 1 and 2,
+/// followed by `N1` view pointers and `N2` entity pointers, so its groups start
+/// at token `3 + N1 + N2`. Form 4 uses five fields per view block, so its groups
+/// start at token `3 + 5*N1 + N2`.
+/// Type 402 Forms 2 and 12 put the positive entry count `N` at index 1 and
+/// store a name/pointer pair per entry, so their groups start at token
+/// `2 + 2*N`.
 /// Type 406 Form 1 puts positive `NP` at index 1 and stores `NP` level numbers,
 /// so its groups start at token `2 + NP`.
 /// Type 406 Form 2 fixes `NP=3` at index 1 and stores the three restriction
@@ -451,6 +544,15 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// 2 through 7, and stores the six class lists after the type flag at index 8,
 /// so its groups start at token
 /// `9 + NF + NC + NJ + NN + NT + NP`. Zero class counts are valid.
+/// Type 402 Form 8 puts `NS`, `N1`, `N2`, and `N3` at indexes 1 through 4,
+/// followed by the four counted classes, so its groups start at token
+/// `5 + NS + N1 + N2 + N3`.
+/// Type 402 Form 10 puts `NP` and `NTD` at indexes 1 and 2, `NP` point
+/// pointers at index 3, and one seven-field text description, so its groups
+/// start at token `10 + NP`.
+/// Type 402 Form 11 puts `NC` and `NP` at indexes 1 and 2, followed by `NC`
+/// point pointers and `NP` data values, so its groups start at token
+/// `3 + NC + NP`.
 /// Type 406 Forms 34 and 35 put `NP = 1 + 3*ND` at index 1, `ND` at index 2,
 /// and one three-integer text-score range per specification, so their groups
 /// start at token `3 + 3*ND`.
@@ -466,8 +568,9 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 402 Form 9 requires `NP=1`, puts `NC` at index 2, the parent at index 3,
 /// and `NC` child pointers at indexes 4 through `3 + NC`, so its groups start
 /// at token `4 + NC`.
-/// Type 230 Form 0 puts the island count at index 8 and consumes one pointer
-/// per island, so its groups start at token `9 + N`; zero islands is valid.
+/// Type 230 Forms 0 and 1 put the island count at index 8 and consume one
+/// pointer per island, so their groups start at token `9 + N`; Form 0 allows
+/// zero islands and Form 1 requires at least one island.
 /// Type 320 Form 0 puts `NA` at index 3 and `NC` after the fixed `TF`, `PRD`,
 /// and `DPTR` fields, so its groups start at token `8 + NA + NC` after the
 /// entity type token. Both counts may be zero when their lists fit.
@@ -498,6 +601,8 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// at token 15.
 /// Type 402 Form 19 puts the block count at index 1 and stores six fields per
 /// view/segment block, so its groups start at token `2 + 6*N`.
+/// Type 406 Form 4 stores three fixed primary fields, so its groups start at
+/// token 4.
 /// Type 202 Form 0 stores eight fixed primary fields, so its groups start at
 /// token nine.
 /// Type 204 Form 0 stores seven fixed primary fields, so its groups start at
@@ -511,8 +616,21 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 222 Form 0 stores four fixed primary fields, so its groups start at
 /// token five. Form 1 stores one additional fixed leader pointer, so its
 /// groups start at token six.
+/// Type 100 Form 0 stores seven fixed primary fields, so its groups start at
+/// token eight.
 /// Type 104 Forms 0 through 3 store eleven fixed primary fields, so their
 /// groups start at token twelve.
+/// Type 140 Form 0 stores five fixed primary fields, so its groups start at
+/// token six.
+/// Type 308 Form 0 puts the member count at index 3 and stores one pointer per
+/// member, so its groups start at token `4 + N`.
+/// Type 302 Forms 5001 through 9999 put the class count at index 1 and repeat
+/// `BP`, `OR`, `N`, and `N` item-type fields per class, so their groups start at
+/// token `2 + sum(3 + N)`.
+/// Type 316 Form 0 puts the unit-entry count at index 1 and stores three fields
+/// per entry, so its groups start at token `2 + 3*NP`.
+/// Type 322 Forms 0 through 2 put the attribute count at index 3 and store a
+/// three-field descriptor plus its form-specific values per attribute.
 /// Type 108 Forms -1 through 1 store nine fixed primary fields, so their
 /// groups start at token ten.
 /// Type 312 Forms 0 and 1 store ten fixed primary fields, so their groups
@@ -546,13 +664,14 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// Type 210 Form 0 puts the positive leader count `N` at index 2 and the `N`
 /// leader pointers at indexes 3 through `2 + N`, so its groups start at token
 /// `3 + N`.
-/// Type 212 Form 0 puts the positive string count `NS` at index 1 and stores
-/// twelve tokens per text string, so its groups start at token `2 + 12*NS`.
+/// Type 212 Forms 0 through 8, 100 through 102, and 105 put the positive
+/// string count `NS` at index 1 and store twelve tokens per text string, so
+/// their groups start at token `2 + 12*NS`.
 /// Type 213 Form 0 puts the positive string count `NS` at index 12 and stores
 /// twenty tokens per text string, so its groups start at token `13 + 20*NS`.
-/// Type 228 Form 0 puts the positive geometry count `N` at index 2 and the
-/// nonnegative leader count `L` after the geometry pointers, so its groups
-/// start at token `4 + N + L`.
+/// Type 228 standard and implementor-defined forms put the positive geometry
+/// count `N` at index 2 and the nonnegative leader count `L` after the geometry
+/// pointers, so their groups start at token `4 + N + L`.
 /// Type 126 Forms 0 through 5 define `K`, `M`, and `A = 1 + K + M`, so their
 /// groups start at token `18 + 5*K + M`.
 /// Type 112 Form 0 puts `N` at index 4 and stores thirteen primary tokens per
@@ -590,29 +709,155 @@ pub(crate) fn analyze_trailing_pointer_groups(
 /// 5.
 /// Type 186 Form 0 puts the void-shell count at index 3 and stores one
 /// `(VOID, VOF)` pair per void shell, so its groups start at token `4 + 2*N`.
+/// Type 502 Form 1 puts the positive vertex count at index 1 and stores three
+/// coordinates per vertex, so its groups start at token `2 + 3*N`.
+/// Type 504 Form 1 puts the positive edge count at index 1 and stores five
+/// fields per edge, so its groups start at token `2 + 5*N`.
+/// Type 508 Form 1 puts the positive edge-use count at index 1. Each use has
+/// five fixed fields followed by `2*K` parameter-curve fields, so its groups
+/// start after the complete nested use sequence.
+/// Type 510 Form 1 puts the positive loop count at index 2 after the surface
+/// pointer and stores one loop pointer per count, so its groups start at token
+/// `4 + N`.
+/// Type 514 Forms 1 and 2 put the positive face-use count at index 1 and store
+/// two fields per face use, so their groups start at token `2 + 2*N`.
 /// Type 180 Forms 0 and 1 put the postorder length `N` at index 1 and store
 /// `N` operation-or-operand terms, so their groups start at token `N + 2`.
 /// Layouts not represented here use generic CADIR recovery. A malformed known
 /// layout returns the record end as a sentinel and never enables generic
 /// recovery.
-pub(crate) fn entity_primary_end(
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SignalStringLayout {
+    pub(crate) signal_name_count: usize,
+    pub(crate) connection_count: usize,
+    pub(crate) schematic_count: usize,
+    pub(crate) physical_count: usize,
+    pub(crate) signal_names_start: usize,
+    pub(crate) connections_start: usize,
+    pub(crate) schematic_start: usize,
+    pub(crate) physical_start: usize,
+    pub(crate) primary_end: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TextNodeLayout {
+    pub(crate) geometry_count: usize,
+    pub(crate) geometry_start: usize,
+    pub(crate) description_start: usize,
+    pub(crate) primary_end: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ConnectNodeLayout {
+    pub(crate) point_count: usize,
+    pub(crate) data_count: usize,
+    pub(crate) points_start: usize,
+    pub(crate) data_start: usize,
+    pub(crate) primary_end: usize,
+}
+
+fn legacy_count(record: &ParameterRecord, index: usize) -> Option<usize> {
+    record
+        .integer(index)
+        .and_then(|value| usize::try_from(value).ok())
+}
+
+pub(crate) fn signal_string_layout(record: &ParameterRecord) -> Option<SignalStringLayout> {
+    let signal_name_count = legacy_count(record, 1)?;
+    let connection_count = legacy_count(record, 2)?;
+    let schematic_count = legacy_count(record, 3)?;
+    let physical_count = legacy_count(record, 4)?;
+    let signal_names_start: usize = 5;
+    let connections_start = signal_names_start.checked_add(signal_name_count)?;
+    let schematic_start = connections_start.checked_add(connection_count)?;
+    let physical_start = schematic_start.checked_add(schematic_count)?;
+    let primary_end = physical_start.checked_add(physical_count)?;
+    (primary_end <= record.parameter_end()).then_some(SignalStringLayout {
+        signal_name_count,
+        connection_count,
+        schematic_count,
+        physical_count,
+        signal_names_start,
+        connections_start,
+        schematic_start,
+        physical_start,
+        primary_end,
+    })
+}
+
+pub(crate) fn text_node_layout(record: &ParameterRecord) -> Option<TextNodeLayout> {
+    let geometry_count = legacy_count(record, 1)?;
+    let text_description_count = legacy_count(record, 2)?;
+    let geometry_start: usize = 3;
+    let description_start = geometry_start.checked_add(geometry_count)?;
+    let primary_end = description_start.checked_add(7)?;
+    (text_description_count == 1 && primary_end <= record.parameter_end()).then_some(
+        TextNodeLayout {
+            geometry_count,
+            geometry_start,
+            description_start,
+            primary_end,
+        },
+    )
+}
+
+pub(crate) fn connect_node_layout(record: &ParameterRecord) -> Option<ConnectNodeLayout> {
+    let point_count = legacy_count(record, 1)?;
+    let data_count = legacy_count(record, 2)?;
+    let points_start: usize = 3;
+    let data_start = points_start.checked_add(point_count)?;
+    let primary_end = data_start.checked_add(data_count)?;
+    (primary_end <= record.parameter_end()).then_some(ConnectNodeLayout {
+        point_count,
+        data_count,
+        points_start,
+        data_start,
+        primary_end,
+    })
+}
+
+fn signal_string_primary_end(record: &ParameterRecord) -> usize {
+    signal_string_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end)
+}
+
+fn text_node_primary_end(record: &ParameterRecord) -> usize {
+    text_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end)
+}
+
+fn connect_node_primary_end(record: &ParameterRecord) -> usize {
+    connect_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end)
+}
+
+pub(crate) fn entity_primary_end_for_dialect(
     record: &ParameterRecord,
     directory: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
 ) -> Option<usize> {
     let entry = directory.get(&record.directory_sequence)?;
     match (entry.entity_type, entry.form) {
         (102, 0) | (402, 1 | 7 | 14 | 15) => Some(counted_primary_end(record)),
         (402, 5) => Some(label_display_primary_end(record)),
         (402, 6) => Some(view_list_primary_end(record)),
-        (402, 12) => Some(external_reference_index_primary_end(record)),
+        (402, 3) => Some(view_visibility_primary_end(record, 1, dialect)),
+        (402, 4) => Some(view_visibility_primary_end(record, 5, dialect)),
+        (402, 2 | 12) => Some(external_reference_index_primary_end(record)),
+        (402, 8) => Some(signal_string_primary_end(record)),
+        (402, 10) => Some(text_node_primary_end(record)),
+        (402, 11) => Some(connect_node_primary_end(record)),
         (402, 13) => Some(dimensioned_geometry_primary_end(record)),
+        (402, 16) => Some(planar_associativity_primary_end(record)),
         (402, 18) => Some(flow_associativity_primary_end(record, 2)),
         (402, 19) => Some(segmented_visibility_primary_end(record)),
         (402, 20) => Some(flow_associativity_primary_end(record, 1)),
+        (402, 21) => Some(new_dimensioned_geometry_primary_end(record)),
+        (404, 0 | 1) => Some(drawing_primary_end(record, entry.form)),
         (406, 1 | 14) => Some(counted_primary_end(record)),
         (406, 2) => Some(region_restriction_primary_end(record)),
         (406, 3) => Some(level_function_primary_end(record)),
+        (406, 4) => Some(fixed_primary_end(record, 4)),
+        (406, 5) => Some(fixed_primary_end(record, 7)),
         (406, 6) => Some(fixed_primary_end(record, 7)),
+        (406, 7) => Some(fixed_primary_end(record, 3)),
         (406, 18..=21) => Some(fixed_primary_end(record, 3)),
         (406, 22) => Some(fixed_primary_end(record, 11)),
         (406, 23) => Some(fixed_primary_end(record, 4)),
@@ -635,9 +880,14 @@ pub(crate) fn entity_primary_end(
         (406, 30) => Some(dimension_display_primary_end(record)),
         (406, 34 | 35) => Some(text_score_primary_end(record)),
         (406, 27) => Some(generic_data_primary_end(record)),
+        (406, 5001..=9999) => Some(counted_primary_end(record)),
         (402, 9) => Some(single_parent_primary_end(record)),
-        (230, 0) => Some(sectioned_area_primary_end(record)),
-        (228, 0) => Some(general_symbol_primary_end(record)),
+        (230, 0..=1) => Some(sectioned_area_primary_end(record)),
+        (228, 0..=3 | 5001..=9999) => Some(general_symbol_primary_end(record)),
+        (134, 0) => Some(fixed_primary_end(record, 5)),
+        (136, 0) => Some(finite_element_primary_end(record)),
+        (138, 0) => Some(nodal_displacement_primary_end(record)),
+        (146 | 148, 0..=34) => Some(fem_result_primary_end(record, entry.entity_type)),
         (132, 0) => Some(fixed_primary_end(record, 15)),
         (202, 0) => Some(fixed_primary_end(record, 9)),
         (204, 0) => Some(fixed_primary_end(record, 8)),
@@ -661,13 +911,21 @@ pub(crate) fn entity_primary_end(
         (118, 0 | 1) => Some(fixed_primary_end(record, 5)),
         (120, 0) => Some(fixed_primary_end(record, 5)),
         (122, 0) => Some(fixed_primary_end(record, 5)),
+        (125, 0..=4) => Some(fixed_primary_end(record, 7)),
         (182, 0) => Some(fixed_primary_end(record, 5)),
         (186, 0) => Some(manifold_solid_primary_end(record)),
+        (502, 1) => Some(vertex_list_primary_end(record)),
+        (504, 1) => Some(edge_list_primary_end(record)),
+        (508, 1) => Some(loop_primary_end(record)),
+        (510, 1) => Some(face_primary_end(record)),
+        (514, 1 | 2) => Some(shell_primary_end(record)),
         (312, 0..=1) => Some(fixed_primary_end(record, 11)),
         (314, 0) => Some(fixed_primary_end(record, 5)),
         (304, 1) => Some(fixed_primary_end(record, 5)),
         (304, 2) => Some(line_font_pattern_primary_end(record)),
         (310, 0) => Some(text_font_primary_end(record)),
+        (316, 0) => Some(units_data_primary_end(record)),
+        (322, 0..=2) => Some(attribute_table_definition_primary_end(record, entry.form)),
         (320, 0) => Some(network_subfigure_primary_end(record)),
         (184, 0 | 1) => Some(solid_assembly_primary_end(record)),
         (214, 1..=12) => Some(leader_primary_end(record)),
@@ -706,14 +964,53 @@ pub(crate) fn entity_primary_end(
         (180, 0 | 1) => Some(boolean_tree_primary_end(record)),
         (141, 0) => Some(boundary_primary_end(record)),
         (142, 0) => Some(fixed_primary_end(record, 6)),
+        (100, 0) => Some(fixed_primary_end(record, 8)),
+        (140, 0) => Some(fixed_primary_end(record, 6)),
+        (308, 0) => Some(subfigure_definition_primary_end(record)),
+        (302, 5001..=9999) => Some(associativity_definition_primary_end(record)),
         (208, 0) => Some(flag_note_primary_end(record)),
         (210, 0) => Some(general_label_primary_end(record)),
-        (212, 0) => Some(general_note_primary_end(record)),
+        (212, 0..=8 | 100..=102 | 105) => Some(general_note_primary_end(record)),
         (213, 0) => Some(new_general_note_primary_end(record)),
         (143, 0) => Some(bounded_surface_primary_end(record)),
         (144, 0) => Some(trimmed_surface_primary_end(record)),
+        (418, 0) => Some(nodal_load_constraint_primary_end(record)),
         _ => None,
     }
+}
+
+#[cfg(test)]
+// Keep the legacy test fixture adapter dialect-explicit so it cannot be used
+// by production assembly when a file's resolved dialect is available.
+pub(crate) fn entity_primary_end(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+) -> Option<usize> {
+    entity_primary_end_for_dialect(record, directory, Dialect::V5_3)
+}
+
+fn entity_primary_end_with_records_for_dialect(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
+) -> Option<usize> {
+    let entry = directory.get(&record.directory_sequence)?;
+    if entry.entity_type == 422 && matches!(entry.form, 0 | 1) {
+        return Some(attribute_table_instance_primary_end(
+            record, entry, directory, records,
+        ));
+    }
+    entity_primary_end_for_dialect(record, directory, dialect)
+}
+
+#[cfg(test)]
+fn entity_primary_end_with_records(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Option<usize> {
+    entity_primary_end_with_records_for_dialect(record, directory, records, Dialect::V5_3)
 }
 
 fn counted_primary_end(record: &ParameterRecord) -> usize {
@@ -731,6 +1028,128 @@ fn fixed_primary_end(record: &ParameterRecord, end: usize) -> usize {
     } else {
         record.tokens.len()
     }
+}
+
+fn counted_fem_end(
+    record: &ParameterRecord,
+    count_index: usize,
+    start: usize,
+    stride: usize,
+) -> usize {
+    let Some(count) = record
+        .integer(count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    count
+        .checked_mul(stride)
+        .and_then(|span| start.checked_add(span))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn finite_element_primary_end(record: &ParameterRecord) -> usize {
+    counted_fem_end(record, 2, 4, 1)
+}
+
+fn nodal_displacement_primary_end(record: &ParameterRecord) -> usize {
+    let Some(case_count) = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(node_count_index) = 2usize.checked_add(case_count) else {
+        return record.tokens.len();
+    };
+    let Some(node_count) = record
+        .integer(node_count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(start) = node_count_index.checked_add(1) else {
+        return record.tokens.len();
+    };
+    let Some(stride) = case_count
+        .checked_mul(6)
+        .and_then(|value| value.checked_add(2))
+    else {
+        return record.tokens.len();
+    };
+    node_count
+        .checked_mul(stride)
+        .and_then(|span| start.checked_add(span))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn fem_result_primary_end(record: &ParameterRecord, entity_type: i64) -> usize {
+    let (value_count_index, item_count_index, item_start): (usize, usize, usize) =
+        if entity_type == 146 {
+            (4, 5, 6)
+        } else {
+            (4, 6, 7)
+        };
+    let Some(value_count) = record
+        .integer(value_count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(item_count) = record
+        .integer(item_count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    if entity_type == 146 {
+        return value_count
+            .checked_add(2)
+            .and_then(|stride| item_count.checked_mul(stride))
+            .and_then(|span| item_start.checked_add(span))
+            .filter(|end| *end <= record.tokens.len())
+            .unwrap_or(record.tokens.len());
+    }
+    let mut cursor = item_start;
+    for _ in 0..item_count {
+        let Some(report_location_count_index) = cursor.checked_add(5) else {
+            return record.tokens.len();
+        };
+        let Some(report_location_count) = record
+            .integer(report_location_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return record.tokens.len();
+        };
+        let Some(report_location_start) = cursor.checked_add(6) else {
+            return record.tokens.len();
+        };
+        let Some(value_count_index) = report_location_start.checked_add(report_location_count)
+        else {
+            return record.tokens.len();
+        };
+        let Some(result_count) = record
+            .integer(value_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return record.tokens.len();
+        };
+        let Some(next) = value_count_index
+            .checked_add(1)
+            .and_then(|start| start.checked_add(result_count))
+            .filter(|end| *end <= record.tokens.len())
+        else {
+            return record.tokens.len();
+        };
+        cursor = next;
+    }
+    cursor
+}
+
+fn nodal_load_constraint_primary_end(record: &ParameterRecord) -> usize {
+    counted_fem_end(record, 1, 4, 1)
 }
 
 fn line_font_pattern_primary_end(record: &ParameterRecord) -> usize {
@@ -904,6 +1323,47 @@ fn view_list_primary_end(record: &ParameterRecord) -> usize {
         .integer(2)
         .and_then(|value| usize::try_from(value).ok())
         .and_then(|count| count.checked_add(4))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn planar_associativity_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) != Some(1) {
+        return record.tokens.len();
+    }
+    positive_counted_primary_end(record, 2, 4, 1)
+}
+
+pub(crate) fn view_visibility_entity_count(
+    record: &ParameterRecord,
+    dialect: Dialect,
+) -> Option<usize> {
+    let value = if dialect == Dialect::V4_0 {
+        record.integer(2)
+    } else {
+        record.integer_or(2, 0)
+    }?;
+    usize::try_from(value).ok()
+}
+
+fn view_visibility_primary_end(
+    record: &ParameterRecord,
+    block_width: usize,
+    dialect: Dialect,
+) -> usize {
+    let view_count = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0);
+    let entity_count = view_visibility_entity_count(record, dialect);
+    view_count
+        .zip(entity_count)
+        .and_then(|(view_count, entity_count)| {
+            view_count
+                .checked_mul(block_width)?
+                .checked_add(3)?
+                .checked_add(entity_count)
+        })
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
 }
@@ -1096,6 +1556,13 @@ fn dimensioned_geometry_primary_end(record: &ParameterRecord) -> usize {
         .unwrap_or(record.tokens.len())
 }
 
+fn new_dimensioned_geometry_primary_end(record: &ParameterRecord) -> usize {
+    if record.integer(1) != Some(1) {
+        return record.tokens.len();
+    }
+    positive_counted_primary_end(record, 2, 6, 5)
+}
+
 fn flow_associativity_primary_end(record: &ParameterRecord, context_count: i64) -> usize {
     if record.integer(1) != Some(context_count) {
         return record.tokens.len();
@@ -1222,6 +1689,203 @@ fn network_subfigure_primary_end(record: &ParameterRecord) -> usize {
         .unwrap_or(record.tokens.len())
 }
 
+fn subfigure_definition_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+        .and_then(|member_count| member_count.checked_add(4))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn associativity_definition_primary_end(record: &ParameterRecord) -> usize {
+    let Some(class_count) = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+
+    let mut cursor = 2_usize;
+    for _ in 0..class_count {
+        let Some(item_count_index) = cursor.checked_add(2) else {
+            return record.tokens.len();
+        };
+        let Some(item_count) = record
+            .integer(item_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            return record.tokens.len();
+        };
+        let Some(next) = item_count_index
+            .checked_add(1)
+            .and_then(|start| start.checked_add(item_count))
+        else {
+            return record.tokens.len();
+        };
+        if next > record.tokens.len() {
+            return record.tokens.len();
+        }
+        cursor = next;
+    }
+    cursor
+}
+
+fn units_data_primary_end(record: &ParameterRecord) -> usize {
+    record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+        .and_then(|count| count.checked_mul(3))
+        .and_then(|span| span.checked_add(2))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn drawing_primary_end(record: &ParameterRecord, form: i64) -> usize {
+    let view_width = match form {
+        0 => 3,
+        1 => 4,
+        _ => return record.tokens.len(),
+    };
+    let Some(view_count) = record
+        .integer_or(1, 0)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    let Some(annotation_count_index) = view_count
+        .checked_mul(view_width)
+        .and_then(|span| span.checked_add(2))
+    else {
+        return record.tokens.len();
+    };
+    let Some(annotation_count) = record
+        .integer_or(annotation_count_index, 0)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return record.tokens.len();
+    };
+    annotation_count_index
+        .checked_add(1)
+        .and_then(|start| start.checked_add(annotation_count))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn attribute_table_definition_primary_end(record: &ParameterRecord, form: i64) -> usize {
+    let Some(attribute_count) = record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let value_stride = match form {
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        _ => return record.tokens.len(),
+    };
+    let mut cursor = 4_usize;
+    for _ in 0..attribute_count {
+        let Some(value_count) = record
+            .integer_or(cursor + 2, 1)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return record.tokens.len();
+        };
+        let Some(next) = cursor.checked_add(3).and_then(|start| {
+            value_count
+                .checked_mul(value_stride)
+                .and_then(|span| start.checked_add(span))
+        }) else {
+            return record.tokens.len();
+        };
+        if next > record.tokens.len() {
+            return record.tokens.len();
+        }
+        cursor = next;
+    }
+    cursor
+}
+
+fn attribute_table_definition_value_counts(record: &ParameterRecord) -> Option<Vec<usize>> {
+    let attribute_count = record
+        .integer(3)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)?;
+    let mut cursor = 4_usize;
+    let mut value_counts = Vec::with_capacity(attribute_count.min(record.tokens.len()));
+    for attribute_index in 0..attribute_count {
+        let count_index = cursor.checked_add(2)?;
+        record.tokens.get(cursor)?;
+        record.tokens.get(cursor + 1)?;
+        let value_count = match record.tokens.get(count_index) {
+            Some(_) => record.integer_or(count_index, 1),
+            None if attribute_index + 1 == attribute_count => Some(1),
+            None => None,
+        }
+        .and_then(|value| usize::try_from(value).ok())?;
+        value_counts.push(value_count);
+        cursor = count_index.checked_add(1)?;
+    }
+    Some(value_counts)
+}
+
+fn attribute_table_instance_primary_end(
+    record: &ParameterRecord,
+    entry: &DirectoryEntry,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> usize {
+    let Some(definition_sequence) = entry
+        .structure
+        .checked_neg()
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|sequence| sequence % 2 == 1)
+    else {
+        return record.tokens.len();
+    };
+    let Some(definition_entry) = directory
+        .get(&definition_sequence)
+        .filter(|entry| entry.entity_type == 322 && entry.form == 0)
+    else {
+        return record.tokens.len();
+    };
+    let Some(definition_record) = records.get(&definition_entry.sequence) else {
+        return record.tokens.len();
+    };
+    let Some(value_counts) = attribute_table_definition_value_counts(definition_record) else {
+        return record.tokens.len();
+    };
+    let Some(values_per_row) = value_counts
+        .into_iter()
+        .try_fold(0_usize, usize::checked_add)
+    else {
+        return record.tokens.len();
+    };
+    let (value_start, row_count) = if entry.form == 0 {
+        (1_usize, 1_usize)
+    } else {
+        let Some(row_count) = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            return record.tokens.len();
+        };
+        (2, row_count)
+    };
+    row_count
+        .checked_mul(values_per_row)
+        .and_then(|span| value_start.checked_add(span))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
 fn network_instance_primary_end(record: &ParameterRecord) -> usize {
     record
         .integer(11)
@@ -1311,6 +1975,75 @@ fn manifold_solid_primary_end(record: &ParameterRecord) -> usize {
         .and_then(|span| span.checked_add(4))
         .filter(|end| *end <= record.tokens.len())
         .unwrap_or(record.tokens.len())
+}
+
+fn positive_counted_primary_end(
+    record: &ParameterRecord,
+    count_index: usize,
+    primary_start: usize,
+    item_stride: usize,
+) -> usize {
+    let Some(count) = record
+        .integer(count_index)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    count
+        .checked_mul(item_stride)
+        .and_then(|span| primary_start.checked_add(span))
+        .filter(|end| *end <= record.tokens.len())
+        .unwrap_or(record.tokens.len())
+}
+
+fn vertex_list_primary_end(record: &ParameterRecord) -> usize {
+    positive_counted_primary_end(record, 1, 2, 3)
+}
+
+fn edge_list_primary_end(record: &ParameterRecord) -> usize {
+    positive_counted_primary_end(record, 1, 2, 5)
+}
+
+fn loop_primary_end(record: &ParameterRecord) -> usize {
+    let Some(use_count) = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return record.tokens.len();
+    };
+    let mut index: usize = 2;
+    for _ in 0..use_count {
+        let Some(parameter_curve_count_index) = index.checked_add(4) else {
+            return record.tokens.len();
+        };
+        let Some(parameter_curve_count) = record
+            .integer(parameter_curve_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return record.tokens.len();
+        };
+        let Some(next_index) = index
+            .checked_add(5)
+            .and_then(|start| parameter_curve_count.checked_mul(2)?.checked_add(start))
+        else {
+            return record.tokens.len();
+        };
+        if next_index > record.tokens.len() {
+            return record.tokens.len();
+        }
+        index = next_index;
+    }
+    index
+}
+
+fn face_primary_end(record: &ParameterRecord) -> usize {
+    positive_counted_primary_end(record, 2, 4, 1)
+}
+
+fn shell_primary_end(record: &ParameterRecord) -> usize {
+    positive_counted_primary_end(record, 1, 2, 2)
 }
 
 fn rectangular_array_primary_end(record: &ParameterRecord) -> usize {
@@ -1537,6 +2270,7 @@ fn pointer_group_candidate_with_prefix(
     record: &ParameterRecord,
     association_count_index: usize,
     non_integer_prefix: &[usize],
+    allow_empty: bool,
 ) -> Option<PointerGroupCandidate> {
     let association_count = record
         .raw_integer(association_count_index)
@@ -1546,7 +2280,11 @@ fn pointer_group_candidate_with_prefix(
     let property_count = record
         .raw_integer(property_count_index)
         .and_then(|value| usize::try_from(value).ok())?;
-    if association_count == 0 && property_count == 0 {
+    // A table-defined primary boundary is exact, so an explicitly encoded
+    // `0,0` suffix is a valid empty pair of groups. Generic recovery has no
+    // evidence for such a boundary and must not infer one from arbitrary
+    // zeros inside an entity's primary data.
+    if !allow_empty && association_count == 0 && property_count == 0 {
         return None;
     }
     let property_start = property_count_index.checked_add(1)?;
@@ -1573,6 +2311,7 @@ fn structural_pointer_group_candidates(record: &ParameterRecord) -> Vec<PointerG
                 record,
                 association_count_index,
                 &non_integer_prefix,
+                false,
             )
         })
         .collect()
@@ -1652,10 +2391,21 @@ fn groups_for_candidate(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParameterDefect {
     HollerithCountUnreadable,
+    HollerithCountZero,
     HollerithPayloadTruncated,
+    HollerithHeaderCrossesCard,
+    HollerithForbiddenByte,
+    NumericCrossesCard,
+    NumericContainsBlanks,
     TokenNotAscii,
     TokenNotANumber,
+    NumericOutOfRange,
     DelimiterMissing,
+    MacroHeaderMalformed,
+    MacroArgumentListMissing,
+    MacroEntityTypeOutOfRange,
+    MacroStatementEmpty,
+    MacroTerminatorMissing,
     EntityTypeTokenMismatch,
     DeclaredCardMissing,
     NoOwnedCards,
@@ -1667,10 +2417,21 @@ impl ParameterDefect {
     pub(crate) fn key(self) -> &'static str {
         match self {
             Self::HollerithCountUnreadable => "hollerith-count-unreadable",
+            Self::HollerithCountZero => "hollerith-count-zero",
             Self::HollerithPayloadTruncated => "hollerith-payload-truncated",
+            Self::HollerithHeaderCrossesCard => "hollerith-header-crosses-card",
+            Self::HollerithForbiddenByte => "hollerith-forbidden-byte",
+            Self::NumericCrossesCard => "numeric-crosses-card",
+            Self::NumericContainsBlanks => "numeric-contains-blanks",
             Self::TokenNotAscii => "token-not-ascii",
             Self::TokenNotANumber => "token-not-a-number",
+            Self::NumericOutOfRange => "numeric-out-of-range",
             Self::DelimiterMissing => "delimiter-missing",
+            Self::MacroHeaderMalformed => "macro-header-malformed",
+            Self::MacroArgumentListMissing => "macro-argument-list-missing",
+            Self::MacroEntityTypeOutOfRange => "macro-entity-type-out-of-range",
+            Self::MacroStatementEmpty => "macro-statement-empty",
+            Self::MacroTerminatorMissing => "macro-terminator-missing",
             Self::EntityTypeTokenMismatch => "entity-type-token-mismatch",
             Self::DeclaredCardMissing => "declared-card-missing",
             Self::NoOwnedCards => "no-owned-cards",
@@ -1682,10 +2443,33 @@ impl ParameterDefect {
     fn describe(self) -> &'static str {
         match self {
             Self::HollerithCountUnreadable => "a Hollerith byte count is unreadable",
+            Self::HollerithCountZero => "a Hollerith byte count is zero",
             Self::HollerithPayloadTruncated => "a Hollerith payload is truncated",
+            Self::HollerithHeaderCrossesCard => {
+                "a Hollerith count and H delimiter cross a card boundary"
+            }
+            Self::HollerithForbiddenByte => {
+                "a Hollerith string contains a byte forbidden by the declared dialect"
+            }
+            Self::NumericCrossesCard => "a numeric field or its delimiter crosses a card boundary",
+            Self::NumericContainsBlanks => "a numeric field contains embedded or trailing blanks",
             Self::TokenNotAscii => "a token is not ASCII",
             Self::TokenNotANumber => "a token is not a number",
+            Self::NumericOutOfRange => {
+                "a numeric token exceeds the sender range declared in Global fields 7, 8, or 10"
+            }
             Self::DelimiterMissing => "a delimiter is missing",
+            Self::MacroHeaderMalformed => {
+                "a Type 306 header is not `306,MACRO,entity-type,argument-list`"
+            }
+            Self::MacroArgumentListMissing => "a Type 306 MACRO statement has no argument list",
+            Self::MacroEntityTypeOutOfRange => {
+                "a Type 306 macro entity type is outside the assigned macro ranges"
+            }
+            Self::MacroStatementEmpty => "a Type 306 language statement is empty",
+            Self::MacroTerminatorMissing => {
+                "a Type 306 Parameter Data record has no ENDM statement"
+            }
             Self::EntityTypeTokenMismatch => {
                 "the first token disagrees with the Directory Entry entity type"
             }
@@ -1742,6 +2526,109 @@ enum TokenizeFailure {
     Refusal(CodecError),
 }
 
+fn layout_hollerith(bytes: &[u8], start: usize) -> Result<Option<(usize, usize)>, CodecError> {
+    let mut cursor = start;
+    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+        cursor += 1;
+    }
+    if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
+        return Ok(None);
+    }
+    let count = std::str::from_utf8(&bytes[start..cursor])
+        .map_err(|_| CodecError::Malformed("IGES Hollerith count is not ASCII".into()))?
+        .parse::<usize>()
+        .map_err(|_| CodecError::Malformed("IGES Hollerith count is out of range".into()))?;
+    if count == 0 {
+        return Err(CodecError::Malformed(
+            "IGES Hollerith count must be positive".into(),
+        ));
+    }
+    let payload_start = cursor
+        .checked_add(1)
+        .ok_or_else(|| CodecError::Malformed("IGES Hollerith payload offset overflows".into()))?;
+    let payload_end = payload_start
+        .checked_add(count)
+        .ok_or_else(|| CodecError::Malformed("IGES Hollerith payload length overflows".into()))?;
+    bytes
+        .get(payload_start..payload_end)
+        .ok_or_else(|| CodecError::Malformed("IGES Hollerith payload is truncated".into()))?;
+    Ok(Some((cursor + 1, payload_end)))
+}
+
+/// Lay out an entity's logical Parameter Data into 64-column payloads.
+///
+/// A Hollerith header is kept together while its counted payload may cross a
+/// card. Numeric fields are moved to the next card when their delimiter would
+/// otherwise cross the card boundary. Bytes after the record delimiter are
+/// comment payload and may use the remaining card space without token rules.
+pub(crate) fn layout_parameter_cards(bytes: &[u8]) -> Result<Vec<Vec<u8>>, CodecError> {
+    let mut fields = Vec::new();
+    let mut cursor = 0_usize;
+    loop {
+        let start = cursor;
+        let mut end = cursor;
+        if let Some((_, payload_end)) = layout_hollerith(bytes, cursor)? {
+            end = payload_end;
+        }
+        while end < bytes.len() && !matches!(bytes[end], b',' | b';') {
+            end += 1;
+        }
+        let delimiter = bytes.get(end).ok_or_else(|| {
+            CodecError::Malformed("IGES Parameter Data delimiter is missing".into())
+        })?;
+        end += 1;
+        fields.push(start..end);
+        cursor = end;
+        if *delimiter == b';' {
+            break;
+        }
+    }
+
+    let mut cards = Vec::new();
+    let mut card = Vec::with_capacity(64);
+    for field in fields.iter().map(|range| &bytes[range.clone()]) {
+        let leading = field
+            .iter()
+            .position(|byte| !byte.is_ascii_whitespace())
+            .unwrap_or(field.len());
+        let header_end = if leading < field.len() {
+            layout_hollerith(field, leading)?.map(|(header_end, _)| header_end)
+        } else {
+            None
+        };
+        let minimum = header_end.map_or(field.len(), |end| leading + end);
+        if minimum > 64 {
+            return Err(CodecError::Malformed(
+                "IGES generated Parameter Data field exceeds one card".into(),
+            ));
+        }
+        if card.len() + minimum > 64 {
+            card.resize(64, b' ');
+            cards.push(std::mem::take(&mut card));
+            card = Vec::with_capacity(64);
+        }
+        for byte in field.iter().copied() {
+            if card.len() == 64 {
+                cards.push(std::mem::take(&mut card));
+                card = Vec::with_capacity(64);
+            }
+            card.push(byte);
+        }
+    }
+
+    for byte in bytes[cursor..].iter().copied() {
+        if card.len() == 64 {
+            cards.push(std::mem::take(&mut card));
+            card = Vec::with_capacity(64);
+        }
+        card.push(byte);
+    }
+    if !card.is_empty() {
+        cards.push(card);
+    }
+    Ok(cards)
+}
+
 /// Both parse results of the Parameter Data section.
 pub(crate) struct ParameterAssembly {
     pub(crate) records: Vec<ParameterRecord>,
@@ -1751,11 +2638,33 @@ pub(crate) struct ParameterAssembly {
 }
 
 fn back_pointer(line: &PhysicalLine) -> Option<u32> {
-    let text = std::str::from_utf8(line.payload.get(64..72)?).ok()?.trim();
-    text.parse::<u32>().ok()
+    let field = line.payload.get(64..72)?;
+    if field.first() != Some(&b' ') {
+        return None;
+    }
+    let digits_start = field[1..]
+        .iter()
+        .position(|byte| *byte != b' ')
+        .map_or(1, |offset| offset + 1);
+    let digits = field.get(digits_start..)?;
+    if digits.is_empty() || digits.iter().any(|byte| !byte.is_ascii_digit()) {
+        return None;
+    }
+    let mut value = 0_u32;
+    for digit in digits.iter().copied() {
+        value = value
+            .checked_mul(10)?
+            .checked_add(u32::from(digit - b'0'))?;
+    }
+    (value > 0).then_some(value)
 }
 
-fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Token, usize)>, TokenizeFailure> {
+fn hollerith(
+    bytes: &[u8],
+    card_boundaries: &[usize],
+    start: usize,
+    dialect: Dialect,
+) -> Result<Option<(Token, usize)>, TokenizeFailure> {
     let mut cursor = start;
     while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
         cursor += 1;
@@ -1763,12 +2672,27 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Token, usize)>, Token
     if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
         return Ok(None);
     }
+    if card_boundaries
+        .iter()
+        .any(|boundary| start < *boundary && *boundary < cursor + 1)
+    {
+        return Err(TokenizeFailure::Defect(
+            ParameterDefect::HollerithHeaderCrossesCard,
+            start,
+        ));
+    }
     let unreadable_count =
         || TokenizeFailure::Defect(ParameterDefect::HollerithCountUnreadable, start);
     let count = std::str::from_utf8(&bytes[start..cursor])
         .map_err(|_| unreadable_count())?
         .parse::<usize>()
         .map_err(|_| unreadable_count())?;
+    if count == 0 {
+        return Err(TokenizeFailure::Defect(
+            ParameterDefect::HollerithCountZero,
+            start,
+        ));
+    }
     let end = cursor
         .checked_add(1)
         .and_then(|payload_start| payload_start.checked_add(count))
@@ -1777,6 +2701,14 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Token, usize)>, Token
         ParameterDefect::HollerithPayloadTruncated,
         start,
     ))?;
+    if payload.iter().copied().any(|byte| {
+        !byte.is_ascii() || (byte.is_ascii_control() && !matches!(dialect, Dialect::V4_0))
+    }) {
+        return Err(TokenizeFailure::Defect(
+            ParameterDefect::HollerithForbiddenByte,
+            start,
+        ));
+    }
     Ok(Some((
         Token {
             value: TokenValue::String(payload.to_vec()),
@@ -1786,40 +2718,420 @@ fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Token, usize)>, Token
     )))
 }
 
-fn numeric(bytes: &[u8], span: Range<usize>) -> Result<Token, TokenizeFailure> {
+/// The structural parts of one Type 306 Parameter Data record.
+///
+/// Type 306 is the one IGES entity whose Parameter Data is a language stream
+/// rather than a sequence of ordinary numeric and Hollerith fields. The
+/// decoder validates only the framing needed to retain that stream: the
+/// `306,MACRO,<type>,<arguments>;` header, statement delimiters, and the final
+/// `ENDM;`. The macro language itself is not evaluated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MacroParameterData {
+    pub(crate) statement_spans: Vec<Range<usize>>,
+    pub(crate) record_end: usize,
+    pub(crate) defined_entity_type: i64,
+    pub(crate) entity_type_span: Range<usize>,
+    pub(crate) header_payload_start: usize,
+}
+
+fn trim_macro_span(bytes: &[u8], span: Range<usize>) -> Range<usize> {
+    let mut start = span.start;
+    let mut end = span.end;
+    while bytes
+        .get(start)
+        .is_some_and(|byte| matches!(*byte, b' ' | b'\t'))
+    {
+        start += 1;
+    }
+    while end > start
+        && bytes
+            .get(end - 1)
+            .is_some_and(|byte| matches!(*byte, b' ' | b'\t'))
+    {
+        end -= 1;
+    }
+    start..end
+}
+
+fn macro_hollerith_end(
+    bytes: &[u8],
+    start: usize,
+) -> Result<Option<usize>, (ParameterDefect, usize)> {
+    let mut cursor = start;
+    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+        cursor += 1;
+    }
+    if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
+        return Ok(None);
+    }
+    let count = std::str::from_utf8(&bytes[start..cursor])
+        .ok()
+        .and_then(|text| text.parse::<usize>().ok())
+        .ok_or((ParameterDefect::HollerithCountUnreadable, start))?;
+    if count == 0 {
+        return Err((ParameterDefect::HollerithCountZero, start));
+    }
+    let payload_start = cursor
+        .checked_add(1)
+        .ok_or((ParameterDefect::HollerithPayloadTruncated, start))?;
+    let payload_end = payload_start
+        .checked_add(count)
+        .ok_or((ParameterDefect::HollerithPayloadTruncated, start))?;
+    if bytes.get(payload_start..payload_end).is_none() {
+        return Err((ParameterDefect::HollerithPayloadTruncated, start));
+    }
+    Ok(Some(payload_end))
+}
+
+fn macro_next_field(
+    bytes: &[u8],
+    start: usize,
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+) -> Result<(Range<usize>, u8, usize), (ParameterDefect, usize)> {
+    let mut cursor = start;
+    while let Some(byte) = bytes.get(cursor) {
+        if matches!(*byte, b' ' | b'\t') {
+            cursor += 1;
+        } else {
+            break;
+        }
+    }
+    let field_start = cursor;
+    while let Some(byte) = bytes.get(cursor).copied() {
+        if let Some(payload_end) = macro_hollerith_end(bytes, cursor)? {
+            cursor = payload_end;
+            continue;
+        }
+        if byte == parameter_delimiter || byte == record_delimiter {
+            let field = trim_macro_span(bytes, field_start..cursor);
+            return Ok((field, byte, cursor + 1));
+        }
+        cursor += 1;
+    }
+    Err((ParameterDefect::MacroHeaderMalformed, field_start))
+}
+
+fn macro_integer(bytes: &[u8], span: &Range<usize>) -> Option<i64> {
+    std::str::from_utf8(bytes.get(span.clone())?)
+        .ok()?
+        .parse::<i64>()
+        .ok()
+}
+
+fn macro_keyword(bytes: &[u8], span: &Range<usize>, keyword: &[u8]) -> bool {
+    bytes.get(span.clone()).is_some_and(|value| {
+        value
+            .iter()
+            .copied()
+            .filter(|byte| *byte != b' ' && *byte != b'\t')
+            .eq(keyword.iter().copied())
+    })
+}
+
+/// Parse and validate the structural framing of a Type 306 Parameter Data
+/// stream. Statement spans exclude their record delimiters; `record_end`
+/// points immediately after the terminating `ENDM` delimiter, so the caller
+/// can retain any remaining card bytes as the ordinary Parameter Data comment.
+pub(crate) fn macro_parameter_data(
+    bytes: &[u8],
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+) -> Result<MacroParameterData, (ParameterDefect, usize)> {
+    let mut statements = Vec::new();
+    let mut start = 0_usize;
+    let mut cursor = 0_usize;
+    while let Some(byte) = bytes.get(cursor).copied() {
+        if let Some(payload_end) = macro_hollerith_end(bytes, cursor)? {
+            cursor = payload_end;
+            continue;
+        }
+        if byte != record_delimiter {
+            cursor += 1;
+            continue;
+        }
+        let raw_statement = start..cursor;
+        if trim_macro_span(bytes, raw_statement.clone()).is_empty() {
+            return Err((ParameterDefect::MacroStatementEmpty, start));
+        }
+        statements.push(raw_statement.clone());
+        let record_end = cursor + 1;
+        if macro_keyword(bytes, &raw_statement, b"ENDM") {
+            let first = statements
+                .first()
+                .cloned()
+                .ok_or((ParameterDefect::MacroHeaderMalformed, start))?;
+            let (entity_type_span, first_delimiter, after_entity_type) =
+                macro_next_field(bytes, first.start, parameter_delimiter, record_delimiter)?;
+            if first_delimiter != parameter_delimiter
+                || macro_integer(bytes, &entity_type_span) != Some(306)
+            {
+                return Err((
+                    ParameterDefect::MacroHeaderMalformed,
+                    entity_type_span.start,
+                ));
+            }
+            let (keyword_span, keyword_delimiter, after_keyword) = macro_next_field(
+                bytes,
+                after_entity_type,
+                parameter_delimiter,
+                record_delimiter,
+            )?;
+            if keyword_delimiter != parameter_delimiter
+                || !macro_keyword(bytes, &keyword_span, b"MACRO")
+            {
+                return Err((ParameterDefect::MacroHeaderMalformed, keyword_span.start));
+            }
+            let (defined_type_span, defined_type_delimiter, after_defined_type) =
+                macro_next_field(bytes, after_keyword, parameter_delimiter, record_delimiter)?;
+            if defined_type_delimiter == record_delimiter {
+                return Err((
+                    ParameterDefect::MacroArgumentListMissing,
+                    defined_type_span.end,
+                ));
+            }
+            if defined_type_delimiter != parameter_delimiter {
+                return Err((
+                    ParameterDefect::MacroHeaderMalformed,
+                    defined_type_span.start,
+                ));
+            }
+            let Some(defined_entity_type) = macro_integer(bytes, &defined_type_span) else {
+                return Err((
+                    ParameterDefect::MacroHeaderMalformed,
+                    defined_type_span.start,
+                ));
+            };
+            if !crate::profile::macro_instance_type(defined_entity_type) {
+                return Err((
+                    ParameterDefect::MacroEntityTypeOutOfRange,
+                    defined_type_span.start,
+                ));
+            }
+            if bytes
+                .get(after_defined_type..first.end)
+                .is_none_or(|arguments| arguments.iter().all(u8::is_ascii_whitespace))
+            {
+                return Err((
+                    ParameterDefect::MacroArgumentListMissing,
+                    after_defined_type,
+                ));
+            }
+            return Ok(MacroParameterData {
+                statement_spans: statements,
+                record_end,
+                defined_entity_type,
+                entity_type_span,
+                header_payload_start: after_entity_type,
+            });
+        }
+        start = record_end;
+        cursor = record_end;
+    }
+    Err((ParameterDefect::MacroTerminatorMissing, start))
+}
+
+fn tokenize_macro(
+    bytes: &[u8],
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(Vec<Token>, usize), TokenizeFailure> {
+    let data = macro_parameter_data(bytes, parameter_delimiter, record_delimiter)
+        .map_err(|(defect, offset)| TokenizeFailure::Defect(defect, offset))?;
+    let charge = |ctx| charge_token(ctx).map_err(TokenizeFailure::Refusal);
+    let mut tokens = Vec::new();
+    charge(ctx)?;
+    tokens.push(Token {
+        value: TokenValue::Integer(306),
+        span: data.entity_type_span,
+    });
+    if let Some(span) = data
+        .statement_spans
+        .first()
+        .map(|statement| data.header_payload_start..statement.end)
+        .filter(|span| span.start < span.end)
+    {
+        charge(ctx)?;
+        tokens.push(Token {
+            value: TokenValue::String(bytes[span.clone()].to_vec()),
+            span,
+        });
+    }
+    for span in data.statement_spans.iter().skip(1) {
+        charge(ctx)?;
+        tokens.push(Token {
+            value: TokenValue::String(bytes[span.clone()].to_vec()),
+            span: span.clone(),
+        });
+    }
+    Ok((tokens, data.record_end))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DecimalShape {
+    order: i64,
+    double_precision: bool,
+    zero: bool,
+}
+
+fn decimal_shape(text: &[u8]) -> Option<DecimalShape> {
+    let mut start = 0;
+    if matches!(text.first(), Some(b'+' | b'-')) {
+        start = 1;
+    }
+    let exponent_at = text[start..]
+        .iter()
+        .position(|byte| matches!(byte, b'E' | b'e' | b'D' | b'd'))
+        .map(|offset| start + offset);
+    let (base, exponent_text, double_precision) = match exponent_at {
+        Some(index) => (
+            &text[..index],
+            text.get(index + 1..),
+            matches!(text[index], b'D' | b'd'),
+        ),
+        None => (text, None, false),
+    };
+    let exponent = match exponent_text {
+        Some(value) => std::str::from_utf8(value).ok()?.parse::<i64>().ok()?,
+        None => 0,
+    };
+    let base = base.get(start..)?;
+    let (integer, fraction) = match base.iter().position(|byte| *byte == b'.') {
+        Some(dot) => (base.get(..dot)?, base.get(dot + 1..)?),
+        None => (base, &[][..]),
+    };
+    if integer.is_empty() && fraction.is_empty()
+        || integer
+            .iter()
+            .chain(fraction)
+            .any(|byte| !byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let first_nonzero = integer
+        .iter()
+        .chain(fraction)
+        .position(|byte| *byte != b'0');
+    let Some(first_nonzero) = first_nonzero else {
+        return Some(DecimalShape {
+            order: 0,
+            double_precision,
+            zero: true,
+        });
+    };
+    let integer_digits = i64::try_from(integer.len()).ok()?;
+    let first_nonzero = i64::try_from(first_nonzero).ok()?;
+    let order = integer_digits
+        .checked_sub(1)?
+        .checked_sub(first_nonzero)?
+        .checked_add(exponent)?;
+    Some(DecimalShape {
+        order,
+        double_precision,
+        zero: false,
+    })
+}
+
+fn integer_within_bits(value: i64, bits: u32) -> bool {
+    if bits == 0 || bits > 64 {
+        return true;
+    }
+    let maximum = if bits >= 64 {
+        (1_u128 << 63) - 1
+    } else {
+        (1_u128 << bits.saturating_sub(1)) - 1
+    };
+    u128::from(value.unsigned_abs()) <= maximum
+}
+
+fn real_within_limits(shape: DecimalShape, limits: NumericLimits) -> bool {
+    let magnitude = if shape.double_precision {
+        limits.double_magnitude
+    } else {
+        limits.single_magnitude
+    };
+    shape.zero || magnitude.is_none_or(|maximum| shape.order <= maximum)
+}
+
+fn numeric_with_limits(
+    bytes: &[u8],
+    span: Range<usize>,
+    limits: NumericLimits,
+) -> Result<Token, TokenizeFailure> {
     let start = span.start;
-    let text = std::str::from_utf8(&bytes[span.clone()])
-        .map_err(|_| TokenizeFailure::Defect(ParameterDefect::TokenNotAscii, start))?
-        .trim();
-    if text.is_empty() {
+    let raw = &bytes[span.clone()];
+    let first = raw
+        .iter()
+        .position(|byte| *byte != b' ')
+        .unwrap_or(raw.len());
+    if first == raw.len() {
         return Ok(Token {
             value: TokenValue::Omitted,
             span,
         });
     }
+    let text_bytes = &raw[first..];
+    if text_bytes.contains(&b' ') {
+        return Err(TokenizeFailure::Defect(
+            ParameterDefect::NumericContainsBlanks,
+            start,
+        ));
+    }
+    let text = std::str::from_utf8(text_bytes)
+        .map_err(|_| TokenizeFailure::Defect(ParameterDefect::TokenNotAscii, start))?;
     let not_a_number = || TokenizeFailure::Defect(ParameterDefect::TokenNotANumber, start);
     let real = text
         .bytes()
         .any(|byte| matches!(byte, b'.' | b'E' | b'e' | b'D' | b'd'));
     let value = if real {
+        let shape = decimal_shape(text_bytes).ok_or_else(not_a_number)?;
+        if !real_within_limits(shape, limits) {
+            return Err(TokenizeFailure::Defect(
+                ParameterDefect::NumericOutOfRange,
+                start,
+            ));
+        }
         let normalized = text.replace(['D', 'd'], "E");
-        TokenValue::Real(normalized.parse::<f64>().map_err(|_| not_a_number())?)
+        TokenValue::Real(
+            normalized
+                .parse::<f64>()
+                .ok()
+                .filter(|value| value.is_finite())
+                .ok_or_else(not_a_number)?,
+        )
     } else {
-        TokenValue::Integer(text.parse::<i64>().map_err(|_| not_a_number())?)
+        let value = text.parse::<i64>().map_err(|_| not_a_number())?;
+        if limits
+            .integer_bits
+            .is_some_and(|bits| !integer_within_bits(value, bits))
+        {
+            return Err(TokenizeFailure::Defect(
+                ParameterDefect::NumericOutOfRange,
+                start,
+            ));
+        }
+        TokenValue::Integer(value)
     };
     Ok(Token { value, span })
 }
 
-fn tokenize(
+fn tokenize_with_limits(
     bytes: &[u8],
+    card_boundaries: &[usize],
     parameter_delimiter: u8,
     record_delimiter: u8,
+    dialect: Dialect,
+    limits: NumericLimits,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<(Vec<Token>, usize), TokenizeFailure> {
     let charge = |ctx| charge_token(ctx).map_err(TokenizeFailure::Refusal);
     let mut tokens = Vec::new();
     let mut cursor = 0_usize;
     loop {
+        while bytes.get(cursor) == Some(&b' ') {
+            cursor += 1;
+        }
         if bytes.get(cursor) == Some(&record_delimiter) {
             return Ok((tokens, cursor + 1));
         }
@@ -1832,7 +3144,8 @@ fn tokenize(
             cursor += 1;
             continue;
         }
-        let (token, end) = if let Some(value) = hollerith(bytes, cursor)? {
+        let (token, end) = if let Some(value) = hollerith(bytes, card_boundaries, cursor, dialect)?
+        {
             value
         } else {
             let end = bytes[cursor..]
@@ -1851,7 +3164,23 @@ fn tokenize(
                     cursor,
                 ));
             }
-            (numeric(bytes, cursor..end)?, end)
+            let span = cursor..end;
+            let first_value = span.start
+                + bytes[span.clone()]
+                    .iter()
+                    .position(|byte| !byte.is_ascii_whitespace())
+                    .unwrap_or(span.len());
+            if first_value < end
+                && card_boundaries
+                    .iter()
+                    .any(|boundary| first_value < *boundary && *boundary <= end)
+            {
+                return Err(TokenizeFailure::Defect(
+                    ParameterDefect::NumericCrossesCard,
+                    first_value,
+                ));
+            }
+            (numeric_with_limits(bytes, span, limits)?, end)
         };
         charge(ctx)?;
         tokens.push(token);
@@ -1866,6 +3195,26 @@ fn tokenize(
             }
         }
     }
+}
+
+#[cfg(test)]
+fn tokenize(
+    bytes: &[u8],
+    card_boundaries: &[usize],
+    parameter_delimiter: u8,
+    record_delimiter: u8,
+    dialect: Dialect,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<(Vec<Token>, usize), TokenizeFailure> {
+    tokenize_with_limits(
+        bytes,
+        card_boundaries,
+        parameter_delimiter,
+        record_delimiter,
+        dialect,
+        NumericLimits::default(),
+        ctx,
+    )
 }
 
 /// The Directory-declared Parameter Data range, when the declaration is usable.
@@ -1941,12 +3290,25 @@ fn overlapping_ranges(declared: &BTreeMap<u32, Range<u32>>) -> BTreeSet<u32> {
     overlapping
 }
 
-fn owned_bytes(cards: &[u32], lines: &BTreeMap<u32, &PhysicalLine>) -> Vec<u8> {
-    cards
-        .iter()
-        .filter_map(|sequence| lines.get(sequence))
-        .flat_map(|line| line.payload.get(..64).unwrap_or_default().iter().copied())
-        .collect()
+struct OwnedParameterBytes {
+    bytes: Vec<u8>,
+    card_boundaries: Vec<usize>,
+}
+
+fn owned_bytes(cards: &[u32], lines: &BTreeMap<u32, &PhysicalLine>) -> OwnedParameterBytes {
+    let mut bytes = Vec::new();
+    let mut card_boundaries = Vec::new();
+    for sequence in cards {
+        let Some(line) = lines.get(sequence) else {
+            continue;
+        };
+        bytes.extend(line.payload.get(..64).unwrap_or_default());
+        card_boundaries.push(bytes.len());
+    }
+    OwnedParameterBytes {
+        bytes,
+        card_boundaries,
+    }
 }
 
 /// The source offset of `offset` inside the assembled 64-column card stream.
@@ -2174,13 +3536,26 @@ pub(crate) fn assemble_with_context(
             quarantined.push(quarantine(entry, &owned.cards, &lines, defect, None));
             continue;
         }
-        let bytes = owned_bytes(&owned.cards, &lines);
-        let (tokens, record_end) = match tokenize(
-            &bytes,
-            global.parameter_delimiter,
-            global.record_delimiter,
-            ctx,
-        ) {
+        let owned_bytes = owned_bytes(&owned.cards, &lines);
+        let tokenized = if entry.entity_type == 306 {
+            tokenize_macro(
+                &owned_bytes.bytes,
+                global.parameter_delimiter,
+                global.record_delimiter,
+                ctx,
+            )
+        } else {
+            tokenize_with_limits(
+                &owned_bytes.bytes,
+                &owned_bytes.card_boundaries,
+                global.parameter_delimiter,
+                global.record_delimiter,
+                global.dialect(),
+                global.numeric_limits(),
+                ctx,
+            )
+        };
+        let (tokens, record_end) = match tokenized {
             Ok(value) => value,
             Err(TokenizeFailure::Refusal(error)) => return Err(error),
             Err(TokenizeFailure::Defect(defect, offset)) => {
@@ -2211,22 +3586,41 @@ pub(crate) fn assemble_with_context(
             .last()
             .map_or(line_start, |last| last.saturating_add(1));
         let parameter_end = tokens.len();
-        let mut record = ParameterRecord {
+        let record = ParameterRecord {
             directory_sequence: entry.sequence,
             line_range: line_start..line_end,
-            comment: bytes.get(record_end..).unwrap_or_default().to_vec(),
-            bytes,
+            comment: owned_bytes
+                .bytes
+                .get(record_end..)
+                .unwrap_or_default()
+                .to_vec(),
+            bytes: owned_bytes.bytes,
             tokens,
             parameter_end,
         };
-        let analysis = analyze_trailing_pointer_groups(&record, &entries);
-        record.parameter_end = analysis
-            .groups
-            .as_ref()
+        records.push(record);
+    }
+    {
+        let record_by_directory = records
+            .iter()
+            .map(|record| (record.directory_sequence, record))
+            .collect::<BTreeMap<_, _>>();
+        for record in &records {
+            let analysis = analyze_trailing_pointer_groups_with_records_for_dialect(
+                record,
+                &entries,
+                &record_by_directory,
+                global.dialect(),
+            );
+            trailing_pointer_analysis.insert(record.directory_sequence, analysis);
+        }
+    }
+    for record in &mut records {
+        record.parameter_end = trailing_pointer_analysis
+            .get(&record.directory_sequence)
+            .and_then(|analysis| analysis.groups.as_ref())
             .filter(|groups| groups.fully_valid)
             .map_or(record.tokens.len(), |groups| groups.token_start);
-        trailing_pointer_analysis.insert(entry.sequence, analysis);
-        records.push(record);
     }
     let accounted = ownership
         .iter()
@@ -2295,3 +3689,9 @@ mod counted_list_tests;
 mod quarantine_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod type228_tests;
+#[cfg(test)]
+mod type230_tests;
+#[cfg(test)]
+mod type_fem_tests;

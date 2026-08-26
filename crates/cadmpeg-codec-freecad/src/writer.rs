@@ -100,7 +100,7 @@ pub(crate) fn write_seekable(
     for property in &written_graph.properties {
         for entry in &property.side_entries {
             if !entries.iter().any(|candidate| candidate.name == *entry) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "edited property {} references missing side entry {entry}",
                     property.id
                 )));
@@ -123,7 +123,7 @@ pub(crate) fn write_seekable(
             archive
                 .start_file(&entry.name, file_options)
                 .map_err(|error| {
-                    CodecError::Malformed(format!("cannot write {}: {error}", entry.name))
+                    CodecError::malformed(format_args!("cannot write {}: {error}", entry.name))
                 })?;
             archive.write_all(if entry.name == "Document.xml" {
                 &document_xml
@@ -132,7 +132,7 @@ pub(crate) fn write_seekable(
             })?;
         }
         archive.finish().map_err(|error| {
-            CodecError::Malformed(format!("cannot finish FCStd archive: {error}"))
+            CodecError::malformed(format_args!("cannot finish FCStd archive: {error}"))
         })?;
     }
     Ok(ExportReport {
@@ -158,7 +158,7 @@ pub(crate) fn write_seekable(
 
 fn exactly_one<'a, T>(values: &'a [T], description: &str) -> Result<&'a T, CodecError> {
     if values.len() != 1 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "FCStd native graph must contain exactly one {description}"
         )));
     }
@@ -191,13 +191,13 @@ fn validate_entry_names(entries: &[EntrySlot]) -> Result<(), CodecError> {
                 .split('/')
                 .any(|part| part.is_empty() || part == "." || part == "..")
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "unsafe FCStd output entry name {:?}",
                 entry.name
             )));
         }
         if !names.insert(entry.name.as_str()) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate FCStd output entry {}",
                 entry.name
             )));
@@ -208,7 +208,7 @@ fn validate_entry_names(entries: &[EntrySlot]) -> Result<(), CodecError> {
 
 fn validate_entry(entry: &EntryRecord) -> Result<(), CodecError> {
     if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "FCStd output entry {} has stale length or digest metadata",
             entry.name
         )));
@@ -280,19 +280,19 @@ fn patch_document(source: &[u8], properties: &[PropertyRecord]) -> Result<Vec<u8
         let end = usize::try_from(property.byte_end)
             .map_err(|_| CodecError::Malformed("property end exceeds address space".into()))?;
         if start < cursor || end > source.len() || start >= end {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid retained span for property {}",
                 property.id
             )));
         }
         let retained = source_text.get(start..end).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "retained span for property {} is not on UTF-8 boundaries",
                 property.id
             ))
         })?;
         if retained != property.raw_xml {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "retained bytes disagree with property {} provenance",
                 property.id
             )));
@@ -310,7 +310,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
     let mut replacement = property.raw_xml.clone();
     let wrapped = format!("<Root>{}</Root>", property.raw_xml);
     let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::Malformed(format!("invalid retained property XML: {error}"))
+        CodecError::malformed(format_args!("invalid retained property XML: {error}"))
     })?;
     let source_ranges = parsed
         .root_element()
@@ -324,7 +324,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
         .map(|node| (node.range().start - 6, node.range().end - 6))
         .collect::<Vec<_>>();
     if source_ranges.len() != property.values.len() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "property {} value provenance count changed",
             property.id
         )));
@@ -336,7 +336,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
             continue;
         }
         if property.raw_xml[start..end] != value.raw_xml {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "property {} retained value {} disagrees with provenance",
                 property.id, value.order
             )));
@@ -359,7 +359,7 @@ fn serialize_property(property: &PropertyRecord) -> Result<Vec<u8>, CodecError> 
 fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError> {
     let wrapped = format!("<Root>{}</Root>", property.raw_xml);
     let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::Malformed(format!("invalid retained property XML: {error}"))
+        CodecError::malformed(format_args!("invalid retained property XML: {error}"))
     })?;
     let element = parsed
         .root_element()
@@ -391,7 +391,7 @@ fn validate_property_wrapper(property: &PropertyRecord) -> Result<(), CodecError
 fn serialize_value(value: &ValueRecord) -> Result<String, CodecError> {
     let wrapped = format!("<Root>{}</Root>", value.raw_xml);
     let parsed = roxmltree::Document::parse(&wrapped).map_err(|error| {
-        CodecError::Malformed(format!("invalid retained property value XML: {error}"))
+        CodecError::malformed(format_args!("invalid retained property value XML: {error}"))
     })?;
     let original = parsed
         .root_element()

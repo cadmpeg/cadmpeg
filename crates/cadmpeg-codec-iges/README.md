@@ -1,6 +1,6 @@
 # cadmpeg-codec-iges
 
-`cadmpeg-codec-iges` inspects, decodes, and writes IGES 5.1, 5.2, and 5.3
+`cadmpeg-codec-iges` inspects, decodes, and writes IGES 4.0, 5.0, 5.1, 5.2, and 5.3
 Fixed ASCII files through `CadIr`.
 
 Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
@@ -96,6 +96,20 @@ Records that block faithful transfer land in `DecodeReport::losses`.
 `transfer_ledger` records every non-null Directory entity and verifies its
 closure against the decoded model. Coverage for each envelope lives in the
 [format-support profile][support].
+
+## Stress inputs
+
+Regenerate the deterministic stress corpus into a directory of your choice:
+
+```sh
+cargo run -p cadmpeg-codec-iges --bin iges_stress -- OUTPUT_DIRECTORY
+```
+
+Six files, 3–8 MB each, cover composite chains, trimmed surfaces, counted
+lists, trailing pointer groups, annotation text runs, and free curves. Add
+`--fast` for a ~0.5 MB smoke set. Output is byte-stable: the crate's tests
+pin each file's length and SHA-256, so a deliberate change to the emitted
+bytes must repin those digests from a fresh run.
 
 ## Documentation
 

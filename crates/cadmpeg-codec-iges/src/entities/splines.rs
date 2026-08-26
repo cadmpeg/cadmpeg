@@ -8,7 +8,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
@@ -764,7 +764,10 @@ pub(super) fn project(
             ));
             continue;
         }
-        let mut grid = vec![None; pole_count];
+        let mut grid = ctx.map_or_else(
+            || alloc_filled(pole_count, None, "iges spline surface control grid"),
+            |ctx| ctx.alloc_filled(pole_count, None, "iges spline surface control grid"),
+        )?;
         let mut valid = true;
         'patches: for u_patch in 0..u_segments {
             for v_patch in 0..v_segments {

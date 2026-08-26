@@ -367,7 +367,7 @@ fn parse_inner(bytes: &[u8]) -> Result<MetaStream, ParseFailure> {
 /// Parse one complete `MetaStream` segment and reject any unframed remainder.
 pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError> {
     parse_inner(bytes).map_err(|failure| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "invalid F3D MetaStream {} at byte {}: {stream}",
             failure.field, failure.offset
         ))

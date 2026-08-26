@@ -642,7 +642,7 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
             }
             CurveGeometry::Procedural { .. } => {
                 if !native_cacheless_procedural_curve(records, target, &carrier.id)? {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "procedural curve carrier {} has no construction",
                         carrier.id
                     )));
@@ -757,9 +757,11 @@ fn encode_face_topology_smbh(
         let first_region = body
             .regions
             .first()
-            .ok_or_else(|| CodecError::Malformed(format!("body {} has no region", body.id)))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("body {} has no region", body.id)))?;
         let region_ordinal = region_ordinals.get(first_region).copied().ok_or_else(|| {
-            CodecError::Malformed(format!("body references missing region {first_region}"))
+            CodecError::malformed(format_args!(
+                "body references missing region {first_region}"
+            ))
         })?;
         let transform_ordinal = model.bodies[..body_ordinal]
             .iter()
@@ -815,25 +817,28 @@ fn encode_face_topology_smbh(
             .bodies
             .iter()
             .position(|body| body.id == region.body)
-            .ok_or_else(|| CodecError::Malformed(format!("region {} has no body", region.id)))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("region {} has no body", region.id))
+            })?;
         let body = &model.bodies[body_ordinal];
         let ordinal = body
             .regions
             .iter()
             .position(|id| *id == region.id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("body does not own region {}", region.id))
+                CodecError::malformed(format_args!("body does not own region {}", region.id))
             })?;
-        let first_shell = region
-            .shells
-            .first()
-            .ok_or_else(|| CodecError::Malformed(format!("region {} has no shell", region.id)))?;
+        let first_shell = region.shells.first().ok_or_else(|| {
+            CodecError::malformed(format_args!("region {} has no shell", region.id))
+        })?;
         let shell_ordinal = model
             .shells
             .iter()
             .position(|shell| shell.id == *first_shell)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("region references missing shell {first_shell}"))
+                CodecError::malformed(format_args!(
+                    "region references missing shell {first_shell}"
+                ))
             })?;
         let next = if ordinal + 1 == body.regions.len() {
             -1
@@ -844,7 +849,7 @@ fn encode_face_topology_smbh(
                 .iter()
                 .position(|item| item.id == *id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("body references missing region {id}"))
+                    CodecError::malformed(format_args!("body references missing region {id}"))
                 })?;
             native_record_index(region_start, position)?
         };
@@ -865,14 +870,16 @@ fn encode_face_topology_smbh(
             .regions
             .iter()
             .position(|region| region.id == shell.region)
-            .ok_or_else(|| CodecError::Malformed(format!("shell {} has no region", shell.id)))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("shell {} has no region", shell.id))
+            })?;
         let region = &model.regions[region_ordinal];
         let ordinal = region
             .shells
             .iter()
             .position(|id| *id == shell.id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("region does not own shell {}", shell.id))
+                CodecError::malformed(format_args!("region does not own shell {}", shell.id))
             })?;
         let first_face = shell
             .faces
@@ -883,7 +890,9 @@ fn encode_face_topology_smbh(
                     .iter()
                     .position(|face| face.id == *first_face)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!("shell references missing face {first_face}"))
+                        CodecError::malformed(format_args!(
+                            "shell references missing face {first_face}"
+                        ))
                     })
                     .and_then(|ordinal| native_record_index(face_start, ordinal))
             })
@@ -898,7 +907,7 @@ fn encode_face_topology_smbh(
                 .iter()
                 .position(|item| item.id == *id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("region references missing shell {id}"))
+                    CodecError::malformed(format_args!("region references missing shell {id}"))
                 })?;
             native_record_index(shell_start, position)?
         };
@@ -947,13 +956,15 @@ fn encode_face_topology_smbh(
             .shells
             .iter()
             .position(|shell| shell.id == face.shell)
-            .ok_or_else(|| CodecError::Malformed(format!("face {} has no shell", face.id)))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("face {} has no shell", face.id)))?;
         let shell = &model.shells[shell_ordinal];
         let ordinal = shell
             .faces
             .iter()
             .position(|id| *id == face.id)
-            .ok_or_else(|| CodecError::Malformed(format!("shell does not own face {}", face.id)))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("shell does not own face {}", face.id))
+            })?;
         if face.loops.is_empty() {
             return Err(CodecError::NotImplemented(
                 "source-less F3D face generation requires every face to own a loop".into(),
@@ -964,14 +975,20 @@ fn encode_face_topology_smbh(
             .iter()
             .position(|loop_| loop_.id == face.loops[0])
             .ok_or_else(|| {
-                CodecError::Malformed(format!("face references missing loop {}", face.loops[0]))
+                CodecError::malformed(format_args!(
+                    "face references missing loop {}",
+                    face.loops[0]
+                ))
             })?;
         let surface_position = model
             .surfaces
             .iter()
             .position(|surface| surface.id == face.surface)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("face references missing surface {}", face.surface))
+                CodecError::malformed(format_args!(
+                    "face references missing surface {}",
+                    face.surface
+                ))
             })?;
         native_ident(&mut records, "face")?;
         native_ref(
@@ -997,7 +1014,7 @@ fn encode_face_topology_smbh(
                     .iter()
                     .position(|item| item.id == *id)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!("shell references missing face {id}"))
+                        CodecError::malformed(format_args!("shell references missing face {id}"))
                     })?;
                 native_record_index(face_start, position)?
             },
@@ -1028,18 +1045,17 @@ fn encode_face_topology_smbh(
             .iter()
             .position(|face| face.id == loop_.face)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("loop references missing face {}", loop_.face))
+                CodecError::malformed(format_args!("loop references missing face {}", loop_.face))
             })?;
-        let first = loop_
-            .coedges
-            .first()
-            .ok_or_else(|| CodecError::Malformed(format!("loop {} has no coedges", loop_.id)))?;
+        let first = loop_.coedges.first().ok_or_else(|| {
+            CodecError::malformed(format_args!("loop {} has no coedges", loop_.id))
+        })?;
         let coedge_position = model
             .coedges
             .iter()
             .position(|coedge| coedge.id == *first)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("loop references missing coedge {first}"))
+                CodecError::malformed(format_args!("loop references missing coedge {first}"))
             })?;
         native_ident(&mut records, "loop")?;
         native_ref(&mut records, -1);
@@ -1051,7 +1067,10 @@ fn encode_face_topology_smbh(
             .iter()
             .position(|id| *id == loop_.id)
             .ok_or_else(|| {
-                CodecError::Malformed(format!("face {} does not own loop {}", face.id, loop_.id))
+                CodecError::malformed(format_args!(
+                    "face {} does not own loop {}",
+                    face.id, loop_.id
+                ))
             })?;
         let next_loop = if ordinal + 1 == face.loops.len() {
             -1
@@ -1062,7 +1081,7 @@ fn encode_face_topology_smbh(
                 .iter()
                 .position(|candidate| candidate.id == *next_id)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!("face references missing loop {next_id}"))
+                    CodecError::malformed(format_args!("face references missing loop {next_id}"))
                 })?;
             native_record_index(loop_start, position)?
         };
@@ -1278,7 +1297,7 @@ fn encode_face_topology_smbh(
         let (Some(next), Some(previous), Some(radial), Some(edge), Some(owner)) =
             (next, previous, radial, edge, owner)
         else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "coedge {} has an unresolved topology reference",
                 coedge.id
             )));
@@ -1321,7 +1340,7 @@ fn encode_face_topology_smbh(
                     .get(pcurve_id)
                     .copied()
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "coedge references missing pcurve {pcurve_id}"
                         ))
                     })
@@ -1347,12 +1366,12 @@ fn encode_face_topology_smbh(
         let wire_ref = source_less_wire_record_for_shell(model, wire_start, shell_ordinal)?;
         for (ordinal, edge_id) in shell.wire_edges.iter().enumerate() {
             let edge_ordinal = edge_ordinals.get(edge_id).copied().ok_or_else(|| {
-                CodecError::Malformed(format!("wire references missing edge {edge_id}"))
+                CodecError::malformed(format_args!("wire references missing edge {edge_id}"))
             })?;
             let coedge_ordinal = wire_edge_base + ordinal;
             let owner = native_record_index(wire_coedge_start, coedge_ordinal)?;
             if wire_edge_owners.insert(edge_id.clone(), owner).is_some() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "wire edge {edge_id} belongs to more than one shell"
                 )));
             }
@@ -1470,7 +1489,7 @@ fn encode_source_less_edges_vertices_points(
         let start = vertex_ordinals.get(&edge.start).copied();
         let end = vertex_ordinals.get(&edge.end).copied();
         let (Some(start), Some(end)) = (start, end) else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "edge {} has an unresolved vertex",
                 edge.id
             )));
@@ -1483,7 +1502,9 @@ fn encode_source_less_edges_vertices_points(
                     .get(curve_id)
                     .copied()
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!("edge references missing curve {curve_id}"))
+                        CodecError::malformed(format_args!(
+                            "edge references missing curve {curve_id}"
+                        ))
                     })
                     .and_then(|ordinal| native_record_index(curve_start, ordinal))
             })
@@ -1548,7 +1569,7 @@ fn encode_source_less_edges_vertices_points(
     for vertex in &model.vertices {
         let point = point_ordinals.get(&vertex.point).copied();
         let Some(point) = point else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "vertex {} has an unresolved carrier",
                 vertex.id
             )));
@@ -1620,7 +1641,7 @@ fn vertex_ownership(
             .iter()
             .position(|edge| edge.id == metadata.owning_edge)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "vertex {} references missing owning edge {}",
                     vertex.id, metadata.owning_edge
                 ))
@@ -1632,7 +1653,7 @@ fn vertex_ownership(
             _ => false,
         };
         if !valid {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "vertex {} endpoint slot {} conflicts with owning edge {}",
                 vertex.id, metadata.endpoint_index, metadata.owning_edge
             )));
@@ -1652,7 +1673,7 @@ fn vertex_ownership(
                 None
             }
         })
-        .ok_or_else(|| CodecError::Malformed(format!("vertex {} has no edge", vertex.id)))
+        .ok_or_else(|| CodecError::malformed(format_args!("vertex {} has no edge", vertex.id)))
 }
 
 fn native_face_sidedness(
@@ -1731,7 +1752,7 @@ fn native_tolerant_vertex_tail(
         None => return Ok(()),
     };
     if !tolerance.is_finite() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D vertex {} tolerance must be finite",
             vertex.id
         )));
@@ -1773,7 +1794,7 @@ fn native_tolerant_edge_tail(
         return Ok(());
     };
     if !tolerance.is_finite() || tolerance < 0.0 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D edge {} tolerance must be finite and nonnegative",
             edge.id
         )));
@@ -1805,7 +1826,7 @@ fn edge_record_metadata(
         |metadata| metadata.continuity.clone(),
     );
     if continuity != "tangent" && continuity != "unknown" {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D edge {} has unsupported continuity token {continuity}",
             edge.id
         )));
@@ -1826,7 +1847,7 @@ fn apply_native_edge_owners(
             .iter()
             .any(|edge| edge.id == ownership.edge)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D edge ownership {} references missing edge {}",
                 ownership.id, ownership.edge
             )));
@@ -1842,7 +1863,7 @@ fn apply_native_edge_owners(
                     .find(|(_, coedge)| coedge.id == *owner)
                 {
                     if coedge.edge != ownership.edge {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "F3D edge ownership {} selects a coedge of another edge",
                             ownership.id
                         )));
@@ -1851,7 +1872,7 @@ fn apply_native_edge_owners(
                 } else if owners.contains_key(&ownership.edge) {
                     continue;
                 } else {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "F3D edge ownership {} references missing coedge {owner}",
                         ownership.id
                     )));

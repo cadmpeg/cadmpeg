@@ -9,6 +9,8 @@ use super::super::sketch_transfer::{
     unique_point_segment, unique_reference_line_segment,
 };
 
+const EPS_SKAMP_AGREEMENT: f64 = 1.0e-9;
+
 pub(crate) fn section_line_fixed_coordinate(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
@@ -114,7 +116,7 @@ pub(crate) fn section_line_direct_fixed_coordinates(
             .into_iter()
             .map(f64::abs)
             .fold(1.0, f64::max);
-        let tolerance = 1e-9 * scale;
+        let tolerance = EPS_SKAMP_AGREEMENT * scale;
         match [(x0 - x1).abs() <= tolerance, (y0 - y1).abs() <= tolerance] {
             [true, false] => {
                 coordinates.insert(0);
@@ -282,7 +284,7 @@ pub(crate) fn saved_line_fixed_coordinate_value(
         return None;
     };
     let scale = first.abs().max(second.abs()).max(1.0);
-    ((first - second).abs() <= 1e-9 * scale).then_some(first)
+    ((first - second).abs() <= EPS_SKAMP_AGREEMENT * scale).then_some(first)
 }
 
 #[derive(Clone, Copy)]

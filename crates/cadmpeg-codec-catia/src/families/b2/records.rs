@@ -24,6 +24,18 @@ use crate::wire::records::{
     ConsolidatedPcurve, ConsolidatedRecord,
 };
 
+const EPS_PLANE_DIRECTION_UNIT: f64 = 1.0e-9;
+const EPS_PARAMETER_RANGE: f64 = 1.0e-6;
+const EPS_SPATIAL_CIRCLE_UNIT: f64 = 1.0e-12;
+const EPS_SPATIAL_CIRCLE_ORTHO: f64 = 1.0e-12;
+const EPS_CONE_RANGE_START: f64 = 1.0e-12;
+const EPS_CONE_DIRECTION_UNIT: f64 = 1.0e-9;
+const EPS_CONE_FRAME_ORTHO: f64 = 1.0e-9;
+const EPS_ANALYTIC_FRAME_UNIT: f64 = 1.0e-12;
+const EPS_ANALYTIC_FRAME_ORTHO: f64 = 1.0e-12;
+const EPS_ANALYTIC_AXIS_UNIT: f64 = 1.0e-9;
+const EPS_ANALYTIC_AXIS_RANGE: f64 = 1.0e-9;
+
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
 /// kind-`0x01` `b2 03 30` construction-use record.
 #[derive(Debug, Clone)]
@@ -1037,8 +1049,8 @@ pub(crate) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeome
     let u_axis = Vector3::new(direction[0], direction[1], direction[2]);
     let z_axis = Vector3::new(0.0, 0.0, 1.0);
     let normal = u_axis.cross(z_axis).unit()?;
-    let valid_direction = (u_axis.norm() - 1.0).abs() <= 1e-9
-        && u_axis.z.abs() <= 1e-9
+    let valid_direction = (u_axis.norm() - 1.0).abs() <= EPS_PLANE_DIRECTION_UNIT
+        && u_axis.z.abs() <= EPS_PLANE_DIRECTION_UNIT
         && direction.iter().all(|value| value.is_finite());
     let valid_tail =
         tail.iter().all(|value| value.is_finite()) && tail[0] > 0.0 && tail[1] < tail[2];
@@ -1107,7 +1119,7 @@ fn parameter_in_closed_range(value: f64, range: [f64; 2]) -> bool {
     if !span.is_finite() || span <= 0.0 {
         return false;
     }
-    let tolerance = 1e-6 * span;
+    let tolerance = EPS_PARAMETER_RANGE * span;
     range[0] - tolerance <= value && value <= range[1] + tolerance
 }
 
@@ -1252,9 +1264,9 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
     let radius = values[9];
     let range = [values[10], values[11]];
     if !values.iter().all(|value| value.is_finite())
-        || (ref_norm - 1.0).abs() > 1e-12
-        || (transverse_norm - 1.0).abs() > 1e-12
-        || orthogonality > 1e-12
+        || (ref_norm - 1.0).abs() > EPS_SPATIAL_CIRCLE_UNIT
+        || (transverse_norm - 1.0).abs() > EPS_SPATIAL_CIRCLE_UNIT
+        || orthogonality > EPS_SPATIAL_CIRCLE_ORTHO
         || radius <= 0.0
         || range[0] >= range[1]
         || values[12].to_bits() != 1.0f64.to_bits()
@@ -1726,10 +1738,12 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
         let mut slant_range = [values[16], values[17]];
         let angular_scale = values[18];
         let angular_domain = [values[21], values[22]];
-        if slant_range[0].abs() <= 1e-12 {
+        if slant_range[0].abs() <= EPS_CONE_RANGE_START {
             slant_range[0] = 0.0;
         }
-        let unit = |v: [f64; 3]| ((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) - 1.0).abs() < 1e-9;
+        let unit = |v: [f64; 3]| {
+            ((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) - 1.0).abs() < EPS_CONE_DIRECTION_UNIT
+        };
         let cross = [
             t1[1] * t2[2] - t1[2] * t2[1],
             t1[2] * t2[0] - t1[0] * t2[2],
@@ -1742,7 +1756,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
             && cross
                 .iter()
                 .zip(axis)
-                .all(|(cross, axis)| (cross - axis).abs() <= 1e-9)
+                .all(|(cross, axis)| (cross - axis).abs() <= EPS_CONE_FRAME_ORTHO)
             && 0.0 < half_angle
             && half_angle < std::f64::consts::FRAC_PI_2
             && periodic_angular_range_is_valid(angular_range, angular_domain)
@@ -1838,11 +1852,11 @@ pub(crate) fn b2_revolutions_from_records(
             || bounds[2] >= bounds[3]
             || [direction_x, direction_y, axis]
                 .into_iter()
-                .any(|direction| (squared_length(direction) - 1.0).abs() > 1e-12)
+                .any(|direction| (squared_length(direction) - 1.0).abs() > EPS_ANALYTIC_FRAME_UNIT)
             || cross
                 .iter()
                 .zip(axis)
-                .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
+                .any(|(cross, axis)| (cross - axis).abs() > EPS_ANALYTIC_FRAME_ORTHO)
             || bounds[0] / angular_scale != 0.5
             || (bounds[1] - bounds[0]) / angular_scale != std::f64::consts::TAU
             || mean_angle_parameter / angular_scale != std::f64::consts::PI + 0.5
@@ -1940,7 +1954,7 @@ pub(crate) fn b2_line_profiles_from_records(
                 .iter()
                 .map(|component| component * component)
                 .sum::<f64>();
-            ((squared_length - 1.0).abs() <= 1e-12
+            ((squared_length - 1.0).abs() <= EPS_ANALYTIC_FRAME_UNIT
                 && values[6].to_bits() == 1.0_f64.to_bits()
                 && values[7] < values[8])
                 .then_some(B2LineProfile {
@@ -1987,7 +2001,7 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
             let dot = |first: [f64; 3], second: [f64; 3]| {
                 first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
             };
-            let unit = |value: [f64; 3]| (dot(value, value) - 1.0).abs() <= 1e-12;
+            let unit = |value: [f64; 3]| (dot(value, value) - 1.0).abs() <= EPS_ANALYTIC_FRAME_UNIT;
             let cross = [
                 direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
                 direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
@@ -1997,16 +2011,16 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
                 && unit(direction_x)
                 && unit(direction_y)
                 && unit(axis)
-                && dot(direction_x, direction_y).abs() <= 1e-12
-                && dot(direction_x, axis).abs() <= 1e-12
-                && dot(direction_y, axis).abs() <= 1e-12
+                && dot(direction_x, direction_y).abs() <= EPS_ANALYTIC_FRAME_ORTHO
+                && dot(direction_x, axis).abs() <= EPS_ANALYTIC_FRAME_ORTHO
+                && dot(direction_y, axis).abs() <= EPS_ANALYTIC_FRAME_ORTHO
                 && cross
                     .iter()
                     .zip(axis)
                     .map(|(first, second)| (first - second).powi(2))
                     .sum::<f64>()
                     .sqrt()
-                    <= 1e-12
+                    <= EPS_ANALYTIC_FRAME_ORTHO
                 && major_radius > 0.0
                 && minor_radius > 0.0
                 && periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
@@ -2066,7 +2080,7 @@ pub(crate) fn b2_spheres_from_records(
             let chart_origin = values[18];
             let scaled_length_is_radius = |value: [f64; 3]| {
                 let length = value[0].hypot(value[1]).hypot(value[2]);
-                length.is_finite() && ((length / radius) - 1.0).abs() <= 1e-12
+                length.is_finite() && ((length / radius) - 1.0).abs() <= EPS_ANALYTIC_FRAME_UNIT
             };
             (values.iter().all(|value| value.is_finite())
                 && radius > 0.0
@@ -2091,7 +2105,7 @@ pub(crate) fn b2_spheres_from_records(
             cross
                 .iter()
                 .zip(axis)
-                .all(|(cross, axis)| (cross - axis).abs() <= 1e-12)
+                .all(|(cross, axis)| (cross - axis).abs() <= EPS_ANALYTIC_FRAME_ORTHO)
                 .then_some(B2Sphere {
                     pos: frame.pos,
                     center,
@@ -2240,7 +2254,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 || vector.iter().any(|value| !value.is_finite())
                 || u_range.iter().any(|value| !value.is_finite())
                 || v_range.iter().any(|value| !value.is_finite())
-                || (vector[0].hypot(vector[1]) - 1.0).abs() > 1e-9
+                || (vector[0].hypot(vector[1]) - 1.0).abs() > EPS_ANALYTIC_AXIS_UNIT
                 || u_range[0] >= u_range[1]
                 || v_range[0] >= v_range[1]
                 || !circle_range_is_full_turn(radius, u_range)
@@ -2324,7 +2338,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 || vector.iter().any(|value| !value.is_finite())
                 || u_range.iter().any(|value| !value.is_finite())
                 || v_range.iter().any(|value| !value.is_finite())
-                || (vector[0].hypot(vector[1]) - 1.0).abs() > 1e-9
+                || (vector[0].hypot(vector[1]) - 1.0).abs() > EPS_ANALYTIC_AXIS_UNIT
                 || !range_origin.is_finite()
                 || range_origin.to_bits() != expected_range_origin.to_bits()
                 || u_range[0] >= u_range[1]
@@ -2420,12 +2434,12 @@ pub(crate) fn b2_circles_from_records(
 
 pub(crate) fn circle_range_is_full_turn(radius: f64, range: [f64; 2]) -> bool {
     let relative_span = (range[1] - range[0]) / (std::f64::consts::TAU * radius);
-    relative_span.is_finite() && (relative_span - 1.0).abs() < 1e-9
+    relative_span.is_finite() && (relative_span - 1.0).abs() < EPS_ANALYTIC_AXIS_RANGE
 }
 
 pub(crate) fn circle_range_is_within_full_turn(radius: f64, range: [f64; 2]) -> bool {
     let relative_span = (range[1] - range[0]) / (std::f64::consts::TAU * radius);
-    relative_span.is_finite() && relative_span <= 1.0 + 1e-9
+    relative_span.is_finite() && relative_span <= 1.0 + EPS_ANALYTIC_AXIS_RANGE
 }
 
 /// Decode structurally repeated `b2 03 23` edge-range packets.

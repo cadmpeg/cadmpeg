@@ -9,6 +9,7 @@ use crate::directory::DirectoryEntry;
 use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
 };
+use crate::global::Dialect;
 use crate::graph::ParameterResolver;
 use crate::parameter::ParameterRecord;
 use serde::Serialize;
@@ -46,6 +47,7 @@ pub(super) enum NativeAnnotation {
     GeneralNote {
         id: String,
         source_entity: String,
+        form: i64,
         declared_string_count: Option<i64>,
         strings: Vec<NativeTextRun>,
         transformation: Option<String>,
@@ -156,19 +158,24 @@ pub(super) enum NativeAnnotation {
     GeneralSymbol {
         id: String,
         source_entity: String,
+        form: i64,
         note: Option<String>,
+        declared_geometry_count: Option<i64>,
         geometry: Vec<Option<String>>,
+        declared_leader_count: Option<i64>,
         leaders: Vec<Option<String>>,
         transformation: Option<String>,
     },
     SectionedArea {
         id: String,
         source_entity: String,
+        form: i64,
         boundary: Option<String>,
         fill_pattern: Option<i64>,
         pattern_anchor: [Option<f64>; 3],
         pattern_spacing: Option<f64>,
         pattern_angle: Option<f64>,
+        declared_island_count: Option<i64>,
         islands: Vec<Option<String>>,
         transformation: Option<String>,
     },
@@ -184,6 +191,7 @@ struct Subject<'a> {
     primary_end: usize,
     entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
     parameter_resolver: &'a ParameterResolver<'a>,
+    v5_null_string_rule: bool,
 }
 
 impl Subject<'_> {
@@ -230,11 +238,16 @@ impl Subject<'_> {
     fn text_run(&self, start: usize) -> NativeTextRun {
         let record = self.record;
         let font_code = record.and_then(|record| record.integer(start + 3));
+        let text = record.and_then(|record| record.string(start + 11));
+        let v5_null_string = self.v5_null_string_rule
+            && record.and_then(|record| record.integer(1)) == Some(1)
+            && record.and_then(|record| record.integer(start)) == Some(1)
+            && text.is_some_and(|value| value == b" ");
         NativeTextRun {
             declared_character_count: record.and_then(|record| record.integer(start)),
-            text: record
-                .and_then(|record| record.string(start + 11))
-                .map(<[u8]>::to_vec),
+            text: (!v5_null_string)
+                .then(|| text.map(<[u8]>::to_vec))
+                .flatten(),
             box_size: [
                 record.and_then(|record| record.number(start + 1)),
                 record.and_then(|record| record.number(start + 2)),
@@ -417,6 +430,7 @@ fn general_note(
     NativeAnnotation::GeneralNote {
         id: subject.id(),
         source_entity: subject.source_entity(),
+        form: subject.form,
         declared_string_count: record.and_then(|record| record.integer(1)),
         strings: (0..count)
             .map(|index| subject.text_run(2 + index * 12))
@@ -557,6 +571,15 @@ fn general_label(
 fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> NativeAnnotation {
     let record = subject.record;
     let end = subject.primary_end;
+    let declared_geometry_count = record.and_then(|record| record.integer(2));
+    // The leader count follows the declared geometry span, even when that
+    // span cannot be admitted. This preserves the second declaration without
+    // allowing an invalid count to alias a geometry pointer.
+    let declared_leader_count_index = declared_geometry_count
+        .and_then(|count| usize::try_from(count).ok())
+        .and_then(|count| 3_usize.checked_add(count));
+    let declared_leader_count = declared_leader_count_index
+        .and_then(|index| record.and_then(|record| record.integer(index)));
     // On any checked failure the tuple defaults to (0, 0, 0), so
     // leader_count_index is read only when leader_count > 0 admitted it.
     let (geometry_count, leader_count_index, leader_count) = record
@@ -574,10 +597,13 @@ fn general_symbol(subject: &Subject<'_>, transformation: Option<String>) -> Nati
     NativeAnnotation::GeneralSymbol {
         id: subject.id(),
         source_entity: subject.source_entity(),
+        form: subject.form,
         note: subject.note_link(1),
+        declared_geometry_count,
         geometry: (0..geometry_count)
             .map(|offset| subject.geometry_link(3 + offset))
             .collect(),
+        declared_leader_count,
         leaders: (0..leader_count)
             .map(|offset| subject.leader_link(leader_count_index + 1 + offset))
             .collect(),
@@ -595,6 +621,7 @@ fn sectioned_area(
     NativeAnnotation::SectionedArea {
         id: subject.id(),
         source_entity: subject.source_entity(),
+        form: subject.form,
         boundary: subject.section_boundary_link(1),
         fill_pattern: record.and_then(|record| record.integer(2)),
         pattern_anchor: [
@@ -604,6 +631,7 @@ fn sectioned_area(
         ],
         pattern_spacing: record.and_then(|record| record.number(6)),
         pattern_angle: record.and_then(|record| record.number(7)),
+        declared_island_count: record.and_then(|record| record.integer(8)),
         islands: (0..island_count)
             .map(|offset| subject.section_boundary_link(9 + offset))
             .collect(),
@@ -618,6 +646,7 @@ pub(super) fn build(
     parameter_resolver: &ParameterResolver<'_>,
     clamped_primary_end: &impl Fn(u32, &ParameterRecord) -> usize,
     overdeclared_counts: &mut OverdeclaredCounts,
+    dialect: Dialect,
 ) -> Vec<NativeAnnotation> {
     directory
         .iter()
@@ -631,6 +660,8 @@ pub(super) fn build(
                 primary_end: record.map_or(0, |record| clamped_primary_end(entry.sequence, record)),
                 entries,
                 parameter_resolver,
+                v5_null_string_rule: dialect == Dialect::V5_0
+                    && matches!(kind, AnnotationKind::GeneralNote),
             };
             let transformation = (entry.transform > 0)
                 .then(|| format!("iges:native:transformation#D{}", entry.transform));

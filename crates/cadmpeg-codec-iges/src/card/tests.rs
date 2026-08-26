@@ -55,7 +55,7 @@ fn inspect_rejects_unsequenced_physical_records_before_terminate() {
 #[test]
 fn malformed_sequence_padding_is_rejected_without_panicking() {
     let mut bytes = point_file();
-    bytes[73..80].copy_from_slice(b"     1 ");
+    bytes[CARD_DATA_COLUMNS + 1..CARD_COLUMNS].copy_from_slice(b"     1 ");
 
     assert_eq!(IgesCodec.detect(&bytes), Confidence::No);
     assert_eq!(
@@ -106,9 +106,17 @@ fn inspect_reports_sections_and_physical_line_endings() {
 fn decode_rejects_extended_physical_records_before_terminate() {
     let mut bytes = point_file();
     let mut inserted = b"short record\n".to_vec();
-    inserted.extend(std::iter::repeat_n(b'x', 81));
+    inserted.extend(std::iter::repeat_n(b'x', CARD_COLUMNS + 1));
     inserted.push(b'\n');
-    bytes.splice(162..162, inserted);
+    // The over-long record goes in at the last Global card so it precedes
+    // the Directory section — the same offset this test used as a bare
+    // literal before this derivation replaced it.
+    let last_global = bytes
+        .chunks_exact(CARD_LINE_BYTES)
+        .rposition(|line| line[CARD_DATA_COLUMNS] == b'G')
+        .expect("Global card");
+    let offset = last_global * CARD_LINE_BYTES;
+    bytes.splice(offset..offset, inserted);
 
     let error = IgesCodec
         .inspect(

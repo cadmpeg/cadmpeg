@@ -96,8 +96,9 @@ fn definition_at(
     let raw_name = bytes.get(start..start.checked_add(count.checked_mul(2)?)?)?;
     let units = raw_name
         .chunks_exact(2)
-        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-        .collect::<Vec<_>>();
+        .enumerate()
+        .map(|(index, _)| View::u16_le_at(raw_name, index * 2))
+        .collect::<Option<Vec<_>>>()?;
     let name = String::from_utf16(&units).ok()?.trim().to_string();
     if name.is_empty() {
         return None;

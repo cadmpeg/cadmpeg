@@ -68,8 +68,9 @@
     "entities=2",
     "entity.212.form.0=1",
     "entity.213.form.0=1",
-    "parameter_records=2",
-    "parameter_tokens=59",
-    "external_references=0"
+    "parameter_records=1",
+    "parameter_tokens=26",
+    "external_references=0",
+    "loss.iges/parameter.data-quarantined=1"
   ]
 }

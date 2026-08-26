@@ -3,6 +3,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use cadmpeg_core::decode::alloc_filled;
 
 use super::substrate::StreamView;
 
@@ -480,6 +481,13 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
         }
         if let Some(trailer) = census.terminal_null_references {
             let bytes = &stream.inflated[trailer.offset..trailer.end];
+            let Ok(references) = alloc_filled(
+                trailer.count.into(),
+                1_u32,
+                "nx Parasolid terminal null references",
+            ) else {
+                continue;
+            };
             events
                 .terminal_null_references
                 .push(ParasolidDeltasTerminalNullReferences {
@@ -488,7 +496,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                         trailer.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
-                    references: vec![1; trailer.count.into()],
+                    references,
                     byte_len: bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                     inflated_offset: trailer.offset as u64,

@@ -18,6 +18,8 @@ use super::super::graph::{bounded_occurrence_range, B5Graph};
 use super::{annotate, distance, B5Support, CurvePlan, SurfacePlan, TransferPlan};
 use crate::assemble::cgm_source;
 
+const EPS_SUPPORT_ENDPOINT: f64 = 1.0e-6;
+
 pub(super) fn merge_curve_plan(
     plans: &mut HashMap<u32, CurvePlan>,
     conflicts: &mut HashSet<u32>,
@@ -223,7 +225,8 @@ pub(super) fn b5_supports_agree(
     };
     lifted.all(|candidate| {
         candidate.is_some_and(|candidate| {
-            distance(reference[0], candidate[0]).max(distance(reference[1], candidate[1])) <= 1e-6
+            distance(reference[0], candidate[0]).max(distance(reference[1], candidate[1]))
+                <= EPS_SUPPORT_ENDPOINT
         })
     })
 }
@@ -253,7 +256,7 @@ pub(super) fn b5_supports_follow_curve(
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
 ) -> bool {
-    const EXACT_TOLERANCE: f64 = 1e-6;
+    const EXACT_TOLERANCE: f64 = 1.0e-6;
 
     let Some(range) = curve_plan_parameter_range(curve) else {
         return false;

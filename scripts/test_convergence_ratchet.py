@@ -99,6 +99,9 @@ class PatternFilters(unittest.TestCase):
             "struct LossNote {\n"
             "    msg: String,\n"
             "}\n"
+            "impl LossNote {\n"
+            "    fn new() -> Self { todo!() }\n"
+            "}\n"
             "fn make() -> LossNote {\n"
             "    LossNote { msg: String::new() }\n"
             "}\n"
@@ -107,7 +110,11 @@ class PatternFilters(unittest.TestCase):
         for line in text.splitlines():
             if not ratchet.LOSS_NOTE_LIT.search(line):
                 continue
-            if ratchet.LOSS_NOTE_RETURN.search(line) or ratchet.LOSS_NOTE_STRUCT.search(line):
+            if (
+                ratchet.LOSS_NOTE_RETURN.search(line)
+                or ratchet.LOSS_NOTE_STRUCT.search(line)
+                or ratchet.LOSS_NOTE_IMPL.search(line)
+            ):
                 continue
             hits += 1
         self.assertEqual(hits, 1)
@@ -127,6 +134,17 @@ class PatternFilters(unittest.TestCase):
         self.assertEqual(
             ratchet.BARE_TOLERANCE.findall(text),
             ["1e-6", "1e-7", "1e-8", "1e-9", "1e-10", "1e-11", "1e-12"],
+        )
+
+    def test_vec_repeat_scanner_ignores_nested_delimiters_and_strings(self) -> None:
+        text = r'''
+            let bytes = vec![0u8; len];
+            let nested = vec![[0; 2]; outer_len];
+            let message = vec![format!("a; b")];
+            // vec![0; commented_len]
+        '''
+        self.assertEqual(
+            list(ratchet.iter_vec_repeat_counts(text)), ["len", "outer_len"]
         )
 
     def test_from_endian_counts_non_codec_crates(self) -> None:

@@ -122,7 +122,7 @@ fn flag_three_units_require_a_nonempty_name_and_accept_delegated_symbols() {
 
 #[test]
 fn minimum_resolution_falls_back_to_zero_when_absent_or_negative() {
-    for (resolution, expected) in [("", 0_usize), ("-0.001", 1)] {
+    for (resolution, expected) in [("", 1_usize), ("-0.001", 1)] {
         let global = format!(
             "1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,{resolution},1,1Ha,1Ho,11,0,0H,0H;"
         );
@@ -141,6 +141,71 @@ fn minimum_resolution_falls_back_to_zero_when_absent_or_negative() {
             expected,
             "{resolution:?}"
         );
+    }
+}
+
+#[test]
+fn trailing_exponent_decimal_recovers_global_real_without_substitution() {
+    let mut fields = valid_global_fields();
+    fields[18] = "2e-06.".into();
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(
+        parsed.length_context().unwrap().minimum_resolution_mm(),
+        2e-6
+    );
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalNumericSyntaxRecovered),
+        1
+    );
+    assert!(losses[0].message.contains("2e-06."));
+    assert!(losses[0].message.contains("recovered finite value"));
+}
+
+#[test]
+fn trailing_decimal_recovery_requires_an_exponent_prefix() {
+    let mut fields = valid_global_fields();
+    fields[18] = "2e-06..".into();
+
+    let (parsed, losses) = resolve_global_fields(&fields);
+
+    assert_eq!(
+        parsed.length_context().unwrap().minimum_resolution_mm(),
+        0.0
+    );
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalSemanticContextSubstituted),
+        1
+    );
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalNumericSyntaxRecovered),
+        0
+    );
+}
+
+#[test]
+fn recovered_global_real_is_strictly_reported_as_noncanonical() {
+    let bytes = point_file_with_field(18, "2e-06.");
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(
+        report_code_count(result.report(), IgesLossCode::GlobalNumericSyntaxRecovered),
+        1
+    );
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &strict_options(false))
+        .unwrap_err();
+    match error {
+        CodecError::StrictRefusal { loss_code, .. } => assert_eq!(
+            loss_code,
+            IgesLossCode::GlobalNumericSyntaxRecovered.kind().as_str()
+        ),
+        other => panic!("expected a shared-gate strict refusal, got {other:?}"),
     }
 }
 

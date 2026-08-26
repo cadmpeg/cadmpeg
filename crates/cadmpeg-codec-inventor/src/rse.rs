@@ -679,35 +679,35 @@ impl<'a> MetaCursor<'a> {
 
     fn length(&mut self, what: &'static str, width: usize) -> Result<usize, CodecError> {
         let count = usize::try_from(self.u32(what)?)
-            .map_err(|_| CodecError::Malformed(format!("RSe metadata {what} is too large")))?;
-        count
-            .checked_mul(width)
-            .ok_or_else(|| CodecError::Malformed(format!("RSe metadata {what} length overflows")))
+            .map_err(|_| CodecError::malformed(format_args!("RSe metadata {what} is too large")))?;
+        count.checked_mul(width).ok_or_else(|| {
+            CodecError::malformed(format_args!("RSe metadata {what} length overflows"))
+        })
     }
 
     fn length_prefixed_utf8(&mut self, what: &'static str) -> Result<String, CodecError> {
         let len = self.length(what, 1)?;
         if len > 256 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "RSe metadata {what} exceeds 256 bytes"
             )));
         }
         let bytes = self.take(len, what)?;
         std::str::from_utf8(bytes)
             .map(str::to_owned)
-            .map_err(|_| CodecError::Malformed(format!("RSe metadata {what} is not UTF-8")))
+            .map_err(|_| CodecError::malformed(format_args!("RSe metadata {what} is not UTF-8")))
     }
 
     fn length_prefixed_utf16(&mut self, what: &'static str) -> Result<String, CodecError> {
         let len = self.length(what, 2)?;
         if len > 8_192 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "RSe metadata {what} exceeds 4096 UTF-16 units"
             )));
         }
         self.source
             .utf16_le(len / 2)
-            .ok_or_else(|| CodecError::Malformed(format!("RSe metadata {what} is not UTF-16")))
+            .ok_or_else(|| CodecError::malformed(format_args!("RSe metadata {what} is not UTF-16")))
     }
 }
 

@@ -321,7 +321,7 @@ fn parse_occurrence<'a>(
     let occurrence_id = cursor.u32("occurrence id")?;
     let label = cursor.utf16(ctx, "occurrence record label", 256)?;
     if label != "DCx" {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Inventor occurrence record label is {label:?}, expected \"DCx\""
         )));
     }
@@ -368,7 +368,7 @@ fn parse_placement<'a>(
     let occurrence_id = cursor.u32("placement occurrence id")?;
     let label = cursor.utf16(ctx, "placement record label", 256)?;
     if label != "GRx" {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Inventor placement record label is {label:?}, expected \"GRx\""
         )));
     }
@@ -407,7 +407,7 @@ fn parse_placement<'a>(
 
 fn require(actual: u32, expected: u32, field: &str) -> Result<(), CodecError> {
     if actual != expected {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Inventor {field} is {actual:#010x}, expected {expected:#010x}"
         )));
     }
@@ -462,7 +462,7 @@ impl<'a> Cursor<'a> {
             .req_f64_le()
             .map_err(|error| error.during(field))?;
         if !value.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Inventor {field} is not finite"
             )));
         }
@@ -471,9 +471,9 @@ impl<'a> Cursor<'a> {
 
     fn count32(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
         let value = usize::try_from(self.u32(field)?)
-            .map_err(|_| CodecError::Malformed(format!("Inventor {field} is too large")))?;
+            .map_err(|_| CodecError::malformed(format_args!("Inventor {field} is too large")))?;
         if value > maximum {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Inventor {field} value {value} exceeds {maximum}"
             )));
         }
@@ -487,13 +487,13 @@ impl<'a> Cursor<'a> {
         maximum: usize,
     ) -> Result<String, CodecError> {
         let count = self.count32(field, maximum)?;
-        let len = count
-            .checked_mul(2)
-            .ok_or_else(|| CodecError::Malformed(format!("Inventor {field} length overflows")))?;
+        let len = count.checked_mul(2).ok_or_else(|| {
+            CodecError::malformed(format_args!("Inventor {field} length overflows"))
+        })?;
         ctx.charge_retained(len as u64, "retain Inventor assembly string", None)?;
         self.source
             .utf16_le(count)
-            .ok_or_else(|| CodecError::Malformed(format!("Inventor {field} is not UTF-16")))
+            .ok_or_else(|| CodecError::malformed(format_args!("Inventor {field} is not UTF-16")))
     }
 
     fn transform(&mut self) -> Result<CompactTransform, CodecError> {
@@ -532,10 +532,12 @@ impl<'a> Cursor<'a> {
         let view = self
             .source
             .child(self.source.position(), self.source.end())
-            .ok_or_else(|| CodecError::Malformed(format!("Inventor {field} range is invalid")))?;
-        self.source
-            .seek(self.source.end())
-            .ok_or_else(|| CodecError::Malformed(format!("Inventor {field} range is invalid")))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("Inventor {field} range is invalid"))
+            })?;
+        self.source.seek(self.source.end()).ok_or_else(|| {
+            CodecError::malformed(format_args!("Inventor {field} range is invalid"))
+        })?;
         Ok(view)
     }
 }

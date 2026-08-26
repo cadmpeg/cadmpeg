@@ -75,8 +75,9 @@ impl AsmEditSet {
             .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
         let limit = asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
         let ref_width = asm_header::stream_ref_width(bytes);
-        let records = sab::frame(bytes, start, limit, ref_width)
-            .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
+        let records = sab::frame(bytes, start, limit, ref_width).map_err(|error| {
+            CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
+        })?;
         let header_scale = asm_header::parse(bytes)
             .and_then(|header| header.scale)
             .unwrap_or(1.0);
@@ -94,7 +95,7 @@ impl AsmEditSet {
         header_scale: f64,
     ) -> Result<Self, CodecError> {
         if !matches!(ref_width, 4 | 8) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "ASM stream has unsupported integer width {ref_width}"
             )));
         }
@@ -146,13 +147,13 @@ impl AsmEditSet {
     ) -> Result<usize, CodecError> {
         let offset =
             sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "{} record {} lacks payload field {index}",
                     record.head, record.index
                 ))
             })?;
         if bytes.get(offset) != Some(&tag) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "{} record {} payload field {index} is not tag {tag:#04x}",
                 record.head, record.index
             )));
@@ -183,13 +184,13 @@ impl AsmEditSet {
     ) -> Result<(), CodecError> {
         let offset =
             sab::payload_token_offset(bytes, record, self.ref_width, index).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "{} record {} lacks payload field {index}",
                     record.head, record.index
                 ))
             })?;
         if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "{} record {} payload field {index} is not a sense token",
                 record.head, record.index
             )));
@@ -211,13 +212,13 @@ impl AsmEditSet {
     ) -> Result<(), CodecError> {
         let offset =
             sab::payload_token_offset(bytes, record, self.ref_width, index).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "{} record {} lacks boolean field {index}",
                     record.head, record.index
                 ))
             })?;
         Self::patch_boolean_at(bytes, offset, value).map_err(|_| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "{} record {} payload field {index} is not a boolean token",
                 record.head, record.index
             ))
@@ -249,7 +250,7 @@ impl AsmEditSet {
     ) -> Result<(), CodecError> {
         let offset = self.required_payload_field(bytes, record, index, 0x07)?;
         let encoded_length = bytes.get(offset + 1).copied().ok_or_else(|| {
-            CodecError::Malformed(format!("{} record string is truncated", record.head))
+            CodecError::malformed(format_args!("{} record string is truncated", record.head))
         })? as usize;
         if value.len() != encoded_length || !value.is_ascii() {
             return Err(CodecError::NotImplemented(format!(
@@ -271,7 +272,7 @@ impl AsmEditSet {
     ) -> Result<(), CodecError> {
         let offset =
             sab::payload_token_offset(bytes, record, self.ref_width, field).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "{} record {} lacks packed truecolor field {field}",
                     record.head, record.index
                 ))
@@ -287,7 +288,7 @@ impl AsmEditSet {
                 bytes[offset + 1..offset + 9].copy_from_slice(&i64::from(packed).to_le_bytes());
             }
             _ => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "{} record {} truecolor field {field} is not an integer",
                     record.head, record.index
                 )));
@@ -305,14 +306,14 @@ impl AsmEditSet {
         packed: u32,
     ) -> Result<(), CodecError> {
         let Some(sab::Token::Str(current)) = record.chunk(field) else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "{} record {} decimal-color field {field} is not text",
                 record.head, record.index
             )));
         };
         let offset =
             sab::payload_token_offset(bytes, record, self.ref_width, field).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "{} record {} lacks decimal-color field {field}",
                     record.head, record.index
                 ))
@@ -322,7 +323,7 @@ impl AsmEditSet {
             Some(0x08) => 2,
             Some(0x09 | 0x12) => self.ref_width,
             _ => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "{} record {} decimal-color field {field} has an invalid text tag",
                     record.head, record.index
                 )));
@@ -339,7 +340,7 @@ impl AsmEditSet {
         let encoded = format!("{packed:0width$}");
         let start = offset + 1 + length_width;
         let output = bytes.get_mut(start..start + width).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "{} record {} decimal-color text is truncated",
                 record.head, record.index
             ))
@@ -356,7 +357,7 @@ impl AsmEditSet {
         value: i64,
     ) -> Result<(), CodecError> {
         if !matches!(width, 4 | 8) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "ASM integer payload has unsupported width {width}"
             )));
         }
@@ -409,7 +410,7 @@ impl AsmEditSet {
                 CodecError::Malformed("ASM record offset exceeds address space".into())
             })?;
         if bytes.get(tag) != Some(&expected_tag) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "ASM field {ordinal} at byte {tag} has the wrong token tag"
             )));
         }
@@ -600,7 +601,7 @@ impl AsmEditSet {
         let record_bytes = record_slice(bytes, record, "extrusion")?;
         let layout = crate::nurbs::proc_curve::extrusion_patch_layout(record_bytes, self.ref_width)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "spline record {} lacks writable extrusion fields",
                     record.index
                 ))
@@ -647,7 +648,7 @@ impl AsmEditSet {
         let layout =
             crate::nurbs::proc_curve::rolling_ball_patch_layout(record_bytes, self.ref_width)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "spline record {} lacks a writable rolling-ball radius pair",
                         record.index
                     ))
@@ -673,7 +674,7 @@ impl AsmEditSet {
         let record_bytes = record_slice(bytes, record, "procedural-surface")?;
         let layout =
             crate::nurbs::core::final_surface_patch_layout(record_bytes).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "spline record {} has no solved surface cache",
                     record.index
                 ))
@@ -697,7 +698,7 @@ impl AsmEditSet {
         let record_bytes = record_slice(bytes, record, "procedural-curve")?;
         let layout =
             crate::nurbs::core::final_curve_patch_layout(record_bytes).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "intcurve record {} has no solved curve cache",
                     record.index
                 ))
@@ -719,7 +720,7 @@ impl AsmEditSet {
         transform: Transform,
     ) -> Result<(), CodecError> {
         if self.header_scale == 0.0 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "transform record {} has zero header scale",
                 record.index
             )));
@@ -803,11 +804,13 @@ impl AsmEditSet {
 
 fn record_slice<'a>(bytes: &'a [u8], record: &Record, label: &str) -> Result<&'a [u8], CodecError> {
     let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed(format!("{label} record extent overflows address space"))
+        CodecError::malformed(format_args!(
+            "{label} record extent overflows address space"
+        ))
     })?;
     bytes
         .get(record.offset..end)
-        .ok_or_else(|| CodecError::Malformed(format!("{label} record is truncated")))
+        .ok_or_else(|| CodecError::malformed(format_args!("{label} record is truncated")))
 }
 
 fn apply_f64_patches(
@@ -867,7 +870,7 @@ fn patch_helix_definition(
     let layout =
         crate::nurbs::proc_curve::helix_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "procedural curve record {} lacks writable helix fields",
                     record.index
                 ))
@@ -926,7 +929,7 @@ fn patch_vector_offset_definition(
     let layout =
         crate::nurbs::proc_curve::vector_offset_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "vector-offset record {} lacks writable construction fields",
                     record.index
                 ))
@@ -965,7 +968,7 @@ fn patch_subset_definition(
     let layout =
         crate::nurbs::proc_curve::subset_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "subset record {} lacks writable construction fields",
                     record.index
                 ))
@@ -997,7 +1000,7 @@ fn patch_compound_definition(
     let layout =
         crate::nurbs::proc_curve::compound_patch_layout(record_bytes, stream_ref_width(bytes))
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "compound record {} lacks writable parameter arrays",
                     record.index
                 ))
@@ -1569,7 +1572,7 @@ fn patch_nurbs_surface_record(
             |ordinal| crate::nurbs::core::surface_patch_layout_at(record_bytes, ordinal),
         )
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "spline record {} has no writable surface cache",
                 record.index
             ))
@@ -1618,7 +1621,7 @@ fn patch_nurbs_surface_record(
     }
     let components = if layout.rational { 4 } else { 3 };
     if layout.control_value_offsets.len() != u_count * v_count * components {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "spline record {} has an inconsistent NURBS control layout",
             record.index
         )));
@@ -1659,7 +1662,7 @@ fn patch_nurbs_curve_record(
         crate::nurbs::core::first_curve_patch_layout(record_bytes)
     }
     .ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "spline record {} has no writable curve cache",
             record.index
         ))
@@ -1688,7 +1691,7 @@ fn patch_nurbs_curve_record(
     }
     let components = if layout.rational { 4 } else { 3 };
     if layout.control_value_offsets.len() != curve.control_points.len() * components {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "spline record {} has an inconsistent NURBS curve layout",
             record.index
         )));
@@ -1732,7 +1735,7 @@ fn patch_nurbs_pcurve_record(
     let ref_width = stream_ref_width(bytes);
     let scope = if record.head == "pcurve" {
         sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur").ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "pcurve record {} has no exp_par_cur payload",
                 record.index
             ))
@@ -1742,7 +1745,7 @@ fn patch_nurbs_pcurve_record(
             CodecError::Malformed("NURBS pcurve record extent overflows address space".into())
         })?
     } else {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "record {} is not a pcurve carrier",
             record.index
         )));
@@ -1752,7 +1755,7 @@ fn patch_nurbs_pcurve_record(
             || CodecError::Malformed("NURBS pcurve subtype extent is truncated".into()),
         )?)
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "pcurve record {} has no writable UV cache",
                 record.index
             ))
@@ -1781,13 +1784,13 @@ fn patch_nurbs_pcurve_record(
         if let Some(reversed) = edit.wrapper_reversed {
             let offset =
                 sab::payload_token_offset(bytes, record, ref_width, 4).ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "pcurve record {} lacks wrapper-reversal carrier",
                         record.index
                     ))
                 })?;
             if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "pcurve record {} has a non-boolean wrapper-reversal carrier",
                     record.index
                 )));
@@ -1795,14 +1798,14 @@ fn patch_nurbs_pcurve_record(
             AsmEditSet::patch_boolean_at(bytes, offset, reversed)?;
         }
         if bytes.get(scope.end) != Some(&0x10) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "pcurve record {} lacks the exp_par_cur close",
                 record.index
             )));
         }
         // Chunk space, because `payload_token_offset` indexes value tokens.
         let suffix_start = record.chunk_len().checked_sub(6).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "pcurve record {} lacks its native metadata suffix",
                 record.index
             ))
@@ -1810,7 +1813,7 @@ fn patch_nurbs_pcurve_record(
         let suffix_offsets = (suffix_start..record.chunk_len())
             .map(|index| {
                 sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "pcurve record {} has an incomplete native metadata suffix",
                         record.index
                     ))
@@ -1820,7 +1823,7 @@ fn patch_nurbs_pcurve_record(
         if let Some(flags) = edit.native_tail_flags {
             for (offset, flag) in suffix_offsets[..4].iter().zip(flags) {
                 if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "pcurve record {} has an incomplete native boolean tail",
                         record.index
                     )));
@@ -1830,7 +1833,7 @@ fn patch_nurbs_pcurve_record(
         } else {
             for offset in &suffix_offsets[..4] {
                 if !matches!(bytes.get(*offset), Some(0x0a | 0x0b)) {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "pcurve record {} has an incomplete native boolean tail",
                         record.index
                     )));
@@ -1840,7 +1843,7 @@ fn patch_nurbs_pcurve_record(
         if let Some(range) = edit.parameter_range {
             for (offset, value) in suffix_offsets[4..].iter().zip(range) {
                 if bytes.get(*offset) != Some(&0x06) {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "pcurve record {} has an incomplete parameter range",
                         record.index
                     )));
@@ -1898,13 +1901,13 @@ fn patch_ref_pcurve_contract(
     for (index, value) in [5usize, 6].into_iter().zip(range) {
         let offset =
             sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "ref-form pcurve record {} lacks parameter-range field {index}",
                     record.index
                 ))
             })?;
         if bytes.get(offset) != Some(&0x06) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "ref-form pcurve record {} parameter-range field {index} is not a double",
                 record.index
             )));

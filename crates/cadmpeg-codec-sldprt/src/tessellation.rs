@@ -474,10 +474,15 @@ fn persistent_surface_references(
             at += 1;
             continue;
         };
-        let units = raw
+        let Some(units) = raw
             .chunks_exact(2)
-            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-            .collect::<Vec<_>>();
+            .enumerate()
+            .map(|(index, _)| View::u16_le_at(raw, index * 2))
+            .collect::<Option<Vec<_>>>()
+        else {
+            at = end;
+            continue;
+        };
         let Ok(text) = String::from_utf16(&units) else {
             at = end;
             continue;

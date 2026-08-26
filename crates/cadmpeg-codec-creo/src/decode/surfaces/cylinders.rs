@@ -24,6 +24,10 @@ use super::super::native::annotate;
 use super::super::sketch::normalized;
 use super::super::sketch_transfer::{feature_recipe, feature_section_sweep_semantics_conflict};
 
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_LENGTH_NONZERO: f64 = 1.0e-9;
+
 pub(in super::super) fn rowless_round_cylinder_pairs(
     round_feature_ids: &BTreeSet<u32>,
     tables: &[crate::feature::FeatureEntityTable],
@@ -509,7 +513,7 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
     .then_some(())?;
     let radius = first.radius;
     let radius_scale = radius.max(second.radius).max(1.0);
-    ((second.radius - radius).abs() <= 1e-9 * radius_scale).then_some(())?;
+    ((second.radius - radius).abs() <= EPS_RADIUS_AGREEMENT * radius_scale).then_some(())?;
     let scale = first
         .center
         .iter()
@@ -518,21 +522,21 @@ pub(in super::super) fn reference_circle_pair_cylinder_frame(
         .fold(radius_scale, f64::max);
     let first_axis = normalized(first.axis)?;
     let second_axis = normalized(second.axis)?;
-    ((dot(first_axis, second_axis).abs() - 1.0).abs() <= 1e-9).then_some(())?;
+    ((dot(first_axis, second_axis).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT).then_some(())?;
     let displacement: [f64; 3] =
         std::array::from_fn(|index| second.center[index] - first.center[index]);
     let length = dot(displacement, displacement).sqrt();
-    (length.is_finite() && length > 1e-9 * scale).then_some(())?;
+    (length.is_finite() && length > EPS_LENGTH_NONZERO * scale).then_some(())?;
     let center_direction = displacement.map(|value| value / length);
-    ((dot(center_direction, first_axis).abs() - 1.0).abs() <= 1e-9
-        && (dot(center_direction, second_axis).abs() - 1.0).abs() <= 1e-9)
+    ((dot(center_direction, first_axis).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT
+        && (dot(center_direction, second_axis).abs() - 1.0).abs() <= EPS_AXIS_ALIGNMENT)
         .then_some(())?;
     let validated_radial = |circle: &crate::reference::ReferenceCircle, axis| {
         let vector: [f64; 3] =
             std::array::from_fn(|index| circle.start[index] - circle.center[index]);
         let length = dot(vector, vector).sqrt();
-        ((length - radius).abs() <= 1e-9 * radius_scale
-            && dot(axis, vector).abs() <= 1e-9 * radius_scale)
+        ((length - radius).abs() <= EPS_RADIUS_AGREEMENT * radius_scale
+            && dot(axis, vector).abs() <= EPS_AXIS_ALIGNMENT * radius_scale)
             .then_some((vector, length))
     };
     let (radial, radial_length) = validated_radial(first, first_axis)?;

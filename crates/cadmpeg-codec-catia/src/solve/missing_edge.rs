@@ -518,7 +518,13 @@ pub(crate) fn face_endpoint_candidates_close(
     if edges.is_empty() {
         return FaceEndpointClosureOutcome::Rejected;
     }
-    let mut selected = vec![[0; 2]; candidates.len()];
+    let Ok(mut selected) = alloc_filled(
+        candidates.len(),
+        [0; 2],
+        "catia missing-edge selected endpoints",
+    ) else {
+        return FaceEndpointClosureOutcome::Rejected;
+    };
     let mut degrees = HashMap::new();
     let mut branches = Vec::new();
     for &edge in &edges {

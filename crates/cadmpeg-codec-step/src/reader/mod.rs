@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -453,7 +453,7 @@ fn decode_exchange_mode(
             .ctx
             .map(|ctx| ctx.reserve_scoped(input.len() as u64, "step_byte_accounting", None))
             .transpose()?;
-        byte_accounting(input, exchange, &session.typed_records)
+        byte_accounting(input, exchange, &session.typed_records, session.ctx)?
     };
     if retain_opaque {
         let signature_spans = std::mem::take(&mut exchange.signatures);
@@ -993,8 +993,13 @@ fn byte_accounting(
     input: &[u8],
     exchange: &Exchange,
     typed_records: &HashSet<u64>,
-) -> ByteAccounting {
-    let mut classes = vec![ByteClass::Unclassified; input.len()];
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<ByteAccounting, CodecError> {
+    let mut classes = if let Some(ctx) = ctx {
+        ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?
+    } else {
+        alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?
+    };
     for record in exchange.records.values() {
         let class = if typed_records.contains(&record.id) {
             ByteClass::Typed
@@ -1015,7 +1020,7 @@ fn byte_accounting(
     }
     claim_trivia(input, cursor..input.len(), &mut classes);
 
-    classes
+    Ok(classes
         .into_iter()
         .fold(ByteAccounting::default(), |mut counts, class| {
             match class {
@@ -1025,7 +1030,7 @@ fn byte_accounting(
                 ByteClass::Opaque => counts.opaque += 1,
             }
             counts
-        })
+        }))
 }
 
 fn claim_range(classes: &mut [ByteClass], range: &std::ops::Range<usize>, class: ByteClass) {

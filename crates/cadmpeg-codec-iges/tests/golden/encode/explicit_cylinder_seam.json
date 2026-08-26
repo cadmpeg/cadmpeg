@@ -1,3 +1,3 @@
 {
-  "encode_error": "not implemented yet: IGES B-rep writer refuses cylindrical face iges:model:face#D21:D19 with a boundary loop that repeats one seam edge without axial bounds"
+  "encode_error": "not implemented yet: IGES analytic surface iges:model:surface#D5 requires B-rep topology for Type 192 through 198 output; no bounded Type 128 domain is available"
 }

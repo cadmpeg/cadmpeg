@@ -257,7 +257,9 @@ fn every_token_defect_key_names_its_own_failure() {
             "hollerith-count-unreadable",
         ),
         ("116,1,2,64Hshort;", "hollerith-payload-truncated"),
+        ("116,1,2,0H;", "hollerith-count-zero"),
         ("116,1,2,3x4,0;", "token-not-a-number"),
+        ("116,1,2,3 ,0;", "numeric-contains-blanks"),
         ("116,1,2,3,0", "delimiter-missing"),
     ] {
         let result = decode(point_file(parameters));
@@ -308,6 +310,10 @@ fn an_entity_owning_no_card_under_either_rule_is_quarantined() {
         code_count(result.report(), IgesLossCode::CardFramingRecovered),
         1
     );
+    assert_eq!(
+        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
+        1
+    );
     assert_eq!(result.report().losses.len(), 2);
 }
 
@@ -323,6 +329,10 @@ fn a_non_ascii_token_byte_quarantines_the_parameter_data() {
     let quarantined = &native.arenas["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].fields()["defect"], "token-not-ascii");
+    assert_eq!(
+        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
+        1
+    );
     assert_eq!(result.report().losses.len(), 1);
 }
 
@@ -334,6 +344,10 @@ fn a_record_with_no_delimiter_quarantines_the_parameter_data() {
     let quarantined = &native.arenas["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].fields()["defect"], "delimiter-missing");
+    assert_eq!(
+        code_count(result.report(), IgesLossCode::ParameterDataQuarantined),
+        1
+    );
     assert_eq!(result.report().losses.len(), 1);
 }
 

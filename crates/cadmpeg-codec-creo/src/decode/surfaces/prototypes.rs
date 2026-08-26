@@ -16,6 +16,8 @@ use super::super::native::annotate;
 use super::super::sketch::normalized;
 use super::super::sweep::interpolation_spline_surface;
 
+const EPS_PROTOTYPE_AGREEMENT: f64 = 1.0e-10;
+
 pub(in super::super) fn prototype_scalar(
     record: &crate::surface::SurfacePrototypeRecord,
     name: &str,
@@ -100,12 +102,14 @@ pub(in super::super) fn prototype_local_frame(
             .into_iter()
             .filter_map(|(candidate, eligible)| {
                 let candidate_norm = dot(candidate, candidate).sqrt();
-                let equal_scale =
-                    (first_norm - candidate_norm).abs() <= 1e-10 * first_norm.max(candidate_norm);
+                let equal_scale = (first_norm - candidate_norm).abs()
+                    <= EPS_PROTOTYPE_AGREEMENT * first_norm.max(candidate_norm);
                 eligible
                     .then_some(())
                     .filter(|()| {
-                        equal_scale && dot(reference, candidate).abs() <= 1e-10 * candidate_norm
+                        equal_scale
+                            && dot(reference, candidate).abs()
+                                <= EPS_PROTOTYPE_AGREEMENT * candidate_norm
                     })
                     .and_then(|()| normalized(candidate))
             });

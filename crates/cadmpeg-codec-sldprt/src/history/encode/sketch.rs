@@ -102,13 +102,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             require_same_family(existing, &feature.id, &["Wrap"])?;
             let profile = profile_source(profile, record_sources, feature_sources, sketch_sources)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "SLDPRT feature {} references a missing wrap profile",
                         feature.id
                     ))
                 })?;
             let face = face_selection_value(face).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no wrap target face",
                     feature.id
                 ))
@@ -121,7 +121,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     let depth = depth
                         .filter(|value| value.0.is_finite() && value.0 > 0.0)
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "SLDPRT feature {} has invalid wrap depth",
                                 feature.id
                             ))
@@ -130,7 +130,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }
                 WrapMode::Scribe => {
                     if depth.is_some() {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} gives a scribe wrap a depth",
                             feature.id
                         )));

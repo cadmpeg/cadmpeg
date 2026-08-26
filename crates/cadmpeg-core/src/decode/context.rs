@@ -55,7 +55,8 @@ impl<'a> DecodeContext<'a> {
             buffer
                 .try_reserve(reserve)
                 .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, reserve as u64))?;
-            let mut chunk = vec![0u8; 256 * 1024].into_boxed_slice();
+            let mut chunk =
+                alloc_filled(256 * 1024, 0_u8, "decode root read chunk")?.into_boxed_slice();
             while (buffer.len() as u64) < cap {
                 let remaining = cap.saturating_sub(buffer.len() as u64);
                 let want =
@@ -509,7 +510,7 @@ impl<'a> DecodeContext<'a> {
             .zip(end)
             .and_then(|(start, end)| parent.child(start, end))
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "stored slice [{}, {}) escapes parent space {}",
                     range.start,
                     range.end,
@@ -584,7 +585,7 @@ impl<'a> ExpandWriter<'_, 'a> {
         let new_written = self.written.saturating_add(len);
         match self.spec {
             ExpandSpec::Exact(size) if new_written > size => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "expansion exceeded declared exact size {size}"
                 )))
             }
@@ -624,7 +625,7 @@ impl<'a> ExpandWriter<'_, 'a> {
     pub fn finalize(self) -> Result<View<'a>, CodecError> {
         if let ExpandSpec::Exact(size) = self.spec {
             if self.written != size {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "expansion produced {} of declared exact {size} bytes",
                     self.written
                 )));

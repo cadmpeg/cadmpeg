@@ -2753,8 +2753,11 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [],
           "network_definitions": [
             {
               "connect_points": [
@@ -2765,6 +2768,7 @@
               "depth": 0,
               "display_template": null,
               "id": "iges:product:network-definition#D3",
+              "label_display": null,
               "members": [],
               "name": [
                 78,
@@ -2776,6 +2780,7 @@
                 49
               ],
               "source_entity": "iges:entity:directory#3",
+              "transformation": null,
               "type_flag": 1
             }
           ],
@@ -2848,6 +2853,7 @@
               ],
               "member": null,
               "neutral_links": [],
+              "root": true,
               "source_instance": "iges:entity:directory#7",
               "world_transform": [
                 [
@@ -2889,7 +2895,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 3
+        "version": 6
       }
     },
     "source": {

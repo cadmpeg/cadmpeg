@@ -9,6 +9,7 @@
 use std::fmt;
 
 use anyhow::{bail, Context, Result};
+use cadmpeg_core::decode::alloc_filled;
 use clap::Args;
 use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -425,7 +426,7 @@ pub(crate) fn project_fields(
     out.push_str(&paths.join("\t"));
     out.push('\n');
 
-    let mut empty_counts = vec![0usize; paths.len()];
+    let mut empty_counts = alloc_filled(paths.len(), 0usize, "cli query field counts")?;
     let row_count = values.len();
     for value in values {
         for (i, path) in paths.iter().enumerate() {

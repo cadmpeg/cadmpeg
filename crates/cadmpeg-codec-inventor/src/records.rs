@@ -169,7 +169,7 @@ pub(crate) fn parse_meta_tables<'a>(
         let previous_span = read_u32(bytes, header, "metadata section back span")? as usize;
         let discriminator = read_u32(bytes, header + 4, "metadata section discriminator")?;
         if previous_span < 4 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "RSe metadata section {number} has invalid back span {previous_span}"
             )));
         }
@@ -184,7 +184,7 @@ pub(crate) fn parse_meta_tables<'a>(
         payload_len = previous_span - 4;
     }
     if end != section_4_footer {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "RSe metadata section chain ends at {end}, expected {section_4_footer}"
         )));
     }
@@ -215,7 +215,7 @@ pub(crate) fn frame_bulk_records<'a>(
         let selector = cursor.u32("record type selector")?;
         let type_index = selector as u8;
         let descriptor = tables.types.get(type_index as usize).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "RSe record {} selects absent type index {type_index}",
                 block.ordinal
             ))
@@ -224,7 +224,7 @@ pub(crate) fn frame_bulk_records<'a>(
         let payload = cursor.view(block.payload_len as usize, "record payload")?;
         let trailing_payload_len = cursor.u32("record trailing payload length")?;
         if trailing_payload_len != 0 && trailing_payload_len != block.payload_len {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "RSe record {} declares payload length {} but trails with {trailing_payload_len}",
                 block.ordinal, block.payload_len
             )));
@@ -249,7 +249,7 @@ pub(crate) fn frame_bulk_records<'a>(
     let trailer_start = cursor.position;
     let trailer_marker = cursor.u32("stream trailer marker")?;
     if trailer_marker != u32::MAX {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "RSe stream trailer marker is {trailer_marker:#010x}"
         )));
     }
@@ -271,21 +271,21 @@ fn counted_section<'a>(
     let bytes = body.window();
     let count = read_u32(bytes, offset, name)? as usize;
     if count > 1_000_000 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "RSe metadata {name} count exceeds 1000000"
         )));
     }
-    let payload_len = count
-        .checked_mul(item_size)
-        .ok_or_else(|| CodecError::Malformed(format!("RSe metadata {name} length overflows")))?;
+    let payload_len = count.checked_mul(item_size).ok_or_else(|| {
+        CodecError::malformed(format_args!("RSe metadata {name} length overflows"))
+    })?;
     let payload_start = offset + 4;
-    let footer = payload_start
-        .checked_add(payload_len)
-        .ok_or_else(|| CodecError::Malformed(format!("RSe metadata {name} range overflows")))?;
+    let footer = payload_start.checked_add(payload_len).ok_or_else(|| {
+        CodecError::malformed(format_args!("RSe metadata {name} range overflows"))
+    })?;
     let span = read_u32(bytes, footer, name)? as usize;
     let expected_span = 4 + payload_len;
     if span != expected_span {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "RSe metadata {name} spans {span} bytes, expected {expected_span}"
         )));
     }
@@ -306,7 +306,7 @@ fn validate_reverse_section(
         return Ok(());
     }
     if discriminator > 1_000_000 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "RSe metadata section {number} count exceeds 1000000"
         )));
     }
@@ -333,7 +333,7 @@ fn validate_reverse_section(
         .checked_mul(item_size)
         .ok_or_else(|| CodecError::Malformed("RSe metadata section length overflows".into()))?;
     if payload_len != expected {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "RSe metadata section {number} stores {payload_len} bytes for {discriminator} entries of {item_size} bytes"
         )));
     }
@@ -386,7 +386,7 @@ fn parse_extended_record_trailer(
     let list_type = cursor.u16("record trailer list type")?;
     let list_marker = cursor.u16("record trailer list marker")?;
     if list_type != 6 || list_marker != 0x3000 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "RSe record trailer list marker is ({list_type:#06x}, {list_marker:#06x})"
         )));
     }
@@ -418,17 +418,17 @@ fn child<'a>(
 ) -> Result<View<'a>, CodecError> {
     parent
         .child(parent.start() + start, parent.start() + end)
-        .ok_or_else(|| CodecError::Malformed(format!("RSe {name} range is invalid")))
+        .ok_or_else(|| CodecError::malformed(format_args!("RSe {name} range is invalid")))
 }
 
 fn read_u16(bytes: &[u8], offset: usize, name: &str) -> Result<u16, CodecError> {
     View::u16_le_at(bytes, offset)
-        .ok_or_else(|| CodecError::Malformed(format!("truncated RSe {name}")))
+        .ok_or_else(|| CodecError::malformed(format_args!("truncated RSe {name}")))
 }
 
 fn read_u32(bytes: &[u8], offset: usize, name: &str) -> Result<u32, CodecError> {
     View::u32_le_at(bytes, offset)
-        .ok_or_else(|| CodecError::Malformed(format!("truncated RSe {name}")))
+        .ok_or_else(|| CodecError::malformed(format_args!("truncated RSe {name}")))
 }
 
 struct Cursor<'a> {
@@ -498,10 +498,10 @@ impl<'a> Cursor<'a> {
             .source
             .window()
             .get(self.position)
-            .ok_or_else(|| CodecError::Malformed(format!("truncated RSe {name}")))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("truncated RSe {name}")))?;
         self.position += 1;
         if name == "record trailer presence" && value > 1 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "RSe record trailer presence is {value}"
             )));
         }
@@ -528,7 +528,7 @@ impl<'a> Cursor<'a> {
         let end = self
             .position
             .checked_add(len)
-            .ok_or_else(|| CodecError::Malformed(format!("RSe {name} range overflows")))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("RSe {name} range overflows")))?;
         let view = child(self.source, self.position, end, name)?;
         self.position = end;
         Ok(view)
@@ -537,7 +537,7 @@ impl<'a> Cursor<'a> {
     fn sized_bytes(&mut self, maximum: usize, name: &str) -> Result<(), CodecError> {
         let len = self.u32(name)? as usize;
         if len > maximum {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "RSe {name} exceeds {maximum} bytes"
             )));
         }
@@ -548,7 +548,7 @@ impl<'a> Cursor<'a> {
         if self.remaining() == 0 {
             Ok(())
         } else {
-            Err(CodecError::Malformed(format!(
+            Err(CodecError::malformed(format_args!(
                 "RSe record stream has {} trailing bytes",
                 self.remaining()
             )))

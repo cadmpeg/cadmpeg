@@ -3,17 +3,24 @@
 
 use super::composite::{bounded_nurbs_for_curve_with_tolerance, CompositeIndex};
 use super::evaluation;
-use super::geometry::{entity_loss, ProjectionOutcome};
+use super::geometry::{
+    entity_loss, linear_nurbs_parameters, planar_polyline_has_self_intersection,
+    planar_polylines_intersect, plane_coordinates, source_object, BoundaryEndpoint,
+    BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
+    RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point2, Point3};
@@ -192,14 +199,20 @@ fn cluster_boundary_positions(
 fn create_boundary_vertices(
     candidate: &mut ModelDraft,
     stem: &str,
+    source_entity: &str,
     boundary: usize,
-    positions: &[Point3],
+    source_endpoints: &[BoundaryVertexSourceEndpoint],
     tolerance: f64,
-) -> Result<Vec<VertexId>, BoundaryVertexClusterError> {
-    let clusters = cluster_boundary_positions(positions, tolerance)?;
+) -> Result<(Vec<VertexId>, Vec<BoundaryVertexDerivation>), BoundaryVertexClusterError> {
+    let positions = source_endpoints
+        .iter()
+        .map(|endpoint| endpoint.position)
+        .collect::<Vec<_>>();
+    let clusters = cluster_boundary_positions(&positions, tolerance)?;
     let mut vertex_ids = (0..positions.len())
         .map(|_| None)
         .collect::<Vec<Option<VertexId>>>();
+    let mut derivations = Vec::new();
     for (index, cluster) in clusters.into_iter().enumerate() {
         let point_id = PointId(format!("iges:model:point#{stem}:{boundary}:{index}"));
         let vertex_id = VertexId(format!("iges:model:vertex#{stem}:{boundary}:{index}"));
@@ -213,11 +226,23 @@ fn create_boundary_vertices(
             point: point_id,
             tolerance: Some(tolerance),
         });
+        let source_endpoints = cluster
+            .members
+            .iter()
+            .map(|member| source_endpoints[*member].clone())
+            .collect();
+        derivations.push(BoundaryVertexDerivation {
+            source_entity: source_entity.into(),
+            vertex: vertex_id.clone(),
+            representative: cluster.representative,
+            tolerance,
+            source_endpoints,
+        });
         for member in cluster.members {
             vertex_ids[member] = Some(vertex_id.clone());
         }
     }
-    Ok(vertex_ids.into_iter().flatten().collect())
+    Ok((vertex_ids.into_iter().flatten().collect(), derivations))
 }
 
 fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<Point3> {
@@ -225,11 +250,112 @@ fn point_position(index: &ModelIndex<'_>, id: &VertexId) -> Option<Point3> {
     index.points(&point_id.0).map(|point| point.position)
 }
 
+pub(super) struct PcurveSupport<'a> {
+    pub(super) surface_id: &'a SurfaceId,
+    pub(super) geometry: &'a SurfaceGeometry,
+    pub(super) factor: f64,
+}
+
+#[derive(Clone, Copy)]
+enum ProceduralSourceParameterMap {
+    NotApplicable,
+    Unavailable,
+    Mapped((f64, f64, f64, f64)),
+}
+
+fn procedural_source_parameter_map(
+    ir: &CadIr,
+    support: &PcurveSupport<'_>,
+) -> ProceduralSourceParameterMap {
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == *support.surface_id);
+    if let Some(procedural) = procedural.filter(|procedural| {
+        matches!(
+            &procedural.definition,
+            ProceduralSurfaceDefinition::Extrusion { .. }
+                | ProceduralSurfaceDefinition::Revolution { .. }
+        )
+    }) {
+        return procedural_pcurve_parameter_map(ir, &procedural.id).map_or(
+            ProceduralSourceParameterMap::Unavailable,
+            ProceduralSourceParameterMap::Mapped,
+        );
+    }
+    match support.geometry {
+        SurfaceGeometry::Procedural { construction } => {
+            procedural_pcurve_parameter_map(ir, construction).map_or(
+                ProceduralSourceParameterMap::Unavailable,
+                ProceduralSourceParameterMap::Mapped,
+            )
+        }
+        _ => ProceduralSourceParameterMap::NotApplicable,
+    }
+}
+
+fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64, f64, f64, f64)> {
+    match procedural_source_parameter_map(ir, support) {
+        ProceduralSourceParameterMap::Mapped(parameter_map) => {
+            source_parameter_map_to_neutral(parameter_map, support.factor)
+        }
+        ProceduralSourceParameterMap::Unavailable => None,
+        ProceduralSourceParameterMap::NotApplicable => match support.geometry {
+            SurfaceGeometry::Plane { .. } => Some((1.0, 0.0, 1.0, 0.0)),
+            SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
+                Some((1.0 / support.factor, 0.0, 1.0, 0.0))
+            }
+            SurfaceGeometry::Sphere { .. }
+            | SurfaceGeometry::Torus { .. }
+            | SurfaceGeometry::Nurbs(_) => {
+                Some((1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0))
+            }
+            SurfaceGeometry::Procedural { .. } => None,
+            SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Transformed { .. }
+            | SurfaceGeometry::Unknown { .. } => None,
+        },
+    }
+}
+
+fn source_parameter_map_to_neutral(
+    (u_factor, u_offset, v_factor, v_offset): (f64, f64, f64, f64),
+    length_factor_mm: f64,
+) -> Option<(f64, f64, f64, f64)> {
+    // A generic projected curve is length-scaled, but a procedural pcurve
+    // stores source surface parameters. Remove that conversion before the
+    // procedural map evaluates those parameters on the neutral surface.
+    if !length_factor_mm.is_finite() || length_factor_mm <= 0.0 {
+        return None;
+    }
+    let map = (
+        u_factor / length_factor_mm,
+        u_offset,
+        v_factor / length_factor_mm,
+        v_offset,
+    );
+    (map.0.is_finite() && map.1.is_finite() && map.2.is_finite() && map.3.is_finite())
+        .then_some(map)
+}
+
+fn source_parameter_point_to_neutral(
+    point: Point2,
+    (u_factor, u_offset, v_factor, v_offset): (f64, f64, f64, f64),
+    length_factor_mm: f64,
+) -> Point2 {
+    let source_u = point.u / length_factor_mm;
+    let source_v = point.v / length_factor_mm;
+    Point2::new(
+        source_u.mul_add(u_factor, u_offset),
+        source_v.mul_add(v_factor, v_offset),
+    )
+}
+
 pub(super) fn pcurve_geometry(
     ir: &CadIr,
     sequence: u32,
-    support: &SurfaceGeometry,
-    factor: f64,
+    support: &PcurveSupport<'_>,
     tolerance: Option<f64>,
     ctx: Option<&DecodeContext<'_>>,
     composite_index: Option<&CompositeIndex>,
@@ -237,17 +363,13 @@ pub(super) fn pcurve_geometry(
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
     let (nurbs, range) =
         bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?;
-    let (u_factor, v_factor) = match support {
-        SurfaceGeometry::Plane { .. } => (1.0, 1.0),
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => (1.0 / factor, 1.0),
-        SurfaceGeometry::Sphere { .. }
-        | SurfaceGeometry::Torus { .. }
-        | SurfaceGeometry::Nurbs(_) => (1.0 / factor, 1.0 / factor),
-        SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Transformed { .. }
-        | SurfaceGeometry::Unknown { .. } => return None,
+    let source_parameter_map = match procedural_source_parameter_map(ir, support) {
+        ProceduralSourceParameterMap::Mapped(parameter_map) => Some(parameter_map),
+        ProceduralSourceParameterMap::NotApplicable | ProceduralSourceParameterMap::Unavailable => {
+            None
+        }
     };
+    let (u_factor, u_offset, v_factor, v_offset) = pcurve_parameter_map(ir, support)?;
     Some((
         PcurveGeometry::Nurbs {
             degree: nurbs.degree,
@@ -255,13 +377,684 @@ pub(super) fn pcurve_geometry(
             control_points: nurbs
                 .control_points
                 .iter()
-                .map(|point| Point2::new(point.x * u_factor, point.y * v_factor))
+                .map(|point| {
+                    source_parameter_map.map_or_else(
+                        || {
+                            Point2::new(
+                                point.x.mul_add(u_factor, u_offset),
+                                point.y.mul_add(v_factor, v_offset),
+                            )
+                        },
+                        |(u_factor, u_offset, v_factor, v_offset)| {
+                            source_parameter_point_to_neutral(
+                                Point2::new(point.x, point.y),
+                                (u_factor, u_offset, v_factor, v_offset),
+                                support.factor,
+                            )
+                        },
+                    )
+                })
                 .collect(),
             weights: nurbs.weights,
             periodic: nurbs.periodic,
         },
         range,
     ))
+}
+
+fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
+    fn is_line(geometry: &CurveGeometry, depth: usize) -> bool {
+        if depth > 256 {
+            return false;
+        }
+        match geometry {
+            CurveGeometry::Line { .. } => true,
+            CurveGeometry::Transformed { basis, .. } => is_line(basis, depth + 1),
+            _ => false,
+        }
+    }
+
+    ir.model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *curve_id)
+        .is_some_and(|curve| is_line(&curve.geometry, 0))
+}
+
+fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option<(f64, f64)> {
+    let source_width = source[1] - source[0];
+    let target_width = target[1] - target[0];
+    if !source
+        .iter()
+        .chain(target.iter())
+        .all(|value| value.is_finite())
+        || source_width <= 0.0
+        || target_width <= 0.0
+    {
+        return None;
+    }
+    let scale = target_width / source_width;
+    let offset = target[0] - source[0] * scale;
+    (scale.is_finite() && offset.is_finite()).then_some((scale, offset))
+}
+
+fn procedural_pcurve_parameter_map(
+    ir: &CadIr,
+    construction: &ProceduralSurfaceId,
+) -> Option<(f64, f64, f64, f64)> {
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.id == *construction)?;
+    let Some([Some(carrier_start), Some(carrier_end), _, _]) = procedural.record_bounds else {
+        return None;
+    };
+    let carrier_interval = [carrier_start, carrier_end];
+    if !carrier_interval.iter().all(|value| value.is_finite())
+        || carrier_interval[0] >= carrier_interval[1]
+    {
+        return None;
+    }
+    let mut u_map = (1.0, 0.0);
+    let mut v_map = (1.0, 0.0);
+    match &procedural.definition {
+        ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            parameter_interval,
+            ..
+        } => {
+            if line_directrix(ir, directrix) {
+                u_map = affine_parameter_map([0.0, 1.0], carrier_interval)?;
+            } else if let Some(parameter_interval) = parameter_interval {
+                u_map = affine_parameter_map(*parameter_interval, carrier_interval)?;
+            }
+        }
+        ProceduralSurfaceDefinition::Revolution {
+            directrix,
+            angular_interval,
+            angular_parameter_interval,
+            parameter_interval,
+            transposed,
+            ..
+        } => {
+            let directrix_map = if line_directrix(ir, directrix) {
+                affine_parameter_map([0.0, 1.0], carrier_interval)?
+            } else if let Some(parameter_interval) = parameter_interval {
+                affine_parameter_map(*parameter_interval, carrier_interval)?
+            } else {
+                (1.0, 0.0)
+            };
+            let angular_map = match angular_parameter_interval {
+                Some(parameter_interval) => {
+                    affine_parameter_map(*parameter_interval, *angular_interval)?
+                }
+                None => (1.0, 0.0),
+            };
+            if *transposed {
+                u_map = angular_map;
+                v_map = directrix_map;
+            } else {
+                u_map = directrix_map;
+                v_map = angular_map;
+            }
+        }
+        _ => return None,
+    }
+    Some((u_map.0, u_map.1, v_map.0, v_map.1))
+}
+
+fn native_sequence_from_id(id: &str, prefix: &str) -> Option<u32> {
+    let suffix = id.strip_prefix(prefix)?;
+    let end = suffix
+        .bytes()
+        .position(|byte| !byte.is_ascii_digit())
+        .unwrap_or(suffix.len());
+    (end > 0).then(|| suffix[..end].parse().ok())?
+}
+
+fn parameter_curve_carrier_id(
+    sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Option<CurveId> {
+    let entry = entries.get(&sequence).copied()?;
+    let carrier_sequence = if entry.entity_type == 142 && entry.form == 0 {
+        records
+            .get(&sequence)
+            .and_then(|record| record.integer(3))
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|sequence| sequence % 2 == 1)?
+    } else {
+        sequence
+    };
+    Some(CurveId(format!("iges:model:curve#D{carrier_sequence}")))
+}
+
+fn surface_parameter_bound_intervals(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    precision: RealPrecision,
+) -> Option<[Option<DeclaredInterval>; 4]> {
+    let bounds = surface_parameter_bounds(index, surface_id)?;
+    let mut intervals = bounds.map(|bound| bound.map(|value| DeclaredInterval::around(value, 0.0)));
+    let Some(sequence) = native_sequence_from_id(&surface_id.0, "iges:model:surface#D") else {
+        return Some(intervals);
+    };
+    let Some(entry) = entries.get(&sequence).copied() else {
+        return Some(intervals);
+    };
+    if entry.entity_type != 128 {
+        return Some(intervals);
+    }
+    let Some(record) = records.get(&sequence).copied() else {
+        return Some(intervals);
+    };
+    if let Some(declared) = super::surfaces::type128_parameter_bound_intervals(record, precision) {
+        for (bound, declared) in intervals.iter_mut().zip(declared) {
+            if bound.is_some() {
+                *bound = Some(declared);
+            }
+        }
+    }
+    Some(intervals)
+}
+
+fn source_curve_control_intervals(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    precision: RealPrecision,
+    factor: f64,
+    active: &mut BTreeSet<CurveId>,
+) -> Option<Vec<[DeclaredInterval; 3]>> {
+    if !active.insert(curve_id.clone()) {
+        return None;
+    }
+    let result = (|| {
+        let curve = ir.model.curves.iter().find(|curve| curve.id == *curve_id)?;
+        if let Some(sequence) = native_sequence_from_id(&curve_id.0, "iges:model:curve#D") {
+            let entry = entries.get(&sequence).copied()?;
+            if entry.entity_type == 102 && entry.form == 0 {
+                let record = records.get(&sequence).copied()?;
+                let child_count = record.count(1)?;
+                let child_ids = (0..child_count)
+                    .map(|offset| {
+                        let child_sequence = record
+                            .integer(offset.checked_add(2)?)
+                            .and_then(|value| u32::try_from(value).ok())?;
+                        parameter_curve_carrier_id(child_sequence, entries, records)
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                let mut controls = Vec::new();
+                for child_id in child_ids {
+                    controls.extend(source_curve_control_intervals(
+                        ir, &child_id, entries, records, precision, factor, active,
+                    )?);
+                }
+                return (!controls.is_empty()).then_some(controls);
+            }
+        }
+        match &curve.geometry {
+            CurveGeometry::Composite { segments, .. } => {
+                let mut controls = Vec::new();
+                for segment in segments {
+                    controls.extend(source_curve_control_intervals(
+                        ir,
+                        &segment.curve,
+                        entries,
+                        records,
+                        precision,
+                        factor,
+                        active,
+                    )?);
+                }
+                (!controls.is_empty()).then_some(controls)
+            }
+            CurveGeometry::Nurbs(nurbs) => {
+                if nurbs.weights.as_ref().is_some_and(|weights| {
+                    weights.len() != nurbs.control_points.len()
+                        || weights
+                            .iter()
+                            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+                }) {
+                    return None;
+                }
+                let exact = || {
+                    nurbs
+                        .control_points
+                        .iter()
+                        .map(|point| {
+                            [point.x, point.y, point.z]
+                                .map(|value| DeclaredInterval::around(value, 0.0))
+                        })
+                        .collect::<Vec<_>>()
+                };
+                let Some(sequence) = native_sequence_from_id(&curve_id.0, "iges:model:curve#D")
+                else {
+                    return Some(exact());
+                };
+                let Some(entry) = entries.get(&sequence).copied() else {
+                    return Some(exact());
+                };
+                if entry.entity_type != 126 {
+                    return Some(exact());
+                }
+                if entry.transform != 0 {
+                    return None;
+                }
+                let record = records.get(&sequence).copied()?;
+                let raw_controls =
+                    super::geometry::type126_declared_control_points(record, precision)?;
+                if raw_controls.len() != nurbs.control_points.len() {
+                    return None;
+                }
+                Some(
+                    raw_controls
+                        .into_iter()
+                        .map(|control| control.map(|value| value.scale(factor)))
+                        .collect(),
+                )
+            }
+            _ => None,
+        }
+    })();
+    active.remove(curve_id);
+    result
+}
+
+fn affine_parameter_interval(
+    value: DeclaredInterval,
+    factor: f64,
+    offset: f64,
+) -> Option<DeclaredInterval> {
+    let mapped = if factor == 1.0 && offset == 0.0 {
+        value
+    } else {
+        value
+            .scale(factor)
+            .add(DeclaredInterval::around(offset, 0.0))
+    };
+    mapped.is_finite().then_some(mapped)
+}
+
+fn parameter_interval_reaches_bounds(
+    value: DeclaredInterval,
+    lower: Option<DeclaredInterval>,
+    upper: Option<DeclaredInterval>,
+) -> bool {
+    // A source real that reaches a support bound can represent the boundary
+    // value. This is representation uncertainty, not a receiver tolerance;
+    // an interval separated from either finite bound remains invalid.
+    value.is_finite()
+        && lower.is_none_or(|bound| bound.is_finite() && value.upper_bound() >= bound.lower_bound())
+        && upper.is_none_or(|bound| bound.is_finite() && value.lower_bound() <= bound.upper_bound())
+}
+
+fn source_curve_control_polygon_within_bounds(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    support: &PcurveSupport<'_>,
+    bounds: Option<[Option<DeclaredInterval>; 4]>,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    precision: RealPrecision,
+) -> bool {
+    let Some(bounds) = bounds else {
+        return true;
+    };
+    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
+        return false;
+    };
+    let Some(controls) = source_curve_control_intervals(
+        ir,
+        curve_id,
+        entries,
+        records,
+        precision,
+        support.factor,
+        &mut BTreeSet::new(),
+    ) else {
+        return false;
+    };
+    !controls.is_empty()
+        && controls.into_iter().all(|[u, v, _]| {
+            let Some(u) = affine_parameter_interval(u, u_factor, u_offset) else {
+                return false;
+            };
+            let Some(v) = affine_parameter_interval(v, v_factor, v_offset) else {
+                return false;
+            };
+            parameter_interval_reaches_bounds(u, bounds[0], bounds[1])
+                && parameter_interval_reaches_bounds(v, bounds[2], bounds[3])
+        })
+}
+
+fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<Point3>> {
+    if nurbs.weights.as_ref().is_some_and(|weights| {
+        weights.len() != nurbs.control_points.len() || weights.iter().any(|weight| *weight != 1.0)
+    }) {
+        return None;
+    }
+    linear_nurbs_parameters(
+        nurbs.degree,
+        &nurbs.knots,
+        nurbs.control_points.len(),
+        nurbs.periodic,
+        range,
+    )?
+    .into_iter()
+    .map(|parameter| {
+        cadmpeg_ir::eval::nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            None,
+            parameter,
+        )
+        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+    })
+    .collect()
+}
+
+fn linear_pcurve_points(geometry: &PcurveGeometry, range: [f64; 2]) -> Option<Vec<[f64; 2]>> {
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    } = geometry
+    else {
+        return None;
+    };
+    if weights.as_ref().is_some_and(|weights| {
+        weights.len() != control_points.len() || weights.iter().any(|weight| *weight != 1.0)
+    }) {
+        return None;
+    }
+    linear_nurbs_parameters(*degree, knots, control_points.len(), *periodic, range)?
+        .into_iter()
+        .map(|parameter| {
+            evaluation::pcurve(geometry, parameter)
+                .map(|point| [point.u, point.v])
+                .filter(|point| point.iter().all(|coordinate| coordinate.is_finite()))
+        })
+        .collect()
+}
+
+fn append_path<T: Copy + PartialEq>(target: &mut Vec<T>, path: Vec<T>) -> Option<()> {
+    let first = path.first().copied()?;
+    if target.last().is_some_and(|last| *last != first) {
+        return None;
+    }
+    if target.is_empty() {
+        target.extend(path);
+    } else {
+        target.extend(path.into_iter().skip(1));
+    }
+    Some(())
+}
+
+fn normalize_model_ring_endpoints(points: &mut [Point3], tolerance: f64) {
+    if let (Some(first), Some(last)) = (points.first().copied(), points.last_mut()) {
+        if close(first, *last, tolerance) {
+            *last = first;
+        }
+    }
+}
+
+fn normalize_parameter_ring_endpoints(points: &mut [[f64; 2]], tolerance: f64) {
+    if let (Some(first), Some(last)) = (points.first().copied(), points.last_mut()) {
+        let distance = (first[0] - last[0]).hypot(first[1] - last[1]);
+        if distance.is_finite() && distance <= tolerance {
+            *last = first;
+        }
+    }
+}
+
+fn linear_boundary_model_points(
+    items: &[BoundaryItem],
+    index: &ModelIndex<'_>,
+    closure_tolerance: f64,
+) -> Option<Vec<Point3>> {
+    let mut points = Vec::new();
+    for item in items {
+        let curve = index.curves(&item.model_curve.0)?;
+        let mut curve_points = match &curve.geometry {
+            CurveGeometry::Line { .. } => vec![item.start, item.end],
+            CurveGeometry::Nurbs(nurbs) => {
+                linear_model_nurbs_points(nurbs, item.source_edge.param_range?)?
+            }
+            _ => return None,
+        };
+        if curve_points.first().copied() != Some(item.start)
+            || curve_points.last().copied() != Some(item.end)
+        {
+            return None;
+        }
+        if item.segment.sense == Sense::Reversed {
+            curve_points.reverse();
+        }
+        append_path(&mut points, curve_points)?;
+    }
+    normalize_model_ring_endpoints(&mut points, closure_tolerance);
+    Some(points)
+}
+
+#[derive(Clone)]
+enum LinearBoundaryGeometry {
+    Parameter(Vec<[f64; 2]>),
+    Model(Vec<[f64; 2]>),
+}
+
+fn linear_boundary_geometry(
+    items: &[BoundaryItem],
+    index: &ModelIndex<'_>,
+    support: &SurfaceGeometry,
+    resolution: f64,
+    closure_tolerance: f64,
+    use_parameter_curves: bool,
+) -> Option<LinearBoundaryGeometry> {
+    let SurfaceGeometry::Plane { origin, normal, .. } = support else {
+        return None;
+    };
+    let model_points = linear_boundary_model_points(items, index, closure_tolerance)?;
+    let model_plane = (*origin, *normal);
+    if items.iter().any(|item| {
+        let Some(curve) = index.curves(&item.model_curve.0) else {
+            return true;
+        };
+        !super::geometry::curve_geometry_coplanar(
+            &curve.geometry,
+            index,
+            cadmpeg_ir::transform::Transform::identity(),
+            model_plane,
+            resolution,
+            &mut BTreeSet::new(),
+        )
+    }) {
+        return None;
+    }
+    let model_coordinates = plane_coordinates(&model_points, model_plane)?;
+    if use_parameter_curves
+        && items
+            .iter()
+            .any(|item| item.segment.parameter_curves_authoritative)
+    {
+        if !items
+            .iter()
+            .all(|item| item.segment.parameter_curves_authoritative)
+        {
+            return None;
+        }
+        let mut parameter_points = Vec::new();
+        for item in items {
+            if item.pcurves.is_empty() {
+                return None;
+            }
+            for (geometry, range) in &item.pcurves {
+                append_path(
+                    &mut parameter_points,
+                    linear_pcurve_points(geometry, *range)?,
+                )?;
+            }
+        }
+        normalize_parameter_ring_endpoints(&mut parameter_points, closure_tolerance);
+        Some(LinearBoundaryGeometry::Parameter(parameter_points))
+    } else {
+        Some(LinearBoundaryGeometry::Model(model_coordinates))
+    }
+}
+
+fn linear_ring_is_simple(points: &[[f64; 2]]) -> bool {
+    let Some(last) = points.len().checked_sub(1) else {
+        return false;
+    };
+    if points.len() < 4
+        || points.first() != points.last()
+        || points
+            .iter()
+            .flatten()
+            .any(|coordinate| !coordinate.is_finite())
+    {
+        return false;
+    }
+    if points.windows(2).any(|segment| segment[0] == segment[1]) {
+        return false;
+    }
+    for first in 0..last {
+        for second in first + 1..last {
+            if points[first] == points[second] {
+                return false;
+            }
+        }
+    }
+    !planar_polyline_has_self_intersection(points)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PlanarPointLocation {
+    Inside,
+    Boundary,
+    Outside,
+}
+
+fn planar_point_location(point: [f64; 2], ring: &[[f64; 2]]) -> PlanarPointLocation {
+    if ring.windows(2).any(|segment| {
+        super::geometry::planar_segments_contain_point(point, [segment[0], segment[1]])
+    }) {
+        return PlanarPointLocation::Boundary;
+    }
+    let mut inside = false;
+    for segment in ring.windows(2) {
+        let [left, right] = [segment[0], segment[1]];
+        if (left[1] > point[1]) != (right[1] > point[1]) {
+            let crossing =
+                left[0] + (right[0] - left[0]) * (point[1] - left[1]) / (right[1] - left[1]);
+            if point[0] < crossing {
+                inside = !inside;
+            }
+        }
+    }
+    if inside {
+        PlanarPointLocation::Inside
+    } else {
+        PlanarPointLocation::Outside
+    }
+}
+
+fn linear_boundary_rings(
+    candidates: &[Option<LinearBoundaryGeometry>],
+    parameter: bool,
+) -> Option<Vec<Vec<[f64; 2]>>> {
+    if candidates.is_empty() {
+        return None;
+    }
+    candidates
+        .iter()
+        .map(|candidate| match (parameter, candidate.as_ref()) {
+            (true, Some(LinearBoundaryGeometry::Parameter(points)))
+            | (false, Some(LinearBoundaryGeometry::Model(points))) => Some(points.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn inner_boundaries_are_disjoint_and_inside(outer: &[[f64; 2]], inners: &[Vec<[f64; 2]>]) -> bool {
+    for inner in inners {
+        if planar_polylines_intersect(outer, inner)
+            || inner[..inner.len() - 1]
+                .iter()
+                .any(|point| planar_point_location(*point, outer) != PlanarPointLocation::Inside)
+        {
+            return false;
+        }
+    }
+    inners.iter().enumerate().all(|(left_index, left)| {
+        inners.iter().skip(left_index + 1).all(|right| {
+            !planar_polylines_intersect(left, right)
+                && planar_point_location(left[0], right) != PlanarPointLocation::Inside
+                && planar_point_location(right[0], left) != PlanarPointLocation::Inside
+        })
+    })
+}
+
+fn linear_boundary_relationship_is_valid(
+    rings: &[Vec<[f64; 2]>],
+    trimmed_surface: bool,
+    has_explicit_outer: bool,
+    support: &SurfaceGeometry,
+    support_bounds: Option<[Option<f64>; 4]>,
+    periodic_parameters: [bool; 2],
+) -> Option<bool> {
+    if !rings.iter().all(|ring| linear_ring_is_simple(ring)) {
+        return Some(false);
+    }
+    if !trimmed_surface {
+        return Some(true);
+    }
+    if has_explicit_outer {
+        let (outer, inners) = rings.split_first()?;
+        return Some(inner_boundaries_are_disjoint_and_inside(outer, inners));
+    }
+    if periodic_parameters.iter().any(|periodic| *periodic) {
+        return None;
+    }
+    match support_bounds {
+        Some([Some(u_lower), Some(u_upper), Some(v_lower), Some(v_upper)])
+            if u_lower.is_finite()
+                && u_upper.is_finite()
+                && v_lower.is_finite()
+                && v_upper.is_finite()
+                && u_lower < u_upper
+                && v_lower < v_upper =>
+        {
+            if rings.iter().any(|ring| {
+                ring[..ring.len() - 1].iter().any(|point| {
+                    point[0] <= u_lower
+                        || point[0] >= u_upper
+                        || point[1] <= v_lower
+                        || point[1] >= v_upper
+                })
+            }) {
+                return Some(false);
+            }
+        }
+        Some(_) => return None,
+        None if !matches!(support, SurfaceGeometry::Plane { .. }) => return None,
+        None => {}
+    }
+    Some(rings.iter().enumerate().all(|(left_index, left)| {
+        rings.iter().skip(left_index + 1).all(|right| {
+            !planar_polylines_intersect(left, right)
+                && planar_point_location(left[0], right) != PlanarPointLocation::Inside
+                && planar_point_location(right[0], left) != PlanarPointLocation::Inside
+        })
+    }))
 }
 
 #[derive(Clone)]
@@ -408,10 +1201,22 @@ fn restrict_homogeneous_pcurve(
     split_homogeneous_pcurve(&left, relative_start).map(|(_, right)| right)
 }
 
+#[cfg(test)]
 fn pcurve_within_declared_bounds(
     geometry: &PcurveGeometry,
     range: [f64; 2],
     bounds: Option<[Option<f64>; 4]>,
+    periodic: [bool; 2],
+) -> bool {
+    let bounds = bounds
+        .map(|bounds| bounds.map(|bound| bound.map(|value| DeclaredInterval::around(value, 0.0))));
+    pcurve_within_declared_intervals(geometry, range, bounds, periodic)
+}
+
+fn pcurve_within_declared_intervals(
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+    bounds: Option<[Option<DeclaredInterval>; 4]>,
     periodic: [bool; 2],
 ) -> bool {
     let Some(bounds) = bounds else {
@@ -469,20 +1274,25 @@ fn pcurve_within_declared_bounds(
     if range[0] < first_span.domain[0] || range[1] > last_span.domain[1] {
         return false;
     }
-    let in_bound = |value: f64, lower: Option<f64>, upper: Option<f64>| {
-        value.is_finite()
-            && lower.is_none_or(|lower| lower.is_finite() && value >= lower)
-            && upper.is_none_or(|upper| upper.is_finite() && value <= upper)
-    };
-    let expand_periodic =
-        |lower: Option<f64>, upper: Option<f64>, periodic: bool| match (lower, upper, periodic) {
-            (Some(lower), Some(upper), true) => {
-                let period = upper - lower;
-                (period.is_finite() && period > 0.0)
-                    .then_some((Some(lower - period), Some(upper + period)))
-            }
-            _ => Some((lower, upper)),
+    let in_bound =
+        |value: f64, lower: Option<DeclaredInterval>, upper: Option<DeclaredInterval>| {
+            value.is_finite()
+                && lower.is_none_or(|lower| lower.is_finite() && value >= lower.lower_bound())
+                && upper.is_none_or(|upper| upper.is_finite() && value <= upper.upper_bound())
         };
+    let expand_periodic = |lower: Option<DeclaredInterval>,
+                           upper: Option<DeclaredInterval>,
+                           periodic: bool| match (lower, upper, periodic)
+    {
+        (Some(lower), Some(upper), true) => {
+            let lower = DeclaredInterval::around(lower.lower_bound(), 0.0);
+            let upper = DeclaredInterval::around(upper.upper_bound(), 0.0);
+            let period = upper.subtract(lower);
+            (period.is_finite() && period.is_strictly_positive())
+                .then_some((Some(lower.subtract(period)), Some(upper.add(period))))
+        }
+        _ => Some((lower, upper)),
+    };
     let Some((u_lower, u_upper)) = expand_periodic(bounds[0], bounds[1], periodic[0]) else {
         return false;
     };
@@ -711,7 +1521,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> ProjectionOutcome {
+) -> (ProjectionOutcome, Vec<BoundaryVertexDerivation>) {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -722,6 +1532,7 @@ pub(super) fn project(
         .collect::<BTreeMap<_, _>>();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
+    let mut boundary_vertex_derivations = Vec::new();
     let mut boundaries = BTreeMap::new();
 
     let carrier_index = ModelIndex::new(ir);
@@ -957,6 +1768,16 @@ pub(super) fn project(
                         ));
                         continue;
                     };
+                    if entries
+                        .get(&outer)
+                        .is_none_or(|target| target.entity_type != 142 || target.form != 0)
+                    {
+                        losses.push(entity_loss(
+                            entry,
+                            "trimmed-surface outer-boundary pointer does not target a Type 142 Form 0 entity",
+                        ));
+                        continue;
+                    }
                     sequences.push(outer);
                 } else if !matches!(
                     record.value(4),
@@ -978,6 +1799,17 @@ pub(super) fn project(
                         valid = false;
                         break;
                     };
+                    if entries
+                        .get(&sequence)
+                        .is_none_or(|target| target.entity_type != 142 || target.form != 0)
+                    {
+                        losses.push(entity_loss(
+                            entry,
+                            "trimmed-surface inner-boundary pointer does not target a Type 142 Form 0 entity",
+                        ));
+                        valid = false;
+                        break;
+                    }
                     sequences.push(sequence);
                 }
                 (surface, sequences, has_explicit_outer, valid)
@@ -1015,6 +1847,17 @@ pub(super) fn project(
                         valid = false;
                         break;
                     };
+                    if entries
+                        .get(&sequence)
+                        .is_none_or(|target| target.entity_type != 141 || target.form != 0)
+                    {
+                        losses.push(entity_loss(
+                            entry,
+                            "bounded-surface boundary pointer does not target a Type 141 Form 0 entity",
+                        ));
+                        valid = false;
+                        break;
+                    }
                     if boundaries.get(&sequence).is_some_and(|boundary| {
                         (representation == 0
                             && boundary
@@ -1059,9 +1902,22 @@ pub(super) fn project(
         let region_id = RegionId(format!("iges:model:region#{stem}"));
         let shell_id = ShellId(format!("iges:model:shell#{stem}"));
         let face_id = FaceId(format!("iges:model:face#{stem}"));
+        let mut candidate_boundary_vertex_derivations = Vec::new();
         let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id);
+        let support_parameter_intervals = surface_parameter_bound_intervals(
+            &carrier_index,
+            &surface_id,
+            &entries,
+            &records,
+            global.real_precision(),
+        );
         let periodic_parameters = periodic_surface_parameters(&support_geometry);
+        let implicit_outer_domain =
+            trimmed_surface && !has_explicit_outer && !boundary_sequences.is_empty();
+        let mut implicit_boundary_curves = Vec::new();
+        let mut implicit_boundary_pcurves = Vec::new();
         let mut loop_ids = Vec::new();
+        let mut linear_boundary_candidates = Vec::with_capacity(boundary_sequences.len());
         let mut face_tolerance = 0.0_f64;
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
             let Some(boundary) = boundaries.get(&sequence).cloned() else {
@@ -1098,8 +1954,11 @@ pub(super) fn project(
                         pcurve_geometry(
                             ir,
                             *sequence,
-                            &support_geometry,
-                            factor,
+                            &PcurveSupport {
+                                surface_id: &surface_id,
+                                geometry: &support_geometry,
+                                factor,
+                            },
                             Some(carrier_agreement_tolerance),
                             ctx,
                             Some(
@@ -1120,14 +1979,30 @@ pub(super) fn project(
                     }
                     None => Vec::new(),
                 };
-                if pcurves.iter().any(|(geometry, range)| {
-                    !pcurve_within_declared_bounds(
-                        geometry,
-                        *range,
-                        support_parameter_bounds,
-                        periodic_parameters,
-                    )
-                }) {
+                if pcurves
+                    .iter()
+                    .zip(&segment.pcurves)
+                    .any(|((geometry, range), sequence)| {
+                        !pcurve_within_declared_intervals(
+                            geometry,
+                            *range,
+                            support_parameter_intervals,
+                            periodic_parameters,
+                        ) && !source_curve_control_polygon_within_bounds(
+                            ir,
+                            &CurveId(format!("iges:model:curve#D{sequence}")),
+                            &PcurveSupport {
+                                surface_id: &surface_id,
+                                geometry: &support_geometry,
+                                factor,
+                            },
+                            support_parameter_intervals,
+                            &entries,
+                            &records,
+                            global.real_precision(),
+                        )
+                    })
+                {
                     if segment.parameter_curves_authoritative {
                         losses.push(boundary_parameter_loss(
                             entry,
@@ -1200,6 +2075,9 @@ pub(super) fn project(
             if !valid {
                 break;
             }
+            if implicit_outer_domain {
+                implicit_boundary_curves.extend(items.iter().map(|item| item.model_curve.clone()));
+            }
             let traversal = |item: &BoundaryItem| {
                 if item.segment.sense == Sense::Forward {
                     (item.start, item.end)
@@ -1225,22 +2103,44 @@ pub(super) fn project(
                 valid = false;
                 break;
             }
+            linear_boundary_candidates.push(linear_boundary_geometry(
+                &items,
+                &carrier_index,
+                &support_geometry,
+                carrier_agreement_tolerance,
+                sewing_tolerance,
+                trimmed_surface,
+            ));
             let loop_id = LoopId(format!("iges:model:loop#{stem}:{boundary_index}"));
             let coedge_ids = (0..items.len())
                 .map(|index| CoedgeId(format!("iges:model:coedge#{stem}:{boundary_index}:{index}")))
                 .collect::<Vec<_>>();
-            let endpoint_positions = items
+            let source_endpoints = items
                 .iter()
-                .flat_map(|item| [item.start, item.end])
+                .flat_map(|item| {
+                    [
+                        BoundaryVertexSourceEndpoint {
+                            edge: item.source_edge.id.0.clone(),
+                            endpoint: BoundaryEndpoint::Start,
+                            position: item.start,
+                        },
+                        BoundaryVertexSourceEndpoint {
+                            edge: item.source_edge.id.0.clone(),
+                            endpoint: BoundaryEndpoint::End,
+                            position: item.end,
+                        },
+                    ]
+                })
                 .collect::<Vec<_>>();
-            let vertex_ids = match create_boundary_vertices(
+            let (vertex_ids, derivations) = match create_boundary_vertices(
                 &mut candidate,
                 &stem,
+                &format!("iges:entity:directory#{}", entry.sequence),
                 boundary_index,
-                &endpoint_positions,
+                &source_endpoints,
                 sewing_tolerance,
             ) {
-                Ok(vertex_ids) => vertex_ids,
+                Ok(result) => result,
                 Err(BoundaryVertexClusterError::InvalidTolerance) => {
                     losses.push(entity_loss(entry, "boundary sewing tolerance is invalid"));
                     valid = false;
@@ -1255,6 +2155,7 @@ pub(super) fn project(
                     break;
                 }
             };
+            candidate_boundary_vertex_derivations.extend(derivations);
             for (segment_index, item) in items.into_iter().enumerate() {
                 let edge_id = EdgeId(format!(
                     "iges:model:edge#{stem}:{boundary_index}:{segment_index}"
@@ -1277,6 +2178,9 @@ pub(super) fn project(
                         let id = PcurveId(format!(
                             "iges:model:pcurve#{stem}:{boundary_index}:{segment_index}:{pcurve_index}"
                         ));
+                        if implicit_outer_domain {
+                            implicit_boundary_pcurves.push(id.clone());
+                        }
                         candidate.model_mut().pcurves.push(Pcurve {
                             id: id.clone(),
                             geometry,
@@ -1327,10 +2231,65 @@ pub(super) fn project(
         if !valid {
             continue;
         }
+        let linear_rings = linear_boundary_rings(&linear_boundary_candidates, true)
+            .or_else(|| linear_boundary_rings(&linear_boundary_candidates, false));
+        if let Some(rings) = linear_rings {
+            if linear_boundary_relationship_is_valid(
+                &rings,
+                trimmed_surface,
+                has_explicit_outer,
+                &support_geometry,
+                support_parameter_bounds,
+                periodic_parameters,
+            ) == Some(false)
+            {
+                losses.push(entity_loss(
+                    entry,
+                    if trimmed_surface {
+                        "trimmed-surface boundary loops are not simple, disjoint, and correctly nested"
+                    } else {
+                        "boundary loop is not a simple closed carrier"
+                    },
+                ));
+                continue;
+            }
+        }
+        let face_surface_id = if implicit_outer_domain {
+            let derived_surface_id = SurfaceId(format!(
+                "iges:model:surface#D{}:implicit-outer",
+                entry.sequence
+            ));
+            candidate.model_mut().surfaces.push(Surface {
+                id: derived_surface_id.clone(),
+                geometry: support_geometry.clone(),
+                source_object: Some(source_object(entry)),
+            });
+            candidate
+                .model_mut()
+                .procedural_surfaces
+                .push(ProceduralSurface {
+                    id: ProceduralSurfaceId(format!(
+                        "iges:model:procedural-surface#D{}:implicit-outer",
+                        entry.sequence
+                    )),
+                    surface: derived_surface_id.clone(),
+                    definition: ProceduralSurfaceDefinition::CurveBounded {
+                        support: surface_id.clone(),
+                        boundaries: implicit_boundary_curves,
+                        boundary_pcurves: implicit_boundary_pcurves,
+                        implicit_outer: true,
+                    },
+                    cache_fit_tolerance: None,
+                    record_bounds: support_parameter_bounds,
+                });
+            derived_surface_id
+        } else {
+            surface_id
+        };
         candidate.model_mut().faces.push(Face {
             id: face_id.clone(),
             shell: shell_id.clone(),
-            surface: surface_id,
+            surface: face_surface_id,
             sense: Sense::Forward,
             loops: loop_ids,
             name: None,
@@ -1359,11 +2318,15 @@ pub(super) fn project(
             visible: None,
         });
         candidate.model_mut().finalize();
-        staged.push((entry.sequence, candidate));
+        staged.push((
+            entry.sequence,
+            candidate,
+            candidate_boundary_vertex_derivations,
+        ));
     }
     drop(carrier_index);
     let mut commit_session = CommitSession::new(ir);
-    for (sequence, candidate) in staged {
+    for (sequence, candidate, derivations) in staged {
         if commit_session.commit_model(candidate, ir).is_err() {
             let entry = entries
                 .get(&sequence)
@@ -1376,9 +2339,13 @@ pub(super) fn project(
             continue;
         }
         decoded.insert(sequence);
+        boundary_vertex_derivations.extend(derivations);
     }
 
-    ProjectionOutcome { decoded, losses }
+    (
+        ProjectionOutcome { decoded, losses },
+        boundary_vertex_derivations,
+    )
 }
 
 #[cfg(test)]

@@ -14,7 +14,7 @@
 //! That breaks any check of the form "do these two decodes describe the same
 //! model", whether a snapshot harness or a cross-machine compare of one file.
 //!
-//! ## `1e-12` relative, floor of one
+//! ## `1.0e-12` relative, floor of one
 //!
 //! Platform libm disagreement sits near `1e-16` relative. [`FLOAT_TOLERANCE`]
 //! leaves four decimal orders of headroom and still flags a change with
@@ -72,7 +72,7 @@ use serde_json::Value;
 /// Applied against the larger magnitude of the two values, with a floor of one
 /// so small values compare absolutely. See the module documentation for why
 /// this magnitude.
-pub const FLOAT_TOLERANCE: f64 = 1e-12;
+pub const FLOAT_TOLERANCE: f64 = 1.0e-12;
 
 /// Suffix for a source attribute holding a machine-local content digest.
 ///

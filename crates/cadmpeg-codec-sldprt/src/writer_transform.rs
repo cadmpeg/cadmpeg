@@ -183,7 +183,7 @@ fn assign(
 }
 
 fn check_rigid(transform: Transform) -> Result<(), CodecError> {
-    const EPS: f64 = 1e-9;
+    const EPS: f64 = 1.0e-9;
     if transform
         .rows
         .iter()

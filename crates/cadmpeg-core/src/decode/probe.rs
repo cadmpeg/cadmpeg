@@ -38,13 +38,13 @@ impl From<ParseError> for CodecError {
             ParseErrorKind::UnexpectedEof { .. } => {
                 CodecError::truncated(error.location, error.operation)
             }
-            ParseErrorKind::InvalidValue => CodecError::Malformed(format!(
+            ParseErrorKind::InvalidValue => CodecError::malformed(format_args!(
                 "invalid value during {} at space {} offset {}",
                 error.operation,
                 error.location.space.index(),
                 error.location.offset
             )),
-            ParseErrorKind::InvalidFraming => CodecError::Malformed(format!(
+            ParseErrorKind::InvalidFraming => CodecError::malformed(format_args!(
                 "invalid framing during {} at space {} offset {}",
                 error.operation,
                 error.location.space.index(),

@@ -197,6 +197,7 @@
           "annotations": [
             {
               "declared_string_count": 1,
+              "form": 0,
               "id": "iges:presentation:annotation#D1",
               "kind": "general_note",
               "source_entity": "iges:entity:directory#1",
@@ -6723,8 +6724,11 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [],
           "network_definitions": [],
           "network_instances": [],
           "primitive_solids": [],
@@ -6758,7 +6762,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 3
+        "version": 6
       }
     },
     "source": {

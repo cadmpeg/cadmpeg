@@ -232,7 +232,7 @@ pub(crate) fn native_history_tail(
                 .is_none_or(|state| state.state_id != stream_size)
                 || history_entry_count < 0
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
@@ -253,7 +253,7 @@ pub(crate) fn native_history_tail(
         }
         (None, None) => {}
         _ => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D history {} has an incomplete history-stream preamble",
                 history.id
             )));
@@ -276,7 +276,7 @@ pub(crate) fn native_history_tail(
             native_i64(bytes, board.number);
             for change in &board.changes {
                 if change.kind != history_change_kind(change.old_ref, change.new_ref)? {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "F3D entity change {} has a kind inconsistent with its references",
                         change.id
                     )));

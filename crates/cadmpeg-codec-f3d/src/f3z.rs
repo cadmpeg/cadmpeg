@@ -15,7 +15,6 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{EntityRewrite, Model};
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::{Native, NativeRecord};
 
 use crate::container::ContainerScan;
@@ -53,10 +52,10 @@ pub fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let manifest: ManifestJson = serde_json::from_slice(scan.entry_bytes(MANIFEST_ENTRY)?)
         .map_err(|error| {
-            CodecError::Malformed(format!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
+            CodecError::malformed(format_args!("{MANIFEST_ENTRY} is not valid JSON: {error}"))
         })?;
     let root_view = scan.entry_view(&manifest.root).ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "f3z root member {} is not present in the archive",
             manifest.root
         ))
@@ -132,7 +131,7 @@ fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(XrefTable::default());
     };
-    let invalid = |error| CodecError::Malformed(format!("invalid F3D native data: {error}"));
+    let invalid = |error| CodecError::malformed(format_args!("invalid F3D native data: {error}"));
     Ok(XrefTable {
         designs: namespace.arena_as("xref_designs").map_err(invalid)?,
         references: namespace.arena_as("xref_references").map_err(invalid)?,
@@ -237,11 +236,9 @@ fn merge_references(
         )?;
         merged += descendants + 1;
         parent.report_mut().geometry_transferred |= component_report.geometry_transferred;
-        for loss in component_report.losses {
-            parent.report_mut().losses.push(LossNote {
-                message: format!("xref {label}: {}", loss.message),
-                ..loss
-            });
+        for mut loss in component_report.losses {
+            loss.message = format!("xref {label}: {}", loss.message);
+            parent.report_mut().losses.push(loss);
         }
         let placement = if reference.transform.is_some() {
             "Design occurrence transform"
@@ -321,7 +318,7 @@ fn merge_annotations(
             .and_then(|index| stream_map.get(index))
             .copied()
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "component annotation {id} references missing stream {}",
                     provenance.stream
                 ))
@@ -412,11 +409,11 @@ impl EntityRewrite for OccurrenceScope<'_> {
     /// non-finite one.
     fn rewrite<T: Serialize + DeserializeOwned>(&mut self, entity: T) -> Result<T, CodecError> {
         let mut value = serde_value::to_value(entity).map_err(|error| {
-            CodecError::Malformed(format!("model serialization failed: {error}"))
+            CodecError::malformed(format_args!("model serialization failed: {error}"))
         })?;
         remap_ids(&mut value, self.occurrence);
         crate::value_tree::from_value(value).map_err(|error| {
-            CodecError::Malformed(format!("merged model round-trip failed: {error}"))
+            CodecError::malformed(format_args!("merged model round-trip failed: {error}"))
         })
     }
 }

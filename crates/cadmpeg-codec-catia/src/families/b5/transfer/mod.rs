@@ -209,7 +209,7 @@ fn transfer_complete(
     let surface_ids = surfaces::emit_surfaces(ir, annotations, graph, &mut plan);
     let pcurve_uses = pcurves::emit_pcurves(ir, annotations, graph, &plan);
     let edge_id_map = edges::emit_edges(ir, annotations, graph, payload, &mut plan, &surface_ids);
-    faces::emit_faces(
+    if !faces::emit_faces(
         ir,
         annotations,
         graph,
@@ -217,7 +217,9 @@ fn transfer_complete(
         &surface_ids,
         &pcurve_uses,
         &edge_id_map,
-    );
+    ) {
+        return false;
+    }
     true
 }
 

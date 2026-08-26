@@ -7,6 +7,13 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::super::sketch::normalized;
 
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_SIGNED_LENGTH: f64 = 1.0e-9;
+const EPS_SPAN_AGREEMENT: f64 = 1.0e-9;
+const EPS_AXIS_COMPONENT: f64 = 1.0e-9;
+const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrusionSpan {
     pub lower: f64,
@@ -28,7 +35,7 @@ pub fn hole_extent_and_direction(
         .map(|(first, second)| first * second)
         .sum::<f64>()
         .abs();
-    if (alignment - 1.0).abs() > 1e-9 {
+    if (alignment - 1.0).abs() > EPS_AXIS_ALIGNMENT {
         return None;
     }
     let signed_length = second_origin
@@ -42,7 +49,7 @@ pub fn hole_extent_and_direction(
         .chain(first_origin)
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    if signed_length.abs() <= 1e-9 * scale {
+    if signed_length.abs() <= EPS_SIGNED_LENGTH * scale {
         return None;
     }
     Some((
@@ -99,9 +106,9 @@ pub fn cap_square_center_radius(
         .max(corners[0][axis_index].abs())
         .max(corners[1][axis_index].abs())
         .max(1.0);
-    if (corners[1][axis_index] - corners[0][axis_index]).abs() > 1e-9 * scale
-        || spans[0] <= 1e-9
-        || (spans[0] - spans[1]).abs() > 1e-9 * scale
+    if (corners[1][axis_index] - corners[0][axis_index]).abs() > EPS_SPAN_AGREEMENT * scale
+        || spans[0] <= EPS_SPAN_AGREEMENT
+        || (spans[0] - spans[1]).abs() > EPS_SPAN_AGREEMENT * scale
     {
         return None;
     }
@@ -115,8 +122,8 @@ pub fn cylinder_from_single_cap_outline(cap: PartialCapOutline) -> Option<Surfac
     let (_, _, axis, corners) = cap;
     let axis = normalized(axis)?;
     let axis_index = (0..3).find(|index| {
-        axis[*index].abs() > 1.0 - 1e-9
-            && (0..3).all(|other| other == *index || axis[other].abs() < 1e-9)
+        axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
+            && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)
     })?;
     let (center, radius) = cap_square_center_radius(corners?, axis_index)?;
     let radial_axis = (0..3).find(|index| *index != axis_index)?;
@@ -134,8 +141,8 @@ pub fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<Surf
     let placement = hole_placement(caps.map(|(id, origin, normal, _)| (id, origin, normal)))?;
     let axis = placement.1;
     let axis_index = (0..3).find(|index| {
-        axis[*index].abs() > 1.0 - 1e-9
-            && (0..3).all(|other| other == *index || axis[other].abs() < 1e-9)
+        axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
+            && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)
     })?;
     let radial = (0..3)
         .filter(|index| *index != axis_index)
@@ -155,8 +162,8 @@ pub fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<Surf
         .fold(1.0, f64::max);
     if radial
         .iter()
-        .any(|index| (centers[0][*index] - centers[1][*index]).abs() > 1e-9 * scale)
-        || (radii[0] - radii[1]).abs() > 1e-9 * scale
+        .any(|index| (centers[0][*index] - centers[1][*index]).abs() > EPS_CENTER_AGREEMENT * scale)
+        || (radii[0] - radii[1]).abs() > EPS_RADIUS_AGREEMENT * scale
     {
         return None;
     }
@@ -179,8 +186,8 @@ pub fn cylinder_from_complementary_outline_bounds(
     };
     let axis = normalized([normal.x, normal.y, normal.z])?;
     let axis_index = (0..3).find(|index| {
-        axis[*index].abs() > 1.0 - 1e-9
-            && (0..3).all(|other| other == *index || axis[other].abs() < 1e-9)
+        axis[*index].abs() > 1.0 - EPS_AXIS_ALIGNMENT
+            && (0..3).all(|other| other == *index || axis[other].abs() < EPS_AXIS_COMPONENT)
     })?;
     let radial = (0..3)
         .filter(|index| *index != axis_index)
@@ -191,7 +198,7 @@ pub fn cylinder_from_complementary_outline_bounds(
         .flatten()
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_CENTER_AGREEMENT * scale;
     if bounds
         .iter()
         .any(|rectangle| (0..2).any(|index| rectangle[1][index] <= rectangle[0][index]))

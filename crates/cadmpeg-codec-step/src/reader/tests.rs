@@ -11,7 +11,8 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
     let mut extended = input.to_vec();
     extended.push(0xc3);
 
-    let accounting = byte_accounting(&extended, &exchange, &HashSet::new());
+    let accounting = byte_accounting(&extended, &exchange, &HashSet::new(), None)
+        .expect("byte accounting allocation");
 
     assert_eq!(accounting.unclassified, 1);
     assert_eq!(

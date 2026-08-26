@@ -3,21 +3,257 @@
 
 use super::curve_conversion::angularly_equal;
 use crate::directory::DirectoryEntry;
-use crate::global::{ProjectedGlobal, RealPrecision};
+use crate::global::{Dialect, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
+use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Edge, Point, Region, Shell, Vertex};
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
 const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
+const CURVE_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
+
+pub(super) fn planar_polyline_has_self_intersection(points: &[[f64; 2]]) -> bool {
+    if points.len() < 3 {
+        return false;
+    }
+    let mut points = points.to_vec();
+    let last = points.len() - 1;
+    points[last] = points[0];
+    for first_index in 0..last {
+        for second_index in first_index + 1..last {
+            let allowed_endpoint = if second_index == first_index + 1 {
+                Some(points[second_index])
+            } else if first_index == 0 && second_index + 1 == last {
+                Some(points[0])
+            } else {
+                None
+            };
+            if planar_segments_intersect_beyond_endpoint(
+                [points[first_index], points[first_index + 1]],
+                [points[second_index], points[second_index + 1]],
+                allowed_endpoint,
+            ) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+pub(super) fn planar_polylines_intersect(first: &[[f64; 2]], second: &[[f64; 2]]) -> bool {
+    first
+        .windows(2)
+        .flat_map(|first_segment| {
+            second
+                .windows(2)
+                .map(move |second_segment| [first_segment, second_segment])
+        })
+        .any(|segments| {
+            planar_segments_intersect_beyond_endpoint(
+                [segments[0][0], segments[0][1]],
+                [segments[1][0], segments[1][1]],
+                None,
+            )
+        })
+}
+
+pub(super) fn planar_segments_contain_point(point: [f64; 2], segment: [[f64; 2]; 2]) -> bool {
+    planar_point_on_segment(point, segment[0], segment[1])
+}
+
+pub(super) fn plane_coordinates(
+    points: &[Point3],
+    plane: (Point3, Vector3),
+) -> Option<Vec<[f64; 2]>> {
+    let normal = plane.1.unit()?;
+    let reference = if normal.x.abs() <= normal.y.abs() && normal.x.abs() <= normal.z.abs() {
+        Vector3::new(1.0, 0.0, 0.0)
+    } else if normal.y.abs() <= normal.z.abs() {
+        Vector3::new(0.0, 1.0, 0.0)
+    } else {
+        Vector3::new(0.0, 0.0, 1.0)
+    };
+    let u_axis = normal.cross(reference).unit()?;
+    let v_axis = normal.cross(u_axis).unit()?;
+    let coordinates = points
+        .iter()
+        .map(|point| {
+            let displacement = point.vector_from(plane.0);
+            [displacement.dot(u_axis), displacement.dot(v_axis)]
+        })
+        .collect::<Vec<_>>();
+    coordinates
+        .iter()
+        .flatten()
+        .all(|coordinate| coordinate.is_finite())
+        .then_some(coordinates)
+}
+
+pub(super) fn linear_nurbs_parameters(
+    degree: u32,
+    knots: &[f64],
+    control_count: usize,
+    periodic: bool,
+    range: [f64; 2],
+) -> Option<Vec<f64>> {
+    let degree = usize::try_from(degree).ok()?;
+    let expected_knot_count = control_count.checked_add(degree)?.checked_add(1)?;
+    if periodic
+        || degree != 1
+        || control_count < 2
+        || knots.len() != expected_knot_count
+        || !knots.windows(2).all(|pair| pair[0] <= pair[1])
+        || knots.iter().any(|knot| !knot.is_finite())
+        || !range[0].is_finite()
+        || !range[1].is_finite()
+        || range[0] >= range[1]
+    {
+        return None;
+    }
+    let domain = [knots[degree], knots[control_count]];
+    if range[0] < domain[0] || range[1] > domain[1] {
+        return None;
+    }
+    if knots
+        .windows(2)
+        .any(|pair| pair[0] == pair[1] && range[0] < pair[0] && pair[0] < range[1])
+    {
+        return None;
+    }
+    let mut parameters = vec![range[0]];
+    for knot in knots.iter().copied() {
+        if knot > range[0] && knot < range[1] && parameters.last().is_none_or(|last| *last != knot)
+        {
+            parameters.push(knot);
+        }
+    }
+    parameters.push(range[1]);
+    Some(parameters)
+}
+
+fn planar_cross(left: [f64; 2], right: [f64; 2], point: [f64; 2]) -> f64 {
+    (right[0] - left[0]) * (point[1] - left[1]) - (right[1] - left[1]) * (point[0] - left[0])
+}
+
+fn planar_point_on_segment(point: [f64; 2], start: [f64; 2], end: [f64; 2]) -> bool {
+    planar_cross(start, end, point) == 0.0
+        && point[0] >= start[0].min(end[0])
+        && point[0] <= start[0].max(end[0])
+        && point[1] >= start[1].min(end[1])
+        && point[1] <= start[1].max(end[1])
+}
+
+fn planar_segments_intersect_beyond_endpoint(
+    first: [[f64; 2]; 2],
+    second: [[f64; 2]; 2],
+    allowed_endpoint: Option<[f64; 2]>,
+) -> bool {
+    let [a, b] = first;
+    let [c, d] = second;
+    let orientations = [
+        planar_cross(a, b, c),
+        planar_cross(a, b, d),
+        planar_cross(c, d, a),
+        planar_cross(c, d, b),
+    ];
+    let opposite =
+        |left: f64, right: f64| (left > 0.0 && right < 0.0) || (left < 0.0 && right > 0.0);
+    if opposite(orientations[0], orientations[1]) && opposite(orientations[2], orientations[3]) {
+        return true;
+    }
+
+    let mut contacts = [(c, orientations[0]), (d, orientations[1])]
+        .into_iter()
+        .filter_map(|(point, orientation)| {
+            (orientation == 0.0 && planar_point_on_segment(point, a, b)).then_some(point)
+        })
+        .chain(
+            [(a, orientations[2]), (b, orientations[3])]
+                .into_iter()
+                .filter_map(|(point, orientation)| {
+                    (orientation == 0.0 && planar_point_on_segment(point, c, d)).then_some(point)
+                }),
+        );
+    contacts.any(|point| Some(point) != allowed_endpoint)
+}
+
+pub(crate) fn point_display_symbol_type_allowed(entity_type: i64, dialect: Dialect) -> bool {
+    match dialect {
+        Dialect::Legacy => matches!(entity_type, 308 | 408),
+        Dialect::V4_0 => entity_type == 408,
+        Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => entity_type == 308,
+    }
+}
+
+fn point_display_symbol_valid(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
+) -> bool {
+    match record.value(4) {
+        None | Some(crate::parameter::TokenValue::Omitted) => true,
+        Some(crate::parameter::TokenValue::Integer(0)) => true,
+        Some(crate::parameter::TokenValue::Integer(sequence)) => {
+            u32::try_from(*sequence).ok().is_some_and(|sequence| {
+                sequence % 2 == 1
+                    && entries.get(&sequence).is_some_and(|target| {
+                        target.form == 0
+                            && point_display_symbol_type_allowed(target.entity_type, dialect)
+                    })
+            })
+        }
+        Some(crate::parameter::TokenValue::Real(_) | crate::parameter::TokenValue::String(_)) => {
+            false
+        }
+    }
+}
+
+fn base_geometry_table_entry(entity_type: i64, form: i64) -> bool {
+    match entity_type {
+        106 => matches!(form, 1..=3 | 11..=13 | 63),
+        100 | 104 | 108 | 110 | 112 | 114 | 116 | 118 | 120 | 122 | 126 | 128 | 130 | 140 | 142
+        | 144 => true,
+        _ => false,
+    }
+}
+
+fn base_geometry_use_flag_valid(
+    entity_type: i64,
+    form: i64,
+    use_flag: u8,
+    dialect: Dialect,
+) -> bool {
+    !base_geometry_table_entry(entity_type, form)
+        || !matches!(dialect, Dialect::V4_0)
+        || matches!(use_flag, 0 | 1 | 2 | 5)
+}
+
+fn base_geometry_line_font_required(entity_type: i64, form: i64) -> bool {
+    base_geometry_table_entry(entity_type, form)
+        && !matches!(entity_type, 116)
+        && !(entity_type == 106 && matches!(form, 1..=3))
+}
+
+fn base_geometry_line_font_valid(
+    entity_type: i64,
+    form: i64,
+    line_font: i64,
+    dialect: Dialect,
+) -> bool {
+    !matches!(dialect, Dialect::V4_0)
+        || !base_geometry_line_font_required(entity_type, form)
+        || line_font != 0
+}
 
 #[derive(Clone, Copy)]
 enum ControlPointPlane {
@@ -140,9 +376,112 @@ impl DeclaredInterval {
         self.lower <= value && value <= self.upper
     }
 
+    pub(crate) fn is_finite(self) -> bool {
+        self.lower.is_finite() && self.upper.is_finite()
+    }
+
+    pub(crate) fn is_strictly_positive(self) -> bool {
+        self.lower > 0.0
+    }
+
+    pub(crate) fn lower_bound(self) -> f64 {
+        self.lower
+    }
+
+    pub(crate) fn upper_bound(self) -> f64 {
+        self.upper
+    }
+
     pub(crate) fn overlaps(self, other: Self) -> bool {
         self.lower <= other.upper && other.lower <= self.upper
     }
+}
+
+/// Return declared intervals for the Type 126 pole coordinates.
+///
+/// The projected NURBS stores coordinates after unit conversion and placement.
+/// A later consumer that needs to distinguish source uncertainty from arithmetic
+/// roundoff can use this source-space representation before composite-curve
+/// degree elevation and concatenation alter the control polygon.
+pub(super) fn type126_declared_control_points(
+    record: &ParameterRecord,
+    precision: RealPrecision,
+) -> Option<Vec<[DeclaredInterval; 3]>> {
+    let control_count = record.count(1)?.checked_add(1)?;
+    let degree = usize::try_from(record.integer(2)?).ok()?;
+    let knot_count = control_count.checked_add(degree)?.checked_add(1)?;
+    let weight_start = 7usize.checked_add(knot_count)?;
+    let pole_start = weight_start.checked_add(control_count)?;
+    let pole_value_count = control_count.checked_mul(3)?;
+    let range_start = pole_start.checked_add(pole_value_count)?;
+    if record.parameter_end() < range_start.checked_add(2)? {
+        return None;
+    }
+    (0..control_count)
+        .map(|point| {
+            (0..3)
+                .map(|coordinate| {
+                    let index = pole_start
+                        .checked_add(point.checked_mul(3)?)?
+                        .checked_add(coordinate)?;
+                    let value = record.number(index).filter(|value| value.is_finite())?;
+                    Some(DeclaredInterval::around(
+                        value,
+                        record.number_uncertainty(index, value, precision),
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()
+        })
+        .collect()
+}
+
+/// Return whether finite declared intervals prove one affine progression.
+///
+/// A sequence `x[i] = a + i*d` is affine exactly when one value of `d` makes
+/// all intervals `[x[i] - i*d]` overlap. Pairwise bounds on `d` express that
+/// condition without choosing a representative from any source interval. A
+/// non-finite interval or bound is rejected instead of being treated as an
+/// unconstrained value after arithmetic overflow.
+pub(crate) fn declared_affine_progression(values: &[f64], uncertainties: &[f64]) -> bool {
+    if values.len() < 2
+        || values.len() != uncertainties.len()
+        || values
+            .iter()
+            .zip(uncertainties)
+            .any(|(value, uncertainty)| {
+                !value.is_finite() || !uncertainty.is_finite() || *uncertainty < 0.0
+            })
+    {
+        return false;
+    }
+    let intervals = values
+        .iter()
+        .zip(uncertainties)
+        .map(|(value, uncertainty)| DeclaredInterval::around(*value, *uncertainty))
+        .collect::<Vec<_>>();
+    if intervals
+        .iter()
+        .any(|interval| !interval.lower.is_finite() || !interval.upper.is_finite())
+    {
+        return false;
+    }
+    let mut lower = f64::NEG_INFINITY;
+    let mut upper = f64::INFINITY;
+    for first in 0..intervals.len() {
+        for second in first + 1..intervals.len() {
+            let span = (second - first) as f64;
+            let pair_lower = (intervals[second].lower - intervals[first].upper) / span;
+            let pair_upper = (intervals[second].upper - intervals[first].lower) / span;
+            if !pair_lower.is_finite() || !pair_upper.is_finite() {
+                return false;
+            }
+            lower = lower.max(pair_lower);
+            upper = upper.min(pair_upper);
+        }
+    }
+    lower <= upper
 }
 
 fn interval_dot(left: [DeclaredInterval; 3], right: [DeclaredInterval; 3]) -> DeclaredInterval {
@@ -529,6 +868,44 @@ pub(super) struct ProjectionOutcome {
     pub(super) losses: Vec<LossNote>,
 }
 
+/// One source endpoint that participates in a face-local boundary vertex.
+///
+/// Boundary sewing is a topology decision. The endpoint coordinate remains
+/// source evidence and must not be replaced by the neutral representative.
+#[derive(Debug, Clone)]
+pub(crate) struct BoundaryVertexSourceEndpoint {
+    pub(crate) edge: String,
+    pub(crate) endpoint: BoundaryEndpoint,
+    pub(crate) position: Point3,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum BoundaryEndpoint {
+    Start,
+    End,
+}
+
+/// The complete derivation of one neutral vertex created by boundary sewing.
+#[derive(Debug, Clone)]
+pub(crate) struct BoundaryVertexDerivation {
+    pub(crate) source_entity: String,
+    pub(crate) vertex: VertexId,
+    pub(crate) representative: Point3,
+    pub(crate) tolerance: f64,
+    pub(crate) source_endpoints: Vec<BoundaryVertexSourceEndpoint>,
+}
+
+// The `merge_into` drains on the outcome types take `self` by value: every
+// field a sub-projector returns has to be handed to an accumulator, so an
+// outcome field cannot be dropped silently at the merge site. The accumulator
+// element types are pairwise distinct, so arguments cannot be transposed.
+impl ProjectionOutcome {
+    fn merge_into(self, decoded: &mut BTreeSet<u32>, losses: &mut Vec<LossNote>) {
+        decoded.extend(self.decoded);
+        losses.extend(self.losses);
+    }
+}
+
 /// A curve projector's result: the two-field outcome extended with the edges
 /// the caller collects into the free-geometry wire shell.
 pub(super) struct WireProjectionOutcome {
@@ -537,6 +914,20 @@ pub(super) struct WireProjectionOutcome {
     pub(super) wire_edges: Vec<EdgeId>,
 }
 
+impl WireProjectionOutcome {
+    fn merge_into(
+        self,
+        decoded: &mut BTreeSet<u32>,
+        losses: &mut Vec<LossNote>,
+        wire_edges: &mut Vec<EdgeId>,
+    ) {
+        decoded.extend(self.decoded);
+        losses.extend(self.losses);
+        wire_edges.extend(self.wire_edges);
+    }
+}
+
+#[derive(Default)]
 pub(crate) struct Projection {
     pub(crate) decoded: BTreeSet<u32>,
     /// Source records consumed as construction data without a standalone
@@ -544,6 +935,7 @@ pub(crate) struct Projection {
     /// these records; membership here is the only suppression channel.
     pub(crate) consumed: BTreeSet<u32>,
     pub(crate) losses: Vec<LossNote>,
+    pub(crate) boundary_vertex_derivations: Vec<BoundaryVertexDerivation>,
 }
 
 fn positive_sequence(value: i64) -> Option<u32> {
@@ -656,6 +1048,113 @@ fn admit_projected_entities(
     })
 }
 
+fn point_on_plane(point: Point3, plane: (Point3, Vector3), resolution: f64) -> bool {
+    let distance = point.vector_from(plane.0).dot(plane.1).abs();
+    distance.is_finite() && distance <= resolution
+}
+
+fn normal_matches_plane(normal: Vector3, plane_normal: Vector3) -> bool {
+    let norm = normal.norm();
+    norm.is_finite()
+        && norm > 0.0
+        && normal.scale(1.0 / norm).cross(plane_normal).norm() <= CURVE_PLANE_NORMAL_EPSILON
+}
+
+fn direction_in_plane(direction: Vector3, plane_normal: Vector3) -> bool {
+    let direction_norm = direction.norm();
+    let plane_norm = plane_normal.norm();
+    direction_norm.is_finite()
+        && direction_norm > 0.0
+        && plane_norm.is_finite()
+        && plane_norm > 0.0
+        && direction
+            .scale(1.0 / direction_norm)
+            .dot(plane_normal.scale(1.0 / plane_norm))
+            .abs()
+            <= CURVE_PLANE_NORMAL_EPSILON
+}
+
+pub(super) fn curve_geometry_coplanar(
+    geometry: &CurveGeometry,
+    index: &ModelIndex<'_>,
+    transform: Transform,
+    plane: (Point3, Vector3),
+    resolution: f64,
+    active: &mut BTreeSet<CurveId>,
+) -> bool {
+    let point_valid =
+        |point: Point3| point_on_plane(transform.apply_point(point), plane, resolution);
+    let normal_valid = |normal: Vector3| {
+        transform
+            .apply_normal(normal)
+            .is_some_and(|normal| normal_matches_plane(normal, plane.1))
+    };
+    let direction_valid =
+        |direction: Vector3| direction_in_plane(transform.apply_vector(direction), plane.1);
+    match geometry {
+        CurveGeometry::Line { origin, direction } => {
+            point_valid(*origin) && direction_valid(*direction)
+        }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            ..
+        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*ref_direction),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            ..
+        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            ..
+        } => point_valid(*vertex) && normal_valid(*axis) && direction_valid(*major_direction),
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            ..
+        } => point_valid(*center) && normal_valid(*axis) && direction_valid(*major_direction),
+        CurveGeometry::Degenerate { point } => point_valid(*point),
+        CurveGeometry::Nurbs(curve) => curve.control_points.iter().copied().all(point_valid),
+        CurveGeometry::Polyline { points, .. } => points.iter().copied().all(point_valid),
+        CurveGeometry::Composite { segments, .. } => segments.iter().all(|segment| {
+            let Some(curve) = index.curves(&segment.curve.0) else {
+                return false;
+            };
+            if !active.insert(segment.curve.clone()) {
+                return false;
+            }
+            let valid = curve_geometry_coplanar(
+                &curve.geometry,
+                index,
+                transform,
+                plane,
+                resolution,
+                active,
+            );
+            active.remove(&segment.curve);
+            valid
+        }),
+        CurveGeometry::Transformed {
+            basis,
+            transform: map,
+        } => curve_geometry_coplanar(
+            basis,
+            index,
+            transform.compose(*map),
+            plane,
+            resolution,
+            active,
+        ),
+        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
+    }
+}
+
 pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
     IgesLossCode::EntityNotProjected
         .note(format!(
@@ -691,6 +1190,66 @@ pub(crate) fn project_geometry(
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Projection, CodecError> {
+    let dialect = global.dialect();
+    let admitted = |entry: &DirectoryEntry| {
+        entry.status.is_use_flag_valid(dialect)
+            && base_geometry_use_flag_valid(
+                entry.entity_type,
+                entry.form,
+                entry.status.use_flag,
+                dialect,
+            )
+            && base_geometry_line_font_valid(
+                entry.entity_type,
+                entry.form,
+                entry.line_font,
+                dialect,
+            )
+            && crate::profile::envelope_a_admits(entry.entity_type, entry.form, dialect)
+    };
+    let mut losses = Vec::new();
+    for entry in directory {
+        if !entry.status.is_use_flag_valid(dialect) {
+            losses.push(entity_loss(
+                entry,
+                format!(
+                    "Entity Use Flag {:02} is outside the declared dialect",
+                    entry.status.use_flag
+                ),
+            ));
+        } else if !base_geometry_use_flag_valid(
+            entry.entity_type,
+            entry.form,
+            entry.status.use_flag,
+            dialect,
+        ) {
+            losses.push(entity_loss(
+                entry,
+                format!(
+                    "Entity Use Flag {:02} is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
+                    entry.status.use_flag
+                ),
+            ));
+        } else if !base_geometry_line_font_valid(
+            entry.entity_type,
+            entry.form,
+            entry.line_font,
+            dialect,
+        ) {
+            losses.push(entity_loss(
+                entry,
+                "Line Font must be nonzero for this IGES 4.0 geometry entity",
+            ));
+        }
+    }
+    let admitted_directory = directory.iter().any(|entry| !admitted(entry)).then(|| {
+        directory
+            .iter()
+            .filter(|entry| admitted(entry))
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    let directory = admitted_directory.as_deref().unwrap_or(directory);
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -700,8 +1259,8 @@ pub(crate) fn project_geometry(
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
     let mut decoded = BTreeSet::new();
+    let mut boundary_vertex_derivations = Vec::new();
     let consumed = consumed_support_sequences(directory, &records);
-    let mut losses = Vec::new();
     let analytic_surface_locations = directory
         .iter()
         .filter(|entry| {
@@ -915,6 +1474,13 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "X, Y, or Z is not numeric"));
             continue;
         };
+        if !point_display_symbol_valid(record, &entries, global.dialect()) {
+            losses.push(
+                IgesLossCode::DisplayDataNotProjected
+                    .note("Type 116 display symbol pointer is invalid for the declared dialect")
+                    .with_provenance(entry.loss_provenance()),
+            );
+        }
         let transform = match resolve_transform(
             entry.transform,
             &entries,
@@ -933,6 +1499,91 @@ pub(crate) fn project_geometry(
         let position = transform.point(Point3::new(x * factor, y * factor, z * factor));
         if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
             losses.push(entity_loss(entry, "scaled coordinates are not finite"));
+            continue;
+        }
+        let point = PointId(format!("iges:model:point#D{}", entry.sequence));
+        ir.model.points.push(Point {
+            source_object: None,
+            id: point.clone(),
+            position,
+        });
+        if entry.status.subordinate == 0 || !analytic_surface_locations.contains(&entry.sequence) {
+            let vertex = VertexId(format!("iges:model:vertex#D{}", entry.sequence));
+            ir.model.vertices.push(Vertex {
+                id: vertex.clone(),
+                point,
+                tolerance: None,
+            });
+            free_vertices.push(vertex);
+        }
+        decoded.insert(entry.sequence);
+    }
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 125 && (0..=4).contains(&entry.form))
+    {
+        let factor = global.length_factor_mm();
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let coordinates = [record.number(1), record.number(2)];
+        let [Some(x), Some(y)] = coordinates else {
+            losses.push(entity_loss(
+                entry,
+                "X or Y reference coordinate is not numeric",
+            ));
+            continue;
+        };
+        if !x.is_finite() || !y.is_finite() {
+            losses.push(entity_loss(
+                entry,
+                "X or Y reference coordinate is not finite",
+            ));
+            continue;
+        }
+        let required_real = |index| record.number(index).is_some_and(f64::is_finite);
+        let optional_real = |index| record.number_or(index, 0.0).is_some_and(f64::is_finite);
+        let shape_parameters_valid = match entry.form {
+            0 => true,
+            1 => required_real(3) && optional_real(4) && optional_real(5),
+            2 => required_real(3) && required_real(4) && required_real(5),
+            3 => required_real(3) && required_real(4) && optional_real(5),
+            4 => required_real(3) && required_real(4) && required_real(5),
+            _ => false,
+        };
+        if !shape_parameters_valid {
+            losses.push(
+                IgesLossCode::DisplayDataNotProjected
+                    .note("Type 125 flash shape parameters are incomplete or non-finite")
+                    .with_provenance(entry.loss_provenance()),
+            );
+        }
+        if entry.form == 0 && record.integer_or(6, 0).is_none_or(|pointer| pointer == 0) {
+            losses.push(
+                IgesLossCode::DisplayDataNotProjected
+                    .note("Type 125 Form 0 has no defining entity pointer")
+                    .with_provenance(entry.loss_provenance()),
+            );
+        }
+        let transform = match resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            global.real_precision(),
+            &mut BTreeSet::new(),
+            ctx,
+        ) {
+            Ok(transform) => transform,
+            Err(message) => {
+                losses.push(entity_loss(entry, message));
+                continue;
+            }
+        };
+        let position = transform.point(Point3::new(x * factor, y * factor, 0.0));
+        if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
+            losses.push(entity_loss(entry, "scaled reference point is not finite"));
             continue;
         }
         let point = PointId(format!("iges:model:point#D{}", entry.sequence));
@@ -1077,7 +1728,7 @@ pub(crate) fn project_geometry(
             continue;
         };
         let degree_usize = usize::try_from(degree).unwrap_or(usize::MAX);
-        if degree == 0 || k < degree_usize {
+        if k < degree_usize {
             losses.push(entity_loss(
                 entry,
                 "control-point count is smaller than degree plus one",
@@ -1266,18 +1917,18 @@ pub(crate) fn project_geometry(
             .max(point_scale * COMPUTATION_TOLERANCE);
         let plane = classify_control_point_plane(&control_points, plane_tolerance);
         let planar = flags[0] == Some(1);
-        let Some(normal_start) = range_start.checked_add(2) else {
-            losses.push(entity_loss(entry, "plane-normal offset overflows"));
-            continue;
-        };
-        let Some(normal_values) = collect_numbers(normal_start, 3) else {
-            losses.push(entity_loss(
-                entry,
-                "plane-normal fields are missing or non-finite",
-            ));
-            continue;
-        };
         if planar {
+            let Some(normal_start) = range_start.checked_add(2) else {
+                losses.push(entity_loss(entry, "plane-normal offset overflows"));
+                continue;
+            };
+            let Some(normal_values) = collect_numbers(normal_start, 3) else {
+                losses.push(entity_loss(
+                    entry,
+                    "plane-normal fields are missing or non-finite",
+                ));
+                continue;
+            };
             let normal_definition =
                 Vector3::new(normal_values[0], normal_values[1], normal_values[2]);
             if !declared_unit_vector(record, normal_start, normal_definition, precision) {
@@ -1402,45 +2053,63 @@ pub(crate) fn project_geometry(
     }
     let mut admitted_entities = 0;
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_primitives")?;
-    let conics = super::conics::project(ir, directory, parameters, global, ctx);
-    decoded.extend(conics.decoded);
-    losses.extend(conics.losses);
-    wire_edges.extend(conics.wire_edges);
+    // The stanza sequence below is order-sensitive three ways: `losses`,
+    // `wire_edges`, and `free_vertices` are ordered vectors that reach the
+    // decode report and the free-geometry shell; every `project` call appends
+    // to `ir`; and every `admit_projected_entities` call can early-return on
+    // the entity budget.
+    super::conics::project(ir, directory, parameters, global, ctx).merge_into(
+        &mut decoded,
+        &mut losses,
+        &mut wire_edges,
+    );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_conics")?;
-    let copious = super::copious::project(ir, directory, parameters, global, ctx)?;
-    decoded.extend(copious.decoded);
-    losses.extend(copious.losses);
-    wire_edges.extend(copious.wire_edges);
-    free_vertices.extend(copious.free_vertices);
+    super::copious::project(ir, directory, parameters, global, ctx)?.merge_into(
+        &mut decoded,
+        &mut losses,
+        &mut wire_edges,
+        &mut free_vertices,
+    );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_copious")?;
-    let splines = super::splines::project(ir, directory, parameters, global, ctx)?;
-    decoded.extend(splines.decoded);
-    losses.extend(splines.losses);
-    wire_edges.extend(splines.wire_edges);
+    super::splines::project(ir, directory, parameters, global, ctx)?.merge_into(
+        &mut decoded,
+        &mut losses,
+        &mut wire_edges,
+    );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_splines")?;
-    let composites = super::composite::project(ir, directory, parameters, global, ctx)?;
-    decoded.extend(composites.decoded);
-    losses.extend(composites.losses);
-    wire_edges.extend(composites.wire_edges);
+    super::composite::project(ir, directory, parameters, global, ctx)?.merge_into(
+        &mut decoded,
+        &mut losses,
+        &mut wire_edges,
+    );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_composites")?;
-    let offsets = super::offsets::project(ir, directory, parameters, global, ctx);
-    decoded.extend(offsets.decoded);
-    losses.extend(offsets.losses);
-    wire_edges.extend(offsets.wire_edges);
+    super::offsets::project(ir, directory, parameters, global, ctx).merge_into(
+        &mut decoded,
+        &mut losses,
+        &mut wire_edges,
+    );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_offsets")?;
-    let analytic_surfaces =
-        super::analytic_surfaces::project(ir, directory, parameters, global, ctx);
-    decoded.extend(analytic_surfaces.decoded);
-    losses.extend(analytic_surfaces.losses);
+    // A valid V5 Type 130 constituent is deferred until its exact offset
+    // carrier has been projected above. The second composite pass consumes
+    // that carrier while retaining each entity's ordered child list.
+    super::composite::project_type_130_children(ir, directory, parameters, global, ctx)?
+        .merge_into(&mut decoded, &mut losses, &mut wire_edges);
+    admit_projected_entities(
+        ctx,
+        ir,
+        &mut admitted_entities,
+        "iges_geometry_composites_offsets",
+    )?;
+    super::analytic_surfaces::project(ir, directory, parameters, global, ctx)
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,
         ir,
         &mut admitted_entities,
         "iges_geometry_analytic_surfaces",
     )?;
-    let surfaces = super::surfaces::project(ir, directory, parameters, global, ctx)?;
-    decoded.extend(surfaces.decoded);
-    losses.extend(surfaces.losses);
+    super::surfaces::project(ir, directory, parameters, global, ctx)?
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_surfaces")?;
     if !wire_edges.is_empty() || !free_vertices.is_empty() {
         let body = BodyId("iges:model:body#free-geometry".into());
@@ -1474,52 +2143,47 @@ pub(crate) fn project_geometry(
         &mut admitted_entities,
         "iges_geometry_wire_topology",
     )?;
-    let trimming = super::trimming::project(ir, directory, parameters, global, ctx);
-    decoded.extend(trimming.decoded);
-    losses.extend(trimming.losses);
+    let (trimming_projection, trimming_vertex_derivations) =
+        super::trimming::project(ir, directory, parameters, global, ctx);
+    boundary_vertex_derivations.extend(trimming_vertex_derivations);
+    trimming_projection.merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_trimming")?;
-    let brep = super::brep::project(ir, directory, parameters, global, ctx);
-    decoded.extend(brep.decoded);
-    losses.extend(brep.losses);
+    super::brep::project(ir, directory, parameters, global, ctx)
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_brep")?;
-    let csg = super::csg::project(ir, directory, parameters, global, ctx);
-    decoded.extend(csg.decoded);
-    losses.extend(csg.losses);
+    super::csg::project(ir, directory, parameters, global, ctx)
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_csg")?;
-    let structure = super::structure::project(
+    super::structure::project(
         ir,
         directory,
         parameters,
         trailing_pointer_analysis,
         global,
         ctx,
-    );
-    decoded.extend(structure.decoded);
-    losses.extend(structure.losses);
+    )
+    .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_structure")?;
-    let presentation = super::presentation::project(ir, directory, parameters, global, ctx);
-    decoded.extend(presentation.decoded);
-    losses.extend(presentation.losses);
+    super::presentation::project(ir, directory, parameters, global, ctx)
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(
         ctx,
         ir,
         &mut admitted_entities,
         "iges_geometry_presentation",
     )?;
-    let drawing = super::drawing::project(
+    super::drawing::project(
         ir,
         directory,
         parameters,
         trailing_pointer_analysis,
         global,
         ctx,
-    );
-    decoded.extend(drawing.decoded);
-    losses.extend(drawing.losses);
+    )
+    .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_drawing")?;
-    let annotation = super::annotation::project(ir, directory, parameters, global, ctx);
-    decoded.extend(annotation.decoded);
-    losses.extend(annotation.losses);
+    super::annotation::project(ir, directory, parameters, global, ctx)
+        .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_annotation")?;
     let analytic_surface_points = analytic_surface_locations
         .iter()
@@ -1538,6 +2202,7 @@ pub(crate) fn project_geometry(
         decoded,
         consumed,
         losses,
+        boundary_vertex_derivations,
     })
 }
 

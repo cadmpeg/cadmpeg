@@ -66,7 +66,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 let profile_source =
                     profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "SLDPRT feature {} references a missing rib profile",
                                 feature.id
                             ))
@@ -133,7 +133,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 match seed {
                     PatternSeed::Feature(seed) => {
                         seed_sources.push(parent_sources.get(seed).cloned().ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "SLDPRT feature {} references a missing pattern seed",
                                 feature.id
                             ))
@@ -161,7 +161,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ) || existing.is_none())
                 && !matches!(pattern, PatternKind::Unresolved { .. })
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "SLDPRT feature {} has no pattern seeds",
                     feature.id
                 )));
@@ -203,7 +203,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                     require_count(*count, &feature.id)?;
                     if !spacing.0.is_finite() || spacing.0 <= 0.0 {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has invalid linear-pattern spacing",
                             feature.id
                         )));
@@ -234,7 +234,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         require_direction(second.direction, &feature.id, "second pattern")?;
                         require_count(second.count, &feature.id)?;
                         if !second.spacing.0.is_finite() || second.spacing.0 <= 0.0 {
-                            return Err(CodecError::Malformed(format!(
+                            return Err(CodecError::malformed(format_args!(
                                 "SLDPRT feature {} has invalid second linear-pattern spacing",
                                 feature.id
                             )));
@@ -264,7 +264,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 } => {
                     require_count(*count, &feature.id)?;
                     if !spacing.0.is_finite() || spacing.0 <= 0.0 {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} has invalid curve-pattern spacing",
                             feature.id
                         )));
@@ -273,7 +273,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         Some(path) => {
                             let path = path_source(path, record_sources, sketch_sources)
                                 .ok_or_else(|| {
-                                    CodecError::Malformed(format!(
+                                    CodecError::malformed(format_args!(
                                         "SLDPRT feature {} references a missing pattern path",
                                         feature.id
                                     ))

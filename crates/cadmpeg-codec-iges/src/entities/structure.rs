@@ -1,15 +1,58 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product definitions, occurrences, and ordered assembly relationships.
 
-use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
+use super::curve_conversion::angularly_equal;
+use super::geometry::{
+    curve_geometry_coplanar, entity_loss, linear_nurbs_parameters,
+    planar_polyline_has_self_intersection, plane_coordinates, resolve_transform, ProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
-use crate::parameter::{ParameterRecord, TokenValue, TrailingPointerAnalysis};
+use crate::global::{Dialect, ProjectedGlobal};
+use crate::parameter::{
+    connect_node_layout, signal_string_layout, text_node_layout, ParameterRecord, TokenValue,
+    TrailingPointerAnalysis,
+};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::draft::{CommitSession, ModelDraft};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
+};
+use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell,
+};
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const DEFAULT_DIMENSION_UNITS_CHARACTER_SET: i64 = 1;
+const LEGACY_PLANE_NORMAL_EPSILON: f64 = 1.0e-10;
+
+pub(crate) fn attribute_list_type_meaning(value: i64, dialect: Dialect) -> Option<&'static str> {
+    match (dialect, value) {
+        (Dialect::V4_0, 0) => Some("property-entity-defined"),
+        (_, 0) => Some("type406-form15-defined"),
+        (_, 1) => Some("general"),
+        (_, 2) => Some("electrical"),
+        (_, 3) => Some("aec"),
+        (_, 4) => Some("process-plant"),
+        (Dialect::V4_0, 5..=5000) => Some("other-application-area"),
+        (Dialect::V4_0, 5001..=9999) => Some("user-defined"),
+        (_, 5) => Some("electrical-lep-manufacturing"),
+        (_, 6..=5000) => Some("other-application-area"),
+        (_, 5001..=9999) => Some("implementor-defined"),
+        _ => None,
+    }
+}
+
+fn connect_point_function_code_valid(value: i64, dialect: Dialect) -> bool {
+    match dialect {
+        Dialect::V4_0 => matches!(value, 0..=5),
+        _ => matches!(value, 0..=49 | 98..=99 | 5001..=9999),
+    }
+}
 
 #[derive(Clone)]
 struct SolidAssembly {
@@ -33,14 +76,101 @@ struct SubfigureInstance {
 struct NetworkDefinition {
     depth: usize,
     members: Vec<u32>,
-    connect_count: usize,
+    connect_points: Vec<Option<u32>>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct NetworkInstance {
     definition: u32,
-    connect_count: usize,
+    connect_points: Vec<Option<u32>>,
     valid_fields: bool,
+}
+
+fn network_connect_points(
+    record: &ParameterRecord,
+    count_index: usize,
+    first_pointer_index: usize,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
+) -> Option<Vec<Option<u32>>> {
+    let count = record.count(count_index)?;
+    (0..count)
+        .map(|index| {
+            let value = if matches!(dialect, Dialect::V4_0) {
+                record.integer(first_pointer_index + index)
+            } else {
+                record.integer_or(first_pointer_index + index, 0)
+            }?;
+            if value == 0 {
+                return (!matches!(dialect, Dialect::V4_0)).then_some(None);
+            }
+            let sequence = u32::try_from(value).ok()?;
+            (sequence % 2 == 1)
+                .then_some(sequence)
+                .filter(|sequence| {
+                    entries
+                        .get(sequence)
+                        .is_some_and(|entry| entry.entity_type == 132)
+                })
+                .map(Some)
+        })
+        .collect()
+}
+
+fn network_connectivity_valid(
+    definition: &[Option<u32>],
+    instance: &[Option<u32>],
+    dialect: Dialect,
+) -> bool {
+    let slots_match = definition
+        .iter()
+        .zip(instance)
+        .all(|(definition, instance)| definition.is_some() || instance.is_none());
+    definition.len() == instance.len()
+        && slots_match
+        && (!matches!(dialect, Dialect::V4_0)
+            || (definition.iter().all(Option::is_some) && instance.iter().all(Option::is_some)))
+}
+
+fn subfigure_definition_directory_fields_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    entry.status.use_flag == 2
+        && (!matches!(dialect, Dialect::V4_0)
+            || (entry.status.subordinate == 0
+                && (entry.status.hierarchy == 1 || entry.line_font != 0)))
+}
+
+fn subfigure_definition_label_display_valid(
+    entry: &DirectoryEntry,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    entry.label_display == 0
+        || u32::try_from(entry.label_display)
+            .ok()
+            .filter(|sequence| sequence % 2 == 1)
+            .is_some_and(|sequence| {
+                entries
+                    .get(&sequence)
+                    .is_some_and(|target| target.entity_type == 402 && target.form == 5)
+            })
+}
+
+fn subfigure_definition_transform_valid(
+    entry: &DirectoryEntry,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    global: &ProjectedGlobal,
+    ctx: Option<&DecodeContext<'_>>,
+) -> bool {
+    resolve_transform(
+        entry.transform,
+        entries,
+        records,
+        global.length_factor_mm(),
+        global.real_precision(),
+        &mut BTreeSet::new(),
+        ctx,
+    )
+    .is_ok()
 }
 
 #[derive(Clone)]
@@ -108,6 +238,108 @@ pub(crate) fn array_base_type(entity_type: i64, form: i64) -> bool {
     ) || (entity_type == 402 && matches!(form, 1 | 7 | 14 | 15))
 }
 
+pub(crate) fn signal_string_geometry_target(entity_type: i64, form: i64) -> bool {
+    matches!(
+        (entity_type, form),
+        (100 | 102 | 112 | 116 | 130 | 132, 0)
+            | (104, 0..=3)
+            | (106, 11 | 12)
+            | (110, 0..=2)
+            | (126, 0..=5)
+    )
+}
+
+pub(crate) fn flow_join_target_valid(target: &DirectoryEntry) -> bool {
+    target.entity_type == 408
+        || (target.status.use_flag == 0
+            && !matches!(
+                target.entity_type,
+                0 | 132
+                    | 134
+                    | 136
+                    | 138
+                    | 146
+                    | 148
+                    | 180
+                    | 182
+                    | 184
+                    | 202
+                    | 204
+                    | 206
+                    | 208
+                    | 210
+                    | 212
+                    | 213
+                    | 214
+                    | 216
+                    | 218
+                    | 220
+                    | 222
+                    | 228
+                    | 230
+                    | 302
+                    | 304
+                    | 306
+                    | 308
+                    | 310
+                    | 312
+                    | 314
+                    | 316
+                    | 320
+                    | 322
+                    | 402
+                    | 404
+                    | 406
+                    | 410
+                    | 412
+                    | 414
+                    | 416
+                    | 418
+                    | 420
+                    | 422
+                    | 430
+                    | 502
+                    | 504
+                    | 508
+                    | 510
+                    | 514
+            ))
+}
+
+fn flow_associativity_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    if entry.entity_type != 402 {
+        return false;
+    }
+    match dialect {
+        Dialect::V4_0 => entry.form == 18 && entry.status.use_flag == 3,
+        _ => matches!(entry.form, 18 | 20),
+    }
+}
+
+fn flow_connection_target_valid(target: &DirectoryEntry, form: i64, dialect: Dialect) -> bool {
+    if form != 18 {
+        return target.entity_type == 132;
+    }
+    target.entity_type == 132
+        || (!matches!(dialect, Dialect::V4_0)
+            && target.entity_type == 402
+            && matches!(target.form, 1 | 7 | 14 | 15))
+}
+
+fn flow_display_target_valid(target: &DirectoryEntry, form: i64, dialect: Dialect) -> bool {
+    target.entity_type == 312
+        || (form == 18 && !matches!(dialect, Dialect::V4_0) && target.entity_type == 212)
+}
+
+fn flow_continuation_target_valid(target: &DirectoryEntry, form: i64, dialect: Dialect) -> bool {
+    target.entity_type == 402
+        && if form == 18 {
+            target.form == 18 || (!matches!(dialect, Dialect::V4_0) && target.form == 11)
+        } else {
+            target.form == 20
+        }
+}
+
 fn array_mask_valid(
     record: &ParameterRecord,
     count_index: usize,
@@ -171,6 +403,192 @@ fn has_property_pointer(
         .is_some_and(|groups| groups.properties.contains(&property_sequence))
 }
 
+fn legacy_primary_end_valid(
+    record: &ParameterRecord,
+    primary_end: usize,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+) -> bool {
+    record.parameter_end() == primary_end
+        || trailing_pointer_analysis
+            .get(&record.directory_sequence)
+            .and_then(|analysis| analysis.groups.as_ref())
+            .filter(|groups| groups.fully_valid)
+            .is_some_and(|groups| groups.token_start == primary_end)
+}
+
+struct LegacyAssociativityContext<'map, 'data> {
+    entry: &'map DirectoryEntry,
+    entries: &'map BTreeMap<u32, &'data DirectoryEntry>,
+    records: &'map BTreeMap<u32, &'data ParameterRecord>,
+    trailing_pointer_analysis: &'map BTreeMap<u32, TrailingPointerAnalysis>,
+}
+
+impl LegacyAssociativityContext<'_, '_> {
+    fn pointer_list_valid(
+        &self,
+        record: &ParameterRecord,
+        start: usize,
+        count: usize,
+        accepts: fn(&DirectoryEntry) -> bool,
+        back_pointers_required: bool,
+    ) -> bool {
+        (0..count).all(|offset| {
+            let Some(sequence) = existing_pointer(record, start + offset, self.entries) else {
+                return false;
+            };
+            let Some(target) = self.entries.get(&sequence) else {
+                return false;
+            };
+            accepts(target)
+                && (!back_pointers_required
+                    || self.records.get(&sequence).is_some_and(|record| {
+                        has_association_back_pointer(
+                            record,
+                            self.entry.sequence,
+                            self.trailing_pointer_analysis,
+                        )
+                    }))
+        })
+    }
+}
+
+fn connect_node_target(target: &DirectoryEntry) -> bool {
+    target.entity_type == 402 && target.form == 11
+}
+
+fn point_target(target: &DirectoryEntry) -> bool {
+    target.entity_type == 116 && target.form == 0
+}
+
+fn negative_font_pointer_valid(
+    record: &ParameterRecord,
+    index: usize,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    match record.integer_or(index, 1) {
+        Some(value) if value > 0 => true,
+        Some(value) if value < 0 => value
+            .checked_neg()
+            .and_then(|value| u32::try_from(value).ok())
+            .is_some_and(|sequence| {
+                sequence % 2 == 1
+                    && entries
+                        .get(&sequence)
+                        .is_some_and(|target| target.entity_type == 310 && target.form == 0)
+            }),
+        _ => false,
+    }
+}
+
+fn legacy_associativity_valid(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+) -> bool {
+    let context = LegacyAssociativityContext {
+        entry,
+        entries,
+        records,
+        trailing_pointer_analysis,
+    };
+    match entry.form {
+        8 => {
+            let Some(layout) = signal_string_layout(record) else {
+                return false;
+            };
+            let names_valid = (0..layout.signal_name_count).all(|offset| {
+                matches!(
+                    record.value(layout.signal_names_start + offset),
+                    Some(TokenValue::String(_) | TokenValue::Omitted)
+                )
+            });
+            names_valid
+                && context.pointer_list_valid(
+                    record,
+                    layout.connections_start,
+                    layout.connection_count,
+                    connect_node_target,
+                    true,
+                )
+                && context.pointer_list_valid(
+                    record,
+                    layout.schematic_start,
+                    layout.schematic_count,
+                    |target| signal_string_geometry_target(target.entity_type, target.form),
+                    true,
+                )
+                && context.pointer_list_valid(
+                    record,
+                    layout.physical_start,
+                    layout.physical_count,
+                    |target| signal_string_geometry_target(target.entity_type, target.form),
+                    true,
+                )
+                && legacy_primary_end_valid(record, layout.primary_end, trailing_pointer_analysis)
+        }
+        10 => {
+            let Some(layout) = text_node_layout(record) else {
+                return false;
+            };
+            let description = layout.description_start;
+            let numeric_fields_valid = record
+                .number_or(description, 0.0)
+                .is_some_and(f64::is_finite)
+                && record
+                    .number_or(description + 1, 0.0)
+                    .is_some_and(f64::is_finite)
+                && record
+                    .number_or(description + 3, std::f64::consts::FRAC_PI_2)
+                    .is_some_and(f64::is_finite)
+                && record
+                    .number_or(description + 4, 0.0)
+                    .is_some_and(f64::is_finite);
+            let mirror_valid = record
+                .integer_or(description + 5, 0)
+                .is_some_and(|value| matches!(value, 0..=2));
+            let rotate_internal_valid = record
+                .integer_or(description + 6, 0)
+                .is_some_and(|value| matches!(value, 0..=1));
+            let points_valid = context.pointer_list_valid(
+                record,
+                layout.geometry_start,
+                layout.geometry_count,
+                point_target,
+                true,
+            );
+            entry.status.use_flag == 4
+                && layout.geometry_count > 0
+                && points_valid
+                && numeric_fields_valid
+                && negative_font_pointer_valid(record, description + 2, entries)
+                && mirror_valid
+                && rotate_internal_valid
+                && legacy_primary_end_valid(record, layout.primary_end, trailing_pointer_analysis)
+        }
+        11 => {
+            let Some(layout) = connect_node_layout(record) else {
+                return false;
+            };
+            let data_valid = (0..layout.data_count)
+                .all(|offset| record.value(layout.data_start + offset).is_some());
+            entry.status.use_flag == 4
+                && layout.point_count > 0
+                && context.pointer_list_valid(
+                    record,
+                    layout.points_start,
+                    layout.point_count,
+                    point_target,
+                    true,
+                )
+                && data_valid
+                && legacy_primary_end_valid(record, layout.primary_end, trailing_pointer_analysis)
+        }
+        _ => false,
+    }
+}
+
 fn attribute_value_valid(
     record: &ParameterRecord,
     index: usize,
@@ -178,9 +596,9 @@ fn attribute_value_valid(
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
     match (data_type, record.value(index)) {
-        (1, Some(TokenValue::Integer(_)))
-        | (3, Some(TokenValue::String(_)))
-        | (5, Some(TokenValue::Omitted)) => true,
+        (0 | 5, Some(TokenValue::Omitted))
+        | (1, Some(TokenValue::Integer(_)))
+        | (3, Some(TokenValue::String(_))) => true,
         (2, Some(TokenValue::Integer(_) | TokenValue::Real(_))) => {
             record.number(index).is_some_and(f64::is_finite)
         }
@@ -212,6 +630,161 @@ fn unit_value_valid(unit_type: &[u8], value: &[u8]) -> bool {
         b"SOLID" => value == b"C",
         _ => false,
     }
+}
+
+fn line_font_property_code_valid(value: i64) -> bool {
+    matches!(
+        value,
+        12 | 14
+            | 16
+            | 18
+            | 22
+            | 42
+            | 44
+            | 46
+            | 48
+            | 52
+            | 54
+            | 152
+            | 154
+            | 156
+            | 162
+            | 164
+            | 166
+            | 172
+            | 174
+            | 176
+            | 178
+            | 192
+            | 194
+            | 198
+            | 200
+            | 203
+            | 206
+            | 223
+            | 227
+            | 230
+            | 232
+            | 237
+            | 239
+            | 240
+            | 253
+            | 270
+            | 330
+            | 355
+            | 360
+            | 380
+            | 385
+            | 390
+            | 395
+            | 400
+            | 405
+            | 410
+            | 415
+            | 420
+            | 425
+            | 430
+            | 445
+            | 485
+    )
+}
+
+const FUNCTIONAL_LEVEL_IDENTIFIERS: &[&[u8]] = &[
+    b"Annotation",
+    b"Drilled Holes",
+    b"Errors",
+    b"Panel_Outline",
+    b"Placement_Keepin",
+    b"Placement_Keepout",
+    b"PRD_ID",
+    b"Routing_Keepin",
+    b"Routing_Keepout",
+    b"Signal_Guide",
+    b"Substrate_Outline",
+    b"Trace_Keepin",
+    b"Trace_Keepout",
+    b"Undefined",
+    b"Unplaced_Components",
+    b"Via_Keepin",
+    b"Via_Keepout",
+    b"Via_Placement",
+];
+
+const SIDE_QUALIFIED_FUNCTIONAL_LEVEL_IDENTIFIERS: &[&[u8]] = &[
+    b"Bond_Pad",
+    b"Breakout",
+    b"Chip_Pad",
+    b"Component_Outline",
+    b"Component_Placement",
+    b"Crossover",
+    b"Deposition_Components",
+    b"Dielectric",
+    b"Glue_Mask",
+    b"Ground",
+    b"Hole_Fill",
+    b"Laser-Trim-Path",
+    b"Pad",
+    b"Pin_ID",
+    b"Pin_Placement",
+    b"Power",
+    b"Sheet_Dielectric",
+    b"Signal",
+    b"Signal_ID",
+    b"Silkscreen",
+    b"Solder_Mask",
+    b"Solder_Paste-Mask",
+    b"Thermal_Outline",
+    b"Wire-Bond",
+];
+
+fn functional_level_identifier_valid(value: &[u8]) -> bool {
+    if FUNCTIONAL_LEVEL_IDENTIFIERS
+        .iter()
+        .any(|identifier| value.eq_ignore_ascii_case(identifier))
+    {
+        return true;
+    }
+
+    if SIDE_QUALIFIED_FUNCTIONAL_LEVEL_IDENTIFIERS
+        .iter()
+        .any(|identifier| value.eq_ignore_ascii_case(identifier))
+    {
+        return true;
+    }
+
+    SIDE_QUALIFIED_FUNCTIONAL_LEVEL_IDENTIFIERS
+        .iter()
+        .any(|identifier| {
+            let identifier_length = identifier.len();
+            value.len() > identifier_length + 1
+                && value[..identifier_length].eq_ignore_ascii_case(identifier)
+                && value[identifier_length] == b'_'
+                && functional_level_suffix_valid(&value[identifier_length + 1..])
+        })
+}
+
+fn functional_level_suffix_valid(value: &[u8]) -> bool {
+    if value.eq_ignore_ascii_case(b"T") || value.eq_ignore_ascii_case(b"B") {
+        return true;
+    }
+
+    if value.is_empty() {
+        return false;
+    }
+    let mut number = 0_u64;
+    for byte in value {
+        if !byte.is_ascii_digit() {
+            return false;
+        }
+        let Some(next) = number
+            .checked_mul(10)
+            .and_then(|value| value.checked_add(u64::from(*byte - b'0')))
+        else {
+            return false;
+        };
+        number = next;
+    }
+    number >= 2
 }
 
 fn generic_property_value_valid(
@@ -281,6 +854,13 @@ fn property_fields_valid(
     match entry.form {
         2 => exact(3) && (2..=4).all(|index| integer_range(index, 0..=2)),
         3 => exact(2) && record.integer(2).is_some() && record.string(3).is_some(),
+        4 => {
+            exact(2)
+                && integer_range(2, 0..=2)
+                && record.integer(3).is_some_and(|value| {
+                    value == 0 || existing_pointer(record, 3, entries).is_some()
+                })
+        }
         5 => {
             exact(5)
                 && record
@@ -371,7 +951,7 @@ fn property_fields_valid(
                     .number(2)
                     .is_some_and(|value| (0.0..=100.0).contains(&value))
         }
-        19 => exact(1) && record.integer(2).is_some(),
+        19 => exact(1) && record.integer(2).is_some_and(line_font_property_code_valid),
         20 | 21 => exact(1) && integer_range(2, 0..=1),
         22 => {
             exact(9)
@@ -403,7 +983,7 @@ fn property_fields_valid(
                             && record.integer(start + 2).is_some_and(|value| value >= 0)
                             && record
                                 .string(start + 3)
-                                .is_some_and(|value| !value.is_empty())
+                                .is_some_and(functional_level_identifier_valid)
                     })
             }),
         25 => record
@@ -549,6 +1129,10 @@ fn existing_pointer(
         .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
 }
 
+fn type402_structure_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    matches!(dialect, Dialect::V4_0) || entry.structure == 0
+}
+
 fn predefined_associativity_valid(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
@@ -636,7 +1220,7 @@ fn predefined_associativity_valid(
                     })
                 })
         }
-        12 => {
+        2 | 12 => {
             let count = record.count(1).filter(|count| *count > 0);
             count.is_some_and(|count| {
                 end == 2 + count * 2
@@ -694,7 +1278,7 @@ fn predefined_associativity_valid(
             let orientation_valid = record.integer(4).is_some_and(|orientation| {
                 dimension_entry.is_some_and(|dimension| match dimension.entity_type {
                     202 => matches!(orientation, 0..=3),
-                    216 => matches!(orientation, 4..=8),
+                    216 => matches!(orientation, 4..=7),
                     218 => matches!(orientation, 6..=7),
                     206 | 220 | 222 => orientation == 0,
                     _ => false,
@@ -755,13 +1339,524 @@ fn predefined_associativity_valid(
     }
 }
 
+fn vertex_position(index: &ModelIndex<'_>, vertex: &VertexId) -> Option<Point3> {
+    let vertex = index.vertices(&vertex.0)?;
+    index.points(&vertex.point.0).map(|point| point.position)
+}
+
+fn plane_carrier(index: &ModelIndex<'_>, sequence: u32) -> Option<(Point3, Vector3)> {
+    let surface = index.surfaces(&format!("iges:model:surface#D{sequence}"))?;
+    match &surface.geometry {
+        SurfaceGeometry::Plane { origin, normal, .. } => Some((*origin, *normal)),
+        _ => None,
+    }
+}
+
+fn planes_are_coplanar(
+    parent: (Point3, Vector3),
+    child: (Point3, Vector3),
+    resolution: f64,
+) -> bool {
+    let (parent_origin, parent_normal) = parent;
+    let (child_origin, child_normal) = child;
+    parent_normal.cross(child_normal).norm() <= LEGACY_PLANE_NORMAL_EPSILON
+        && child_origin
+            .vector_from(parent_origin)
+            .dot(parent_normal)
+            .abs()
+            <= resolution
+}
+
+fn points_coincident(left: Point3, right: Point3, resolution: f64) -> bool {
+    let distance = left.distance(right);
+    distance == 0.0 || (resolution > 0.0 && distance < resolution)
+}
+
+fn polyline_has_forbidden_duplicate(points: &[Point3], resolution: f64) -> bool {
+    let Some(last) = points.len().checked_sub(1) else {
+        return true;
+    };
+    if last < 2 {
+        return true;
+    }
+    for first in 0..=last {
+        for second in first + 1..=last {
+            if first == 0 && second == last {
+                continue;
+            }
+            if points_coincident(points[first], points[second], resolution) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn linear_nurbs_boundary_points(
+    nurbs: &NurbsCurve,
+    parameter_range: [f64; 2],
+) -> Option<Vec<Point3>> {
+    if nurbs
+        .control_points
+        .iter()
+        .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+        || nurbs.knots.iter().any(|knot| !knot.is_finite())
+        || nurbs.weights.as_ref().is_some_and(|weights| {
+            weights.len() != nurbs.control_points.len()
+                || weights
+                    .iter()
+                    .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        })
+    {
+        return None;
+    }
+    linear_nurbs_parameters(
+        nurbs.degree,
+        &nurbs.knots,
+        nurbs.control_points.len(),
+        nurbs.periodic,
+        parameter_range,
+    )?
+    .into_iter()
+    .map(|parameter| {
+        cadmpeg_ir::eval::nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            nurbs.weights.as_deref(),
+            parameter,
+        )
+        .filter(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+    })
+    .collect()
+}
+
+fn linear_nurbs_is_simple_closed(
+    nurbs: &NurbsCurve,
+    parameter_range: [f64; 2],
+    plane: (Point3, Vector3),
+    resolution: f64,
+    transform: Transform,
+) -> bool {
+    let Some(points) = linear_nurbs_boundary_points(nurbs, parameter_range).map(|points| {
+        points
+            .into_iter()
+            .map(|point| transform.apply_point(point))
+            .collect::<Vec<_>>()
+    }) else {
+        return false;
+    };
+    if points.len() < 3
+        || points
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+        || !points_coincident(points[0], *points.last().unwrap_or(&points[0]), resolution)
+        || polyline_has_forbidden_duplicate(&points, resolution)
+    {
+        return false;
+    }
+    let Some(projected) = plane_coordinates(&points, plane) else {
+        return false;
+    };
+    !planar_polyline_has_self_intersection(&projected)
+}
+
+fn analytic_curve_is_simple_closed(geometry: &CurveGeometry, parameter_range: [f64; 2]) -> bool {
+    let period = parameter_range[1] - parameter_range[0];
+    if !period.is_finite() || period <= 0.0 || !angularly_equal(period, std::f64::consts::TAU) {
+        return false;
+    }
+    match geometry {
+        CurveGeometry::Circle { radius, .. } => radius.is_finite() && *radius > 0.0,
+        CurveGeometry::Ellipse {
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            major_radius.is_finite()
+                && *major_radius > 0.0
+                && minor_radius.is_finite()
+                && *minor_radius > 0.0
+        }
+        _ => false,
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PlaneBoundarySimplicity<'a> {
+    index: &'a ModelIndex<'a>,
+    plane: (Point3, Vector3),
+    resolution: f64,
+    transform: Transform,
+}
+
+fn bounded_plane_curve_is_simple(
+    geometry: &CurveGeometry,
+    context: PlaneBoundarySimplicity<'_>,
+    source_is_certified_simple: bool,
+    parameter_range: Option<[f64; 2]>,
+    active: &mut BTreeSet<CurveId>,
+) -> bool {
+    match geometry {
+        CurveGeometry::Degenerate { .. }
+        | CurveGeometry::Line { .. }
+        | CurveGeometry::Parabola { .. }
+        | CurveGeometry::Hyperbola { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Unknown { .. } => false,
+        CurveGeometry::Composite {
+            segments,
+            self_intersect,
+        } => {
+            self_intersect == &Some(false)
+                && !segments.is_empty()
+                && segments.iter().all(|segment| {
+                    let Some(curve) = context.index.curves(&segment.curve.0) else {
+                        return false;
+                    };
+                    if !active.insert(segment.curve.clone()) {
+                        return false;
+                    }
+                    let valid = bounded_plane_curve_is_simple(
+                        &curve.geometry,
+                        context,
+                        false,
+                        None,
+                        active,
+                    );
+                    active.remove(&segment.curve);
+                    valid
+                })
+        }
+        CurveGeometry::Transformed {
+            basis,
+            transform: map,
+        } => bounded_plane_curve_is_simple(
+            basis,
+            PlaneBoundarySimplicity {
+                transform: context.transform.compose(*map),
+                ..context
+            },
+            source_is_certified_simple,
+            parameter_range,
+            active,
+        ),
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            parameter_range.is_some_and(|range| analytic_curve_is_simple_closed(geometry, range))
+        }
+        CurveGeometry::Nurbs(nurbs) => {
+            source_is_certified_simple
+                || parameter_range.is_some_and(|range| {
+                    linear_nurbs_is_simple_closed(
+                        nurbs,
+                        range,
+                        context.plane,
+                        context.resolution,
+                        context.transform,
+                    )
+                })
+        }
+        CurveGeometry::Polyline {
+            points, parameters, ..
+        } => {
+            let active_range_matches = parameter_range.is_none_or(|range| {
+                parameters.as_ref().is_some_and(|parameters| {
+                    parameters.first().copied() == Some(range[0])
+                        && parameters.last().copied() == Some(range[1])
+                })
+            });
+            let points = points
+                .iter()
+                .copied()
+                .map(|point| context.transform.apply_point(point))
+                .collect::<Vec<_>>();
+            active_range_matches
+                && points.len() >= 3
+                && points_coincident(
+                    points[0],
+                    *points.last().unwrap_or(&points[0]),
+                    context.resolution,
+                )
+                && !polyline_has_forbidden_duplicate(&points, context.resolution)
+                && plane_coordinates(&points, context.plane)
+                    .is_some_and(|projected| !planar_polyline_has_self_intersection(&projected))
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PlaneBoundaryError {
+    MissingEdge,
+    MissingCurve,
+    MissingCurveCarrier,
+    NotSimple,
+    NotCoplanar,
+    MissingStart,
+    MissingEnd,
+    NotClosed,
+}
+
+impl PlaneBoundaryError {
+    fn message(self) -> &'static str {
+        match self {
+            Self::MissingEdge => "plane boundary curve was not projected as a bounded edge",
+            Self::MissingCurve => "plane boundary edge has no curve carrier",
+            Self::MissingCurveCarrier => "plane boundary edge curve carrier is missing",
+            Self::NotSimple => {
+                "plane boundary curve is not proven simple, degenerate, cyclic, or self-intersecting"
+            }
+            Self::NotCoplanar => "plane boundary curve does not lie in the plane",
+            Self::MissingStart => "plane boundary start vertex is missing",
+            Self::MissingEnd => "plane boundary end vertex is missing",
+            Self::NotClosed => "plane boundary curve is not closed",
+        }
+    }
+
+    fn legacy_message(self) -> &'static str {
+        match self {
+            Self::MissingEdge => "legacy single-parent plane boundary was not projected",
+            Self::MissingCurve | Self::MissingCurveCarrier => {
+                "legacy single-parent plane boundary carrier is invalid"
+            }
+            Self::NotSimple => {
+                "legacy single-parent plane boundary is not proven simple, degenerate, cyclic, or self-intersecting"
+            }
+            Self::NotCoplanar => "legacy single-parent plane boundary does not lie in the plane",
+            Self::MissingStart => "legacy single-parent boundary start vertex is missing",
+            Self::MissingEnd => "legacy single-parent boundary end vertex is missing",
+            Self::NotClosed => "legacy single-parent plane boundary is not closed",
+        }
+    }
+}
+
+fn plane_boundary_edge(
+    index: &ModelIndex<'_>,
+    plane: (Point3, Vector3),
+    boundary_sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    resolution: f64,
+) -> Result<Edge, PlaneBoundaryError> {
+    let source_edge = index
+        .edges(&format!("iges:model:edge#D{boundary_sequence}"))
+        .ok_or(PlaneBoundaryError::MissingEdge)?;
+    let curve_id = source_edge
+        .curve
+        .as_ref()
+        .ok_or(PlaneBoundaryError::MissingCurve)?;
+    let curve = index
+        .curves(&curve_id.0)
+        .ok_or(PlaneBoundaryError::MissingCurveCarrier)?;
+    let source_is_certified_simple = entries
+        .get(&boundary_sequence)
+        .is_some_and(|entry| entry.entity_type == 106 && entry.form == 63);
+    let mut active = BTreeSet::new();
+    if !active.insert(curve_id.clone())
+        || !bounded_plane_curve_is_simple(
+            &curve.geometry,
+            PlaneBoundarySimplicity {
+                index,
+                plane,
+                resolution,
+                transform: Transform::identity(),
+            },
+            source_is_certified_simple,
+            source_edge.param_range,
+            &mut active,
+        )
+    {
+        return Err(PlaneBoundaryError::NotSimple);
+    }
+    if !curve_geometry_coplanar(
+        &curve.geometry,
+        index,
+        Transform::identity(),
+        plane,
+        resolution,
+        &mut BTreeSet::new(),
+    ) {
+        return Err(PlaneBoundaryError::NotCoplanar);
+    }
+    let start =
+        vertex_position(index, &source_edge.start).ok_or(PlaneBoundaryError::MissingStart)?;
+    let end = vertex_position(index, &source_edge.end).ok_or(PlaneBoundaryError::MissingEnd)?;
+    if start.distance(end) > resolution {
+        return Err(PlaneBoundaryError::NotClosed);
+    }
+    Ok(source_edge.clone())
+}
+
+fn plane_face_draft(
+    surface_sequence: u32,
+    stem: &str,
+    boundary_edges: Vec<Edge>,
+    resolution: f64,
+) -> ModelDraft {
+    let body_id = BodyId(format!("iges:model:body#{stem}"));
+    let region_id = RegionId(format!("iges:model:region#{stem}"));
+    let shell_id = ShellId(format!("iges:model:shell#{stem}"));
+    let face_id = FaceId(format!("iges:model:face#{stem}"));
+    let mut candidate = ModelDraft::new();
+    let mut loop_ids = Vec::with_capacity(boundary_edges.len());
+    for (boundary_index, edge) in boundary_edges.into_iter().enumerate() {
+        let edge_id = edge.id.clone();
+        candidate.model_mut().edges.push(edge);
+        let loop_id = LoopId(format!("iges:model:loop#{stem}:{boundary_index}"));
+        let coedge_id = CoedgeId(format!("iges:model:coedge#{stem}:{boundary_index}"));
+        candidate.model_mut().coedges.push(Coedge {
+            id: coedge_id.clone(),
+            owner_loop: loop_id.clone(),
+            edge: edge_id,
+            next: coedge_id.clone(),
+            previous: coedge_id.clone(),
+            radial_next: coedge_id.clone(),
+            sense: Sense::Forward,
+            pcurves: Vec::new(),
+            use_curve: None,
+            use_curve_parameter_range: None,
+        });
+        candidate.model_mut().loops.push(Loop {
+            id: loop_id.clone(),
+            face: face_id.clone(),
+            boundary_role: if boundary_index == 0 {
+                LoopBoundaryRole::Outer
+            } else {
+                LoopBoundaryRole::Inner
+            },
+            coedges: vec![coedge_id],
+            vertex_uses: Vec::new(),
+        });
+        loop_ids.push(loop_id);
+    }
+    candidate.model_mut().faces.push(Face {
+        id: face_id.clone(),
+        shell: shell_id.clone(),
+        surface: SurfaceId(format!("iges:model:surface#D{surface_sequence}")),
+        sense: Sense::Forward,
+        loops: loop_ids,
+        name: None,
+        color: None,
+        tolerance: (resolution > 0.0).then_some(resolution),
+    });
+    candidate.model_mut().shells.push(Shell {
+        id: shell_id.clone(),
+        region: region_id.clone(),
+        faces: vec![face_id],
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
+    candidate.model_mut().regions.push(Region {
+        id: region_id.clone(),
+        body: body_id.clone(),
+        shells: vec![shell_id],
+    });
+    candidate.model_mut().bodies.push(Body {
+        id: body_id,
+        kind: BodyKind::Sheet,
+        regions: vec![region_id],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    candidate.model_mut().finalize();
+    candidate
+}
+
+fn legacy_single_parent_face(
+    ir: &CadIr,
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    global: &ProjectedGlobal,
+) -> Result<Option<(ModelDraft, Vec<u32>)>, &'static str> {
+    let Some(parent_sequence) = existing_pointer(record, 3, entries) else {
+        return Ok(None);
+    };
+    let Some(parent_entry) = entries.get(&parent_sequence) else {
+        return Ok(None);
+    };
+    if parent_entry.entity_type != 108 || parent_entry.form != 1 {
+        return Ok(None);
+    }
+    let Some(child_count) = record.count(2).filter(|count| *count > 0) else {
+        return Err("legacy single-parent plane hole has no children");
+    };
+    let Some(children) = (0..child_count)
+        .map(|offset| existing_pointer(record, 4 + offset, entries))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Err("legacy single-parent plane hole has an invalid child pointer");
+    };
+    if children.iter().any(|sequence| {
+        entries
+            .get(sequence)
+            .is_some_and(|child| child.entity_type != 108)
+    }) {
+        return Ok(None);
+    }
+    if children.iter().any(|sequence| {
+        entries
+            .get(sequence)
+            .is_none_or(|child| child.form != -1 || !child.status.is_physically_dependent())
+    }) {
+        return Err(
+            "legacy single-parent plane hole requires negative, physically dependent Type 108 children",
+        );
+    }
+
+    let boundary_sequences = std::iter::once(parent_sequence)
+        .chain(children.iter().copied())
+        .map(|sequence| {
+            records
+                .get(&sequence)
+                .and_then(|plane| existing_pointer(plane, 5, entries))
+                .ok_or("legacy single-parent plane has an invalid boundary pointer")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let index = ModelIndex::new(ir);
+    let parent_plane = plane_carrier(&index, parent_sequence)
+        .ok_or("legacy single-parent parent plane was not projected")?;
+    let resolution = global.minimum_resolution_mm();
+    let mut boundary_edges = Vec::with_capacity(boundary_sequences.len());
+    for (boundary_index, (plane_sequence, boundary_sequence)) in std::iter::once(parent_sequence)
+        .chain(children.iter().copied())
+        .zip(boundary_sequences.iter().copied())
+        .enumerate()
+    {
+        let plane = plane_carrier(&index, plane_sequence)
+            .ok_or("legacy single-parent child plane was not projected")?;
+        if !planes_are_coplanar(parent_plane, plane, resolution) {
+            return Err("legacy single-parent plane boundaries are not coplanar");
+        }
+        let mut edge = plane_boundary_edge(&index, plane, boundary_sequence, entries, resolution)
+            .map_err(PlaneBoundaryError::legacy_message)?;
+        let edge_id = EdgeId(format!(
+            "iges:model:edge#legacy-single-parent-D{}-{boundary_index}",
+            entry.sequence
+        ));
+        edge.id = edge_id.clone();
+        edge.end = edge.start.clone();
+        boundary_edges.push(edge);
+    }
+    let stem = format!("legacy-single-parent-D{}", entry.sequence);
+    Ok(Some((
+        plane_face_draft(parent_sequence, &stem, boundary_edges, resolution),
+        std::iter::once(parent_sequence).chain(children).collect(),
+    )))
+}
+
 fn flow_associativity(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
+    dialect: Dialect,
 ) -> Option<FlowAssociativity> {
+    if !flow_associativity_directory_valid(entry, dialect) {
+        return None;
+    }
     let form = entry.form;
     let context_count = if form == 18 { 2 } else { 1 };
     if record.integer(1) != Some(context_count) {
@@ -823,17 +1918,13 @@ fn flow_associativity(
             .is_some_and(|target| target.entity_type == 402 && target.form == form)
     });
     let connections_valid = connections.iter().all(|sequence| {
-        entries.get(sequence).is_some_and(|target| {
-            if form == 18 {
-                target.entity_type == 132
-                    || (target.entity_type == 402 && matches!(target.form, 1 | 7 | 14 | 15))
-            } else {
-                target.entity_type == 132
-            }
-        }) && (form == 20
-            || records.get(sequence).is_some_and(|member| {
-                has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
-            }))
+        entries
+            .get(sequence)
+            .is_some_and(|target| flow_connection_target_valid(target, form, dialect))
+            && (form == 20
+                || records.get(sequence).is_some_and(|member| {
+                    has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
+                }))
     });
     let joins_valid = joins.iter().all(|sequence| {
         (form == 20
@@ -842,25 +1933,21 @@ fn flow_associativity(
             }))
             && entries
                 .get(sequence)
-                .is_some_and(|target| target.entity_type != 402 || target.form == 7)
+                .is_some_and(|target| flow_join_target_valid(target))
     });
     let displays_valid = displays.iter().all(|sequence| {
-        entries.get(sequence).is_some_and(|target| {
-            target.entity_type == 312 || (form == 18 && target.entity_type == 212)
-        })
+        entries
+            .get(sequence)
+            .is_some_and(|target| flow_display_target_valid(target, form, dialect))
     });
     let continuations_valid = continuations.iter().flatten().all(|sequence| {
-        entries.get(sequence).is_some_and(|target| {
-            target.entity_type == 402
-                && if form == 18 {
-                    matches!(target.form, 11 | 18)
-                } else {
-                    target.form == 20
-                }
-        }) && (form == 20
-            || records.get(sequence).is_some_and(|member| {
-                has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
-            }))
+        entries
+            .get(sequence)
+            .is_some_and(|target| flow_continuation_target_valid(target, form, dialect))
+            && (form == 20
+                || records.get(sequence).is_some_and(|member| {
+                    has_association_back_pointer(member, entry.sequence, trailing_pointer_analysis)
+                }))
     });
     (cursor == record.parameter_end()
         && associated_valid
@@ -876,7 +1963,7 @@ fn flow_associativity(
 }
 
 pub(super) fn project(
-    _ir: &mut CadIr,
+    ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
@@ -895,19 +1982,28 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
     let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
+    let mut legacy_face_candidates = Vec::<(u32, ModelDraft)>::new();
+    let mut legacy_plane_sequences = BTreeSet::new();
     let flows = directory
         .iter()
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
         .filter_map(|entry| {
             let record = records.get(&entry.sequence).copied()?;
-            flow_associativity(entry, record, &entries, &records, trailing_pointer_analysis)
-                .map(|flow| (entry.sequence, flow))
+            flow_associativity(
+                entry,
+                record,
+                &entries,
+                &records,
+                trailing_pointer_analysis,
+                global.dialect(),
+            )
+            .map(|flow| (entry.sequence, flow))
         })
         .collect::<BTreeMap<_, _>>();
 
     for entry in directory
         .iter()
-        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=36))
+        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2..=15 | 18..=36))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -1130,16 +2226,19 @@ pub(super) fn project(
         );
         let list_type_valid = record
             .integer(2)
-            .is_some_and(|value| matches!(value, 0..=9999));
+            .is_some_and(|value| attribute_list_type_meaning(value, global.dialect()).is_some());
         let attribute_count = record.count(3).filter(|count| *count > 0);
         let mut cursor = 4;
         let mut attributes_valid = attribute_count.is_some();
+        let mut attribute_types = BTreeSet::new();
         let mut shape = Vec::new();
         for _ in 0..attribute_count.unwrap_or_default() {
-            let attribute_type_valid = record.integer(cursor).is_some();
+            let attribute_type_valid = record
+                .integer(cursor)
+                .is_some_and(|value| (0..=9999).contains(&value) && attribute_types.insert(value));
             let data_type = record
                 .integer(cursor + 1)
-                .filter(|value| matches!(value, 1..=6));
+                .filter(|value| matches!(value, 0..=6));
             let value_count = match record.value(cursor + 2) {
                 None | Some(TokenValue::Omitted) => record.integer_or(cursor + 2, 1).map(|_| 1),
                 Some(TokenValue::Integer(value)) => {
@@ -1266,15 +2365,7 @@ pub(super) fn project(
                             .is_some_and(|scale| scale.is_finite() && scale > 0.0)
                 })
         });
-        let directory_valid = entry.status.use_flag == 2
-            && entry.structure == 0
-            && entry.line_font == 0
-            && entry.level == 0
-            && entry.view == 0
-            && entry.transform == 0
-            && entry.label_display == 0
-            && entry.line_weight == 0
-            && entry.color == 0;
+        let directory_valid = entry.status.subordinate == 0 && entry.status.use_flag == 2;
         if units_valid && directory_valid {
             decoded.insert(entry.sequence);
         } else {
@@ -1311,15 +2402,8 @@ pub(super) fn project(
             classes_valid &= item_count.is_some();
         }
         let directory_valid = matches!(entry.form, 5001..=9999)
-            && entry.status.use_flag == 2
-            && entry.structure == 0
-            && entry.line_font == 0
-            && entry.level == 0
-            && entry.view == 0
-            && entry.transform == 0
-            && entry.label_display == 0
-            && entry.line_weight == 0
-            && entry.color == 0;
+            && entry.status.subordinate == 0
+            && entry.status.use_flag == 2;
         if directory_valid && classes_valid && cursor == record.parameter_end() {
             decoded.insert(entry.sequence);
         } else {
@@ -1372,26 +2456,117 @@ pub(super) fn project(
     }
 
     for entry in directory.iter().filter(|entry| {
-        entry.entity_type == 402 && matches!(entry.form, 5 | 6 | 9 | 12 | 13 | 16 | 21)
+        entry.entity_type == 402
+            && matches!(entry.form, 2 | 5 | 6 | 8 | 9 | 10 | 11 | 12 | 13 | 16 | 21)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        if entry.structure == 0
-            && predefined_associativity_valid(
-                entry,
-                record,
-                &entries,
-                &records,
-                trailing_pointer_analysis,
-            )
-        {
+        let valid = type402_structure_valid(entry, global.dialect())
+            && if matches!(entry.form, 8 | 10 | 11) {
+                legacy_associativity_valid(
+                    entry,
+                    record,
+                    &entries,
+                    &records,
+                    trailing_pointer_analysis,
+                )
+            } else {
+                predefined_associativity_valid(
+                    entry,
+                    record,
+                    &entries,
+                    &records,
+                    trailing_pointer_analysis,
+                )
+            };
+        if valid {
             decoded.insert(entry.sequence);
+            if entry.form == 9 {
+                match legacy_single_parent_face(ir, entry, record, &entries, &records, global) {
+                    Ok(Some((candidate, plane_sequences))) => {
+                        legacy_plane_sequences.extend(plane_sequences);
+                        legacy_face_candidates.push((entry.sequence, candidate));
+                    }
+                    Ok(None) => {}
+                    Err(reason) => losses.push(entity_loss(entry, reason)),
+                }
+            }
         } else {
             losses.push(entity_loss(
                 entry,
                 "predefined associativity counts, class layout, links, back pointers, or structure are invalid",
+            ));
+        }
+    }
+
+    let index = ModelIndex::new(ir);
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 108 && matches!(entry.form, -1 | 1))
+    {
+        if legacy_plane_sequences.contains(&entry.sequence) {
+            continue;
+        }
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            continue;
+        };
+        let Some(plane) = plane_carrier(&index, entry.sequence) else {
+            continue;
+        };
+        let Some(boundary_sequence) = existing_pointer(record, 5, &entries) else {
+            continue;
+        };
+        match entry.form {
+            1 => match plane_boundary_edge(
+                &index,
+                plane,
+                boundary_sequence,
+                &entries,
+                global.minimum_resolution_mm(),
+            ) {
+                Ok(mut edge) => {
+                    edge.id = EdgeId(format!("iges:model:edge#bounded-plane-D{}", entry.sequence));
+                    edge.end = edge.start.clone();
+                    let stem = format!("bounded-plane-D{}", entry.sequence);
+                    let candidate = plane_face_draft(
+                        entry.sequence,
+                        &stem,
+                        vec![edge],
+                        global.minimum_resolution_mm(),
+                    );
+                    legacy_face_candidates.push((entry.sequence, candidate));
+                }
+                Err(reason) => losses.push(entity_loss(entry, reason.message())),
+            },
+            -1 => match plane_boundary_edge(
+                &index,
+                plane,
+                boundary_sequence,
+                &entries,
+                global.minimum_resolution_mm(),
+            ) {
+                Ok(_) => losses.push(entity_loss(
+                    entry,
+                    "negative bounded plane requires an enclosing positive plane face",
+                )),
+                Err(reason) => losses.push(entity_loss(entry, reason.message())),
+            },
+            _ => {}
+        }
+    }
+
+    let mut commit_session = CommitSession::new(ir);
+    for (sequence, candidate) in legacy_face_candidates {
+        if commit_session.commit_model(candidate, ir).is_err() {
+            let entry = entries
+                .get(&sequence)
+                .copied()
+                .expect("legacy single-parent candidate came from the directory");
+            losses.push(entity_loss(
+                entry,
+                "legacy single-parent plane hole failed neutral topology validation",
             ));
         }
     }
@@ -1426,12 +2601,12 @@ pub(super) fn project(
                 .filter(|target| flows.contains_key(target))
                 .collect()
         });
-        if entry.structure == 0 && flow_targets_valid && !cyclic {
+        if flow_targets_valid && !cyclic {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
                 entry,
-                "flow class counts, flags, typed links, required back pointers, continuation tree, or structure are invalid",
+                "flow class counts, flags, typed links, required back pointers, continuation tree, or directory status is invalid",
             ));
         }
     }
@@ -1562,7 +2737,10 @@ pub(super) fn project(
         };
         let type_flag_valid = record
             .integer_or(5, 0)
-            .is_some_and(|value| matches!(value, 0..=2 | 101..=104 | 201..=203 | 5001..=9999));
+            .is_some_and(|value| match global.dialect() {
+                Dialect::V4_0 => matches!(value, 0..=2),
+                _ => matches!(value, 0..=2 | 101..=104 | 201..=203 | 5001..=9999),
+            });
         let function_flag_valid = record
             .integer_or(6, 0)
             .is_some_and(|value| matches!(value, 0..=2));
@@ -1570,7 +2748,7 @@ pub(super) fn project(
         let identifier_valid = record.integer(11).is_some();
         let function_code_valid = record
             .integer_or(12, 0)
-            .is_some_and(|value| matches!(value, 0..=49 | 98..=99 | 5001..=9999));
+            .is_some_and(|value| connect_point_function_code_valid(value, global.dialect()));
         let swap_valid = record
             .integer_or(13, 0)
             .is_some_and(|value| matches!(value, 0..=1));
@@ -1810,7 +2988,11 @@ pub(super) fn project(
             continue;
         };
         definitions.insert(entry.sequence, SubfigureDefinition { depth, members });
-        if name_valid && entry.status.use_flag == 2 && entry.transform == 0 {
+        if name_valid
+            && subfigure_definition_directory_fields_valid(entry, global.dialect())
+            && subfigure_definition_label_display_valid(entry, &entries)
+            && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)
+        {
             definition_fields_valid.insert(entry.sequence);
         }
     }
@@ -1898,8 +3080,8 @@ pub(super) fn project(
         let type_flag_valid = record
             .integer(4 + member_count)
             .is_some_and(|value| matches!(value, 0..=2));
-        let designator_valid = record.string(5 + member_count).is_some();
-        let display_valid = record.integer(6 + member_count).is_some_and(|value| {
+        let designator_valid = record.string_or_empty(5 + member_count).is_some();
+        let display_valid = record.integer_or(6 + member_count, 0).is_some_and(|value| {
             value == 0
                 || u32::try_from(value).ok().is_some_and(|sequence| {
                     entries
@@ -1907,22 +3089,13 @@ pub(super) fn project(
                         .is_some_and(|target| target.entity_type == 312)
                 })
         });
-        let connect_count = record.count(7 + member_count);
-        let connect_points_valid = connect_count.is_some_and(|count| {
-            (0..count).all(|index| {
-                record
-                    .integer(8 + member_count + index)
-                    .is_some_and(|value| {
-                        value == 0
-                            || u32::try_from(value).ok().is_some_and(|sequence| {
-                                entries
-                                    .get(&sequence)
-                                    .is_some_and(|target| target.entity_type == 132)
-                            })
-                    })
-            })
-        });
-        let Some(connect_count) = connect_count else {
+        let Some(connect_points) = network_connect_points(
+            record,
+            7 + member_count,
+            8 + member_count,
+            &entries,
+            global.dialect(),
+        ) else {
             losses.push(entity_loss(
                 entry,
                 "network definition connect-point count is invalid",
@@ -1934,16 +3107,16 @@ pub(super) fn project(
             NetworkDefinition {
                 depth,
                 members,
-                connect_count,
+                connect_points,
             },
         );
         if name_valid
             && type_flag_valid
             && designator_valid
             && display_valid
-            && connect_points_valid
-            && entry.status.use_flag == 2
-            && entry.transform == 0
+            && subfigure_definition_directory_fields_valid(entry, global.dialect())
+            && subfigure_definition_label_display_valid(entry, &entries)
+            && subfigure_definition_transform_valid(entry, &entries, &records, global, ctx)
         {
             network_definition_fields_valid.insert(entry.sequence);
         }
@@ -1980,8 +3153,8 @@ pub(super) fn project(
         let type_flag_valid = record
             .integer_or(8, 0)
             .is_some_and(|value| matches!(value, 0..=2));
-        let designator_valid = record.string(9).is_some();
-        let display_valid = record.integer(10).is_some_and(|value| {
+        let designator_valid = record.string_or_empty(9).is_some();
+        let display_valid = record.integer_or(10, 0).is_some_and(|value| {
             value == 0
                 || u32::try_from(value).ok().is_some_and(|sequence| {
                     entries
@@ -1989,19 +3162,7 @@ pub(super) fn project(
                         .is_some_and(|target| target.entity_type == 312)
                 })
         });
-        let connect_count = record.count(11);
-        let connect_points_valid = connect_count.is_some_and(|count| {
-            (0..count).all(|index| {
-                record.integer(12 + index).is_some_and(|value| {
-                    value == 0
-                        || u32::try_from(value).ok().is_some_and(|sequence| {
-                            entries
-                                .get(&sequence)
-                                .is_some_and(|target| target.entity_type == 132)
-                        })
-                })
-            })
-        });
+        let connect_points = network_connect_points(record, 11, 12, &entries, global.dialect());
         let transform_valid = resolve_transform(
             entry.transform,
             &entries,
@@ -2012,7 +3173,7 @@ pub(super) fn project(
             ctx,
         )
         .is_ok();
-        let (Some(definition), Some(connect_count)) = (definition, connect_count) else {
+        let (Some(definition), Some(connect_points)) = (definition, connect_points) else {
             losses.push(entity_loss(
                 entry,
                 "network instance definition or count is invalid",
@@ -2023,13 +3184,12 @@ pub(super) fn project(
             entry.sequence,
             NetworkInstance {
                 definition,
-                connect_count,
+                connect_points,
                 valid_fields: translation_valid
                     && scales_valid
                     && type_flag_valid
                     && designator_valid
                     && display_valid
-                    && connect_points_valid
                     && transform_valid,
             },
         );
@@ -2123,9 +3283,16 @@ pub(super) fn project(
     }
     for (sequence, instance) in &network_instances {
         let entry = entries[sequence];
-        let definition_valid = network_definitions
-            .get(&instance.definition)
-            .is_some_and(|definition| definition.connect_count == instance.connect_count);
+        let definition_valid =
+            network_definitions
+                .get(&instance.definition)
+                .is_some_and(|definition| {
+                    network_connectivity_valid(
+                        &definition.connect_points,
+                        &instance.connect_points,
+                        global.dialect(),
+                    )
+                });
         if instance.valid_fields && definition_valid && decoded.contains(&instance.definition) {
             decoded.insert(*sequence);
         } else {

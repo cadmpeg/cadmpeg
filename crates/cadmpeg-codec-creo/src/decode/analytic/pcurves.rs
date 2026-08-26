@@ -22,9 +22,9 @@ use super::edges::{
 use super::equations::{cross, dot};
 use super::vertices::model_points_agree;
 
-const EPS_AGREE: f64 = 1e-9;
-const EPS_ORTHO: f64 = 1e-10;
-const EPS_NEAR_ZERO: f64 = 1e-12;
+const EPS_AGREE: f64 = 1.0e-9;
+const EPS_ORTHO: f64 = 1.0e-10;
+const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
 pub fn mapped_pcurve_endpoints(
     ir: &CadIr,

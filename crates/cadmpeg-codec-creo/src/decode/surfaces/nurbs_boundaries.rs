@@ -9,7 +9,11 @@ use cadmpeg_ir::math::Point3;
 use super::super::analytic::{cross, dot, quadratic_real_roots, PlaneEquation};
 use super::super::sketch::normalized;
 
-const EPS_CUBIC_PARAM: f64 = 1e-11;
+const EPS_CUBIC_PARAM: f64 = 1.0e-11;
+const EPS_BOUNDARY_EXTENT: f64 = 1.0e-9;
+const EPS_WEIGHT_SYMMETRY: f64 = 1.0e-12;
+const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
+const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-12;
 
 #[derive(Clone)]
 pub(in super::super) struct NurbsSurfaceBoundary {
@@ -103,7 +107,7 @@ pub(in super::super) fn point_tolerance<'a>(
         .flat_map(|point| [point.x, point.y, point.z])
         .map(f64::abs)
         .fold(1.0, f64::max);
-    Some((1e-9 * extent).max(32.0 * f64::EPSILON * coordinate_scale))
+    Some((EPS_BOUNDARY_EXTENT * extent).max(32.0 * f64::EPSILON * coordinate_scale))
 }
 
 pub(in super::super) fn nurbs_plane_boundary_curve(
@@ -214,12 +218,12 @@ pub(in super::super) fn nurbs_curves_match(
         left_knots
             .iter()
             .zip(right_knots.iter().rev())
-            .all(|(left, right)| scalar_near(*left, 1.0 - right, 1e-12))
+            .all(|(left, right)| scalar_near(*left, 1.0 - right, EPS_WEIGHT_SYMMETRY))
     } else {
         left_knots
             .iter()
             .zip(&right_knots)
-            .all(|(left, right)| scalar_near(*left, *right, 1e-12))
+            .all(|(left, right)| scalar_near(*left, *right, EPS_WEIGHT_SYMMETRY))
     };
     if !knots_match {
         return false;
@@ -245,7 +249,7 @@ pub(in super::super) fn nurbs_curves_match(
                     scalar_near(
                         *left,
                         scale * right,
-                        1e-12 * left.abs().max((scale * right).abs()).max(1.0),
+                        EPS_PARAMETER_AGREEMENT * left.abs().max((scale * right).abs()).max(1.0),
                     )
                 })
         }
@@ -488,12 +492,12 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
             && u_knots
                 .iter()
                 .zip([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
-                .all(|(actual, expected)| scalar_near(*actual, expected, 1e-12))
+                .all(|(actual, expected)| scalar_near(*actual, expected, EPS_ENDPOINT_AGREEMENT))
             && v_knots.len() == 4
             && v_knots
                 .iter()
                 .zip([0.0, 0.0, 1.0, 1.0])
-                .all(|(actual, expected)| scalar_near(*actual, expected, 1e-12)))
+                .all(|(actual, expected)| scalar_near(*actual, expected, EPS_ENDPOINT_AGREEMENT)))
         .then_some(())?;
         let weights = match &nurbs.weights {
             Some(weights) => weights.clone(),
@@ -503,7 +507,13 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
             },
         };
         (0..4)
-            .all(|u| scalar_near(weights[2 * u], weights[2 * u + 1], 1e-12 * weights[2 * u]))
+            .all(|u| {
+                scalar_near(
+                    weights[2 * u],
+                    weights[2 * u + 1],
+                    EPS_WEIGHT_SYMMETRY * weights[2 * u],
+                )
+            })
             .then_some(())?;
         let generator = [
             nurbs.control_points[1].x - nurbs.control_points[0].x,

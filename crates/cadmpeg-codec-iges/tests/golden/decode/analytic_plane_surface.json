@@ -2492,8 +2492,11 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [],
           "network_definitions": [],
           "network_instances": [],
           "primitive_solids": [],
@@ -2527,7 +2530,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 3
+        "version": 6
       }
     },
     "source": {

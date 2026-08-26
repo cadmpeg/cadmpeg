@@ -544,20 +544,21 @@ pub fn write_semantic(
         })
         .collect::<BTreeMap<_, _>>();
 
-    let mut archive = zip::ZipArchive::new(Cursor::new(source_image))
-        .map_err(|error| CodecError::Malformed(format!("retained F3D ZIP is invalid: {error}")))?;
+    let mut archive = zip::ZipArchive::new(Cursor::new(source_image)).map_err(|error| {
+        CodecError::malformed(format_args!("retained F3D ZIP is invalid: {error}"))
+    })?;
     let output = Cursor::new(Vec::new());
     let mut zip = zip::ZipWriter::new(output);
     let mut patched_protein_appearances = BTreeSet::new();
     for index in 0..archive.len() {
-        let mut entry = archive
-            .by_index(index)
-            .map_err(|error| CodecError::Malformed(format!("invalid F3D ZIP entry: {error}")))?;
+        let mut entry = archive.by_index(index).map_err(|error| {
+            CodecError::malformed(format_args!("invalid F3D ZIP entry: {error}"))
+        })?;
         let name = entry.name().to_owned();
         let options = crate::zip_write::file_options(entry.compression());
         if entry.is_dir() {
             zip.add_directory(name, options).map_err(|error| {
-                CodecError::Malformed(format!("cannot write F3D directory: {error}"))
+                CodecError::malformed(format_args!("cannot write F3D directory: {error}"))
             })?;
             continue;
         }
@@ -568,9 +569,9 @@ pub fn write_semantic(
             if read == 0 {
                 break;
             }
-            bytes
-                .try_reserve(read)
-                .map_err(|_| CodecError::Malformed(format!("cannot allocate ZIP entry {name}")))?;
+            bytes.try_reserve(read).map_err(|_| {
+                CodecError::malformed(format_args!("cannot allocate ZIP entry {name}"))
+            })?;
             bytes.extend_from_slice(&chunk[..read]);
         }
         if let Some(configuration) = configuration_edits.get(&name) {
@@ -668,8 +669,9 @@ pub fn write_semantic(
                 patch_act_entities(&mut bytes, edits)?;
             }
         }
-        zip.start_file(name, options)
-            .map_err(|error| CodecError::Malformed(format!("cannot write F3D entry: {error}")))?;
+        zip.start_file(name, options).map_err(|error| {
+            CodecError::malformed(format_args!("cannot write F3D entry: {error}"))
+        })?;
         zip.write_all(&bytes)?;
     }
     if patched_protein_appearances.len() != protein_appearance_edits.len() {
@@ -679,7 +681,7 @@ pub fn write_semantic(
     }
     let output = zip
         .finish()
-        .map_err(|error| CodecError::Malformed(format!("cannot finish F3D ZIP: {error}")))?
+        .map_err(|error| CodecError::malformed(format_args!("cannot finish F3D ZIP: {error}")))?
         .into_inner();
     writer.write_all(&output)?;
     Ok(())

@@ -138,7 +138,9 @@ fn enforce_edge_arc_consistency(
             supports
         })
         .collect::<Vec<_>>();
-    let mut queued = vec![[true; 2]; edges.len()];
+    let Ok(mut queued) = alloc_filled(edges.len(), [true; 2], "catia edge arc queue") else {
+        return false;
+    };
     let mut queue = (0..edges.len())
         .flat_map(|edge| [(edge, 0usize), (edge, 1usize)])
         .collect::<VecDeque<_>>();
@@ -186,7 +188,9 @@ fn enforce_edge_arc_consistency_from(
     initial_edges: &[usize],
     budget: Option<&WorkBudget<'_>>,
 ) -> bool {
-    let mut queued = vec![[true; 2]; edges.len()];
+    let Ok(mut queued) = alloc_filled(edges.len(), [true; 2], "catia edge arc queue") else {
+        return false;
+    };
     let mut queue = initial_edges
         .iter()
         .copied()
@@ -1598,7 +1602,11 @@ impl MeshQuotient {
                         return false;
                     }
                     let missing = domain.missing_edges.iter().copied().collect::<HashSet<_>>();
-                    let mut edge_points = vec![[0; 2]; global_edge_count];
+                    let Ok(mut edge_points) =
+                        alloc_filled(global_edge_count, [0; 2], "catia deferred edge points")
+                    else {
+                        return false;
+                    };
                     for (&edge, &points) in &selected {
                         edge_points[edge] = points;
                     }
@@ -2274,7 +2282,13 @@ impl MeshQuotient {
                         }) {
                             return false;
                         }
-                        let mut selected = vec![None; edge_candidates.len()];
+                        let Ok(mut selected) = alloc_filled(
+                            edge_candidates.len(),
+                            None,
+                            "catia affected edge selections",
+                        ) else {
+                            return false;
+                        };
                         for (local_edge, &edge) in edge_ids.iter().enumerate() {
                             let [left, right] = edges[local_edge];
                             let [Some(left), Some(right)] = [assigned[left], assigned[right]]
@@ -2484,7 +2498,14 @@ impl MeshQuotient {
             if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
                 return Vec::new();
             }
-            let mut counts = vec![0usize; boundary_domains.len()];
+            let Some(mut counts) = alloc_filled(
+                boundary_domains.len(),
+                0usize,
+                "catia mesh face incidence counts",
+            )
+            .ok() else {
+                return Vec::new();
+            };
             for faces in edge_faces {
                 for (rank, face) in faces.iter().copied().enumerate() {
                     if rank == 0 || face != faces[0] {
@@ -2497,7 +2518,7 @@ impl MeshQuotient {
         if face_incidence_counts.as_ref().is_some_and(Vec::is_empty) {
             return None;
         }
-        let mut assignment = vec![None; roots.len()];
+        let mut assignment = alloc_filled(roots.len(), None, "catia mesh root assignment").ok()?;
         let shared_budget = budget;
         for component in components {
             let support_count = component
@@ -2571,7 +2592,9 @@ impl MeshQuotient {
                 if budget.is_some_and(|budget| !budget.charge_by(edge_ids.len().max(1))) {
                     return None;
                 }
-                let mut face_edges = vec![Vec::new(); boundary_domains.len()];
+                let mut face_edges =
+                    alloc_filled(boundary_domains.len(), Vec::new(), "catia mesh face edges")
+                        .ok()?;
                 for (edge, faces) in local_edge_faces.as_ref()?.iter().copied().enumerate() {
                     for (rank, face) in faces.into_iter().enumerate() {
                         if rank == 0 || face != faces[0] {
@@ -2600,7 +2623,12 @@ impl MeshQuotient {
                 .iter()
                 .map(|root| domains[*root].clone())
                 .collect::<Vec<_>>();
-            let mut root_edges = vec![Vec::new(); component.len()];
+            let mut root_edges = alloc_filled(
+                component.len(),
+                Vec::new(),
+                "catia mesh component root edges",
+            )
+            .ok()?;
             for (edge, [left, right]) in local_edges.iter().copied().enumerate() {
                 root_edges[left].push(edge);
                 if right != left {
@@ -2657,6 +2685,10 @@ impl MeshQuotient {
             let mut states = 0;
             let mut exhausted = false;
             let mut base_degrees = HashMap::new();
+            let mut assigned =
+                alloc_filled(component.len(), None, "catia mesh component assignments").ok()?;
+            let mut point_uses =
+                alloc_filled(point_count, 0, "catia mesh component point uses").ok()?;
             walk(
                 &local_domains,
                 &local_edges,
@@ -2669,8 +2701,8 @@ impl MeshQuotient {
                 closed_faces.as_deref(),
                 incidence.map(|(_, boundary_domains)| boundary_domains),
                 &component_points,
-                &mut vec![None; component.len()],
-                &mut vec![0; point_count],
+                &mut assigned,
+                &mut point_uses,
                 &mut solutions,
                 &mut states,
                 state_limit,
@@ -3568,7 +3600,11 @@ impl MeshQuotient {
         else {
             return PointAssignmentOutcome::Complete(Vec::new());
         };
-        let mut root_edges = vec![Vec::new(); roots.len()];
+        let Ok(mut root_edges) =
+            alloc_filled(roots.len(), Vec::new(), "catia point assignment root edges")
+        else {
+            return PointAssignmentOutcome::Exhausted;
+        };
         for (edge_index, edge) in edge_roots.iter().enumerate() {
             root_edges[edge[0]].push(edge_index);
             if edge[1] != edge[0] {
@@ -3588,13 +3624,17 @@ impl MeshQuotient {
             .collect::<Vec<_>>();
 
         let mut solutions = Vec::new();
+        let Ok(mut assigned) = alloc_filled(domains.len(), None, "catia point assignment roots")
+        else {
+            return PointAssignmentOutcome::Exhausted;
+        };
         walk(
             &domains,
             &edge_roots,
             &root_edges,
             edge_candidates,
             &edge_neighbors,
-            &mut vec![None; domains.len()],
+            &mut assigned,
             &mut HashSet::new(),
             &mut solutions,
             solution_limit,
@@ -6830,7 +6870,10 @@ fn resolve_standard_mesh_endpoint_candidates(
         edge_candidates: &edge_candidates,
         edge_rows,
         vertex_points,
-        selected: vec![None; face_count],
+        selected: match alloc_filled(face_count, None, "catia mesh face selections") {
+            Ok(selected) => selected,
+            Err(_) => return MeshEndpointResolve::Exhausted,
+        },
         states: 0,
         solution: None,
         ambiguous: false,
@@ -6982,7 +7025,13 @@ where
         .zip(&class_constraint.active)
         .map(|((partial, preferred), class)| *partial || *preferred || *class)
         .collect::<Vec<_>>();
-    let mut assignment_predecessors = vec![None; completed_edge_candidates.len()];
+    let Ok(mut assignment_predecessors) = alloc_filled(
+        completed_edge_candidates.len(),
+        None,
+        "catia mesh assignment predecessors",
+    ) else {
+        return MeshCandidateSolve::Rejected(MeshCandidateRejection::QuotientPreparation);
+    };
     for &(left, right) in &class_constraint.ordered {
         assignment_predecessors[right] = Some(
             assignment_predecessors[right].map_or(left, |predecessor: usize| predecessor.max(left)),

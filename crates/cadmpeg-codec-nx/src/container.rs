@@ -771,7 +771,7 @@ fn directory_region(
         .checked_add(4)
         .ok_or_else(|| CodecError::Malformed("directory count offset overflow".to_string()))?;
     if data.get(marker_offset..count_offset) != Some(marker.as_slice()) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "missing {} directory marker",
             String::from_utf8_lossy(&marker)
         )));
@@ -792,12 +792,12 @@ fn directory_region(
     let mut at = entries_offset;
     for ordinal in 0..count {
         let Some((entry, next)) = try_entry(data, at, region) else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "directory entry {ordinal} is truncated or malformed"
             )));
         };
         if next > region_end {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "directory entry {ordinal} extends beyond its bounded region"
             )));
         }

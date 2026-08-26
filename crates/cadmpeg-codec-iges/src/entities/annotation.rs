@@ -1,14 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Text annotation entities.
 
-use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
+use super::geometry::{curve_geometry_coplanar, entity_loss, resolve_transform, ProjectionOutcome};
 use super::presentation::{
-    general_note_font_valid, new_general_note_charset_valid, new_general_note_font_valid,
+    general_note_font_valid_for_dialect, new_general_note_charset_valid,
+    new_general_note_font_valid,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::parameter::{DefaultTailCount, ParameterRecord};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,6 +41,68 @@ pub(crate) enum AnnotationKind {
     SectionedArea,
 }
 
+fn finite_point(point: Point3) -> bool {
+    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+}
+
+fn finite_vector(vector: Vector3) -> bool {
+    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+}
+
+fn normalized(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    (finite_vector(vector) && norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
+}
+
+fn sectioned_area_pattern_plane(
+    record: &ParameterRecord,
+    transform: Transform,
+    length_factor: f64,
+) -> Option<(Point3, Vector3)> {
+    let z = record.number_or(5, 0.0)? * length_factor;
+    if !z.is_finite() || !length_factor.is_finite() {
+        return None;
+    }
+    let point = transform.apply_point(Point3::new(0.0, 0.0, z));
+    let normal = transform
+        .apply_normal(Vector3::new(0.0, 0.0, 1.0))
+        .and_then(normalized)?;
+    finite_point(point).then_some((point, normal))
+}
+
+fn sectioned_area_curves_coplanar(
+    ir: &CadIr,
+    sequences: &[u32],
+    pattern_plane: (Point3, Vector3),
+    resolution: f64,
+) -> bool {
+    if !resolution.is_finite() || resolution < 0.0 {
+        return false;
+    }
+    let index = ModelIndex::new(ir);
+    let identity = Transform::identity();
+    let mut active = BTreeSet::new();
+    sequences.iter().all(|sequence| {
+        let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
+        let Some(curve) = index.curves(&curve_id.0) else {
+            return false;
+        };
+        if !active.insert(curve_id.clone()) {
+            return false;
+        }
+        let valid = curve_geometry_coplanar(
+            &curve.geometry,
+            &index,
+            identity,
+            pattern_plane,
+            resolution,
+            &mut active,
+        );
+        active.remove(&curve_id);
+        valid
+    })
+}
+
 /// Maps a directory entry's type and form to its annotation kind, or `None`
 /// for every shape the annotation concern does not admit.
 pub(crate) fn classify(entity_type: i64, form: i64) -> Option<AnnotationKind> {
@@ -45,15 +112,17 @@ pub(crate) fn classify(entity_type: i64, form: i64) -> Option<AnnotationKind> {
         (206, 0) => Some(AnnotationKind::DiameterDimension),
         (208, 0) => Some(AnnotationKind::FlagNote),
         (210, 0) => Some(AnnotationKind::GeneralLabel),
-        (212, 0) => Some(AnnotationKind::GeneralNote),
+        (212, form) if crate::profile::general_note_form_admitted(form) => {
+            Some(AnnotationKind::GeneralNote)
+        }
         (213, 0) => Some(AnnotationKind::NewGeneralNote),
         (214, 1..=12) => Some(AnnotationKind::Leader),
         (216, 0..=2) => Some(AnnotationKind::LinearDimension),
         (218, 0..=1) => Some(AnnotationKind::OrdinateDimension),
         (220, 0) => Some(AnnotationKind::PointDimension),
         (222, 0..=1) => Some(AnnotationKind::RadiusDimension),
-        (228, 0) => Some(AnnotationKind::GeneralSymbol),
-        (230, 0) => Some(AnnotationKind::SectionedArea),
+        (228, 0..=3 | 5001..=9999) => Some(AnnotationKind::GeneralSymbol),
+        (230, 0..=1) => Some(AnnotationKind::SectionedArea),
         _ => None,
     }
 }
@@ -82,10 +151,68 @@ fn vertical_text_flag_valid(value: i64) -> bool {
     matches!(value, 0..=1)
 }
 
-fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
-    let parameter_end = record.parameter_end();
+fn hexadecimal_byte(bytes: &[u8]) -> Option<u8> {
+    let [high, low] = bytes else {
+        return None;
+    };
+    let high = match high {
+        b'0'..=b'9' => high - b'0',
+        b'A'..=b'F' => high - b'A' + 10,
+        b'a'..=b'f' => high - b'a' + 10,
+        _ => return None,
+    };
+    let low = match low {
+        b'0'..=b'9' => low - b'0',
+        b'A'..=b'F' => low - b'A' + 10,
+        b'a'..=b'f' => low - b'a' + 10,
+        _ => return None,
+    };
+    Some((high << 4) | low)
+}
+
+fn general_note_text_valid_for_dialect(
+    text: &[u8],
+    font: i64,
+    dialect: Dialect,
+    is_v5_null_string: bool,
+) -> bool {
+    if font != 2001 {
+        return true;
+    }
+    if matches!(dialect, Dialect::V4_0) {
+        return false;
+    }
+    if is_v5_null_string && matches!(dialect, Dialect::V5_0) {
+        return true;
+    }
+    text.len().is_multiple_of(4)
+        && text.chunks_exact(4).all(|character| {
+            hexadecimal_byte(&character[..2])
+                .zip(hexadecimal_byte(&character[2..]))
+                .is_some_and(|(row, column)| {
+                    (0x21..=0x7e).contains(&row) && (0x21..=0x7e).contains(&column)
+                })
+        })
+}
+
+fn general_note_valid_for_dialect(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
+    form: i64,
+) -> bool {
+    let parameter_end = crate::parameter::entity_primary_end_for_dialect(record, entries, dialect)
+        .unwrap_or_else(|| record.parameter_end());
+    if !general_note_suffix_structurally_valid(record, parameter_end) {
+        return false;
+    }
     let count = match record.count_with_stride_before_default_tail(1, 12, parameter_end) {
-        DefaultTailCount::Held(count) if count > 0 => count,
+        DefaultTailCount::Held(count)
+            if crate::profile::general_note_form_admitted(form)
+                && general_note_string_count_valid(form, count) =>
+        {
+            count
+        }
         _ => return false,
     };
     parameter_end <= 2 + count * 12
@@ -104,7 +231,16 @@ fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &Directo
                 })
                 && record
                     .integer_or(start + 3, 1)
-                    .is_some_and(|value| general_note_font_valid(value, entries))
+                    .zip(text)
+                    .is_some_and(|(font, text)| {
+                        general_note_font_valid_for_dialect(font, entries, dialect)
+                            && general_note_text_valid_for_dialect(
+                                text,
+                                font,
+                                dialect,
+                                record.integer(1) == Some(1) && text == b" ",
+                            )
+                    })
                 && record
                     .number_or(start + 4, std::f64::consts::FRAC_PI_2)
                     .is_some_and(f64::is_finite)
@@ -118,6 +254,70 @@ fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &Directo
                 && (start + 8..=start + 10)
                     .all(|field| record.number_or(field, 0.0).is_some_and(f64::is_finite))
         })
+}
+
+fn general_note_suffix_structurally_valid(record: &ParameterRecord, primary_end: usize) -> bool {
+    // A malformed pointer target must not invalidate the note's own primary
+    // fields, but arbitrary tokens after that primary span are not a suffix.
+    // Check the two counted group shapes without requiring their targets to
+    // resolve; reference validation owns that separate decision.
+    if record.tokens.len() == primary_end || record.parameter_end() == primary_end {
+        return true;
+    }
+    let Some(first_count) = record
+        .tokens
+        .get(primary_end)
+        .and_then(|token| match &token.value {
+            crate::parameter::TokenValue::Integer(value) => usize::try_from(*value).ok(),
+            crate::parameter::TokenValue::Omitted
+            | crate::parameter::TokenValue::Real(_)
+            | crate::parameter::TokenValue::String(_) => None,
+        })
+    else {
+        return false;
+    };
+    let Some(first_end) = primary_end
+        .checked_add(1)
+        .and_then(|end| end.checked_add(first_count))
+    else {
+        return false;
+    };
+    if first_end > record.tokens.len() {
+        return false;
+    }
+    if first_end == record.tokens.len() {
+        return true;
+    }
+    let Some(second_count) = record
+        .tokens
+        .get(first_end)
+        .and_then(|token| match &token.value {
+            crate::parameter::TokenValue::Integer(value) => usize::try_from(*value).ok(),
+            crate::parameter::TokenValue::Omitted
+            | crate::parameter::TokenValue::Real(_)
+            | crate::parameter::TokenValue::String(_) => None,
+        })
+    else {
+        return false;
+    };
+    first_end
+        .checked_add(1)
+        .and_then(|end| end.checked_add(second_count))
+        .is_some_and(|second_end| second_end == record.tokens.len())
+}
+
+fn general_note_string_count_valid(form: i64, count: usize) -> bool {
+    let minimum = match form {
+        0 | 6..=8 => 1,
+        1..=4 => 2,
+        5 => 3,
+        100 => 4,
+        101 => 8,
+        102 => 9,
+        105 => 12,
+        _ => return false,
+    };
+    count >= minimum
 }
 
 fn new_general_note_valid(
@@ -203,7 +403,11 @@ fn new_general_note_valid(
         })
 }
 
-fn leader_valid(entry: &DirectoryEntry, record: &ParameterRecord) -> bool {
+fn leader_valid_for_dialect(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    dialect: Dialect,
+) -> bool {
     let Some(count) = record
         .count_with_stride_at(1, 7, 2, record.parameter_end())
         .filter(|count| *count > 0)
@@ -216,11 +420,14 @@ fn leader_valid(entry: &DirectoryEntry, record: &ParameterRecord) -> bool {
         .is_some_and(|(height, width)| {
             height.is_finite()
                 && width.is_finite()
-                && match entry.form {
-                    4 => height == 0.0 && width == 0.0,
-                    5 | 6 | 12 => height > 0.0 && height == width,
-                    1..=3 | 7..=11 => height > 0.0 && width > 0.0,
-                    _ => false,
+                && match dialect {
+                    Dialect::V4_0 => matches!(entry.form, 1..=12),
+                    _ => match entry.form {
+                        4 => height == 0.0 && width == 0.0,
+                        5 | 6 | 12 => height > 0.0 && height == width,
+                        1..=3 | 7..=11 => height > 0.0 && width > 0.0,
+                        _ => false,
+                    },
                 }
         });
     exact_parameter_count(record, 7 + count * 2)
@@ -246,6 +453,7 @@ fn child_valid(
     forms: impl Fn(i64) -> bool,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
 ) -> bool {
     entries.get(&sequence).is_some_and(|entry| {
         entry.entity_type == entity_type
@@ -255,12 +463,49 @@ fn child_valid(
             && records
                 .get(&sequence)
                 .is_some_and(|record| match entity_type {
-                    212 => general_note_valid(record, entries),
-                    214 => leader_valid(entry, record),
+                    212 => general_note_valid_for_dialect(record, entries, dialect, entry.form),
+                    214 => leader_valid_for_dialect(entry, record, dialect),
                     106 => witness_valid(record),
                     _ => false,
                 })
     })
+}
+
+fn general_note_child_valid(
+    sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
+) -> bool {
+    entries.get(&sequence).is_some_and(|entry| {
+        entry.entity_type == 212
+            && crate::profile::general_note_form_admitted(entry.form)
+            && entry.status.is_physically_dependent()
+            && entry.status.use_flag == 1
+            && records.get(&sequence).is_some_and(|record| {
+                general_note_valid_for_dialect(record, entries, dialect, entry.form)
+            })
+    })
+}
+
+fn general_symbol_note_valid(
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    form: i64,
+    dialect: Dialect,
+) -> bool {
+    match record.integer(1) {
+        Some(0) => form == 0 && !matches!(dialect, Dialect::V4_0),
+        Some(_) => pointer(record, 1, entries)
+            .is_some_and(|sequence| general_note_child_valid(sequence, entries, records, dialect)),
+        None => false,
+    }
+}
+
+fn dimension_enclosure_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -> bool {
+    matches!((entity_type, form), (100 | 102, 0))
+        || (!matches!(dialect, Dialect::V4_0) && (entity_type, form) == (106, 63))
 }
 
 fn dimension_children_valid(
@@ -307,10 +552,11 @@ fn dimension_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
 ) -> bool {
     let note = pointer(record, 1, entries);
     let note_valid =
-        note.is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records));
+        note.is_some_and(|sequence| general_note_child_valid(sequence, entries, records, dialect));
     let mut children = note.into_iter().collect::<Vec<_>>();
     let fields_valid = match (entry.entity_type, entry.form) {
         (202, 0) => {
@@ -319,7 +565,7 @@ fn dimension_valid(
             let witnesses_valid = witnesses.iter().enumerate().all(|(offset, raw)| match raw {
                 Some(0) => true,
                 Some(_) => pointer(record, 2 + offset, entries).is_some_and(|sequence| {
-                    child_valid(sequence, 106, |form| form == 40, entries, records)
+                    child_valid(sequence, 106, |form| form == 40, entries, records, dialect)
                 }),
                 None => false,
             });
@@ -331,6 +577,7 @@ fn dimension_valid(
                         |form| matches!(form, 1..=12),
                         entries,
                         records,
+                        dialect,
                     )
                 })
             });
@@ -372,13 +619,14 @@ fn dimension_valid(
                         |form| matches!(form, 1..=12),
                         entries,
                         records,
+                        dialect,
                     )
                 })
             });
             let witnesses_valid = (6..=7).all(|index| match record.integer(index) {
                 Some(0) => true,
                 Some(_) => pointer(record, index, entries).is_some_and(|sequence| {
-                    child_valid(sequence, 106, |form| form == 40, entries, records)
+                    child_valid(sequence, 106, |form| form == 40, entries, records, dialect)
                 }),
                 None => false,
             });
@@ -395,6 +643,7 @@ fn dimension_valid(
                     |form| matches!(form, 1..=12),
                     entries,
                     records,
+                    dialect,
                 )
             }) && match record.integer(3) {
                 Some(0) => true,
@@ -405,6 +654,7 @@ fn dimension_valid(
                         |form| matches!(form, 1..=12),
                         entries,
                         records,
+                        dialect,
                     )
                 }),
                 None => false,
@@ -426,13 +676,14 @@ fn dimension_valid(
                         |form| matches!(form, 1..=12),
                         entries,
                         records,
+                        dialect,
                     )
                 })
             });
             let witnesses_valid = witnesses.iter().enumerate().all(|(offset, raw)| match raw {
                 Some(0) => true,
                 Some(_) => pointer(record, 4 + offset, entries).is_some_and(|sequence| {
-                    child_valid(sequence, 106, |form| form == 40, entries, records)
+                    child_valid(sequence, 106, |form| form == 40, entries, records, dialect)
                 }),
                 None => false,
             });
@@ -443,13 +694,14 @@ fn dimension_valid(
         (218, 0) => {
             let ordinate = pointer(record, 2, entries);
             let valid = ordinate.is_some_and(|sequence| {
-                child_valid(sequence, 106, |form| form == 40, entries, records)
+                child_valid(sequence, 106, |form| form == 40, entries, records, dialect)
                     || child_valid(
                         sequence,
                         214,
                         |form| matches!(form, 1..=12),
                         entries,
                         records,
+                        dialect,
                     )
             });
             children.extend(ordinate);
@@ -459,7 +711,7 @@ fn dimension_valid(
             let witness = pointer(record, 2, entries);
             let leader = pointer(record, 3, entries);
             let valid = witness.is_some_and(|sequence| {
-                child_valid(sequence, 106, |form| form == 40, entries, records)
+                child_valid(sequence, 106, |form| form == 40, entries, records, dialect)
             }) && leader.is_some_and(|sequence| {
                 child_valid(
                     sequence,
@@ -467,6 +719,7 @@ fn dimension_valid(
                     |form| matches!(form, 1..=12),
                     entries,
                     records,
+                    dialect,
                 )
             });
             children.extend(witness);
@@ -484,13 +737,14 @@ fn dimension_valid(
                     |form| matches!(form, 1..=12),
                     entries,
                     records,
+                    dialect,
                 ) && records.get(&sequence).and_then(|record| record.integer(1)) == Some(3)
             });
             let enclosure_valid = match enclosure_raw {
                 Some(0) => true,
                 Some(_) => enclosure.is_some_and(|sequence| {
                     entries.get(&sequence).is_some_and(|entry| {
-                        matches!((entry.entity_type, entry.form), (100 | 102, 0) | (106, 63))
+                        dimension_enclosure_type_allowed(entry.entity_type, entry.form, dialect)
                             && entry.status.is_physically_dependent()
                             && entry.status.use_flag == 1
                     })
@@ -510,6 +764,7 @@ fn dimension_valid(
                     |form| matches!(form, 1..=12),
                     entries,
                     records,
+                    dialect,
                 )
             });
             let center_valid = finite(record, 3) && finite(record, 4);
@@ -521,7 +776,14 @@ fn dimension_valid(
                 || match second_raw {
                     Some(0) => true,
                     Some(_) => second.is_some_and(|sequence| {
-                        child_valid(sequence, 214, |form| form == 4, entries, records)
+                        child_valid(
+                            sequence,
+                            214,
+                            |form| matches!(dialect, Dialect::V4_0) || form == 4,
+                            entries,
+                            records,
+                            dialect,
+                        )
                     }),
                     None => false,
                 };
@@ -542,6 +804,7 @@ fn flag_or_label_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
 ) -> bool {
     let (note_index, count_index, leader_start) = if entry.entity_type == 208 {
         (5, 6, 7)
@@ -550,7 +813,7 @@ fn flag_or_label_valid(
     };
     let note = pointer(record, note_index, entries);
     let note_valid =
-        note.is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records));
+        note.is_some_and(|sequence| general_note_child_valid(sequence, entries, records, dialect));
     let count = record.count(count_index);
     let leaders_valid = count.is_some_and(|count| {
         (0..count).all(|offset| {
@@ -561,6 +824,7 @@ fn flag_or_label_valid(
                     |form| matches!(form, 1..=12),
                     entries,
                     records,
+                    dialect,
                 )
             })
         })
@@ -591,13 +855,10 @@ fn general_symbol_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
+    form: i64,
+    dialect: Dialect,
 ) -> bool {
-    let note_valid = match record.integer(1) {
-        Some(0) => true,
-        Some(_) => pointer(record, 1, entries)
-            .is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records)),
-        None => false,
-    };
+    let note_valid = general_symbol_note_valid(record, entries, records, form, dialect);
     let Some(geometry_count) = record.count(2).filter(|count| *count > 0) else {
         return false;
     };
@@ -620,6 +881,7 @@ fn general_symbol_valid(
                 |form| matches!(form, 1..=12),
                 entries,
                 records,
+                dialect,
             )
         })
     });
@@ -636,7 +898,10 @@ pub(crate) fn section_boundary_type(entry: &DirectoryEntry) -> bool {
     )
 }
 
-fn fill_pattern_valid(pattern: i64) -> bool {
+fn fill_pattern_valid_for_dialect(pattern: i64, dialect: Dialect) -> bool {
+    if matches!(dialect, Dialect::V4_0) {
+        return (0..=19).contains(&pattern);
+    }
     matches!(
         pattern,
         0..=20 | 22 | 26 | 28..=29 | 32 | 34 | 36 | 38 | 40..=42 | 46 | 50 | 60
@@ -661,14 +926,63 @@ fn finite_or_omitted(record: &ParameterRecord, index: usize) -> bool {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // the table fields, dialect, placement, and Global tolerances are distinct validation inputs
 fn sectioned_area_valid(
+    ir: &CadIr,
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
+    form: i64,
+    dialect: Dialect,
+    transform: Transform,
+    length_factor: f64,
+    resolution: f64,
 ) -> bool {
-    let boundary_valid = pointer(record, 1, entries)
-        .and_then(|sequence| entries.get(&sequence).copied())
-        .is_some_and(section_boundary_type);
-    let pattern = record.integer(2).filter(|value| fill_pattern_valid(*value));
+    if !matches!(form, 0 | 1) {
+        return false;
+    }
+    let boundary_sequence = match record.integer(1) {
+        Some(0) if form == 1 => Some(None),
+        Some(_) => pointer(record, 1, entries).map(Some),
+        None => None,
+    };
+    let boundary_valid = boundary_sequence.is_some_and(|sequence| {
+        sequence.is_none_or(|sequence| {
+            entries
+                .get(&sequence)
+                .copied()
+                .is_some_and(section_boundary_type)
+        })
+    });
+    let Some(island_count) = record.count(8) else {
+        return false;
+    };
+    if form == 1 && island_count == 0 {
+        return false;
+    }
+    let island_sequences = (0..island_count)
+        .map(|offset| pointer(record, 9 + offset, entries))
+        .collect::<Option<Vec<_>>>();
+    let islands_valid = island_sequences.as_ref().is_some_and(|islands| {
+        islands.iter().all(|sequence| {
+            entries
+                .get(sequence)
+                .is_some_and(|entry| section_boundary_type(entry))
+        })
+    });
+    let definition_sequences = boundary_sequence
+        .into_iter()
+        .flatten()
+        .chain(island_sequences.iter().flatten().copied())
+        .collect::<Vec<_>>();
+    let coplanarity_valid = matches!(dialect, Dialect::V4_0)
+        || sectioned_area_pattern_plane(record, transform, length_factor).is_some_and(
+            |pattern_plane| {
+                sectioned_area_curves_coplanar(ir, &definition_sequences, pattern_plane, resolution)
+            },
+        );
+    let pattern = record
+        .integer(2)
+        .filter(|value| fill_pattern_valid_for_dialect(*value, dialect));
     let pattern_parameters_valid = pattern.is_some_and(|pattern| {
         if matches!(pattern, 0 | 19) || pattern > 19 {
             (3..=7).all(|index| zero_or_omitted(record, index))
@@ -682,22 +996,15 @@ fn sectioned_area_valid(
                 && finite_or_omitted(record, 7)
         }
     });
-    let Some(island_count) = record.count(8) else {
-        return false;
-    };
-    let islands_valid = (0..island_count).all(|offset| {
-        pointer(record, 9 + offset, entries)
-            .and_then(|sequence| entries.get(&sequence).copied())
-            .is_some_and(section_boundary_type)
-    });
     boundary_valid
         && pattern_parameters_valid
         && islands_valid
+        && coplanarity_valid
         && exact_parameter_count(record, 9 + island_count)
 }
 
 pub(super) fn project(
-    _ir: &mut CadIr,
+    ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
@@ -719,7 +1026,7 @@ pub(super) fn project(
         .filter_map(|entry| classify(entry.entity_type, entry.form).map(|kind| (entry, kind)))
     {
         let valid = records.get(&entry.sequence).is_some_and(|record| {
-            let transform_valid = resolve_transform(
+            let resolved_transform = resolve_transform(
                 entry.transform,
                 &entries,
                 &records,
@@ -728,7 +1035,8 @@ pub(super) fn project(
                 &mut BTreeSet::new(),
                 ctx,
             )
-            .is_ok();
+            .ok();
+            let transform_valid = resolved_transform.is_some();
             entry.status.use_flag == 1
                 && transform_valid
                 && match kind {
@@ -739,18 +1047,40 @@ pub(super) fn project(
                     | AnnotationKind::OrdinateDimension
                     | AnnotationKind::PointDimension
                     | AnnotationKind::RadiusDimension => {
-                        dimension_valid(entry, record, &entries, &records)
+                        dimension_valid(entry, record, &entries, &records, global.dialect())
                     }
                     AnnotationKind::FlagNote | AnnotationKind::GeneralLabel => {
-                        flag_or_label_valid(entry, record, &entries, &records)
+                        flag_or_label_valid(entry, record, &entries, &records, global.dialect())
                     }
-                    AnnotationKind::GeneralNote => general_note_valid(record, &entries),
+                    AnnotationKind::GeneralNote => general_note_valid_for_dialect(
+                        record,
+                        &entries,
+                        global.dialect(),
+                        entry.form,
+                    ),
                     AnnotationKind::NewGeneralNote => new_general_note_valid(record, &entries),
-                    AnnotationKind::Leader => leader_valid(entry, record),
-                    AnnotationKind::GeneralSymbol => {
-                        general_symbol_valid(record, &entries, &records)
+                    AnnotationKind::Leader => {
+                        leader_valid_for_dialect(entry, record, global.dialect())
                     }
-                    AnnotationKind::SectionedArea => sectioned_area_valid(record, &entries),
+                    AnnotationKind::GeneralSymbol => general_symbol_valid(
+                        record,
+                        &entries,
+                        &records,
+                        entry.form,
+                        global.dialect(),
+                    ),
+                    AnnotationKind::SectionedArea => resolved_transform.is_some_and(|transform| {
+                        sectioned_area_valid(
+                            ir,
+                            record,
+                            &entries,
+                            entry.form,
+                            global.dialect(),
+                            transform.body_transform(),
+                            global.length_factor_mm(),
+                            global.minimum_resolution_mm(),
+                        )
+                    }),
                 }
         });
         if valid {

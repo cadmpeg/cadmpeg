@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::SubdId;
 use cadmpeg_ir::math::Point3;
@@ -603,7 +603,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         return Err(malformed(name, "primary grip vertex map is incomplete"));
     }
 
-    let mut edge_by_half = vec![None; half_edges.len()];
+    let mut edge_by_half = alloc_filled(half_edges.len(), None, "f3d T-spline half-edge map")?;
     let mut edge_vertices = Vec::with_capacity(live_vertices);
     for (edge_slot, root) in edge_roots.iter().copied().enumerate() {
         let Some(root) = root else { continue };

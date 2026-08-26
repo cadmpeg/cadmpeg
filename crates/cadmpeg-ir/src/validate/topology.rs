@@ -12,6 +12,8 @@ use crate::features::{
 };
 use crate::math::Point3;
 
+const EPS_TORUS_AXES_ORTHO: f64 = 1.0e-9;
+
 fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
     match pattern {
         PatternKind::Unresolved { .. } => true,
@@ -4172,7 +4174,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     || !valid_feature_direction(*major_axis)
                     || (normal.x * major_axis.x + normal.y * major_axis.y + normal.z * major_axis.z)
                         .abs()
-                        > 1e-9
+                        > EPS_TORUS_AXES_ORTHO
                     || !positive_feature_length(*major_radius)
                     || !positive_feature_length(*minor_radius)
                     || minor_radius.0 > major_radius.0

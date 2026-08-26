@@ -17,7 +17,7 @@
 
 use crate::native::{F3dNative, F3D_NATIVE_VERSION};
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{alloc_filled, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::DecodeResult;
@@ -1643,13 +1643,13 @@ fn model_brep_candidates(
         match matches.as_slice() {
             [brep] => candidates.push((**brep).clone()),
             [] => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "Design body map references missing BREP entry {}",
                     binding.blob_name
                 )))
             }
             _ => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "Design body map BREP basename is ambiguous: {}",
                     binding.blob_name
                 )))
@@ -2558,7 +2558,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             }
             if qualify_ids {
                 let namespace = brep_identity_namespace(&candidate.name).ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "BREP entry has no stable blob identity: {}",
                         candidate.name
                     ))
@@ -2643,7 +2643,7 @@ fn extend_unique_assets(
     for asset in incoming {
         match assets.iter().find(|existing| existing.id == asset.id) {
             Some(existing) if existing != &asset => {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D embedded asset {} has conflicting projections",
                     asset.id.0
                 )))
@@ -2854,7 +2854,11 @@ fn mesh_texture_assignments(
             "F3D mesh texture-id count differs from the triangle count".into(),
         ));
     }
-    let mut triangles = vec![Vec::new(); textures.len()];
+    let mut triangles = alloc_filled(
+        textures.len(),
+        Vec::new(),
+        "f3d mesh texture triangle lists",
+    )?;
     for (triangle, texture_id) in texture_ids.iter().enumerate() {
         if *texture_id == 0 {
             continue;
@@ -4501,14 +4505,14 @@ pub(crate) fn resolve_face_appearance_bindings(
             Entry::Occupied(mut entry) => {
                 let existing = entry.get_mut();
                 if !materials::visual_tokens_match(&existing.visual_guid, &assignment.visual_guid) {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "F3D face material GUID {} carries conflicting visual tokens",
                         assignment.face_guid
                     )));
                 }
                 match (existing.color, assignment.color) {
                     (Some(left), Some(right)) if left != right => {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "F3D face material GUID {} carries conflicting neutral colors",
                             assignment.face_guid
                         )));
@@ -4565,7 +4569,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         }
         if let Some(previous) = guid_by_face.insert(face.clone(), face_guid.to_owned()) {
             if previous != face_guid {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D face {face} carries multiple material GUIDs"
                 )));
             }
@@ -4618,7 +4622,7 @@ pub(crate) fn resolve_face_appearance_bindings(
             match bound_targets.entry(target.clone()) {
                 std::collections::hash_map::Entry::Occupied(entry) => {
                     if entry.get() != appearance {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "F3D face {face} carries conflicting appearance assignments"
                         )));
                     }

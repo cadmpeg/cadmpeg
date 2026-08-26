@@ -19247,7 +19247,10 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#53",
+                "iges:entity:directory#107"
+              ],
               "parameter_bytes": [
                 49,
                 56,
@@ -19369,7 +19372,24 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-514-form-1",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 53,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#53"
+                },
+                {
+                  "expected": "type-514-form-1",
+                  "kind": "parameter",
+                  "parameter_index": 4,
+                  "raw_pointer": 107,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#107"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -31353,8 +31373,26 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [
+            {
+              "declared_void_count": 1,
+              "id": "iges:solid:manifold-brep#D109",
+              "shell": "iges:entity:directory#53",
+              "shell_orientation": 1,
+              "source_entity": "iges:entity:directory#109",
+              "transformation": null,
+              "voids": [
+                {
+                  "orientation": 0,
+                  "shell": "iges:entity:directory#107"
+                }
+              ]
+            }
+          ],
           "network_definitions": [],
           "network_instances": [],
           "primitive_solids": [],
@@ -31388,7 +31426,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 3
+        "version": 6
       }
     },
     "source": {
@@ -31432,7 +31470,8 @@
       "entity.514.form.1=2",
       "parameter_records=55",
       "parameter_tokens=454",
-      "external_references=0"
+      "external_references=0",
+      "references.resolved=2"
     ],
     "transfer_ledger": {
       "entries": [

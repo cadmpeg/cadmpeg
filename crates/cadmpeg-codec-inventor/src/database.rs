@@ -319,7 +319,7 @@ impl<'a> Cursor<'a> {
     fn array<const N: usize>(&mut self, field: &'static str) -> Result<[u8; N], CodecError> {
         self.source
             .array()
-            .ok_or_else(|| CodecError::Malformed(format!("truncated {} {field}", self.scope)))
+            .ok_or_else(|| CodecError::malformed(format_args!("truncated {} {field}", self.scope)))
     }
 
     fn u16_array<const N: usize>(&mut self, field: &'static str) -> Result<[u16; N], CodecError> {
@@ -348,10 +348,11 @@ impl<'a> Cursor<'a> {
     }
 
     fn count(&mut self, field: &'static str, maximum: usize) -> Result<usize, CodecError> {
-        let count = usize::try_from(self.u32(field)?)
-            .map_err(|_| CodecError::Malformed(format!("{} {field} is too large", self.scope)))?;
+        let count = usize::try_from(self.u32(field)?).map_err(|_| {
+            CodecError::malformed(format_args!("{} {field} is too large", self.scope))
+        })?;
         if count > maximum {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "{} {field} exceeds {maximum}",
                 self.scope
             )));
@@ -362,11 +363,11 @@ impl<'a> Cursor<'a> {
     fn utf16(&mut self, field: &'static str, maximum: usize) -> Result<String, CodecError> {
         let count = self.count(field, maximum)?;
         count.checked_mul(2).ok_or_else(|| {
-            CodecError::Malformed(format!("{} {field} length overflows", self.scope))
+            CodecError::malformed(format_args!("{} {field} length overflows", self.scope))
         })?;
-        self.source
-            .utf16_le(count)
-            .ok_or_else(|| CodecError::Malformed(format!("{} {field} is not UTF-16", self.scope)))
+        self.source.utf16_le(count).ok_or_else(|| {
+            CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
+        })
     }
 
     fn id_list(
@@ -387,7 +388,7 @@ impl<'a> Cursor<'a> {
         if self.source.is_empty() {
             Ok(())
         } else {
-            Err(CodecError::Malformed(format!(
+            Err(CodecError::malformed(format_args!(
                 "{} has {} trailing bytes",
                 self.scope,
                 self.source.remaining()

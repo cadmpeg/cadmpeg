@@ -708,7 +708,7 @@ fn attribute_before_timestamp(
                 .bodies
                 .get(owner_ordinal)
                 .filter(|body| body.id == *id)
-                .ok_or_else(|| CodecError::Malformed(format!("missing F3D body {id}")))?;
+                .ok_or_else(|| CodecError::malformed(format_args!("missing F3D body {id}")))?;
             if let Some(reference) =
                 body_persistent_attribute_ref(target, index, body, attribute_start)?
             {
@@ -731,7 +731,7 @@ fn attribute_before_timestamp(
                 .faces
                 .get(owner_ordinal)
                 .filter(|face| face.id == *id)
-                .ok_or_else(|| CodecError::Malformed(format!("missing F3D face {id}")))?;
+                .ok_or_else(|| CodecError::malformed(format_args!("missing F3D face {id}")))?;
             if let Some(reference) =
                 face_persistent_attribute_ref(target, index, face, attribute_start)?
             {
@@ -754,7 +754,7 @@ fn attribute_before_timestamp(
                 .edges
                 .get(owner_ordinal)
                 .filter(|edge| edge.id == *id)
-                .ok_or_else(|| CodecError::Malformed(format!("missing F3D edge {id}")))?;
+                .ok_or_else(|| CodecError::malformed(format_args!("missing F3D edge {id}")))?;
             Ok(
                 edge_persistent_attribute_ref(target, index, edge, owner_ordinal, attribute_start)?
                     .unwrap_or(-1),
@@ -766,7 +766,7 @@ fn attribute_before_timestamp(
                 .coedges
                 .get(owner_ordinal)
                 .filter(|coedge| coedge.id == *id)
-                .ok_or_else(|| CodecError::Malformed(format!("missing F3D coedge {id}")))?;
+                .ok_or_else(|| CodecError::malformed(format_args!("missing F3D coedge {id}")))?;
             Ok(coedge_sketch_attribute_ref(target, index, coedge, attribute_start)?.unwrap_or(-1))
         }
         AttributeTarget::Vertex(id) => {
@@ -778,7 +778,9 @@ fn attribute_before_timestamp(
             {
                 Ok(-1)
             } else {
-                Err(CodecError::Malformed(format!("missing F3D vertex {id}")))
+                Err(CodecError::malformed(format_args!(
+                    "missing F3D vertex {id}"
+                )))
             }
         }
         _ => Err(CodecError::NotImplemented(
@@ -818,7 +820,7 @@ fn native_persistent_design_attribute(
     );
     for link in links {
         if link.entity_kind != kind {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "persistent design link {} has entity kind {}, expected {kind}",
                 link.id, link.entity_kind
             )));
@@ -906,7 +908,7 @@ pub(crate) fn encode_source_less_attributes(
     let model = &target.model;
     for (ordinal, timestamp) in index.creation_timestamps.iter().enumerate() {
         if !timestamp.unix_microseconds.is_finite() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D creation timestamp {} is non-finite",
                 timestamp.id
             )));
@@ -915,7 +917,7 @@ pub(crate) fn encode_source_less_attributes(
             .iter()
             .any(|before| before.target == timestamp.target)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "multiple F3D creation timestamps target the same entity: {}",
                 timestamp.id
             )));

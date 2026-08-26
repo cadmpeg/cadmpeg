@@ -192,7 +192,7 @@ pub(crate) fn typed_primary_frames<'a>(
         }
         for &entity_id in &design_type.entity_ids {
             if !typed_entities.insert(entity_id) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D Design {record_kind} entity {entity_id} is registered more than once"
                 )));
             }
@@ -218,7 +218,7 @@ pub(crate) fn typed_primary_frames<'a>(
         });
     }
     if let Some(entity_id) = typed_entities.difference(&resolved_entities).min() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D Design {record_kind} entity {entity_id} has no primary record of its registered class"
         )));
     }

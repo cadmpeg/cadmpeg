@@ -77,7 +77,7 @@ The only card whose columns 1-72 are split.
 | Columns | Field | Type | Src | Meaning |
 | ------- | ----- | ---- | --- | ------- |
 | 1-64 | `parameter_fragment` | `text` | derived | Columns 1-64 are the remainder of the 1-72 data area once the back-pointer claims 65-72. The Parameter Data section states the same span outright: "Bytes 1 through 64 of Parameter Data cards form parameter fragments." |
-| 65-72 | `de_back_pointer` | `text` | spec | Parameter Data cards instead use bytes 65 through 72 for the right-aligned Directory Entry back-pointer |
+| 65-72 | `de_back_pointer` | `text` | spec | Parameter Data cards instead use byte 65 for an ASCII space, bytes 66 through 72 for the right-aligned positive seven-column Directory Entry sequence |
 | 73-73 | `section_marker` | `char` | spec | byte 73 for the `P` marker |
 | 74-80 | `sequence` | `text` | spec | bytes 74 through 80 for the Parameter Data sequence |
 

@@ -14,6 +14,8 @@ use crate::IgesCodec;
 
 mod annotations;
 mod counted_lists;
+mod fem;
+mod macros;
 
 fn code_count(report: &DecodeReport, code: IgesLossCode) -> usize {
     report
@@ -109,7 +111,7 @@ fn every_admitted_entity_form_routes_to_a_typed_decoder_or_native_retention_loss
         .iter()
         .flat_map(|entity| {
             let entity_type = entity["type"].as_integer().unwrap();
-            let forms = entity["forms"].as_array().map_or_else(
+            let mut forms = entity["forms"].as_array().map_or_else(
                 || vec![5001, 9999],
                 |forms| {
                     forms
@@ -118,6 +120,13 @@ fn every_admitted_entity_form_routes_to_a_typed_decoder_or_native_retention_loss
                         .collect()
                 },
             );
+            if entity
+                .get("implementor_defined")
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(false)
+            {
+                forms.extend([5001, 9999]);
+            }
             forms.into_iter().map(move |form| OwnedTestEntity {
                 entity_type,
                 form,
@@ -146,15 +155,31 @@ fn every_admitted_entity_form_routes_to_a_typed_decoder_or_native_retention_loss
         })
         .map(|loss| loss.message.as_str())
         .collect::<Vec<_>>();
+    let mut expected = vec![
+        "IGES entity type 124 form 0 retained without neutral projection".to_owned(),
+        "IGES entity type 124 form 1 retained without neutral projection".to_owned(),
+        "IGES entity type 124 form 10 retained without neutral projection".to_owned(),
+        "IGES entity type 124 form 11 retained without neutral projection".to_owned(),
+        "IGES entity type 124 form 12 retained without neutral projection".to_owned(),
+    ];
+    expected.extend([134, 136, 138].into_iter().map(|entity_type| {
+        format!("IGES entity type {entity_type} form 0 retained without neutral projection")
+    }));
+    for entity_type in [146, 148] {
+        expected.extend((0..=34).map(|form| {
+            format!(
+                "IGES entity type {entity_type} form {form} retained without neutral projection"
+            )
+        }));
+    }
+    expected.push("IGES entity type 418 form 0 retained without neutral projection".to_owned());
+    expected.extend([
+        "IGES entity type 406 form 5001 retained without neutral projection".to_owned(),
+        "IGES entity type 406 form 9999 retained without neutral projection".to_owned(),
+    ]);
     assert_eq!(
         generic_fallthroughs,
-        vec![
-            "IGES entity type 124 form 0 retained without neutral projection",
-            "IGES entity type 124 form 1 retained without neutral projection",
-            "IGES entity type 124 form 10 retained without neutral projection",
-            "IGES entity type 124 form 11 retained without neutral projection",
-            "IGES entity type 124 form 12 retained without neutral projection",
-        ]
+        expected.iter().map(String::as_str).collect::<Vec<_>>()
     );
 }
 
@@ -184,7 +209,7 @@ fn decode_preserves_native_entities_and_graph() {
         Some(bytes.as_slice())
     );
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.version, 3);
+    assert_eq!(native.version, 6);
     assert_eq!(native.arenas["cards"].len(), 7);
     assert_eq!(native.arenas["entities"].len(), 1);
     assert!(native.arenas["colors"].is_empty());

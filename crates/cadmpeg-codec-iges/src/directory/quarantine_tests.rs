@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::report::{DecodeReport, TransferDisposition};
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{card, owned_test_file, OwnedTestEntity};
+use crate::test_support::{card, owned_test_file, owned_test_file_with_global, OwnedTestEntity};
 use crate::IgesCodec;
 
 /// Zero-based index of the level field inside the first Directory card.
@@ -47,6 +47,30 @@ fn two_point_file() -> Vec<u8> {
             parameters: "116,4,5,6,0;".into(),
         },
     ])
+}
+
+const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+
+fn v4_two_point_file() -> Vec<u8> {
+    owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "FIRST".into(),
+                status: "00000000",
+                parameters: "116,1,2,3,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "SECOND".into(),
+                status: "00000000",
+                parameters: "116,4,5,6,0;".into(),
+            },
+        ],
+        GLOBAL_V4,
+    )
 }
 
 fn directory_card_offset(bytes: &[u8], index: usize) -> usize {
@@ -146,6 +170,32 @@ fn every_directory_defect_key_names_its_own_failure() {
             code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
             1,
             "{defect}"
+        );
+    }
+}
+
+#[test]
+fn v4_blank_no_default_directory_fields_quarantine_the_record() {
+    for (card_index, field) in [(2, 0), (2, 1), (3, 0), (3, 3)] {
+        let bytes = corrupt_field(&v4_two_point_file(), card_index, field, *b"        ");
+        let result = decode(bytes);
+        let native = result.ir().native.namespace("iges").unwrap();
+        assert_eq!(
+            native.arenas["entities"].len(),
+            1,
+            "card {card_index}, field {field}"
+        );
+        let quarantined = &native.arenas["quarantined_directory_records"];
+        assert_eq!(quarantined.len(), 1, "card {card_index}, field {field}");
+        assert_eq!(
+            quarantined[0].fields()["defect"],
+            "field-blank-not-allowed",
+            "card {card_index}, field {field}"
+        );
+        assert_eq!(
+            code_count(result.report(), IgesLossCode::DirectoryRecordQuarantined),
+            1,
+            "card {card_index}, field {field}"
         );
     }
 }

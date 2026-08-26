@@ -50,6 +50,8 @@ use cadmpeg_ir::ids::{FaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-12;
+
 pub(in super::super) fn thicken_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -626,7 +628,7 @@ pub(in super::super) fn schema_feature_definition(
                 if let (Some(normal), Some(u_axis)) =
                     (normalized(raw_normal), normalized(raw_u_axis))
                 {
-                    if dot(normal, u_axis).abs() <= 1e-12 {
+                    if dot(normal, u_axis).abs() <= EPS_FRAME_ORTHONORMAL {
                         let origin: [f64; 3] = values[9..12].try_into().expect("three values");
                         return IrFeatureDefinition::DatumPlane {
                             origin: Point3::new(origin[0], origin[1], origin[2]),
@@ -656,10 +658,11 @@ pub(in super::super) fn schema_feature_definition(
                 let z_axis = normalized(values[6..9].try_into().expect("three values"));
                 let origin: [f64; 3] = values[9..12].try_into().expect("three values");
                 if let (Some(x_axis), Some(y_axis), Some(z_axis)) = (x_axis, y_axis, z_axis) {
-                    let right_handed = dot(cross(x_axis, y_axis), z_axis) >= 1.0 - 1e-12;
-                    let orthogonal = dot(x_axis, y_axis).abs() <= 1e-12
-                        && dot(x_axis, z_axis).abs() <= 1e-12
-                        && dot(y_axis, z_axis).abs() <= 1e-12;
+                    let right_handed =
+                        dot(cross(x_axis, y_axis), z_axis) >= 1.0 - EPS_FRAME_ORTHONORMAL;
+                    let orthogonal = dot(x_axis, y_axis).abs() <= EPS_FRAME_ORTHONORMAL
+                        && dot(x_axis, z_axis).abs() <= EPS_FRAME_ORTHONORMAL
+                        && dot(y_axis, z_axis).abs() <= EPS_FRAME_ORTHONORMAL;
                     if origin.into_iter().all(f64::is_finite) && orthogonal && right_handed {
                         return IrFeatureDefinition::DatumCoordinateSystem {
                             origin: Point3::new(origin[0], origin[1], origin[2]),

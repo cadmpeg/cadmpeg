@@ -90,7 +90,7 @@ fn parse_stream<'a>(
     }
     let payload_len = source.window().len().saturating_sub(protein_header::LEN);
     if declared_len as usize != payload_len {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Inventor Protein declares {declared_len} bytes but stores {payload_len}"
         )));
     }
@@ -163,7 +163,7 @@ fn validate_entry_name(name: &str) -> Result<(), CodecError> {
             .split('/')
             .any(|component| matches!(component, "" | "." | ".."))
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Inventor Protein package has unsafe entry name {name:?}"
         )));
     }

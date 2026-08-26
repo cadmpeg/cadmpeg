@@ -408,7 +408,7 @@ fn frame_sections(
         })?;
         if section != Some(current) {
             if section.is_some_and(|previous| current <= previous) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "IGES section {} is out of order",
                     current.name()
                 )));
@@ -603,6 +603,15 @@ pub(crate) fn summarize(scan: &CardScan<'_>) -> ContainerSummary {
         container_kind: "fixed-ascii".into(),
         entries,
         notes: vec![format!("source_bytes={}", scan.source.len())],
+    }
+}
+
+impl CardScan<'_> {
+    pub(crate) fn post_terminate_count(&self) -> usize {
+        self.lines
+            .iter()
+            .position(|line| line.section == Some(Section::Terminate))
+            .map_or(0, |index| self.lines.len().saturating_sub(index + 1))
     }
 }
 

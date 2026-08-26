@@ -6,6 +6,7 @@
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use std::ops::Range;
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::CurveGeometry;
 
 use crate::chunks::{
@@ -1817,14 +1818,21 @@ fn read_mesh_sides(
             reader.skip(chunk.next_offset - reader.position())?;
             warnings.push(format!("Brep mesh cache degraded: {error}"));
             Ok((
-                vec![
+                alloc_filled(
+                    face_count,
                     RawBrepMeshSlot {
                         mesh: None,
                         present: false,
                         userdata: Vec::new(),
-                    };
-                    face_count
-                ],
+                    },
+                    "Rhino Brep degraded mesh slots",
+                )
+                .map_err(|allocation| {
+                    GeometryError::malformed(
+                        chunk.range().start,
+                        format!("Brep degraded mesh allocation refused: {allocation}"),
+                    )
+                })?,
                 chunk.range(),
             ))
         }
@@ -2270,7 +2278,14 @@ fn typed_slot(array: &RawBrepChildren, index: i32, expected: RawBrepBaseType) ->
 }
 
 fn validate_edge_incidences(raw: &RawBrep) -> Result<(), GeometryError> {
-    let mut actual = vec![Vec::new(); raw.vertices.len()];
+    let mut actual = alloc_filled(
+        raw.vertices.len(),
+        Vec::<i32>::new(),
+        "Rhino Brep vertex edge incidences",
+    )
+    .map_err(|error| {
+        GeometryError::malformed(0, format!("Brep incidence allocation refused: {error}"))
+    })?;
     for (vertex, record) in raw.vertices.iter().enumerate() {
         for edge in &record.edges {
             actual[vertex].push(*edge);

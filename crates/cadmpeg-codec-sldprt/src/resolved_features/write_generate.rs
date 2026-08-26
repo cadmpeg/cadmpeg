@@ -172,7 +172,7 @@ pub(super) fn append_generated_sketch_markers(
     {
         for (point, locus) in sketch_entity_loci(entity) {
             let local_id = u16::try_from(next_id).map_err(|_| {
-                cadmpeg_core::CodecError::Malformed(format!(
+                cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT sketch {} exceeds the marker-local id space",
                     sketch.id.0
                 ))
@@ -263,7 +263,7 @@ pub(super) fn append_generated_sketch_markers(
         };
         if let Some(owner) = reverse_owner {
             let relation_id = u16::try_from(next_id).map_err(|_| {
-                cadmpeg_core::CodecError::Malformed(format!(
+                cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT sketch {} exceeds the marker-local id space",
                     sketch.id.0
                 ))
@@ -456,14 +456,14 @@ pub(super) fn append_generated_sketch_markers(
             .iter()
             .find(|candidate| candidate.id == *parameter)
             .ok_or_else(|| {
-                cadmpeg_core::CodecError::Malformed(format!(
+                cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT dimension references missing parameter {}",
                     parameter.0
                 ))
             })?;
         let value = match (&parameter.value, class) {
             (Some(cadmpeg_ir::features::ParameterValue::Length(_)), "sgAnglDim") => {
-                return Err(cadmpeg_core::CodecError::Malformed(format!(
+                return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT angular dimension {} has a length value",
                     parameter.id.0
                 )));
@@ -471,7 +471,7 @@ pub(super) fn append_generated_sketch_markers(
             (Some(cadmpeg_ir::features::ParameterValue::Angle(value)), "sgAnglDim") => value.0,
             (Some(cadmpeg_ir::features::ParameterValue::Length(value)), _) => value.0 * 0.001,
             _ => {
-                return Err(cadmpeg_core::CodecError::Malformed(format!(
+                return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT dimension parameter {} has no compatible evaluated value",
                     parameter.id.0
                 )));
@@ -675,7 +675,7 @@ fn generated_operand_address(
             ))
         })?;
     u16::try_from(ordinal).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed(format!(
+        cadmpeg_core::CodecError::malformed(format_args!(
             "source-less SLDPRT sketch {} exceeds the dimension operand space",
             sketch.id.0
         ))

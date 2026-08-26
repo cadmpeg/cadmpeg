@@ -177,7 +177,8 @@ fn completed_adjacent_branches_fix_same_incidence_allocation_rank() {
     let mut partial = crossed;
     partial[0] = None;
     partial[1] = None;
-    let groups = standard_curve_branch_groups(&supports, &candidates);
+    let groups =
+        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
 
     assert!(standard_curve_branch_assignment_is_ranked(
         &supports,
@@ -226,7 +227,8 @@ fn standard_spline_branch_rank_uses_complete_relation_after_mesh_frontier_prunin
         vec![[0, 2], [1, 2], [2, 4]],
         vec![[0, 3], [1, 3], [3, 4]],
     ];
-    let groups = standard_curve_branch_groups(&supports, &candidates);
+    let groups =
+        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
     let ranked = [Some([0, 1]), Some([2, 3]), Some([0, 2]), Some([1, 3])];
     let crossed = [Some([0, 1]), Some([2, 3]), Some([1, 2]), Some([0, 3])];
 
@@ -271,7 +273,8 @@ fn standard_spline_branch_candidates_narrow_after_fixed_frontiers() {
         vec![[0, 2], [1, 2], [2, 4]],
         vec![[0, 3], [1, 3], [3, 4]],
     ];
-    let groups = standard_curve_branch_groups(&supports, &candidates);
+    let groups =
+        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
     let assignment = [Some([0, 1]), Some([2, 3]), None, None];
     let narrowed = standard_curve_branch_candidates_after_partial_assignment(
         &supports,

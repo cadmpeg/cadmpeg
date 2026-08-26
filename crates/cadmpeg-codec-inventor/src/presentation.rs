@@ -531,7 +531,7 @@ fn parse_graphics_primary_color_style(
     let terminal_state = cursor.u8("graphics primary-color terminal state")?;
     let suffix = cursor.remainder()?;
     if !suffix.window().is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "PmGraphics primary-color record has {} trailing bytes",
             suffix.window().len()
         )));
@@ -568,7 +568,7 @@ fn parse_graphics_style_collection(
     } = cursor.reference_list(ctx, "graphics-style collection")?;
     let suffix = cursor.remainder()?;
     if !suffix.window().is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "PmGraphics style-collection record has {} trailing bytes",
             suffix.window().len()
         )));
@@ -632,7 +632,7 @@ fn parse_graphics_face(
     ];
     let suffix = cursor.remainder()?;
     if !suffix.window().is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "PmGraphics face record has {} trailing bytes",
             suffix.window().len()
         )));
@@ -693,7 +693,7 @@ fn parse_default_style<'a>(
     }
     let suffix = cursor.remainder()?;
     if !suffix.window().is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "PmApp default-style record has {} trailing bytes",
             suffix.window().len()
         )));
@@ -836,7 +836,7 @@ impl<'a> Cursor<'a> {
 
     fn zeroes(&mut self, len: usize, field: &str) -> Result<(), CodecError> {
         if self.take(len, field)?.iter().any(|byte| *byte != 0) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Inventor presentation {field} is not zero-filled"
             )));
         }
@@ -866,7 +866,7 @@ impl<'a> Cursor<'a> {
     fn reference(&mut self, field: &str) -> Result<u32, CodecError> {
         let value = self.u32(field)?;
         if value != 0 && value & 0x8000_0000 == 0 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Inventor presentation {field} lacks its reference qualifier"
             )));
         }
@@ -888,7 +888,7 @@ impl<'a> Cursor<'a> {
             self.u16(&format!("{field} marker 1"))?,
         ];
         if marker != [2, 0x3000] {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "PmGraphics {field} has marker {marker:?}, expected [2, 12288]"
             )));
         }
@@ -920,12 +920,12 @@ impl<'a> Cursor<'a> {
     fn utf16(&mut self, ctx: &DecodeContext<'_>, field: &str) -> Result<String, CodecError> {
         let units = self.u32(&format!("{field} length"))? as usize;
         if units > 1_048_576 {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Inventor presentation {field} exceeds 1048576 UTF-16 code units"
             )));
         }
         let byte_len = units.checked_mul(2).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "Inventor presentation {field} byte length overflows"
             ))
         })?;
@@ -934,7 +934,9 @@ impl<'a> Cursor<'a> {
             .utf16_le(units)
             .map(|value| value.trim_end_matches('\0').to_owned())
             .ok_or_else(|| {
-                CodecError::Malformed(format!("Inventor presentation {field} is invalid UTF-16"))
+                CodecError::malformed(format_args!(
+                    "Inventor presentation {field} is invalid UTF-16"
+                ))
             })
     }
 

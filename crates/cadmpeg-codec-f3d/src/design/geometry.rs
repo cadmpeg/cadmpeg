@@ -312,7 +312,7 @@ pub(crate) fn sketch_arrangement_faces(
     for uses in &mut outgoing {
         uses.sort_by(|left, right| left.2.total_cmp(&right.2));
     }
-    let mut visited = vec![[false; 2]; edges.len()];
+    let mut visited = alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits").ok()?;
     let mut faces = Vec::new();
     for edge_index in 0..edges.len() {
         for reversed in [false, true] {

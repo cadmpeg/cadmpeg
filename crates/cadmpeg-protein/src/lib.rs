@@ -44,7 +44,7 @@ fn read_entry_bounded(
     name: &str,
 ) -> Result<Vec<u8>, CodecError> {
     if declared_size > MAX_SCHEMA_BYTES {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Protein schema {name} exceeds the {MAX_SCHEMA_BYTES}-byte limit"
         )));
     }
@@ -67,7 +67,7 @@ fn read_entry_bounded(
         bytes.extend_from_slice(&chunk[..read]);
     }
     if bytes.len() as u64 > MAX_SCHEMA_BYTES {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Protein schema {name} exceeds the {MAX_SCHEMA_BYTES}-byte limit"
         )));
     }
@@ -306,16 +306,16 @@ fn is_schema_entry(name: &str) -> bool {
 
 fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(protein)).map_err(|error| {
-        CodecError::Malformed(format!("cannot open nested Protein ZIP: {error}"))
+        CodecError::malformed(format_args!("cannot open nested Protein ZIP: {error}"))
     })?;
     let mut schemas = HashMap::new();
     let mut entry_names = BTreeSet::new();
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| {
-            CodecError::Malformed(format!("cannot read nested Protein entry: {error}"))
+            CodecError::malformed(format_args!("cannot read nested Protein entry: {error}"))
         })?;
         if !entry_names.insert(entry.name().to_owned()) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Protein archive defines entry {} more than once",
                 entry.name()
             )));
@@ -327,17 +327,21 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
         let name = entry.name().to_owned();
         let bytes = read_entry_bounded(&mut entry, size, &name)?;
         let xml = std::str::from_utf8(&bytes).map_err(|error| {
-            CodecError::Malformed(format!("Protein schema {name} is not UTF-8: {error}"))
+            CodecError::malformed(format_args!("Protein schema {name} is not UTF-8: {error}"))
         })?;
         let document = roxmltree::Document::parse(xml).map_err(|error| {
-            CodecError::Malformed(format!("Protein schema {name} is malformed XML: {error}"))
+            CodecError::malformed(format_args!(
+                "Protein schema {name} is malformed XML: {error}"
+            ))
         })?;
         let root = document.root_element();
         let uid = root
             .children()
             .find(|node| node.has_tag_name("UID"))
             .and_then(|node| node.attribute("val"))
-            .ok_or_else(|| CodecError::Malformed(format!("Protein schema {name} has no UID")))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("Protein schema {name} has no UID"))
+            })?;
         let mut schema = Schema::default();
         for node in root.children().filter(roxmltree::Node::is_element) {
             if node.has_tag_name("Base") {
@@ -371,7 +375,7 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
             );
         }
         if schemas.insert(uid.to_owned(), schema).is_some() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Protein archive defines schema {uid} more than once"
             )));
         }
@@ -402,12 +406,14 @@ fn property_closure(
     active: &mut BTreeSet<String>,
 ) -> Result<BTreeMap<String, Property>, CodecError> {
     if !active.insert(name.to_owned()) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Protein schema inheritance contains a cycle at {name}"
         )));
     }
     let schema = schemas.get(name).ok_or_else(|| {
-        CodecError::Malformed(format!("Protein instance references absent schema {name}"))
+        CodecError::malformed(format_args!(
+            "Protein instance references absent schema {name}"
+        ))
     })?;
     let mut properties = match schema.base.as_deref() {
         Some(base) => property_closure(base, schemas, active)?,
@@ -455,7 +461,7 @@ fn decode_record(
             && matches!(property.carrier, Carrier::UnitFloat | Carrier::Distance)
         {
             property_at.checked_add(4).ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "Protein {schema} instance {guid} property {id} offset overflows usize"
                 ))
             })?
@@ -463,14 +469,14 @@ fn decode_record(
             property_at
         };
         let value = read_property(record, &mut at, &property, &id).map_err(|error| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "Protein {schema} instance {guid} property {id} at {property_at}..{at}/{}: {error}",
                 record.len()
             ))
         })?;
         let connections = if property.connectable || property.carrier == Carrier::Reference {
             read_connections(record, &mut at).map_err(|error| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "Protein {schema} instance {guid} property {id} connection at {at}/{}: {error}",
                     record.len()
                 ))
@@ -488,7 +494,7 @@ fn decode_record(
         );
     }
     if at != record.len() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Protein {schema} instance {guid} consumed {at} of {} record bytes",
             record.len()
         )));
@@ -542,7 +548,7 @@ fn read_property(
 /// A `TextureURI` value: a kind byte, then either a counted list of paths
 /// (kind 0, used for cloud resource references) or a single path (kind 1).
 fn read_texture_uri(bytes: &[u8], at: &mut usize, id: &str) -> Result<PropertyValue, CodecError> {
-    let malformed = || CodecError::Malformed(format!("Protein property {id} is truncated"));
+    let malformed = || CodecError::malformed(format_args!("Protein property {id} is truncated"));
     let kind = take::<1>(bytes, at).ok_or_else(malformed)?[0];
     if kind == 1 {
         return Ok(PropertyValue::TextureUri(vec![take_lp_utf8_capped(
@@ -551,7 +557,7 @@ fn read_texture_uri(bytes: &[u8], at: &mut usize, id: &str) -> Result<PropertyVa
         .ok_or_else(malformed)?]));
     }
     if kind != 0 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Protein TextureURI property {id} has invalid kind {kind}"
         )));
     }
@@ -565,11 +571,11 @@ fn read_texture_uri(bytes: &[u8], at: &mut usize, id: &str) -> Result<PropertyVa
 
 fn read_count(bytes: &[u8], at: &mut usize, id: &str) -> Result<usize, CodecError> {
     let raw = take(bytes, at)
-        .ok_or_else(|| CodecError::Malformed(format!("Protein property {id} is truncated")))?;
+        .ok_or_else(|| CodecError::malformed(format_args!("Protein property {id} is truncated")))?;
     let count = usize::try_from(u32::from_le_bytes(raw))
         .map_err(|_| CodecError::Malformed("Protein value count exceeds usize".into()))?;
     if count > 1_024 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Protein property {id} has implausible value count {count}"
         )));
     }
@@ -582,7 +588,7 @@ fn read_value(
     carrier: Carrier,
     id: &str,
 ) -> Result<PropertyValue, CodecError> {
-    let malformed = || CodecError::Malformed(format!("Protein property {id} is truncated"));
+    let malformed = || CodecError::malformed(format_args!("Protein property {id} is truncated"));
     Ok(match carrier {
         Carrier::Boolean => {
             PropertyValue::Boolean(take::<1>(bytes, at).ok_or_else(malformed)?[0] != 0)
@@ -630,7 +636,7 @@ fn finite_value(value: f64, id: &str) -> Result<f64, CodecError> {
     value
         .is_finite()
         .then_some(value)
-        .ok_or_else(|| CodecError::Malformed(format!("Protein property {id} is not finite")))
+        .ok_or_else(|| CodecError::malformed(format_args!("Protein property {id} is not finite")))
 }
 
 /// The connection block that follows every connectable member and every
@@ -646,7 +652,7 @@ fn read_connections(bytes: &[u8], at: &mut usize) -> Result<Vec<String>, CodecEr
         return Ok(Vec::new());
     }
     if present != [1] {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Protein property has invalid connection flag {}",
             present[0]
         )));
@@ -655,7 +661,7 @@ fn read_connections(bytes: &[u8], at: &mut usize) -> Result<Vec<String>, CodecEr
         CodecError::Malformed("Protein property connection kind is truncated".into())
     })?;
     if kind != [1] {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "Protein property has invalid connection kind {}",
             kind[0]
         )));

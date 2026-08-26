@@ -21,8 +21,8 @@ use super::equations::{
 use super::pcurves::{directed_pcurve_points, pcurve_edge_endpoints, solve_pcurve_vertex_domains};
 use super::planes::{solve_carriers, valid_positive_nurbs_curve};
 
-const EPS_AGREE: f64 = 1e-9;
-const EPS_NEAR_ZERO: f64 = 1e-12;
+const EPS_AGREE: f64 = 1.0e-9;
+const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
 pub fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
     let scale = first

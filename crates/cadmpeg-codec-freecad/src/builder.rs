@@ -116,7 +116,7 @@ impl FcstdDocumentBuilder {
         let name = name.into();
         valid_identifier(&name, "object")?;
         if self.objects.iter().any(|object| object.name == name) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate source-less FCStd object {name}"
             )));
         }
@@ -136,7 +136,7 @@ impl FcstdDocumentBuilder {
         dependency: &str,
     ) -> Result<&mut Self, CodecError> {
         if object == dependency {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "FCStd object {object} cannot depend on itself"
             )));
         }
@@ -145,7 +145,7 @@ impl FcstdDocumentBuilder {
             .iter()
             .any(|candidate| candidate.name == dependency)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "missing FCStd dependency object {dependency}"
             )));
         }
@@ -153,9 +153,9 @@ impl FcstdDocumentBuilder {
             .objects
             .iter_mut()
             .find(|candidate| candidate.name == object)
-            .ok_or_else(|| CodecError::Malformed(format!("missing FCStd object {object}")))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("missing FCStd object {object}")))?;
         if target.dependencies.iter().any(|name| name == dependency) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate FCStd dependency {object} -> {dependency}"
             )));
         }
@@ -175,7 +175,7 @@ impl FcstdDocumentBuilder {
             .objects
             .iter_mut()
             .find(|candidate| candidate.name == object)
-            .ok_or_else(|| CodecError::Malformed(format!("missing FCStd object {object}")))?;
+            .ok_or_else(|| CodecError::malformed(format_args!("missing FCStd object {object}")))?;
         let name = name.into();
         valid_identifier(&name, "property")?;
         if target
@@ -183,7 +183,7 @@ impl FcstdDocumentBuilder {
             .iter()
             .any(|property| property.name == name)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "duplicate FCStd property {object}.{name}"
             )));
         }
@@ -213,7 +213,7 @@ impl FcstdDocumentBuilder {
             || name == "Document.xml"
             || self.side_entries.iter().any(|(entry, _)| entry == &name)
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid or duplicate source-less FCStd entry {name:?}"
             )));
         }
@@ -364,7 +364,7 @@ fn validate_value(value: &FcstdPropertyValue) -> Result<(), CodecError> {
         valid_identifier(attribute, "value attribute")?;
     }
     if value.text.is_some() && !value.children.is_empty() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "FCStd value {} cannot contain both text and child elements",
             value.tag
         )));
@@ -387,7 +387,7 @@ fn valid_identifier(value: &str, role: &str) -> Result<(), CodecError> {
                 || character.is_ascii_alphanumeric()
         });
     if !valid {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "invalid FCStd {role} identifier {value:?}"
         )));
     }

@@ -78,7 +78,7 @@ pub(super) fn sketch_brep(
             .iter()
             .map(|entity_use| {
                 let entity = entities.get(&entity_use.entity).ok_or_else(|| {
-                    cadmpeg_core::CodecError::Malformed(format!(
+                    cadmpeg_core::CodecError::malformed(format_args!(
                         "sketch {} references missing entity {}",
                         sketch.id.0, entity_use.entity.0
                     ))
@@ -104,7 +104,7 @@ pub(super) fn sketch_brep(
         let mut coedge_ids = Vec::new();
         for (use_index, entity_use) in profile.iter().enumerate() {
             let entity = entities.get(&entity_use.entity).ok_or_else(|| {
-                cadmpeg_core::CodecError::Malformed(format!(
+                cadmpeg_core::CodecError::malformed(format_args!(
                     "sketch {} references missing entity {}",
                     sketch.id.0, entity_use.entity.0
                 ))
@@ -137,7 +137,7 @@ pub(super) fn sketch_brep(
             );
             let length = delta.norm();
             if length == 0.0 && matches!(entity.geometry, SketchGeometry::Line { .. }) {
-                return Err(cadmpeg_core::CodecError::Malformed(format!(
+                return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "sketch entity {} has zero length",
                     entity.id.0
                 )));
@@ -516,7 +516,7 @@ pub(super) fn patch_line_profiles(
             .filter(|entity| entity.sketch == sketch.id)
         {
             if entity.endpoint_refs.len() != 2 {
-                return Err(cadmpeg_core::CodecError::Malformed(format!(
+                return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "SLDPRT sketch entity {} lacks two endpoint references",
                     entity.id.0
                 )));
@@ -529,7 +529,7 @@ pub(super) fn patch_line_profiles(
                     let key = (lane_id.clone(), stream, attr);
                     if let Some(previous) = requested.insert(key, point) {
                         if distance(previous, point) > 1.0e-9 {
-                            return Err(cadmpeg_core::CodecError::Malformed(format!(
+                            return Err(cadmpeg_core::CodecError::malformed(format_args!(
                                 "SLDPRT shared sketch point {reference} has conflicting positions"
                             )));
                         }
@@ -542,7 +542,7 @@ pub(super) fn patch_line_profiles(
                         let key = (lane_id.clone(), stream, attr);
                         if let Some(previous) = requested.insert(key, point) {
                             if distance(previous, point) > 1.0e-9 {
-                                return Err(cadmpeg_core::CodecError::Malformed(format!(
+                                return Err(cadmpeg_core::CodecError::malformed(format_args!(
                                     "SLDPRT shared sketch point {reference} has conflicting positions"
                                 )));
                             }
@@ -568,7 +568,7 @@ pub(super) fn patch_line_profiles(
                             let key = (lane_id.clone(), point_stream, attr);
                             if let Some(previous) = requested.insert(key, point) {
                                 if distance(previous, point) > 1.0e-9 {
-                                    return Err(cadmpeg_core::CodecError::Malformed(format!(
+                                    return Err(cadmpeg_core::CodecError::malformed(format_args!(
                                         "SLDPRT shared sketch point {reference} has conflicting positions"
                                     )));
                                 }
@@ -601,7 +601,7 @@ pub(super) fn patch_line_profiles(
             .iter_mut()
             .find(|lane| lane.id == lane_id)
             .ok_or_else(|| {
-                cadmpeg_core::CodecError::Malformed(format!(
+                cadmpeg_core::CodecError::malformed(format_args!(
                     "SLDPRT sketch lane {lane_id} is missing"
                 ))
             })?;
@@ -613,7 +613,7 @@ pub(super) fn patch_line_profiles(
             .iter_mut()
             .find(|lane| lane.id == request.lane_id)
             .ok_or_else(|| {
-                cadmpeg_core::CodecError::Malformed(format!(
+                cadmpeg_core::CodecError::malformed(format_args!(
                     "SLDPRT sketch lane {} is missing",
                     request.lane_id
                 ))
@@ -678,14 +678,14 @@ struct CurvePatch {
 
 fn parse_point_ref(reference: &str) -> Result<(usize, u16), cadmpeg_core::CodecError> {
     let (stream, id) = reference.split_once(':').ok_or_else(|| {
-        cadmpeg_core::CodecError::Malformed(format!(
+        cadmpeg_core::CodecError::malformed(format_args!(
             "invalid SLDPRT sketch endpoint reference {reference}"
         ))
     })?;
     let attr = id.rsplit('#').next().and_then(|value| value.parse().ok());
     match (stream.parse().ok(), attr) {
         (Some(stream), Some(attr)) => Ok((stream, attr)),
-        _ => Err(cadmpeg_core::CodecError::Malformed(format!(
+        _ => Err(cadmpeg_core::CodecError::malformed(format_args!(
             "invalid SLDPRT sketch endpoint reference {reference}"
         ))),
     }
@@ -714,7 +714,7 @@ fn patch_direct_stream_point(
     let xyz_m = [point_mm.x * 0.001, point_mm.y * 0.001, point_mm.z * 0.001];
     edit_stream(payload, stream_ordinal, |body| {
         if !crate::brep::patch_point(body, attr, xyz_m) {
-            return Err(cadmpeg_core::CodecError::Malformed(format!(
+            return Err(cadmpeg_core::CodecError::malformed(format_args!(
                 "SLDPRT sketch point {attr} is missing"
             )));
         }

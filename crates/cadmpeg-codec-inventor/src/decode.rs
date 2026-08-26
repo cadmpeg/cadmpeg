@@ -1647,7 +1647,9 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         source_fidelity
             .attach_native_unknown_records(&mut ir, "inventor", kernel_unknowns)
             .map_err(|error| {
-                CodecError::Malformed(format!("Inventor kernel unknown retention failed: {error}"))
+                CodecError::malformed(format_args!(
+                    "Inventor kernel unknown retention failed: {error}"
+                ))
             })?;
     }
     source_fidelity.finalize();

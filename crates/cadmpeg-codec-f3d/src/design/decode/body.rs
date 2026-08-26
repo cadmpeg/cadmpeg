@@ -411,19 +411,19 @@ pub(crate) fn body_bindings(
 
         for &entity_id in &design_type.entity_ids {
             if !typed_entities.insert(entity_id) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D Design body-map carrier entity {entity_id} is registered more than once"
                 )));
             }
             let record_ordinal = match primary_by_entity.get(&entity_id) {
                 Some(Some(record_ordinal)) => *record_ordinal,
                 Some(None) => {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                     "F3D Design body-map carrier entity {entity_id} has multiple primary records"
                 )))
                 }
                 None => {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "F3D Design body-map carrier entity {entity_id} has no primary record"
                     )))
                 }
@@ -432,7 +432,7 @@ pub(crate) fn body_bindings(
             let start = frame.start;
             let end = frame.end;
             let record_index = u32::try_from(entity_id).map_err(|_| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "F3D Design body-map carrier entity {entity_id} exceeds u32"
                 ))
             })?;
@@ -443,7 +443,7 @@ pub(crate) fn body_bindings(
                 || View::u32_le_at(bytes, start + indexed_header::RECORD_INDEX)
                     != Some(record_index)
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D Design body-map carrier entity {entity_id} has an invalid indexed header"
                 )));
             }
@@ -454,7 +454,7 @@ pub(crate) fn body_bindings(
                     continue;
                 };
                 if matched.replace(bindings).is_some() {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "F3D Design body-map carrier entity {entity_id} has an ambiguous frame"
                     )));
                 }
@@ -489,7 +489,7 @@ fn parse_body_map_frame(
         return Ok(None);
     };
     let count = usize::try_from(pair_count).map_err(|_| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "F3D Design body map at byte {start} pair count does not fit this platform"
         ))
     })?;
@@ -529,7 +529,7 @@ fn parse_body_map_frame(
 
     let mut bindings = Vec::new();
     bindings.try_reserve(count).map_err(|_| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "F3D Design body map at byte {start} pair count exceeds decoder capacity"
         ))
     })?;
@@ -538,7 +538,7 @@ fn parse_body_map_frame(
         let (Some(key), Some(suffix)) =
             (View::u64_le_at(bytes, at), View::u64_le_at(bytes, at + 8))
         else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D Design body map at byte {start} has a truncated pair run"
             )));
         };

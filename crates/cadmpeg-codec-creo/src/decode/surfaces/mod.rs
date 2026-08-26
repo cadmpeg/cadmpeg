@@ -32,6 +32,8 @@ pub(super) use transfer_curves::*;
 
 use std::collections::BTreeMap;
 
+const EPS_CAP_AXIS_ALIGNMENT: f64 = 1.0e-9;
+
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, OccurrenceId, ProductDefinitionId, SurfaceId};
@@ -180,7 +182,9 @@ pub(super) fn transfer_fc05_cap_circles(
         ) else {
             continue;
         };
-        let Some(axis_index) = (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - 1e-9) else {
+        let Some(axis_index) =
+            (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - EPS_CAP_AXIS_ALIGNMENT)
+        else {
             continue;
         };
         let [first, second] = circle.center_row_frame;

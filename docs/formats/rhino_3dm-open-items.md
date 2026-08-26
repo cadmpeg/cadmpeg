@@ -587,3 +587,84 @@ must fail under the current disputed rule before that rule is changed.
 **Note.** The existing tests establish local framing and ordinary transfers;
 they do not close the selection questions because none supplies the competing
 candidate or boundary value that makes the arbitration observable.
+
+### PC-01. Polycurve endpoints moved to an invented midpoint
+
+**Question.** What neutral geometry can transfer from an `ON_PolyCurve` whose
+adjacent child endpoints do not agree?
+
+**Known.** `rhino_3dm.md` §12.6 states that the source validity rule rejects a
+gap between adjacent children. The same section defines a CADIR midpoint
+repair. `crates/cadmpeg-codec-rhino/src/curves.rs:912-931` computes the midpoint
+of every unequal adjacent endpoint pair, replaces the last control point of the
+preceding segment and the first control point of the next segment with that
+midpoint, and reports the distance moved. The joined neutral NURBS therefore
+contains neither source endpoint at that join.
+
+**Conflict.** The source object is invalid because it does not define one
+continuous join. The decoder creates a continuous curve by changing both
+source geometries and admits the result as the neutral carrier.
+
+**Need.** The answer keeps the ordered child carriers and their endpoint gap
+without claiming one continuous curve, or defines an explicit repaired
+geometry whose invented join and displacement remain queryable on that curve.
+The ordinary neutral carrier must not present the midpoint as source geometry.
+
+### BR-01. Region topology replaced by incidence-derived shells
+
+**Question.** What neutral region and shell structure can transfer when a
+minor-3 Brep's serialized region topology does not assign exactly one bounded
+region to each face?
+
+**Known.** The Brep stores explicit face-side and region records.
+`crates/cadmpeg-codec-rhino/src/decode.rs:4997-5060` uses those records only
+when every face has one bounded side. Otherwise
+`region_shell_groups_without_records` groups faces by edge-incidence component
+and assigns generated numeric region labels. The decoder commits those inferred
+shells and reports that incidence-derived shells were used. The source region
+records remain in native data but no longer determine the neutral ownership
+graph.
+
+**Need.** Edge incidence can identify connected face components, but it does
+not define the source's bounded-region membership. The answer withholds the
+region and shell projection when the explicit relationship is unusable, or
+represents the incidence grouping as inferred topology that cannot be mistaken
+for the serialized Brep regions.
+
+### WR-01. Unspecified loop role selected from neutral list order
+
+**Question.** Which Rhino loop type can the writer emit for a neutral loop whose
+`boundary_role` is `Unspecified`?
+
+**Known.** Rhino Brep loop types distinguish outer, inner, slit,
+curve-on-surface, and point-on-surface loops. `rhino_3dm.md` §15 states that an
+unspecified neutral role makes the first loop of a face outer and all remaining
+loops inner. `crates/cadmpeg-codec-rhino/src/writer.rs:1968-1985` implements
+that rule by comparing each loop with `face.loops.first()`. It does not use a
+declared neutral role or geometric containment to establish the distinction.
+
+**Need.** Neutral loop order is traversal order, not an outer-boundary
+declaration. The writer therefore creates Rhino topology semantics from list
+position. The answer requires explicit representable boundary roles, or derives
+the roles through a stated geometric containment result with an explicit
+inference status. It must not silently classify the first loop as outer.
+
+### LY-01. Duplicate layer identity rewritten during decode
+
+**Question.** What neutral identity and archive index can a later layer retain
+when its UUID or integer layer index duplicates an earlier layer record?
+
+**Known.** `crates/cadmpeg-codec-rhino/src/settings.rs:2417-2428` keeps every
+typed layer but assigns archive-identity ownership of a duplicate UUID to the
+first serialized record. `crates/cadmpeg-codec-rhino/src/settings.rs:2495-2512`
+keeps the first occurrence of a duplicate integer index and replaces each later
+layer's index with the next unused value above the existing range. `LayerRecord`
+has no separate original-index field, so the typed layer record retains the
+generated value in place of its serialized index. A duplicate-resolution loss
+reports the rewrite.
+
+**Need.** A generated index was not declared by the archive and can be confused
+with a valid source layer index. First-record UUID ownership also does not give
+the later record a distinct source identity. The answer preserves each
+serialized identity and represents the collision explicitly, or withholds the
+ambiguous archive-reference binding without manufacturing a replacement index.

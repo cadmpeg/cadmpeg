@@ -24,11 +24,11 @@ pub(crate) use operands::{
 };
 
 /// Orthonormal-frame handedness acceptance for datum CS completeness.
-const EPS_ORTHONORMAL_FRAME: f64 = 1e-9;
+const EPS_ORTHONORMAL_FRAME: f64 = 1.0e-9;
 /// Unit-length acceptance for authored feature directions.
-const EPS_UNIT_DIRECTION: f64 = 1e-9;
+const EPS_UNIT_DIRECTION: f64 = 1.0e-9;
 /// Perpendicularity acceptance scaled by direction magnitudes.
-const EPS_PERPENDICULAR: f64 = 1e-9;
+const EPS_PERPENDICULAR: f64 = 1.0e-9;
 
 pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Feature) -> bool {
     feature.outputs.is_empty()

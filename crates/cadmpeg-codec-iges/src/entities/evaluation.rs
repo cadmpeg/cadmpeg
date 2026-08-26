@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact evaluation helpers for decoded neutral carriers.
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 
@@ -14,9 +15,10 @@ fn basis(knots: &[f64], degree: usize, count: usize, parameter: f64) -> Option<V
     } else {
         (degree..count).find(|index| knots[*index] <= parameter && parameter < knots[*index + 1])?
     };
-    let mut values = vec![0.0; degree + 1];
-    let mut left = vec![0.0; degree + 1];
-    let mut right = vec![0.0; degree + 1];
+    let degree_slots = degree.checked_add(1)?;
+    let mut values = alloc_filled(degree_slots, 0.0, "iges basis values").ok()?;
+    let mut left = alloc_filled(degree_slots, 0.0, "iges basis left knots").ok()?;
+    let mut right = alloc_filled(degree_slots, 0.0, "iges basis right knots").ok()?;
     values[0] = 1.0;
     for order in 1..=degree {
         left[order] = parameter - knots[span + 1 - order];
@@ -34,7 +36,7 @@ fn basis(knots: &[f64], degree: usize, count: usize, parameter: f64) -> Option<V
         }
         values[order] = saved;
     }
-    let mut result = vec![0.0; count];
+    let mut result = alloc_filled(count, 0.0, "iges basis result").ok()?;
     for (offset, value) in values.into_iter().enumerate() {
         result[span - degree + offset] = value;
     }

@@ -46,6 +46,7 @@
           "annotations": [
             {
               "declared_string_count": 2,
+              "form": 0,
               "id": "iges:presentation:annotation#D1",
               "kind": "general_note",
               "source_entity": "iges:entity:directory#1",
@@ -103,69 +104,27 @@
             },
             {
               "baseline_origin": [
-                0.0,
-                18.0,
-                0.0
+                null,
+                null,
+                null
               ],
-              "containment_angle": 0.0,
+              "containment_angle": null,
               "containment_origin": [
-                0.0,
-                20.0,
-                0.0
+                null,
+                null,
+                null
               ],
               "containment_size": [
-                40.0,
-                20.0
+                null,
+                null
               ],
-              "declared_string_count": 1,
+              "declared_string_count": null,
               "id": "iges:presentation:annotation#D3",
-              "justification": 2,
+              "justification": null,
               "kind": "new_general_note",
-              "normal_interline_spacing": -5.0,
+              "normal_interline_spacing": null,
               "source_entity": "iges:entity:directory#3",
-              "strings": [
-                {
-                  "character_angle": 0.0,
-                  "character_size": [
-                    2.0,
-                    3.0
-                  ],
-                  "character_spacing": -0.5,
-                  "control_codes": [
-                    84,
-                    85,
-                    78,
-                    76
-                  ],
-                  "fixed_or_variable": 0,
-                  "font_style": 18,
-                  "line_spacing": 0.0,
-                  "text": {
-                    "box_size": [
-                      12.0,
-                      3.0
-                    ],
-                    "declared_character_count": 4,
-                    "font_code": 1,
-                    "font_definition": null,
-                    "mirror": 0,
-                    "rotation_angle": 0.0,
-                    "slant_angle": 1.5707963267948966,
-                    "start": [
-                      2.0,
-                      18.0,
-                      0.0
-                    ],
-                    "text": [
-                      84,
-                      79,
-                      76,
-                      33
-                    ],
-                    "vertical": 0
-                  }
-                }
-              ],
+              "strings": [],
               "transformation": null
             }
           ],
@@ -1744,30 +1703,7 @@
               "association_links": [],
               "blank_status": 0,
               "color": 0,
-              "comment": [
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32
-              ],
+              "comment": [],
               "directory_sequence": 3,
               "entity_type": 213,
               "form": 0,
@@ -1788,7 +1724,71 @@
               "line_font": 0,
               "line_weight": 0,
               "links": [],
-              "parameter_bytes": [
+              "parameter_bytes": [],
+              "parameter_line_count": 2,
+              "parameter_line_end": null,
+              "parameter_line_start": null,
+              "parameter_start": 3,
+              "parameters": [],
+              "property_links": [],
+              "references": [],
+              "reserved": [
+                [
+                  32,
+                  32,
+                  32,
+                  32,
+                  32,
+                  32,
+                  32,
+                  32
+                ],
+                [
+                  32,
+                  32,
+                  32,
+                  32,
+                  32,
+                  32,
+                  32,
+                  32
+                ]
+              ],
+              "structure": 0,
+              "subordinate_status": 0,
+              "subscript": 0,
+              "transform": 0,
+              "use_flag": 1,
+              "view": 0
+            }
+          ],
+          "external_references": [],
+          "fem_entities": [],
+          "flashes": [],
+          "groups": [],
+          "line_fonts": [],
+          "manifold_solids": [],
+          "network_definitions": [],
+          "network_instances": [],
+          "primitive_solids": [],
+          "procedural_solids": [],
+          "product_occurrence_expansion": [
+            {
+              "depth_limit": 64,
+              "emitted": 0,
+              "id": "iges:product:occurrence-expansion#state",
+              "issues": [],
+              "output_limit": 100000,
+              "truncated": false
+            }
+          ],
+          "product_occurrences": [],
+          "product_properties": [],
+          "properties": [],
+          "quarantined_directory_records": [],
+          "quarantined_parameter_records": [
+            {
+              "bytes": [
                 50,
                 49,
                 51,
@@ -1853,6 +1853,22 @@
                 50,
                 44,
                 51,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                51,
+                80,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                51,
                 44,
                 49,
                 44,
@@ -1916,342 +1932,32 @@
                 32,
                 32,
                 32,
-                32
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                51,
+                80,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                52
               ],
-              "parameter_line_count": 2,
-              "parameter_line_end": 5,
-              "parameter_line_start": 3,
-              "parameter_start": 3,
-              "parameters": [
-                {
-                  "end": 3,
-                  "start": 0,
-                  "value": {
-                    "kind": "integer",
-                    "value": 213
-                  }
-                },
-                {
-                  "end": 6,
-                  "start": 4,
-                  "value": {
-                    "kind": "integer",
-                    "value": 40
-                  }
-                },
-                {
-                  "end": 9,
-                  "start": 7,
-                  "value": {
-                    "kind": "integer",
-                    "value": 20
-                  }
-                },
-                {
-                  "end": 11,
-                  "start": 10,
-                  "value": {
-                    "kind": "integer",
-                    "value": 2
-                  }
-                },
-                {
-                  "end": 13,
-                  "start": 12,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 16,
-                  "start": 14,
-                  "value": {
-                    "kind": "integer",
-                    "value": 20
-                  }
-                },
-                {
-                  "end": 18,
-                  "start": 17,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 20,
-                  "start": 19,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 22,
-                  "start": 21,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 25,
-                  "start": 23,
-                  "value": {
-                    "kind": "integer",
-                    "value": 18
-                  }
-                },
-                {
-                  "end": 27,
-                  "start": 26,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 30,
-                  "start": 28,
-                  "value": {
-                    "kind": "integer",
-                    "value": -5
-                  }
-                },
-                {
-                  "end": 32,
-                  "start": 31,
-                  "value": {
-                    "kind": "integer",
-                    "value": 1
-                  }
-                },
-                {
-                  "end": 34,
-                  "start": 33,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 36,
-                  "start": 35,
-                  "value": {
-                    "kind": "integer",
-                    "value": 2
-                  }
-                },
-                {
-                  "end": 38,
-                  "start": 37,
-                  "value": {
-                    "kind": "integer",
-                    "value": 3
-                  }
-                },
-                {
-                  "end": 43,
-                  "start": 39,
-                  "value": {
-                    "kind": "real",
-                    "value": -0.5
-                  }
-                },
-                {
-                  "end": 45,
-                  "start": 44,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 48,
-                  "start": 46,
-                  "value": {
-                    "kind": "integer",
-                    "value": 18
-                  }
-                },
-                {
-                  "end": 50,
-                  "start": 49,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 57,
-                  "start": 51,
-                  "value": {
-                    "kind": "string",
-                    "value": [
-                      84,
-                      85,
-                      78,
-                      76
-                    ]
-                  }
-                },
-                {
-                  "end": 59,
-                  "start": 58,
-                  "value": {
-                    "kind": "integer",
-                    "value": 4
-                  }
-                },
-                {
-                  "end": 62,
-                  "start": 60,
-                  "value": {
-                    "kind": "integer",
-                    "value": 12
-                  }
-                },
-                {
-                  "end": 64,
-                  "start": 63,
-                  "value": {
-                    "kind": "integer",
-                    "value": 3
-                  }
-                },
-                {
-                  "end": 66,
-                  "start": 65,
-                  "value": {
-                    "kind": "integer",
-                    "value": 1
-                  }
-                },
-                {
-                  "end": 85,
-                  "start": 67,
-                  "value": {
-                    "kind": "real",
-                    "value": 1.5707963267948966
-                  }
-                },
-                {
-                  "end": 87,
-                  "start": 86,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 89,
-                  "start": 88,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 91,
-                  "start": 90,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 93,
-                  "start": 92,
-                  "value": {
-                    "kind": "integer",
-                    "value": 2
-                  }
-                },
-                {
-                  "end": 96,
-                  "start": 94,
-                  "value": {
-                    "kind": "integer",
-                    "value": 18
-                  }
-                },
-                {
-                  "end": 98,
-                  "start": 97,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 105,
-                  "start": 99,
-                  "value": {
-                    "kind": "string",
-                    "value": [
-                      84,
-                      79,
-                      76,
-                      33
-                    ]
-                  }
-                }
-              ],
-              "property_links": [],
-              "references": [],
-              "reserved": [
-                [
-                  32,
-                  32,
-                  32,
-                  32,
-                  32,
-                  32,
-                  32,
-                  32
-                ],
-                [
-                  32,
-                  32,
-                  32,
-                  32,
-                  32,
-                  32,
-                  32,
-                  32
-                ]
-              ],
-              "structure": 0,
-              "subordinate_status": 0,
-              "subscript": 0,
-              "transform": 0,
-              "use_flag": 1,
-              "view": 0
+              "cards": 2,
+              "defect": "numeric-crosses-card",
+              "id": "iges:quarantine:parameter#3",
+              "section": "parameter-data",
+              "sequence": 3,
+              "source_offset": 729
             }
           ],
-          "external_references": [],
-          "groups": [],
-          "line_fonts": [],
-          "network_definitions": [],
-          "network_instances": [],
-          "primitive_solids": [],
-          "procedural_solids": [],
-          "product_occurrence_expansion": [
-            {
-              "depth_limit": 64,
-              "emitted": 0,
-              "id": "iges:product:occurrence-expansion#state",
-              "issues": [],
-              "output_limit": 100000,
-              "truncated": false
-            }
-          ],
-          "product_occurrences": [],
-          "product_properties": [],
-          "properties": [],
-          "quarantined_directory_records": [],
-          "quarantined_parameter_records": [],
           "rectangular_arrays": [],
           "segmented_visibility": [],
           "selected_components": [],
@@ -2266,7 +1972,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 3
+        "version": 6
       }
     },
     "source": {
@@ -2295,13 +2001,29 @@
     "container_only": false,
     "format": "iges",
     "geometry_transferred": true,
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "parameter.data-quarantined",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "iges"
+        },
+        "message": "IGES Parameter Data of D3 (P3 through P4) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
+        "provenance": {
+          "format": "iges",
+          "offset": 792,
+          "stream": "iges",
+          "tag": "D3:parameter"
+        },
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "entities=2",
       "entity.212.form.0=1",
       "entity.213.form.0=1",
-      "parameter_records=2",
-      "parameter_tokens=59",
+      "parameter_records=1",
+      "parameter_tokens=26",
       "external_references=0"
     ],
     "transfer_ledger": {
@@ -2314,9 +2036,15 @@
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
+          "note": "native record retained; semantic projection omitted with an attributed loss",
           "source": "D3",
           "target": "iges:entity:directory#3"
+        },
+        {
+          "disposition": "retained",
+          "note": "quarantined parameter data retained; tokens were not recovered",
+          "source": "D3:parameter",
+          "target": "iges:quarantine:parameter#3"
         }
       ]
     }

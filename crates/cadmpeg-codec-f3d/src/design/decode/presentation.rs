@@ -85,20 +85,20 @@ pub(crate) fn browser_node_records(
                 .as_deref()
                 .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D Design browser-node entity {} has incompatible registration metadata",
                 frame.entity_id
             )));
         }
         let record = &bytes[frame.start..frame.end];
         let record_index = View::u32_le_at(record, 7).ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "F3D Design browser-node entity {} has a truncated record index",
                 frame.entity_id
             ))
         })?;
         if u64::from(record_index) != frame.entity_id || record.get(11..21) != Some(&[0; 10]) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D Design browser-node entity {} has an invalid header",
                 frame.entity_id
             )));
@@ -118,7 +118,7 @@ pub(crate) fn browser_node_records(
             CodecError::Malformed("F3D Design browser-node flag is truncated".into())
         })?
         else {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D Design browser-node entity {} has an invalid hidden flag",
                 frame.entity_id
             )));
@@ -162,7 +162,7 @@ pub(crate) fn body_presentations(
                 .as_deref()
                 .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D Design body-presentation entity {} has incompatible registration metadata",
                 frame.entity_id
             )));
@@ -178,7 +178,7 @@ pub(crate) fn body_presentations(
         )) = named_header
         {
             if entity_suffix != frame.entity_id {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D Design body-presentation entity {} disagrees with its named header entity {entity_suffix}",
                     frame.entity_id
                 )));
@@ -203,13 +203,13 @@ pub(crate) fn body_presentations(
         } else {
             let entity_suffix =
                 View::u64_le_at(framed_bytes, frame.start + 7).ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "F3D Design bare body-presentation entity {} has a truncated head",
                         frame.entity_id
                     ))
                 })?;
             if entity_suffix == 0 || entity_suffix != frame.entity_id {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D Design bare body-presentation entity {} has head entity {entity_suffix}",
                     frame.entity_id
                 )));
@@ -264,7 +264,7 @@ fn entity_types(
                 )
                 .is_some()
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D Design entity {entity_id} has multiple registered types"
                 )));
             }

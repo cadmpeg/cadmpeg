@@ -30,7 +30,7 @@ pub(crate) fn transfer(
         let grounded_property = unique_property(&owned, "ObjectToGround")?;
         let joint_type_property = unique_property(&owned, "JointType")?;
         if grounded_property.is_some() && joint_type_property.is_some() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "joint object {} carries both ObjectToGround and JointType",
                 object.id
             )));
@@ -44,7 +44,7 @@ pub(crate) fn transfer(
                 "App::PropertyLinkGlobal" | "App::PropertyLink"
             ) && !legacy_empty_sub
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "joint property {} has the wrong runtime type for ObjectToGround",
                     property.id
                 )));
@@ -52,7 +52,7 @@ pub(crate) fn transfer(
         }
         if let Some(property) = joint_type_property {
             if property.type_name != "App::PropertyEnumeration" {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "joint property {} has the wrong runtime type for JointType",
                     property.id
                 )));
@@ -463,7 +463,7 @@ fn unique_property<'a>(
         return Ok(None);
     };
     if matches.next().is_some() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "joint property {name} occurs more than once"
         )));
     }

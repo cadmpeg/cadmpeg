@@ -3,7 +3,7 @@
 
 use super::geometry::ProjectionOutcome;
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
@@ -60,14 +60,28 @@ fn text_font_definition_pointer_valid(
         })
 }
 
-pub(super) fn general_note_font_valid(
+pub(super) fn general_note_font_valid_for_dialect(
     value: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
+    dialect: Dialect,
 ) -> bool {
-    matches!(
-        value,
-        0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001 | 1002 | 1003 | 2001 | 3001
-    ) || text_font_definition_pointer_valid(value, entries)
+    let standard = match dialect {
+        Dialect::V4_0 => {
+            matches!(
+                value,
+                0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003
+            )
+        }
+        Dialect::V5_0 => matches!(
+            value,
+            0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001
+        ),
+        Dialect::Legacy | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => matches!(
+            value,
+            0 | 1 | 2 | 3 | 6 | 12 | 13 | 14 | 17 | 18 | 19 | 1001..=1003 | 2001 | 3001
+        ),
+    };
+    standard || text_font_definition_pointer_valid(value, entries)
 }
 
 pub(super) fn new_general_note_font_valid(value: i64) -> bool {
@@ -88,6 +102,39 @@ fn mirror_flag_valid(value: i64) -> bool {
 
 fn vertical_text_flag_valid(value: i64) -> bool {
     matches!(value, 0..=1)
+}
+
+fn line_font_definition_directory_valid(entry: &DirectoryEntry) -> bool {
+    entry.status.subordinate == 0
+        && entry.status.use_flag == 2
+        && (1..=5).contains(&entry.line_font)
+}
+
+fn text_template_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    match dialect {
+        Dialect::V4_0 | Dialect::V5_0 => {
+            entry.status.subordinate != 0 && entry.status.use_flag == 1 && entry.line_font != 0
+        }
+        Dialect::Legacy | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
+            entry.status.subordinate == 0
+                && entry.status.use_flag == 2
+                && entry.structure == 0
+                && entry.line_font == 0
+                && entry.view == 0
+                && entry.transform == 0
+                && entry.label_display == 0
+                && entry.line_weight == 0
+                && entry.status.hierarchy == 0
+        }
+    }
+}
+
+fn directory_color_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    !(matches!(dialect, Dialect::V4_0) && matches!(entry.entity_type, 124 | 406))
+}
+
+fn directory_line_weight_is_semantic(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    !(matches!(dialect, Dialect::V4_0) && matches!(entry.entity_type, 124 | 314 | 406))
 }
 
 fn source_sequence(id: &str) -> Option<u32> {
@@ -120,15 +167,7 @@ fn text_font_definition(
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> Option<TextFontDefinition> {
     let parameter_end = record.parameter_end();
-    let directory_valid = entry.status.use_flag == 2
-        && entry.structure == 0
-        && entry.line_font == 0
-        && entry.level == 0
-        && entry.view == 0
-        && entry.transform == 0
-        && entry.label_display == 0
-        && entry.line_weight == 0
-        && entry.color == 0;
+    let directory_valid = entry.status.subordinate == 0 && entry.status.use_flag == 2;
     if !directory_valid
         || record.integer(1).is_none_or(|value| value < 0)
         || record.string(2).is_none_or(<[u8]>::is_empty)
@@ -243,14 +282,10 @@ pub(super) fn project(
         };
         let parameter_end = record.parameter_end();
         let font = record.integer_or(3, 1);
-        let font_valid = font.is_some_and(|font| general_note_font_valid(font, &entries));
-        let directory_valid = entry.status.use_flag == 2
-            && entry.structure == 0
-            && entry.line_font == 0
-            && entry.view == 0
-            && entry.transform == 0
-            && entry.label_display == 0
-            && entry.line_weight == 0;
+        let font_valid = font.is_some_and(|font| {
+            general_note_font_valid_for_dialect(font, &entries, global.dialect())
+        });
+        let directory_valid = text_template_directory_valid(entry, global.dialect());
         let fields_valid = parameter_end <= 11
             && (1..=2).all(|index| {
                 record
@@ -312,7 +347,7 @@ pub(super) fn project(
             losses.push(loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        if entry.status.use_flag != 2 || !(1..=5).contains(&entry.line_font) {
+        if !line_font_definition_directory_valid(entry) {
             losses.push(loss(
                 entry,
                 "line-font definition use flag or fallback pattern is invalid",
@@ -386,6 +421,11 @@ pub(super) fn project(
             Some(crate::parameter::TokenValue::String(_)) => record
                 .string(4)
                 .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok()),
+            Some(crate::parameter::TokenValue::Integer(0))
+                if matches!(global.dialect(), Dialect::V4_0) =>
+            {
+                None
+            }
             Some(
                 crate::parameter::TokenValue::Integer(_) | crate::parameter::TokenValue::Real(_),
             ) => {
@@ -393,6 +433,13 @@ pub(super) fn project(
                 continue;
             }
         };
+        let directory_valid = entry.status.subordinate == 0
+            && entry.status.use_flag == 2
+            && matches!(entry.color, 0..=8);
+        if !directory_valid {
+            losses.push(loss(entry, "color definition Directory fields are invalid"));
+            continue;
+        }
         let color = Color {
             r: (components[0] / 100.0) as f32,
             g: (components[1] / 100.0) as f32,
@@ -431,7 +478,10 @@ pub(super) fn project(
         }
     };
 
-    for entry in directory.iter().filter(|entry| entry.color != 0) {
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.color != 0 && directory_color_is_semantic(entry, global.dialect()))
+    {
         if resolve(entry.color).is_none() {
             losses.push(loss(
                 entry,
@@ -453,8 +503,10 @@ pub(super) fn project(
             ));
         }
     }
-    for entry in directory.iter().filter(|entry| entry.line_weight != 0) {
-        if global.line_weight_mm(entry.line_weight).is_none() {
+    for entry in directory.iter().filter(|entry| {
+        entry.line_weight != 0 && directory_line_weight_is_semantic(entry, global.dialect())
+    }) {
+        if !global.line_weight_number_is_valid(entry.line_weight) {
             losses.push(loss(
                 entry,
                 "line-weight number is outside the Global gradation range",

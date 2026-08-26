@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 use cadmpeg_ir::math::Point3;
 
 use super::records::ZeroEntitySupportRun;
@@ -127,7 +127,12 @@ fn endpoint_pair_candidates_inner(
         );
     }
 
-    let mut visited = vec![false; occurrences.len()];
+    let mut visited = alloc_filled(
+        occurrences.len(),
+        false,
+        "catia zero-entity occurrence visits",
+    )
+    .ok()?;
     let mut candidates = Vec::new();
     for start in 0..occurrences.len() {
         if visited[start] {
@@ -204,7 +209,12 @@ fn endpoint_locus_candidates_inner(
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
         cells.entry(endpoint_cell(*point)).or_default().push(index);
     }
-    let mut neighbors = vec![Vec::new(); endpoints.len()];
+    let mut neighbors = alloc_filled(
+        endpoints.len(),
+        Vec::new(),
+        "catia zero-entity endpoint neighbors",
+    )
+    .ok()?;
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
         let cell = endpoint_cell(*point);
         for dx in -1..=1 {
@@ -234,7 +244,8 @@ fn endpoint_locus_candidates_inner(
         }
     }
 
-    let mut visited = vec![false; endpoints.len()];
+    let mut visited =
+        alloc_filled(endpoints.len(), false, "catia zero-entity endpoint visits").ok()?;
     let mut candidates = Vec::new();
     for start in 0..endpoints.len() {
         if visited[start] {
@@ -296,7 +307,12 @@ fn endpoint_match_graph(
                 .push(index);
         }
     }
-    let mut matches = vec![Vec::new(); occurrences.len()];
+    let mut matches = alloc_filled(
+        occurrences.len(),
+        Vec::new(),
+        "catia zero-entity occurrence matches",
+    )
+    .ok()?;
     for (index, occurrence) in occurrences.iter().enumerate() {
         let mut possible = HashSet::new();
         for endpoint in occurrence.model_endpoints {

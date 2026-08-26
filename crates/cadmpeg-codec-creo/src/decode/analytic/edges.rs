@@ -10,9 +10,9 @@ use super::super::surfaces::curve_contains_points;
 use super::equations::{cross, dot};
 use super::planes::valid_positive_nurbs_curve;
 
-const EPS_ON_CONIC: f64 = 1e-7;
-const EPS_AGREE: f64 = 1e-9;
-const EPS_NEAR_ZERO: f64 = 1e-12;
+const EPS_ON_CONIC: f64 = 1.0e-7;
+const EPS_AGREE: f64 = 1.0e-9;
+const EPS_NEAR_ZERO: f64 = 1.0e-12;
 
 pub fn orient_line_edge_carrier(
     geometry: &mut CurveGeometry,

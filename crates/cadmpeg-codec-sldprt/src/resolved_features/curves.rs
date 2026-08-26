@@ -15,7 +15,7 @@ use super::scalars::feature_object_name;
 use super::transforms::quantize;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
-use cadmpeg_core::decode::{bounded_len, View};
+use cadmpeg_core::decode::{alloc_filled, bounded_len, View};
 use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry};
@@ -1747,7 +1747,7 @@ pub(super) fn ordered_compact_line_profile(
     if lines.len() < 3 {
         return None;
     }
-    let mut used = vec![false; lines.len()];
+    let mut used = alloc_filled(lines.len(), false, "SLDPRT compact line profile usage").ok()?;
     let mut profile = Vec::with_capacity(lines.len());
     let first = lines.first()?;
     used[0] = true;

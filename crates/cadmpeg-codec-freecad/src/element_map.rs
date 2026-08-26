@@ -43,7 +43,7 @@ pub(crate) fn parse(
     let text = std::str::from_utf8(document)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
-        .map_err(|error| CodecError::Malformed(format!("invalid Document.xml: {error}")))?;
+        .map_err(|error| CodecError::malformed(format_args!("invalid Document.xml: {error}")))?;
     let file_version = xml
         .root_element()
         .attribute("FileVersion")
@@ -76,7 +76,7 @@ pub(crate) fn parse(
         let inline_bytes = source_entry.is_none().then(|| node_text_bytes(data_node));
         let bytes = if let Some(name) = source_entry {
             *entry_data.get(name).ok_or_else(|| {
-                CodecError::Malformed(format!("StringHasher references missing entry {name}"))
+                CodecError::malformed(format_args!("StringHasher references missing entry {name}"))
             })?
         } else {
             inline_bytes.as_deref().unwrap_or_default()
@@ -114,7 +114,7 @@ pub(crate) fn parse(
         .filter(|property| property.type_name == "Part::PropertyPartShape")
     {
         let property_xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "invalid shape property XML {}: {error}",
                 property.id
             ))
@@ -140,7 +140,7 @@ pub(crate) fn parse(
                 let inline_bytes = source_entry.is_none().then(|| node_text_bytes(map_node));
                 let bytes = if let Some(name) = source_entry.as_deref() {
                     *entry_data.get(name).ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "ElementMap2 references missing entry {name}"
                         ))
                     })?
@@ -199,7 +199,7 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
         .ok_or_else(|| CodecError::Malformed("string-table side entry has no count".into()))?;
     let count = parse_usize(count, "string-table header count")?;
     if count > MAX_TABLE_ENTRIES {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "string-table entry count exceeds {MAX_TABLE_ENTRIES}"
         )));
     }
@@ -759,7 +759,9 @@ fn parse_count(node: roxmltree::Node<'_, '_>, kind: &str) -> Result<usize, Codec
     let count = node.attribute("count").unwrap_or("0");
     let count = parse_usize(count, &format!("{kind} count"))?;
     if count > MAX_TABLE_ENTRIES {
-        return Err(CodecError::Malformed(format!("{kind} count exceeds limit")));
+        return Err(CodecError::malformed(format_args!(
+            "{kind} count exceeds limit"
+        )));
     }
     Ok(count)
 }
@@ -768,20 +770,22 @@ fn parse_bool(value: &str) -> Result<bool, CodecError> {
     match value {
         "0" | "false" => Ok(false),
         "1" | "true" => Ok(true),
-        _ => Err(CodecError::Malformed(format!("invalid boolean {value:?}"))),
+        _ => Err(CodecError::malformed(format_args!(
+            "invalid boolean {value:?}"
+        ))),
     }
 }
 
 fn parse_decimal(value: &str, field: &str) -> Result<i64, CodecError> {
     value
         .parse()
-        .map_err(|_| CodecError::Malformed(format!("invalid {field} {value:?}")))
+        .map_err(|_| CodecError::malformed(format_args!("invalid {field} {value:?}")))
 }
 
 fn parse_usize(value: &str, field: &str) -> Result<usize, CodecError> {
     value
         .parse()
-        .map_err(|_| CodecError::Malformed(format!("invalid {field} {value:?}")))
+        .map_err(|_| CodecError::malformed(format_args!("invalid {field} {value:?}")))
 }
 
 fn parse_hex(value: &str, field: &str) -> Result<i64, CodecError> {
@@ -789,10 +793,10 @@ fn parse_hex(value: &str, field: &str) -> Result<i64, CodecError> {
         .strip_prefix('-')
         .map_or((false, value), |digits| (true, digits));
     if digits.is_empty() {
-        return Err(CodecError::Malformed(format!("empty {field}")));
+        return Err(CodecError::malformed(format_args!("empty {field}")));
     }
     let value = i64::from_str_radix(digits, 16)
-        .map_err(|_| CodecError::Malformed(format!("invalid {field} {value:?}")))?;
+        .map_err(|_| CodecError::malformed(format_args!("invalid {field} {value:?}")))?;
     Ok(if negative { -value } else { value })
 }
 
@@ -1138,7 +1142,7 @@ fn next_token<'a>(
 ) -> Result<&'a str, CodecError> {
     tokens
         .next()
-        .ok_or_else(|| CodecError::Malformed(format!("element map ends before {field}")))
+        .ok_or_else(|| CodecError::malformed(format_args!("element map ends before {field}")))
 }
 
 fn expect<'a>(
@@ -1147,7 +1151,7 @@ fn expect<'a>(
 ) -> Result<(), CodecError> {
     let actual = next_token(tokens, expected)?;
     if actual != expected {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "expected element-map token {expected:?}, found {actual:?}"
         )));
     }
@@ -1161,7 +1165,7 @@ fn next_count<'a>(
 ) -> Result<usize, CodecError> {
     let value = parse_usize(next_token(tokens, field)?, field)?;
     if value > limit {
-        return Err(CodecError::Malformed(format!("{field} exceeds limit")));
+        return Err(CodecError::malformed(format_args!("{field} exceeds limit")));
     }
     Ok(value)
 }
@@ -1172,7 +1176,7 @@ fn next_u64<'a>(
 ) -> Result<u64, CodecError> {
     next_token(tokens, field)?
         .parse()
-        .map_err(|_| CodecError::Malformed(format!("invalid {field}")))
+        .map_err(|_| CodecError::malformed(format_args!("invalid {field}")))
 }
 
 #[cfg(test)]

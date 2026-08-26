@@ -70,9 +70,12 @@ MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTIL
 LOSS_NOTE_LIT = re.compile(r"LossNote\s*\{")
 LOSS_NOTE_RETURN = re.compile(r"->\s*LossNote\s*\{")
 LOSS_NOTE_STRUCT = re.compile(r"\b(?:pub(?:\([^)]*\))?\s+)?struct\s+LossNote\s*\{")
+LOSS_NOTE_IMPL = re.compile(r"\bimpl(?:<[^>]*>)?\s+LossNote\s*\{")
 BARE_TOLERANCE = re.compile(r"(?<![0-9A-Za-z_.])1[eE]-(?:6|7|8|9|10|11|12)\b")
-# `vec![value; count]` where count is not a decimal/hex literal.
-VEC_REPEAT = re.compile(r"vec!\s*\[(?:[^\];]|;)*;\s*([^\]]+)\]", re.MULTILINE)
+# The scanner below identifies `vec![value; count]` repeats structurally. A
+# regular expression cannot distinguish the repeat separator from semicolons
+# inside nested arrays, strings, comments, or format arguments.
+VEC_MACRO = re.compile(r"\bvec!\s*\[")
 VEC_REPEAT_LITERAL = re.compile(r"^(?:0x[0-9a-fA-F]+|\d+)$")
 CFG_TEST_ATTR = re.compile(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]")
 CFG_ATTR = re.compile(r"#\s*\[\s*cfg\s*\((.*)\)\s*\]\s*$", re.DOTALL)
@@ -213,7 +216,11 @@ def count_loss_note_literals() -> int:
             code = line.split("//", 1)[0]
             if not LOSS_NOTE_LIT.search(code):
                 continue
-            if LOSS_NOTE_RETURN.search(code) or LOSS_NOTE_STRUCT.search(code):
+            if (
+                LOSS_NOTE_RETURN.search(code)
+                or LOSS_NOTE_STRUCT.search(code)
+                or LOSS_NOTE_IMPL.search(code)
+            ):
                 continue
             total += 1
     return total
@@ -227,12 +234,113 @@ def count_bare_tolerances() -> int:
     return total
 
 
+def _skip_rust_quoted(text: str, start: int) -> int | None:
+    """Return the end of a Rust string/character literal at ``start``."""
+    quote = text[start]
+    raw_start = start
+    if quote in {"b", "c"} and text.startswith("r", start + 1):
+        raw_start += 1
+    if text.startswith("r", raw_start):
+        hash_start = raw_start + 1
+        hash_end = hash_start
+        while hash_end < len(text) and text[hash_end] == "#":
+            hash_end += 1
+        if hash_end < len(text) and text[hash_end] == '"':
+            hashes = text[hash_start:hash_end]
+            terminator = '"' + hashes
+            end = text.find(terminator, hash_end + 1)
+            return len(text) if end < 0 else end + len(terminator)
+    if quote not in {'"', "'"}:
+        return None
+    if quote == "'":
+        # Do not mistake a lifetime such as `'static` for a character literal.
+        if start + 2 >= len(text) or (
+            text[start + 1] != "\\" and text[start + 2] != "'"
+        ):
+            return None
+    index = start + 1
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+            continue
+        if text[index] == quote:
+            return index + 1
+        index += 1
+    return len(text)
+
+
+def _vec_repeat_count(text: str, macro: re.Match[str]) -> str | None:
+    stack = ["["]
+    separator = None
+    index = macro.end()
+    while index < len(text) and stack:
+        if text.startswith("//", index):
+            newline = text.find("\n", index + 2)
+            index = len(text) if newline < 0 else newline + 1
+            continue
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            index = len(text) if end < 0 else end + 2
+            continue
+        quoted_end = (
+            _skip_rust_quoted(text, index)
+            if text[index] in {'"', "'", "b", "c", "r"}
+            else None
+        )
+        if quoted_end is not None:
+            index = quoted_end
+            continue
+        character = text[index]
+        if character in "([{":
+            stack.append(character)
+        elif character in ")]}":
+            expected = {")": "(", "]": "[", "}": "{"
+            }[character]
+            if stack[-1] == expected:
+                stack.pop()
+                if not stack:
+                    return None if separator is None else text[separator + 1 : index].strip()
+        elif character == ";" and len(stack) == 1 and separator is None:
+            separator = index
+        index += 1
+    return None
+
+
+def iter_vec_repeat_counts(text: str):
+    """Yield count expressions from syntactic ``vec![value; count]`` repeats."""
+    index = 0
+    while index < len(text):
+        if text.startswith("//", index):
+            newline = text.find("\n", index + 2)
+            index = len(text) if newline < 0 else newline + 1
+            continue
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            index = len(text) if end < 0 else end + 2
+            continue
+        quoted_end = (
+            _skip_rust_quoted(text, index)
+            if text[index] in {'"', "'", "b", "c", "r"}
+            else None
+        )
+        if quoted_end is not None:
+            index = quoted_end
+            continue
+        macro = VEC_MACRO.match(text, index)
+        if macro:
+            count = _vec_repeat_count(text, macro)
+            if count is not None:
+                yield count
+            index = macro.end()
+            continue
+        index += 1
+
+
 def count_nonliteral_vec_repeat() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
         text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
-        for match in VEC_REPEAT.finditer(text):
-            count_expr = match.group(1).strip()
+        for count_expr in iter_vec_repeat_counts(text):
             if VEC_REPEAT_LITERAL.fullmatch(count_expr):
                 continue
             total += 1
