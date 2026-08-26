@@ -927,6 +927,8 @@ pub(in super::super) fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeM
     }
     (
         SourceMeta {
+            declared: BTreeMap::new(),
+            dialect: None,
             format: "creo".to_string(),
             attributes,
         },

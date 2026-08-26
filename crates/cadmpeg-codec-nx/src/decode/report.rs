@@ -276,6 +276,7 @@ pub(crate) fn build_geometry_report(
     }
 
     DecodeReport {
+        dialects: Vec::new(),
         format: "nx".to_string(),
         container_only: false,
         geometry_transferred: true,

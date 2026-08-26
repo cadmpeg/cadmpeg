@@ -15,6 +15,8 @@
 //! metadata-only document. The report marks geometry and topology as blocking,
 //! and retained source data remains available for native replay.
 
+use std::collections::BTreeMap;
+
 use crate::native::{F3dNative, F3D_NATIVE_VERSION};
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -4751,6 +4753,8 @@ fn source_and_tolerances(
 
     (
         SourceMeta {
+            declared: BTreeMap::new(),
+            dialect: None,
             format: "f3d".to_string(),
             attributes,
         },
@@ -4851,6 +4855,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     ));
 
     DecodeReport {
+        dialects: Vec::new(),
         format: "f3d".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -4916,6 +4921,8 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
     }
 
     ir.source = Some(SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "f3d".to_string(),
         attributes,
     });
@@ -5011,6 +5018,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     }
 
     DecodeReport {
+        dialects: Vec::new(),
         format: "f3d".to_string(),
         container_only,
         geometry_transferred: false,

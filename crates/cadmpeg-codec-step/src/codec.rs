@@ -208,6 +208,7 @@ impl CodecBackend for StepCodec {
         let mut notes = vec![format!("schema {schema}; {edition}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
         Ok(ContainerSummary {
+            dialects: Vec::new(),
             format: "step".into(),
             container_kind: "iso-10303-21-clear-text".into(),
             entries,
@@ -315,6 +316,7 @@ fn inspect_zip(
     notes.extend(root_summary.notes);
     notes.extend(resource_notes);
     Ok(ContainerSummary {
+        dialects: Vec::new(),
         format: "step".into(),
         container_kind: "iso-10303-21-zip".into(),
         entries,

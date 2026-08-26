@@ -266,6 +266,7 @@ impl Encoder for F3dCodec {
             .into_iter()
             .collect();
         let report = ExportReport {
+            target: None,
             format: "f3d".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,

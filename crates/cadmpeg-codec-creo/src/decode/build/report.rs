@@ -153,6 +153,7 @@ pub(in super::super) fn build_report(
     push_coverage_drop_losses(&mut losses, &coverage);
 
     DecodeReport {
+        dialects: Vec::new(),
         format: "creo".to_string(),
         container_only,
         geometry_transferred: has_transferred_geometry(ir),

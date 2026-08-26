@@ -457,6 +457,8 @@ pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
         );
     }
     SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "catia".to_string(),
         attributes,
     }
@@ -554,6 +556,7 @@ pub(crate) fn build_geometry_report(
     );
 
     DecodeReport {
+        dialects: Vec::new(),
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -674,6 +677,7 @@ pub(crate) fn build_container_report(scan: &ContainerScan, container_only: bool)
     ));
 
     DecodeReport {
+        dialects: Vec::new(),
         format: "catia".to_string(),
         container_only,
         geometry_transferred: false,

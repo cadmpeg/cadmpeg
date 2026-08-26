@@ -50,6 +50,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
         },
     });
     let mut report = DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,
@@ -409,6 +410,7 @@ fn native_dimension_subtypes_are_reported() {
         native_ref: None,
     });
     let mut report = DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".into(),
         container_only: false,
         geometry_transferred: true,

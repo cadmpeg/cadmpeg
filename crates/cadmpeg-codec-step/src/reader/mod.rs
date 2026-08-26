@@ -86,11 +86,14 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             exchange.records.len().to_string(),
         );
         ir.source = Some(SourceMeta {
+            declared: BTreeMap::new(),
+            dialect: None,
             format: "step".into(),
             attributes,
         });
 
         let mut report = DecodeReport {
+            dialects: Vec::new(),
             format: "step".into(),
             container_only,
             geometry_transferred: false,

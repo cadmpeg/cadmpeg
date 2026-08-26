@@ -528,6 +528,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     attributes.insert("document_kind".into(), document_kind.label().into());
     metadata.apply_attributes(&mut attributes);
     ir.source = Some(SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "inventor".into(),
         attributes,
     });
@@ -1665,6 +1667,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
+            dialects: Vec::new(),
             format: "inventor".into(),
             container_only: ctx.container_only(),
             geometry_transferred,

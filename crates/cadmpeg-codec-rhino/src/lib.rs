@@ -169,6 +169,7 @@ impl Encoder for RhinoEncoder {
             );
         }
         let report = ExportReport {
+            target: None,
             format: "rhino".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,

@@ -85,6 +85,7 @@ pub struct DecodeResult {
 impl DecodeResult {
     /// Build a result with mandatory source fidelity after canonicalizing it and the IR.
     pub fn new(mut ir: CadIr, report: DecodeReport, mut source_fidelity: SourceFidelity) -> Self {
+        cadmpeg_core::dialect::debug_assert_primary_layer(&report.dialects, &report.format);
         ir.finalize();
         source_fidelity.finalize();
         Self {
@@ -390,6 +391,7 @@ impl Encoder for CadirEncoder {
 
     fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
         let report = ExportReport {
+            target: None,
             format: "cadir".into(),
             census: EntityCensus {
                 basis: CensusBasis::IrArenas,

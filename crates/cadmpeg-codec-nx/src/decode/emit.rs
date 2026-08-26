@@ -1365,6 +1365,8 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
         }
     }
     SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "nx".to_string(),
         attributes,
     }

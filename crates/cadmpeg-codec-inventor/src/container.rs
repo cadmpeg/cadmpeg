@@ -135,6 +135,7 @@ impl<'a> InventorContainer<'a> {
             }
         }
         ContainerSummary {
+            dialects: Vec::new(),
             format: "inventor".into(),
             container_kind: "cfb".into(),
             entries,

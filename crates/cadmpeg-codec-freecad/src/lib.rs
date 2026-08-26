@@ -1163,6 +1163,8 @@ impl CodecBackend for FcstdCodec {
         let mut cycle_affected_design_objects = BTreeSet::new();
         let mut gui_losses = Vec::new();
         ir.source = Some(SourceMeta {
+            declared: BTreeMap::new(),
+            dialect: None,
             format: "fcstd".into(),
             attributes,
         });
@@ -1424,6 +1426,7 @@ impl CodecBackend for FcstdCodec {
         Ok(DecodeResult::new(
             ir,
             DecodeReport {
+                dialects: Vec::new(),
                 format: "fcstd".into(),
                 container_only: options.container_only,
                 geometry_transferred,

@@ -136,6 +136,7 @@ pub(crate) fn write_seekable(
         })?;
     }
     Ok(ExportReport {
+        target: None,
         format: "fcstd".into(),
         census: cadmpeg_ir::EntityCensus {
             basis: cadmpeg_ir::CensusBasis::IrArenas,

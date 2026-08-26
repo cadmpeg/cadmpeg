@@ -2554,6 +2554,7 @@ impl<'a> DecodeContext<'a> {
         DecodeResult::new(
             self.ir,
             DecodeReport {
+                dialects: Vec::new(),
                 format: "rhino".to_string(),
                 container_only: false,
                 geometry_transferred: self.geometry_transferred,
@@ -5737,6 +5738,8 @@ fn source_meta(scan: &Scan<'_>) -> SourceMeta {
         }
     }
     SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "rhino".to_string(),
         attributes,
     }

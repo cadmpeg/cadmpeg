@@ -1902,6 +1902,7 @@ fn modern_body_appearance_is_not_a_face_assignment() {
 /// decoding runs.
 fn appearance_loss_report() -> cadmpeg_ir::report::DecodeReport {
     cadmpeg_ir::report::DecodeReport {
+        dialects: Vec::new(),
         format: "f3d".to_owned(),
         container_only: false,
         geometry_transferred: false,

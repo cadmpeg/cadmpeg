@@ -3,6 +3,7 @@
 
 #![allow(clippy::unwrap_used)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Cursor, Write};
 
@@ -500,6 +501,8 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
 fn cube_with_source(attributes: &[(&str, &str)]) -> cadmpeg_ir::CadIr {
     let mut ir = unit_cube();
     ir.source = Some(cadmpeg_ir::SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "synthetic".into(),
         attributes: attributes
             .iter()

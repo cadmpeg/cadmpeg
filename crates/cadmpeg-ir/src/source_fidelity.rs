@@ -433,6 +433,7 @@ mod tests {
     #[test]
     fn decode_sidecar_binds_exact_ir_bytes_and_validates_versions() {
         let report = DecodeReport {
+            dialects: Vec::new(),
             format: "test".into(),
             container_only: false,
             geometry_transferred: true,
