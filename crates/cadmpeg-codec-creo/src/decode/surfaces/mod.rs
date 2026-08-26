@@ -341,26 +341,17 @@ pub(super) fn transfer_fc05_cap_circles(
             reference,
             axis_sign,
         );
-        let (center, axis, ref_direction) = if scan
-            .curves
-            .fc05_cylinder_cap_pairs
-            .iter()
-            .any(|pair| pair.surface_id == *cylinder_id)
-        {
-            legacy_frame
-        } else {
-            let witness = crate::decode::analytic::fc05_cylinder_model_witness(
-                scan,
-                *cylinder_id,
-                crate::decode::analytic::CylinderEquation {
-                    origin: legacy_frame.0,
-                    axis: legacy_frame.1,
-                    ref_direction: legacy_frame.2,
-                    radius: circle.radius_mm,
-                },
-            );
-            (witness.origin, witness.axis, witness.ref_direction)
-        };
+        let witness = crate::decode::analytic::fc05_cylinder_model_witness(
+            scan,
+            *cylinder_id,
+            crate::decode::analytic::CylinderEquation {
+                origin: legacy_frame.0,
+                axis: legacy_frame.1,
+                ref_direction: legacy_frame.2,
+                radius: circle.radius_mm,
+            },
+        );
+        let (center, axis, ref_direction) = (witness.origin, witness.axis, witness.ref_direction);
         let id = CurveId(format!("creo:visibgeom:curve#{}", circle.curve_id));
         if !ir.model.curves.iter().any(|curve| curve.id == id) {
             annotate(

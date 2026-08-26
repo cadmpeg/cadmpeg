@@ -663,6 +663,172 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
 }
 
 #[test]
+fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
+    const EPS_BRANCH_TEST: f64 = 1e-12;
+
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    for (id, kind) in [
+        (1, crate::surface::SurfaceKind::Plane),
+        (2, crate::surface::SurfaceKind::Plane),
+        (5, crate::surface::SurfaceKind::Plane),
+        (7, crate::surface::SurfaceKind::Cylinder),
+    ] {
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id,
+            type_byte: 0x22,
+            kind,
+            feature_id: 4,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: id as usize,
+        });
+    }
+    scan.planes.outlines.extend([
+        OutlinePlane {
+            surface_id: 1,
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 10,
+        },
+        OutlinePlane {
+            surface_id: 2,
+            origin: [0.0, 38.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 20,
+        },
+    ]);
+    scan.curves.fc05_circles.extend([
+        crate::curve::Fc05Circle {
+            curve_id: 11,
+            center_row_frame: [2.0, 3.0],
+            radius_mm: 0.5,
+            sample_direction_row_frame: [1.0, 0.0],
+            reference_direction_row_frame: Some([1.0, 0.0]),
+            parameter_sign: Some(1),
+            cap_ordinate_row_frame: Some(0.0),
+            point_count: 8,
+            max_residual: 0.0,
+            angle_parameter_consistent: true,
+            offset: 30,
+        },
+        crate::curve::Fc05Circle {
+            curve_id: 12,
+            center_row_frame: [2.0, 3.0],
+            radius_mm: 0.5,
+            sample_direction_row_frame: [1.0, 0.0],
+            reference_direction_row_frame: Some([1.0, 0.0]),
+            parameter_sign: Some(1),
+            cap_ordinate_row_frame: Some(38.0),
+            point_count: 8,
+            max_residual: 0.0,
+            angle_parameter_consistent: true,
+            offset: 31,
+        },
+    ]);
+    scan.curves.topology_rows.extend([
+        crate::curve::CurveTopologyRow {
+            id: 11,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [7, 1],
+            next_edges: [0; 2],
+            offset: 40,
+        },
+        crate::curve::CurveTopologyRow {
+            id: 12,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [7, 2],
+            next_edges: [0; 2],
+            offset: 41,
+        },
+        crate::curve::CurveTopologyRow {
+            id: 13,
+            type_byte: 5,
+            feature_id: 4,
+            directions: [0; 2],
+            faces: [7, 5],
+            next_edges: [0; 2],
+            offset: 42,
+        },
+    ]);
+    scan.curves
+        .fc05_cylinder_cap_pairs
+        .push(crate::curve::Fc05CylinderCapPair {
+            surface_id: 7,
+            curve_ids: vec![11, 12],
+            cap_plane_ids: vec![1, 2],
+            curve_cap_ordinates_row_frame: vec![0.0, 38.0],
+            center_row_frame: [2.0, 3.0],
+            radius_mm: 0.5,
+            reference_direction_row_frame: [1.0, 0.0],
+            parameter_sign: 1,
+            cap_ordinates_row_frame: vec![0.0, 38.0],
+            offset: 43,
+        });
+    scan.references.circles.extend([
+        crate::reference::ReferenceCircle {
+            entity_id: 11,
+            center: [2.0, 0.0, -3.0],
+            center_stored: true,
+            radius: 0.5,
+            axis: [0.0, 1.0, 0.0],
+            start: [2.5, 0.0, -3.0],
+            end: [2.0, 0.0, -2.5],
+            offset: 50,
+        },
+        crate::reference::ReferenceCircle {
+            entity_id: 12,
+            center: [2.0, 38.0, -3.0],
+            center_stored: true,
+            radius: 0.5,
+            axis: [0.0, 1.0, 0.0],
+            start: [2.5, 38.0, -3.0],
+            end: [2.0, 38.0, -2.5],
+            offset: 51,
+        },
+    ]);
+    let origin_z = -(17.0 / 8.0);
+    scan.planes.local_systems.push(PlaneLocalSystem {
+        surface_id: 5,
+        body: Vec::new(),
+        slots: vec![
+            Some(0.8),
+            Some(0.0),
+            Some(-0.6),
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+            Some(0.6),
+            Some(0.0),
+            Some(0.8),
+            Some(0.0),
+            Some(0.0),
+            Some(origin_z),
+        ],
+        origin: Some([0.0, 0.0, origin_z]),
+        u_axis: Some([0.8, 0.0, -0.6]),
+        normal: Some([0.6, 0.0, 0.8]),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 50,
+        offset: 60,
+    });
+
+    let candidates = plane_candidates(&scan);
+    let [candidate] = candidates.get(&5).expect("plane candidates").as_slice() else {
+        panic!("the reference-tangent branch must be selected");
+    };
+    assert!((candidate.equation.normal[0] - 0.6).abs() < EPS_BRANCH_TEST);
+    assert!((candidate.equation.normal[2] - 0.8).abs() < EPS_BRANCH_TEST);
+    assert!((candidate.equation.origin[2] - origin_z).abs() < EPS_BRANCH_TEST);
+}
+
+#[test]
 fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.extend([

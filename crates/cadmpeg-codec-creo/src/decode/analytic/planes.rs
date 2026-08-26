@@ -705,14 +705,15 @@ fn fc05_cylinder_branch_witnesses(
         .iter()
         .filter_map(|pair| {
             let frame = fc05_cap_pair_model_frame(scan, pair)?;
+            let legacy = super::equations::CylinderEquation {
+                origin: frame.origin,
+                axis: frame.axis,
+                ref_direction: frame.ref_direction,
+                radius: pair.radius_mm,
+            };
             Some((
                 pair.surface_id,
-                super::equations::CylinderEquation {
-                    origin: frame.origin,
-                    axis: frame.axis,
-                    ref_direction: frame.ref_direction,
-                    radius: pair.radius_mm,
-                },
+                fc05_cylinder_model_witness(scan, pair.surface_id, legacy),
             ))
         })
         .collect::<BTreeMap<_, _>>();
@@ -824,8 +825,8 @@ fn fc05_cylinder_branch_witnesses(
     witnesses
 }
 
-/// Select a non-pair FC05 cylinder frame only when reference geometry improves
-/// the independent stored-plane tangency score. Strict cap pairs remain the
+/// Select an FC05 cylinder frame only when reference geometry improves the
+/// independent stored-plane tangency score. A validated cap pair remains the
 /// primary frame source; this witness does not turn an ID match into geometry.
 pub(crate) fn fc05_cylinder_model_witness(
     scan: &ContainerScan,
