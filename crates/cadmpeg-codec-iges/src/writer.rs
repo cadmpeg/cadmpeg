@@ -88,18 +88,21 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     options: crate::IgesWriteOptions,
 ) -> Result<ExportPlan<'_>, CodecError> {
-    if let Some(bytes) = replay_bytes(input.ir, input.fidelity, options.version)? {
-        return Ok(ExportPlan::buffered(
-            report(
-                FidelityResolution::Replayed,
-                WritePath::VerbatimReplay,
-                Vec::new(),
-                "preserved source container replayed verbatim",
-                counts_for_ir(input.ir),
-            ),
-            bytes,
-        ));
-    }
+    let declined = match replay_bytes(input.ir, input.fidelity, options.version)? {
+        Replay::Replayed(bytes) => {
+            return Ok(ExportPlan::buffered(
+                report(
+                    FidelityResolution::Replayed,
+                    WritePath::VerbatimReplay,
+                    Vec::new(),
+                    "preserved source container replayed verbatim",
+                    counts_for_ir(input.ir),
+                ),
+                bytes,
+            ));
+        }
+        Replay::Declined { reason } => reason,
+    };
 
     let source_expected = input
         .ir
@@ -124,6 +127,8 @@ pub(crate) fn plan(
         FidelityResolution::Degraded {
             reason: "preserved IGES source image is unavailable".into(),
         }
+    } else if let Some(reason) = declined {
+        FidelityResolution::Degraded { reason }
     } else if input.fidelity.is_some() {
         FidelityResolution::NotConsumed
     } else {
@@ -141,33 +146,61 @@ pub(crate) fn plan(
     ))
 }
 
+/// Outcome of the replay decision. A decline carries the specific cause when
+/// the source is an IGES document, so the export report can name it.
+enum Replay {
+    Replayed(Vec<u8>),
+    Declined { reason: Option<String> },
+}
+
+impl Replay {
+    fn declined() -> Self {
+        Self::Declined { reason: None }
+    }
+
+    fn declined_because(reason: impl Into<String>) -> Self {
+        Self::Declined {
+            reason: Some(reason.into()),
+        }
+    }
+}
+
 fn replay_bytes(
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
     version: crate::IgesVersion,
-) -> Result<Option<Vec<u8>>, CodecError> {
-    let Some(expected) = ir
-        .source
-        .as_ref()
-        .filter(|source| source.format == "iges")
-        .and_then(|source| source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))
-    else {
-        return Ok(None);
+) -> Result<Replay, CodecError> {
+    let Some(source) = ir.source.as_ref().filter(|source| source.format == "iges") else {
+        return Ok(Replay::declined());
     };
-    if ir
-        .source
-        .as_ref()
-        .and_then(|source| source.attributes.get("iges_version"))
-        .is_none_or(|source_version| source_version != version.name())
-    {
-        return Ok(None);
+    let Some(expected) = source.attributes.get(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE) else {
+        return Ok(Replay::declined_because(format!(
+            "preserved IGES source carries no `{DOCUMENT_LOCAL_DIGEST_ATTRIBUTE}` baseline; byte replay skipped"
+        )));
+    };
+    match source.attributes.get("iges_version") {
+        None => {
+            return Ok(Replay::declined_because(format!(
+                "preserved IGES source records no version, target is {}; byte replay skipped",
+                version.name()
+            )));
+        }
+        Some(source_version) if source_version != version.name() => {
+            return Ok(Replay::declined_because(format!(
+                "source is {source_version}, target is {}; byte replay skipped",
+                version.name()
+            )));
+        }
+        Some(_) => {}
     }
     if crate::document_digest(ir) != *expected {
-        return Ok(None);
+        return Ok(Replay::declined_because(
+            "decoded model no longer matches the preserved IGES source digest; byte replay skipped",
+        ));
     }
     let Some(record) = fidelity.and_then(|value| value.retained_record(crate::SOURCE_IMAGE_ID))
     else {
-        return Ok(None);
+        return Ok(Replay::declined());
     };
     let Some(data) = record.data.as_deref() else {
         return Err(CodecError::Malformed(
@@ -179,7 +212,7 @@ fn replay_bytes(
             "retained IGES source image failed integrity validation".into(),
         ));
     }
-    Ok(Some(data.to_vec()))
+    Ok(Replay::Replayed(data.to_vec()))
 }
 
 fn report(
