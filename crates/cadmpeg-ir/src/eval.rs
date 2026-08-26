@@ -1160,6 +1160,119 @@ pub fn nurbs_surface_closest_parameter(
     solve_nurbs_surface_parameter(surface, point, seed, None).map(|(parameters, _)| parameters)
 }
 
+/// Find a bounded local parameter candidate on a finite NURBS surface.
+///
+/// A supplied seed selects the local Newton branch. Without a seed, a fixed
+/// parameter grid supplies the initial branch. The result is a constructive
+/// candidate only; callers must forward-evaluate it and apply their own
+/// residual bound. This operation does not prove that the candidate is
+/// globally closest.
+pub fn nurbs_surface_parameter_near_point(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+) -> Option<Point2> {
+    const COARSE_GRID: usize = 8;
+    const MAX_ITERATIONS: usize = 24;
+    const MAX_LINE_SEARCH_STEPS: usize = 12;
+
+    if ![point.x, point.y, point.z]
+        .iter()
+        .all(|value| value.is_finite())
+    {
+        return None;
+    }
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    let u_domain = [
+        *surface.u_knots.get(u_degree)?,
+        *surface.u_knots.get(u_count)?,
+    ];
+    let v_domain = [
+        *surface.v_knots.get(v_degree)?,
+        *surface.v_knots.get(v_count)?,
+    ];
+    if !u_domain[0].is_finite()
+        || !u_domain[1].is_finite()
+        || !v_domain[0].is_finite()
+        || !v_domain[1].is_finite()
+        || u_domain[0] >= u_domain[1]
+        || v_domain[0] >= v_domain[1]
+    {
+        return None;
+    }
+    let mut parameters = match seed.filter(|seed| seed.u.is_finite() && seed.v.is_finite()) {
+        Some(seed) => Point2::new(
+            seed.u.clamp(u_domain[0], u_domain[1]),
+            seed.v.clamp(v_domain[0], v_domain[1]),
+        ),
+        None => {
+            let mut best = None;
+            for u_index in 0..=COARSE_GRID {
+                let u = u_domain[0]
+                    + (u_index as f64 / COARSE_GRID as f64) * (u_domain[1] - u_domain[0]);
+                for v_index in 0..=COARSE_GRID {
+                    let v = v_domain[0]
+                        + (v_index as f64 / COARSE_GRID as f64) * (v_domain[1] - v_domain[0]);
+                    let candidate = nurbs_surface_point(surface, u, v)?;
+                    let distance = candidate.distance(point);
+                    if best.is_none_or(|(_, best_distance)| distance < best_distance) {
+                        best = Some((Point2::new(u, v), distance));
+                    }
+                }
+            }
+            best?.0
+        }
+    };
+    let squared_distance = |left: Point3| left.distance(point).powi(2);
+    for _ in 0..MAX_ITERATIONS {
+        let partials = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
+        let current_distance = squared_distance(partials.point);
+        if current_distance <= f64::EPSILON {
+            return Some(parameters);
+        }
+        let residual = Vector3::new(
+            partials.point.x - point.x,
+            partials.point.y - point.y,
+            partials.point.z - point.z,
+        );
+        let du_squared = partials.du.dot(partials.du);
+        let mixed = partials.du.dot(partials.dv);
+        let dv_squared = partials.dv.dot(partials.dv);
+        let determinant = du_squared * dv_squared - mixed * mixed;
+        if !determinant.is_finite() || determinant.abs() <= f64::EPSILON {
+            break;
+        }
+        let du_residual = partials.du.dot(residual);
+        let dv_residual = partials.dv.dot(residual);
+        let step = Point2::new(
+            (dv_squared * du_residual - mixed * dv_residual) / determinant,
+            (du_squared * dv_residual - mixed * du_residual) / determinant,
+        );
+        let mut scale = 1.0;
+        let mut accepted = false;
+        for _ in 0..MAX_LINE_SEARCH_STEPS {
+            let candidate = Point2::new(
+                (parameters.u - scale * step.u).clamp(u_domain[0], u_domain[1]),
+                (parameters.v - scale * step.v).clamp(v_domain[0], v_domain[1]),
+            );
+            let candidate_point = nurbs_surface_point(surface, candidate.u, candidate.v)?;
+            if squared_distance(candidate_point) < current_distance {
+                parameters = candidate;
+                accepted = true;
+                break;
+            }
+            scale *= 0.5;
+        }
+        if !accepted {
+            break;
+        }
+    }
+    parameters.u.is_finite().then_some(parameters)
+}
+
 /// Find a NURBS surface parameter pair whose image is within `tolerance` of
 /// `point`. The result is forward-evaluated before it is returned.
 ///

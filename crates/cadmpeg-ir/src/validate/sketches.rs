@@ -10,16 +10,17 @@ use crate::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
-const EPS_SKETCHES_VALID_SPATIAL_CIRCLE_FRAME_E9: f64 = 1.0e-9;
-const EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9: f64 = 1.0e-9;
-const EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E12: f64 = 1.0e-12;
-const EPS_SKETCHES_SPATIAL_PARALLEL_LINE_DISTANCE_E12: f64 = 1.0e-12;
-const EPS_SKETCHES_SPATIAL_PARALLEL_LINE_DISTANCE_E9: f64 = 1.0e-9;
-const EPS_SKETCHES_SPATIAL_LENGTH_PARAMETER_MATCHES_E9: f64 = 1.0e-9;
-const EPS_SKETCHES_CHECK_SKETCHES_E9: f64 = 1.0e-9;
-const EPS_SKETCHES_CHECK_SKETCHES_E12: f64 = 1.0e-12;
-const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E12: f64 = 1.0e-12;
-const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E9: f64 = 1.0e-9;
+const SPATIAL_LINE_DEGENERACY_EPSILON: f64 = 1.0e-12;
+const EPS_SKETCHES_VALID_SPATIAL_CIRCLE_FRAME_E9: f64 = 1e-9;
+const EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9: f64 = 1e-9;
+const EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E12: f64 = 1e-12;
+const EPS_SKETCHES_SPATIAL_PARALLEL_LINE_DISTANCE_E12: f64 = 1e-12;
+const EPS_SKETCHES_SPATIAL_PARALLEL_LINE_DISTANCE_E9: f64 = 1e-9;
+const EPS_SKETCHES_SPATIAL_LENGTH_PARAMETER_MATCHES_E9: f64 = 1e-9;
+const EPS_SKETCHES_CHECK_SKETCHES_E9: f64 = 1e-9;
+const EPS_SKETCHES_CHECK_SKETCHES_E12: f64 = 1e-12;
+const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E12: f64 = 1e-12;
+const EPS_SKETCHES_PLANAR_PARALLEL_LINE_DISTANCE_E9: f64 = 1e-9;
 
 fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
     findings.push(Finding {
@@ -287,12 +288,10 @@ fn sketch_curve_offset_matches(
             && result_sweep.abs() > EPS_OFFSET_SWEEP
             && source_sweep.signum() == result_sweep.signum()
             && angular_overlap
-            && (source_center.u - result_center.u).abs()
-                <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale
-            && (source_center.v - result_center.v).abs()
-                <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale
+            && (source_center.u - result_center.u).abs() <= 1.0e-9 * scale
+            && (source_center.v - result_center.v).abs() <= 1.0e-9 * scale
             && (source_sweep.signum() * (source_radius.0 - result_radius.0) - expected).abs()
-                <= EPS_SKETCHES_SKETCH_CURVE_OFFSET_MATCHES_E9 * scale;
+                <= 1.0e-9 * scale;
     }
 
     if let Some(distance) =
@@ -405,6 +404,36 @@ fn spatial_line_length(geometry: &SpatialSketchGeometry) -> Option<f64> {
         return None;
     };
     Some((end.x - start.x).hypot((end.y - start.y).hypot(end.z - start.z)))
+}
+
+fn spatial_point_line_distance(
+    point: &SpatialSketchGeometry,
+    line: &SpatialSketchGeometry,
+) -> Option<f64> {
+    let (SpatialSketchGeometry::Point { position }, SpatialSketchGeometry::Line { start, end }) =
+        (point, line)
+    else {
+        return None;
+    };
+    let direction = crate::math::Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
+    let length = direction.norm();
+    if !length.is_finite() || length <= SPATIAL_LINE_DEGENERACY_EPSILON {
+        return None;
+    }
+    let offset = crate::math::Vector3::new(
+        position.x - start.x,
+        position.y - start.y,
+        position.z - start.z,
+    );
+    Some(
+        crate::math::Vector3::new(
+            offset.y * direction.z - offset.z * direction.y,
+            offset.z * direction.x - offset.x * direction.z,
+            offset.x * direction.y - offset.y * direction.x,
+        )
+        .norm()
+            / length,
+    )
 }
 
 fn spatial_parallel_line_span_distance(
@@ -1001,6 +1030,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             | SpatialConstraint::ParallelLineDistance { first, second, .. } => {
                 vec![first.clone(), second.clone()]
             }
+            SpatialConstraint::PointLineDistance { point, line, .. } => {
+                vec![point.clone(), line.clone()]
+            }
             SpatialConstraint::LineLength { entity, .. } => vec![entity.clone()],
             SpatialConstraint::RepeatedLineLength { entities, .. } => entities.clone(),
             SpatialConstraint::RepeatedParallelLineDistance { pairs, .. } => pairs
@@ -1256,6 +1288,40 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                         Check::GeometricConsistency,
                         &constraint.id.0,
                         "spatial point distance requires two points separated by its length parameter",
+                    );
+                }
+            }
+            SpatialConstraint::PointLineDistance {
+                point,
+                line,
+                parameter,
+            } => {
+                if !matches!(
+                    spatial_geometry.get(point),
+                    Some(SpatialSketchGeometry::Point { .. })
+                ) || !matches!(
+                    spatial_geometry.get(line),
+                    Some(SpatialSketchGeometry::Line { .. })
+                ) {
+                    finding(
+                        findings,
+                        Check::ReferentialIntegrity,
+                        &constraint.id.0,
+                        "spatial point-line distance requires a point and line",
+                    );
+                    continue;
+                }
+                let measured = spatial_geometry.get(point).and_then(|point| {
+                    spatial_geometry
+                        .get(line)
+                        .and_then(|line| spatial_point_line_distance(point, line))
+                });
+                if !spatial_length_parameter_matches(measured, parameter, &parameter_values) {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "spatial point-line distance requires a point-to-line distance matching its length parameter",
                     );
                 }
             }

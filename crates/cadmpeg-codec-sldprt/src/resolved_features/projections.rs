@@ -8,7 +8,11 @@ use super::drafts::{draft_operand_candidates, same_draft_operands, DraftAnchor, 
 use super::holes::feature_object_byte_ranges;
 use super::is_class_token;
 use super::parameters::value_only_scalar_offset;
-use super::relation_geometry::owned_relation_parameters;
+use super::relation_geometry::{
+    owned_relation_parameters, relation_display_scalar_for_parameter,
+    RELATION_DISPLAY_SCALAR_ID_PROPERTY, RELATION_PARAMETER_ID_PROPERTY,
+    RELATION_PARAMETER_ROLE_PROPERTY, RELATION_PARAMETER_ROLE_REFERENCE,
+};
 use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::selections::{
@@ -22,15 +26,16 @@ use crate::records::{
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{
-    BodySelection, EdgeSelection, FaceSelection, FeatureDefinition, FilletGroup, Length,
-    PatternSeed, RadiusSpec, VariableRadius,
+    Angle, BodySelection, DesignParameter, DimensionDisplay, EdgeSelection, FaceSelection,
+    FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, PatternSeed, RadiusSpec,
+    VariableRadius,
 };
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry};
 use cadmpeg_ir::topology::Face;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 const EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9: f64 = 1.0e-9;
 const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E8: f64 = 1.0e-8;
@@ -301,6 +306,174 @@ pub(crate) fn bind_parameter_scalars<'a>(
     }
 }
 
+/// Materialize evaluated relation dimensions that have no driving scalar.
+///
+/// A display scalar is a measurement, not a writable native parameter. Keep
+/// its relation and scalar identities in parameter properties so later
+/// relation projection can join the derived value without assigning a
+/// display record to `native_ref`.
+pub(crate) fn synthesize_display_relation_parameters<'a>(
+    parameters: &mut Vec<DesignParameter>,
+    features: &[cadmpeg_ir::features::Feature],
+    lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
+) {
+    let lanes = lanes.into_iter().collect::<Vec<_>>();
+    let owned = owned_relation_parameters(features, parameters, lanes.iter().copied());
+    let features_by_native_ref = features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
+        .collect::<HashMap<_, _>>();
+    let mut relation_ids = parameters
+        .iter()
+        .filter_map(|parameter| {
+            parameter
+                .properties
+                .get(RELATION_PARAMETER_ID_PROPERTY)
+                .cloned()
+        })
+        .collect::<HashSet<_>>();
+    let mut parameter_ids = parameters
+        .iter()
+        .map(|parameter| parameter.id.clone())
+        .collect::<HashSet<_>>();
+    let mut names_by_owner = parameters
+        .iter()
+        .filter_map(|parameter| Some((parameter.owner.clone()?, parameter.name.clone())))
+        .collect::<HashSet<_>>();
+    let mut next_ordinals = parameters.iter().fold(
+        HashMap::<cadmpeg_ir::features::FeatureId, u32>::new(),
+        |mut ordinals, parameter| {
+            let Some(owner) = parameter.owner.clone() else {
+                return ordinals;
+            };
+            let next = parameter.ordinal.saturating_add(1);
+            ordinals
+                .entry(owner)
+                .and_modify(|current| *current = (*current).max(next))
+                .or_insert(next);
+            ordinals
+        },
+    );
+
+    for lane in lanes {
+        for relation in &lane.relation_instances {
+            if relation.parameter_scalar_ref.is_some()
+                || owned.get(&relation.id).is_some_and(Option::is_some)
+                || relation_ids.contains(&relation.id)
+            {
+                continue;
+            }
+            let Some(scalar) = relation_display_scalar_for_parameter(relation, lane) else {
+                continue;
+            };
+            if !scalar.value.is_finite() {
+                continue;
+            }
+            let Some(feature) = features_by_native_ref.get(relation.feature_ref.as_str()) else {
+                continue;
+            };
+            let Some(source_name) = lane
+                .names
+                .iter()
+                .find(|name| name.id == scalar.name)
+                .map(|name| name.value.as_str())
+                .filter(|name| !name.is_empty())
+            else {
+                continue;
+            };
+            let (value, display, expression) =
+                relation_display_parameter_value(relation.family, scalar.value);
+            let owner = feature.id.clone();
+            let ordinal = next_ordinals.entry(owner.clone()).or_insert(0);
+            let current_ordinal = *ordinal;
+            *ordinal = match current_ordinal.checked_add(1) {
+                Some(next) => next,
+                None => continue,
+            };
+            let base_name = format!("{source_name}@reference");
+            let mut name = base_name.clone();
+            if names_by_owner.contains(&(owner.clone(), name.clone())) {
+                name = format!("{base_name}:{}", relation.offset);
+                let mut suffix = 0u32;
+                while names_by_owner.contains(&(owner.clone(), name.clone())) {
+                    suffix = suffix.saturating_add(1);
+                    name = format!("{base_name}:{}:{suffix}", relation.offset);
+                }
+            }
+            let relation_key = relation
+                .id
+                .rsplit_once('#')
+                .map_or(relation.id.as_str(), |(_, key)| key);
+            let id = ParameterId(format!("sldprt:model:parameter#reference:{relation_key}"));
+            if !parameter_ids.insert(id.clone()) {
+                continue;
+            }
+            let mut properties = BTreeMap::new();
+            properties.insert(RELATION_PARAMETER_ID_PROPERTY.into(), relation.id.clone());
+            properties.insert(
+                RELATION_DISPLAY_SCALAR_ID_PROPERTY.into(),
+                scalar.id.clone(),
+            );
+            properties.insert(
+                RELATION_PARAMETER_ROLE_PROPERTY.into(),
+                RELATION_PARAMETER_ROLE_REFERENCE.into(),
+            );
+            properties.insert("source_name".into(), source_name.into());
+            parameters.push(DesignParameter {
+                id,
+                owner: Some(owner.clone()),
+                ordinal: current_ordinal,
+                name: name.clone(),
+                expression,
+                display,
+                value: Some(value),
+                dependencies: Vec::new(),
+                properties,
+                pmi: None,
+                native_ref: None,
+            });
+            names_by_owner.insert((owner, name));
+            relation_ids.insert(relation.id.clone());
+        }
+    }
+}
+
+fn relation_display_parameter_value(
+    family: FeatureInputRelationFamily,
+    value: f64,
+) -> (ParameterValue, Option<DimensionDisplay>, String) {
+    match family {
+        FeatureInputRelationFamily::Angle => (
+            ParameterValue::Angle(Angle(value)),
+            None,
+            crate::history::format_angle_rad(value),
+        ),
+        FeatureInputRelationFamily::CircleDiameter => {
+            let millimetres = value * 1000.0;
+            (
+                ParameterValue::Length(Length(millimetres)),
+                Some(DimensionDisplay::Diameter),
+                format!(
+                    "<MOD-DIAM>{}",
+                    crate::history::format_length_mm(millimetres)
+                ),
+            )
+        }
+        FeatureInputRelationFamily::LineLineDistance
+        | FeatureInputRelationFamily::PointPointDistance
+        | FeatureInputRelationFamily::PointLineDistance
+        | FeatureInputRelationFamily::PointPointHorizontalDistance
+        | FeatureInputRelationFamily::PointPointVerticalDistance => {
+            let millimetres = value * 1000.0;
+            (
+                ParameterValue::Length(Length(millimetres)),
+                None,
+                crate::history::format_length_mm(millimetres),
+            )
+        }
+    }
+}
+
 /// Apply relation-defined units and display semantics to parameters named by display scalars.
 pub(crate) fn type_display_relation_parameters(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
@@ -480,7 +653,6 @@ pub(crate) fn project_compact_edge_selections(
             &feature.definition,
             FeatureDefinition::Fillet { groups }
                 if matches!(groups.as_slice(), [FilletGroup {
-                    edges: EdgeSelection::Unresolved,
                     radius: RadiusSpec::Unresolved { .. },
                     ..
                 }])
@@ -495,15 +667,23 @@ pub(crate) fn project_compact_edge_selections(
                 let [group] = groups.as_slice() else {
                     unreachable!("checked one fillet group")
                 };
-                let tangency_weight = group.tangency_weight;
-                *groups = radius_groups
-                    .into_iter()
-                    .map(|(radius, selections)| FilletGroup {
-                        edges: projected_edges(&selections),
-                        radius,
-                        tangency_weight,
-                    })
-                    .collect();
+                let existing_edges = group.edges.clone();
+                if matches!(&existing_edges, EdgeSelection::Unresolved) || radius_groups.len() == 1
+                {
+                    let tangency_weight = group.tangency_weight;
+                    *groups = radius_groups
+                        .into_iter()
+                        .map(|(radius, selections)| FilletGroup {
+                            edges: if matches!(&existing_edges, EdgeSelection::Unresolved) {
+                                projected_edges(&selections)
+                            } else {
+                                existing_edges.clone()
+                            },
+                            radius,
+                            tangency_weight,
+                        })
+                        .collect();
+                }
             }
         }
         let groups = match &mut feature.definition {
@@ -555,6 +735,61 @@ fn variable_fillet_radius_groups<'a>(
         .collect::<HashSet<_>>();
     if parameter_names.len() != feature.parameters.len() || parameter_names.len() < 2 {
         return None;
+    }
+
+    // A legacy VarFillet with exactly the two ordered controls 0 and 1 may
+    // omit endpoint markers entirely. Its three-reference edge-control
+    // roster supplies one feature-wide radius profile for every selected edge.
+    // Require that roster shape and reject any endpoint-bearing reference so a
+    // feature with several endpoint-specific profiles cannot enter this path.
+    let has_legacy_edge_control_roster = selections.iter().any(|selection| {
+        selection.references.len() == 3
+            && selection.local_edge_ids.len() == selection.references.len()
+            && selection
+                .references
+                .iter()
+                .zip(&selection.local_edge_ids)
+                .all(|(reference, local_id)| {
+                    let [component] = reference.as_slice() else {
+                        return false;
+                    };
+                    component.local_id == Some(*local_id)
+                })
+    });
+    let has_endpoint_reference = selections
+        .iter()
+        .flat_map(|selection| selection.references.iter())
+        .flat_map(|reference| reference.iter())
+        .any(|component| component.instance == Some(0x8083));
+    if parameter_names.len() == 2 && has_legacy_edge_control_roster && !has_endpoint_reference {
+        let mut ordered_parameters = parameter_names
+            .iter()
+            .map(|name| {
+                variable_fillet_dimension_index_for_feature(feature, name).zip(
+                    feature.parameters.get(*name).and_then(|value| {
+                        crate::history::parse_positive_dimension_length_mm(value)
+                    }),
+                )
+            })
+            .collect::<Option<Vec<_>>>()?;
+        ordered_parameters.sort_unstable_by_key(|(index, _)| *index);
+        if ordered_parameters
+            .iter()
+            .enumerate()
+            .all(|(expected, (actual, _))| expected == *actual)
+        {
+            let mut selections = selections.to_vec();
+            selections.sort_unstable_by_key(|selection| selection.ordinal);
+            let points = ordered_parameters
+                .into_iter()
+                .enumerate()
+                .map(|(parameter, (_, radius))| VariableRadius {
+                    parameter: parameter as f64,
+                    radius: Length(radius),
+                })
+                .collect();
+            return Some(vec![(RadiusSpec::Variable { points }, selections)]);
+        }
     }
 
     let mut vertex_radii = HashMap::<[u8; 12], f64>::new();
@@ -940,6 +1175,78 @@ pub(crate) fn project_compact_surface_selections(
             }
             continue;
         }
+        let unresolved_full_round = matches!(
+            &feature.definition,
+            FeatureDefinition::Fillet { groups }
+                if matches!(
+                    groups.as_slice(),
+                    [cadmpeg_ir::features::FilletGroup {
+                        edges: EdgeSelection::Unresolved,
+                        radius: RadiusSpec::Unresolved { .. },
+                        ..
+                    }]
+                )
+        );
+        if unresolved_full_round {
+            let Some([center_faces, side_one_faces, side_two_faces]) =
+                full_round_fillet_selection_triple(feature_selections)
+            else {
+                continue;
+            };
+            let face_selections = [center_faces, side_one_faces, side_two_faces]
+                .into_iter()
+                .map(|selection| {
+                    let native = compact_surface_selection_value(&selection.components);
+                    let generated = selection
+                        .terminal_feature_ref
+                        .as_ref()
+                        .and_then(|producer| feature_ids_by_native.get(producer))
+                        .zip(selection.components.last())
+                        .and_then(|(producer, component)| Some((producer, component.local_id?)));
+                    let face = match generated {
+                        Some((producer, local_id)) => {
+                            if producer != &feature.id && !feature.dependencies.contains(producer) {
+                                feature.dependencies.push(producer.clone());
+                            }
+                            cadmpeg_ir::features::FaceSelection::Generated {
+                                faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                                    feature: producer.clone(),
+                                    local_id: local_id.to_string(),
+                                }],
+                                native,
+                            }
+                        }
+                        None => cadmpeg_ir::features::FaceSelection::Native(native),
+                    };
+                    for producer in selection
+                        .producer_feature_refs
+                        .iter()
+                        .filter_map(|producer| feature_ids_by_native.get(producer))
+                        .filter(|producer| *producer != &feature.id)
+                    {
+                        if !feature.dependencies.contains(producer) {
+                            feature.dependencies.push(producer.clone());
+                        }
+                    }
+                    face
+                })
+                .collect::<Vec<_>>();
+            let [center_faces, side_one_faces, side_two_faces] = face_selections.as_slice() else {
+                unreachable!("full-round candidate has three face selections")
+            };
+            feature.definition = FeatureDefinition::FullRoundFillet {
+                groups: vec![cadmpeg_ir::features::FullRoundFilletGroup {
+                    center_faces: center_faces.clone(),
+                    side_one_faces: cadmpeg_ir::features::FullRoundSideSelection::Explicit(
+                        side_one_faces.clone(),
+                    ),
+                    side_two_faces: cadmpeg_ir::features::FullRoundSideSelection::Explicit(
+                        side_two_faces.clone(),
+                    ),
+                }],
+            };
+            continue;
+        }
         if matches!(feature.definition, FeatureDefinition::DatumPlaneUnresolved)
             && feature_selections.len() == 2
         {
@@ -957,7 +1264,15 @@ pub(crate) fn project_compact_surface_selections(
             }
             continue;
         }
-        let Some(selection) = surface_selection_consensus(feature_selections) else {
+        let first_component = matches!(
+            &feature.definition,
+            FeatureDefinition::CosmeticThread { .. }
+        );
+        let Some(selection) = (if first_component {
+            cosmetic_thread_surface_selection_consensus(feature_selections)
+        } else {
+            surface_selection_consensus(feature_selections)
+        }) else {
             continue;
         };
         if let FeatureDefinition::DatumOffsetPlane {
@@ -1013,13 +1328,16 @@ pub(crate) fn project_compact_surface_selections(
                     else {
                         continue;
                     };
+                    let origin = crate::history::offset_plane_support_origin(
+                        &feature.source_properties,
+                        crate::history::face_selection_native(&face),
+                        origin,
+                        normal,
+                        *distance,
+                    );
                     *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
                         face,
-                        origin: Point3::new(
-                            origin.x + normal.x * distance.0,
-                            origin.y + normal.y * distance.0,
-                            origin.z + normal.z * distance.0,
-                        ),
+                        origin,
                         normal,
                         u_axis,
                     });
@@ -1028,8 +1346,6 @@ pub(crate) fn project_compact_surface_selections(
             }
             continue;
         }
-        let first_component =
-            matches!(feature.definition, FeatureDefinition::CosmeticThread { .. });
         let slot = match &mut feature.definition {
             FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
             FeatureDefinition::Shell { removed_faces, .. } => SelectionSlot::Face(removed_faces),
@@ -1211,17 +1527,50 @@ pub(crate) fn project_compact_surface_selections(
         else {
             continue;
         };
+        let origin = crate::history::offset_plane_support_origin(
+            &feature.source_properties,
+            crate::history::face_selection_native(&face),
+            origin,
+            normal,
+            *distance,
+        );
         *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
             face,
-            origin: Point3::new(
-                origin.x + normal.x * distance.0,
-                origin.y + normal.y * distance.0,
-                origin.z + normal.z * distance.0,
-            ),
+            origin,
             normal,
             u_axis,
         });
     }
+}
+
+fn full_round_fillet_selection_triple<'a>(
+    selections: &[&'a FeatureInputSurfaceSelection],
+) -> Option<[&'a FeatureInputSurfaceSelection; 3]> {
+    let mut by_lane = HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new();
+    for selection in selections {
+        by_lane
+            .entry(selection.parent.as_str())
+            .or_default()
+            .push(*selection);
+    }
+    let mut consensus: Option<[&'a FeatureInputSurfaceSelection; 3]> = None;
+    for mut lane_selections in by_lane.into_values() {
+        lane_selections.sort_unstable_by_key(|selection| selection.offset);
+        let [center, side_one, side_two] = lane_selections.as_slice() else {
+            return None;
+        };
+        if let Some([expected_center, expected_side_one, expected_side_two]) = consensus {
+            if !same_surface_selection_semantics(expected_center, center)
+                || !same_surface_selection_semantics(expected_side_one, side_one)
+                || !same_surface_selection_semantics(expected_side_two, side_two)
+            {
+                return None;
+            }
+        } else {
+            consensus = Some([*center, *side_one, *side_two]);
+        }
+    }
+    consensus
 }
 
 pub(crate) fn project_draft_operands(
@@ -1398,6 +1747,26 @@ fn surface_selection_consensus<'a>(
         .then_some(first)
 }
 
+/// Configuration lanes repeat a cosmetic-thread cylinder reference, but only
+/// its first typed component identifies the attached face.  The remaining
+/// components retain the owning path and can vary with the lane's instance
+/// path.  Reject only when the attached-face component itself disagrees.
+fn cosmetic_thread_surface_selection_consensus<'a>(
+    selections: &[&'a FeatureInputSurfaceSelection],
+) -> Option<&'a FeatureInputSurfaceSelection> {
+    let first = selections.first().copied()?;
+    let first_component = first.components.first()?;
+    selections
+        .iter()
+        .all(|selection| {
+            selection.components.first().is_some_and(|component| {
+                component.local_id == first_component.local_id
+                    && component.type_signature[4..8] == first_component.type_signature[4..8]
+            })
+        })
+        .then_some(first)
+}
+
 fn same_surface_selection_semantics(
     left: &FeatureInputSurfaceSelection,
     right: &FeatureInputSurfaceSelection,
@@ -1507,6 +1876,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         (
                             format!("{lane_key}:{}", selection.offset),
                             Some(selection.components.clone()),
+                            selection.producer_feature_refs.first().cloned(),
                         )
                     })
             })
@@ -1540,7 +1910,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                             &cylinder_tokens,
                         )
                         .into_iter()
-                        .map(|(marker, components)| (format!("{lane_key}:{marker}"), components))
+                        .map(|(marker, components)| {
+                            (format!("{lane_key}:{marker}"), components, None)
+                        })
                         .collect::<Vec<_>>(),
                     )
                 })()
@@ -1549,7 +1921,7 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             .collect::<Vec<_>>();
         let mut native_references = references
             .iter()
-            .map(|(reference, _)| reference.clone())
+            .map(|(reference, _, _)| reference.clone())
             .collect::<Vec<_>>();
         native_references.sort();
         native_references.dedup();
@@ -1561,14 +1933,27 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         });
         let generated = references
             .iter()
-            .map(|(_, components)| {
+            .map(|(_, components, explicit_producer)| {
                 let components = components.as_ref()?;
-                let (component, producer) = component_path_feature(
-                    components,
-                    &history_features,
-                    native_feature.id.as_str(),
-                    ComponentPathEnd::Leading,
-                )?;
+                let explicit = explicit_producer.as_deref().and_then(|producer_ref| {
+                    let producer = history_features
+                        .iter()
+                        .copied()
+                        .find(|candidate| candidate.id.as_str() == producer_ref)?;
+                    let component = components.first()?;
+                    component
+                        .local_id
+                        .is_some()
+                        .then_some((component, producer))
+                });
+                let (component, producer) = explicit.or_else(|| {
+                    component_path_feature(
+                        components,
+                        &history_features,
+                        native_feature.id.as_str(),
+                        ComponentPathEnd::Leading,
+                    )
+                })?;
                 Some((
                     feature_ids_by_native.get(producer.id.as_str())?.clone(),
                     component.local_id?.to_string(),
@@ -1684,13 +2069,25 @@ pub(crate) fn project_unbound_offset_plane_faces(
         else {
             continue;
         };
-        if !matches!(face, cadmpeg_ir::features::FaceSelection::Unresolved) {
-            continue;
-        }
+        let native = match face {
+            cadmpeg_ir::features::FaceSelection::Unresolved => None,
+            cadmpeg_ir::features::FaceSelection::Native(native)
+                if native.starts_with("sldprt:feature-input:legacy-face-alias#") =>
+            {
+                Some(native.clone())
+            }
+            _ => continue,
+        };
         let Some(selected) = unique_planar_face(*origin, *normal, faces, surfaces) else {
             continue;
         };
-        *face = cadmpeg_ir::features::FaceSelection::Faces(vec![selected]);
+        *face = match native {
+            Some(native) => cadmpeg_ir::features::FaceSelection::Resolved {
+                faces: vec![selected],
+                native,
+            },
+            None => cadmpeg_ir::features::FaceSelection::Faces(vec![selected]),
+        };
     }
 }
 

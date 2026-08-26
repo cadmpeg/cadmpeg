@@ -6,7 +6,6 @@ use cadmpeg_ir::features::{
     Angle, CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference,
     FaceSelection, FeatureDefinition, FeatureId, Length, PathRef, ProfileRef, WrapMode,
 };
-use cadmpeg_ir::math::Point3;
 use std::collections::HashMap;
 
 use crate::history::literals::{
@@ -48,13 +47,17 @@ pub(crate) fn project_offset_plane(
         .or_else(|| {
             let origin = parse_point3_mm(feature.properties.get("Origin")?)?;
             let normal = parse_vector3(feature.properties.get("Normal")?)?;
+            let native = feature.properties.get("ReferenceFaceNative")?;
+            let origin = crate::history::offset_plane_support_origin(
+                &feature.properties,
+                Some(native),
+                origin,
+                normal,
+                distance,
+            );
             Some(DatumPlaneReference::Face {
-                face: FaceSelection::Native(feature.properties.get("ReferenceFaceNative")?.clone()),
-                origin: Point3::new(
-                    origin.x + normal.x * distance.0,
-                    origin.y + normal.y * distance.0,
-                    origin.z + normal.z * distance.0,
-                ),
+                face: FaceSelection::Native(native.clone()),
+                origin,
                 normal,
                 u_axis: parse_vector3(feature.properties.get("UAxis")?)?,
             })

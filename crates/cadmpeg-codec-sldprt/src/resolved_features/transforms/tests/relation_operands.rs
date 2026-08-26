@@ -171,6 +171,12 @@ fn axis_relation_expands_intermediate_relation_handle() {
             entity_ref: second.id.clone(),
         },
     ];
+    let mut reverse_owner = marker("reverse-owner", Some([3.0, 4.0]));
+    reverse_owner.offset = 3;
+    reverse_owner.links = vec![SketchInputLink {
+        local_id: 9,
+        entity_ref: distance.id.clone(),
+    }];
     let mut horizontal = marker("horizontal", None);
     horizontal.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
     horizontal.local_id = Some(13);
@@ -189,6 +195,7 @@ fn axis_relation_expands_intermediate_relation_handle() {
         (first.id.as_str(), &first),
         (second.id.as_str(), &second),
         (distance.id.as_str(), &distance),
+        (reverse_owner.id.as_str(), &reverse_owner),
         (horizontal.id.as_str(), &horizontal),
     ]);
     let loci = HashMap::from([
@@ -199,6 +206,12 @@ fn axis_relation_expands_intermediate_relation_handle() {
         (
             second.id.clone(),
             vec![SketchLocus::Entity(SketchEntityId("second-point".into()))],
+        ),
+        (
+            reverse_owner.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId(
+                "reverse-owner-point".into(),
+            ))],
         ),
     ]);
 
@@ -263,6 +276,92 @@ fn axis_relation_expands_intermediate_relation_handle() {
         ),
         Some(SketchConstraintDefinition::Native { .. })
     ));
+}
+
+#[test]
+fn axis_relation_prefers_forward_points_over_reverse_owners() {
+    let sketch = SketchId("axis-sketch".into());
+    let first = marker("first-point", Some([0.0, 1.0]));
+    let mut second = marker("second-point", Some([2.0, 1.0]));
+    second.offset = 1;
+    let mut horizontal = marker("horizontal", None);
+    horizontal.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    horizontal.offset = 2;
+    horizontal.links = vec![
+        SketchInputLink {
+            local_id: 8,
+            entity_ref: first.id.clone(),
+        },
+        SketchInputLink {
+            local_id: 9,
+            entity_ref: second.id.clone(),
+        },
+    ];
+    let mut reverse_first = marker("reverse-first", Some([3.0, 4.0]));
+    reverse_first.kind = SketchInputKind::Point;
+    reverse_first.offset = 3;
+    reverse_first.links = vec![SketchInputLink {
+        local_id: 10,
+        entity_ref: horizontal.id.clone(),
+    }];
+    let mut reverse_second = marker("reverse-second", Some([5.0, 6.0]));
+    reverse_second.kind = SketchInputKind::Point;
+    reverse_second.offset = 4;
+    reverse_second.links = reverse_first.links.clone();
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+        (horizontal.id.as_str(), &horizontal),
+        (reverse_first.id.as_str(), &reverse_first),
+        (reverse_second.id.as_str(), &reverse_second),
+    ]);
+    let first_entity = SketchEntity {
+        id: SketchEntityId("first-entity".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(first.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 1.0),
+        },
+    };
+    let second_entity = SketchEntity {
+        id: SketchEntityId("second-entity".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(second.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(2.0, 1.0),
+        },
+    };
+    let entities = [first_entity.clone(), second_entity.clone()];
+    let loci = HashMap::from([
+        (
+            first.id.clone(),
+            vec![SketchLocus::Entity(first_entity.id.clone())],
+        ),
+        (
+            second.id.clone(),
+            vec![SketchLocus::Entity(second_entity.id.clone())],
+        ),
+    ]);
+
+    assert_eq!(
+        typed_marker_relation_definition_in_sketch(
+            &horizontal,
+            &sketch,
+            &entities,
+            &markers,
+            &loci,
+        ),
+        Some(SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(first_entity.id),
+            second: SketchLocus::Entity(second_entity.id),
+        })
+    );
 }
 
 #[test]
@@ -396,15 +495,18 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
         start: Point2::new(0.0, 2.0),
         end: Point2::new(0.0, 6.0),
     };
+    let entities = [first_line, second_line];
+    let definition =
+        typed_marker_relation_definition_in_sketch(&relation, &sketch, &entities, &markers, &loci)
+            .expect("typed parallel relation");
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(
-            &relation,
-            &sketch,
-            &[first_line, second_line],
-            &markers,
-            &loci,
-        ),
-        Some(SketchConstraintDefinition::Native { .. })
+        definition,
+        SketchConstraintDefinition::Parallel { .. }
+    ));
+    assert!(marker_relation_is_inactive(
+        &relation,
+        &definition,
+        &entities,
     ));
 }
 

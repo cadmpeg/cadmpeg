@@ -2620,6 +2620,7 @@ pub fn project_spatial_dimension_constraints(
                 ..
             }
             | SpatialSketchConstraintDefinition::PointDistance { parameter, .. }
+            | SpatialSketchConstraintDefinition::PointLineDistance { parameter, .. }
             | SpatialSketchConstraintDefinition::LineLength { parameter, .. }
             | SpatialSketchConstraintDefinition::RepeatedLineLength { parameter, .. }
             | SpatialSketchConstraintDefinition::ParallelLineDistance { parameter, .. }

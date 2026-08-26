@@ -12,9 +12,9 @@ use crate::SldprtCodec;
 
 #[test]
 fn decode_merges_partition_and_deltas_records() {
-    let body = triangle_body();
-    let split = body.len() / 2;
-    let f = sldprt_with_partition_and_deltas(&body[..split], &body[split..]);
+    let partition = triangle_body();
+    let deltas = world_point(60, [2.0, 0.0, 0.0]);
+    let f = sldprt_with_partition_and_deltas(&partition, &deltas);
     let mut cur = Cursor::new(f);
 
     let result = SldprtCodec
@@ -24,6 +24,38 @@ fn decode_merges_partition_and_deltas_records() {
     assert!(result.report().geometry_transferred);
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.points.len(), 3);
+    assert!(result
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.position.x == 2000.0));
+}
+
+#[test]
+fn typed_ownership_can_close_across_partition_and_deltas() {
+    let full = triangle_body();
+    let typed_start = full
+        .windows(3)
+        .position(|window| window == [0x00, 0x0c, 0xff])
+        .expect("typed body");
+    let partition = &full[..typed_start];
+    let deltas = &full[typed_start..];
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(partition, deltas)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.shells[0].faces.len(), 1);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("No body record was available")));
 }
 
 #[test]
@@ -31,11 +63,23 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     let mut partition = Vec::new();
-    partition.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    partition.extend(face_color_definition());
+    partition.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
     partition.extend(entity53_color(900, [0.25, 0.5, 0.75]));
     partition.extend(owned_triangle(0, 700, 0.0));
     let mut deltas = Vec::new();
-    deltas.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    deltas.extend(face_color_definition());
+    deltas.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
     deltas.extend(entity53_color(900, [0.25, 0.5, 0.75]));
 
     let result = SldprtCodec
@@ -194,7 +238,7 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
 #[test]
 fn unselected_deltas_bridges_do_not_enter_partition_membership() {
     let partition = triangle_body();
-    let deltas = owned_triangle(200, 900, 10.0);
+    let deltas = bridge(210, 220, 300);
     let mut cur = Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas));
 
     let result = SldprtCodec

@@ -1,20 +1,136 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind native topology selections to decoded B-rep identities.
 
-use crate::records::FeatureHistory;
+use crate::records::{FeatureHistory, FeatureInputSurfaceSelection};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{
     BodySelection, DatumPlaneReference, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceSelection,
-    FeatureDefinition, PathRef, PatternKind, ProfileRef, Termination,
+    FeatureDefinition, Length, PathRef, PatternKind, ProfileRef, Termination,
 };
 use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Edge, Face};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::history::literals::{parse_point3_mm, parse_vector3};
 
-const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9: f64 = 1.0e-9;
-const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8: f64 = 1.0e-8;
+const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9: f64 = 1e-9;
+const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8: f64 = 1e-8;
+
+pub(crate) type SurfaceSelectionFaceBindings =
+    HashMap<(String, String), Option<Vec<cadmpeg_ir::ids::FaceId>>>;
+
+pub(crate) struct FaceSelectionContext<'a> {
+    pub(crate) ids: &'a HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
+    pub(crate) feature_ref: Option<&'a str>,
+    pub(crate) surface_selection_faces: &'a SurfaceSelectionFaceBindings,
+}
+
+pub(crate) struct TopologySelectionInputs<'a> {
+    pub(crate) bodies: &'a [Body],
+    pub(crate) faces: &'a [Face],
+    pub(crate) surfaces: &'a [Surface],
+    pub(crate) edges: &'a [Edge],
+    pub(crate) curves: &'a [Curve],
+    pub(crate) lanes: &'a [crate::records::FeatureInputLane],
+    pub(crate) face_identities: &'a [(String, u32, u32)],
+}
+
+const SURFACE_COMPONENT_SELECTION_PREFIX: &str = "sldprt:feature-input:surface-component-ids";
+
+/// Return the native expression retained by a face selection, when present.
+pub(crate) fn face_selection_native(selection: &FaceSelection) -> Option<&str> {
+    match selection {
+        FaceSelection::Resolved { native, .. }
+        | FaceSelection::Historical { native, .. }
+        | FaceSelection::HistoricalPartial { native, .. }
+        | FaceSelection::Generated { native, .. }
+        | FaceSelection::Native(native) => Some(native),
+        FaceSelection::Unresolved | FaceSelection::Faces(_) => None,
+    }
+}
+
+/// Resolve the support origin represented by a face-backed offset reference.
+/// Explicit face frames and legacy face aliases store the support origin. A
+/// surface-component selection stores the resulting plane origin, so its
+/// support is one signed `D1` displacement along the stored normal.
+pub(crate) fn offset_plane_support_origin(
+    source_properties: &BTreeMap<String, String>,
+    native: Option<&str>,
+    fallback_origin: Point3,
+    normal: Vector3,
+    distance: Length,
+) -> Point3 {
+    if let Some(origin) = source_properties
+        .get("ReferenceFaceOrigin")
+        .and_then(|value| parse_point3_mm(value))
+    {
+        return origin;
+    }
+    let origin = source_properties
+        .get("Origin")
+        .and_then(|value| parse_point3_mm(value))
+        .unwrap_or(fallback_origin);
+    if native.is_some_and(|native| native.starts_with(SURFACE_COMPONENT_SELECTION_PREFIX)) {
+        return Point3::new(
+            origin.x + normal.x * distance.0,
+            origin.y + normal.y * distance.0,
+            origin.z + normal.z * distance.0,
+        );
+    }
+    origin
+}
+
+fn surface_selection_face_bindings<'a>(
+    selections: impl IntoIterator<Item = &'a FeatureInputSurfaceSelection>,
+    feature_sources: &HashMap<String, Option<u32>>,
+    face_identities: &[(String, u32, u32)],
+) -> SurfaceSelectionFaceBindings {
+    let mut faces_by_identity = HashMap::<(u32, u32), Option<cadmpeg_ir::ids::FaceId>>::new();
+    for (target, feature_source_id, local_face_id) in face_identities {
+        let candidate = cadmpeg_ir::ids::FaceId(target.clone());
+        let entry = faces_by_identity
+            .entry((*feature_source_id, *local_face_id))
+            .or_insert_with(|| Some(candidate.clone()));
+        if entry
+            .as_ref()
+            .is_some_and(|existing| existing != &candidate)
+        {
+            *entry = None;
+        }
+    }
+
+    let mut bindings = SurfaceSelectionFaceBindings::new();
+    for selection in selections {
+        let candidate = selection.components.last().and_then(|component| {
+            let feature_source_id = match selection.terminal_feature_ref.as_deref() {
+                Some(terminal_feature) => feature_sources.get(terminal_feature).copied().flatten(),
+                None => View::u32_le_at(&component.type_signature, 4),
+            }?;
+            let local_face_id = component.local_id?;
+            faces_by_identity
+                .get(&(feature_source_id, local_face_id))
+                .cloned()
+                .flatten()
+        });
+        let native = crate::resolved_features::terminations::compact_surface_selection_value(
+            &selection.components,
+        );
+        let key = (selection.feature_ref.clone(), native);
+        let candidate = candidate.map(|face| vec![face]);
+        match bindings.entry(key) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(candidate);
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if entry.get() != &candidate {
+                    entry.insert(None);
+                }
+            }
+        }
+    }
+    bindings
+}
 
 pub(crate) fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut ExtrudeSide> {
     match extent {
@@ -26,12 +142,15 @@ pub(crate) fn extrude_extent_sides_mut(extent: &mut ExtrudeExtent) -> Vec<&mut E
 pub fn bind_topology_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
-    bodies: &[Body],
-    faces: &[Face],
-    surfaces: &[Surface],
-    edges: &[Edge],
-    curves: &[Curve],
+    inputs: &TopologySelectionInputs<'_>,
 ) {
+    let bodies = inputs.bodies;
+    let faces = inputs.faces;
+    let surfaces = inputs.surfaces;
+    let edges = inputs.edges;
+    let curves = inputs.curves;
+    let lanes = inputs.lanes;
+    let face_identities = inputs.face_identities;
     let body_ids = selection_ids(
         bodies
             .iter()
@@ -56,7 +175,22 @@ pub fn bind_topology_selections(
         .iter()
         .map(|surface| (&surface.id, surface))
         .collect::<HashMap<_, _>>();
+    let feature_sources = history_feature_sources(histories, lanes);
+    let surface_selection_faces = surface_selection_face_bindings(
+        lanes.iter().flat_map(|lane| lane.surface_selections.iter()),
+        &feature_sources,
+        face_identities,
+    );
     for feature in features {
+        let feature_native_ref = feature.native_ref.clone();
+        let face_selection_context = FaceSelectionContext {
+            ids: &face_ids,
+            feature_ref: feature_native_ref.as_deref(),
+            surface_selection_faces: &surface_selection_faces,
+        };
+        let resolve_face = |selection: &mut FaceSelection| {
+            resolve_face_selection(selection, &face_selection_context);
+        };
         if let Some(scope) = feature
             .native_ref
             .as_deref()
@@ -81,20 +215,32 @@ pub fn bind_topology_selections(
                         normal,
                         ..
                     }),
-                ..
+                distance,
             } => {
-                resolve_offset_plane_face_selection(
-                    reference,
+                let native = face_selection_native(reference).or_else(|| {
+                    feature
+                        .source_properties
+                        .get("ReferenceFaceNative")
+                        .map(String::as_str)
+                });
+                let support_origin = offset_plane_support_origin(
+                    &feature.source_properties,
+                    native,
                     *origin,
                     *normal,
+                    *distance,
+                );
+                *origin = support_origin;
+                resolve_offset_plane_face_selection(
+                    reference,
+                    support_origin,
+                    *normal,
+                    &face_selection_context,
                     faces,
                     &surfaces_by_id,
                 );
             }
-            FeatureDefinition::DatumOffsetPlane {
-                reference,
-                distance,
-            } if reference.is_none() => {
+            FeatureDefinition::DatumOffsetPlane { reference, .. } if reference.is_none() => {
                 let Some(origin) = feature
                     .source_properties
                     .get("Origin")
@@ -116,23 +262,12 @@ pub fn bind_topology_selections(
                 else {
                     continue;
                 };
-                let support_origin = Point3::new(
-                    origin.x + normal.x * distance.0,
-                    origin.y + normal.y * distance.0,
-                    origin.z + normal.z * distance.0,
-                );
                 let mut face = FaceSelection::Unresolved;
-                resolve_planar_face_selection(
-                    &mut face,
-                    support_origin,
-                    normal,
-                    faces,
-                    &surfaces_by_id,
-                );
+                resolve_planar_face_selection(&mut face, origin, normal, faces, &surfaces_by_id);
                 if !matches!(face, FaceSelection::Unresolved) {
                     *reference = Some(DatumPlaneReference::Face {
                         face,
-                        origin: support_origin,
+                        origin,
                         normal,
                         u_axis,
                     });
@@ -146,7 +281,7 @@ pub fn bind_topology_selections(
                     if let Termination::ToFace { face, .. }
                     | Termination::OffsetFromFace { face, .. } = &mut side.termination
                     {
-                        resolve_face_selection(face, &face_ids);
+                        resolve_face(face);
                     }
                 }
             }
@@ -191,16 +326,16 @@ pub fn bind_topology_selections(
                 }
             }
             FeatureDefinition::Shell { removed_faces, .. } => {
-                resolve_face_selection(removed_faces, &face_ids);
+                resolve_face(removed_faces);
             }
             FeatureDefinition::Thicken { faces, .. } => {
-                resolve_face_selection(faces, &face_ids);
+                resolve_face(faces);
             }
             FeatureDefinition::OffsetSurface { faces, .. } => {
-                resolve_face_selection(faces, &face_ids);
+                resolve_face(faces);
             }
             FeatureDefinition::KnitSurface { faces, .. } => {
-                resolve_face_selection(faces, &face_ids);
+                resolve_face(faces);
             }
             FeatureDefinition::FilledSurface {
                 boundary,
@@ -210,14 +345,14 @@ pub fn bind_topology_selections(
                 if let cadmpeg_ir::features::SurfaceBoundary::Edges(edges) = boundary {
                     resolve_edge_selection(edges, &edge_ids);
                 }
-                resolve_face_selection(support_faces, &face_ids);
+                resolve_face(support_faces);
             }
             FeatureDefinition::TrimSurface { faces, tool, .. } => {
-                resolve_face_selection(faces, &face_ids);
+                resolve_face(faces);
                 resolve_path_ref(tool, &edge_ids, &curve_ids);
             }
             FeatureDefinition::ExtendSurface { faces, .. } => {
-                resolve_face_selection(faces, &face_ids);
+                resolve_face(faces);
             }
             FeatureDefinition::RuledSurface {
                 edges,
@@ -225,15 +360,15 @@ pub fn bind_topology_selections(
                 ..
             } => {
                 resolve_edge_selection(edges, &edge_ids);
-                resolve_face_selection(support_faces, &face_ids);
+                resolve_face(support_faces);
             }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
                 ..
             } => {
-                resolve_face_selection(faces, &face_ids);
-                resolve_face_selection(neutral_plane, &face_ids);
+                resolve_face(faces);
+                resolve_face(neutral_plane);
             }
             FeatureDefinition::Combine { target, tools, .. } => {
                 resolve_body_selection(target, &body_ids);
@@ -241,7 +376,7 @@ pub fn bind_topology_selections(
             }
             FeatureDefinition::CutWithSurface { targets, tools, .. } => {
                 resolve_body_selection(targets, &body_ids);
-                resolve_face_selection(tools, &face_ids);
+                resolve_face(tools);
             }
             FeatureDefinition::DeleteBody { bodies, .. } => {
                 resolve_body_selection(bodies, &body_ids);
@@ -262,23 +397,23 @@ pub fn bind_topology_selections(
             FeatureDefinition::DeleteFace { faces, .. }
             | FeatureDefinition::MoveFace { faces, .. }
             | FeatureDefinition::Dome { faces, .. } => {
-                resolve_face_selection(faces, &face_ids);
+                resolve_face(faces);
             }
             FeatureDefinition::ReplaceFace {
                 targets,
                 replacements,
             } => {
-                resolve_face_selection(targets, &face_ids);
-                resolve_face_selection(replacements, &face_ids);
+                resolve_face(targets);
+                resolve_face(replacements);
             }
             FeatureDefinition::Hole {
                 face: Some(face), ..
             } => {
-                resolve_face_selection(face, &face_ids);
+                resolve_face(face);
             }
             FeatureDefinition::Wrap { profile, face, .. } => {
                 resolve_profile_ref(profile, &face_ids);
-                resolve_face_selection(face, &face_ids);
+                resolve_face(face);
             }
             FeatureDefinition::ProjectedCurve {
                 source,
@@ -286,7 +421,7 @@ pub fn bind_topology_selections(
                 ..
             } => {
                 resolve_path_ref(source, &edge_ids, &curve_ids);
-                resolve_face_selection(target_faces, &face_ids);
+                resolve_face(target_faces);
             }
             FeatureDefinition::CompositeCurve { segments, .. } => {
                 for segment in segments {
@@ -361,9 +496,14 @@ pub(crate) fn resolve_offset_plane_face_selection(
     selection: &mut FaceSelection,
     origin: Point3,
     normal: Vector3,
+    context: &FaceSelectionContext<'_>,
     faces: &[Face],
     surfaces: &HashMap<&cadmpeg_ir::ids::SurfaceId, &Surface>,
 ) {
+    if !matches!(selection, FaceSelection::Native(_)) {
+        return;
+    }
+    resolve_face_selection(selection, context);
     if !matches!(selection, FaceSelection::Native(_)) {
         return;
     }
@@ -425,16 +565,54 @@ pub(crate) fn resolve_ids<Id: Clone>(
 
 pub(crate) fn resolve_face_selection(
     selection: &mut FaceSelection,
-    ids: &HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
+    context: &FaceSelectionContext<'_>,
 ) {
     if let FaceSelection::Native(native) = selection {
-        if let Some(faces) = resolve_ids(native, ids) {
+        let faces = resolve_ids(native, context.ids).or_else(|| {
+            let feature_ref = context.feature_ref?;
+            context
+                .surface_selection_faces
+                .get(&(feature_ref.to_string(), native.clone()))
+                .cloned()
+                .flatten()
+        });
+        if let Some(faces) = faces {
             *selection = FaceSelection::Resolved {
                 faces,
                 native: native.clone(),
             };
         }
     }
+}
+
+fn history_feature_sources(
+    histories: &[FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+) -> HashMap<String, Option<u32>> {
+    let mut features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .cloned()
+        .collect::<Vec<_>>();
+    crate::resolved_features::selections::enrich_feature_object_sources(&mut features, lanes);
+    let mut sources = HashMap::new();
+    for feature in features {
+        let source = feature
+            .source_id
+            .as_deref()
+            .and_then(|value| value.parse::<u32>().ok());
+        match sources.entry(feature.id.clone()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(source);
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if entry.get() != &source {
+                    entry.insert(None);
+                }
+            }
+        }
+    }
+    sources
 }
 
 pub(crate) fn resolve_edge_selection(
@@ -462,5 +640,98 @@ pub(crate) fn resolve_body_selection(
                 native: native.clone(),
             };
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::records::FeatureInputComponentPathEntry;
+
+    fn component(feature_source_id: u32, local_face_id: u32) -> FeatureInputComponentPathEntry {
+        let mut type_signature = [0; 12];
+        type_signature[4..8].copy_from_slice(&feature_source_id.to_le_bytes());
+        FeatureInputComponentPathEntry {
+            instance: Some(0x8001),
+            type_signature,
+            local_id: Some(local_face_id),
+        }
+    }
+
+    fn surface_selection(
+        feature_ref: &str,
+        components: Vec<FeatureInputComponentPathEntry>,
+    ) -> FeatureInputSurfaceSelection {
+        FeatureInputSurfaceSelection {
+            id: "selection".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            selector: 2,
+            endpoint_selector: None,
+            object_name_ref: "feature".into(),
+            feature_ref: feature_ref.into(),
+            producer_feature_refs: Vec::new(),
+            terminal_feature_ref: None,
+            components,
+        }
+    }
+
+    #[test]
+    fn surface_selection_binds_terminal_component_identity() {
+        let selection = surface_selection("feature", vec![component(47, 8), component(50, 5)]);
+        let feature_sources = HashMap::new();
+        let bindings = surface_selection_face_bindings(
+            std::iter::once(&selection),
+            &feature_sources,
+            &[
+                ("intermediate-face".into(), 47, 8),
+                ("terminal-face".into(), 50, 5),
+            ],
+        );
+        let key = (
+            "feature".to_string(),
+            "sldprt:feature-input:surface-component-ids:8,5".to_string(),
+        );
+        assert_eq!(
+            bindings.get(&key).cloned(),
+            Some(Some(vec![cadmpeg_ir::ids::FaceId("terminal-face".into())]))
+        );
+    }
+
+    #[test]
+    fn surface_selection_keeps_ambiguous_terminal_identity_native() {
+        let selection = surface_selection("feature", vec![component(50, 5)]);
+        let feature_sources = HashMap::new();
+        let bindings = surface_selection_face_bindings(
+            std::iter::once(&selection),
+            &feature_sources,
+            &[("first-face".into(), 50, 5), ("second-face".into(), 50, 5)],
+        );
+        let key = (
+            "feature".to_string(),
+            "sldprt:feature-input:surface-component-ids:5".to_string(),
+        );
+        assert_eq!(bindings.get(&key).cloned(), Some(None));
+    }
+
+    #[test]
+    fn explicit_terminal_owner_overrides_component_source() {
+        let mut selection = surface_selection("feature", vec![component(47, 8), component(99, 5)]);
+        selection.terminal_feature_ref = Some("terminal".into());
+        let feature_sources = HashMap::from([(String::from("terminal"), Some(50))]);
+        let bindings = surface_selection_face_bindings(
+            std::iter::once(&selection),
+            &feature_sources,
+            &[("terminal-face".into(), 50, 5)],
+        );
+        let key = (
+            "feature".to_string(),
+            "sldprt:feature-input:surface-component-ids:8,5".to_string(),
+        );
+        assert_eq!(
+            bindings.get(&key).cloned(),
+            Some(Some(vec![cadmpeg_ir::ids::FaceId("terminal-face".into())]))
+        );
     }
 }

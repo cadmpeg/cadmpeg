@@ -1,6 +1,8 @@
 //! Named scalar records, operands and feature object names.
 
-use super::relation_records::{compact_scalar_layout, legacy_scalar_layout, scalar_role};
+use super::relation_records::{
+    compact_scalar_layout, legacy_scalar_layout, scalar_role, shifted_value_only_scalar_trailer,
+};
 use super::{COMPACT_SCALAR_HEADER, NAME_MARKER, SCALAR_HEADER, VALUE_ONLY_SCALAR_HEADER};
 use crate::records::{
     FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
@@ -77,6 +79,15 @@ fn scalar_value_offset(payload: &[u8], name_offset: usize, name: &str) -> Option
         return Some(compact_value_offset);
     }
     let value_only_offset = header_offset.checked_add(VALUE_ONLY_SCALAR_HEADER.len())?;
+    let shifted_value_offset = value_only_offset.checked_add(4)?;
+    let shifted_trailer_offset = shifted_value_offset.checked_add(8)?;
+    if payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER)
+        && payload.get(value_only_offset..shifted_value_offset) == Some(&[0; 4])
+        && View::f64_le_at(payload, shifted_value_offset).is_some_and(f64::is_finite)
+        && shifted_value_only_scalar_trailer(payload, shifted_trailer_offset)
+    {
+        return Some(shifted_value_offset);
+    }
     (payload.get(header_offset..value_only_offset) == Some(VALUE_ONLY_SCALAR_HEADER))
         .then_some(value_only_offset)
 }

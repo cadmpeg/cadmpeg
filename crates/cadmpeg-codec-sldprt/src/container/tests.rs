@@ -160,6 +160,109 @@ fn parasolid_partition_selection_uses_explicit_active_source_index() {
 }
 
 #[test]
+fn parasolid_partition_selection_uses_the_namespaced_manifest_active_id() {
+    let mut source = sldprt_with_colliding_sites();
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="First"/><Configuration Name="Second"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/Features",
+        br#"<?xml version="1.0"?><swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="model-0" swConfigurationName="First" swConfigurationId="0"/><swModel id="model-1" swConfigurationName="Second" swConfigurationId="1"/><swConfigurationList><swConfiguration swID="0" swModelRef="model-0" swMostRecentConfiguration="NO"/><swConfiguration swID="1" swModelRef="model-1" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#,
+    ));
+    let scan = container::scan_bytes(&source);
+
+    assert_eq!(
+        container::manifest_active_configuration(&scan),
+        Some((1, Some("Second".to_string())))
+    );
+    assert_eq!(
+        container::active_configuration_name(&scan).as_deref(),
+        Some("Second")
+    );
+    assert_eq!(container::active_configuration_index(&scan), Some(1));
+    let (block, _) = container::select_active_parasolid(&scan).expect("manifest selects a site");
+    assert_eq!(
+        block.section.as_deref(),
+        Some("Contents/Config-1-Partition")
+    );
+}
+
+#[test]
+fn parasolid_partition_selection_accepts_utf16_manifest_payloads() {
+    let xml = r#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swConfigurationList><swConfiguration swID="1" swName="Second" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#;
+    let mut payload = vec![0xff, 0xfe];
+    for unit in xml.encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    let mut source = sldprt_with_colliding_sites();
+    source.extend(make_block(0x43, "Contents/Features", &payload));
+    let scan = container::scan_bytes(&source);
+
+    assert_eq!(container::active_configuration_index(&scan), Some(1));
+    let (block, _) = container::select_active_parasolid(&scan).expect("UTF-16 manifest");
+    assert_eq!(
+        block.section.as_deref(),
+        Some("Contents/Config-1-Partition")
+    );
+}
+
+#[test]
+fn explicit_source_index_precedes_the_manifest_partition_id() {
+    let mut source = sldprt_with_colliding_sites();
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="First"/><Configuration Name="Second" SourceIndex="0"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/Features",
+        br#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="model-0" swConfigurationName="First"/><swModel id="model-1" swConfigurationName="Second"/><swConfigurationList><swConfiguration swID="1" swModelRef="model-1" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#,
+    ));
+    let scan = container::scan_bytes(&source);
+
+    assert_eq!(container::active_configuration_index(&scan), Some(0));
+    let (block, _) = container::select_active_parasolid(&scan).expect("explicit source index");
+    assert_eq!(
+        block.section.as_deref(),
+        Some("Contents/Config-0-Partition")
+    );
+}
+
+#[test]
+fn non_unique_manifest_activity_does_not_select_one_of_multiple_partitions() {
+    for manifest in [
+        br#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swConfigurationList><swConfiguration swID="0" swMostRecentConfiguration="NO"/><swConfiguration swID="1" swMostRecentConfiguration="NO"/></swConfigurationList></swSolidWorks>"#.as_slice(),
+        br#"<swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swConfigurationList><swConfiguration swID="0" swMostRecentConfiguration="YES"/><swConfiguration swID="1" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#.as_slice(),
+    ] {
+        let mut source = sldprt_with_colliding_sites();
+        source.extend(make_block(0x43, "Contents/Features", manifest));
+        let scan = container::scan_bytes(&source);
+        assert_eq!(container::manifest_active_configuration(&scan), None);
+        assert_eq!(container::active_configuration_index(&scan), None);
+        assert!(container::select_active_parasolid(&scan).is_none());
+    }
+}
+
+#[test]
+fn manifest_activity_is_read_only_from_the_features_stream() {
+    let mut source = sldprt_with_colliding_sites();
+    source.extend(make_block(
+        0x42,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks><swConfigurationList><swConfiguration swID="1" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#,
+    ));
+    let scan = container::scan_bytes(&source);
+
+    assert_eq!(container::manifest_active_configuration(&scan), None);
+    assert_eq!(container::active_configuration_index(&scan), None);
+    assert!(container::select_active_parasolid(&scan).is_none());
+}
+
+#[test]
 fn parasolid_partition_selection_never_uses_a_deltas_section() {
     let mut source = outer_header();
     source.extend(make_block(

@@ -1209,6 +1209,10 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                             parameter,
                             ..
                         }
+                        | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointLineDistance {
+                            parameter,
+                            ..
+                        }
                         | cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelLineDistance {
                             parameter,
                             ..

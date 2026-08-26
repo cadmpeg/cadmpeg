@@ -5,8 +5,8 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::HashSet;
 
-const EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_REFERENCE_PLANE_RECORD_E9: f64 = 1.0e-9;
-const EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9: f64 = 1.0e-9;
+const EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_REFERENCE_PLANE_RECORD_E9: f64 = 1e-9;
+const EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9: f64 = 1e-9;
 
 const COMPACT_REFERENCE_PLANE_CLASS: &[u8] = b"moCompRefPlane_c";
 const COMPACT_REFERENCE_PLANE_RECORD_LEN: usize = 67;
@@ -214,7 +214,20 @@ pub(super) fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, V
     let mut frames = payload
         .windows(RECORD_LEN)
         .filter_map(|bytes| {
+            // Cheap byte-pattern guards run before any float is read; every
+            // guard is side-effect free, so rejecting early keeps the accept
+            // set identical while skipping the frame math at almost every
+            // window offset.
             let source = View::u32_le_at(bytes, 0)?;
+            if source == 0
+                || bytes.get(8..14) != Some(&[0; 6])
+                || bytes.get(14) != Some(&1)
+                || bytes.get(119..122) != Some(&[0; 3])
+                || bytes.get(122..126) != Some(&4u32.to_le_bytes())
+                || bytes.get(126..130) != Some(&[0xff; 4])
+            {
+                return None;
+            }
             let scalar = |index: usize| {
                 let offset = 15 + index * 8;
                 let value = View::f64_le_at(bytes, offset)?;
@@ -224,11 +237,8 @@ pub(super) fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, V
             let v_axis = Vector3::new(scalar(3)?, scalar(4)?, scalar(5)?);
             let normal = Vector3::new(scalar(6)?, scalar(7)?, scalar(8)?);
             let expected_normal = u_axis.cross(v_axis);
-            if source == 0
-                || bytes.get(8..14) != Some(&[0; 6])
-                || bytes.get(14) != Some(&1)
-                || (u_axis.dot(u_axis) - 1.0).abs()
-                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+            if (u_axis.dot(u_axis) - 1.0).abs()
+                > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
                 || (v_axis.dot(v_axis) - 1.0).abs()
                     > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
                 || (normal.dot(normal) - 1.0).abs()
@@ -240,9 +250,6 @@ pub(super) fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, V
                 || (expected_normal.z - normal.z).abs()
                     > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
                 || scalar(12)? != 1.0
-                || bytes.get(119..122) != Some(&[0; 3])
-                || bytes.get(122..126) != Some(&4u32.to_le_bytes())
-                || bytes.get(126..130) != Some(&[0xff; 4])
             {
                 return None;
             }
