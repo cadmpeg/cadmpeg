@@ -130,6 +130,41 @@ fn native_namespace_retains_consolidated_class61_records() {
 }
 
 #[test]
+fn native_namespace_retains_class5b5c_control_records_without_assigning_roles() {
+    let native = crate::native::CatiaNative::decode(&b2_class5b5c_stream());
+    let records = &native.consolidated_class5b5c_records;
+    assert_eq!(records.len(), 3);
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.class)
+            .collect::<Vec<_>>(),
+        [0x5b, 0x5c, 0x5b]
+    );
+    assert_eq!(records[0].source_index, 0);
+    assert_eq!(records[0].source_offset, records[0].byte_offset);
+    assert_eq!(records[1].width, 2);
+    assert!(records.iter().all(|record| !record.payload.is_empty()));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA class-0x5b/0x5c records");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA class-0x5b/0x5c records"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_class5b5c_records[0].class = 0x5a;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA class-0x5b/0x5c record");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     let native = crate::native::CatiaNative::decode(&b2_parameter_point_stream());
     let [uv, station_uv, five_scalars, station_uv_last] =

@@ -371,6 +371,32 @@ pub struct B2Long61 {
     pub scalar: f64,
 }
 
+/// Structurally complete consolidated class-`0x5b` or class-`0x5c` record.
+///
+/// The complete payload is retained as an opaque body. No field role is
+/// assigned until a source-closed relation establishes one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct B2Class5b5cRecord {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
+    /// Logical offset within the bounded record source.
+    pub source_offset: usize,
+    /// Complete framed-record byte length.
+    pub byte_len: usize,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent frame flag.
+    pub flag: u8,
+    /// Record class (`0x5b` or `0x5c`).
+    pub class: u8,
+    /// Width-coded frame header token.
+    pub header_token: u32,
+    /// Complete opaque payload in source order.
+    pub payload: Vec<u8>,
+}
+
 /// Target encoding of a structurally complete class-`0x5f` node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum B2FaceNode5fTargetEncoding {
@@ -1337,6 +1363,47 @@ pub(crate) fn b2_long_61_from_records(
                 members,
                 references,
                 scalar,
+            })
+        })
+        .collect()
+}
+
+/// Decode complete B-family class-`0x5b` and class-`0x5c` control records.
+///
+/// The B-family length byte closes the frame. The complete payload stays
+/// opaque until a source-closed field relation is established.
+#[must_use]
+#[cfg(test)]
+pub fn b2_class5b5c_records(data: &[u8]) -> Vec<B2Class5b5cRecord> {
+    let records = consolidated_records(data);
+    b2_class5b5c_records_from_records(data, &records)
+}
+
+pub(crate) fn b2_class5b5c_records_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2Class5b5cRecord> {
+    records
+        .iter()
+        .filter_map(|record| {
+            if !record.physically_contiguous
+                || record.family != ConsolidatedFamily::B
+                || !matches!(record.class, 0x5b | 0x5c)
+            {
+                return None;
+            }
+            let payload = data.get(record.payload.clone())?;
+            let byte_len = record.range.end.checked_sub(record.range.start)?;
+            Some(B2Class5b5cRecord {
+                pos: record.range.start,
+                source_index: record.source_index,
+                source_offset: record.source_range.start,
+                byte_len,
+                width: record.width,
+                flag: record.flag,
+                class: record.class,
+                header_token: record.header_token,
+                payload: payload.to_vec(),
             })
         })
         .collect()

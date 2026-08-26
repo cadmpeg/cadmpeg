@@ -22,7 +22,7 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 287;
+pub const CATIA_NATIVE_VERSION: u32 = 288;
 /// Native schema version that links width-coded owner-chart supports to alias rows.
 #[cfg(test)]
 pub(crate) const CATIA_OWNER_CHART_ALIAS_VERSION: u32 = 286;
@@ -862,6 +862,37 @@ pub struct CatiaConsolidatedClass61Record {
     pub header_token: u32,
     /// Counted or long-form record payload.
     pub payload: CatiaConsolidatedClass61Payload,
+}
+
+/// One complete consolidated B-family class-`0x5b` or class-`0x5c` record.
+///
+/// These records retain their source-local control lane. The payload has no
+/// assigned semantic fields or cross-source identity relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaConsolidatedClass5b5cRecord {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: u64,
+    /// Logical offset within the bounded record source.
+    pub source_offset: u64,
+    /// Complete framed-record byte length.
+    pub byte_len: u64,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent frame flag.
+    pub flag: u8,
+    /// Record class (`0x5b` or `0x5c`).
+    pub class: u8,
+    /// Width-coded frame header token.
+    pub header_token: u32,
+    /// Complete opaque payload in source order.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    pub payload: Vec<u8>,
 }
 
 /// Structurally decoded payload of a consolidated class-`0x61` record.
@@ -5533,6 +5564,10 @@ define_catia_arenas! {
         /// Complete consolidated class-`0x61` records.
         pub stored;
     },
+    consolidated_class5b5c_records: CatiaConsolidatedClass5b5cRecord {
+        /// Complete source-local consolidated class-`0x5b`/`0x5c` records.
+        pub stored;
+    },
     consolidated_cone_faces: CatiaConsolidatedConeFace {
         /// Complete consolidated cone-face chart descriptors.
         pub stored;
@@ -6043,6 +6078,31 @@ fn consolidated_class61_records(
                 payload,
             },
         )
+        .collect()
+}
+
+fn consolidated_class5b5c_records(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedClass5b5cRecord> {
+    let mut control_records =
+        crate::families::b2::records::b2_class5b5c_records_from_records(bytes, records);
+    control_records.sort_by_key(|record| (record.source_index, record.source_offset));
+    control_records
+        .into_iter()
+        .enumerate()
+        .map(|(index, record)| CatiaConsolidatedClass5b5cRecord {
+            id: format!("catia:consolidated:class5b5c-record#{index}"),
+            byte_offset: record.pos as u64,
+            source_index: record.source_index as u64,
+            source_offset: record.source_offset as u64,
+            byte_len: record.byte_len as u64,
+            width: record.width,
+            flag: record.flag,
+            class: record.class,
+            header_token: record.header_token,
+            payload: record.payload,
+        })
         .collect()
 }
 
@@ -7847,6 +7907,8 @@ impl CatiaNative {
         let consolidated_circles = consolidated_circles(bytes, consolidated_records);
         let consolidated_class61_records =
             consolidated_class61_records(bytes, consolidated_records);
+        let consolidated_class5b5c_records =
+            consolidated_class5b5c_records(bytes, consolidated_records);
         let consolidated_parameter_points =
             consolidated_parameter_points(bytes, consolidated_records);
         let consolidated_cone_faces =
@@ -7920,6 +7982,7 @@ impl CatiaNative {
             catalogs,
             consolidated_circles,
             consolidated_class61_records,
+            consolidated_class5b5c_records,
             consolidated_cone_faces,
             consolidated_cones,
             consolidated_cylinders,

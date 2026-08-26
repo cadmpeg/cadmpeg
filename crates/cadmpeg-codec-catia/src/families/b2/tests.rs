@@ -566,6 +566,68 @@ fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
 }
 
 #[test]
+fn b2_class5b5c_parser_retains_complete_source_local_control_lanes() {
+    let bytes = b2_class5b5c_stream();
+    let records = crate::families::b2::records::b2_class5b5c_records(&bytes);
+    assert_eq!(records.len(), 3);
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.class)
+            .collect::<Vec<_>>(),
+        [0x5b, 0x5c, 0x5b]
+    );
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.width)
+            .collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    assert_eq!(
+        records.iter().map(|record| record.flag).collect::<Vec<_>>(),
+        [0x13, 0x03, 0x83]
+    );
+    assert!(records.iter().all(|record| {
+        record.source_index == 0
+            && record.source_offset == record.pos
+            && record.byte_len == 4 + usize::from(record.width) + record.payload.len()
+    }));
+
+    let mut invalid_flag = bytes;
+    invalid_flag[1] = 0x04;
+    assert_eq!(
+        crate::families::b2::records::b2_class5b5c_records(&invalid_flag)
+            .iter()
+            .map(|record| record.class)
+            .collect::<Vec<_>>(),
+        [0x5c, 0x5b]
+    );
+}
+
+#[test]
+fn b2_class5b5c_parser_retains_bounded_source_coordinates() {
+    let bytes = b2_class5b5c_stream();
+    let split = 12 + 15;
+    let records = crate::wire::records::consolidated_records_in_sources(
+        &bytes,
+        [
+            std::iter::once(0..split),
+            std::iter::once(split..bytes.len()),
+        ],
+    );
+    let controls =
+        crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records);
+    assert_eq!(
+        controls
+            .iter()
+            .map(|record| (record.source_index, record.source_offset))
+            .collect::<Vec<_>>(),
+        [(0, 0), (0, 12), (1, 0)]
+    );
+}
+
+#[test]
 fn b2_face_node_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
     let mut bytes = Vec::new();
     for payload in [
@@ -1135,6 +1197,20 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .map(|record| record.pos)
             .collect(),
         crate::families::b2::records::b2_long_61_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+    );
+
+    let bytes = b2_class5b5c_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    compare(
+        "class 5b/5c control records",
+        crate::families::b2::records::b2_class5b5c_records(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
             .into_iter()
             .map(|record| record.pos)
             .collect(),

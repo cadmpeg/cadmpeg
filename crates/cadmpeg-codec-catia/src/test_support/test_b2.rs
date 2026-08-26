@@ -352,6 +352,40 @@ pub(crate) fn b2_long_61_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn b2_class5b5c_stream() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let records = [
+        (
+            0xb2,
+            0x13,
+            0x5b,
+            vec![0x81, 0x03, 0x05, 0x00, 0x08, 0x3a, 0x1c],
+            vec![0x1f],
+        ),
+        (
+            0xb3,
+            0x03,
+            0x5c,
+            vec![0x81, 0x1f, 0x81, 0x01, 0x00, 0x01, 0x00, 0x05, 0x0d],
+            vec![0x34, 0x12],
+        ),
+        (
+            0xb4,
+            0x83,
+            0x5b,
+            vec![0x42, 0x00, 0x7f],
+            vec![0x01, 0x00, 0x10],
+        ),
+    ];
+    for (lead, flag, class, payload, token) in records {
+        assert_eq!(usize::from(lead - 0xb1), token.len());
+        bytes.extend_from_slice(&[lead, flag, class, u8::try_from(payload.len()).unwrap()]);
+        bytes.extend_from_slice(&token);
+        bytes.extend_from_slice(&payload);
+    }
+    bytes
+}
+
 pub(crate) fn b2_face_node_5f_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x08, 0x5d, 0x02, 0x03, 0x05,

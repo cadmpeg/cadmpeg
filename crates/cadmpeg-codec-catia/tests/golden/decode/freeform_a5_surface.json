@@ -98,6 +98,7 @@
           "catalog_entries": [],
           "catalogs": [],
           "consolidated_circles": [],
+          "consolidated_class5b5c_records": [],
           "consolidated_class61_records": [],
           "consolidated_cone_faces": [],
           "consolidated_cones": [],
@@ -145,7 +146,7 @@
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
         },
-        "version": 287
+        "version": 288
       }
     },
     "source": {

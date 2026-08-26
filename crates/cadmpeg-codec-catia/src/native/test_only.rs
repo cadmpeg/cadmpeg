@@ -654,6 +654,35 @@ fn validate_consolidated_class61_records(
     Ok(())
 }
 
+fn validate_consolidated_class5b5c_records(
+    records: &[CatiaConsolidatedClass5b5cRecord],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, record) in records.iter().enumerate() {
+        let expected_id = format!("catia:consolidated:class5b5c-record#{index}");
+        let expected_len = 4u64
+            .checked_add(u64::from(record.width))
+            .and_then(|len| len.checked_add(u64::try_from(record.payload.len()).ok()?));
+        let source_order_valid = index == 0
+            || (
+                records[index - 1].source_index,
+                records[index - 1].source_offset,
+            ) < (record.source_index, record.source_offset);
+        if record.id != expected_id
+            || !matches!(record.width, 1..=3)
+            || !matches!(record.flag, 0x03 | 0x13 | 0x83)
+            || !matches!(record.class, 0x5b | 0x5c)
+            || expected_len != Some(record.byte_len)
+            || !source_order_valid
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated class-0x5b/0x5c record `{}` is structurally invalid",
+                record.id
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn validate_consolidated_groups(
     groups: &[CatiaConsolidatedGroup],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -3578,6 +3607,17 @@ impl CatiaNative {
             namespace.arena_as("consolidated_class61_records")?;
         consolidated_class61_records.sort_by_key(|record| record.byte_offset);
         validate_consolidated_class61_records(&consolidated_class61_records)?;
+        let mut consolidated_class5b5c_records: Vec<CatiaConsolidatedClass5b5cRecord> = if namespace
+            .arenas
+            .contains_key("consolidated_class5b5c_records")
+        {
+            namespace.arena_as("consolidated_class5b5c_records")?
+        } else {
+            Vec::new()
+        };
+        consolidated_class5b5c_records
+            .sort_by_key(|record| (record.source_index, record.source_offset));
+        validate_consolidated_class5b5c_records(&consolidated_class5b5c_records)?;
         let mut consolidated_cone_faces: Vec<CatiaConsolidatedConeFace> =
             namespace.arena_as("consolidated_cone_faces")?;
         consolidated_cone_faces.sort_by_key(|face| face.byte_offset);
@@ -3718,6 +3758,7 @@ impl CatiaNative {
             catalogs,
             consolidated_circles,
             consolidated_class61_records,
+            consolidated_class5b5c_records,
             consolidated_cone_faces,
             consolidated_cones,
             consolidated_cylinders,
