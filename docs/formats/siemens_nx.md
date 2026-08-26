@@ -1608,6 +1608,8 @@ A complete sketch construction-input record requires exactly one joined sketch o
 
 The logical sketch construction payload is the bytewise concatenation of the resolved leading member blocks followed by the resolved terminal block. Block boundaries do not delimit values or named-record boundaries. The payload retains its exact concatenated byte length and hash, ordered source-block identities, each block's payload offset and byte length, and each block's absolute source offset.
 
+A shifted binary64 atom is `marker, payload[7]`, where `marker` is in `20..3f` or `a0..bf`. Adding `0x10` to `marker` and retaining `payload[7]` produces one big-endian IEEE-754 binary64 value. The reconstructed value is finite. A first byte outside these marker ranges is not a shifted binary64 atom and does not form a shifted-binary64 field.
+
 A sketch payload scalar field is `50 59 66, field_code:u8, 00, shifted_f64`. The shifted binary64 uses the extrusion shifted-IEEE transform. Each complete finite field retains its discriminator, decoded value, exact eight-byte encoding, payload-relative marker offset, and absolute source offset. The field frame does not assign a geometric or constraint role to the value.
 
 A sketch repeated-type scalar pair is `00, type:u8, type, 41, 00 03 01 03 01 c0 45 04 00 80 86 02 00 03, first:shifted_f64, second:shifted_f64`. `type` is nonzero and the two serialized type bytes are equal. Both values are finite. The pair retains the exact discriminator through the final `03`, both decoded values, both exact eight-byte encodings, payload-relative offsets, and absolute source offsets. The frame does not assign a point, curve, constraint, or coordinate-space role to either value.

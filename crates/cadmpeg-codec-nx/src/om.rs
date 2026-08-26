@@ -386,7 +386,7 @@ fn color_component_layout(bytes: &[u8]) -> Option<(f32, usize)> {
     match bytes.first().copied()? {
         0x00 => Some((0.0, 1)),
         0x01 => Some((1.0, 1)),
-        marker @ (0x20..=0x3f | 0xa0..=0xbf) => {
+        marker if is_shifted_ieee_f64_marker(marker) => {
             let raw: [u8; 8] = bytes.get(..8)?.try_into().ok()?;
             let value = shifted_ieee_f64(&raw)? / 4.0;
             (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
@@ -974,7 +974,9 @@ pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPaylo
     for start in 0..bytes.len().saturating_sub(12) {
         if bytes.get(start..start + 3) != Some(b"PYf")
             || bytes.get(start + 4) != Some(&0x00)
-            || !matches!(bytes.get(start + 5), Some(0x20..=0x3f | 0xa0..=0xbf))
+            || !bytes
+                .get(start + 5)
+                .is_some_and(|marker| is_shifted_ieee_f64_marker(*marker))
         {
             continue;
         }
@@ -5441,10 +5443,17 @@ pub fn operation_terminal_discriminator(
 
 fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
     let encoded: [u8; 8] = bytes.try_into().ok()?;
+    if !is_shifted_ieee_f64_marker(encoded[0]) {
+        return None;
+    }
     let mut raw = encoded;
     raw[0] = raw[0].checked_add(0x10)?;
     let value = f64::from_be_bytes(raw);
     value.is_finite().then_some(value)
+}
+
+fn is_shifted_ieee_f64_marker(marker: u8) -> bool {
+    matches!(marker, 0x20..=0x3f | 0xa0..=0xbf)
 }
 
 /// Decode complete three-scalar clauses following ordered operation body fields.
@@ -6798,7 +6807,7 @@ fn payload_scalar(bytes: &[u8]) -> Option<(f64, PayloadScalarEncoding, usize)> {
     let marker = *bytes.first()?;
     match marker {
         0x00 => Some((0.0, PayloadScalarEncoding::Zero, 1)),
-        0x20..=0x3f | 0xa0..=0xbf => Some((
+        marker if is_shifted_ieee_f64_marker(marker) => Some((
             shifted_ieee_f64(bytes.get(..8)?)?,
             PayloadScalarEncoding::Binary64,
             8,
