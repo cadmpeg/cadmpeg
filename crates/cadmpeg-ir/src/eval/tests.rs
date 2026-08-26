@@ -205,6 +205,18 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
 }
 
 #[test]
+fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
+    let surface = bilinear_surface();
+    let point = Point3::new(0.3, 0.7, 0.2);
+    let parameters = nurbs_surface_parameter_near_point(&surface, point, None)
+        .expect("bounded local surface candidate");
+    let mapped = nurbs_surface_point(&surface, parameters.u, parameters.v).expect("surface point");
+    assert!(mapped.distance(point) <= 0.2 + f64::EPSILON * 1024.0);
+    assert!((parameters.u - 0.3).abs() < f64::EPSILON * 1024.0);
+    assert!((parameters.v - 0.7).abs() < f64::EPSILON * 1024.0);
+}
+
+#[test]
 fn nurbs_surface_inverse_handles_rational_internal_spans() {
     let surface = NurbsSurface {
         u_degree: 1,

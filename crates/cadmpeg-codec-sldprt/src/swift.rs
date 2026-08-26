@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::ids::PmiId;
+use cadmpeg_ir::ids::{EdgeId, FaceId, PmiId, VertexId};
 use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
     PmiQuantity, PmiTarget, PmiValue,
@@ -53,12 +53,18 @@ struct Entity {
 
 /// Exact primary topology identities addressable by a SWIFT `CadIdentifier`.
 ///
-/// The numeric suffix is a lane-local native identity. Supporting geometry and
-/// boundary records are intentionally not indexed: a `CadRef` to one of those
-/// records remains a source `ShapeAspect` until a primary identity is available.
+/// Sequence suffixes use the active source's bridge, edge-use, and vertex-use
+/// sequence fields before any emitted-arena suffix lookup. Supporting geometry
+/// and boundary records are intentionally not indexed: a `CadRef` to one of
+/// those records remains a source `ShapeAspect` until a primary identity is
+/// available.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct TopologyIdentityIndex {
     entries: BTreeMap<u64, Vec<PmiTarget>>,
+    /// `Some(target)` is an unambiguous sequence-to-primary-topology binding.
+    /// `None` records a known sequence with no emitted or unique target, so it
+    /// cannot fall through to an unrelated primary arena suffix.
+    sequence_targets: BTreeMap<u64, Option<PmiTarget>>,
 }
 
 impl TopologyIdentityIndex {
@@ -68,26 +74,21 @@ impl TopologyIdentityIndex {
         faces: &[Face],
         edges: &[Edge],
         vertices: &[Vertex],
+        face_bridge_sequences: &[(u32, u16)],
+        edge_use_sequences: &[(u32, u16)],
+        vertex_use_sequences: &[(u32, u16)],
     ) -> Self {
         let mut index = Self::default();
         for body in bodies {
-            index.insert_id(
+            index.insert_primary_id(
                 body.id.as_str(),
                 PmiTarget::Body {
                     body: body.id.clone(),
                 },
             );
         }
-        for face in faces {
-            index.insert_id(
-                face.id.as_str(),
-                PmiTarget::Face {
-                    face: face.id.clone(),
-                },
-            );
-        }
         for edge in edges {
-            index.insert_id(
+            index.insert_primary_id(
                 edge.id.as_str(),
                 PmiTarget::Edge {
                     edge: edge.id.clone(),
@@ -95,17 +96,40 @@ impl TopologyIdentityIndex {
             );
         }
         for vertex in vertices {
-            index.insert_id(
+            index.insert_primary_id(
                 vertex.id.as_str(),
                 PmiTarget::Vertex {
                     vertex: vertex.id.clone(),
                 },
             );
         }
+        for &(sequence, attr) in face_bridge_sequences {
+            let target = face_id_for_attribute(faces, attr).map(|face| PmiTarget::Face { face });
+            index.insert_sequence_target(sequence, target.as_ref());
+        }
+        for &(sequence, attr) in edge_use_sequences {
+            let target = edge_id_for_attribute(edges, attr).map(|edge| PmiTarget::Edge { edge });
+            index.insert_sequence_target(sequence, target.as_ref());
+        }
+        for &(sequence, attr) in vertex_use_sequences {
+            let target =
+                vertex_id_for_attribute(vertices, attr).map(|vertex| PmiTarget::Vertex { vertex });
+            index.insert_sequence_target(sequence, target.as_ref());
+        }
         index
     }
 
-    fn insert_id(&mut self, id: &str, target: PmiTarget) {
+    fn insert_sequence_target(&mut self, sequence: u32, target: Option<&PmiTarget>) {
+        let entry = self
+            .sequence_targets
+            .entry(u64::from(sequence))
+            .or_insert_with(|| target.cloned());
+        if entry.as_ref() != target {
+            *entry = None;
+        }
+    }
+
+    fn insert_primary_id(&mut self, id: &str, target: PmiTarget) {
         let Some(suffix) = id.rsplit_once('#').map(|(_, suffix)| suffix) else {
             return;
         };
@@ -124,11 +148,51 @@ impl TopologyIdentityIndex {
             return None;
         }
         let suffix = suffix.parse::<u64>().ok()?;
+        if let Some(target) = self.sequence_targets.get(&suffix) {
+            return target.clone();
+        }
         let targets = self.entries.get(&suffix)?;
         (targets.len() == 1)
             .then(|| targets.first().cloned())
             .flatten()
     }
+}
+
+fn face_id_for_attribute(faces: &[Face], attr: u16) -> Option<FaceId> {
+    let prefix = format!("sldprt:brep:face#{attr}");
+    unique_id_for_attribute(faces.iter().map(|face| face.id.0.clone()), &prefix).map(FaceId)
+}
+
+fn edge_id_for_attribute(edges: &[Edge], attr: u16) -> Option<EdgeId> {
+    let prefix = format!("sldprt:brep:edge#{attr}");
+    unique_id_for_attribute(edges.iter().map(|edge| edge.id.0.clone()), &prefix).map(EdgeId)
+}
+
+fn vertex_id_for_attribute(vertices: &[Vertex], attr: u16) -> Option<VertexId> {
+    let prefix = format!("sldprt:brep:vertex#{attr}");
+    unique_id_for_attribute(vertices.iter().map(|vertex| vertex.id.0.clone()), &prefix)
+        .map(VertexId)
+}
+
+fn unique_id_for_attribute<I>(ids: I, prefix: &str) -> Option<String>
+where
+    I: IntoIterator<Item = String>,
+{
+    let ids = ids
+        .into_iter()
+        .filter(|id| {
+            id == prefix
+                || id
+                    .strip_prefix(prefix)
+                    .is_some_and(|suffix| suffix.starts_with('@'))
+        })
+        .collect::<BTreeSet<_>>();
+    if let Some(id) = ids.iter().find(|id| id.as_str() == prefix) {
+        return Some((*id).clone());
+    }
+    let mut ids = ids.into_iter();
+    let first = ids.next()?;
+    ids.next().is_none().then_some(first)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2535,11 +2599,11 @@ mod tests {
         root.annotations.entities.push(datum);
 
         let mut index = TopologyIdentityIndex::default();
-        index.insert_id(
-            "sldprt:brep:face#42",
-            PmiTarget::Face {
-                face: "sldprt:brep:face#42".into(),
-            },
+        index.sequence_targets.insert(
+            42,
+            Some(PmiTarget::Face {
+                face: FaceId("sldprt:brep:face#42".into()),
+            }),
         );
         let projected = project_with_topology(&root, Some(&index));
         let first = projected.first().expect("projected datum");
@@ -2572,6 +2636,189 @@ mod tests {
                 source_id: "F10".into()
             }]
         );
+    }
+
+    #[test]
+    fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
+        use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId, PointId, ShellId, SurfaceId, VertexId};
+        use cadmpeg_ir::topology::{Body, BodyKind, Edge, Face, Sense, Vertex};
+
+        let body = Body {
+            id: BodyId("sldprt:brep:body#11".into()),
+            kind: BodyKind::default(),
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        };
+        let face = Face {
+            id: FaceId("sldprt:brep:face#22".into()),
+            shell: ShellId("sldprt:brep:shell#1".into()),
+            surface: SurfaceId("sldprt:brep:surf#22".into()),
+            sense: Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let edge = Edge {
+            id: EdgeId("sldprt:brep:edge#33".into()),
+            curve: None,
+            start: VertexId("sldprt:brep:vertex#1".into()),
+            end: VertexId("sldprt:brep:vertex#2".into()),
+            param_range: None,
+            tolerance: None,
+        };
+        let vertex = Vertex {
+            id: VertexId("sldprt:brep:vertex#44".into()),
+            point: PointId("sldprt:brep:point#44".into()),
+            tolerance: None,
+        };
+        let index = TopologyIdentityIndex::from_model(
+            std::slice::from_ref(&body),
+            std::slice::from_ref(&face),
+            std::slice::from_ref(&edge),
+            std::slice::from_ref(&vertex),
+            &[(222, 22)],
+            &[(333, 33)],
+            &[(444, 44)],
+        );
+
+        assert_eq!(
+            index.resolve("schema-a:11"),
+            Some(PmiTarget::Body {
+                body: body.id.clone(),
+            })
+        );
+        assert_eq!(
+            index.resolve("schema-b:222"),
+            Some(PmiTarget::Face {
+                face: face.id.clone(),
+            })
+        );
+        assert!(index.resolve("schema-b:22").is_none());
+        assert_eq!(
+            index.resolve("schema-c:33"),
+            Some(PmiTarget::Edge {
+                edge: edge.id.clone(),
+            })
+        );
+        assert_eq!(
+            index.resolve("schema-d:44"),
+            Some(PmiTarget::Vertex {
+                vertex: vertex.id.clone(),
+            })
+        );
+        assert_eq!(
+            index.resolve("schema-e:333"),
+            Some(PmiTarget::Edge {
+                edge: edge.id.clone(),
+            })
+        );
+        assert_eq!(
+            index.resolve("schema-f:444"),
+            Some(PmiTarget::Vertex {
+                vertex: vertex.id.clone(),
+            })
+        );
+
+        let qualified_alternate = Face {
+            id: FaceId("sldprt:brep:face#22@alternate".into()),
+            ..face.clone()
+        };
+        let active_with_alternate = TopologyIdentityIndex::from_model(
+            std::slice::from_ref(&body),
+            &[face.clone(), qualified_alternate],
+            std::slice::from_ref(&edge),
+            std::slice::from_ref(&vertex),
+            &[(222, 22)],
+            &[],
+            &[],
+        );
+        assert_eq!(
+            active_with_alternate.resolve("schema-g:222"),
+            Some(PmiTarget::Face {
+                face: face.id.clone(),
+            })
+        );
+        assert!(index.resolve("schema-e:not-a-number").is_none());
+        assert!(index.resolve("11").is_none());
+
+        let collision = Face {
+            id: FaceId("sldprt:brep:face#11".into()),
+            ..face.clone()
+        };
+        let index = TopologyIdentityIndex::from_model(
+            std::slice::from_ref(&body),
+            &[collision],
+            std::slice::from_ref(&edge),
+            std::slice::from_ref(&vertex),
+            &[],
+            &[],
+            &[],
+        );
+        assert_eq!(
+            index.resolve("schema-g:11"),
+            Some(PmiTarget::Body {
+                body: body.id.clone(),
+            })
+        );
+
+        let sequence_wins = TopologyIdentityIndex::from_model(
+            std::slice::from_ref(&body),
+            std::slice::from_ref(&face),
+            std::slice::from_ref(&edge),
+            std::slice::from_ref(&vertex),
+            &[],
+            &[(11, 33)],
+            &[],
+        );
+        assert_eq!(
+            sequence_wins.resolve("schema-h:11"),
+            Some(PmiTarget::Edge {
+                edge: edge.id.clone(),
+            })
+        );
+
+        let unresolved = TopologyIdentityIndex::from_model(
+            std::slice::from_ref(&body),
+            std::slice::from_ref(&face),
+            std::slice::from_ref(&edge),
+            std::slice::from_ref(&vertex),
+            &[(11, 999)],
+            &[],
+            &[],
+        );
+        assert!(unresolved.resolve("schema-i:11").is_none());
+
+        let conflicting = TopologyIdentityIndex::from_model(
+            std::slice::from_ref(&body),
+            &[
+                face.clone(),
+                Face {
+                    id: FaceId("sldprt:brep:face#23".into()),
+                    ..face.clone()
+                },
+            ],
+            std::slice::from_ref(&edge),
+            std::slice::from_ref(&vertex),
+            &[(77, 22), (77, 23)],
+            &[],
+            &[],
+        );
+        assert!(conflicting.resolve("schema-j:77").is_none());
+
+        let conflicting_families = TopologyIdentityIndex::from_model(
+            std::slice::from_ref(&body),
+            std::slice::from_ref(&face),
+            std::slice::from_ref(&edge),
+            std::slice::from_ref(&vertex),
+            &[(88, 22)],
+            &[(88, 33)],
+            &[],
+        );
+        assert!(conflicting_families.resolve("schema-k:88").is_none());
     }
 
     fn put_pstr(bytes: &mut Vec<u8>, value: &str) {

@@ -32,6 +32,8 @@ pub const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 #[derive(Debug, Clone)]
 pub struct Record {
     pub attr: u16,
+    /// Big-endian document sequence carried by sequence-bearing topology records.
+    pub sequence: Option<u32>,
     /// Big-endian `refs` array (length varies by family).
     pub refs: Vec<u16>,
     /// Orientation marker (`0x2b` forward / `0x2d` reversed), when the family
@@ -97,6 +99,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
     let p = body_start(buf, off, 0x0e)?;
     if buf.get(p + 8) == Some(&1) && buf.get(p + 9..p + 17) == Some(MAGIC.as_slice()) {
         let attr = attr_at(buf, p)?;
+        let sequence = View::u32_be_at(buf, p + 2)?;
         let owner = View::u16_be_at(buf, p + 6)?;
         let refs = refs_tripled(buf, p + 17, 5)?;
         let marker = *buf.get(p + 32)?;
@@ -105,6 +108,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
         }
         return Some(Record {
             attr,
+            sequence: Some(sequence),
             refs,
             marker: Some(marker),
             xyz_m: None,
@@ -117,6 +121,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
         return None;
     }
     let attr = attr_at(buf, p)?;
+    let sequence = View::u32_be_at(buf, p + 2)?;
     let owner = View::u16_be_at(buf, p + 6)?;
     let tripled = (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
     let (refs, marker) = if tripled {
@@ -129,6 +134,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
     }
     Some(Record {
         attr,
+        sequence: Some(sequence),
         refs,
         marker: Some(marker),
         xyz_m: None,
@@ -149,6 +155,7 @@ fn parse_loop(buf: &[u8], off: usize) -> Option<Record> {
     let refs = refs_tripled(buf, p + 6, 4).or_else(|| refs_be(buf, p + 6, 4))?;
     Some(Record {
         attr,
+        sequence: None,
         refs,
         marker: None,
         xyz_m: None,
@@ -159,8 +166,19 @@ fn parse_loop(buf: &[u8], off: usize) -> Option<Record> {
 }
 
 fn record(attr: u16, refs: Vec<u16>, marker: Option<u8>, offset: usize) -> Record {
+    record_with_sequence(attr, None, refs, marker, offset)
+}
+
+fn record_with_sequence(
+    attr: u16,
+    sequence: Option<u32>,
+    refs: Vec<u16>,
+    marker: Option<u8>,
+    offset: usize,
+) -> Record {
     Record {
         attr,
+        sequence,
         refs,
         marker,
         xyz_m: None,
@@ -186,10 +204,11 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<Record> {
     let Some(attr) = attr_at(buf, p) else {
         return Vec::new();
     };
+    let sequence = View::u32_be_at(buf, p + 2);
     let mut out = Vec::new();
     if buf.get(p + 8..p + 16) == Some(MAGIC.as_slice()) {
         if let Some(refs) = refs_be(buf, p + 16, 6) {
-            out.push(record(attr, refs, None, off));
+            out.push(record_with_sequence(attr, sequence, refs, None, off));
         }
     }
 
@@ -222,7 +241,7 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<Record> {
             if decoded.len() >= 3 {
                 let mut refs = vec![0; 6];
                 refs[3] = decoded[2];
-                out.push(record(attr, refs, None, off));
+                out.push(record_with_sequence(attr, sequence, refs, None, off));
             }
         }
     }
@@ -264,6 +283,7 @@ fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<Record> {
 fn deduplicate_records(mut records: Vec<Record>) -> Vec<Record> {
     records.dedup_by(|right, left| {
         right.attr == left.attr
+            && right.sequence == left.sequence
             && right.refs == left.refs
             && right.marker == left.marker
             && right.offset == left.offset
@@ -279,6 +299,7 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
         return None;
     }
     let attr = attr_at(buf, p)?;
+    let sequence = View::u32_be_at(buf, p + 2)?;
     let refs = if buf.get(p + 16..p + 24) == Some(MAGIC.as_slice()) {
         refs_be(buf, p + 6, 5)?
     } else {
@@ -292,6 +313,7 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
     };
     Some(Record {
         attr,
+        sequence: Some(sequence),
         refs,
         marker: None,
         xyz_m: None,
@@ -338,6 +360,7 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
     }
     Some(Record {
         attr,
+        sequence: None,
         refs,
         marker: None,
         xyz_m: Some([x, y, z]),
@@ -361,20 +384,16 @@ pub struct Tables {
 impl Tables {
     /// Merge deltas without replacing partition topology membership.
     ///
-    /// The change roster does not identify a partition face that a deltas
-    /// bridge supersedes. Preserve a partition bridge when its identity is
-    /// present and add only missing deltas bridges reached by the final-state
-    /// body-relation selector.
-    pub fn merge_deltas(&mut self, mut deltas: Self, final_state_refs: Option<&HashSet<u16>>) {
+    /// Preserve partition topology for shared identities and add only deltas
+    /// bridges selected by the typed FACE ownership set.
+    pub fn merge_deltas(&mut self, mut deltas: Self, selected_bridge_attrs: Option<&HashSet<u16>>) {
         if self.bridges.is_empty() {
+            if let Some(selected_bridge_attrs) = selected_bridge_attrs {
+                retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
+            }
             self.bridges = deltas.bridges;
-        } else if let Some(final_state_refs) = final_state_refs {
-            deltas.bridges.retain(|attr, record| {
-                final_state_refs.contains(attr)
-                    || record
-                        .owner
-                        .is_some_and(|owner| final_state_refs.contains(&owner))
-            });
+        } else if let Some(selected_bridge_attrs) = selected_bridge_attrs {
+            retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
             merge_missing(&mut self.bridges, deltas.bridges);
         }
         merge_missing(&mut self.loops, deltas.loops);
@@ -383,6 +402,18 @@ impl Tables {
         merge_missing(&mut self.vertex_uses, deltas.vertex_uses);
         self.points.extend(deltas.points.drain());
     }
+}
+
+fn retain_selected_bridges(
+    bridges: &mut HashMap<u16, Record>,
+    selected_bridge_attrs: &HashSet<u16>,
+) {
+    bridges.retain(|attr, record| {
+        selected_bridge_attrs.contains(attr)
+            || record
+                .owner
+                .is_some_and(|owner| selected_bridge_attrs.contains(&owner))
+    });
 }
 
 fn merge_missing(target: &mut HashMap<u16, Record>, source: HashMap<u16, Record>) {
@@ -610,25 +641,53 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
 /// Later full records replace earlier records with the same `attr`, matching
 /// partition-base plus deltas-override merge order.
 pub fn scan(body: &[u8]) -> Tables {
-    scan_with_point_framing(body, false, None)
+    scan_with_point_framing(body, false, None, None)
 }
 
 /// Scan a partition stream with the typed curve attributes available to
 /// resolve an otherwise ambiguous edge-use reference orientation.
 pub(crate) fn scan_with_curve_attrs(body: &[u8], curve_attrs: &HashSet<u16>) -> Tables {
-    scan_with_point_framing(body, false, Some(curve_attrs))
+    scan_with_point_framing(body, false, Some(curve_attrs), None)
+}
+
+/// Scan a partition stream while admitting typed FACE offsets that carry a
+/// loop head.  A typed FACE and a compact bridge share the `00 0e` framing.
+/// An ownership-only typed FACE has a null loop field and must not replace a
+/// separate compact bridge for the same attribute; a shared FACE/bridge record
+/// has a non-null loop field and is the topology record as well.
+pub(crate) fn scan_with_curve_attrs_excluding(
+    body: &[u8],
+    curve_attrs: &HashSet<u16>,
+    excluded_bridge_offsets: &HashSet<usize>,
+) -> Tables {
+    scan_with_point_framing(
+        body,
+        false,
+        Some(curve_attrs),
+        Some(excluded_bridge_offsets),
+    )
 }
 
 /// Scan a deltas stream with the typed curve attributes available to resolve
 /// an otherwise ambiguous edge-use reference orientation.
 pub(crate) fn scan_deltas_with_curve_attrs(body: &[u8], curve_attrs: &HashSet<u16>) -> Tables {
-    scan_with_point_framing(body, true, Some(curve_attrs))
+    scan_with_point_framing(body, true, Some(curve_attrs), None)
+}
+
+/// Scan a deltas stream with the typed FACE/compact-bridge overlap rule.
+pub(crate) fn scan_deltas_with_curve_attrs_excluding(
+    body: &[u8],
+    curve_attrs: &HashSet<u16>,
+    excluded_bridge_offsets: &HashSet<usize>,
+) -> Tables {
+    scan_with_point_framing(body, true, Some(curve_attrs), Some(excluded_bridge_offsets))
 }
 
 fn scan_with_point_framing(
     body: &[u8],
     prefixed_points: bool,
     curve_attrs: Option<&HashSet<u16>>,
+    excluded_bridge_offsets: Option<&HashSet<usize>>,
 ) -> Tables {
     let mut t = Tables::default();
     let mut loop_candidates = Vec::new();
@@ -643,7 +702,12 @@ fn scan_with_point_framing(
         match body[i + 1] {
             0x0e => {
                 if let Some(record) = parse_bridge(body, i) {
-                    t.bridges.insert(record.attr, record);
+                    let excluded =
+                        excluded_bridge_offsets.is_some_and(|offsets| offsets.contains(&i));
+                    let carries_loop = record.refs.get(2).is_some_and(|reference| *reference > 1);
+                    if !excluded || carries_loop {
+                        t.bridges.insert(record.attr, record);
+                    }
                 }
             }
             0x0f => {
@@ -743,6 +807,7 @@ mod tests {
 
         let bridge = parse_bridge(&bytes, 0).expect("deltas-form bridge");
         assert_eq!(bridge.attr, 0x1234);
+        assert_eq!(bridge.sequence, Some(7));
         assert_eq!(bridge.owner, Some(0x4321));
         assert_eq!(bridge.refs, expected);
         assert_eq!(bridge.marker, Some(0x2b));
@@ -756,10 +821,34 @@ mod tests {
             let bridge = parse_bridge(&bytes, 0)
                 .unwrap_or_else(|| panic!("bridge tripled={tripled} bytes={bytes:02x?}"));
             assert_eq!(bridge.attr, 0x1234);
+            assert_eq!(bridge.sequence, Some(7));
             assert_eq!(bridge.owner, Some(0x4321));
             assert_eq!(bridge.refs, expected);
             assert_eq!(bridge.marker, Some(0x2d));
         }
+    }
+
+    #[test]
+    fn shared_typed_face_with_loop_remains_a_topology_bridge() {
+        let body = bridge_with_refs(&[1, 2, 3, 7, 8], false);
+        let excluded = HashSet::from([0]);
+
+        let tables = scan_with_curve_attrs_excluding(&body, &HashSet::new(), &excluded);
+
+        assert_eq!(
+            tables.bridges.get(&0x1234).map(|record| record.refs[2]),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn ownership_only_typed_face_does_not_replace_a_compact_bridge() {
+        let body = bridge_with_refs(&[1, 2, 0, 7, 8], false);
+        let excluded = HashSet::from([0]);
+
+        let tables = scan_with_curve_attrs_excluding(&body, &HashSet::new(), &excluded);
+
+        assert!(tables.bridges.is_empty());
     }
 
     fn topology_bridge(attr: u16, loop_attr: u16) -> Vec<u8> {
@@ -797,10 +886,10 @@ mod tests {
         bytes
     }
 
-    fn topology_edge_use(attr: u16) -> Vec<u8> {
+    fn topology_edge_use(attr: u16, sequence: u32) -> Vec<u8> {
         let mut bytes = vec![0, 0x10];
         bytes.extend(attr.to_be_bytes());
-        bytes.extend(0_u32.to_be_bytes());
+        bytes.extend(sequence.to_be_bytes());
         bytes.extend(0_u16.to_be_bytes());
         bytes.extend(MAGIC);
         bytes.extend(
@@ -811,10 +900,10 @@ mod tests {
         bytes
     }
 
-    fn topology_vertex_use(attr: u16) -> Vec<u8> {
+    fn topology_vertex_use(attr: u16, sequence: u32) -> Vec<u8> {
         let mut bytes = vec![0, 0x12];
         bytes.extend(attr.to_be_bytes());
-        bytes.extend(0_u32.to_be_bytes());
+        bytes.extend(sequence.to_be_bytes());
         bytes.extend([0_u16, 0, 0, 0, 60].into_iter().flat_map(u16::to_be_bytes));
         bytes.extend(MAGIC);
         bytes
@@ -829,8 +918,8 @@ mod tests {
             30,
             [0, 20, 0, 30, 50, 0, 0x2b40, 0, 0],
         ));
-        body.extend(topology_edge_use(0x2b40));
-        body.extend(topology_vertex_use(50));
+        body.extend(topology_edge_use(0x2b40, 0));
+        body.extend(topology_vertex_use(50, 0));
 
         let tables = scan(&body);
         let coedge = tables.coedges.get(&30).expect("tripled coedge");
@@ -838,6 +927,17 @@ mod tests {
         assert_eq!(coedge.refs[4], 50);
         assert_eq!(coedge.refs[6], 0x2b40);
         assert!(tables.loops.contains_key(&20));
+    }
+
+    #[test]
+    fn edge_and_vertex_use_sequences_are_retained() {
+        let mut body = Vec::new();
+        body.extend(topology_edge_use(40, 0x0102_0304));
+        body.extend(topology_vertex_use(50, 0x0506_0708));
+
+        let tables = scan(&body);
+        assert_eq!(tables.edge_uses[&40].sequence, Some(0x0102_0304));
+        assert_eq!(tables.vertex_uses[&50].sequence, Some(0x0506_0708));
     }
 
     #[test]

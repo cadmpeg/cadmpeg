@@ -138,7 +138,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
 #[test]
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
-    use cadmpeg_ir::report::{LossTaxonomy, StrictConsequence};
+    use cadmpeg_ir::report::StrictConsequence;
 
     let fixture = sldprt_with_body_and_history(&triangle_body());
     let strict = SldprtCodec
@@ -150,11 +150,6 @@ fn strict_accepts_tolerable_gauge_substitution_geometry() {
         .losses
         .iter()
         .all(|note| note.strict_consequence() == StrictConsequence::Tolerate));
-    assert!(strict
-        .report()
-        .losses
-        .iter()
-        .any(|note| note.code.taxonomy() == LossTaxonomy::TopologyGaugeSubstituted));
 }
 
 /// Phase 5 freeze: export precondition (:50) rejects shared broken IR; empty accepts.

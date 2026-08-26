@@ -10,6 +10,7 @@ use super::endpoints::{
 use super::scalars::feature_object_name;
 use super::transforms::{quantize, sketch_frame_marker_transform, MarkerTransform};
 use super::{is_class_token, CLASS_MARKER, SKETCH_MARKER};
+use crate::layout::temporary_axis_reference_nine_scalar as temporary_axis;
 use crate::records::{FeatureInputLane, FeatureInputName, SketchInputEntity, SketchInputKind};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{FeatureDefinition, Length};
@@ -17,6 +18,8 @@ use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
 use std::collections::{HashMap, HashSet};
+
+const TEMPORARY_AXIS_UNIT_DIRECTION_EPS: f64 = 1.0e-9;
 
 pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
     let class_offset = usize::try_from(class_offset).ok()?;
@@ -780,47 +783,72 @@ pub(super) fn revolution_line_reference_inputs(
     Some(*candidate)
 }
 
-pub(super) fn revolution_temporary_axis(
+pub(super) fn temporary_axis_reference(
     payload: &[u8],
     object_start: usize,
     object_end: usize,
 ) -> Option<(Point3, Vector3)> {
-    const DECLARATION: &[u8] = b"\xff\xff\x01\x00\x0f\x00moTempAxisRef_w";
-    const HANDLE_PAIR: &[u8] = b"\xc7\xcf\xff\xff\xc7\xcf\xff\xff";
     const NATIVE_TO_IR: f64 = 1000.0;
 
     let end = object_end.min(payload.len());
-    let last_declaration = end.checked_sub(316)?;
+    let last_declaration = end.checked_sub(temporary_axis::LEN)?;
     let mut candidates = (object_start..=last_declaration).filter_map(|declaration| {
-        if payload.get(declaration..declaration + DECLARATION.len()) != Some(DECLARATION)
-            || payload.get(declaration + 223..declaration + 231) != Some(HANDLE_PAIR)
-            || payload.get(declaration + 231..declaration + 235) != Some(&[0; 4])
-            || View::u32_le_at(payload, declaration + 235).is_none_or(|address| address == 0)
+        if payload.get(
+            declaration + temporary_axis::CLASS_MARKER
+                ..declaration
+                    + temporary_axis::CLASS_MARKER
+                    + temporary_axis::CLASS_MARKER_VALUE.len(),
+        ) != Some(&temporary_axis::CLASS_MARKER_VALUE)
+            || View::u16_le_at(payload, declaration + temporary_axis::NAME_LENGTH)
+                != Some(temporary_axis::NAME_LENGTH_VALUE)
+            || payload.get(
+                declaration + temporary_axis::NAME
+                    ..declaration + temporary_axis::NAME + temporary_axis::NAME_VALUE.len(),
+            ) != Some(&temporary_axis::NAME_VALUE)
+            || payload.get(
+                declaration + temporary_axis::HANDLES
+                    ..declaration + temporary_axis::HANDLES + temporary_axis::HANDLES_VALUE.len(),
+            ) != Some(&temporary_axis::HANDLES_VALUE)
+            || payload.get(
+                declaration + temporary_axis::ZERO_BEFORE_ADDRESS
+                    ..declaration
+                        + temporary_axis::ZERO_BEFORE_ADDRESS
+                        + temporary_axis::ZERO_BEFORE_ADDRESS_VALUE.len(),
+            ) != Some(&temporary_axis::ZERO_BEFORE_ADDRESS_VALUE)
+            || View::u32_le_at(payload, declaration + temporary_axis::STREAM_ADDRESS)
+                .is_none_or(|address| address == 0)
         {
             return None;
         }
-        let scalar = |index: usize| {
-            let offset = declaration + 239 + index * 8;
+        let mut frame = [0.0; 9];
+        for (index, scalar) in frame.iter_mut().enumerate() {
+            let offset = declaration + temporary_axis::AXIS_FRAME + index * 8;
             let value = View::f64_le_at(payload, offset)?;
-            (value.is_finite() && value.abs() <= 1.0e6).then_some(value)
-        };
+            if !value.is_finite() || value.abs() > 1.0e6 {
+                return None;
+            }
+            *scalar = value;
+        }
         let origin = Point3::new(
-            scalar(0)? * NATIVE_TO_IR,
-            scalar(1)? * NATIVE_TO_IR,
-            scalar(2)? * NATIVE_TO_IR,
+            frame[0] * NATIVE_TO_IR,
+            frame[1] * NATIVE_TO_IR,
+            frame[2] * NATIVE_TO_IR,
         );
-        let direction = Vector3::new(scalar(6)?, scalar(7)?, scalar(8)?);
+        let direction = Vector3::new(frame[6], frame[7], frame[8]);
         let norm =
             (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
                 .sqrt();
-        if (norm - 1.0).abs() > 1.0e-9 {
+        if (norm - 1.0).abs() > TEMPORARY_AXIS_UNIT_DIRECTION_EPS {
             return None;
         }
-        let record_end = declaration + 311;
-        let next_class = (record_end..=record_end + 24).find(|offset| {
+        let record_end = declaration + temporary_axis::NEXT_CLASS_MARKER;
+        let last_next_class = end.checked_sub(temporary_axis::NEXT_CLASS_MARKER_VALUE.len())?;
+        let search_end = record_end.checked_add(24)?.min(last_next_class);
+        let next_class = (record_end..=search_end).find(|offset| {
             payload.get(record_end..*offset).is_some_and(|padding| {
                 padding.iter().all(|byte| *byte == 0)
-                    && payload.get(*offset..*offset + 4) == Some(CLASS_MARKER)
+                    && payload.get(*offset..*offset + temporary_axis::NEXT_CLASS_MARKER_VALUE.len())
+                        == Some(&temporary_axis::NEXT_CLASS_MARKER_VALUE)
             })
         })?;
         (next_class < end).then_some((
@@ -928,7 +956,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                 );
                 let placed_axis = line_reference
                     .map(|(_, origin, direction)| (origin, direction))
-                    .or_else(|| revolution_temporary_axis(&lane.native_payload, start, end));
+                    .or_else(|| temporary_axis_reference(&lane.native_payload, start, end));
                 profiles
                     .entry(feature.id.clone())
                     .or_default()

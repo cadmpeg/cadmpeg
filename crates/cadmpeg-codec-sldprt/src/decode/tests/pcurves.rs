@@ -452,7 +452,6 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             &DecodeOptions::default(),
         )
         .unwrap();
-
     assert!(result.ir().model.pcurves.iter().any(|pcurve| {
         result
             .source_fidelity()
@@ -520,6 +519,15 @@ fn bounded_planar_line_pcurve_keeps_the_curve_parameterization() {
 #[test]
 fn rational_nurbs_surface_row_gets_isoparametric_pcurve() {
     let mut body = triangle_body();
+    let end_point = body
+        .windows(4)
+        .position(|window| window == [0x00, 0x1d, 0x00, 0x3d])
+        .expect("triangle endpoint point");
+    let endpoint = [0.0_f64, 1.0, 0.0]
+        .into_iter()
+        .flat_map(f64::to_be_bytes)
+        .collect::<Vec<_>>();
+    body[end_point + 16..end_point + 40].copy_from_slice(&endpoint);
     let bridge = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
     body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
     let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
@@ -532,7 +540,6 @@ fn rational_nurbs_surface_row_gets_isoparametric_pcurve() {
             &DecodeOptions::default(),
         )
         .unwrap();
-
     assert!(result.ir().model.pcurves.iter().any(|pcurve| {
         result
             .source_fidelity()

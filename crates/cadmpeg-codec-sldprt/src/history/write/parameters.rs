@@ -17,6 +17,7 @@ use crate::history::parameters::{
     parameters_with_incoherent_dependencies, parse_native_parameter_literal, project_parameters,
 };
 use crate::history::project::neutral_feature_id;
+use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
 
 pub fn prepare_parameters_for_write(
     ir: &cadmpeg_ir::CadIr,
@@ -75,6 +76,17 @@ pub(crate) fn sync_neutral_parameters(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
+    if let Some(parameter) = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| is_reference_relation_parameter(parameter))
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "SLDPRT display-only relation parameter {} has no writable native scalar",
+            parameter.id.0
+        )));
+    }
     let mut parameters = ir.model.parameters.clone();
     let feature_names = ir
         .model

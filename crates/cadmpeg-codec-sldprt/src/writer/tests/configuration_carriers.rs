@@ -764,10 +764,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
     assert!(count_entity51_family(solid_payload, 2, 0x0013) >= 1);
     assert!(count_entity51_family(solid_payload, 1, 0x0015) >= 1);
 
-    let mut sheet_body = Vec::new();
-    sheet_body.extend(entity51(2, 501, 0x0017, &[511, 701, 0, 0, 0, 0]));
-    sheet_body.extend(entity51(1, 511, 0x001d, &[701, 0, 0, 0, 0, 0]));
-    sheet_body.extend(owned_triangle(0, 701, 0.0));
+    let sheet_body = owned_triangle_with_kind(0, 701, 0.0, 3);
     let mut sheet = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&sheet_body)),
@@ -783,6 +780,24 @@ fn semantic_writer_uses_schema_specific_face_families() {
     let sheet_payload = &sheet_scan.blocks[0].payload;
     assert!(count_entity51_family(sheet_payload, 2, 0x0015) >= 1);
     assert!(count_entity51_family(sheet_payload, 1, 0x001f) >= 1);
+}
+
+#[test]
+fn semantic_writer_emits_typed_body_ownership_nodes() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let body = super::super::brep_body(decoded.ir(), 0.001, false).unwrap();
+    let facts = crate::brep::typed::scan(&body);
+
+    assert!(facts.has_valid_ownership());
+    assert_eq!(facts.bodies.len(), 1);
+    assert!(!facts.shells.is_empty());
+    assert!(!facts.regions.is_empty());
+    assert!(!facts.faces.is_empty());
 }
 
 #[test]
@@ -857,10 +872,7 @@ fn semantic_writer_regenerates_modified_analytic_breps() {
 
 #[test]
 fn semantic_writer_preserves_sheet_body_classification() {
-    let mut body = Vec::new();
-    body.extend(entity51(2, 501, 0x0017, &[511, 701, 0, 0, 0, 0]));
-    body.extend(entity51(1, 511, 0x001d, &[701, 0, 0, 0, 0, 0]));
-    body.extend(owned_triangle(0, 701, 0.0));
+    let body = owned_triangle_with_kind(0, 701, 0.0, 3);
     let mut decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -1319,8 +1331,14 @@ fn semantic_writer_preserves_face_appearance() {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
     let mut body = Vec::new();
+    body.extend(face_color_definition());
     body.extend(entity51(2, 500, 0x0017, &[700, 0, 0, 0, 0, 0]));
-    body.extend(entity51(1, 700, 0x0015, &[0, 0, 0, 0, 0, 900]));
+    body.extend(entity51(
+        1,
+        700,
+        FACE_COLOR_DEFINITION_ID,
+        &[0, 0, 0, 0, 0, 900],
+    ));
     body.extend(entity53_color(900, [0.25, 0.5, 0.75]));
     body.extend(owned_triangle(0, 700, 0.0));
     let mut decoded = SldprtCodec
