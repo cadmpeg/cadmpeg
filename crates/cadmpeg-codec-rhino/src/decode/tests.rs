@@ -732,6 +732,59 @@ fn serialized_solid_state_uses_valid_values_and_topology_fallback() {
     );
 }
 
+/// A missing stamp trusts the stored solid flag; the loss follows that reading.
+///
+/// The same bytes classify as `Sheet` under any stamp older than the flag, so an
+/// unstamped archive that reads `Solid` was classified on an assumption it does
+/// not carry. Where the two readings agree nothing was substituted.
+#[test]
+fn body_kind_gauge_charges_only_when_a_missing_stamp_changes_the_kind() {
+    assert_eq!(
+        serialized_brep_body_kind(2, Some(1), None, false),
+        BodyKind::Solid
+    );
+    assert!(body_kind_rests_on_missing_stamp(2, Some(1), None, false));
+    assert!(body_kind_rests_on_missing_stamp(2, Some(2), None, false));
+
+    // A modern stamp vouches for the same flag: the reading is verified.
+    assert!(!body_kind_rests_on_missing_stamp(
+        2,
+        Some(1),
+        Some(200_210_020),
+        false
+    ));
+    // Both readings agree, so no kind was substituted.
+    assert!(!body_kind_rests_on_missing_stamp(2, Some(1), None, true));
+    assert!(!body_kind_rests_on_missing_stamp(2, Some(0), None, false));
+    assert!(!body_kind_rests_on_missing_stamp(2, None, None, false));
+    assert!(!body_kind_rests_on_missing_stamp(1, Some(1), None, false));
+
+    // The whole-record path reports the substitution as a promotable warning.
+    let mut raw = region_raw(Vec::new(), Vec::new());
+    raw.minor = 2;
+    raw.is_solid = Some(1);
+    raw.edges = vec![crate::brep::RawBrepEdge {
+        index: 0,
+        curve: 0,
+        proxy_reversed: 0,
+        proxy_domain: crate::settings::Interval([0.0, 1.0]),
+        vertices: [0, 1],
+        trims: Vec::new(),
+        tolerance: 0.0,
+        domain: crate::settings::Interval([0.0, 1.0]),
+        source_range: 0..0,
+    }];
+    let (kind, substituted) = brep_body_kind(&raw, None);
+    assert_eq!(kind, BodyKind::Solid);
+    assert!(
+        substituted
+            .as_deref()
+            .is_some_and(|warning| warning.starts_with(BODY_KIND_GAUGE_PREFIX)),
+        "{substituted:?}"
+    );
+    assert_eq!(brep_body_kind(&raw, Some(200_210_020)).1, None);
+}
+
 #[test]
 fn representable_region_uses_bounded_membership_and_serialized_direction() {
     let raw = region_raw(
