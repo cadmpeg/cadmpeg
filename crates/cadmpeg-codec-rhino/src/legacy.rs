@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -281,7 +282,7 @@ fn v1_f64(reader: &mut BoundedReader<'_>, label: &str) -> Result<f64, CodecError
     value
         .is_finite()
         .then_some(value)
-        .ok_or_else(|| CodecError::Malformed(format!("V1 {label} is not finite")))
+        .ok_or_else(|| CodecError::malformed(format_args!("V1 {label} is not finite")))
 }
 
 fn v1_count(
@@ -293,7 +294,7 @@ fn v1_count(
     usize::try_from(count)
         .ok()
         .filter(|value| *value <= maximum)
-        .ok_or_else(|| CodecError::Malformed(format!("invalid V1 {label} count {count}")))
+        .ok_or_else(|| CodecError::malformed(format_args!("invalid V1 {label} count {count}")))
 }
 
 fn v1_string(reader: &mut BoundedReader<'_>, label: &str) -> Result<V1String, CodecError> {
@@ -343,7 +344,7 @@ fn v1_annotation(
     match chunk.typecode {
         TCODE_TEXT_BLOCK => {
             if version != 1 && version != 2 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "unsupported V1 text-block version {version}"
                 )));
             }
@@ -379,7 +380,7 @@ fn v1_annotation(
         }
         TCODE_ANNOTATION_LEADER => {
             if version != 1 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "unsupported V1 leader version {version}"
                 )));
             }
@@ -401,7 +402,7 @@ fn v1_annotation(
         }
         TCODE_LINEAR_DIMENSION => {
             if version != 1 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "unsupported V1 linear-dimension version {version}"
                 )));
             }
@@ -428,7 +429,7 @@ fn v1_annotation(
         }
         TCODE_ANGULAR_DIMENSION => {
             if version != 1 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "unsupported V1 angular-dimension version {version}"
                 )));
             }
@@ -464,7 +465,7 @@ fn v1_annotation(
         }
         TCODE_RADIAL_DIMENSION => {
             if version != 1 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "unsupported V1 radial-dimension version {version}"
                 )));
             }
@@ -489,7 +490,7 @@ fn v1_annotation(
                 by_object,
             }))
         }
-        _ => Err(CodecError::Malformed(format!(
+        _ => Err(CodecError::malformed(format_args!(
             "typecode {:#010x} is not a V1 annotation",
             chunk.typecode
         ))),
@@ -732,7 +733,7 @@ fn nested_chunk(
     )
     .map_err(malformed)?;
     if chunk.short || chunk.typecode != typecode {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "expected V1 nested chunk {typecode:#010x} at offset {}",
             reader.position()
         )));
@@ -750,7 +751,7 @@ fn nested_stuff(
     stuff_type: u32,
 ) -> Result<crate::chunks::Chunk, CodecError> {
     child_with_type(data, range, stuff_type)?.ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "V1 wrapper {wrapper_type:#010x} has no stuff chunk"
         ))
     })
@@ -783,7 +784,7 @@ fn v1_nurbs_curve_data(
     let wire_version = reader.i32().map_err(malformed)?;
     let version = wire_version & !0x100;
     if version != 100 && version != 101 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "unsupported RhinoIO V1 NURBS curve version {wire_version}"
         )));
     }
@@ -797,7 +798,7 @@ fn v1_nurbs_curve_data(
         0 => false,
         1 => true,
         value => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid RhinoIO V1 NURBS curve rational flag {value}"
             )))
         }
@@ -816,7 +817,7 @@ fn v1_nurbs_curve_data(
     }
     let flag = reader.i32().map_err(malformed)?;
     if flag != 0 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "invalid RhinoIO V1 NURBS curve flag {flag}"
         )));
     }
@@ -871,7 +872,7 @@ fn v1_nurbs_surface_data(
     let wire_version = reader.i32().map_err(malformed)?;
     let version = wire_version & !0x100;
     if version != 100 && version != 101 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "unsupported RhinoIO V1 NURBS surface version {wire_version}"
         )));
     }
@@ -885,7 +886,7 @@ fn v1_nurbs_surface_data(
         0 => false,
         1 => true,
         value => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "invalid RhinoIO V1 NURBS surface rational flag {value}"
             )));
         }
@@ -914,7 +915,7 @@ fn v1_nurbs_surface_data(
     }
     let flag = reader.i32().map_err(malformed)?;
     if flag != 0 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "invalid RhinoIO V1 NURBS surface flag {flag}"
         )));
     }
@@ -1020,7 +1021,7 @@ fn v1_nurbs_brep(data: &[u8], chunk: &crate::chunks::Chunk) -> Result<V1NurbsBre
         BoundedReader::new(data, data_chunk.body.start, data_chunk.body.end).map_err(malformed)?;
     let wire_version = reader.i32().map_err(malformed)?;
     if wire_version != 100 && wire_version != 101 {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "unsupported RhinoIO V1 Brep version {wire_version}"
         )));
     }
@@ -1176,7 +1177,7 @@ fn v1_direct_record(
         }
         TCODE_RHINOIO_OBJECT_BREP => V1DirectPayload::NurbsBrep(v1_nurbs_brep(data, chunk)?),
         _ => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "unsupported V1 direct typecode {:#010x}",
                 chunk.typecode
             )))
@@ -1382,7 +1383,11 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
     let region_id: cadmpeg_ir::ids::RegionId = format!("rhino:object:region#{suffix}").into();
     let shell_id: cadmpeg_ir::ids::ShellId = format!("rhino:object:shell#{suffix}").into();
     let mut trim_paths = Vec::new();
-    let mut face_trim_indices = vec![Vec::new(); brep.faces.len()];
+    let mut face_trim_indices = alloc_filled(
+        brep.faces.len(),
+        Vec::<usize>::new(),
+        "Rhino legacy Brep face trim indices",
+    )?;
     for (face_index, face) in brep.faces.iter().enumerate() {
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
             for trim_index in 0..loop_record.trims.len() {
@@ -2149,7 +2154,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
                 BoundedReader::new(data, chunk.body.start, chunk.body.end).map_err(malformed)?;
             let version = reader.i32().map_err(malformed)?;
             if version != 1 {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "unsupported V1 unit structure {version}"
                 )));
             }
@@ -2158,7 +2163,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
                 1.0
             } else {
                 crate::settings::standard_scale(unit).ok_or_else(|| {
-                    CodecError::Malformed(format!("unsupported V1 unit system {unit}"))
+                    CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
                 })?
             };
             ir.tolerances.linear = reader.f64().map_err(malformed)? * scale;
@@ -2176,7 +2181,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
                 reader.f64().map_err(malformed)? * scale,
             );
             if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "V1 point at offset {offset} is not finite"
                 )));
             }

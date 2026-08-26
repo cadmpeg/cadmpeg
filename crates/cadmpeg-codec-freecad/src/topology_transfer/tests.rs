@@ -666,10 +666,12 @@ fn face_connectivity_partitions_transitively_without_reordering() {
     ];
 
     assert_eq!(
-        connected_components(&sets),
+        connected_components(&sets).expect("connected-component allocation"),
         vec![vec![0, 2, 3], vec![1], vec![4]]
     );
-    assert!(connected_components(&[]).is_empty());
+    assert!(connected_components(&[])
+        .expect("connected-component allocation")
+        .is_empty());
 }
 
 #[test]

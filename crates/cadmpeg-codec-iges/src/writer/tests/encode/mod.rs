@@ -23,7 +23,130 @@ use cadmpeg_ir::CadIr;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
+use crate::writer::same_float;
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+
+#[test]
+fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
+        let decoded = IgesCodec
+            .decode(
+                &mut Cursor::new(composite_curve_with_join_gap(0.001_001)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let plan = IgesEncoder::new(IgesWriteOptions { version }).plan(EncodeInput {
+            ir: decoded.ir(),
+            fidelity: None,
+        });
+        let plan = plan
+            .unwrap_or_else(|error| panic!("{version:?} Type 102 semantic plan refused: {error}"));
+        let mut written = Vec::new();
+        let report = plan.write_to(&mut written).unwrap();
+        let round_trip = IgesCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap();
+        assert!(!report.losses.iter().any(|loss| {
+            loss.code.taxonomy() == cadmpeg_ir::LossTaxonomy::GeometryNotTransferred
+        }));
+        assert!(
+            round_trip
+                .ir()
+                .native
+                .namespace("iges")
+                .and_then(|namespace| namespace.arenas.get("entities"))
+                .is_some_and(|entities| {
+                    entities.iter().any(|record| {
+                        record.field("entity_type").and_then(|value| value.as_i64()) == Some(102)
+                    })
+                }),
+            "{version:?} output has no Type 102 entity"
+        );
+        assert!(round_trip.ir().model.curves.iter().any(|curve| {
+            curve
+                .source_object
+                .as_ref()
+                .and_then(|source| source.name.as_deref())
+                == Some("COMPOSIT")
+        }));
+        let validation =
+            cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone());
+        assert!(
+            validation.is_ok(),
+            "{version:?}: {:#?}",
+            validation.findings
+        );
+    }
+}
+
+#[test]
+fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
+    let mut decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_curve_with_join_gap(0.001_001)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let second_start = decoded
+        .ir()
+        .model
+        .edges
+        .iter()
+        .find(|edge| {
+            edge.curve
+                .as_ref()
+                .is_some_and(|curve| curve.as_str() == "iges:model:curve#D3")
+        })
+        .expect("second Type 102 child edge")
+        .start
+        .clone();
+    {
+        let mut ir = decoded.ir_mut();
+        let composite = ir
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
+            .expect("Type 102 composite curve");
+        let CurveGeometry::Composite { segments, .. } = &mut composite.geometry else {
+            panic!("expected retained Type 102 composite geometry");
+        };
+        segments[1].same_sense = false;
+        ir.model
+            .edges
+            .iter_mut()
+            .find(|edge| {
+                edge.curve
+                    .as_ref()
+                    .is_some_and(|curve| curve.as_str() == "iges:model:curve#D5")
+            })
+            .expect("Type 102 composite edge")
+            .end = second_start;
+    }
+    let plan = IgesEncoder::new(IgesWriteOptions {
+        version: IgesVersion::V5_0,
+    })
+    .plan(EncodeInput {
+        ir: decoded.ir(),
+        fidelity: None,
+    })
+    .expect("reversed Type 102 child is writable");
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert!(round_trip.ir().model.curves.iter().any(|curve| {
+        matches!(
+            curve.geometry,
+            CurveGeometry::Line { origin, direction }
+                if same_float(origin.x, 2.0) && same_float(direction.x, -1.0)
+        )
+    }));
+    let validation =
+        cadmpeg_ir::validate_neutral(round_trip.ir(), round_trip.report().losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
 
 #[test]
 fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
@@ -116,6 +239,110 @@ fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
             "{name}: {:#?}",
             decoded.report().losses
         );
+    }
+}
+
+#[test]
+fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
+    for (version, name) in [(IgesVersion::V4_0, "4.0"), (IgesVersion::V5_0, "5.0")] {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.push(Point {
+            id: PointId(format!("point#{name}")),
+            source_object: None,
+            position: Point3::new(4.0, 5.0, 6.0),
+        });
+        let plan = IgesEncoder::new(IgesWriteOptions { version })
+            .plan(EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .unwrap();
+        let mut written = Vec::new();
+        let report = plan.write_to(&mut written).unwrap();
+        assert!(report.losses.is_empty(), "{name}: {:#?}", report.losses);
+
+        let decoded = IgesCodec
+            .decode(
+                &mut Cursor::new(written.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            decoded.ir().source.as_ref().unwrap().attributes["iges_version"],
+            name
+        );
+        assert_eq!(decoded.ir().model.points.len(), 1);
+        assert!(
+            decoded.report().losses.is_empty(),
+            "{name}: {:#?}",
+            decoded.report()
+        );
+    }
+}
+
+#[test]
+fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId(format!("surface#{version:?}")),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(4.0, 5.0, 6.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+                u_axis: Vector3::new(0.0, 1.0, 0.0),
+            },
+            source_object: None,
+        });
+        let plan = IgesEncoder::new(IgesWriteOptions { version })
+            .plan(EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .unwrap_or_else(|error| panic!("{version:?}: {error}"));
+        let mut written = Vec::new();
+        let report = plan
+            .write_to(&mut written)
+            .unwrap_or_else(|error| panic!("{version:?}: {error}"));
+        assert!(
+            report.losses.is_empty(),
+            "{version:?}: {:#?}",
+            report.losses
+        );
+
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{version:?}: {error}"));
+        assert_eq!(decoded.ir().model.surfaces.len(), 1, "{version:?}");
+        let SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } = &decoded.ir().model.surfaces[0].geometry
+        else {
+            panic!("{version:?}: expected a decoded plane");
+        };
+        assert!(same_float(origin.x, 4.0), "{version:?}");
+        assert!(same_float(origin.y, 5.0), "{version:?}");
+        assert!(same_float(origin.z, 6.0), "{version:?}");
+        assert_eq!(*normal, Vector3::new(1.0, 0.0, 0.0), "{version:?}");
+        assert_eq!(*u_axis, Vector3::new(0.0, 1.0, 0.0), "{version:?}");
+        assert!(
+            decoded.report().losses.is_empty(),
+            "{version:?}: {:#?}",
+            decoded.report().losses
+        );
+        assert!(
+            cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok(),
+            "{version:?}"
+        );
+
+        let entities = &decoded.ir().native.namespace("iges").unwrap().arenas["entities"];
+        assert!(entities.iter().any(|record| {
+            record.field("entity_type").and_then(|value| value.as_i64()) == Some(108)
+        }));
+        assert!(!entities.iter().any(|record| {
+            record.field("entity_type").and_then(|value| value.as_i64()) == Some(190)
+        }));
     }
 }
 
@@ -1760,234 +1987,5 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
-#[test]
-fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
-    let decoded = IgesCodec
-        .decode(
-            &mut Cursor::new(explicit_void_solid_file().0),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let source_region = &decoded.ir().model.regions[0];
-    assert_eq!(source_region.shells.len(), 2);
-    assert!(decoded
-        .ir()
-        .model
-        .shells
-        .iter()
-        .find(|shell| Some(&shell.id) == source_region.void_shells().next())
-        .unwrap()
-        .faces
-        .iter()
-        .all(|face_id| decoded
-            .ir()
-            .model
-            .faces
-            .iter()
-            .find(|face| face.id == *face_id)
-            .is_some_and(|face| face.sense == Sense::Reversed)));
-    let plan = IgesEncoder::default()
-        .plan(EncodeInput {
-            ir: decoded.ir(),
-            fidelity: None,
-        })
-        .unwrap();
-    let mut written = Vec::new();
-    plan.write_to(&mut written).unwrap();
-
-    let round_trip = IgesCodec
-        .decode(&mut Cursor::new(written), &DecodeOptions::default())
-        .unwrap();
-    let body = round_trip
-        .ir()
-        .model
-        .bodies
-        .iter()
-        .find(|body| body.kind == BodyKind::Solid)
-        .unwrap();
-    let region = round_trip
-        .ir()
-        .model
-        .regions
-        .iter()
-        .find(|region| region.id == body.regions[0])
-        .unwrap();
-    assert_eq!(region.shells.len(), 2);
-    let void_shell = round_trip
-        .ir()
-        .model
-        .shells
-        .iter()
-        .find(|shell| shell.id == region.shells[1])
-        .unwrap();
-    assert!(void_shell.faces.iter().all(|face_id| {
-        round_trip
-            .ir()
-            .model
-            .faces
-            .iter()
-            .find(|face| face.id == *face_id)
-            .is_some_and(|face| face.sense == Sense::Reversed)
-    }));
-    assert!(
-        round_trip.report().losses.is_empty(),
-        "{:#?}",
-        round_trip.report().losses
-    );
-    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new());
-    assert!(validation.is_ok(), "{:#?}", validation.findings);
-}
-
-#[test]
-fn encode_type_186_uses_ordered_region_shell_roles() {
-    let decoded = IgesCodec
-        .decode(
-            &mut Cursor::new(explicit_void_solid_file().0),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let mut ir = decoded.ir().clone();
-    let region = &mut ir.model.regions[0];
-    let source_outer = region.shells[0].clone();
-    let source_void = region.shells[1].clone();
-    region.shells.reverse();
-
-    let (exterior, voids) = crate::writer::solid_shell_roles(region).unwrap();
-    assert_eq!(exterior, &source_void);
-    assert_eq!(voids, std::slice::from_ref(&source_outer));
-
-    let entities = crate::writer::brep_entities(&ir).unwrap();
-    let shell_indices = entities
-        .iter()
-        .enumerate()
-        .filter_map(|(index, entity)| (entity.type_code == 514).then_some(index))
-        .collect::<Vec<_>>();
-    assert_eq!(shell_indices.len(), 2);
-    let solid = entities
-        .iter()
-        .find(|entity| entity.type_code == 186)
-        .unwrap();
-    let expected = format!(
-        "186,{},1,1,{},1;",
-        crate::writer::reference_marker(shell_indices[0]),
-        crate::writer::reference_marker(shell_indices[1])
-    );
-    assert_eq!(
-        String::from_utf8(solid.parameters.clone()).unwrap(),
-        expected
-    );
-}
-
-#[test]
-fn encode_nurbs_declares_actual_planarity_and_closedness() {
-    let cases = [
-        (
-            "planar-open",
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(2.0, 0.0, 0.0),
-                ],
-                weights: None,
-                periodic: false,
-            },
-            [1, 0, 1, 0],
-        ),
-        (
-            "nonplanar-open",
-            NurbsCurve {
-                degree: 2,
-                knots: vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(1.0, 0.0, 1.0),
-                    Point3::new(2.0, 1.0, 0.0),
-                    Point3::new(3.0, 0.0, 0.0),
-                ],
-                weights: None,
-                periodic: false,
-            },
-            [0, 0, 1, 0],
-        ),
-        (
-            "closed-planar",
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-                control_points: vec![
-                    Point3::new(0.0, 0.0, 0.0),
-                    Point3::new(1.0, 0.0, 0.0),
-                    Point3::new(0.0, 0.0, 0.0),
-                ],
-                weights: None,
-                periodic: false,
-            },
-            [1, 1, 1, 0],
-        ),
-        (
-            "equal-weight-rational",
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
-                weights: Some(vec![2.0, 2.0]),
-                periodic: false,
-            },
-            [1, 0, 1, 0],
-        ),
-    ];
-    for (name, nurbs, expected) in cases {
-        let mut ir = CadIr::empty(Units::default());
-        ir.model.curves.push(Curve {
-            id: CurveId(format!("curve#{name}")),
-            geometry: CurveGeometry::Nurbs(nurbs),
-            source_object: None,
-        });
-        let plan = IgesEncoder::default()
-            .plan(EncodeInput {
-                ir: &ir,
-                fidelity: None,
-            })
-            .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let mut written = Vec::new();
-        plan.write_to(&mut written)
-            .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let decoded = IgesCodec
-            .decode(&mut Cursor::new(written), &DecodeOptions::default())
-            .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let entity = decoded.ir().native.namespace("iges").unwrap().arenas["entities"]
-            .iter()
-            .find(|record| {
-                record.field("entity_type").and_then(|value| value.as_i64()) == Some(126)
-            })
-            .unwrap_or_else(|| panic!("{name}: missing Type 126 entity"));
-        let fields = entity.fields();
-        let parameters = fields["parameters"].as_array().unwrap();
-        for (index, expected_value) in expected.into_iter().enumerate() {
-            assert_eq!(
-                parameters[index + 3]["value"]["value"].as_i64(),
-                Some(i64::from(expected_value)),
-                "{name}: Type 126 property {}",
-                index + 1
-            );
-        }
-        if expected[0] == 1 {
-            let normal = parameters
-                .get(parameters.len().saturating_sub(3)..)
-                .unwrap_or_default()
-                .iter()
-                .map(|parameter| parameter["value"]["value"].as_f64())
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or_else(|| panic!("{name}: missing Type 126 plane normal"));
-            assert_eq!(normal, vec![0.0, 0.0, 1.0], "{name}: Type 126 plane normal");
-        }
-        assert!(
-            decoded.report().losses.is_empty(),
-            "{name}: {:?}",
-            decoded.report().losses
-        );
-    }
-}
+mod curves;
+mod region_and_surface;

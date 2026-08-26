@@ -6,7 +6,7 @@ use std::io::Cursor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use super::{report_code_count, strict_options, valid_global_fields};
+use super::{point_file_with_field, report_code_count, strict_options, valid_global_fields};
 use crate::loss::IgesLossCode;
 use crate::test_support::{
     card, directory_card, fixed_ascii_with_global, fixed_ascii_with_global_cards, parameter_card,
@@ -30,7 +30,7 @@ fn point_file_with_delimiters(parameter: char, record: char) -> Vec<u8> {
         2,
     ));
     bytes.extend(parameter_card(
-        format!("116{parameter}1.0{parameter}2.0{parameter}3.0{record}").as_bytes(),
+        format!("116{parameter}1.25{parameter}2.5{parameter}3.75{record}").as_bytes(),
         1,
         1,
     ));
@@ -75,7 +75,7 @@ fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
 }
 
 #[test]
-fn global_hollerith_count_digits_split_across_cards_open_the_payload() {
+fn global_hollerith_header_split_across_cards_is_a_field_defect() {
     let product = "p".repeat(70);
     let tail = format!(
         "0H{product},8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;"
@@ -83,9 +83,38 @@ fn global_hollerith_count_digits_split_across_cards_open_the_payload() {
     let bytes = fixed_ascii_with_global_chunks(&[b"1H,,1H;,7", tail.as_bytes()]);
     let (parsed, losses) = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
 
-    assert_eq!(parsed.sender_product().as_deref(), Some(product.as_str()));
+    assert_eq!(parsed.sender_product(), None);
     assert_eq!(parsed.native_file_name().as_deref(), Some("part.igs"));
-    assert!(losses.is_empty(), "{losses:#?}");
+    assert_eq!(losses.len(), 1, "{losses:#?}");
+    assert_eq!(
+        losses[0].code,
+        IgesLossCode::GlobalMetadataFieldUnusable.kind()
+    );
+    assert!(losses[0].message.contains("field 3"));
+}
+
+#[test]
+fn global_numeric_field_and_delimiter_must_share_a_card() {
+    let prefix = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,";
+    let padding = 71 - prefix.len();
+    let mut global = prefix.to_vec();
+    global.extend(std::iter::repeat_n(b' ', padding));
+    global.extend_from_slice(b"1,;");
+    let cards = global.chunks(CARD_DATA_COLUMNS).collect::<Vec<_>>();
+    let (parsed, losses) =
+        crate::global::parse(&crate::card::scan(&fixed_ascii_with_global_cards(&cards)).unwrap())
+            .unwrap();
+
+    assert_eq!(parsed.sender_product().as_deref(), Some("p"));
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == IgesLossCode::GlobalMetadataFieldUnusable.kind())
+            .count(),
+        1,
+        "{losses:#?}"
+    );
+    assert!(losses.iter().any(|loss| loss.message.contains("field 7")));
 }
 
 #[test]
@@ -109,6 +138,31 @@ fn global_card_padding_does_not_remove_hollerith_payload_spaces() {
     let (parsed, _) = crate::global::parse(&crate::card::scan(&bytes).unwrap()).unwrap();
 
     assert_eq!(parsed.sender_product().as_deref(), Some("ab "));
+}
+
+#[test]
+fn global_numeric_fields_reject_embedded_and_trailing_blanks() {
+    for value in ["3 2", "32 "] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(point_file_with_field(6, value)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert_eq!(result.ir().model.points.len(), 1, "{value:?}");
+        assert_eq!(
+            report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
+            1,
+            "{value:?}: {:#?}",
+            result.report().losses
+        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("field 7")));
+    }
 }
 
 #[test]
@@ -191,37 +245,21 @@ fn a_twenty_seventh_global_field_decodes_with_the_noncanonical_framing_loss() {
 }
 
 #[test]
-fn a_prohibited_delimiter_declaration_is_honored_and_charges_noncanonical_framing() {
-    for (parameter, record, expected) in [
-        (',', ';', 0_usize),
-        ('+', ';', 1),
-        (',', 'D', 1),
-        ('+', 'D', 2),
-    ] {
-        let bytes = point_file_with_delimiters(parameter, record);
-
-        let result = IgesCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap();
-
-        assert_eq!(
-            result.ir().model.points.len(),
-            1,
-            "{parameter}{record}: {:#?}",
-            result.report().losses
-        );
-        let position = &result.ir().model.points[0].position;
-        assert_eq!(
-            (position.x, position.y, position.z),
-            (1.0, 2.0, 3.0),
-            "{parameter}{record}"
-        );
-        assert_eq!(
-            report_code_count(result.report(), IgesLossCode::GlobalNoncanonicalFraming),
-            expected,
-            "{parameter}{record}: {:#?}",
-            result.report().losses
-        );
+fn prohibited_delimiter_declarations_refuse_before_parameter_decode() {
+    let prohibited = [
+        ' ', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '-', '.', 'D', 'E', 'H',
+    ];
+    for delimiter in prohibited {
+        for (parameter, record) in [(delimiter, ';'), (',', delimiter)] {
+            let bytes = point_file_with_delimiters(parameter, record);
+            assert!(
+                matches!(
+                    IgesCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()),
+                    Err(CodecError::Malformed(_))
+                ),
+                "{parameter}{record}"
+            );
+        }
     }
 }
 

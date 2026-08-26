@@ -4,6 +4,10 @@
 
 use super::test_cards::*;
 use super::test_owned::*;
+mod test_annotation_variants;
+pub(crate) use test_annotation_variants::*;
+mod test_general_note_variants;
+pub(crate) use test_general_note_variants::*;
 
 pub(crate) fn parametrically_bounded_plane_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
@@ -44,7 +48,7 @@ pub(crate) fn parametrically_bounded_plane_file() -> Vec<u8> {
     bytes.extend(parameter_card(square, 5, 3));
     bytes.extend(parameter_card(b"141,1,3,1,1,3,1,1,5;", 7, 4));
     bytes.extend(parameter_card(b"143,1,1,1,7;", 9, 5));
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000010P0000005").as_bytes(),
         b'T',
@@ -117,7 +121,7 @@ pub(crate) fn explicit_open_shell_file() -> Vec<u8> {
             parameter_sequence,
         ));
     }
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000024P0000012").as_bytes(),
         b'T',
@@ -367,7 +371,7 @@ pub(crate) fn explicit_tetrahedron_solid_file_extended(
     let mut parameter_sequence = 1_u32;
     for (index, (entity_type, form, label, status, parameters)) in entities.iter().enumerate() {
         let sequence = u32::try_from(index * 2 + 1).unwrap();
-        let line_count = parameters.len().div_ceil(64);
+        let line_count = parameter_fragment_count(parameters.as_bytes());
         let entity_type = entity_type.to_string();
         let form = form.to_string();
         let parameter_start = parameter_sequence.to_string();
@@ -415,9 +419,10 @@ pub(crate) fn explicit_tetrahedron_solid_file_extended(
             sequence,
             parameter_sequence,
         ));
-        parameter_sequence += u32::try_from(parameters.len().div_ceil(64)).unwrap();
+        parameter_sequence +=
+            u32::try_from(parameter_fragment_count(parameters.as_bytes())).unwrap();
     }
-    let global_cards = global.len().div_ceil(72);
+    let global_cards = global_card_count(global);
     bytes.extend(card(
         format!(
             "S0000001G{global_cards:07}D{:07}P{:07}",
@@ -1132,6 +1137,7 @@ pub(crate) fn scalar_property_forms_file() -> Vec<u8> {
     let cases = [
         (2, "406,3,0,1,2;"),
         (3, "406,2,17,5HPOWER;"),
+        (4, "406,2,1,0;"),
         (5, "406,5,0.25,0,2,1,0.1;"),
         (6, "406,5,0.5,0.45,1,2,8;"),
         (8, "406,1,3HPA7;"),
@@ -1184,7 +1190,7 @@ pub(crate) fn grid_property_file() -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00020000",
+            status: "00020100",
             parameters: "410,1,1,0,0,0,0,0,0;".into(),
         },
         OwnedTestEntity {
@@ -1198,7 +1204,7 @@ pub(crate) fn grid_property_file() -> Vec<u8> {
             entity_type: 404,
             form: 1,
             label: "DRAWING".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "404,1,1,0,0,0,0,0,1,3;".into(),
         },
     ])
@@ -1349,7 +1355,7 @@ pub(crate) fn drawing_metadata_property_forms_file() -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00020000",
+            status: "00020100",
             parameters: "410,1,1,0,0,0,0,0,0;".into(),
         },
         OwnedTestEntity {
@@ -1370,7 +1376,7 @@ pub(crate) fn drawing_metadata_property_forms_file() -> Vec<u8> {
             entity_type: 404,
             form: 1,
             label: "DRAWING".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "404,1,1,0,0,0,0,0,2,3,5;".into(),
         },
     ])
@@ -1395,7 +1401,7 @@ fn drawing_sheet_ids_file(second_sid: &str, share_first_property: bool) -> Vec<u
             entity_type: 410,
             form: 0,
             label: "VIEW1".into(),
-            status: "00020000",
+            status: "00020100",
             parameters: "410,1,1,0,0,0,0,0,0;".into(),
         },
         OwnedTestEntity {
@@ -1409,14 +1415,14 @@ fn drawing_sheet_ids_file(second_sid: &str, share_first_property: bool) -> Vec<u
             entity_type: 404,
             form: 1,
             label: "DRAWING1".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "404,1,1,0,0,0,0,0,1,3;".into(),
         },
         OwnedTestEntity {
             entity_type: 410,
             form: 0,
             label: "VIEW2".into(),
-            status: "00020000",
+            status: "00020100",
             parameters: "410,2,1,0,0,0,0,0,0;".into(),
         },
     ];
@@ -1433,7 +1439,7 @@ fn drawing_sheet_ids_file(second_sid: &str, share_first_property: bool) -> Vec<u
         entity_type: 404,
         form: 1,
         label: "DRAWING2".into(),
-        status: "00000000",
+        status: "00000100",
         parameters: format!("404,1,7,0,0,0,0,0,1,{second_drawing_property};"),
     });
     owned_test_file(&entities)
@@ -1490,21 +1496,21 @@ pub(crate) fn view_forms_file() -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "ORTHO".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "410,1,,0,0,0,0,0,0;".into(),
         },
         OwnedTestEntity {
             entity_type: 410,
             form: 1,
             label: "PERSP".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "410,2,1.5,0,0,1,0,0,0,0,0,10,0,1,0,5,-2,2,-1,1,3,-5,5;".into(),
         },
         OwnedTestEntity {
             entity_type: 410,
             form: 1,
             label: "SCALE".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "410,3,1,0,0,1E-200,0,0,0,0,0,10,0,1E-200,0,5,-2,2,-1,1,0,0,0;".into(),
         },
     ])
@@ -1515,7 +1521,7 @@ pub(crate) fn out_of_table_depth_clipping_view_file() -> Vec<u8> {
         entity_type: 410,
         form: 1,
         label: "BADDCI".into(),
-        status: "00000000",
+        status: "00000100",
         parameters: "410,2,1.5,0,0,1,0,0,0,0,0,10,0,1,0,5,-2,2,-1,1,4,-5,5;".into(),
     }])
 }
@@ -1526,14 +1532,14 @@ pub(crate) fn out_of_table_segmented_display_file() -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "410,1,1,0,0,0,0,0,0;".into(),
         },
         OwnedTestEntity {
             entity_type: 402,
             form: 19,
             label: "BADDF".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "402,1,1,0.5,2,0,0,0;".into(),
         },
     ])
@@ -1578,7 +1584,7 @@ pub(crate) fn defaulted_text_and_view_fields_file() -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "410,1,1.,,,,,,;".into(),
         },
     ])
@@ -1590,28 +1596,28 @@ pub(crate) fn view_visibility_forms_file() -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "VIEW1".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "410,1,1,0,0,0,0,0,0,1,3,0;".into(),
         },
         OwnedTestEntity {
             entity_type: 402,
             form: 3,
             label: "VISIBLE".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "402,1,0,1;".into(),
         },
         OwnedTestEntity {
             entity_type: 410,
             form: 0,
             label: "VIEW2".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "410,2,1,0,0,0,0,0,0,1,7,0;".into(),
         },
         OwnedTestEntity {
             entity_type: 402,
             form: 4,
             label: "DISPLAY".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "402,1,0,5,1,0,2,3;".into(),
         },
     ])
@@ -1623,14 +1629,14 @@ pub(crate) fn segmented_view_visibility_file() -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "410,1,1,0,0,0,0,0,0;".into(),
         },
         OwnedTestEntity {
             entity_type: 402,
             form: 19,
             label: "SEGMENTS".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "402,2,1,0.5,0,,,1,1,1.0,1,2,3,4;".into(),
         },
     ])
@@ -1642,7 +1648,7 @@ pub(crate) fn drawing_with_properties_file() -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00020000",
+            status: "00020100",
             parameters: "410,1,1,0,0,0,0,0,0;".into(),
         },
         OwnedTestEntity {
@@ -1677,7 +1683,7 @@ pub(crate) fn drawing_with_properties_file() -> Vec<u8> {
             entity_type: 404,
             form: 1,
             label: "DRAWING".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "404,1,1,10,20,0.5,1,3,0,3,5,7,9;".into(),
         },
     ])
@@ -1689,7 +1695,7 @@ pub(crate) fn drawing_with_conflicting_size_properties_file() -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00020000",
+            status: "00020100",
             parameters: "410,1,1,0,0,0,0,0,0;".into(),
         },
         OwnedTestEntity {
@@ -1731,7 +1737,7 @@ pub(crate) fn drawing_with_conflicting_size_properties_file() -> Vec<u8> {
             entity_type: 404,
             form: 1,
             label: "DRAWING".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "404,1,1,10,20,0.5,1,3,0,4,5,7,9,11;".into(),
         },
     ])
@@ -1865,7 +1871,7 @@ pub(crate) fn malformed_view_parameter_type_file() -> Vec<u8> {
         entity_type: 410,
         form: 0,
         label: "BADVIEW".into(),
-        status: "00000000",
+        status: "00000100",
         parameters: "410,1.0,1.,,,,,,;".into(),
     }])
 }
@@ -1887,153 +1893,4 @@ pub(crate) fn negative_text_box_dimensions_file() -> Vec<u8> {
             parameters: "213,-10,10,0,0,0,0,0,0,0,0,0,1,0,1,1,0,0,1,0,0,1,-2,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
         },
     ])
-}
-
-fn new_general_note_file_with_character_metrics(
-    character_width: &str,
-    character_height: &str,
-) -> Vec<u8> {
-    new_general_note_file_with_fields("0", character_width, character_height, "", "0")
-}
-
-fn new_general_note_file_with_fields(
-    fixed_or_variable: &str,
-    character_width: &str,
-    character_height: &str,
-    character_spacing: &str,
-    character_count: &str,
-) -> Vec<u8> {
-    new_general_note_file_with_font(
-        fixed_or_variable,
-        character_width,
-        character_height,
-        character_spacing,
-        character_count,
-        "1",
-    )
-}
-
-fn new_general_note_file_with_font(
-    fixed_or_variable: &str,
-    character_width: &str,
-    character_height: &str,
-    character_spacing: &str,
-    character_count: &str,
-    font_style: &str,
-) -> Vec<u8> {
-    new_general_note_file_with_font_and_character_set(
-        fixed_or_variable,
-        character_width,
-        character_height,
-        character_spacing,
-        character_count,
-        font_style,
-        "",
-    )
-}
-
-fn new_general_note_file_with_font_and_character_set(
-    fixed_or_variable: &str,
-    character_width: &str,
-    character_height: &str,
-    character_spacing: &str,
-    character_count: &str,
-    font_style: &str,
-    character_set: &str,
-) -> Vec<u8> {
-    owned_test_file(&[OwnedTestEntity {
-        entity_type: 213,
-        form: 0,
-        label: "DEFAULTS".into(),
-        status: "00000100",
-        parameters: new_general_note_parameters(
-            fixed_or_variable,
-            character_width,
-            character_height,
-            character_spacing,
-            character_count,
-            font_style,
-            character_set,
-        ) + ";",
-    }])
-}
-
-fn new_general_note_parameters(
-    fixed_or_variable: &str,
-    character_width: &str,
-    character_height: &str,
-    character_spacing: &str,
-    character_count: &str,
-    font_style: &str,
-    character_set: &str,
-) -> String {
-    let mut fields = vec![String::from("213")];
-    fields.extend((0..11).map(|_| String::new()));
-    fields.push(String::from("1"));
-    fields.extend(
-        [
-            fixed_or_variable,
-            character_width,
-            character_height,
-            character_spacing,
-            "", // LSPACE
-            font_style,
-            "", // CHRANG
-            "", // CCTEXT
-            character_count,
-            "", // WT
-            "", // HT
-            character_set,
-            "", // SL
-            "", // A
-            "", // M
-            "", // VH
-            "", // XS
-            "", // YS
-            "", // ZS
-            "", // TEXT
-        ]
-        .into_iter()
-        .map(str::to_owned),
-    );
-    fields.join(",")
-}
-
-pub(crate) fn out_of_table_annotation_font_values_file() -> Vec<u8> {
-    owned_test_file(&[
-        OwnedTestEntity {
-            entity_type: 212,
-            form: 0,
-            label: "BAD212".into(),
-            status: "00000100",
-            parameters: "212,1,1,1,4,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 213,
-            form: 0,
-            label: "BAD213".into(),
-            status: "00000100",
-            parameters: "213,40,20,2,0,20,0,0,0,18,0,-5,1,0,2,3,-0.5,0,4,0,4HTUNL,4,12,3,1,1.5707963267948966,0,0,0,2,18,0,4HTOL!;".into(),
-        },
-    ])
-}
-
-pub(crate) fn leader_forms_file() -> Vec<u8> {
-    let entities = (1..=12)
-        .map(|form| {
-            let (height, width) = match form {
-                4 => (0, 0),
-                5 | 6 | 12 => (2, 2),
-                _ => (2, 1),
-            };
-            OwnedTestEntity {
-                entity_type: 214,
-                form,
-                label: format!("LEAD{form}"),
-                status: "00000100",
-                parameters: format!("214,2,{height},{width},3,0,0,5,0,5,4;"),
-            }
-        })
-        .collect::<Vec<_>>();
-    owned_test_file(&entities)
 }

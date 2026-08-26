@@ -64,23 +64,26 @@ fn representation_classification_fills_its_prefix_across_short_reads() {
 }
 
 #[test]
-fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
+fn compressed_and_binary_representations_are_detected_and_binary_is_validated() {
     let mut compressed = vec![b' '; 80];
     compressed[72] = b'C';
     assert_eq!(IgesCodec.detect(&compressed), Confidence::High);
-    let summary = IgesCodec
+    let inspect_error = IgesCodec
         .inspect(
             &mut Cursor::new(compressed.clone()),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .unwrap();
-    assert_eq!(summary.container_kind, "compressed-ascii");
+        .unwrap_err();
+    assert_eq!(
+        inspect_error.to_string(),
+        "malformed container: IGES Compressed ASCII: Start section is missing after the flag record"
+    );
     assert_eq!(
         IgesCodec
             .decode(&mut Cursor::new(compressed), &DecodeOptions::default())
             .unwrap_err()
             .to_string(),
-        "not implemented yet: IGES Compressed ASCII representation decode"
+        "malformed container: IGES Compressed ASCII: Start section is missing after the flag record"
     );
 
     let mut binary = vec![0_u8; 80];
@@ -100,20 +103,21 @@ fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
     binary[73..79].fill(b'0');
     binary[79] = b'1';
     assert_eq!(IgesCodec.detect(&binary), Confidence::High);
-    let summary = IgesCodec
+    let inspect_error = IgesCodec
         .inspect(
             &mut Cursor::new(binary.clone()),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
-        .unwrap();
-    assert_eq!(summary.container_kind, "binary");
-    assert_eq!(
-        IgesCodec
-            .decode(&mut Cursor::new(binary), &DecodeOptions::default())
-            .unwrap_err()
-            .to_string(),
-        "not implemented yet: IGES Binary representation decode"
-    );
+        .unwrap_err();
+    assert!(inspect_error
+        .to_string()
+        .contains("malformed container: IGES Binary: Binary primitive bit lengths"));
+    let error = IgesCodec
+        .decode(&mut Cursor::new(binary), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("malformed container: IGES Binary: Binary primitive bit lengths"));
 }
 
 #[test]
@@ -162,9 +166,9 @@ fn representation_detection_rejects_malformed_flag_constants() {
 #[test]
 fn detection_reads_the_second_card_image_from_a_fused_first_line() {
     let base = point_file();
-    let mut fused = base[..80].to_vec();
-    fused.extend_from_slice(&base[81..161]);
-    fused.extend_from_slice(&base[161..]);
+    let mut fused = base[..CARD_COLUMNS].to_vec();
+    fused.extend_from_slice(&base[CARD_LINE_BYTES..CARD_LINE_BYTES + CARD_COLUMNS]);
+    fused.extend_from_slice(&base[CARD_LINE_BYTES + CARD_COLUMNS..]);
 
     assert_eq!(IgesCodec.detect(&fused), Confidence::High);
 
@@ -188,7 +192,7 @@ fn detection_reads_the_second_card_image_from_a_fused_first_line() {
 #[test]
 fn detection_refuses_a_start_card_with_no_readable_sequence() {
     let mut bytes = point_file();
-    bytes[73..80].fill(b' ');
+    bytes[CARD_DATA_COLUMNS + 1..CARD_COLUMNS].fill(b' ');
 
     assert_eq!(IgesCodec.detect(&bytes), Confidence::No);
     assert_eq!(

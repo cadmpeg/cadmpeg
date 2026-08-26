@@ -2,7 +2,7 @@
 # A decrease updates this file in the same commit. A deliberate increase
 # requires a reason under [reasons] for every raised key.
 # [kinds] is pressure (no zero destination) or convergence ([targets]).
-measured_at = "ed3994945f84b746b42427872d2bd28f8f77e31b"
+measured_at = "33fc5ff5a83de6b21d4bbfb84428d809ef193ec2"
 filter = "legacy metrics: production .rs under crates/**/src via is_production_rs; exclude tests/ and benches/ path segments; exclude files named tests.rs or *test*.rs; strip cfg(test)-attributed items with blank-preserving elision. from_endian_bytes uses that same crates/**/src glob (not codec crates only). Placement metrics: scan crates/**/*.rs by ownership, structural entry points, standard mod resolution, and test-only #[path] ancestry; golden_tests files stay out of test-line debt. production_line_debt reuses is_production_rs and elides cfg(test) items without blank placeholders. [kinds] marks each key pressure (no zero destination) or convergence ([targets] is the completion criterion)."
 
 [kinds]
@@ -26,19 +26,16 @@ path_test_includes = 0
 test_line_debt = 0
 production_line_debt = 0
 
+[reasons]
+from_endian_bytes = "The remaining 93 calls are intentional exceptions: View's 16 typed-reader implementations; CATIA's seven padded 24-bit or partial-width local token arrays; Creo's 36 compact-token IEEE reconstructions; F3D's two output color packings; Inventor's three field-reordered GUID reads; NX's seven reconstructed or copied scalar, footer, and checksum arrays; Rhino's four copied layer-color arrays; SLDPRT's nine copied component/tag arrays and output packing; the inspect scalar's one normalized local lane; the fuzz generator's one RGB packing; and Protein's seven fixed arrays returned by take. None reads a bounded decode window as a standard-width scalar."
+
 [ceilings]
-from_endian_bytes = 115
-codec_error_malformed_format = 1415
-loss_note_struct_literals = 2
-bare_tolerance_literals = 708
-nonliteral_vec_repeat = 152
+from_endian_bytes = 93
+codec_error_malformed_format = 0
+loss_note_struct_literals = 0
+bare_tolerance_literals = 0
+nonliteral_vec_repeat = 0
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 13913
+test_line_debt = 0
 production_line_debt = 0
-
-[reasons]
-from_endian_bytes = "four u32::from_le_bytes calls compare already-copied layer color arrays in deterministic source order; these are not bounded decode-window reads and remain intentional exceptions"
-codec_error_malformed_format = "The merged FreeCAD, IGES, Rhino, and STEP admission paths retain explicit malformed-input diagnostics: DP-10 and SA-03 require exact carrier and annotation checks, while IGES Type 186 and Rhino V1/RhinoIO checks preserve field-specific failures rather than collapsing distinct producer fields into one generic error."
-bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; still occurrence-only (does not see naming or collapse of distinct values)"
-test_line_debt = "The merged tree retains the current CATIA native test helper file at 3,777 lines, the IGES parameter test file at 14,097 lines, and the IGES solid test support file at 2,039 lines while test ownership migration remains incomplete."

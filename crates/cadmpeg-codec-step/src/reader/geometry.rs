@@ -3299,6 +3299,10 @@ fn unit_scale_mm_inner(
     result.filter(|scale| scale.is_finite() && *scale > 0.0)
 }
 
+const SI_MICRO: f64 = 1.0e-6;
+const SI_NANO: f64 = 1.0e-9;
+const SI_PICO: f64 = 1.0e-12;
+
 fn si_prefix(prefix: &str) -> Option<f64> {
     Some(match prefix {
         "EXA" => 1e18,
@@ -3312,9 +3316,9 @@ fn si_prefix(prefix: &str) -> Option<f64> {
         "DECI" => 1e-1,
         "CENTI" => 1e-2,
         "MILLI" => 1e-3,
-        "MICRO" => 1e-6,
-        "NANO" => 1e-9,
-        "PICO" => 1e-12,
+        "MICRO" => SI_MICRO,
+        "NANO" => SI_NANO,
+        "PICO" => SI_PICO,
         "FEMTO" => 1e-15,
         "ATTO" => 1e-18,
         _ => return None,

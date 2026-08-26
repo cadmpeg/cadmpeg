@@ -310,7 +310,7 @@ pub fn sync_neutral_features(
             .as_deref()
             .is_some_and(|tag| !valid_xml_name(tag))
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT feature {} has an invalid source tag",
                 feature.id
             )));
@@ -364,7 +364,7 @@ pub fn sync_neutral_features(
                 .map(|body| body_sources.get(body).cloned())
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "SLDPRT feature {} references a missing output body",
                         feature.id
                     ))
@@ -482,7 +482,7 @@ pub fn sync_neutral_features(
                 }
             });
         if !consistent {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT feature {} dependencies are inconsistent with its operands",
                 feature.id
             )));
@@ -514,13 +514,13 @@ pub(crate) fn synchronize_neutral_feature_content(
                 FeatureSourceContent::Text(text) => Ok(FeatureContent::Text(text.clone())),
                 FeatureSourceContent::Parameter(id) => {
                     let parameter = parameters.get(id).ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "SLDPRT feature {} content references missing parameter {}",
                             feature.id, id.0
                         ))
                     })?;
                     if parameter.owner.as_ref() != Some(&feature.id) {
-                        return Err(CodecError::Malformed(format!(
+                        return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} content references parameter {} owned by another feature",
                             feature.id, id.0
                         )));
@@ -532,7 +532,7 @@ pub(crate) fn synchronize_neutral_feature_content(
                     .cloned()
                     .map(FeatureContent::Feature)
                     .ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "SLDPRT feature {} content references missing feature {}",
                             feature.id, id
                         ))

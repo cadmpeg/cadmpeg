@@ -3,7 +3,7 @@
 
 use super::geometry::{entity_loss, resolve_transform, ProjectionOutcome};
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
 use cadmpeg_core::decode::DecodeContext;
@@ -54,14 +54,65 @@ fn standard_color_valid(value: i64) -> bool {
     matches!(value, 0..=8)
 }
 
+fn drawing_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    entry.entity_type == 404
+        && matches!(entry.form, 0 | 1)
+        && entry.status.subordinate == 0
+        && match dialect {
+            Dialect::V4_0 | Dialect::Legacy => entry.status.use_flag != 0,
+            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
+                entry.status.use_flag == 1
+                    && entry.structure == 0
+                    && entry.line_font == 0
+                    && entry.line_weight == 0
+                    && entry.color == 0
+            }
+        }
+}
+
+fn view_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    entry.entity_type == 410
+        && matches!(entry.form, 0 | 1)
+        && match dialect {
+            Dialect::V4_0 | Dialect::Legacy => entry.status.use_flag != 0,
+            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3 => {
+                entry.status.use_flag == 1
+            }
+        }
+}
+
+fn views_visible_directory_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    entry.entity_type == 402
+        && match dialect {
+            Dialect::V4_0 => matches!(entry.form, 3 | 4),
+            _ => matches!(entry.form, 3 | 4 | 19),
+        }
+        && entry.status.subordinate == 0
+        && (!matches!(
+            dialect,
+            Dialect::V5_0 | Dialect::V5_1 | Dialect::V5_2 | Dialect::V5_3
+        ) || entry.status.use_flag == 1)
+}
+
+fn clipping_plane_valid(entry: &DirectoryEntry, dialect: Dialect) -> bool {
+    entry.entity_type == 108
+        && match dialect {
+            Dialect::V4_0 => matches!(entry.status.use_flag, 0 | 1 | 2 | 5),
+            _ => entry.status.use_flag == 1,
+        }
+}
+
 #[derive(Debug, PartialEq)]
-enum DrawingPropertyValue {
+pub(crate) enum DrawingPropertyValue {
     Name(Vec<u8>),
     Size([f64; 2]),
     Units(i64, Vec<u8>),
 }
 
-fn drawing_property_value(form: i64, record: &ParameterRecord) -> Option<DrawingPropertyValue> {
+pub(crate) fn drawing_property_value(
+    form: i64,
+    record: &ParameterRecord,
+) -> Option<DrawingPropertyValue> {
     match form {
         15 => (record.integer(1) == Some(1))
             .then(|| record.string(2).filter(|value| !value.is_empty()))
@@ -73,7 +124,7 @@ fn drawing_property_value(form: i64, record: &ParameterRecord) -> Option<Drawing
             }
             let size = [record.number(2)?, record.number(3)?];
             size.iter()
-                .all(|value| value.is_finite() && *value > 0.0)
+                .all(|value| value.is_finite())
                 .then_some(DrawingPropertyValue::Size(size))
         }
         17 => {
@@ -146,11 +197,7 @@ pub(super) fn project(
         };
         let valid = if entry.form == 16 {
             record.integer(1) == Some(2)
-                && (2..=3).all(|index| {
-                    record
-                        .number(index)
-                        .is_some_and(|value| value.is_finite() && value > 0.0)
-                })
+                && (2..=3).all(|index| record.number(index).is_some_and(f64::is_finite))
         } else {
             record.integer(1) == Some(2)
                 && record
@@ -228,7 +275,7 @@ pub(super) fn project(
                     })
             })
         });
-        if views_valid && annotations_valid {
+        if drawing_directory_valid(entry, global.dialect()) && views_valid && annotations_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
@@ -275,9 +322,9 @@ pub(super) fn project(
                 record.integer_or(index, 0).is_some_and(|value| {
                     value == 0
                         || u32::try_from(value).ok().is_some_and(|sequence| {
-                            entries
-                                .get(&sequence)
-                                .is_some_and(|target| target.entity_type == 108)
+                            entries.get(&sequence).is_some_and(|target| {
+                                clipping_plane_valid(target, global.dialect())
+                            })
                         })
                 })
             });
@@ -318,7 +365,11 @@ pub(super) fn project(
                 && depth.is_some()
                 && depth_values_valid
         };
-        if view_number_valid && scale_valid && form_valid {
+        if view_directory_valid(entry, global.dialect())
+            && view_number_valid
+            && scale_valid
+            && form_valid
+        {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
@@ -409,7 +460,7 @@ pub(super) fn project(
                     && weight_valid
             })
         });
-        if blocks_valid {
+        if views_visible_directory_valid(entry, global.dialect()) && blocks_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
@@ -428,7 +479,7 @@ pub(super) fn project(
             continue;
         };
         let view_count = record.count(1).filter(|count| *count > 0);
-        let entity_count = record.count(2);
+        let entity_count = crate::parameter::view_visibility_entity_count(record, global.dialect());
         let block_width = if entry.form == 3 { 1 } else { 5 };
         let views_valid = view_count.is_some_and(|count| {
             (0..count).all(|index| {
@@ -452,7 +503,7 @@ pub(super) fn project(
                     && (entry.form == 3 || {
                         let line_font = record.integer(start + 1);
                         let definition = record.integer(start + 2);
-                        let color = record.integer(start + 3);
+                        let color = record.integer_or(start + 3, 0);
                         let weight = record.integer(start + 4);
                         line_font.is_some_and(|value| value == 0 || standard_line_font_valid(value))
                             && definition.is_some_and(|value| {
@@ -492,7 +543,7 @@ pub(super) fn project(
                     .is_some_and(|sequence| entries.contains_key(&sequence))
             })
         });
-        if views_valid && entities_valid {
+        if views_visible_directory_valid(entry, global.dialect()) && views_valid && entities_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(

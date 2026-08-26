@@ -4,6 +4,8 @@
 
 use super::test_cards::*;
 use super::test_owned::*;
+mod test_surface_domains;
+pub(crate) use test_surface_domains::*;
 
 pub(crate) fn dimension_forms_file() -> Vec<u8> {
     owned_test_file(&[
@@ -237,6 +239,71 @@ pub(crate) fn symbol_and_sectioned_area_file() -> Vec<u8> {
     ])
 }
 
+pub(crate) fn general_symbol_form_file(form: i64, global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global_and_line_fonts(
+        &[
+            OwnedTestEntity {
+                entity_type: 212,
+                form: 0,
+                label: "SYMNOTE".into(),
+                status: "00010100",
+                parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HS;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 100,
+                form: 0,
+                label: "SYMGEOM".into(),
+                status: "00010100",
+                parameters: "100,0,0,0,1,0,1,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 214,
+                form: 2,
+                label: "SYMLEAD".into(),
+                status: "00010100",
+                parameters: "214,1,2,1,0,0,0,2,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 228,
+                form,
+                label: "SYMBOL".into(),
+                status: "00000100",
+                parameters: "228,1,1,3,1,5;".into(),
+            },
+        ],
+        global,
+        &[(3, 1)],
+    )
+}
+
+pub(crate) fn inverted_sectioned_area_file() -> Vec<u8> {
+    inverted_sectioned_area_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    )
+}
+
+pub(crate) fn inverted_sectioned_area_file_with_global(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 100,
+                form: 0,
+                label: "ISLAND".into(),
+                status: "00000000",
+                parameters: "100,0,0,0,1,0,1,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 230,
+                form: 1,
+                label: "INVERTED".into(),
+                status: "00000100",
+                parameters: "230,0,2,0,0,0,1,0.7853981633974483,1,1;".into(),
+            },
+        ],
+        global,
+    )
+}
+
 pub(crate) fn out_of_table_sectioned_area_pattern_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -267,99 +334,196 @@ pub(crate) fn associativity_definition_file() -> Vec<u8> {
 }
 
 pub(crate) fn bounded_associativity_forms_file() -> Vec<u8> {
-    owned_test_file(&[
-        OwnedTestEntity {
-            entity_type: 410,
-            form: 0,
-            label: "VIEW".into(),
-            status: "00000000",
-            parameters: "410,1,1,0,0,0,0,0,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 214,
-            form: 1,
-            label: "LABELARR".into(),
-            status: "00010100",
-            parameters: "214,1,2,1,0,0,0,2,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "LABELED".into(),
-            status: "00000000",
-            parameters: "116,1,2,3,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 402,
-            form: 5,
-            label: "LABELDSP".into(),
-            status: "00000200",
-            parameters: "402,1,1,1,2,3,3,0,5;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "PARENT".into(),
-            status: "00000000",
-            parameters: "116,0,0,0,0,1,13,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 116,
-            form: 0,
-            label: "CHILD".into(),
-            status: "00000000",
-            parameters: "116,1,0,0,0,1,13,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 402,
-            form: 9,
-            label: "PARENTCH".into(),
-            status: "00000200",
-            parameters: "402,1,1,9,11;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 402,
-            form: 12,
-            label: "EXTINDEX".into(),
-            status: "00000200",
-            parameters: "402,1,4HNAME,9;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 212,
-            form: 0,
-            label: "DIMNOTE".into(),
-            status: "00010100",
-            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HD;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 214,
-            form: 1,
-            label: "DIMARR".into(),
-            status: "00010100",
-            parameters: "214,1,2,1,0,0,0,2,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 216,
-            form: 0,
-            label: "DIMENS".into(),
-            status: "00000100",
-            parameters: "216,17,19,19,0,0,1,23,0;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 402,
-            form: 13,
-            label: "DIMGEOM".into(),
-            status: "00000200",
-            parameters: "402,1,1,21,9;".into(),
-        },
-        OwnedTestEntity {
-            entity_type: 402,
-            form: 16,
-            label: "PLANAR".into(),
-            status: "00000200",
-            parameters: "402,1,2,0,9,11;".into(),
-        },
-    ])
+    bounded_associativity_forms_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    )
+}
+
+pub(crate) fn bounded_associativity_forms_file_with_global(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global(
+        &[
+            OwnedTestEntity {
+                entity_type: 410,
+                form: 0,
+                label: "VIEW".into(),
+                status: "00000100",
+                parameters: "410,1,1,0,0,0,0,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 214,
+                form: 1,
+                label: "LABELARR".into(),
+                status: "00010100",
+                parameters: "214,1,2,1,0,0,0,2,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "LABELED".into(),
+                status: "00000000",
+                parameters: "116,1,2,3,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 5,
+                label: "LABELDSP".into(),
+                status: "00000200",
+                parameters: "402,1,1,1,2,3,3,0,5;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "PARENT".into(),
+                status: "00000000",
+                parameters: "116,0,0,0,0,1,13,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "CHILD".into(),
+                status: "00000000",
+                parameters: "116,1,0,0,0,1,13,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 9,
+                label: "PARENTCH".into(),
+                status: "00000200",
+                parameters: "402,1,1,9,11;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 12,
+                label: "EXTINDEX".into(),
+                status: "00000200",
+                parameters: "402,1,4HNAME,9;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 212,
+                form: 0,
+                label: "DIMNOTE".into(),
+                status: "00010100",
+                parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HD;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 214,
+                form: 1,
+                label: "DIMARR".into(),
+                status: "00010100",
+                parameters: "214,1,2,1,0,0,0,2,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 216,
+                form: 0,
+                label: "DIMENS".into(),
+                status: "00000100",
+                parameters: "216,17,19,19,0,0,1,23,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 13,
+                label: "DIMGEOM".into(),
+                status: "00000200",
+                parameters: "402,1,1,21,9;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 16,
+                label: "PLANAR".into(),
+                status: "00000200",
+                parameters: "402,1,2,0,9,11;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 2,
+                label: "EXTLOGIC".into(),
+                status: "00000200",
+                parameters: "402,1,4HNAME,9;".into(),
+            },
+        ],
+        global,
+    )
+}
+
+pub(crate) fn legacy_perforated_plane_file(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global_and_line_fonts(
+        &[
+            OwnedTestEntity {
+                entity_type: 108,
+                form: 1,
+                label: "PPLANE".into(),
+                status: "00000000",
+                parameters: "108,0,0,1,0,5,0,0,0,0,1,9,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 108,
+                form: -1,
+                label: "CPLANE".into(),
+                status: "00010000",
+                parameters: "108,0,0,1,0,7,0,0,0,0,1,9,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 106,
+                form: 63,
+                label: "OUTER".into(),
+                status: "00010000",
+                parameters: "106,1,5,0,0,0,10,0,10,10,0,10,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 106,
+                form: 63,
+                label: "INNER".into(),
+                status: "00010000",
+                parameters: "106,1,5,0,2,2,4,2,4,4,2,4,2,2;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 9,
+                label: "PERFOR8".into(),
+                status: "00000200",
+                parameters: "402,1,1,1,3;".into(),
+            },
+        ],
+        global,
+        &[(1, 1), (3, 1), (5, 1), (7, 1)],
+    )
+}
+
+pub(crate) fn legacy_generic_single_parent_file(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global_and_line_fonts(
+        &[
+            OwnedTestEntity {
+                entity_type: 108,
+                form: 1,
+                label: "GENPARN".into(),
+                status: "00000000",
+                parameters: "108,0,0,1,0,3,0,0,0,0,1,7,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 106,
+                form: 63,
+                label: "OUTER".into(),
+                status: "00010000",
+                parameters: "106,1,5,0,0,0,10,0,10,10,0,10,0,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "CHILD".into(),
+                status: "00000000",
+                parameters: "116,1,2,3,0,1,7,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 402,
+                form: 9,
+                label: "GENASSOC".into(),
+                status: "00000200",
+                parameters: "402,1,1,1,5;".into(),
+            },
+        ],
+        global,
+        &[(1, 1), (3, 1)],
+    )
 }
 
 pub(crate) fn label_display_without_leader_file() -> Vec<u8> {
@@ -368,7 +532,7 @@ pub(crate) fn label_display_without_leader_file() -> Vec<u8> {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: "410,1,1,0,0,0,0,0,0;".into(),
         },
         OwnedTestEntity {
@@ -388,14 +552,14 @@ pub(crate) fn label_display_without_leader_file() -> Vec<u8> {
     ])
 }
 
-pub(crate) fn view_list_associativity_file(back_pointers: bool) -> Vec<u8> {
+fn view_list_associativity_entities(back_pointers: bool) -> Vec<OwnedTestEntity> {
     let suffix = if back_pointers { ",1,3,0" } else { "" };
-    owned_test_file(&[
+    vec![
         OwnedTestEntity {
             entity_type: 410,
             form: 0,
             label: "VIEW".into(),
-            status: "00000000",
+            status: "00000100",
             parameters: format!("410,1,1,0,0,0,0,0,0{suffix};"),
         },
         OwnedTestEntity {
@@ -411,6 +575,98 @@ pub(crate) fn view_list_associativity_file(back_pointers: bool) -> Vec<u8> {
             label: "VISIBLE".into(),
             status: "00000000",
             parameters: format!("116,1,2,3,0{suffix};"),
+        },
+    ]
+}
+
+pub(crate) fn view_list_associativity_file(back_pointers: bool) -> Vec<u8> {
+    owned_test_file(&view_list_associativity_entities(back_pointers))
+}
+
+pub(crate) fn view_list_associativity_file_with_global(
+    back_pointers: bool,
+    global: &[u8],
+) -> Vec<u8> {
+    owned_test_file_with_global(&view_list_associativity_entities(back_pointers), global)
+}
+
+fn legacy_associativity_entities() -> Vec<OwnedTestEntity> {
+    vec![
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "NODEPT".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,1,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 11,
+            label: "NODE".into(),
+            status: "00000400",
+            parameters: "402,1,2,1,6HCONSTR,42,1,9,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "TEXTPT".into(),
+            status: "00000000",
+            parameters: "116,1,2,3,0,1,7,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 10,
+            label: "TEXTNODE".into(),
+            status: "00000400",
+            parameters: "402,1,1,5,1.0,2.0,1,1.5708,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 8,
+            label: "SIGNAL".into(),
+            status: "00000400",
+            parameters: "402,1,1,1,1,3HNET,3,11,11;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "SIGCURVE".into(),
+            status: "00000000",
+            parameters: "110,0,0,0,1,0,0,1,9,0;".into(),
+        },
+    ]
+}
+
+pub(crate) fn legacy_associativity_forms_file() -> Vec<u8> {
+    owned_test_file_with_display(&legacy_associativity_entities(), &[], &[(11, 1)])
+}
+
+pub(crate) fn legacy_associativity_forms_file_with_global(global: &[u8]) -> Vec<u8> {
+    owned_test_file_with_global_and_line_fonts(&legacy_associativity_entities(), global, &[(11, 1)])
+}
+
+pub(crate) fn legacy_text_node_font_pointer_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 310,
+            form: 0,
+            label: "FONT".into(),
+            status: "00000200",
+            parameters: "310,101,4HBASE,,10,1,65,8,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "TEXTPT".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,1,5,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 10,
+            label: "TEXTNODE".into(),
+            status: "00000400",
+            parameters: "402,1,1,3,1.0,2.0,-1,1.5708,0,0,0;".into(),
         },
     ])
 }
@@ -484,6 +740,12 @@ pub(crate) fn flow_associativity_forms_file() -> Vec<u8> {
 }
 
 pub(crate) fn recalculable_dimension_associativity_file() -> Vec<u8> {
+    recalculable_dimension_associativity_file_with_orientation(4)
+}
+
+pub(crate) fn recalculable_dimension_associativity_file_with_orientation(
+    orientation: i64,
+) -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
             entity_type: 212,
@@ -532,7 +794,7 @@ pub(crate) fn recalculable_dimension_associativity_file() -> Vec<u8> {
             form: 21,
             label: "RECALCD".into(),
             status: "00010200",
-            parameters: "402,1,2,11,4,0,7,0,0,0,0,9,1,4,0,0;".into(),
+            parameters: format!("402,1,2,11,{orientation},0,7,0,0,0,0,9,1,4,0,0;"),
         },
     ])
 }
@@ -676,6 +938,155 @@ pub(crate) fn nested_subfigure_file() -> Vec<u8> {
             parameters: "408,7,10,20,30,2;".into(),
         },
     ])
+}
+
+pub(crate) fn transformed_subfigure_definition_file(
+    definition_type: i64,
+    instance_type: i64,
+    global: &[u8],
+    line_font: i64,
+    label_display: i64,
+    definition_transform: i64,
+) -> Vec<u8> {
+    struct Entry<'a> {
+        entity_type: i64,
+        form: i64,
+        transform: i64,
+        label_display: i64,
+        label: &'a str,
+        status: &'a str,
+        parameters: &'a [u8],
+    }
+    assert!(matches!(
+        (definition_type, instance_type),
+        (308, 408) | (320, 420)
+    ));
+    let definition_parameters: &[u8] = match definition_type {
+        308 => b"308,0,3HDEF,1,3;",
+        320 => b"320,0,3HNET,1,3,1,,,0;",
+        _ => unreachable!(),
+    };
+    let instance_parameters: &[u8] = match instance_type {
+        408 => b"408,5,0,0,0,1;",
+        420 => b"420,5,0,0,0,1,,,1,,,0;",
+        _ => unreachable!(),
+    };
+    let mut entries = Vec::from([
+        Entry {
+            entity_type: 124,
+            form: 0,
+            transform: 0,
+            label_display: 0,
+            label: "MATRIX",
+            status: "00010000",
+            parameters: b"124,1,0,0,10,0,1,0,20,0,0,1,30;",
+        },
+        Entry {
+            entity_type: 110,
+            form: 0,
+            transform: 0,
+            label_display: 0,
+            label: "MEMBER",
+            status: "00010000",
+            parameters: b"110,0,0,0,1,0,0;",
+        },
+        Entry {
+            entity_type: definition_type,
+            form: 0,
+            transform: definition_transform,
+            label_display,
+            label: "DEF",
+            status: "00000200",
+            parameters: definition_parameters,
+        },
+        Entry {
+            entity_type: instance_type,
+            form: 0,
+            transform: 0,
+            label_display: 0,
+            label: "INSTANCE",
+            status: "00000000",
+            parameters: instance_parameters,
+        },
+    ]);
+    if label_display != 0 {
+        entries.extend([
+            Entry {
+                entity_type: 402,
+                form: 5,
+                transform: 0,
+                label_display: 0,
+                label: "LABELDSP",
+                status: "00000200",
+                parameters: b"402,1,11,1,2,3,13,0,5;",
+            },
+            Entry {
+                entity_type: 410,
+                form: 0,
+                transform: 0,
+                label_display: 0,
+                label: "VIEW",
+                status: "00000100",
+                parameters: b"410,1,1,0,0,0,0,0,0;",
+            },
+            Entry {
+                entity_type: 214,
+                form: 1,
+                transform: 0,
+                label_display: 0,
+                label: "LEADER",
+                status: "00010100",
+                parameters: b"214,1,2,1,0,0,0,2,0;",
+            },
+        ]);
+    }
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (index, entry) in entries.iter().enumerate() {
+        let sequence = u32::try_from(index * 2 + 1).unwrap();
+        let parameter_start = u32::try_from(index + 1).unwrap().to_string();
+        let entity_type = entry.entity_type.to_string();
+        let form = entry.form.to_string();
+        let transform = entry.transform.to_string();
+        let line_font = if line_font != 0 {
+            line_font.to_string()
+        } else {
+            "0".into()
+        };
+        bytes.extend(directory_card(
+            [
+                &entity_type,
+                &parameter_start,
+                "0",
+                &line_font,
+                "0",
+                "0",
+                &transform,
+                &entry.label_display.to_string(),
+                entry.status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [&entity_type, "0", "0", "1", &form, "", "", entry.label, "0"],
+            sequence + 1,
+        ));
+    }
+    for (index, entry) in entries.iter().enumerate() {
+        let sequence = u32::try_from(index * 2 + 1).unwrap();
+        bytes.extend(parameter_card(
+            entry.parameters,
+            sequence,
+            u32::try_from(index + 1).unwrap(),
+        ));
+    }
+    let global_cards = global_card_count(global);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000008P0000004").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
 }
 
 pub(crate) fn malformed_occurrence_placement_file() -> Vec<u8> {
@@ -1313,8 +1724,19 @@ pub(crate) fn trimmed_plane_with_boundaries(
     outer_pcurve: &str,
     trimmed_parameters: &str,
 ) -> Vec<u8> {
+    trimmed_plane_with_boundaries_and_inner(
+        outer_pcurve,
+        "106,1,5,0,0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75,0.25,0.25;",
+        trimmed_parameters,
+    )
+}
+
+pub(crate) fn trimmed_plane_with_boundaries_and_inner(
+    outer_pcurve: &str,
+    inner: &str,
+    trimmed_parameters: &str,
+) -> Vec<u8> {
     let outer = "106,1,5,0,0,0,1,0,1,1,0,1,0,0;";
-    let inner = "106,1,5,0,0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75,0.25,0.25;";
     owned_test_file(&[
         OwnedTestEntity {
             entity_type: 108,
@@ -1397,7 +1819,28 @@ pub(crate) fn parameter_domain_trimmed_surface_file(trimmed_surface_parameters: 
 }
 
 pub(crate) fn subrange_nurbs_surface_boundary_file(preference: i64) -> Vec<u8> {
-    owned_test_file(&[
+    subrange_nurbs_surface_boundary_file_with_global(
+        preference,
+        "126,2,2,1,1,1,0,0,0,0,1,1,1,1,1,1,0.2,0.2,0,0.1,0.5,0,0.2,0.2,0,0,1,0,0,1;",
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    )
+}
+
+pub(crate) fn subrange_nurbs_surface_boundary_file_with_source_precision() -> Vec<u8> {
+    subrange_nurbs_surface_boundary_file_with_global(
+        3,
+        "126,2,2,1,1,1,0,0,0,0,1,1,1,1,1,1,0.1999999,0.1999999,0,0.5,0.5,0,0.1999999,0.1999999,0,0,1,0,0,1;",
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,6,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+    )
+}
+
+fn subrange_nurbs_surface_boundary_file_with_global(
+    preference: i64,
+    pcurve_parameters: &str,
+    global: &[u8],
+) -> Vec<u8> {
+    owned_test_file_with_global(
+        &[
         OwnedTestEntity {
             entity_type: 128,
             form: 0,
@@ -1419,8 +1862,7 @@ pub(crate) fn subrange_nurbs_surface_boundary_file(preference: i64) -> Vec<u8> {
             form: 2,
             label: "PCURVE".into(),
             status: "00010500",
-            parameters:
-                "126,2,2,1,1,1,0,0,0,0,1,1,1,1,1,1,0.2,0.2,0,0.1,0.5,0,0.2,0.2,0,0,1,0,0,1;".into(),
+            parameters: pcurve_parameters.into(),
         },
         OwnedTestEntity {
             entity_type: 142,
@@ -1436,7 +1878,9 @@ pub(crate) fn subrange_nurbs_surface_boundary_file(preference: i64) -> Vec<u8> {
             status: "00000000",
             parameters: "144,1,1,0,7;".into(),
         },
-    ])
+        ],
+        global,
+    )
 }
 
 pub(crate) fn independent_boundary_entities_file(include_failing_owner: bool) -> Vec<u8> {
@@ -1494,164 +1938,4 @@ pub(crate) fn independent_boundary_entities_file(include_failing_owner: bool) ->
         });
     }
     owned_test_file(&entities)
-}
-
-pub(crate) fn asymmetric_parameter_domain_surface_file() -> Vec<u8> {
-    owned_test_file(&[OwnedTestEntity {
-        entity_type: 128,
-        form: 0,
-        label: "SURFACE".into(),
-        status: "00010000",
-        parameters:
-            "128,1,1,1,1,0,0,1,0,0,0,0,1,1,-2,-2,2,2,1,1,1,1,0,0,0,0,1,0,0,1,0,1,0,1,0,1,-2,2;"
-                .into(),
-    }])
-}
-
-pub(crate) fn alternate_asymmetric_parameter_domain_surface_file() -> Vec<u8> {
-    owned_test_file(&[OwnedTestEntity {
-        entity_type: 128,
-        form: 0,
-        label: "SURFACE".into(),
-        status: "00010000",
-        parameters:
-            "128,1,1,1,1,0,0,1,0,0,0,0,1,1,-2,-2,2,2,1,1,1,1,0,0,0,0,1,0,0,1,0,1,0,1,0,-2,1,2;"
-                .into(),
-    }])
-}
-
-pub(crate) fn subrange_nurbs_surface_file() -> Vec<u8> {
-    owned_test_file(&[OwnedTestEntity {
-        entity_type: 128,
-        form: 0,
-        label: "SURFACE".into(),
-        status: "00010000",
-        parameters:
-            "128,1,1,1,1,0,0,1,0,0,0,0,1,1,-2,-2,2,2,1,1,1,1,0,0,0,0,1,0,0,1,0,1,0,1,0.2,0.8,-1,1;"
-                .into(),
-    }])
-}
-
-pub(crate) fn nested_transformed_point_file() -> Vec<u8> {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,0.5,10,2HCM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
-    let mut bytes = fixed_ascii_with_global(global);
-    bytes.truncate(bytes.len() - 81);
-    for (sequence, parameter_start, transform, entity_type, form, label) in [
-        (1, 1, 0, "124", 0, "PARENT"),
-        (3, 2, 1, "124", 1, "LOCAL"),
-        (5, 3, 3, "116", 0, "POINT"),
-    ] {
-        bytes.extend(directory_card(
-            [
-                entity_type,
-                &parameter_start.to_string(),
-                "0",
-                "0",
-                "0",
-                "0",
-                &transform.to_string(),
-                "0",
-                "00000000",
-            ],
-            sequence,
-        ));
-        bytes.extend(directory_card(
-            [
-                entity_type,
-                "0",
-                "0",
-                "1",
-                &form.to_string(),
-                "",
-                "",
-                label,
-                "0",
-            ],
-            sequence + 1,
-        ));
-    }
-    bytes.extend(parameter_card(b"124,1,0,0,0,0,1,0,2,0,0,1,0;", 1, 1));
-    bytes.extend(parameter_card(b"124,-1,0,0,1,0,1,0,0,0,0,1,0;", 3, 2));
-    bytes.extend(parameter_card(b"116,1,2,3;", 5, 3));
-    let global_cards = global.len().div_ceil(72);
-    bytes.extend(card(
-        format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
-        b'T',
-        1,
-    ));
-    bytes
-}
-
-pub(crate) fn transform_chain_overflow_file(transform_count: u32) -> Vec<u8> {
-    assert!(transform_count > 0);
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
-    let mut bytes = fixed_ascii_with_global(global);
-    bytes.truncate(bytes.len() - 81);
-    let identity = b"124,1,0,0,0,0,1,0,0,0,0,1,0;";
-    for index in 0..transform_count {
-        let sequence = 1 + index * 2;
-        let transform = if index + 1 < transform_count {
-            sequence + 2
-        } else {
-            0
-        };
-        bytes.extend(directory_card(
-            [
-                "124",
-                &(index + 1).to_string(),
-                "0",
-                "0",
-                "0",
-                "0",
-                &transform.to_string(),
-                "0",
-                "00000000",
-            ],
-            sequence,
-        ));
-        bytes.extend(directory_card(
-            ["124", "0", "0", "1", "0", "", "", "TRANS", "0"],
-            sequence + 1,
-        ));
-    }
-    let point_sequence = 1 + transform_count * 2;
-    bytes.extend(directory_card(
-        [
-            "116",
-            &(transform_count + 1).to_string(),
-            "0",
-            "0",
-            "0",
-            "0",
-            "1",
-            "0",
-            "00000000",
-        ],
-        point_sequence,
-    ));
-    bytes.extend(directory_card(
-        ["116", "0", "0", "1", "0", "", "", "POINT", "0"],
-        point_sequence + 1,
-    ));
-    for index in 0..transform_count {
-        let sequence = 1 + index * 2;
-        bytes.extend(parameter_card(identity, sequence, index + 1));
-    }
-    bytes.extend(parameter_card(
-        b"116,1,2,3;",
-        point_sequence,
-        transform_count + 1,
-    ));
-    let global_cards = global.len().div_ceil(72);
-    bytes.extend(card(
-        format!(
-            "S0000001G{global_cards:07}D{:07}P{:07}",
-            (transform_count + 1) * 2,
-            transform_count + 1
-        )
-        .as_bytes(),
-        b'T',
-        1,
-    ));
-    bytes
 }

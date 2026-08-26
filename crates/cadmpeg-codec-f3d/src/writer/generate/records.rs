@@ -5,6 +5,7 @@ use crate::records::{
     ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry,
     SketchPointCompanionReferenceEncoding, SketchPointRecordForm, SketchText,
 };
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
@@ -67,16 +68,18 @@ pub(crate) fn native_tolerant_coedge_extension(
                 .coedges
                 .iter()
                 .find(|candidate| candidate.id == *coedge)
-                .ok_or_else(|| CodecError::Malformed(format!("missing coedge {coedge}")))?;
+                .ok_or_else(|| CodecError::malformed(format_args!("missing coedge {coedge}")))?;
             let curve_id = model_coedge.use_curve.as_ref().ok_or_else(|| {
-                CodecError::Malformed(format!("tolerant coedge {coedge} has no use curve"))
+                CodecError::malformed(format_args!("tolerant coedge {coedge} has no use curve"))
             })?;
             let curve = target
                 .model
                 .curves
                 .iter()
                 .find(|curve| curve.id == *curve_id)
-                .ok_or_else(|| CodecError::Malformed(format!("missing use curve {curve_id}")))?;
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!("missing use curve {curve_id}"))
+                })?;
             let CurveGeometry::Nurbs(curve) = &curve.geometry else {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D tolerant coedge {coedge} requires a NURBS use curve"
@@ -212,7 +215,7 @@ pub(crate) fn encode_design_bulkstream(
         let mut prefix = [0u8; 27];
         if let Some(design_id) = &recipe.design_id {
             if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "source-less Design recipe id must be three ASCII digits: {design_id}"
                 )));
             }
@@ -303,13 +306,13 @@ pub(crate) fn encode_design_bulkstream(
             .next()
             .map(|(ordinal, _)| ordinal)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "generated sketch point {} has no registered companion type",
                     point.id
                 ))
             })?;
         if companion_types.next().is_some() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "generated sketch point {} has multiple registered companion types",
                 point.id
             )));
@@ -357,7 +360,7 @@ pub(crate) fn encode_design_bulkstream(
             if previous.next_class_tag != reference.class_tag
                 || previous.next_record_index != reference.record_index
             {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D lost-edge record {} does not continue the preceding indexed run",
                     reference.id
                 )));
@@ -455,7 +458,7 @@ fn encode_sketch_point(
         ));
     }
     let owner_reference = point.owner_reference.ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "source-less sketch point {} has no direct owner",
             point.id
         ))
@@ -471,12 +474,12 @@ fn encode_sketch_point(
         )));
     };
     let persistent_id = point.persistent_id.ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "source-less sketch point {} has no persistent identity",
             point.id
         ))
     })?;
-    let mut record = vec![0u8; 105 + shift];
+    let mut record = alloc_filled(105 + shift, 0_u8, "f3d sketch point record")?;
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
     record[20] = 1;
     record[21..25].copy_from_slice(&(1 + u32::from(point.entity_genesis.is_some())).to_le_bytes());
@@ -491,7 +494,7 @@ fn encode_sketch_point(
     record[70 + shift] = 1;
     record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
     if point.flags.iter().any(|flag| *flag > 1) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "source-less sketch point {} has a flag outside zero or one",
             point.id
         )));
@@ -502,13 +505,13 @@ fn encode_sketch_point(
     record[97 + shift..105 + shift]
         .copy_from_slice(&(point.coordinates.v / LEN_TO_MM).to_le_bytes());
     let closure = point.closure.as_ref().ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "source-less sketch point {} has no version-11 closure",
             point.id
         ))
     })?;
     if !point.record_form.closure_is_valid(Some(closure)) {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "source-less sketch point {} has an invalid closure selector or state",
             point.id
         )));
@@ -537,7 +540,7 @@ fn encode_sketch_point_companion(
     companion: Option<&crate::records::SketchPointCompanion>,
 ) -> Result<(), CodecError> {
     let companion = companion.ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "source-less sketch point {point_record_index} has no inverse companion"
         ))
     })?;
@@ -552,7 +555,7 @@ fn encode_sketch_point_companion(
         CodecError::Malformed("source-less sketch point companion exceeds u32::MAX curves".into())
     })?;
     let prefix_len = if prefix_present_zero { 25 } else { 21 };
-    let mut record = vec![0u8; prefix_len];
+    let mut record = alloc_filled(prefix_len, 0_u8, "f3d sketch point companion record")?;
     encode_sketch_record_header(&mut record, class_tag, record_index)?;
     if prefix_present_zero {
         record[20] = 1;
@@ -572,13 +575,13 @@ fn encode_sketch_curve_identity(
     curve: &crate::records::SketchCurveIdentity,
 ) -> Result<(), CodecError> {
     let owner_reference = curve.owner_reference.ok_or_else(|| {
-        CodecError::Malformed(format!(
+        CodecError::malformed(format_args!(
             "source-less sketch curve {} has no direct owner",
             curve.id
         ))
     })?;
     let shift = usize::from(curve.entity_genesis.is_some()) * 52;
-    let mut record = vec![0u8; 133 + shift];
+    let mut record = alloc_filled(133 + shift, 0_u8, "f3d sketch curve record")?;
     encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
     record[20] = 1;
     record[21..25].copy_from_slice(&(2 + u32::from(curve.entity_genesis.is_some())).to_le_bytes());
@@ -773,7 +776,9 @@ fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecE
         text.record_index,
         0,
     )
-    .ok_or_else(|| CodecError::Malformed(format!("invalid raw sketch-text record {}", text.id)))?;
+    .ok_or_else(|| {
+        CodecError::malformed(format_args!("invalid raw sketch-text record {}", text.id))
+    })?;
     let common_header_matches = text.raw_bytes.get(0..4) == Some(&3u32.to_le_bytes())
         && text.raw_bytes.get(4..7) == Some(text.class_tag.as_bytes());
     let legacy_index_matches =
@@ -797,7 +802,7 @@ fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecE
         && decoded.first_reference == text.first_reference
         && decoded.second_reference == text.second_reference;
     if !header_matches || !fields_match {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "sketch-text record {} fields disagree with its raw bytes",
             text.id
         )));
@@ -815,7 +820,7 @@ fn encode_sketch_relation(
     if constraint_kinds != relation.constraint_kinds
         || unknown_constraint_bits != relation.unknown_constraint_bits
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D sketch relation {} has a mask inconsistent with its typed constraint kinds",
             relation.id
         )));
@@ -825,7 +830,7 @@ fn encode_sketch_relation(
     if !relation.member_relation_ordinals.is_empty()
         && relation.member_relation_ordinals.len() != relation.members.len()
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D sketch relation {} has a relation-ordinal run that does not pair with its members",
             relation.id
         )));
@@ -907,7 +912,7 @@ pub(crate) fn validate_dynamic_class_tag(value: &str, field: &str) -> Result<(),
     if value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit()) {
         Ok(())
     } else {
-        Err(CodecError::Malformed(format!(
+        Err(CodecError::malformed(format_args!(
             "{field} class tag must be three ASCII digits: {value}"
         )))
     }
@@ -950,7 +955,7 @@ pub(crate) fn encode_design_metastream(
         }
         out.extend_from_slice(&design_type.version.to_le_bytes());
         if crate::bytes::is_guid_relaxed(&design_type.module) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "Design type module name is GUID-shaped: {}",
                 design_type.module
             )));
@@ -980,13 +985,13 @@ pub(crate) fn encode_design_metastream(
     let mut previous_offset = None;
     for record in primary_records {
         if !registered_entities.contains(&record.entity_id) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "generated Design primary entity {} has no type registration",
                 record.entity_id
             )));
         }
         if !indexed_entities.insert(record.entity_id) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "generated Design primary entity {} is indexed more than once",
                 record.entity_id
             )));
@@ -1072,7 +1077,7 @@ fn validate_guid(value: &str, field: &str) -> Result<(), CodecError> {
     if valid {
         Ok(())
     } else {
-        Err(CodecError::Malformed(format!(
+        Err(CodecError::malformed(format_args!(
             "{field} is not a canonical GUID: {value}"
         )))
     }

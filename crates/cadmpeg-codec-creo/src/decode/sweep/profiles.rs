@@ -8,6 +8,12 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
+
+const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
+const EPS_PARAMETER_SCALE: f64 = 1.0e-12;
+const EPS_FULL_TURN: f64 = 1.0e-12;
+const EPS_AREA: f64 = 1.0e-12;
+const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 use std::collections::BTreeMap;
 
 pub(in super::super) fn sketch_geometry_endpoints(
@@ -100,13 +106,15 @@ pub(in super::super) fn connected_sketch_profile_vertices(
                 .all(|adjacent| {
                     let end = adjacent[0].1;
                     let next = adjacent[1].0;
-                    (end[0] - next[0]).hypot(end[1] - next[1]) <= 1e-9 * scale
+                    (end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale
                 })
                 .then(|| {
                     let mut vertices = uses.iter().map(|(start, _)| *start).collect::<Vec<_>>();
                     let first = uses[0].0;
                     let terminal = uses.last().expect("profile is not empty").1;
-                    if (terminal[0] - first[0]).hypot(terminal[1] - first[1]) > 1e-9 * scale {
+                    if (terminal[0] - first[0]).hypot(terminal[1] - first[1])
+                        > EPS_ENDPOINT_AGREEMENT * scale
+                    {
                         vertices.push(terminal);
                     }
                     (profile_index, vertices)
@@ -128,10 +136,10 @@ pub(in super::super) fn oriented_arc_parameterization(
     let raw_span = raw_end - raw_start;
     let full_turn = raw_span.is_finite()
         && (raw_span.abs() - std::f64::consts::TAU).abs()
-            <= 1e-12 * raw_span.abs().max(std::f64::consts::TAU);
+            <= EPS_PARAMETER_SCALE * raw_span.abs().max(std::f64::consts::TAU);
     let start = raw_start.rem_euclid(std::f64::consts::TAU);
     let mut end = raw_end.rem_euclid(std::f64::consts::TAU);
-    if end < start || (full_turn && (end - start).abs() <= 1e-12) {
+    if end < start || (full_turn && (end - start).abs() <= EPS_FULL_TURN) {
         end += std::f64::consts::TAU;
     }
     (axis_sign, [start, end])
@@ -141,7 +149,7 @@ pub(in super::super) fn forward_arc_sweep(start: f64, end: f64) -> f64 {
     let raw_span = end - start;
     if raw_span.is_finite()
         && (raw_span - std::f64::consts::TAU).abs()
-            <= 1e-12 * raw_span.abs().max(std::f64::consts::TAU)
+            <= EPS_PARAMETER_SCALE * raw_span.abs().max(std::f64::consts::TAU)
     {
         std::f64::consts::TAU
     } else {
@@ -321,7 +329,7 @@ pub(in super::super) fn extrusion_profile_signed_area(
         .flat_map(|(_, _, start, end)| start.iter().chain(end))
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    (area_twice.abs() > 1e-12 * scale * scale).then_some(0.5 * area_twice)
+    (area_twice.abs() > EPS_AREA * scale * scale).then_some(0.5 * area_twice)
 }
 
 pub(in super::super) type ExtrusionProfile = Vec<(SketchGeometry, bool, [f64; 2], [f64; 2])>;
@@ -366,7 +374,7 @@ pub(in super::super) fn resolved_sketch_profiles(
             .enumerate()
             .all(|(index, (_, _, _, end))| {
                 let next = geometries[(index + 1) % geometries.len()].2;
-                (end[0] - next[0]).hypot(end[1] - next[1]) <= 1e-9 * scale
+                (end[0] - next[0]).hypot(end[1] - next[1]) <= EPS_ENDPOINT_AGREEMENT * scale
             })
             .then_some(())?;
         profiles.push(geometries);
@@ -812,7 +820,7 @@ pub(in super::super) fn profile_strictly_contains(
         .flat_map(|(_, _, start, end)| start.iter().chain(end))
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    let tolerance = 1e-9 * scale;
+    let tolerance = EPS_GEOMETRY_AGREEMENT * scale;
     let mut winding = 0.0;
     for segment in profile {
         let mut accumulate = |first: [f64; 2], second: [f64; 2]| {
@@ -861,7 +869,7 @@ pub(in super::super) fn ordered_extrusion_profiles(
         .flat_map(|(_, _, start, end)| start.iter().chain(end))
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    let tolerance = 1e-9 * scale;
+    let tolerance = EPS_GEOMETRY_AGREEMENT * scale;
     for profile in &profiles {
         for first in 0..profile.len() {
             for second in first + 1..profile.len() {

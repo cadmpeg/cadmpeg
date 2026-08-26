@@ -28,7 +28,7 @@ use crate::loss::StepLossCode;
 use crate::options::{StepSchema, StepUnsupportedPolicy, StepWriteOptions};
 use crate::writer::{real, refs, string, Emitter, Ref};
 
-const EPS_IDENTITY: f64 = 1e-12;
+const EPS_IDENTITY: f64 = 1.0e-12;
 
 /// Serializes an IR document as an ISO 10303-21 STEP Part 21 file for the
 /// schema selected by [`StepWriteOptions::schema`].

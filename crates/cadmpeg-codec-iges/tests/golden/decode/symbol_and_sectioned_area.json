@@ -267,6 +267,7 @@
           "annotations": [
             {
               "declared_string_count": 1,
+              "form": 0,
               "id": "iges:presentation:annotation#D1",
               "kind": "general_note",
               "source_entity": "iges:entity:directory#1",
@@ -297,7 +298,9 @@
             },
             {
               "boundary": "iges:entity:directory#9",
+              "declared_island_count": 1,
               "fill_pattern": 2,
+              "form": 0,
               "id": "iges:presentation:annotation#D13",
               "islands": [
                 "iges:entity:directory#11"
@@ -338,6 +341,9 @@
               "transformation": null
             },
             {
+              "declared_geometry_count": 1,
+              "declared_leader_count": 1,
+              "form": 0,
               "geometry": [
                 "iges:entity:directory#3"
               ],
@@ -4471,8 +4477,11 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [],
           "network_definitions": [],
           "network_instances": [],
           "primitive_solids": [],
@@ -4506,7 +4515,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 3
+        "version": 6
       }
     },
     "source": {

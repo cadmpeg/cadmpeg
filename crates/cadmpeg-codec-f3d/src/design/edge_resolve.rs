@@ -6,6 +6,7 @@ use crate::records::{
     DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
     DesignParameterScope,
 };
+use cadmpeg_core::decode::alloc_filled;
 use std::collections::{HashMap, HashSet};
 
 pub(crate) fn resolved_edge_group(
@@ -1119,7 +1120,8 @@ fn bipartite_assignment(
             return None;
         }
     }
-    let mut assignment = vec![0; candidate_sets.len()];
+    let mut assignment =
+        alloc_filled(candidate_sets.len(), 0, "f3d edge candidate assignment").ok()?;
     for (edge, member) in edge_members {
         assignment[member] = edge;
     }

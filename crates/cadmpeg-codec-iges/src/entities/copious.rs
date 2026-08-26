@@ -3,7 +3,7 @@
 
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{Dialect, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{refuse_local_limit, DecodeContext};
@@ -18,11 +18,26 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const MAX_COPIOUS_TUPLES: usize = 1_000_000;
 
-pub(super) struct CopiousProjection {
+pub(super) struct CopiousProjectionOutcome {
     pub(super) decoded: BTreeSet<u32>,
     pub(super) losses: Vec<LossNote>,
     pub(super) wire_edges: Vec<EdgeId>,
     pub(super) free_vertices: Vec<VertexId>,
+}
+
+impl CopiousProjectionOutcome {
+    pub(super) fn merge_into(
+        self,
+        decoded: &mut BTreeSet<u32>,
+        losses: &mut Vec<LossNote>,
+        wire_edges: &mut Vec<EdgeId>,
+        free_vertices: &mut Vec<VertexId>,
+    ) {
+        decoded.extend(self.decoded);
+        losses.extend(self.losses);
+        wire_edges.extend(self.wire_edges);
+        free_vertices.extend(self.free_vertices);
+    }
 }
 
 fn expected_interpretation(form: i64) -> Option<i64> {
@@ -36,6 +51,10 @@ fn expected_interpretation(form: i64) -> Option<i64> {
 
 fn presentation_form(form: i64) -> bool {
     matches!(form, 20 | 21 | 31..=38 | 40)
+}
+
+fn presentation_use_flag_valid(form: i64, use_flag: u8) -> bool {
+    !presentation_form(form) || use_flag == 1
 }
 
 fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
@@ -127,82 +146,12 @@ fn has_forbidden_form_63_duplicate(points: &[Point3], resolution: f64) -> bool {
     false
 }
 
-fn planar_cross(left: [f64; 2], right: [f64; 2], point: [f64; 2]) -> f64 {
-    (right[0] - left[0]) * (point[1] - left[1]) - (right[1] - left[1]) * (point[0] - left[0])
-}
-
-fn planar_point_on_segment(point: [f64; 2], start: [f64; 2], end: [f64; 2]) -> bool {
-    planar_cross(start, end, point) == 0.0
-        && point[0] >= start[0].min(end[0])
-        && point[0] <= start[0].max(end[0])
-        && point[1] >= start[1].min(end[1])
-        && point[1] <= start[1].max(end[1])
-}
-
-fn segment_intersects_beyond_endpoint(
-    first: [[f64; 2]; 2],
-    second: [[f64; 2]; 2],
-    allowed_endpoint: Option<[f64; 2]>,
-) -> bool {
-    let [a, b] = first;
-    let [c, d] = second;
-    let orientations = [
-        planar_cross(a, b, c),
-        planar_cross(a, b, d),
-        planar_cross(c, d, a),
-        planar_cross(c, d, b),
-    ];
-    let opposite =
-        |left: f64, right: f64| (left > 0.0 && right < 0.0) || (left < 0.0 && right > 0.0);
-    if opposite(orientations[0], orientations[1]) && opposite(orientations[2], orientations[3]) {
-        return true;
-    }
-
-    let mut contacts = [(c, orientations[0]), (d, orientations[1])]
-        .into_iter()
-        .filter_map(|(point, orientation)| {
-            (orientation == 0.0 && planar_point_on_segment(point, a, b)).then_some(point)
-        })
-        .chain(
-            [(a, orientations[2]), (b, orientations[3])]
-                .into_iter()
-                .filter_map(|(point, orientation)| {
-                    (orientation == 0.0 && planar_point_on_segment(point, c, d)).then_some(point)
-                }),
-        );
-    contacts.any(|point| Some(point) != allowed_endpoint)
-}
-
 fn has_form_63_self_intersection(points: &[Point3]) -> bool {
-    let mut planar_points = points
+    let planar_points = points
         .iter()
         .map(|point| [point.x, point.y])
         .collect::<Vec<_>>();
-    if planar_points.len() < 3 {
-        return false;
-    }
-    let last = planar_points.len() - 1;
-    planar_points[last] = planar_points[0];
-    let segment_count = last;
-    for first_index in 0..segment_count {
-        for second_index in first_index + 1..segment_count {
-            let allowed_endpoint = if second_index == first_index + 1 {
-                Some(planar_points[second_index])
-            } else if first_index == 0 && second_index + 1 == segment_count {
-                Some(planar_points[0])
-            } else {
-                None
-            };
-            if segment_intersects_beyond_endpoint(
-                [planar_points[first_index], planar_points[first_index + 1]],
-                [planar_points[second_index], planar_points[second_index + 1]],
-                allowed_endpoint,
-            ) {
-                return true;
-            }
-        }
-    }
-    false
+    super::geometry::planar_polyline_has_self_intersection(&planar_points)
 }
 
 pub(super) fn project(
@@ -211,7 +160,7 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> Result<CopiousProjection, CodecError> {
+) -> Result<CopiousProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -229,6 +178,13 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
+        if !presentation_use_flag_valid(entry.form, entry.status.use_flag) {
+            losses.push(entity_loss(
+                entry,
+                "Type 106 presentation forms require Entity Use Flag 01",
+            ));
+            continue;
+        }
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -268,10 +224,26 @@ pub(super) fn project(
             ));
             continue;
         }
-        if matches!(entry.form, 11..=13 | 63) && tuple_count < 2 {
+        if matches!(entry.form, 11..=13) {
+            let minimum_tuple_count = if matches!(global.dialect(), Dialect::V4_0) {
+                1
+            } else {
+                2
+            };
+            if tuple_count < minimum_tuple_count {
+                losses.push(entity_loss(
+                    entry,
+                    format!(
+                        "linear paths require at least {minimum_tuple_count} tuple(s) under the declared dialect"
+                    ),
+                ));
+                continue;
+            }
+        }
+        if entry.form == 63 && tuple_count < 2 {
             losses.push(entity_loss(
                 entry,
-                "linear paths require at least two tuples",
+                "simple closed paths require at least two tuples",
             ));
             continue;
         }
@@ -356,7 +328,11 @@ pub(super) fn project(
             ));
             continue;
         }
-        if matches!(entry.form, 1..=3) {
+        let projects_as_points = matches!(entry.form, 1..=3)
+            || (matches!(entry.form, 11..=13)
+                && tuple_count == 1
+                && matches!(global.dialect(), Dialect::V4_0));
+        if projects_as_points {
             for (index, position) in points.into_iter().enumerate() {
                 let point = PointId(format!(
                     "iges:model:point#D{}-{}",
@@ -472,7 +448,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    Ok(CopiousProjection {
+    Ok(CopiousProjectionOutcome {
         decoded,
         losses,
         wire_edges,

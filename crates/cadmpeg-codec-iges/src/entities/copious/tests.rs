@@ -12,6 +12,18 @@ use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
+use super::presentation_use_flag_valid;
+
+#[test]
+fn presentation_copious_forms_require_the_annotation_use_flag() {
+    for form in [20, 21, 31, 32, 33, 34, 35, 36, 37, 38, 40] {
+        assert!(presentation_use_flag_valid(form, 1), "{form}");
+        assert!(!presentation_use_flag_valid(form, 0), "{form}");
+        assert!(!presentation_use_flag_valid(form, 2), "{form}");
+    }
+    assert!(presentation_use_flag_valid(11, 0));
+}
+
 #[test]
 fn decode_refuses_a_copious_tuple_count_over_its_projection_limit() {
     let error = IgesCodec
@@ -29,6 +41,39 @@ fn decode_refuses_a_copious_tuple_count_over_its_projection_limit() {
                 && limit.used == 1_000_000
                 && limit.additional == 1
     ));
+}
+
+#[test]
+fn decode_rejects_presentation_copious_forms_without_annotation_use_flag() {
+    let globals = [
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;".as_slice(),
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;".as_slice(),
+    ];
+    for global in globals {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global(
+                    &[OwnedTestEntity {
+                        entity_type: 106,
+                        form: 40,
+                        label: "WITNESS".into(),
+                        status: "00000000",
+                        parameters: "106,1,3,0,0,0,1,0,2,0;".into(),
+                    }],
+                    global,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(result.ir().model.curves.is_empty());
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::EntityNotProjected.kind()
+                && loss
+                    .message
+                    .contains("Type 106 presentation forms require Entity Use Flag 01")
+        }));
+    }
 }
 
 #[test]
@@ -58,6 +103,74 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
     assert!(result.report().losses.is_empty());
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn v4_one_tuple_linear_path_is_projected_as_its_authored_point() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global_and_line_fonts(
+                &[OwnedTestEntity {
+                    entity_type: 106,
+                    form: 11,
+                    label: "V4PATH".into(),
+                    status: "00000000",
+                    parameters: "106,1,1,0,3,4;".into(),
+                }],
+                global_v4,
+                &[(1, 1)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 1);
+    assert!(result.ir().model.curves.is_empty());
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::SourceDialectUnverified.kind()),
+        "{:#?}",
+        result.report()
+    );
+}
+
+#[test]
+fn v5_one_tuple_linear_path_keeps_the_later_minimum() {
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[OwnedTestEntity {
+                    entity_type: 106,
+                    form: 11,
+                    label: "V5PATH".into(),
+                    status: "00000000",
+                    parameters: "106,1,1,0,3,4;".into(),
+                }],
+                global_v5,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .message
+                .contains("linear paths require at least 2 tuple(s)")
+    }));
 }
 
 #[test]

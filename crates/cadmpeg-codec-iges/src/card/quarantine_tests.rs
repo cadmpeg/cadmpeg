@@ -10,7 +10,9 @@ use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use cadmpeg_ir::report::DecodeReport;
 
 use crate::loss::IgesLossCode;
-use crate::test_support::{owned_test_file, OwnedTestEntity};
+use crate::test_support::{
+    owned_test_file, OwnedTestEntity, CARD_COLUMNS, CARD_DATA_COLUMNS, CARD_LINE_BYTES,
+};
 use crate::IgesCodec;
 
 /// Authored coordinates of the single Type 116 point in every fixture here.
@@ -66,15 +68,15 @@ fn stride(bytes: &[u8]) -> Vec<u8> {
 /// Join the card carrying `section` at `index` onto the following card.
 fn fuse(bytes: &[u8], section: u8, index: usize) -> Vec<u8> {
     let card = bytes
-        .chunks_exact(81)
+        .chunks_exact(CARD_LINE_BYTES)
         .enumerate()
-        .filter(|(_, line)| line[72] == section)
+        .filter(|(_, line)| line[CARD_DATA_COLUMNS] == section)
         .nth(index)
         .map(|(line, _)| line)
         .expect("section card");
     let mut fused = bytes.to_vec();
-    assert_eq!(fused[card * 81 + 80], b'\n');
-    fused.remove(card * 81 + 80);
+    assert_eq!(fused[card * CARD_LINE_BYTES + CARD_COLUMNS], b'\n');
+    fused.remove(card * CARD_LINE_BYTES + CARD_COLUMNS);
     fused
 }
 
@@ -82,10 +84,10 @@ fn fuse(bytes: &[u8], section: u8, index: usize) -> Vec<u8> {
 fn misnumber(bytes: &[u8], section: u8) -> Vec<u8> {
     let mut misnumbered = bytes.to_vec();
     for line in misnumbered
-        .chunks_exact_mut(81)
-        .filter(|line| line[72] == section)
+        .chunks_exact_mut(CARD_LINE_BYTES)
+        .filter(|line| line[CARD_DATA_COLUMNS] == section)
     {
-        line[73..80].copy_from_slice(b"9999999");
+        line[CARD_DATA_COLUMNS + 1..CARD_COLUMNS].copy_from_slice(b"9999999");
     }
     misnumbered
 }

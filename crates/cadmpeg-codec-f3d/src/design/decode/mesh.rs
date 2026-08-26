@@ -429,7 +429,7 @@ fn validate_mesh_registration(
             .as_deref()
             .is_some_and(|base| base.eq_ignore_ascii_case(expected_base_type_guid))
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "F3D Design {record_kind} entity {} has incompatible registration metadata",
             frame.entity_id
         )));
@@ -445,7 +445,7 @@ fn exact_record_index(
     View::u32_le_at(record, 7)
         .filter(|record_index| u64::from(*record_index) == frame.entity_id)
         .ok_or_else(|| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "F3D Design {record_kind} entity {} has an invalid record index",
                 frame.entity_id
             ))
@@ -453,7 +453,7 @@ fn exact_record_index(
 }
 
 fn malformed_frame(record_kind: &str, entity_id: u64) -> CodecError {
-    CodecError::Malformed(format!(
+    CodecError::malformed(format_args!(
         "F3D Design {record_kind} entity {entity_id} has an invalid primary frame"
     ))
 }
@@ -1101,7 +1101,7 @@ fn unique_record_map<T>(
     for record in records {
         let index = record_index(&record);
         if out.insert(index, record).is_some() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D Design {record_kind} record index {index} is not unique"
             )));
         }
@@ -1116,13 +1116,13 @@ fn typed_frame_map<'a>(
     let mut out = HashMap::with_capacity(frames.len());
     for frame in frames {
         let index = u32::try_from(frame.entity_id).map_err(|_| {
-            CodecError::Malformed(format!(
+            CodecError::malformed(format_args!(
                 "F3D Design {record_kind} entity {} exceeds the indexed-record domain",
                 frame.entity_id
             ))
         })?;
         if out.insert(index, frame).is_some() {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "F3D Design {record_kind} record index {index} is not unique"
             )));
         }
@@ -1131,7 +1131,7 @@ fn typed_frame_map<'a>(
 }
 
 fn malformed_mesh_graph(stream: &str, invariant: &str) -> CodecError {
-    CodecError::Malformed(format!(
+    CodecError::malformed(format_args!(
         "F3D Design mesh feature graph violates `{invariant}` in {stream}"
     ))
 }
@@ -1504,7 +1504,7 @@ fn decode_mesh_design_records(scan: &ContainerScan) -> Result<Vec<MeshDesignReco
                     && candidate.name.rsplit('/').next() == Some(filename)
             });
             let (Some(asset), None) = (matches.next(), matches.next()) else {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "F3D Design mesh texture `{filename}` does not resolve to one embedded image"
                 )));
             };

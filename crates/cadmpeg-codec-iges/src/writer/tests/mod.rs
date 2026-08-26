@@ -12,8 +12,8 @@ use std::io::Cursor;
 
 use crate::loss::IgesLossCode;
 use crate::test_support::{
-    parametrically_bounded_plane_file, point_file_with_global, trimmed_plane_file,
-    trimmed_plane_with_inner_loop_file,
+    fixed_ascii_with_global, parametrically_bounded_plane_file, point_file_with_global,
+    trimmed_plane_file, trimmed_plane_with_inner_loop_file,
 };
 use crate::writer::Entity;
 use crate::{IgesCodec, IgesEncoder, IgesVersion};
@@ -128,13 +128,31 @@ fn type_508_requires_an_explicit_isoparametric_flag() {
 #[test]
 fn generation_timestamp_uses_utc_calendar_fields() {
     assert_eq!(
-        generation_timestamp(UNIX_EPOCH).expect("Unix epoch is representable"),
+        generation_timestamp(UNIX_EPOCH, IgesVersion::V5_3).expect("Unix epoch is representable"),
         "19700101.000000"
     );
     assert_eq!(
-        generation_timestamp(UNIX_EPOCH + std::time::Duration::from_secs(951_827_696))
-            .expect("leap-day timestamp is representable"),
+        generation_timestamp(
+            UNIX_EPOCH + std::time::Duration::from_secs(951_827_696),
+            IgesVersion::V5_3,
+        )
+        .expect("leap-day timestamp is representable"),
         "20000229.123456"
+    );
+}
+
+#[test]
+fn generation_timestamp_uses_the_declared_version_width() {
+    let instant = UNIX_EPOCH + std::time::Duration::from_secs(951_827_696);
+    assert_eq!(
+        generation_timestamp(instant, IgesVersion::V4_0)
+            .expect("IGES 4.0 timestamp is representable"),
+        "000229.123456"
+    );
+    assert_eq!(
+        generation_timestamp(instant, IgesVersion::V5_0)
+            .expect("IGES 5.0 timestamp is representable"),
+        "000229.123456"
     );
 }
 
@@ -264,11 +282,46 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
         .filter(|line| line.section == Some(crate::card::Section::Global))
         .flat_map(|line| line.payload.iter().take(72).copied())
         .collect::<Vec<_>>();
-    let global_text = String::from_utf8(global_text).expect("generated Global record is ASCII");
+    let global_text = String::from_utf8(global_text)
+        .expect("generated Global record is ASCII")
+        .replace(' ', "");
     assert!(global_text.starts_with(
         "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,0H,1.0,2,2HMM,1,1.0,15H"
     ));
     assert!(global_text.contains(",6Hauthor,7Hcadmpeg,11,0,0H,0H;"));
+}
+
+#[test]
+fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
+    for (version, name, timestamp, tail) in [
+        (IgesVersion::V4_0, "4.0", "260714.000000", ",6,0;"),
+        (IgesVersion::V5_0, "5.0", "260714.000000", ",8,0,0H;"),
+    ] {
+        let global_bytes = generated_global(version, timestamp, 0.001, 1000.0);
+        let fixture = fixed_ascii_with_global(&global_bytes);
+        let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
+        let (global, losses) = crate::global::parse(&scan).expect("versioned Global parses");
+        assert_eq!(global.version(), name);
+        assert!(losses.is_empty(), "{name}: {losses:#?}");
+
+        let global_text = scan
+            .lines
+            .iter()
+            .filter(|line| line.section == Some(crate::card::Section::Global))
+            .flat_map(|line| line.payload.iter().take(72).copied())
+            .collect::<Vec<_>>();
+        let global_text = String::from_utf8(global_text)
+            .expect("Global is ASCII")
+            .replace(' ', "");
+        assert!(
+            global_text.contains(&format!(",{}H{timestamp}", timestamp.len())),
+            "{name}: {global_text}"
+        );
+        assert!(
+            global_text.trim_end().ends_with(tail),
+            "{name}: {global_text}"
+        );
+    }
 }
 
 #[test]
@@ -350,6 +403,8 @@ fn target_profiles_cover_every_emitted_entity_form() {
         (104, 2),
         (104, 3),
         (110, 0),
+        (120, 0),
+        (122, 0),
         (116, 0),
         (123, 0),
         (124, 0),
@@ -402,6 +457,42 @@ fn target_profiles_cover_every_emitted_entity_form() {
             Err(CodecError::NotImplemented(_))
         ));
     }
+
+    for unsupported in [(123, 0), (141, 0), (143, 0), (186, 0), (190, 1), (502, 1)] {
+        assert!(matches!(
+            ensure_version_support(&[entity(unsupported)], IgesVersion::V4_0),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+    for supported in [(108, 0), (120, 0), (122, 0), (141, 0), (143, 0)] {
+        assert!(ensure_version_support(&[entity(supported)], IgesVersion::V5_0).is_ok());
+    }
+    assert!(ensure_version_support(&[entity((108, 0))], IgesVersion::V4_0).is_ok());
+    assert!(ensure_version_support(&[entity((120, 0))], IgesVersion::V4_0).is_ok());
+    assert!(ensure_version_support(&[entity((122, 0))], IgesVersion::V4_0).is_ok());
+    assert!(ensure_version_support(&[entity((104, 1))], IgesVersion::V5_0).is_ok());
+    for unsupported in [(104, 0), (123, 0), (186, 0), (190, 1)] {
+        assert!(matches!(
+            ensure_version_support(&[entity(unsupported)], IgesVersion::V5_0),
+            Err(CodecError::NotImplemented(_))
+        ));
+    }
+    let single_constituent = Entity {
+        type_code: 102,
+        form: 0,
+        label: "TEST",
+        status: "00000000",
+        parameters: b"102,1,@R0@;".to_vec(),
+        transform: None,
+    };
+    assert!(matches!(
+        ensure_version_support(std::slice::from_ref(&single_constituent), IgesVersion::V4_0),
+        Err(CodecError::NotImplemented(_))
+    ));
+    assert!(
+        ensure_version_support(std::slice::from_ref(&single_constituent), IgesVersion::V5_0)
+            .is_ok()
+    );
 }
 
 #[test]
@@ -505,7 +596,8 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
         ),
     ];
     for (geometry, expected_type) in cases {
-        let entities = surface_entities(&geometry, 0).expect("analytic surface has a carrier");
+        let entities = surface_entities(&geometry, 0, IgesVersion::V5_3)
+            .expect("analytic surface has a carrier");
         let surface = entities
             .last()
             .expect("analytic surface emits a surface entity");
@@ -529,7 +621,7 @@ fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
         start: curve_point(&geometry, range[0]).expect("start evaluates"),
         end: curve_point(&geometry, range[1]).expect("end evaluates"),
     };
-    let entity = oriented_curve_entity(&geometry, &span, Sense::Reversed)
+    let entity = oriented_curve_entity(&geometry, &span, Sense::Reversed, IgesVersion::V5_3)
         .expect("a bounded hyperbola can be reversed exactly");
     assert_eq!((entity.type_code, entity.form), (104, 2));
     assert_eq!(
@@ -614,24 +706,27 @@ fn generated_reals_round_trip_without_writer_quantization() {
 }
 
 #[test]
-fn generated_parameter_cards_end_at_delimiters() {
+fn generated_parameter_cards_preserve_field_boundaries() {
     let token = number(f64::MAX);
     let parameters = format!("128,{token},{token},{token},{token};");
-    let fragments = parameter_fragments(parameters.as_bytes())
+    let fragments = crate::parameter::layout_parameter_cards(parameters.as_bytes())
         .expect("ordinary generated real tokens fit one card");
     assert!(fragments.len() > 1);
-    assert!(fragments
-        .iter()
-        .all(|fragment| fragment.len() <= 64 && matches!(fragment.last(), Some(b',' | b';'))));
-    assert_eq!(fragments.concat(), parameters.as_bytes());
+    assert!(fragments.iter().all(|fragment| fragment.len() <= 64));
+    let compact = fragments
+        .concat()
+        .into_iter()
+        .filter(|byte| *byte != b' ')
+        .collect::<Vec<_>>();
+    assert_eq!(compact, parameters.as_bytes());
 }
 
 #[test]
-fn generated_parameter_token_wider_than_a_card_is_refused() {
+fn generated_parameter_field_wider_than_a_card_is_refused() {
     let parameters = format!("{};", "1".repeat(65));
-    let error = parameter_fragments(parameters.as_bytes())
-        .expect_err("a token wider than the data area must fail");
-    assert!(error.to_string().contains("token exceeds 64 bytes"));
+    let error = crate::parameter::layout_parameter_cards(parameters.as_bytes())
+        .expect_err("a field wider than the data area must fail");
+    assert!(error.to_string().contains("field exceeds one card"));
 }
 
 #[test]
@@ -642,7 +737,7 @@ fn generated_full_circle_has_lexically_identical_endpoints() {
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
         radius: 2.0,
     };
-    let entity = curve_entity(&geometry, None).expect("full circle is writable");
+    let entity = curve_entity(&geometry, None, IgesVersion::V5_3).expect("full circle is writable");
     let parameters = String::from_utf8(entity.parameters).expect("parameters are ASCII");
     let values = parameters
         .trim_end_matches(';')
@@ -664,7 +759,7 @@ fn generated_circle_refuses_a_zero_length_edge_span() {
         start: Point3::new(0.0, 0.0, 0.0),
         end: Point3::new(0.0, 0.0, 0.0),
     };
-    let error = curve_entity(&geometry, Some(&span))
+    let error = curve_entity(&geometry, Some(&span), IgesVersion::V5_3)
         .err()
         .expect("zero-length span must not become a full revolution");
     assert!(error.to_string().contains("non-zero ordered span"));

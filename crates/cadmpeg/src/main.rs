@@ -59,6 +59,12 @@ enum IgesTarget {
     /// IGES 5.1 Fixed ASCII.
     #[value(name = "5.1", alias = "v5.1", alias = "v5_1")]
     V5_1,
+    /// IGES 5.0 Fixed ASCII.
+    #[value(name = "5.0", alias = "v5.0", alias = "v5_0")]
+    V5_0,
+    /// IGES 4.0 Fixed ASCII.
+    #[value(name = "4.0", alias = "v4.0", alias = "v4_0")]
+    V4_0,
 }
 
 #[cfg(feature = "iges")]
@@ -66,6 +72,8 @@ impl IgesTarget {
     const fn options(self) -> cadmpeg_codec_iges::IgesWriteOptions {
         cadmpeg_codec_iges::IgesWriteOptions {
             version: match self {
+                Self::V4_0 => cadmpeg_codec_iges::IgesVersion::V4_0,
+                Self::V5_0 => cadmpeg_codec_iges::IgesVersion::V5_0,
                 Self::V5_1 => cadmpeg_codec_iges::IgesVersion::V5_1,
                 Self::V5_3 => cadmpeg_codec_iges::IgesVersion::V5_3,
                 Self::V5_2 => cadmpeg_codec_iges::IgesVersion::V5_2,

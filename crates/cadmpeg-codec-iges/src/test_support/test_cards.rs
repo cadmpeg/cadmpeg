@@ -25,7 +25,14 @@ pub(crate) fn card_with_ending(data: &[u8], section: u8, sequence: u32, ending: 
 }
 
 pub(crate) fn fixed_ascii_with_global(global: &[u8]) -> Vec<u8> {
-    fixed_ascii_with_global_cards(&global.chunks(CARD_DATA_COLUMNS).collect::<Vec<_>>())
+    match crate::global::layout_global_cards(global) {
+        Ok(cards) => {
+            fixed_ascii_with_global_cards(&cards.iter().map(Vec::as_slice).collect::<Vec<_>>())
+        }
+        Err(_) => {
+            fixed_ascii_with_global_cards(&global.chunks(CARD_DATA_COLUMNS).collect::<Vec<_>>())
+        }
+    }
 }
 
 pub(crate) fn fixed_ascii_with_global_cards(cards: &[&[u8]]) -> Vec<u8> {
@@ -39,6 +46,13 @@ pub(crate) fn fixed_ascii_with_global_cards(cards: &[&[u8]]) -> Vec<u8> {
         1,
     ));
     bytes
+}
+
+pub(crate) fn global_card_count(global: &[u8]) -> usize {
+    crate::global::layout_global_cards(global).map_or_else(
+        |_| global.len().div_ceil(CARD_DATA_COLUMNS),
+        |cards| cards.len(),
+    )
 }
 
 pub(crate) fn directory_card(fields: [&str; 9], sequence: u32) -> Vec<u8> {
@@ -62,6 +76,28 @@ pub(crate) fn parameter_cards(
     directory_sequence: u32,
     first_sequence: u32,
 ) -> Vec<u8> {
+    parameter_fragments(data)
+        .into_iter()
+        .enumerate()
+        .flat_map(|(index, chunk)| {
+            parameter_card(
+                chunk,
+                directory_sequence,
+                first_sequence + u32::try_from(index).unwrap(),
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn parameter_fragment_count(data: &[u8]) -> usize {
+    parameter_fragments(data).len()
+}
+
+pub(crate) fn raw_parameter_cards(
+    data: &[u8],
+    directory_sequence: u32,
+    first_sequence: u32,
+) -> Vec<u8> {
     data.chunks(64)
         .enumerate()
         .flat_map(|(index, chunk)| {
@@ -72,4 +108,30 @@ pub(crate) fn parameter_cards(
             )
         })
         .collect()
+}
+
+pub(crate) fn raw_parameter_fragment_count(data: &[u8]) -> usize {
+    data.len().div_ceil(64)
+}
+
+fn parameter_fragments(data: &[u8]) -> Vec<&[u8]> {
+    let mut fragments = Vec::new();
+    let mut remainder = data;
+    while remainder.len() > 64 {
+        let window = &remainder[..64];
+        let split = if window.contains(&b';') {
+            64
+        } else {
+            window
+                .iter()
+                .rposition(|byte| *byte == b',')
+                .map_or(64, |index| index + 1)
+        };
+        fragments.push(&remainder[..split]);
+        remainder = &remainder[split..];
+    }
+    if !remainder.is_empty() {
+        fragments.push(remainder);
+    }
+    fragments
 }

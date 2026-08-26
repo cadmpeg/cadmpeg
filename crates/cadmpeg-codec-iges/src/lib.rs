@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! IGES Fixed ASCII codec. Decode admits every declared version and
-//! interprets it with semantics verified for versions 5.1, 5.2, and 5.3.
+//! IGES codec. Decode admits every declared version and applies
+//! version-specific envelope rules; semantic rules are verified for versions
+//! 5.1, 5.2, and 5.3.
 //!
 //! Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
-//! for the declared Fixed ASCII mechanical/document envelope. Bounded
+//! for the declared Fixed ASCII mechanical/document envelope, with Compressed
+//! ASCII and Binary read normalization. Bounded
 //! semantic writing and independent-producer acceptance are part of the
 //! verified profile.
 
+mod binary;
 mod card;
+mod compressed;
 mod directory;
 mod entities;
 mod error;
@@ -47,11 +51,17 @@ pub enum IgesVersion {
     V5_2,
     /// IGES 5.1 Fixed ASCII.
     V5_1,
+    /// IGES 5.0 Fixed ASCII.
+    V5_0,
+    /// IGES 4.0 Fixed ASCII.
+    V4_0,
 }
 
 impl IgesVersion {
     pub(crate) const fn name(self) -> &'static str {
         match self {
+            Self::V4_0 => "4.0",
+            Self::V5_0 => "5.0",
             Self::V5_1 => "5.1",
             Self::V5_2 => "5.2",
             Self::V5_3 => "5.3",
@@ -60,6 +70,8 @@ impl IgesVersion {
 
     pub(crate) const fn global_flag(self) -> u8 {
         match self {
+            Self::V4_0 => 6,
+            Self::V5_0 => 8,
             Self::V5_1 => 9,
             Self::V5_2 => 10,
             Self::V5_3 => 11,
@@ -98,10 +110,16 @@ impl CodecBackend for IgesCodec {
     ) -> Result<ContainerSummary, CodecError> {
         let mut reader = Cursor::new(root.window());
         match representation::classify(&mut reader)? {
-            representation::Representation::FixedAscii => reader::inspect(ctx, root.window()),
-            representation @ (representation::Representation::CompressedAscii
-            | representation::Representation::Binary) => {
-                Ok(representation::unsupported_summary(representation))
+            representation::Representation::FixedAscii => {
+                reader::inspect(ctx, root.window(), "fixed-ascii", root.window().len())
+            }
+            representation::Representation::CompressedAscii => {
+                let normalized = compressed::normalize(root.window(), Some(ctx))?;
+                reader::inspect(ctx, &normalized, "compressed-ascii", root.window().len())
+            }
+            representation::Representation::Binary => {
+                let normalized = binary::normalize(root.window(), Some(ctx))?;
+                reader::inspect(ctx, &normalized, "binary", root.window().len())
             }
             representation::Representation::Unknown => Err(CodecError::WrongFormat(
                 "unrecognized IGES representation".into(),
@@ -118,15 +136,39 @@ impl CodecBackend for IgesCodec {
         match representation::classify(&mut source)? {
             representation::Representation::FixedAscii => reader::decode(
                 root.window(),
+                root.window(),
+                "fixed-ascii",
                 DecodeOptions {
                     container_only: ctx.container_only(),
                     policy: *ctx.policy(),
                 },
                 ctx,
             ),
-            representation @ (representation::Representation::CompressedAscii
-            | representation::Representation::Binary) => {
-                Err(representation::unsupported_error(representation))
+            representation::Representation::CompressedAscii => {
+                let normalized = compressed::normalize(root.window(), Some(ctx))?;
+                reader::decode(
+                    &normalized,
+                    root.window(),
+                    "compressed-ascii",
+                    DecodeOptions {
+                        container_only: ctx.container_only(),
+                        policy: *ctx.policy(),
+                    },
+                    ctx,
+                )
+            }
+            representation::Representation::Binary => {
+                let normalized = binary::normalize(root.window(), Some(ctx))?;
+                reader::decode(
+                    &normalized,
+                    root.window(),
+                    "binary",
+                    DecodeOptions {
+                        container_only: ctx.container_only(),
+                        policy: *ctx.policy(),
+                    },
+                    ctx,
+                )
             }
             representation::Representation::Unknown => Err(CodecError::WrongFormat(
                 "unrecognized IGES representation".into(),

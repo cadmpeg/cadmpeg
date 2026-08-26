@@ -4,22 +4,28 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, PcurveGeometry, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, SurfaceId, VertexId};
+use cadmpeg_ir::draft::ModelDraft;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, PcurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, EdgeId, PcurveId, PointId, SurfaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Sense, Vertex};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
 use super::{
-    cluster_boundary_positions, coordinate_quantum, pcurve_within_declared_bounds,
-    BoundaryVertexClusterError, FaceTolerancePolicy,
+    cluster_boundary_positions, coordinate_quantum, create_boundary_vertices,
+    linear_boundary_relationship_is_valid, pcurve_within_declared_bounds, BoundaryEndpoint,
+    BoundaryVertexClusterError, BoundaryVertexSourceEndpoint, DeclaredInterval,
+    FaceTolerancePolicy,
 };
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
 const EPS_BOUNDARY_ENDPOINT_MATCH: f64 = 1.0e-9;
+const EPS_SOURCE_BOUND_REPRESENTATION: f64 = 5.0e-7;
 
 #[test]
 fn pcurve_bounds_use_the_active_nurbs_subrange() {
@@ -109,6 +115,26 @@ fn pcurve_bounds_keep_partial_domains_and_periodic_seams() {
 }
 
 #[test]
+fn source_parameter_interval_must_reach_each_finite_support_bound() {
+    let lower = DeclaredInterval::around(0.703_187_779_306_162, 0.0);
+    let upper = DeclaredInterval::around(0.900_082_841_304_349, 0.0);
+    let represented_lower =
+        DeclaredInterval::around(0.703_187_779, EPS_SOURCE_BOUND_REPRESENTATION);
+    let separated = DeclaredInterval::around(0.5, EPS_SOURCE_BOUND_REPRESENTATION);
+
+    assert!(super::parameter_interval_reaches_bounds(
+        represented_lower,
+        Some(lower),
+        Some(upper)
+    ));
+    assert!(!super::parameter_interval_reaches_bounds(
+        separated,
+        Some(lower),
+        Some(upper)
+    ));
+}
+
+#[test]
 fn decode_reports_an_out_of_domain_alternate_for_model_preferred_type_142() {
     let result = IgesCodec
         .decode(
@@ -159,6 +185,40 @@ fn decode_rejects_an_out_of_domain_parameter_preferred_type_142() {
 }
 
 #[test]
+fn decode_admits_pcurve_whose_source_intervals_reach_support_bounds() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(subrange_nurbs_surface_boundary_file_with_source_precision()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(
+        result
+            .ir()
+            .model
+            .faces
+            .iter()
+            .any(|face| face.id.0 == "iges:model:face#D9"),
+        "losses={:#?}",
+        result.report().losses
+    );
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == IgesLossCode::BoundaryPcurveOutsideSupportDomain.kind() }));
+    let coedge = result
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.0 == "iges:model:coedge#D9:0:0")
+        .expect("trimmed boundary coedge");
+    assert_eq!(coedge.pcurves.len(), 1);
+}
+
+#[test]
 fn boundary_vertex_clustering_rejects_non_transitive_tolerance_neighborhoods() {
     let points = [
         Point3::new(0.0, 0.0, 0.0),
@@ -188,6 +248,48 @@ fn boundary_vertex_clustering_uses_canonical_representatives() {
             .map(|cluster| cluster.representative)
             .collect::<Vec<_>>(),
         vec![Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)]
+    );
+}
+
+#[test]
+fn boundary_vertex_creation_retains_every_source_endpoint() {
+    let mut candidate = ModelDraft::new();
+    let source_endpoints = vec![
+        BoundaryVertexSourceEndpoint {
+            edge: "iges:model:edge#source-a".into(),
+            endpoint: BoundaryEndpoint::Start,
+            position: Point3::new(1.0, 0.0, 0.0),
+        },
+        BoundaryVertexSourceEndpoint {
+            edge: "iges:model:edge#source-b".into(),
+            endpoint: BoundaryEndpoint::End,
+            position: Point3::new(0.0, 0.0, 0.0),
+        },
+    ];
+
+    let (vertex_ids, derivations) = create_boundary_vertices(
+        &mut candidate,
+        "D9",
+        "iges:entity:directory#9",
+        0,
+        &source_endpoints,
+        1.0,
+    )
+    .unwrap();
+
+    assert_eq!(vertex_ids[0], vertex_ids[1]);
+    assert_eq!(derivations.len(), 1);
+    assert_eq!(derivations[0].source_entity, "iges:entity:directory#9");
+    assert_eq!(derivations[0].representative, Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(derivations[0].tolerance, 1.0);
+    assert_eq!(derivations[0].source_endpoints.len(), 2);
+    assert_eq!(
+        derivations[0].source_endpoints[0].position,
+        Point3::new(1.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        derivations[0].source_endpoints[1].position,
+        Point3::new(0.0, 0.0, 0.0)
     );
 }
 
@@ -516,6 +618,103 @@ fn decode_retains_inner_boundaries_after_an_omitted_outer_pointer() {
         loop_.boundary_role,
         cadmpeg_ir::topology::LoopBoundaryRole::Inner
     );
+    assert_eq!(face.surface.0, "iges:model:surface#D15:implicit-outer");
+    let procedural = result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|surface| surface.surface == face.surface)
+        .unwrap();
+    match &procedural.definition {
+        ProceduralSurfaceDefinition::CurveBounded {
+            support,
+            boundaries,
+            boundary_pcurves,
+            implicit_outer,
+        } => {
+            assert_eq!(support.0, "iges:model:surface#D1");
+            assert_eq!(boundaries, &[CurveId("iges:model:curve#D9".into())]);
+            assert_eq!(
+                boundary_pcurves,
+                &[PcurveId("iges:model:pcurve#D15:0:0:0".into())]
+            );
+            assert!(*implicit_outer);
+        }
+        definition => panic!("unexpected implicit-domain definition: {definition:?}"),
+    }
+}
+
+#[test]
+fn type_144_rejects_a_self_intersecting_linear_outer_boundary() {
+    let rings = vec![vec![
+        [0.0, 0.0],
+        [1.0, 1.0],
+        [0.0, 1.0],
+        [1.0, 0.0],
+        [0.0, 0.0],
+    ]];
+    let plane = SurfaceGeometry::Plane {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+    };
+
+    assert_eq!(
+        linear_boundary_relationship_is_valid(&rings, true, true, &plane, None, [false, false]),
+        Some(false)
+    );
+}
+
+#[test]
+fn decode_rejects_a_linear_type_144_inner_boundary_outside_the_outer() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_with_boundaries_and_inner(
+                "106,1,5,0,0,0,1,0,1,1,0,1,0,0;",
+                "106,1,5,0,0.75,0.25,1.25,0.25,1.25,0.75,0.75,0.75,0.75,0.25;",
+                "144,1,1,1,7,13;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(!result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .any(|face| face.id.0 == "iges:model:face#D15"));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .message
+                .contains("trimmed-surface boundary loops are not simple")
+    }));
+}
+
+#[test]
+fn decode_rejects_a_trimmed_surface_pointer_to_a_non_type_142_entity() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_with_boundaries(
+                "106,1,5,0,0,0,1,0,1,1,0,1,0,0;",
+                "144,1,1,1,5,13;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .any(|face| face.id.0 == "iges:model:face#D15"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]
@@ -534,6 +733,29 @@ fn decode_accepts_independent_boundary_entities() {
 }
 
 #[test]
+fn decode_rejects_a_bounded_surface_pointer_to_a_non_type_141_entity() {
+    let source = String::from_utf8(parametrically_bounded_plane_file()).unwrap();
+    let source = source.replace("143,1,1,1,7;", "143,1,1,1,5;");
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(source.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(!result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .any(|face| face.id.0 == "iges:model:face#D9"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+}
+
+#[test]
 fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
     let result = IgesCodec
         .decode(
@@ -546,6 +768,21 @@ fn decode_does_not_blame_a_boundary_for_its_owning_surface_failure() {
         1,
         "{:#?}",
         result.report().losses
+    );
+    assert_eq!(
+        result.report().losses[0].code,
+        IgesLossCode::EntityNotProjected.kind()
+    );
+    // D13 is the Type 144 owner, the seventh entity in the fixture. Pinning
+    // the provenance tag is what separates this test from the bug it guards
+    // against: the loss must land on the trimmed surface, never on the Type
+    // 141 boundary or the Type 142 curve-on-surface it names.
+    assert_eq!(
+        result.report().losses[0]
+            .provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("directory_entry:D13")
     );
     assert!(result.report().losses[0]
         .message
@@ -910,7 +1147,8 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         loop_.boundary_role,
         cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
     );
-    assert!(!coedge.pcurves.is_empty());
+    assert_eq!(coedge.pcurves.len(), 1);
+    assert_eq!(coedge.pcurves[0].pcurve.0, "iges:model:pcurve#D9:0:0:0");
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1181,7 +1419,8 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .find(|coedge| coedge.id == loop_.coedges[0])
         .unwrap();
     assert_eq!(coedge.radial_next, coedge.id);
-    assert!(!coedge.pcurves.is_empty());
+    assert_eq!(coedge.pcurves.len(), 1);
+    assert_eq!(coedge.pcurves[0].pcurve.0, "iges:model:pcurve#D9:0:0:0");
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -1229,6 +1468,158 @@ fn decode_builds_a_trimmed_sheet_from_a_native_circle_pcurve() {
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_maps_a_line_generatrix_pcurve_to_the_neutral_distance_parameter() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_procedural_line_surface_of_revolution_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let face = result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D13")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "iges:model:surface#D5")
+        .unwrap();
+    let SurfaceGeometry::Procedural { construction } = &surface.geometry else {
+        panic!("expected a procedural revolution surface");
+    };
+    let procedural = result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.id == *construction)
+        .unwrap();
+    let ProceduralSurfaceDefinition::Revolution {
+        parameter_interval: Some(parameter_interval),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected a bounded procedural revolution");
+    };
+    assert_eq!(*parameter_interval, [0.0, 1.0]);
+    let carrier_interval = procedural.record_bounds.unwrap();
+    assert!(carrier_interval[1].is_some_and(|value| value > 3.0));
+
+    let loop_ = result
+        .ir()
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .unwrap();
+    let coedge = result
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id == loop_.coedges[0])
+        .unwrap();
+    assert_eq!(coedge.pcurves.len(), 1);
+    let pcurve = result
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
+        .unwrap();
+    let PcurveGeometry::Nurbs { control_points, .. } = &pcurve.geometry else {
+        panic!("expected a NURBS pcurve, got {:?}", pcurve.geometry);
+    };
+    let expected_u =
+        (11.762_109_22_f64 - 6.814_348_186).hypot(-6.969_522_429_f64 - -2.592_356_749_f64) * 0.5;
+    assert!((control_points[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!(control_points[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_unscales_procedural_pcurve_coordinates_before_neutral_mapping() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_procedural_line_surface_of_revolution_file_with_global(
+                b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,64,38,6,308,15,0H,1.0,1,4HINCH,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let face = result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D13")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
+    let loop_ = result
+        .ir()
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .unwrap();
+    let coedge = result
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id == loop_.coedges[0])
+        .unwrap();
+    let pcurve = result
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
+        .unwrap();
+    let PcurveGeometry::Nurbs { control_points, .. } = &pcurve.geometry else {
+        panic!("expected a NURBS pcurve, got {:?}", pcurve.geometry);
+    };
+    let expected_u = (11.762_109_22_f64 - 6.814_348_186)
+        .hypot(-6.969_522_429_f64 - -2.592_356_749_f64)
+        * 0.5
+        * 25.4;
+    assert!((control_points[0].u - expected_u).abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!(control_points[0].v.abs() <= EPS_BOUNDARY_ENDPOINT_MATCH);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn procedural_parameter_conversion_preserves_declared_endpoints() {
+    let upper_u = 0.898_025_612_106_907_5;
+    let mapped = super::source_parameter_point_to_neutral(
+        Point2::new(25.4, 2.0 * 25.4),
+        (upper_u, 0.0, 1.0, 0.0),
+        25.4,
+    );
+
+    assert_eq!(mapped.u, upper_u);
+    assert_eq!(mapped.v, 2.0);
 }
 
 #[test]

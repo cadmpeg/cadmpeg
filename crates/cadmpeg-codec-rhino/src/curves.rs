@@ -4,6 +4,7 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -722,7 +723,12 @@ fn insert_knot_once(
     if multiplicity > degree {
         return Err(());
     }
-    let mut output = vec![points[0]; points.len() + 1];
+    let mut output = alloc_filled(
+        points.len().checked_add(1).ok_or(())?,
+        points[0],
+        "Rhino polycurve knot insertion points",
+    )
+    .map_err(|_| ())?;
     output[..=k - degree].copy_from_slice(&points[..=k - degree]);
     output[k - multiplicity + 1..=n + 1].copy_from_slice(&points[k - multiplicity..=n]);
     for index in k - degree + 1..=k - multiplicity {
@@ -751,9 +757,20 @@ fn elevate_to_degree(
     {
         return Err(error(offset, "polycurve segment knot vector is invalid"));
     }
-    let weights = curve
-        .weights
-        .unwrap_or_else(|| vec![1.0; curve.control_points.len()]);
+    let weights = match curve.weights {
+        Some(weights) => weights,
+        None => alloc_filled(
+            curve.control_points.len(),
+            1.0,
+            "Rhino polycurve segment weights",
+        )
+        .map_err(|error| {
+            GeometryError::malformed(
+                offset,
+                format!("polycurve weight allocation refused: {error}"),
+            )
+        })?,
+    };
     if weights.len() != curve.control_points.len() {
         return Err(error(offset, "polycurve segment weight count mismatch"));
     }
@@ -800,7 +817,19 @@ fn elevate_to_degree(
         }
         let _ = boundary;
     }
-    let mut elevated_knots = vec![boundaries[0][0]; target + 1];
+    let mut elevated_knots = alloc_filled(
+        target
+            .checked_add(1)
+            .ok_or_else(|| error(offset, "polycurve elevated knot count overflow"))?,
+        boundaries[0][0],
+        "Rhino polycurve elevated knots",
+    )
+    .map_err(|error| {
+        GeometryError::malformed(
+            offset,
+            format!("polycurve knot allocation refused: {error}"),
+        )
+    })?;
     for boundary in boundaries.iter().take(boundaries.len() - 1) {
         elevated_knots.extend(std::iter::repeat_n(boundary[1], target));
     }

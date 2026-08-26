@@ -10,6 +10,77 @@ use crate::test_support::*;
 use crate::IgesCodec;
 
 #[test]
+fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let families = [
+        ("ellipse", "104,0.25,0,1,0,0,-1,0,2,0,0,1;", 0),
+        (
+            "hyperbola",
+            "104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;",
+            1,
+        ),
+        ("parabola", "104,1,0,0,0,-4,0,0,2,1,-2,1;", 2),
+    ];
+
+    for (version, global) in [("4.0", &global_v4[..]), ("5.0", &global_v5[..])] {
+        for (family, parameters, family_number) in families {
+            let result = IgesCodec
+                .decode(
+                    &mut Cursor::new(owned_test_file_with_global_and_line_fonts(
+                        &[OwnedTestEntity {
+                            entity_type: 104,
+                            form: 0,
+                            label: "CONIC".into(),
+                            status: "00000000",
+                            parameters: parameters.into(),
+                        }],
+                        global,
+                        &[(1, 1)],
+                    )),
+                    &DecodeOptions::default(),
+                )
+                .unwrap();
+
+            assert_eq!(
+                result.ir().source.as_ref().unwrap().attributes["iges_version"],
+                version,
+                "{family}"
+            );
+            assert_eq!(result.ir().model.curves.len(), 1, "{version} {family}");
+            assert!(
+                matches!(
+                    (&result.ir().model.curves[0].geometry, family_number),
+                    (cadmpeg_ir::geometry::CurveGeometry::Ellipse { .. }, 0)
+                        | (cadmpeg_ir::geometry::CurveGeometry::Hyperbola { .. }, 1)
+                        | (cadmpeg_ir::geometry::CurveGeometry::Parabola { .. }, 2)
+                ),
+                "{version} {family}: {:?}",
+                result.ir().model.curves[0].geometry
+            );
+            assert!(
+                result
+                    .report()
+                    .losses
+                    .iter()
+                    .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+                "{version} {family}: {:#?}",
+                result.report().losses
+            );
+            assert!(
+                result
+                    .report()
+                    .losses
+                    .iter()
+                    .all(|loss| loss.code != IgesLossCode::SourceDialectUnverified.kind()),
+                "{version} {family}: {:#?}",
+                result.report().losses
+            );
+        }
+    }
+}
+
+#[test]
 fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
     let fixtures: [(i64, &[u8]); 5] = [
         (0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;"),

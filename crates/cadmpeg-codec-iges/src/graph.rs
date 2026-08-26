@@ -11,6 +11,9 @@ use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// The largest sequence address representable by an IGES pointer constant.
+const MAX_POINTER_SEQUENCE: i64 = 9_999_999;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ReferenceKind {
@@ -98,7 +101,7 @@ impl<'a> ParameterResolver<'a> {
         if raw_pointer == 0 {
             return None;
         }
-        let target_sequence = u32::try_from(raw_pointer).ok();
+        let target_sequence = positive_pointer_sequence(raw_pointer);
         self.resolve_sequence(
             source,
             parameter_index,
@@ -120,9 +123,7 @@ impl<'a> ParameterResolver<'a> {
         if raw_pointer == 0 {
             return None;
         }
-        let target_sequence = raw_pointer
-            .checked_neg()
-            .and_then(|value| u32::try_from(value).ok());
+        let target_sequence = negative_pointer_sequence(raw_pointer);
         self.resolve_sequence(
             source,
             parameter_index,
@@ -222,9 +223,7 @@ fn negative_candidate(kind: ReferenceKind, raw_pointer: i64) -> Candidate {
     Candidate {
         kind,
         raw_pointer,
-        target_sequence: raw_pointer
-            .checked_abs()
-            .and_then(|value| u32::try_from(value).ok()),
+        target_sequence: negative_pointer_sequence(raw_pointer),
     }
 }
 
@@ -232,10 +231,26 @@ fn positive_candidate(kind: ReferenceKind, raw_pointer: i64) -> Candidate {
     Candidate {
         kind,
         raw_pointer,
-        target_sequence: (raw_pointer != 0)
-            .then(|| u32::try_from(raw_pointer).ok())
-            .flatten(),
+        target_sequence: positive_pointer_sequence(raw_pointer),
     }
+}
+
+fn positive_pointer_sequence(raw_pointer: i64) -> Option<u32> {
+    if !(1..=MAX_POINTER_SEQUENCE).contains(&raw_pointer) {
+        return None;
+    }
+    u32::try_from(raw_pointer).ok()
+}
+
+fn negative_pointer_sequence(raw_pointer: i64) -> Option<u32> {
+    if raw_pointer >= 0 {
+        return None;
+    }
+    let magnitude = raw_pointer.checked_abs()?;
+    if !(1..=MAX_POINTER_SEQUENCE).contains(&magnitude) {
+        return None;
+    }
+    u32::try_from(magnitude).ok()
 }
 
 fn candidates(entry: &DirectoryEntry) -> Vec<Candidate> {
@@ -272,7 +287,9 @@ fn expected(kind: ReferenceKind, source: &DirectoryEntry) -> &'static str {
         ReferenceKind::Structure => match source.entity_type {
             422 if matches!(source.form, 0..=1) => "type-322-form-0",
             402 if matches!(source.form, 5001..=9999) => "type-302-matching-form",
-            600..=699 | 10_000..=99_999 => "type-306-or-type-416",
+            entity_type if crate::profile::macro_instance_type(entity_type) => {
+                "type-306-or-type-416"
+            }
             _ => "structure-not-permitted",
         },
         ReferenceKind::LineFont => "type-304",
@@ -292,7 +309,9 @@ fn accepts(kind: ReferenceKind, source: &DirectoryEntry, target: &DirectoryEntry
             402 if matches!(source.form, 5001..=9999) => {
                 target.entity_type == 302 && target.form == source.form
             }
-            600..=699 | 10_000..=99_999 => matches!(target.entity_type, 306 | 416),
+            entity_type if crate::profile::macro_instance_type(entity_type) => {
+                matches!(target.entity_type, 306 | 416)
+            }
             _ => false,
         },
         ReferenceKind::LineFont => target.entity_type == 304 && matches!(target.form, 1 | 2),

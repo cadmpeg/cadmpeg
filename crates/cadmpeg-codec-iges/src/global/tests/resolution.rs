@@ -50,17 +50,17 @@ fn global_field_categories_apply_defaults_and_require_no_default_fields() {
     assert!(losses.is_empty(), "{losses:#?}");
 
     for (index, expected) in [
-        (3, None),
-        (4, None),
-        (5, None),
-        (6, None),
-        (7, None),
+        (3, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
+        (4, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
+        (5, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
+        (6, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
+        (7, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
         (8, Some(IgesLossCode::GlobalSemanticContextSubstituted)),
-        (9, None),
+        (9, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
         (10, Some(IgesLossCode::GlobalSemanticContextSubstituted)),
         (16, Some(IgesLossCode::LineWeightScaleUnavailable)),
-        (17, None),
-        (18, None),
+        (17, Some(IgesLossCode::GlobalMetadataFieldUnusable)),
+        (18, Some(IgesLossCode::GlobalSemanticContextSubstituted)),
     ] {
         let mut fields = valid_global_fields();
         fields[index].clear();
@@ -88,7 +88,11 @@ fn omitted_sender_product_is_retained_as_null_for_reader_compatibility() {
     let (parsed, losses) = resolve_global_fields(&fields);
 
     assert_eq!(parsed.sender_product(), None);
-    assert!(losses.is_empty(), "{losses:#?}");
+    assert_eq!(
+        code_count(&losses, IgesLossCode::GlobalMetadataFieldUnusable),
+        1,
+        "{losses:#?}"
+    );
 }
 
 #[test]
@@ -240,6 +244,31 @@ fn absent_or_nonpositive_significance_fields_substitute_seventeen_digits() {
             losses[0].message
         );
     }
+}
+
+#[test]
+fn readable_numeric_capabilities_are_retained_separately_from_projection_precision() {
+    let (parsed, losses) = resolve_global_fields(&valid_global_fields());
+
+    assert_eq!(
+        parsed.numeric_limits().integer_bits,
+        Some(32),
+        "{losses:#?}"
+    );
+    assert_eq!(parsed.numeric_limits().single_magnitude, Some(38));
+    assert_eq!(parsed.numeric_limits().double_magnitude, Some(308));
+
+    let mut fields = valid_global_fields();
+    fields[6].clear();
+    fields[7].clear();
+    fields[8].clear();
+    fields[9].clear();
+    fields[10].clear();
+    let (parsed, _) = resolve_global_fields(&fields);
+    assert_eq!(
+        parsed.numeric_limits(),
+        crate::global::NumericLimits::default()
+    );
 }
 
 #[test]

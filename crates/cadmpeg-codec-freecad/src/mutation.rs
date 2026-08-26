@@ -31,7 +31,7 @@ pub(crate) fn set_value_attribute(
             .iter_mut()
             .find(|record| record.order == value_order)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "FCStd property {} has no value at order {value_order}",
                     property.id
                 ))
@@ -54,7 +54,7 @@ pub(crate) fn set_value_text(
             .iter_mut()
             .find(|record| record.order == value_order)
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "FCStd property {} has no value at order {value_order}",
                     property.id
                 ))
@@ -79,7 +79,7 @@ pub(crate) fn replace_entry(
     let entry = entries
         .iter_mut()
         .find(|candidate| candidate.name == entry_name)
-        .ok_or_else(|| CodecError::Malformed(format!("missing FCStd entry {entry_name}")))?;
+        .ok_or_else(|| CodecError::malformed(format_args!("missing FCStd entry {entry_name}")))?;
     entry.byte_len = bytes.len() as u64;
     entry.sha256 = sha256_hex(&bytes);
     entry.data = bytes;
@@ -108,12 +108,12 @@ fn mutate_property(
     let index = match matches.as_slice() {
         [index] => *index,
         [] => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "missing FCStd property {owner_id}.{property_name}"
             )))
         }
         _ => {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "ambiguous FCStd property {owner_id}.{property_name}"
             )))
         }
@@ -137,7 +137,7 @@ fn valid_xml_name(value: &str, role: &str) -> Result<(), CodecError> {
     if valid {
         Ok(())
     } else {
-        Err(CodecError::Malformed(format!(
+        Err(CodecError::malformed(format_args!(
             "invalid FCStd {role} name {value:?}"
         )))
     }

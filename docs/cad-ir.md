@@ -201,7 +201,7 @@ When present, native namespace versions are:
 | `native.catia`    | 276     |
 | `native.creo`     | 1       |
 | `native.rhino`    | 2       |
-| `native.iges`     | 3       |
+| `native.iges`     | 5       |
 | `native.sat`      | 1       |
 
 Fusion native data includes ACT, Design, persistent-reference, sketch-link, construction-recipe, and ASM-history records. SOLIDWORKS native data includes feature histories and feature-input lanes. Inventor native data includes RSe segment inventories, OLE property sets, Protein package assets, external-reference records, presentation joins, and design-parameter, sketch, and feature arenas. Bare SAT streams retain ASM-native topology and unknown SAB records under `native.sat`; its version 1 is the IR's default for a namespace that declares no shape revision of its own, not a version the codec stamps.

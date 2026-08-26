@@ -6,11 +6,12 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::global::Dialect;
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
 use crate::IgesCodec;
 
-use super::Status;
+use super::{status, Status};
 
 #[test]
 fn subordinate_switch_dependency_bits_follow_the_four_defined_values() {
@@ -29,6 +30,37 @@ fn subordinate_switch_dependency_bits_follow_the_four_defined_values() {
         assert_eq!(status.is_physically_dependent(), physical);
         assert_eq!(status.is_logically_dependent(), logical);
     }
+}
+
+#[test]
+fn entity_use_flag_range_follows_the_declared_dialect() {
+    for (dialect, use_flag, expected) in [
+        (Dialect::V4_0, 5, true),
+        (Dialect::V4_0, 6, false),
+        (Dialect::V5_0, 6, true),
+        (Dialect::V5_0, 7, false),
+    ] {
+        let status = Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag,
+            hierarchy: 0,
+        };
+        assert_eq!(status.is_use_flag_valid(dialect), expected);
+    }
+}
+
+#[test]
+fn early_dialects_left_pad_right_justified_status_numbers() {
+    for dialect in [Dialect::Legacy, Dialect::V4_0, Dialect::V5_0] {
+        let status = status(*b"     201", dialect).unwrap();
+        assert_eq!(status.blank, 0);
+        assert_eq!(status.subordinate, 0);
+        assert_eq!(status.use_flag, 2);
+        assert_eq!(status.hierarchy, 1);
+    }
+
+    assert!(status(*b"     201", Dialect::V5_1).is_err());
 }
 
 #[test]

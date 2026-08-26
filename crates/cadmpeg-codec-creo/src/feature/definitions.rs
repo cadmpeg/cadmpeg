@@ -16,6 +16,8 @@ use super::rows::{
     FeatureRevolutionExtentKind,
 };
 
+const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
+
 /// Definition-space parameter-frame field in a `FeatDefs` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureParameterFrameKind {
@@ -190,7 +192,7 @@ impl FeatureVariableTable {
                 let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
                 if values
                     .iter()
-                    .all(|candidate| (*candidate - first).abs() <= 1e-9 * scale)
+                    .all(|candidate| (*candidate - first).abs() <= EPS_PARAMETER_AGREEMENT * scale)
                 {
                     point[coordinate] = Some(first);
                 } else {
@@ -5155,11 +5157,11 @@ pub(crate) fn saved_positional_generated_entities(
                 ) {
                     (Some(0), Some(first), _, Some(second), _) => {
                         let scale = first.abs().max(second.abs()).max(1.0);
-                        (first - second).abs() <= 1e-9 * scale
+                        (first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale
                     }
                     (Some(1), _, Some(first), _, Some(second)) => {
                         let scale = first.abs().max(second.abs()).max(1.0);
-                        (first - second).abs() <= 1e-9 * scale
+                        (first - second).abs() <= EPS_PARAMETER_AGREEMENT * scale
                     }
                     _ => false,
                 };

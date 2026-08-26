@@ -2,7 +2,9 @@
 //! Offset curve entity projection.
 
 use super::curve_conversion::angularly_equal;
-use super::geometry::{declared_unit_vector, entity_loss, source_object, WireProjectionOutcome};
+use super::geometry::{
+    declared_unit_vector, entity_loss, resolve_transform, source_object, WireProjectionOutcome,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::ProjectedGlobal;
 use crate::parameter::{ParameterRecord, TokenValue};
@@ -16,6 +18,54 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
+
+const EPS_OFFSET_FRAME: f64 = 1.0e-10;
+
+fn unit_vector(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    (norm.is_finite() && norm > 0.0).then(|| vector.scale(1.0 / norm))
+}
+
+fn transform_orientation(transform: cadmpeg_ir::transform::Transform) -> Option<f64> {
+    let x = transform.apply_vector(Vector3::new(1.0, 0.0, 0.0));
+    let y = transform.apply_vector(Vector3::new(0.0, 1.0, 0.0));
+    let z = transform.apply_vector(Vector3::new(0.0, 0.0, 1.0));
+    let determinant = x.cross(y).dot(z);
+    (determinant.is_finite() && determinant != 0.0).then_some(determinant.signum())
+}
+
+fn placed_offset_normal(
+    normal: Vector3,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Option<Vector3> {
+    let orientation = transform_orientation(transform)?;
+    unit_vector(transform.apply_vector(normal).scale(orientation))
+}
+
+fn placed_offset_source(
+    geometry: &CurveGeometry,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Option<CurveGeometry> {
+    let orientation = transform_orientation(transform)?;
+    match geometry {
+        CurveGeometry::Line { origin, direction } => Some(CurveGeometry::Line {
+            origin: transform.apply_point(*origin),
+            direction: unit_vector(transform.apply_vector(*direction))?,
+        }),
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => Some(CurveGeometry::Circle {
+            center: transform.apply_point(*center),
+            axis: unit_vector(transform.apply_vector(*axis))?.scale(orientation),
+            ref_direction: unit_vector(transform.apply_vector(*ref_direction))?,
+            radius: *radius,
+        }),
+        _ => None,
+    }
+}
 
 fn coordinate(point: Point3, index: u8) -> Option<f64> {
     match index {
@@ -157,7 +207,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    _ctx: Option<&DecodeContext<'_>>,
+    ctx: Option<&DecodeContext<'_>>,
 ) -> WireProjectionOutcome {
     let records = parameters
         .iter()
@@ -198,7 +248,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset plane normal is not numeric"));
             continue;
         };
-        let Some(normal) = ({
+        let Some(mut normal) = ({
             let v = Vector3::new(x, y, z);
             let n = v.norm();
             (n.is_finite() && n > 0.0).then(|| v.scale(1.0 / n))
@@ -231,22 +281,21 @@ pub(super) fn project(
             ));
             continue;
         }
-        if entry.transform != 0 {
-            losses.push(entity_loss(
-                entry,
-                "placed offset curves require composed source projection",
-            ));
-            continue;
-        }
         let source_id = CurveId(format!("iges:model:curve#D{source_sequence}"));
-        let Some(source) = ir.model.curves.iter().find(|curve| curve.id == source_id) else {
+        let Some(source_geometry) = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == source_id)
+            .map(|curve| curve.geometry.clone())
+        else {
             losses.push(entity_loss(entry, "offset source curve is missing"));
             continue;
         };
         let source_range = source_parameter_range(
             ir,
             &source_id,
-            &source.geometry,
+            &source_geometry,
             global.minimum_resolution_mm(),
         );
         let Some(source_range) = source_range else {
@@ -285,6 +334,48 @@ pub(super) fn project(
             ));
             continue;
         }
+        let mut offset_source_id = source_id.clone();
+        let mut offset_source_geometry = source_geometry.clone();
+        if entry.transform != 0 {
+            let transform = match resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                factor,
+                global.real_precision(),
+                &mut BTreeSet::new(),
+                ctx,
+            ) {
+                Ok(transform) => transform,
+                Err(message) => {
+                    losses.push(entity_loss(entry, message));
+                    continue;
+                }
+            };
+            let body_transform = transform.body_transform();
+            let Some(placed_source_geometry) =
+                placed_offset_source(&source_geometry, body_transform)
+            else {
+                losses.push(entity_loss(
+                    entry,
+                    "placed offset source has no exact line or circle carrier",
+                ));
+                continue;
+            };
+            let Some(placed_normal) = placed_offset_normal(normal, body_transform) else {
+                losses.push(entity_loss(
+                    entry,
+                    "placed offset normal cannot be represented",
+                ));
+                continue;
+            };
+            normal = placed_normal;
+            offset_source_id = CurveId(format!(
+                "iges:model:curve#D{}-placed-source",
+                entry.sequence
+            ));
+            offset_source_geometry = placed_source_geometry.clone();
+        }
         let start = parameter_map.to_neutral(native_start);
         let end = parameter_map.to_neutral(native_end);
         let parameter_origin = parameter_map.to_neutral(0.0);
@@ -313,9 +404,9 @@ pub(super) fn project(
                     continue;
                 };
                 let distance = distance * factor;
-                let geometry = match &source.geometry {
+                let geometry = match &offset_source_geometry {
                     CurveGeometry::Line { origin, direction }
-                        if normal.dot(*direction).abs() <= 1.0e-10 =>
+                        if normal.dot(*direction).abs() <= EPS_OFFSET_FRAME =>
                     {
                         CurveGeometry::Line {
                             origin: origin.translated(normal.cross(*direction), distance),
@@ -327,7 +418,7 @@ pub(super) fn project(
                         axis,
                         ref_direction,
                         radius,
-                    } if normal.dot(*axis).abs() >= 1.0 - 1.0e-10 => {
+                    } if normal.dot(*axis).abs() >= 1.0 - EPS_OFFSET_FRAME => {
                         let offset_radius = radius - distance * normal.dot(*axis).signum();
                         if offset_radius <= 0.0 {
                             losses.push(entity_loss(
@@ -406,14 +497,14 @@ pub(super) fn project(
                     control_origin + td1 * control_factor,
                     control_origin + td2 * control_factor,
                 ];
-                let CurveGeometry::Line { direction, .. } = &source.geometry else {
+                let CurveGeometry::Line { direction, .. } = &offset_source_geometry else {
                     losses.push(entity_loss(
                         entry,
                         "linear offset source has no exact neutral carrier",
                     ));
                     continue;
                 };
-                if normal.dot(*direction).abs() > 1.0e-10 {
+                if normal.dot(*direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",
@@ -430,7 +521,8 @@ pub(super) fn project(
                     distances[0] + alpha * (distances[1] - distances[0])
                 };
                 let offset_direction = normal.cross(*direction);
-                let Some(source_start) = cadmpeg_ir::eval::curve_point(&source.geometry, start)
+                let Some(source_start) =
+                    cadmpeg_ir::eval::curve_point(&offset_source_geometry, start)
                 else {
                     losses.push(entity_loss(
                         entry,
@@ -438,7 +530,8 @@ pub(super) fn project(
                     ));
                     continue;
                 };
-                let Some(source_end) = cadmpeg_ir::eval::curve_point(&source.geometry, end) else {
+                let Some(source_end) = cadmpeg_ir::eval::curve_point(&offset_source_geometry, end)
+                else {
                     losses.push(entity_loss(
                         entry,
                         "linear offset source end cannot be evaluated",
@@ -520,14 +613,14 @@ pub(super) fn project(
                     ));
                     continue;
                 }
-                let CurveGeometry::Line { direction, .. } = &source.geometry else {
+                let CurveGeometry::Line { direction, .. } = &offset_source_geometry else {
                     losses.push(entity_loss(
                         entry,
                         "function offset source has no exact neutral carrier",
                     ));
                     continue;
                 };
-                if normal.dot(*direction).abs() > 1.0e-10 {
+                if normal.dot(*direction).abs() > EPS_OFFSET_FRAME {
                     losses.push(entity_loss(
                         entry,
                         "offset normal is not perpendicular to the line",
@@ -588,7 +681,7 @@ pub(super) fn project(
                     };
                     let independent = inverse_parameter(function_parameter);
                     let Some(base) = cadmpeg_ir::eval::curve_point(
-                        &source.geometry,
+                        &offset_source_geometry,
                         source_parameter(independent),
                     ) else {
                         controls.clear();
@@ -669,6 +762,13 @@ pub(super) fn project(
         let start_vertex = VertexId(format!("iges:model:vertex#D{}:start", entry.sequence));
         let end_vertex = VertexId(format!("iges:model:vertex#D{}:end", entry.sequence));
         let edge_id = EdgeId(format!("iges:model:edge#D{}", entry.sequence));
+        if offset_source_id != source_id {
+            ir.model.curves.push(Curve {
+                id: offset_source_id.clone(),
+                geometry: offset_source_geometry.clone(),
+                source_object: Some(source_object(entry)),
+            });
+        }
         ir.model.points.extend([
             Point {
                 source_object: None,
@@ -710,7 +810,7 @@ pub(super) fn project(
             id: ProceduralCurveId(format!("iges:model:procedural-curve#D{}", entry.sequence)),
             curve: curve_id,
             definition: ProceduralCurveDefinition::Offset {
-                source: source_id,
+                source: offset_source_id,
                 distance,
                 support: None,
                 direction: None,

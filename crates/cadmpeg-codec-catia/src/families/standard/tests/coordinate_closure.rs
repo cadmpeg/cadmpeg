@@ -80,7 +80,8 @@ fn native_edge_carrier_binding_uses_unique_unused_endpoint_identity() {
             &native_support_ids,
             Some(&vertex_roster),
             &[vec![0, 1], vec![2, 3]],
-        ),
+        )
+        .expect("native edge bindings allocation"),
         vec![Some(70), Some(71)]
     );
 
@@ -93,7 +94,8 @@ fn native_edge_carrier_binding_uses_unique_unused_endpoint_identity() {
             &ambiguous_support_ids,
             Some(&vertex_roster),
             &[vec![0, 1]],
-        ),
+        )
+        .expect("native edge bindings allocation"),
         vec![None]
     );
 
@@ -104,7 +106,8 @@ fn native_edge_carrier_binding_uses_unique_unused_endpoint_identity() {
             &HashSet::from([900]),
             None,
             &[vec![2, 3]],
-        ),
+        )
+        .expect("native edge bindings allocation"),
         vec![Some(900)]
     );
 }
