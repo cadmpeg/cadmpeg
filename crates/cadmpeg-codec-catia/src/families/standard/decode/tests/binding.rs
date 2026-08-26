@@ -1347,6 +1347,52 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
 }
 
 #[test]
+fn standard_torus_witness_selects_complementary_meridian_arc() {
+    let surface = SurfaceGeometry::Torus {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        major_radius: 5.0,
+        minor_radius: 2.0,
+    };
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 1],
+        geometry: StandardCurveGeometry::Circle {
+            center: Point3::new(5.0, 0.0, 0.0),
+            radius: 2.0,
+        },
+    };
+    let start = Point3::new(7.0, 0.0, 0.0);
+    let end = Point3::new(5.0, 0.0, 2.0);
+    let witness = Point3::new(5.0, 0.0, -2.0);
+    let (geometry, _) =
+        standard_pcurve_geometry(&surface, &support, start, end, Some(witness), None)
+            .expect("witnessed torus meridian");
+    let PcurveGeometry::Line { origin, direction } = geometry else {
+        panic!("expected torus meridian chart line");
+    };
+    let long_sweep = std::f64::consts::FRAC_PI_2 - std::f64::consts::TAU;
+    assert_eq!(origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
+    assert_eq!(direction, cadmpeg_ir::math::Point2::new(0.0, long_sweep));
+
+    let range = circle_parameter_range_from_surface_branch(
+        &surface,
+        Point3::new(5.0, 0.0, 0.0),
+        2.0,
+        Vector3::new(0.0, -1.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        start,
+        end,
+        origin,
+        direction,
+    )
+    .expect("torus meridian circle range");
+    assert_eq!(range, [0.0, long_sweep]);
+}
+
+#[test]
 fn arc_witness_selects_tiny_nonzero_sweep() {
     let sweep = 1e-200;
     assert_eq!(witness_arc_end(0.0, sweep, sweep * 0.5), Some(sweep));

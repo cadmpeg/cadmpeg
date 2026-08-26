@@ -342,14 +342,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** The admitted positional relation is source order within the two complete source-closed lanes. It is not a persistent allocation-order join and does not select an entry from a partial lane.
 
-### SN-15. Standard arc branch selection
-
-**Question.** Which serialized field or identity relation selects the standard arc branch?
-
-**Known.** `catia.md` §5.6 "**Circle/arc endpoints by support intersection:**" defines arc selection when one of these witnesses fixes the branch. `catia.md` §5.7 defines a centered sphere as no circle-plane witness; a distinct incident carrier, such as a cylinder, can still define the full circle, but it does not select an arc branch.
-
-**Need.** We must define branch selection for records in which those relations do not select one branch.
-
 ### SN-16. Class-`0x20` persistent reference
 
 **Question.** How does the `op1` or persistent-tag reference in an `a5 03 20` record select a serialized record?
