@@ -213,6 +213,7 @@ pub struct CompoundSnapshot<'a> {
 
 impl<'a> CompoundSnapshot<'a> {
     /// Parses and validates the complete CFB structure without opening streams.
+    /// Stream extents are checked against their available bytes when opened.
     pub fn new(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
         let parsed = CompoundState::parse(ctx, root.window())?;
         let snapshot_id = NEXT_COMPOUND_SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed);
@@ -453,19 +454,22 @@ impl<'a> CompoundSnapshot<'a> {
                     })?)
                     .ok_or_else(|| CodecError::Malformed("CFB ledger offset overflow".into()))?
                     as u64;
+            let sector_end = start
+                .checked_add(self.parsed.sector_size as u64)
+                .ok_or_else(|| CodecError::Malformed("CFB ledger offset overflow".into()))?
+                .min(self.root.window().len() as u64);
+            let sector_length = usize::try_from(sector_end.saturating_sub(start))
+                .map_err(|_| CodecError::Malformed("CFB ledger sector length overflow".into()))?;
             let sector = u32::try_from(index)
                 .map_err(|_| CodecError::Malformed("CFB sector id exceeds u32".into()))?;
             if self.parsed.range_lock_sector == Some(sector) {
-                push_span(
-                    &mut spans,
-                    start,
-                    self.parsed.sector_size,
-                    "range lock sector",
-                    None,
-                );
+                push_span(&mut spans, start, sector_length, "range lock sector", None);
             } else if let Some(role) = structural.get(&sector) {
-                push_span(&mut spans, start, self.parsed.sector_size, role, None);
+                push_span(&mut spans, start, sector_length, role, None);
             } else if let Some((entry, payload)) = regular.get(&sector) {
+                if *payload > sector_length {
+                    return malformed(format!("CFB stream {entry} is shorter than declared"));
+                }
                 push_span(
                     &mut spans,
                     start,
@@ -476,28 +480,35 @@ impl<'a> CompoundSnapshot<'a> {
                 push_span(
                     &mut spans,
                     start + *payload as u64,
-                    self.parsed.sector_size - *payload,
+                    sector_length - *payload,
                     "padding",
                     Some(entry.clone()),
                 );
             } else if let Some(root_ordinal) = root_sectors.get(&sector) {
-                for mini_ordinal in 0..self.parsed.sector_size / self.parsed.mini_sector_size {
+                for mini_ordinal in 0..sector_length.div_ceil(self.parsed.mini_sector_size) {
                     let logical_mini = root_ordinal
                         .checked_mul(self.parsed.sector_size / self.parsed.mini_sector_size)
                         .and_then(|base| base.checked_add(mini_ordinal))
                         .ok_or_else(|| {
                             CodecError::Malformed("CFB mini-sector id overflow".into())
                         })?;
-                    let mini_start = start + (mini_ordinal * self.parsed.mini_sector_size) as u64;
+                    let mini_offset = mini_ordinal * self.parsed.mini_sector_size;
+                    let mini_length =
+                        (sector_length - mini_offset).min(self.parsed.mini_sector_size);
+                    let mini_start = start + mini_offset as u64;
                     let root_offset = (logical_mini * self.parsed.mini_sector_size) as u64;
                     let mapped = root_size
                         .saturating_sub(root_offset)
-                        .min(self.parsed.mini_sector_size as u64)
-                        as usize;
+                        .min(mini_length as u64) as usize;
                     let logical_mini = u32::try_from(logical_mini).map_err(|_| {
                         CodecError::Malformed("CFB mini-sector id exceeds u32".into())
                     })?;
                     if let Some((entry, payload)) = mini.get(&logical_mini) {
+                        if *payload > mini_length {
+                            return malformed(format!(
+                                "CFB stream {entry} is shorter than declared"
+                            ));
+                        }
                         push_span(
                             &mut spans,
                             mini_start,
@@ -508,7 +519,7 @@ impl<'a> CompoundSnapshot<'a> {
                         push_span(
                             &mut spans,
                             mini_start + *payload as u64,
-                            self.parsed.mini_sector_size - *payload,
+                            mini_length - *payload,
                             "padding",
                             Some(entry.clone()),
                         );
@@ -517,20 +528,14 @@ impl<'a> CompoundSnapshot<'a> {
                         push_span(
                             &mut spans,
                             mini_start + mapped as u64,
-                            self.parsed.mini_sector_size - mapped,
+                            mini_length - mapped,
                             "padding",
                             None,
                         );
                     }
                 }
             } else {
-                push_span(
-                    &mut spans,
-                    start,
-                    self.parsed.sector_size,
-                    "unallocated sector",
-                    None,
-                );
+                push_span(&mut spans, start, sector_length, "unallocated sector", None);
             }
         }
         if spans.first().is_none_or(|span| span.start != 0)
@@ -545,7 +550,12 @@ impl<'a> CompoundSnapshot<'a> {
     }
 
     fn regular_sector_view(&self, sector: u32) -> Result<View<'a>, CodecError> {
-        let (start, end) = sector_range(self.parsed.sector_size, self.parsed.sector_count, sector)?;
+        let (start, end) = sector_range(
+            self.parsed.sector_size,
+            self.parsed.sector_count,
+            self.root.window().len(),
+            sector,
+        )?;
         self.root
             .child(start, end)
             .ok_or_else(|| CodecError::Malformed("CFB sector escapes input".into()))
@@ -605,10 +615,10 @@ impl CompoundState {
         let sector_size = 1usize
             .checked_shl(u32::from(sector_shift))
             .ok_or_else(|| CodecError::Malformed("CFB sector size overflow".into()))?;
-        if bytes.len() < sector_size || !(bytes.len() - sector_size).is_multiple_of(sector_size) {
-            return malformed("CFB input does not end on a sector boundary");
+        if bytes.len() < sector_size {
+            return malformed("CFB input does not contain a complete header sector");
         }
-        let sector_count = (bytes.len() - sector_size) / sector_size;
+        let sector_count = (bytes.len() - sector_size).div_ceil(sector_size);
         if sector_count < 2 {
             return malformed("CFB file has fewer than the minimum three sectors");
         }
@@ -730,6 +740,9 @@ impl CompoundState {
         for &id in &fat_sectors {
             let data = sector(id)
                 .ok_or_else(|| CodecError::Malformed("CFB FAT sector is absent".into()))?;
+            if data.len() != sector_size {
+                return malformed("CFB FAT sector is truncated");
+            }
             fat.extend(
                 data.chunks_exact(4)
                     .map(|word| le_u32(word, 0).expect("four-byte chunk")),
@@ -1580,10 +1593,12 @@ fn join_sectors(
         .ok_or_else(|| CodecError::Malformed("CFB chain byte length overflow".into()))?;
     let mut output = Vec::with_capacity(length);
     for &sector in sectors {
-        output.extend_from_slice(
-            sector_slice(bytes, sector_size, sector_count, sector)
-                .ok_or_else(|| CodecError::Malformed("CFB sector is absent".into()))?,
-        );
+        let data = sector_slice(bytes, sector_size, sector_count, sector)
+            .ok_or_else(|| CodecError::Malformed("CFB sector is absent".into()))?;
+        if data.len() != sector_size {
+            return malformed("CFB structural sector is truncated");
+        }
+        output.extend_from_slice(data);
     }
     Ok(output)
 }
@@ -1612,7 +1627,12 @@ fn push_span(
     });
 }
 
-fn sector_range(sector_size: usize, count: usize, id: u32) -> Result<(usize, usize), CodecError> {
+fn sector_range(
+    sector_size: usize,
+    count: usize,
+    bytes_len: usize,
+    id: u32,
+) -> Result<(usize, usize), CodecError> {
     let index = usize::try_from(id)
         .map_err(|_| CodecError::Malformed("CFB sector id does not fit memory".into()))?;
     if index >= count {
@@ -1625,11 +1645,18 @@ fn sector_range(sector_size: usize, count: usize, id: u32) -> Result<(usize, usi
                 .ok_or_else(|| CodecError::Malformed("CFB sector offset overflow".into()))?,
         )
         .ok_or_else(|| CodecError::Malformed("CFB sector offset overflow".into()))?;
-    Ok((start, start + sector_size))
+    if start >= bytes_len {
+        return malformed("CFB sector is absent");
+    }
+    let end = start
+        .checked_add(sector_size)
+        .ok_or_else(|| CodecError::Malformed("CFB sector offset overflow".into()))?
+        .min(bytes_len);
+    Ok((start, end))
 }
 
 fn sector_slice(bytes: &[u8], sector_size: usize, count: usize, id: u32) -> Option<&[u8]> {
-    let (start, end) = sector_range(sector_size, count, id).ok()?;
+    let (start, end) = sector_range(sector_size, count, bytes.len(), id).ok()?;
     bytes.get(start..end)
 }
 
@@ -1695,6 +1722,58 @@ mod tests {
                 .end,
             file.len() as u64
         );
+    }
+
+    #[test]
+    fn snapshot_opens_a_stream_from_a_partial_final_sector() {
+        let file = partial_regular_fixture();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
+            .expect("synthetic CFB fits the decode policy");
+        let snapshot = CompoundSnapshot::new(&ctx, root).expect("synthetic CFB parses");
+        let stream = snapshot
+            .open(
+                &ctx,
+                snapshot
+                    .stream("Store/Large")
+                    .expect("regular stream exists"),
+            )
+            .expect("regular stream opens through the partial sector");
+        assert_eq!(stream.window().len(), 4110);
+        assert!(stream.window().iter().all(|byte| *byte == 0x5a));
+        assert_eq!(
+            snapshot
+                .physical_ledger()
+                .expect("physical ledger builds")
+                .last()
+                .expect("ledger contains the partial sector")
+                .end,
+            file.len() as u64
+        );
+
+        let mut too_large = partial_regular_fixture();
+        sector_mut(&mut too_large, 0)[3 * 128 + 120..4 * 128]
+            .copy_from_slice(&4608_u64.to_le_bytes());
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&too_large, &arena, &policy)
+            .expect("synthetic CFB fits the decode policy");
+        let snapshot = CompoundSnapshot::new(&ctx, root).expect("metadata still parses");
+        assert!(snapshot
+            .open(
+                &ctx,
+                snapshot
+                    .stream("Store/Large")
+                    .expect("regular stream exists")
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn rejects_a_partial_structural_sector() {
+        let mut file = fixture();
+        file.truncate(SECTOR_SIZE * 12 + 37);
+        assert!(!snapshot_parses(&file));
     }
 
     #[test]
@@ -2092,6 +2171,26 @@ mod tests {
         put_u32(fat, 9 * 4, END_OF_CHAIN);
         put_u32(fat, 10 * 4, END_OF_CHAIN);
         put_u32(fat, 11 * 4, FAT_SECTOR);
+        file
+    }
+
+    fn partial_regular_fixture() -> Vec<u8> {
+        let mut file = fixture();
+        file.resize(file.len() + SECTOR_SIZE, 0x5a);
+        directory_entry(
+            sector_mut(&mut file, 0),
+            3,
+            "Large",
+            2,
+            NO_STREAM,
+            NO_STREAM,
+            NO_STREAM,
+            2,
+            4110,
+        );
+        put_u32(sector_mut(&mut file, 11), 9 * 4, 12);
+        put_u32(sector_mut(&mut file, 11), 12 * 4, END_OF_CHAIN);
+        file.truncate(SECTOR_SIZE * 13 + 37);
         file
     }
 

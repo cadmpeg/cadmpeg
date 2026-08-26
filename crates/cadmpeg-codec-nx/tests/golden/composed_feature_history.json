@@ -33,6 +33,7 @@
               "object_index.2": "null",
               "object_index.3": "null",
               "operation_record": "nx:feature-history:operation-record#0000000000-0000000000",
+              "operation_stable_identity": "nx:feature-history:operation-header-identity#content:nx:om:data-block:64234489a7f9fea1dc9fea395989f5a3b6ceaeeaca8f936c65fddf2d5dcaddb7-null-null-null",
               "sketch_construction_inputs": "nx:feature-history:sketch-construction-inputs#0000000000-0000000000",
               "sketch_construction_payload.0": "nx:feature-history:sketch-construction-payload#0000000000-0000000000",
               "sketch_named_point_block_use.0": "nx:feature-history:sketch-named-point-block-use#0000000000-0000000000-0-0-1-0",
@@ -54,32 +55,19 @@
               "sketch": "nx:feature-history:sketch#0000000000-0000000001",
               "space": "planar"
             },
-            "dependencies": [
-              "nx:feature-history:feature#0000000000-0000000003",
-              "nx:feature-history:feature#0000000000-0000000002"
-            ],
             "id": "nx:feature-history:feature#0000000000-0000000001",
             "name": "SKETCH",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000001",
             "ordinal": 13,
             "source_properties": {
-              "datum_csys_block_use.0": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000001-0",
-              "datum_csys_block_use.1": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000001-0",
-              "datum_csys_block_use.2": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-2-0000000000-0000000001-0",
-              "datum_csys_block_use.3": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-3-0000000000-0000000001-0",
-              "datum_csys_block_use.4": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-4-0000000000-0000000001-0",
-              "datum_csys_block_use.5": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-5-0000000000-0000000001-0",
-              "datum_csys_block_use.6": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-6-0000000000-0000000001-0",
-              "datum_csys_block_use.7": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-7-0000000000-0000000001-0",
-              "datum_plane_block_use.0": "nx:feature-history:datum-plane-block-use#0000000000-0000000003-object-0-0000000000-0000000001-0",
-              "input_block.0": "nx:om-data-blocks-0:block#3",
-              "input_block_identity_group.0": "nx:feature-history:input-block-identity-group#0000000000",
+              "input_block.0": "nx:om-data-blocks-0:block#6",
               "input_block_record.0": "nx:feature-history:input-block#0000000000-0000000001-0000000000",
-              "object_index.0": "3",
+              "object_index.0": "6",
               "object_index.1": "null",
               "object_index.2": "null",
               "object_index.3": "null",
               "operation_record": "nx:feature-history:operation-record#0000000000-0000000001",
+              "operation_stable_identity": "nx:feature-history:operation-header-identity#content:nx:om:data-block:12b999bbda6a66f2a22c58008c41a414ddf8a1366b57b5d2fa46529a2ceffb57-null-null-null",
               "sketch_construction_inputs": "nx:feature-history:sketch-construction-inputs#0000000000-0000000001",
               "sketch_construction_payload.0": "nx:feature-history:sketch-construction-payload#0000000000-0000000001",
               "sketch_coordinate_pair.0": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-coordinate-pair-0000000000",
@@ -87,10 +75,11 @@
               "sketch_fixed_pair.0": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000",
               "sketch_fixed_pair.1": "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000001",
               "sketch_fixed_point.0": "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001",
+              "sketch_named_point_block_use.0": "nx:feature-history:sketch-named-point-block-use#0000000000-0000000001-0-0-6-0",
               "sketch_point_group.0": "nx:feature-history:sketch-point-group#0000000000-0000000001-0000000000",
-              "sketch_preceding_named_point_use.0": "nx:feature-history:sketch-preceding-named-point-use#0000000000-0000000001-0-1",
+              "sketch_point_use.0": "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-6-0",
               "sketch_record.0": "nx:feature-history:sketch-record#0000000000-0000000001",
-              "sketch_reference.0": "nx:om-data-blocks-0:block#3",
+              "sketch_reference.0": "nx:om-data-blocks-0:block#6",
               "sketch_reference.1": "nx:om-data-blocks-0:block#4",
               "sketch_reference_record.0": "nx:feature-history:sketch-reference#0000000000-0000000001-0000000000",
               "sketch_reference_record.1": "nx:feature-history:sketch-reference#0000000000-0000000001-0000000001"
@@ -692,6 +681,16 @@
           {
             "construction": false,
             "geometry": {
+              "kind": "native",
+              "native_kind": "nx-fixed-point"
+            },
+            "id": "nx:feature-history:sketch-entity#fixed-point-0000000000-0000000001-0000000001",
+            "native_ref": "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001",
+            "sketch": "nx:feature-history:sketch#0000000000-0000000001"
+          },
+          {
+            "construction": false,
+            "geometry": {
               "kind": "point",
               "position": {
                 "u": 57.149999999999686,
@@ -711,8 +710,8 @@
                 "v": 3745382.3999999794
               }
             },
-            "id": "nx:feature-history:sketch-entity#point-0000000000-0000000001-0000000000",
-            "native_ref": "nx:feature-history:sketch-point-group#0000000000-0000000001-0000000000",
+            "id": "nx:feature-history:sketch-entity#point-0000000000-0000000001-0-0-6-0",
+            "native_ref": "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-6-0",
             "sketch": "nx:feature-history:sketch#0000000000-0000000001"
           }
         ],
@@ -813,7 +812,8 @@
                 "section_ordinal": 0,
                 "sha256": "468fb56723f3e5c56e68cbbc0e4fd14009f7a035c0a0c1cee55602e697fcef49",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1497
+                "source_offset": 1501,
+                "stable_identity": "nx:om:data-block:8f024974f7e887f3370a38dc1670ed125fdd3824d049658078a3665d50d030b4"
               },
               {
                 "block_ordinal": 1,
@@ -824,7 +824,8 @@
                 "section_ordinal": 0,
                 "sha256": "dbd24a2d721f65758cd0b37be8bb0d0d445b06c4db4a6c895a1842c9f3e97d2e",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1513
+                "source_offset": 1517,
+                "stable_identity": "nx:om:data-block:64234489a7f9fea1dc9fea395989f5a3b6ceaeeaca8f936c65fddf2d5dcaddb7"
               },
               {
                 "block_ordinal": 2,
@@ -835,7 +836,8 @@
                 "section_ordinal": 0,
                 "sha256": "bf22e43e9f5e0e7d93118e7b53769608c9926f1732f95dc9ba84fb3891384c31",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1535
+                "source_offset": 1539,
+                "stable_identity": "nx:om:data-block:ed6c1fd13474c96f407f4a17c6892628c6897dad4e115d7d1e09b2aa77a0ad7f"
               },
               {
                 "block_ordinal": 3,
@@ -846,7 +848,8 @@
                 "section_ordinal": 0,
                 "sha256": "3fbe6c8853b80010fb9f2b3489d8a6f5b84934b56198b2bde78829f651cdd685",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1548
+                "source_offset": 1552,
+                "stable_identity": "nx:om:data-block:87215951f44fbc6ebba36e4b8c6642c05d09da28d4930c0fd67f07c9754d5661"
               },
               {
                 "block_ordinal": 4,
@@ -857,7 +860,8 @@
                 "section_ordinal": 0,
                 "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1762
+                "source_offset": 1766,
+                "stable_identity": "nx:om:data-block:b15379e11cf36ff829a7df0c58d556a7f17d86db9462cffb9776aef17eb659ca"
               },
               {
                 "block_ordinal": 5,
@@ -868,7 +872,20 @@
                 "section_ordinal": 0,
                 "sha256": "80c6d8c05cdd42ad4f3225cde96b66cd03204912c3ee90563e181ce41d4c1204",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1763
+                "source_offset": 1767,
+                "stable_identity": "nx:om:data-block:3344d1027de001f949996c331182016faa2ed03b9ff3be343e6954a7da9c4f24"
+              },
+              {
+                "block_ordinal": 6,
+                "byte_len": 214,
+                "id": "nx:om-data-blocks-0:block#6",
+                "role": "column",
+                "section_offset": 76,
+                "section_ordinal": 0,
+                "sha256": "71065c6382c3d4dc6c9d379899c12ff1a5ed95b1167c02101e18ec8dffdc0022",
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 1807,
+                "stable_identity": "nx:om:data-block:12b999bbda6a66f2a22c58008c41a414ddf8a1366b57b5d2fa46529a2ceffb57"
               }
             ],
             "feature_block_construction_references": [
@@ -944,6 +961,7 @@
               },
               {
                 "control": 38,
+                "data_block": "nx:om-data-blocks-0:block#6",
                 "id": "nx:feature-history:block-construction-reference#0000000000-0000000012-0000000005",
                 "object_index": 6,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000012",
@@ -1131,16 +1149,6 @@
                 "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
                 "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
                 "data_block": "nx:om-data-blocks-0:block#3",
-                "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000001-0",
-                "input_binding": "nx:feature-history:input-block#0000000000-0000000001-0000000000",
-                "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "input_slot": 0,
-                "reference_ordinal": 0
-              },
-              {
-                "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
-                "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-                "data_block": "nx:om-data-blocks-0:block#3",
                 "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-0-0000000000-0000000002-0",
                 "input_binding": "nx:feature-history:input-block#0000000000-0000000002-0000000000",
                 "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
@@ -1266,16 +1274,6 @@
                 "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000014",
                 "input_slot": 0,
                 "reference_ordinal": 0
-              },
-              {
-                "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
-                "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-                "data_block": "nx:om-data-blocks-0:block#3",
-                "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-1-0000000000-0000000001-0",
-                "input_binding": "nx:feature-history:input-block#0000000000-0000000001-0000000000",
-                "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "input_slot": 0,
-                "reference_ordinal": 1
               },
               {
                 "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
@@ -1411,16 +1409,6 @@
                 "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
                 "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
                 "data_block": "nx:om-data-blocks-0:block#3",
-                "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-2-0000000000-0000000001-0",
-                "input_binding": "nx:feature-history:input-block#0000000000-0000000001-0000000000",
-                "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "input_slot": 0,
-                "reference_ordinal": 2
-              },
-              {
-                "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
-                "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-                "data_block": "nx:om-data-blocks-0:block#3",
                 "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-2-0000000000-0000000002-0",
                 "input_binding": "nx:feature-history:input-block#0000000000-0000000002-0000000000",
                 "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
@@ -1546,16 +1534,6 @@
                 "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000014",
                 "input_slot": 0,
                 "reference_ordinal": 2
-              },
-              {
-                "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
-                "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-                "data_block": "nx:om-data-blocks-0:block#3",
-                "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-3-0000000000-0000000001-0",
-                "input_binding": "nx:feature-history:input-block#0000000000-0000000001-0000000000",
-                "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "input_slot": 0,
-                "reference_ordinal": 3
               },
               {
                 "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
@@ -1691,16 +1669,6 @@
                 "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
                 "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
                 "data_block": "nx:om-data-blocks-0:block#3",
-                "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-4-0000000000-0000000001-0",
-                "input_binding": "nx:feature-history:input-block#0000000000-0000000001-0000000000",
-                "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "input_slot": 0,
-                "reference_ordinal": 4
-              },
-              {
-                "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
-                "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-                "data_block": "nx:om-data-blocks-0:block#3",
                 "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-4-0000000000-0000000002-0",
                 "input_binding": "nx:feature-history:input-block#0000000000-0000000002-0000000000",
                 "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
@@ -1826,16 +1794,6 @@
                 "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000014",
                 "input_slot": 0,
                 "reference_ordinal": 4
-              },
-              {
-                "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
-                "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-                "data_block": "nx:om-data-blocks-0:block#3",
-                "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-5-0000000000-0000000001-0",
-                "input_binding": "nx:feature-history:input-block#0000000000-0000000001-0000000000",
-                "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "input_slot": 0,
-                "reference_ordinal": 5
               },
               {
                 "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
@@ -1971,16 +1929,6 @@
                 "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
                 "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
                 "data_block": "nx:om-data-blocks-0:block#3",
-                "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-6-0000000000-0000000001-0",
-                "input_binding": "nx:feature-history:input-block#0000000000-0000000001-0000000000",
-                "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "input_slot": 0,
-                "reference_ordinal": 6
-              },
-              {
-                "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
-                "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-                "data_block": "nx:om-data-blocks-0:block#3",
                 "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-6-0000000000-0000000002-0",
                 "input_binding": "nx:feature-history:input-block#0000000000-0000000002-0000000000",
                 "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
@@ -2106,16 +2054,6 @@
                 "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000014",
                 "input_slot": 0,
                 "reference_ordinal": 6
-              },
-              {
-                "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
-                "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
-                "data_block": "nx:om-data-blocks-0:block#3",
-                "id": "nx:feature-history:datum-csys-block-use#0000000000-0000000002-7-0000000000-0000000001-0",
-                "input_binding": "nx:feature-history:input-block#0000000000-0000000001-0000000000",
-                "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "input_slot": 0,
-                "reference_ordinal": 7
               },
               {
                 "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
@@ -2325,7 +2263,7 @@
                 "data_block": "nx:om-data-blocks-0:block#3",
                 "id": "nx:feature-history:datum-csys-construction#0000000000-0000000002-descriptor-5",
                 "identity": "0123456789abcde0123456789abcde0",
-                "identity_source_offset": 1730,
+                "identity_source_offset": 1734,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
                 "prefix": [
                   3,
@@ -2512,7 +2450,7 @@
                   0
                 ],
                 "reference_ordinal": 5,
-                "source_offset": 1548,
+                "source_offset": 1552,
                 "suffix": [
                   0
                 ]
@@ -2522,7 +2460,7 @@
                 "data_block": "nx:om-data-blocks-0:block#3",
                 "id": "nx:feature-history:datum-csys-construction#0000000000-0000000002-descriptor-6",
                 "identity": "0123456789abcde0123456789abcde0",
-                "identity_source_offset": 1730,
+                "identity_source_offset": 1734,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
                 "prefix": [
                   3,
@@ -2709,7 +2647,7 @@
                   0
                 ],
                 "reference_ordinal": 6,
-                "source_offset": 1548,
+                "source_offset": 1552,
                 "suffix": [
                   0
                 ]
@@ -2719,7 +2657,7 @@
                 "data_block": "nx:om-data-blocks-0:block#3",
                 "id": "nx:feature-history:datum-csys-construction#0000000000-0000000002-descriptor-7",
                 "identity": "0123456789abcde0123456789abcde0",
-                "identity_source_offset": 1730,
+                "identity_source_offset": 1734,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000002",
                 "prefix": [
                   3,
@@ -2906,7 +2844,7 @@
                   0
                 ],
                 "reference_ordinal": 7,
-                "source_offset": 1548,
+                "source_offset": 1552,
                 "suffix": [
                   0
                 ]
@@ -2956,14 +2894,14 @@
                     0
                   ]
                 ],
-                "source_offset": 1662,
+                "source_offset": 1666,
                 "value_payload_offsets": [
                   129,
                   138
                 ],
                 "value_source_offsets": [
-                  1677,
-                  1686
+                  1681,
+                  1690
                 ],
                 "values": [
                   0.5,
@@ -3013,14 +2951,14 @@
                     0
                   ]
                 ],
-                "source_offset": 1662,
+                "source_offset": 1666,
                 "value_payload_offsets": [
                   343,
                   352
                 ],
                 "value_source_offsets": [
-                  1677,
-                  1686
+                  1681,
+                  1690
                 ],
                 "values": [
                   0.5,
@@ -3074,14 +3012,14 @@
                     0
                   ]
                 ],
-                "source_offset": 1630,
+                "source_offset": 1634,
                 "value_payload_offsets": [
                   97,
                   106
                 ],
                 "value_source_offsets": [
-                  1645,
-                  1654
+                  1649,
+                  1658
                 ],
                 "values": [
                   32.0,
@@ -3133,14 +3071,14 @@
                     0
                   ]
                 ],
-                "source_offset": 1697,
+                "source_offset": 1701,
                 "value_payload_offsets": [
                   164,
                   173
                 ],
                 "value_source_offsets": [
-                  1712,
-                  1721
+                  1716,
+                  1725
                 ],
                 "values": [
                   32.0,
@@ -3192,14 +3130,14 @@
                     0
                   ]
                 ],
-                "source_offset": 1630,
+                "source_offset": 1634,
                 "value_payload_offsets": [
                   311,
                   320
                 ],
                 "value_source_offsets": [
-                  1645,
-                  1654
+                  1649,
+                  1658
                 ],
                 "values": [
                   32.0,
@@ -3251,14 +3189,14 @@
                     0
                   ]
                 ],
-                "source_offset": 1697,
+                "source_offset": 1701,
                 "value_payload_offsets": [
                   378,
                   387
                 ],
                 "value_source_offsets": [
-                  1712,
-                  1721
+                  1716,
+                  1725
                 ],
                 "values": [
                   32.0,
@@ -3284,7 +3222,7 @@
                   51,
                   7
                 ],
-                "source_offset": 1557,
+                "source_offset": 1561,
                 "value": 57.149999999999686
               },
               {
@@ -3304,7 +3242,7 @@
                   51,
                   7
                 ],
-                "source_offset": 1570,
+                "source_offset": 1574,
                 "value": 3745382.3999999794
               },
               {
@@ -3324,7 +3262,7 @@
                   51,
                   7
                 ],
-                "source_offset": 1557,
+                "source_offset": 1561,
                 "value": 57.149999999999686
               },
               {
@@ -3344,7 +3282,7 @@
                   51,
                   7
                 ],
-                "source_offset": 1570,
+                "source_offset": 1574,
                 "value": 3745382.3999999794
               }
             ],
@@ -3359,8 +3297,8 @@
                   214
                 ],
                 "block_source_offsets": [
-                  1548,
-                  1548
+                  1552,
+                  1552
                 ],
                 "byte_len": 428,
                 "construction": "nx:feature-history:datum-csys-construction#0000000000-0000000002",
@@ -3374,17 +3312,6 @@
               }
             ],
             "feature_datum_plane_block_uses": [
-              {
-                "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000003",
-                "data_block": "nx:om-data-blocks-0:block#3",
-                "datum_plane_header": "nx:feature-history:datum-plane-header#0000000000-0000000003",
-                "id": "nx:feature-history:datum-plane-block-use#0000000000-0000000003-object-0-0000000000-0000000001-0",
-                "input_binding": "nx:feature-history:input-block#0000000000-0000000001-0000000000",
-                "input_operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "input_slot": 0,
-                "lane": "object",
-                "reference_ordinal": 0
-              },
               {
                 "construction_operation_label": "nx:feature-history:operation-label#0000000000-0000000003",
                 "data_block": "nx:om-data-blocks-0:block#3",
@@ -3568,7 +3495,7 @@
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000003",
                 "ordinal": 0,
                 "schema_index": 3,
-                "source_offset": 1763,
+                "source_offset": 1767,
                 "suffix": [
                   63,
                   65,
@@ -3650,14 +3577,14 @@
                     0
                   ]
                 ],
-                "source_offset": 1694,
+                "source_offset": 1698,
                 "value_payload_offsets": [
                   164,
                   173
                 ],
                 "value_source_offsets": [
-                  1712,
-                  1721
+                  1716,
+                  1725
                 ],
                 "values": [
                   32.0,
@@ -3674,7 +3601,7 @@
                   0
                 ],
                 "block_source_offsets": [
-                  1548
+                  1552
                 ],
                 "byte_len": 214,
                 "data_blocks": [
@@ -3826,6 +3753,7 @@
             ],
             "feature_extrude_profile_references": [
               {
+                "field_tag": 22,
                 "id": "nx:feature-history:extrude-profile-reference#0000000000-0000000009-0000000000",
                 "object_index": 255,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000009",
@@ -3835,9 +3763,10 @@
                   255
                 ],
                 "source_offset": 1049,
-                "witnessed": true
+                "witness_source_offset": 1060
               },
               {
+                "field_tag": 22,
                 "id": "nx:feature-history:extrude-profile-reference#0000000000-0000000009-0000000001",
                 "object_index": 256,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000009",
@@ -3848,7 +3777,7 @@
                   0
                 ],
                 "source_offset": 1051,
-                "witnessed": true
+                "witness_source_offset": 1062
               }
             ],
             "feature_input_block_identity_groups": [
@@ -3856,7 +3785,6 @@
                 "data_block": "nx:om-data-blocks-0:block#3",
                 "id": "nx:feature-history:input-block-identity-group#0000000000",
                 "input_blocks": [
-                  "nx:feature-history:input-block#0000000000-0000000001-0000000000",
                   "nx:feature-history:input-block#0000000000-0000000002-0000000000",
                   "nx:feature-history:input-block#0000000000-0000000003-0000000000",
                   "nx:feature-history:input-block#0000000000-0000000004-0000000000",
@@ -3884,11 +3812,9 @@
                   0,
                   0,
                   0,
-                  0,
                   0
                 ],
                 "operation_labels": [
-                  "nx:feature-history:operation-label#0000000000-0000000001",
                   "nx:feature-history:operation-label#0000000000-0000000002",
                   "nx:feature-history:operation-label#0000000000-0000000003",
                   "nx:feature-history:operation-label#0000000000-0000000004",
@@ -3904,7 +3830,6 @@
                   "nx:feature-history:operation-label#0000000000-0000000014"
                 ],
                 "source_offsets": [
-                  346,
                   388,
                   458,
                   517,
@@ -3934,13 +3859,13 @@
                 "source_offset": 304
               },
               {
-                "data_block": "nx:om-data-blocks-0:block#3",
+                "data_block": "nx:om-data-blocks-0:block#6",
                 "id": "nx:feature-history:input-block#0000000000-0000000001-0000000000",
                 "input_slot": 0,
-                "object_index": 3,
+                "object_index": 6,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
                 "raw_object_index": [
-                  3
+                  6
                 ],
                 "source_offset": 346
               },
@@ -4114,12 +4039,13 @@
                 ],
                 "section_link": "nx:segment-om-links:link#0",
                 "source_offset": 308,
+                "stable_identity": "nx:feature-history:operation-header-identity#content:nx:om:data-block:64234489a7f9fea1dc9fea395989f5a3b6ceaeeaca8f936c65fddf2d5dcaddb7-null-null-null",
                 "value": "SKETCH"
               },
               {
                 "id": "nx:feature-history:operation-label#0000000000-0000000001",
                 "object_indices": [
-                  3,
+                  6,
                   null,
                   null,
                   null
@@ -4127,7 +4053,7 @@
                 "ordinal": 1,
                 "raw_object_indices": [
                   [
-                    3
+                    6
                   ],
                   [
                     255
@@ -4141,6 +4067,7 @@
                 ],
                 "section_link": "nx:segment-om-links:link#0",
                 "source_offset": 350,
+                "stable_identity": "nx:feature-history:operation-header-identity#content:nx:om:data-block:12b999bbda6a66f2a22c58008c41a414ddf8a1366b57b5d2fa46529a2ceffb57-null-null-null",
                 "value": "SKETCH"
               },
               {
@@ -4505,7 +4432,8 @@
                 "payload_sha256": "336c6458aa036ded079294eedbe39076250bdf47978e911a3ac82833c671e1cd",
                 "payload_source_offset": 317,
                 "sha256": "c76134d5e55ad7b33d52bb3b1f063af9839876a9aa2c20cdceea312836df6d79",
-                "source_offset": 289
+                "source_offset": 289,
+                "stable_identity": "nx:feature-history:operation-header-identity#content:nx:om:data-block:64234489a7f9fea1dc9fea395989f5a3b6ceaeeaca8f936c65fddf2d5dcaddb7-null-null-null"
               },
               {
                 "byte_len": 42,
@@ -4513,10 +4441,11 @@
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
                 "ordinal": 1,
                 "payload_byte_len": 14,
-                "payload_sha256": "45f9b1f9f368a96a7ac49eb2e5f1307782fed44fa90e21482a44f5ec58ea52a3",
+                "payload_sha256": "f896a95186eb17962d58e47ba6284b467901e51ff9cf61163fda87edf7742c08",
                 "payload_source_offset": 359,
-                "sha256": "93b9380ac30b8f14d0ce93a75ef19497148e00f265598d9ec779874d13724d4e",
-                "source_offset": 331
+                "sha256": "13f9f00b4fa8a4f5c15896370b5adf84d005a015662f6df12dd694c5eeac76ae",
+                "source_offset": 331,
+                "stable_identity": "nx:feature-history:operation-header-identity#content:nx:om:data-block:12b999bbda6a66f2a22c58008c41a414ddf8a1366b57b5d2fa46529a2ceffb57-null-null-null"
               },
               {
                 "byte_len": 70,
@@ -4771,6 +4700,7 @@
             "feature_pattern_references": [
               {
                 "id": "nx:feature-history:pattern-reference#0000000000-0000000007-0000000000",
+                "layout": "geometry_instance",
                 "object_index": 801,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000007",
                 "ordinal": 0,
@@ -4987,7 +4917,7 @@
               {
                 "id": "nx:feature-history:sketch-construction-inputs#0000000000-0000000001",
                 "member_data_blocks": [
-                  "nx:om-data-blocks-0:block#3"
+                  "nx:om-data-blocks-0:block#6"
                 ],
                 "member_references": [
                   "nx:feature-history:sketch-reference#0000000000-0000000001-0000000000"
@@ -5009,8 +4939,8 @@
                   22
                 ],
                 "block_source_offsets": [
-                  1513,
-                  1535
+                  1517,
+                  1539
                 ],
                 "byte_len": 35,
                 "construction_inputs": "nx:feature-history:sketch-construction-inputs#0000000000-0000000000",
@@ -5032,18 +4962,18 @@
                   214
                 ],
                 "block_source_offsets": [
-                  1548,
-                  1762
+                  1807,
+                  1766
                 ],
                 "byte_len": 215,
                 "construction_inputs": "nx:feature-history:sketch-construction-inputs#0000000000-0000000001",
                 "data_blocks": [
-                  "nx:om-data-blocks-0:block#3",
+                  "nx:om-data-blocks-0:block#6",
                   "nx:om-data-blocks-0:block#4"
                 ],
                 "id": "nx:feature-history:sketch-construction-payload#0000000000-0000000001",
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "sha256": "3f3e3ab754c47fce7c4cc9cd73022215c105555662a78cc76707ccc0bf0bf47c"
+                "sha256": "2422a62941fffdb74f7d95fa98dfb1d01976526ff12012dce3fff6f426183150"
               }
             ],
             "feature_sketch_fixed_points": [
@@ -5053,10 +4983,10 @@
                 "name": "Point2",
                 "named_record": "nx:feature-history:sketch-payload-record#0000000000-0000000001-0000000001",
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "source_offset": 1594,
+                "source_offset": 1853,
                 "values": [
                   0.5,
-                  -0.5
+                  0.75
                 ]
               }
             ],
@@ -5080,6 +5010,16 @@
                 "reference_ordinal": 1,
                 "sketch_reference": "nx:feature-history:sketch-reference#0000000000-0000000000-0000000001",
                 "source_offset": 325
+              },
+              {
+                "data_block": "nx:om-data-blocks-0:block#6",
+                "id": "nx:feature-history:sketch-named-point-block-use#0000000000-0000000001-0-0-6-0",
+                "named_point": "nx:offset-store:named-point#0-6",
+                "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
+                "point_block_ordinal": 0,
+                "reference_ordinal": 0,
+                "sketch_reference": "nx:feature-history:sketch-reference#0000000000-0000000001-0000000000",
+                "source_offset": 363
               }
             ],
             "feature_sketch_payload_coordinate_pairs": [
@@ -5128,14 +5068,14 @@
                     0
                   ]
                 ],
-                "source_offset": 1630,
+                "source_offset": 1889,
                 "value_payload_offsets": [
                   97,
                   106
                 ],
                 "value_source_offsets": [
-                  1645,
-                  1654
+                  1904,
+                  1913
                 ],
                 "values": [
                   32.0,
@@ -5187,14 +5127,14 @@
                     0
                   ]
                 ],
-                "source_offset": 1697,
+                "source_offset": 1956,
                 "value_payload_offsets": [
                   164,
                   173
                 ],
                 "value_source_offsets": [
-                  1712,
-                  1721
+                  1971,
+                  1980
                 ],
                 "values": [
                   32.0,
@@ -5221,7 +5161,7 @@
                 "payload_offset": 46,
                 "raw_values": [
                   [
-                    64,
+                    0,
                     0,
                     0,
                     0,
@@ -5230,7 +5170,7 @@
                     0
                   ],
                   [
-                    192,
+                    8,
                     0,
                     0,
                     0,
@@ -5239,18 +5179,18 @@
                     0
                   ]
                 ],
-                "source_offset": 1594,
+                "source_offset": 1853,
                 "value_payload_offsets": [
                   54,
                   63
                 ],
                 "value_source_offsets": [
-                  1602,
-                  1611
+                  1861,
+                  1870
                 ],
                 "values": [
                   0.5,
-                  -0.5
+                  0.75
                 ]
               },
               {
@@ -5278,7 +5218,7 @@
                 "payload_offset": 114,
                 "raw_values": [
                   [
-                    64,
+                    0,
                     0,
                     0,
                     0,
@@ -5287,7 +5227,7 @@
                     0
                   ],
                   [
-                    192,
+                    8,
                     0,
                     0,
                     0,
@@ -5296,18 +5236,18 @@
                     0
                   ]
                 ],
-                "source_offset": 1662,
+                "source_offset": 1921,
                 "value_payload_offsets": [
                   129,
                   138
                 ],
                 "value_source_offsets": [
-                  1677,
-                  1686
+                  1936,
+                  1945
                 ],
                 "values": [
                   0.5,
-                  -0.5
+                  0.75
                 ]
               }
             ],
@@ -5371,7 +5311,7 @@
                 "ordinal": 0,
                 "payload_leading": true,
                 "payload_offset": 0,
-                "source_offset": 1513,
+                "source_offset": 1517,
                 "value": "Point7"
               },
               {
@@ -5381,7 +5321,7 @@
                 "ordinal": 0,
                 "payload_leading": true,
                 "payload_offset": 0,
-                "source_offset": 1548,
+                "source_offset": 1807,
                 "value": "Point1"
               },
               {
@@ -5394,10 +5334,10 @@
                 "raw_type_code": [
                   50
                 ],
-                "source_offset": 1583,
+                "source_offset": 1842,
                 "type_code": 50,
                 "type_code_payload_offset": 36,
-                "type_code_source_offset": 1584,
+                "type_code_source_offset": 1843,
                 "value": "Point2"
               },
               {
@@ -5410,10 +5350,10 @@
                 "raw_type_code": [
                   50
                 ],
-                "source_offset": 1619,
+                "source_offset": 1878,
                 "type_code": 50,
                 "type_code_payload_offset": 72,
-                "type_code_source_offset": 1620,
+                "type_code_source_offset": 1879,
                 "value": "Point3"
               }
             ],
@@ -5435,7 +5375,7 @@
                   51,
                   7
                 ],
-                "source_offset": 1522,
+                "source_offset": 1526,
                 "value": 57.149999999999686
               },
               {
@@ -5455,7 +5395,7 @@
                   51,
                   7
                 ],
-                "source_offset": 1535,
+                "source_offset": 1539,
                 "value": 3745382.3999999794
               },
               {
@@ -5475,7 +5415,7 @@
                   51,
                   7
                 ],
-                "source_offset": 1557,
+                "source_offset": 1816,
                 "value": 57.149999999999686
               },
               {
@@ -5495,7 +5435,7 @@
                   51,
                   7
                 ],
-                "source_offset": 1570,
+                "source_offset": 1829,
                 "value": 3745382.3999999794
               }
             ],
@@ -5543,6 +5483,21 @@
                   321,
                   325
                 ]
+              },
+              {
+                "block_uses": [
+                  "nx:feature-history:sketch-named-point-block-use#0000000000-0000000001-0-0-6-0"
+                ],
+                "id": "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-6-0",
+                "named_point": "nx:offset-store:named-point#0-6",
+                "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
+                "sketch_point_group": "nx:feature-history:sketch-point-group#0000000000-0000000001-0000000000",
+                "sketch_references": [
+                  "nx:feature-history:sketch-reference#0000000000-0000000001-0000000000"
+                ],
+                "source_offsets": [
+                  363
+                ]
               }
             ],
             "feature_sketch_points": [
@@ -5573,20 +5528,6 @@
                   "nx:feature-history:sketch-payload-scalar#0000000000-0000000001-0000000000",
                   "nx:feature-history:sketch-payload-scalar#0000000000-0000000001-0000000001"
                 ]
-              }
-            ],
-            "feature_sketch_preceding_named_point_uses": [
-              {
-                "first_sketch_reference": "nx:feature-history:sketch-reference#0000000000-0000000001-0000000000",
-                "following_data_block": "nx:om-data-blocks-0:block#3",
-                "id": "nx:feature-history:sketch-preceding-named-point-use#0000000000-0000000001-0-1",
-                "named_point": "nx:offset-store:named-point#0-1",
-                "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
-                "point_data_blocks": [
-                  "nx:om-data-blocks-0:block#1",
-                  "nx:om-data-blocks-0:block#2"
-                ],
-                "source_offset": 363
               }
             ],
             "feature_sketch_records": [
@@ -5649,15 +5590,15 @@
                 "terminal": true
               },
               {
-                "data_block": "nx:om-data-blocks-0:block#3",
+                "data_block": "nx:om-data-blocks-0:block#6",
                 "declared_count": 2,
                 "id": "nx:feature-history:sketch-reference#0000000000-0000000001-0000000000",
-                "object_index": 3,
+                "object_index": 6,
                 "operation_label": "nx:feature-history:operation-label#0000000000-0000000001",
                 "ordinal": 0,
                 "raw_object_index": [
                   240,
-                  3
+                  6
                 ],
                 "source_offset": 363,
                 "terminal": false
@@ -5852,6 +5793,8 @@
                 "id": "nx:om-entry-0:field#117",
                 "name": "m_target",
                 "ordinal": 0,
+                "registry_owner_class": 2,
+                "registry_storage_code": 2,
                 "registry_suffix": [
                   1,
                   2
@@ -5901,10 +5844,86 @@
                     7
                   ]
                 ],
-                "source_offset": 1513,
+                "source_offset": 1517,
                 "value_source_offsets": [
-                  1522,
-                  1535
+                  1526,
+                  1539
+                ],
+                "values": [
+                  57.149999999999686,
+                  3745382.3999999794
+                ]
+              },
+              {
+                "data_blocks": [
+                  "nx:om-data-blocks-0:block#3"
+                ],
+                "id": "nx:offset-store:named-point#0-3",
+                "name": "Point1",
+                "raw_values": [
+                  [
+                    48,
+                    76,
+                    147,
+                    51,
+                    51,
+                    51,
+                    51,
+                    7
+                  ],
+                  [
+                    49,
+                    76,
+                    147,
+                    51,
+                    51,
+                    51,
+                    51,
+                    7
+                  ]
+                ],
+                "source_offset": 1552,
+                "value_source_offsets": [
+                  1561,
+                  1574
+                ],
+                "values": [
+                  57.149999999999686,
+                  3745382.3999999794
+                ]
+              },
+              {
+                "data_blocks": [
+                  "nx:om-data-blocks-0:block#6"
+                ],
+                "id": "nx:offset-store:named-point#0-6",
+                "name": "Point1",
+                "raw_values": [
+                  [
+                    48,
+                    76,
+                    147,
+                    51,
+                    51,
+                    51,
+                    51,
+                    7
+                  ],
+                  [
+                    49,
+                    76,
+                    147,
+                    51,
+                    51,
+                    51,
+                    51,
+                    7
+                  ]
+                ],
+                "source_offset": 1807,
+                "value_source_offsets": [
+                  1816,
+                  1829
                 ],
                 "values": [
                   57.149999999999686,
@@ -5924,7 +5943,7 @@
                 "product_version": "NX 2027.3102",
                 "schema_role": "feature_history",
                 "section_link": "nx:segment-om-links:link#0",
-                "sha256": "b380ba85f4d1c75adb38cb88e376f89fe6de0e892b15dc2f63c0bd219761e222",
+                "sha256": "a846e30f41128a8e1bd78577ea31e4212e713f6d8d325960456ea574c8fa4ee4",
                 "source_offset": 261
               }
             ],
@@ -5965,7 +5984,7 @@
                 "object_id": null,
                 "section_ordinal": 0,
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 1497,
+                "source_offset": 1501,
                 "version": "NX 2027.3102"
               }
             ],
@@ -5987,6 +6006,9 @@
               },
               {
                 "id": "nx:om-section-0:block#5"
+              },
+              {
+                "id": "nx:om-section-0:block#6"
               }
             ]
           },
@@ -5998,10 +6020,10 @@
           "classified_offset_store_control_count": "0",
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "1817",
+          "file_size": "2035",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "1803",
+          "footer_offset": "2021",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "offset_store_control_count": "1",
@@ -6044,11 +6066,11 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: version 0x06, file tag 0, footer offset 1803, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: version 0x06, file tag 0, footer offset 2021, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
         "NX object model: 0 of 1 bounded offset-store control block(s) have an admitted complete grammar",
         "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)",
-        "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 6 offset-only data block(s)"
+        "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 7 offset-only data block(s)"
       ]
     },
     "source_fidelity": {
@@ -6111,13 +6133,16 @@
           "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
             "entity": "derived"
           },
-          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0000000000": {
+          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0-0-6-0": {
             "entity": "derived"
           },
           "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001": {
             "entity": "derived"
           },
           "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0": {
+            "entity": "derived"
+          },
+          "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-6-0": {
             "entity": "derived"
           },
           "nx:feature-history:sketch-record#0000000000-0000000000": {
@@ -6279,7 +6304,7 @@
             "tag": "FEATURE_INPUT_BLOCK"
           },
           "nx:feature-history:input-block-identity-group#0000000000": {
-            "offset": 346,
+            "offset": 388,
             "stream": 0,
             "tag": "FEATURE_INPUT_BLOCK_IDENTITY_GROUP"
           },
@@ -6469,27 +6494,32 @@
             "tag": "SKETCH"
           },
           "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000": {
-            "offset": 1594,
+            "offset": 1853,
             "stream": 0,
             "tag": "FEATURE_SKETCH_FIXED_PAIR"
           },
           "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000001": {
-            "offset": 1662,
+            "offset": 1921,
             "stream": 0,
             "tag": "FEATURE_SKETCH_FIXED_PAIR"
+          },
+          "nx:feature-history:sketch-entity#fixed-point-0000000000-0000000001-0000000001": {
+            "offset": 1853,
+            "stream": 0,
+            "tag": "SKETCH_NATIVE_FIXED_POINT"
           },
           "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
             "offset": 321,
             "stream": 0,
             "tag": "SKETCH_POINT"
           },
-          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0000000000": {
-            "offset": 1557,
+          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0-0-6-0": {
+            "offset": 363,
             "stream": 0,
             "tag": "SKETCH_POINT"
           },
           "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001": {
-            "offset": 1594,
+            "offset": 1853,
             "stream": 0,
             "tag": "FEATURE_SKETCH_FIXED_POINT"
           },
@@ -6503,15 +6533,20 @@
             "stream": 0,
             "tag": "SKETCH_NAMED_POINT_BLOCK_USE"
           },
+          "nx:feature-history:sketch-named-point-block-use#0000000000-0000000001-0-0-6-0": {
+            "offset": 363,
+            "stream": 0,
+            "tag": "SKETCH_NAMED_POINT_BLOCK_USE"
+          },
           "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0": {
             "offset": 321,
             "stream": 0,
             "tag": "SKETCH_POINT_USE"
           },
-          "nx:feature-history:sketch-preceding-named-point-use#0000000000-0000000001-0-1": {
+          "nx:feature-history:sketch-point-use#0000000000-0000000001-0-0-6-0": {
             "offset": 363,
             "stream": 0,
-            "tag": "SKETCH_PRECEDING_NAMED_POINT_USE"
+            "tag": "SKETCH_POINT_USE"
           },
           "nx:feature-history:sketch-record#0000000000-0000000000": {
             "offset": 308,
@@ -6524,7 +6559,17 @@
             "tag": "FEATURE_SKETCH_RECORD"
           },
           "nx:offset-store:named-point#0-1": {
-            "offset": 1513,
+            "offset": 1517,
+            "stream": 0,
+            "tag": "OFFSET_STORE_NAMED_POINT"
+          },
+          "nx:offset-store:named-point#0-3": {
+            "offset": 1552,
+            "stream": 0,
+            "tag": "OFFSET_STORE_NAMED_POINT"
+          },
+          "nx:offset-store:named-point#0-6": {
+            "offset": 1807,
             "stream": 0,
             "tag": "OFFSET_STORE_NAMED_POINT"
           },
@@ -6534,37 +6579,42 @@
             "tag": "OM_RECORD_AREA"
           },
           "nx:om-section-0:block#0": {
-            "offset": 1497,
+            "offset": 1501,
             "stream": 0,
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#1": {
-            "offset": 1513,
+            "offset": 1517,
             "stream": 0,
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#2": {
-            "offset": 1535,
+            "offset": 1539,
             "stream": 0,
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#3": {
-            "offset": 1548,
+            "offset": 1552,
             "stream": 0,
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#4": {
-            "offset": 1762,
+            "offset": 1766,
             "stream": 0,
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-section-0:block#5": {
-            "offset": 1763,
+            "offset": 1767,
+            "stream": 0,
+            "tag": "OM_DATA_BLOCK"
+          },
+          "nx:om-section-0:block#6": {
+            "offset": 1807,
             "stream": 0,
             "tag": "OM_DATA_BLOCK"
           },
           "nx:om-store-headers:store#0": {
-            "offset": 1497,
+            "offset": 1501,
             "stream": 0,
             "tag": "OM_STORE_VERSION"
           },
@@ -6593,7 +6643,7 @@
           "byte_len": 16,
           "data": "BAEOTlggMjAyNy4zMTAyAA==",
           "id": "nx:om-section-0:block#0",
-          "offset": 1497,
+          "offset": 1501,
           "sha256": "468fb56723f3e5c56e68cbbc0e4fd14009f7a035c0a0c1cee55602e697fcef49",
           "stream": "nx:container"
         },
@@ -6601,7 +6651,7 @@
           "byte_len": 22,
           "data": "AwhQb2ludDcAUFlmWAAwTJMzMzMzBw==",
           "id": "nx:om-section-0:block#1",
-          "offset": 1513,
+          "offset": 1517,
           "sha256": "dbd24a2d721f65758cd0b37be8bb0d0d445b06c4db4a6c895a1842c9f3e97d2e",
           "stream": "nx:container"
         },
@@ -6609,7 +6659,7 @@
           "byte_len": 13,
           "data": "UFlmWQAxTJMzMzMzBw==",
           "id": "nx:om-section-0:block#2",
-          "offset": 1535,
+          "offset": 1539,
           "sha256": "bf22e43e9f5e0e7d93118e7b53769608c9926f1732f95dc9ba84fb3891384c31",
           "stream": "nx:container"
         },
@@ -6617,7 +6667,7 @@
           "byte_len": 214,
           "data": "AwhQb2ludDEAUFlmWAAwTJMzMzMzB1BZZlkAMUyTMzMzMwdmMgMIUG9pbnQyAATgSA4CA4CEMEAAAAAAAAAAMMAAAAAAAABmMgMIUG9pbnQzAAgCAwEDAcBFBACAhgIAAzBAAAAAAAAAADDAAAAAAAAACwIDAQMBwEUEAICGAgADMEAAAAAAAAAAMMAAAAAAAABtAPAIAgMBAwHARQQAgIYCAAMwQAAAAAAAAAAwwAAAAAAAAAAwMTIzNDU2Nzg5YWJjZGUwMTIzNDU2Nzg5YWJjZGUwAA==",
           "id": "nx:om-section-0:block#3",
-          "offset": 1548,
+          "offset": 1552,
           "sha256": "3fbe6c8853b80010fb9f2b3489d8a6f5b84934b56198b2bde78829f651cdd685",
           "stream": "nx:container"
         },
@@ -6625,7 +6675,7 @@
           "byte_len": 1,
           "data": "AA==",
           "id": "nx:om-section-0:block#4",
-          "offset": 1762,
+          "offset": 1766,
           "sha256": "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
           "stream": "nx:container"
         },
@@ -6633,8 +6683,16 @@
           "byte_len": 40,
           "data": "MDEyMzQ1Njc4OWFiY2RlMDEyMzQ1Njc4OWFiY2RlMD9BA/8CAURQZA==",
           "id": "nx:om-section-0:block#5",
-          "offset": 1763,
+          "offset": 1767,
           "sha256": "80c6d8c05cdd42ad4f3225cde96b66cd03204912c3ee90563e181ce41d4c1204",
+          "stream": "nx:container"
+        },
+        {
+          "byte_len": 214,
+          "data": "AwhQb2ludDEAUFlmWAAwTJMzMzMzB1BZZlkAMUyTMzMzMwdmMgMIUG9pbnQyAATgSA4CA4CEMAAAAAAAAAAAMAgAAAAAAABmMgMIUG9pbnQzAAgCAwEDAcBFBACAhgIAAzBAAAAAAAAAADDAAAAAAAAACwIDAQMBwEUEAICGAgADMAAAAAAAAAAAMAgAAAAAAABtAPAIAgMBAwHARQQAgIYCAAMwQAAAAAAAAAAwwAAAAAAAAAAwMTIzNDU2Nzg5YWJjZGUwMTIzNDU2Nzg5YWJjZGUwAA==",
+          "id": "nx:om-section-0:block#6",
+          "offset": 1807,
+          "sha256": "71065c6382c3d4dc6c9d379899c12ff1a5ed95b1167c02101e18ec8dffdc0022",
           "stream": "nx:container"
         }
       ],
@@ -6649,20 +6707,20 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compressed_size": 1727,
+        "compressed_size": 1945,
         "compression": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
-        "uncompressed_size": 1727
+        "uncompressed_size": 1945
       }
     ],
     "format": "nx",
     "notes": [
-      "SPLMSSTR container: version 0x06, file tag 0, footer offset 1803, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: version 0x06, file tag 0, footer offset 2021, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid",
       "NX object model: 0 of 1 bounded offset-store control block(s) have an admitted complete grammar",
       "NX object model: 1 size-framed section(s), 2 class declaration(s), 2 field declaration(s)",
-      "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 6 offset-only data block(s)"
+      "NX object model: 1 indexed section(s), 0 ID-bounded entity record(s), 7 offset-only data block(s)"
     ]
   }
 }

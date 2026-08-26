@@ -85,11 +85,20 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
+        },
+        {
+          "code": {
+            "code": "stream.non-parasolid-omitted",
+            "kind": "passthrough_record_omitted",
+            "namespace": "nx"
+          },
+          "message": "Non-Parasolid preview stream #0 was classified but not transferred.",
+          "severity": "info"
         }
       ],
       "notes": [
         "SPLMSSTR container: version 0x06, file tag 0, footer offset 114, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-        "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
+        "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 1 preview/non-Parasolid"
       ]
     },
     "source_fidelity": {
@@ -114,12 +123,23 @@
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
         "uncompressed_size": 38
+      },
+      {
+        "attributes": {
+          "file_offset": "76",
+          "kind": "preview"
+        },
+        "compressed_size": 0,
+        "compression": "zlib",
+        "name": "parasolid#0",
+        "role": "preview",
+        "uncompressed_size": 44
       }
     ],
     "format": "nx",
     "notes": [
       "SPLMSSTR container: version 0x06, file tag 0, footer offset 114, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
-      "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
+      "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 1 preview/non-Parasolid"
     ]
   }
 }

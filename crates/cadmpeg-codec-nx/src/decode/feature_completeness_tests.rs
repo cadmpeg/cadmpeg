@@ -1959,3 +1959,38 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
         assert!(losses[0].message.contains("sew bodies (1)"));
     }
 }
+
+#[test]
+fn nx_shell_completeness_requires_each_construction_field() {
+    use cadmpeg_ir::features::{
+        BodySelection, FaceSelection, FeatureDefinition, Length, ShellJoin, ShellMode,
+    };
+    use cadmpeg_ir::ids::{BodyId, FaceId};
+
+    let incomplete = FeatureDefinition::Shell {
+        bodies: None,
+        removed_faces: FaceSelection::Unresolved,
+        thickness: None,
+        outward: None,
+        mode: None,
+        join: None,
+        resolve_intersections: None,
+        allow_self_intersections: None,
+    };
+    assert!(super::shell_definition_is_incomplete(&incomplete));
+
+    let complete = FeatureDefinition::Shell {
+        bodies: Some(BodySelection::Bodies(vec![BodyId(
+            "test:body#shell".into(),
+        )])),
+        removed_faces: FaceSelection::Faces(vec![FaceId("test:face#opening".into())]),
+        thickness: Some(Length(2.0)),
+        outward: Some(false),
+        mode: Some(ShellMode::Skin),
+        join: Some(ShellJoin::Intersection),
+        resolve_intersections: Some(true),
+        allow_self_intersections: Some(false),
+    };
+    assert!(!super::shell_definition_is_incomplete(&complete));
+    assert_eq!(complete.body_output_family(), Some("shell"));
+}

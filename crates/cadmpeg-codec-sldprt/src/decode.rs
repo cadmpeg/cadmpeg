@@ -1632,16 +1632,35 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             }
             FeatureDefinition::Native { .. } | FeatureDefinition::PostProcess { .. } => false,
             // Unresolved construction retained as native.
-            FeatureDefinition::DatumPlaneUnresolved
+            FeatureDefinition::DatumAxisUnresolved
+            | FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::BridgeCurveUnresolved
             | FeatureDefinition::LoftUnresolved
+            | FeatureDefinition::ThroughCurveMeshUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
+            | FeatureDefinition::ExtractFaceUnresolved
+            | FeatureDefinition::CopyFaceUnresolved
+            | FeatureDefinition::LinkedFaceUnresolved
+            | FeatureDefinition::FillHoleUnresolved
+            | FeatureDefinition::MoveFaceUnresolved
+            | FeatureDefinition::MoveObjectUnresolved
+            | FeatureDefinition::CylinderUnresolved
+            | FeatureDefinition::ConeUnresolved
+            | FeatureDefinition::SphereUnresolved
+            | FeatureDefinition::ThreadUnresolved
+            | FeatureDefinition::DetailedThreadUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved
             | FeatureDefinition::DraftUnresolved
-            | FeatureDefinition::ExtrudeUnresolved
-            | FeatureDefinition::RevolveUnresolved
-            | FeatureDefinition::FilletUnresolved => true,
+                | FeatureDefinition::BrepUnresolved
+                | FeatureDefinition::MirrorFaceUnresolved
+                | FeatureDefinition::SubdivisionBodyUnresolved
+                | FeatureDefinition::TopologyOptimizationUnresolved
+                | FeatureDefinition::DeleteFaceUnresolved
+                | FeatureDefinition::ExtrudeUnresolved
+                | FeatureDefinition::RevolveUnresolved
+                | FeatureDefinition::FilletUnresolved => true,
             }
         })
         .count();

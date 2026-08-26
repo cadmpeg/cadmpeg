@@ -247,6 +247,7 @@ pub(crate) fn swept_nurbs(
         v_count: 2,
         control_points: control,
         weights,
+        normal_reversed: false,
         u_periodic: profile.periodic,
         v_periodic: false,
     })
@@ -329,6 +330,7 @@ pub(crate) fn spun_nurbs(profile: &NurbsCurve, base: Point3, axis: Vector3) -> N
         v_count: 9,
         control_points: control,
         weights: Some(weights),
+        normal_reversed: false,
         u_periodic: profile.periodic,
         v_periodic: true,
     }

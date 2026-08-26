@@ -122,8 +122,7 @@ pub(crate) fn active_configuration_state_is_incomplete(
     let active_features = if ir.model.features.is_empty() {
         BTreeSet::new()
     } else {
-        let Some(active_features) = crate::native::history::active_feature_closure(ir, bodies)
-        else {
+        let Ok(active_features) = crate::native::history::active_feature_closure(ir, bodies) else {
             return true;
         };
         active_features
@@ -232,7 +231,7 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
             .map(|parameter| {
                 let unit = match parameter.properties.get("unit").map(String::as_str) {
                     None => None,
-                    Some(unit @ ("millimeter" | "degree")) => Some(unit),
+                    Some(unit @ ("millimeter" | "inch" | "degree")) => Some(unit),
                     Some(_) => return None,
                 };
                 let [_] = ids_by_name
@@ -287,11 +286,12 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
                     evaluated.get(*dependency).copied()
                 });
             let stored = match (unit, parameter.value.as_ref()) {
-                (Some("millimeter"), Some(cadmpeg_ir::features::ParameterValue::Length(value))) => {
-                    Some(value.0)
-                }
+                (
+                    Some("millimeter" | "inch"),
+                    Some(cadmpeg_ir::features::ParameterValue::Length(value)),
+                ) => Some(value.0),
                 (Some("degree"), Some(cadmpeg_ir::features::ParameterValue::Angle(value))) => {
-                    Some(value.0.to_degrees())
+                    Some(value.0)
                 }
                 (None, Some(cadmpeg_ir::features::ParameterValue::Real(value))) => Some(*value),
                 (None, Some(cadmpeg_ir::features::ParameterValue::Integer(value))) => {
@@ -299,10 +299,19 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
                 }
                 _ => None,
             };
-            if let (Some(value), Some(stored)) = (value, stored) {
-                let tolerance = 64.0 * f64::EPSILON * value.abs().max(stored.abs()).max(1.0);
-                if value.is_finite() && stored.is_finite() && (value - stored).abs() <= tolerance {
-                    evaluated.insert(parameter.id.clone(), value);
+            if let Some(native_value) = value {
+                let canonical_value = unit.map_or(Some(native_value), |unit| {
+                    crate::native::canonical_expression_value(unit, native_value)
+                });
+                if let (Some(canonical_value), Some(stored)) = (canonical_value, stored) {
+                    let tolerance =
+                        64.0 * f64::EPSILON * canonical_value.abs().max(stored.abs()).max(1.0);
+                    if canonical_value.is_finite()
+                        && stored.is_finite()
+                        && (canonical_value - stored).abs() <= tolerance
+                    {
+                        evaluated.insert(parameter.id.clone(), native_value);
+                    }
                 }
             }
             emitted.insert(index);
@@ -474,11 +483,44 @@ pub(crate) fn face_blend_definition_is_incomplete(feature: &Feature) -> bool {
         || radius_spec_is_incomplete(radius)
 }
 
+pub(crate) fn shell_definition_is_incomplete(definition: &FeatureDefinition) -> bool {
+    let FeatureDefinition::Shell {
+        bodies,
+        removed_faces,
+        thickness,
+        outward,
+        mode,
+        join,
+        resolve_intersections,
+        allow_self_intersections,
+    } = definition
+    else {
+        return true;
+    };
+    bodies.as_ref().is_some_and(body_selection_is_incomplete)
+        || face_selection_is_incomplete(removed_faces)
+        || thickness.is_none_or(|thickness| !positive_feature_length(thickness))
+        || outward.is_none()
+        || mode.is_none()
+        || join.is_none()
+        || resolve_intersections.is_none()
+        || allow_self_intersections.is_none()
+}
+
 pub(crate) fn offset_surface_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::OffsetSurface { faces, distance } = &feature.definition else {
         return true;
     };
     face_selection_is_incomplete(faces) || distance.is_none_or(|distance| !distance.0.is_finite())
+}
+
+pub(crate) fn sphere_definition_is_incomplete(feature: &Feature) -> bool {
+    let FeatureDefinition::Sphere { center, radius, op } = &feature.definition else {
+        return true;
+    };
+    !finite_feature_point(*center)
+        || !positive_feature_length(*radius)
+        || matches!(op, BooleanOp::Unresolved)
 }
 
 pub(crate) fn thicken_definition_is_incomplete(feature: &Feature) -> bool {

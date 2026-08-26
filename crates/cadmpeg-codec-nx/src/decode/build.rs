@@ -3,18 +3,33 @@
 
 use super::emit::{
     annotate_node, canonical_trim_range, curve_tag, decoded_tolerance, emit_topology,
-    retain_unresolved_topology_carriers, source_meta, surface_tag, unknown_stream,
+    retain_unknown_stream_data, retain_unresolved_topology_carriers, source_meta, surface_tag,
+    unknown_stream_metadata,
+};
+use super::geometry_work::{
+    GeometryWorkBudget, MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,
+    MAX_PCURVE_COMPLETION_GEOMETRY_WORK, MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
+    MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,
 };
 use super::offset::{intersection_side, normalize_pcurve_parameters, saved_offset_carriers};
-use super::report::build_geometry_report;
+use super::pcurves::{
+    completion_transfer_budget_limit, transfer_budget_exhausted, EndpointWitnesses,
+    IntersectionEntityStarts, IntersectionIncidenceIndex, MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
+};
+use super::report::{build_geometry_report, CompletionBudgetStatus};
 use super::support_uv::{
-    assign_ext11_support_uv, attach_completed_intersection_pcurves, complete_ext11_support_uv,
-    complete_parameterization_equivalent_support_uv, complete_support_uv,
-    invalidate_inconsistent_support_uv, linear_knots, validate_serialized_support_uv,
+    assign_ext11_support_uv_with_index,
+    attach_completed_intersection_pcurves_for_model_with_budget,
+    attach_completed_intersection_pcurves_for_stream_with_budget,
+    complete_ext11_support_uv_with_budget, complete_parameterization_equivalent_support_uv,
+    complete_support_uv_with_budget_and_endpoint_witnesses,
+    invalidate_inconsistent_support_uv_with_validated_lanes_and_status, linear_knots,
+    support_uv_budget_exhausted, support_uv_completion_budget_limit,
+    validate_serialized_support_uv_with_index, validated_support_uv_endpoint_witnesses,
+    IntersectionCompletionSource, SerializedSupportUv,
 };
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::geometry;
-use crate::parasolid::StreamKind;
 use crate::topology::{Graph, Node};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -39,7 +54,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(crate) fn ordered_point_candidates<'a>(
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(usize, Point3, Option<&'a Node>)> {
+) -> Vec<(Point3, &'a Node)> {
     ordered_fixed_candidates(
         geometry::points(stream)
             .into_iter()
@@ -53,7 +68,7 @@ pub(crate) fn ordered_point_candidates<'a>(
 pub(crate) fn ordered_surface_candidates<'a>(
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(usize, SurfaceGeometry, Option<&'a Node>)> {
+) -> Vec<(SurfaceGeometry, &'a Node)> {
     ordered_fixed_candidates(
         geometry::surfaces(stream)
             .into_iter()
@@ -67,7 +82,7 @@ pub(crate) fn ordered_surface_candidates<'a>(
 pub(crate) fn ordered_curve_candidates<'a>(
     stream: &[u8],
     graph: &'a Graph,
-) -> Vec<(usize, CurveGeometry, Option<&'a Node>)> {
+) -> Vec<(CurveGeometry, &'a Node)> {
     ordered_fixed_candidates(
         geometry::curves(stream)
             .into_iter()
@@ -83,23 +98,23 @@ pub(crate) fn ordered_fixed_candidates<T>(
     graph: &Graph,
     kinds: std::ops::RangeInclusive<u8>,
     graph_value: impl Fn(&Node) -> Option<T>,
-) -> Vec<(usize, T, Option<&Node>)> {
+) -> Vec<(T, &Node)> {
     let mut candidates = BTreeMap::new();
     for (offset, value) in fallback {
-        let node = graph
+        let Some(node) = graph
             .at_pos(offset)
-            .filter(|node| graph_value(node).is_some());
+            .filter(|node| graph_value(node).is_some())
+        else {
+            continue;
+        };
         candidates.insert(offset, (value, node));
     }
     for node in kinds.flat_map(|kind| graph.of_kind(kind)) {
         if let Some(value) = graph_value(node) {
-            candidates.insert(node.pos, (value, Some(node)));
+            candidates.insert(node.pos, (value, node));
         }
     }
-    candidates
-        .into_iter()
-        .map(|(offset, (value, node))| (offset, value, node))
-        .collect()
+    candidates.into_values().collect()
 }
 
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
@@ -120,21 +135,143 @@ pub(crate) fn try_decode_geometry(
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
+    let mut stream_unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
-    let parsed = crate::native::ParsedStreams::parse(scan);
+    let mut parsed = crate::native::ParsedStreams::parse(scan);
+    let rmfastload_ids = scan
+        .container
+        .rmfastload_object_id_table()
+        .map(|(_, table)| {
+            table
+                .object_ids
+                .into_iter()
+                .map(|object_id| object_id.value)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for (si, stream) in scan.streams.iter().enumerate() {
+        if stream.kind.is_parasolid() {
+            body_node_ids.extend(topology_body_node_ids(
+                si,
+                &parsed.stream(si).view_for_geometry().graph,
+            ));
+        }
+    }
+    let rmfastload_selected = rmfastload_selected_bodies(&body_node_ids, &rmfastload_ids);
+    let rmfastload_preselection = (body_node_ids.len() > 1
+        && !rmfastload_selected.is_empty()
+        && rmfastload_selected.len() < body_node_ids.len())
+    .then(|| {
+        rmfastload_stream_indices(&rmfastload_selected).map(|streams| {
+            (
+                rmfastload_selected.clone(),
+                streams,
+                "rmfastload_object_id_membership",
+            )
+        })
+    })
+    .flatten();
+    let terminal_lineage =
+        rmfastload_allows_terminal_lineage(body_node_ids.len(), &rmfastload_selected)
+            .then(|| crate::native::extract_segment_lineage(&scan.container, &scan.streams));
+    let emitted_body_ids = body_node_ids.keys().cloned().collect::<BTreeSet<_>>();
+    let terminal_preselection = terminal_lineage
+        .as_ref()
+        .and_then(|lineage| {
+            crate::native::terminal_feature_body_ids(
+                &emitted_body_ids,
+                &lineage.bindings,
+                &lineage.statuses,
+            )
+        })
+        .filter(|selected| selected.len() < body_node_ids.len())
+        .and_then(|selected| {
+            rmfastload_stream_indices(&selected)
+                .map(|streams| (selected, streams, "terminal_feature_body_lineage"))
+        });
+    let preselection = rmfastload_preselection.or(terminal_preselection);
+    let chart_count = scan
+        .streams
+        .iter()
+        .enumerate()
+        .filter(|(si, stream)| {
+            stream.kind.is_parasolid()
+                && preselection
+                    .as_ref()
+                    .is_none_or(|(_, selected, _)| selected.contains(si))
+        })
+        .map(|(si, _)| {
+            parsed
+                .stream(si)
+                .view_for_geometry()
+                .intersections
+                .curves
+                .len()
+        })
+        .sum::<usize>();
+    let transfer_limit = completion_transfer_budget_limit(chart_count);
+    let support_uv_limit = support_uv_completion_budget_limit(chart_count);
+    let exact_transfer_budget = ctx.work_budget(MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES as u64);
+    let transfer_budget = ctx.work_budget(transfer_limit as u64);
+    let support_uv_validation_budget = ctx.work_budget(support_uv_limit as u64);
+    let support_budget = ctx.work_budget(support_uv_limit as u64);
+    let coupled_support_budget = ctx.work_budget(support_uv_limit as u64);
+    let adaptive_geometry_budget =
+        GeometryWorkBudget::from_work_budget(ctx.work_budget(MAX_ADAPTIVE_GEOMETRY_WORK as u64));
+    let completion_geometry_budget = GeometryWorkBudget::from_work_budget(
+        ctx.work_budget(MAX_PCURVE_COMPLETION_GEOMETRY_WORK as u64),
+    );
+    let support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
+        ctx.work_budget(MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK as u64),
+    );
+    let coupled_support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
+        ctx.work_budget(MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK as u64),
+    );
+    let serialized_support_uv_geometry_budget = GeometryWorkBudget::from_work_budget(
+        ctx.work_budget(MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK as u64),
+    );
+    let mut support_uv_lane_geometry_exhausted = false;
+    let mut intersection_index = IntersectionIncidenceIndex::default();
+    let mut model_endpoint_witnesses = EndpointWitnesses::new();
+    let mut completion_streams = Vec::new();
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
             continue;
         }
+        adaptive_geometry_budget.clear_blend_frame_cache();
+        completion_geometry_budget.clear_blend_frame_cache();
+        support_uv_geometry_budget.clear_blend_frame_cache();
+        coupled_support_uv_geometry_budget.clear_blend_frame_cache();
+        serialized_support_uv_geometry_budget.clear_blend_frame_cache();
+        if preselection
+            .as_ref()
+            .is_some_and(|(_, selected, _)| !selected.contains(&si))
+        {
+            let unknown_index = unknowns.len();
+            let unknown = unknown_stream_metadata(si, stream);
+            let container_stream = annotations.stream("nx:container");
+            annotations
+                .note(&unknown.id, container_stream, stream.file_offset as u64)
+                .tag(stream.kind.label());
+            annotations.exactness(&unknown.id, Exactness::Derived);
+            unknowns.push(unknown);
+            stream_unknowns.push((si, unknown_index));
+            continue;
+        }
+        let crate::nurbs::Parsed {
+            surfaces: nurbs_surfaces,
+            curves: nurbs_curves,
+            pcurves: nurbs_pcurves,
+        } = parsed.take_nurbs(si);
         let view = parsed.stream(si).view_for_geometry();
         let semantic = parsed.semantic_bytes(si);
         let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
         let source_stream = annotations.stream(format!("nx:{stream_name}"));
+        completion_streams.push((si, source_stream));
         let graph = &view.graph;
-        body_node_ids.extend(topology_body_node_ids(si, graph));
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
         let mut curves_by_xmt = BTreeMap::new();
@@ -144,21 +281,22 @@ pub(crate) fn try_decode_geometry(
         let mut pending_blend_supports = Vec::new();
         let mut pending_blend_spines = Vec::new();
         let mut pending_ext11_support_uv = Vec::new();
+        // Admission validates each populated lane against its selected support
+        // surface. Later topology completion only fills absent pcurves, so
+        // this provenance remains valid through the invalidation pass.
+        let mut validated_support_uv_lanes = BTreeSet::new();
         let first_surface = ir.model.surfaces.len();
         let first_curve = ir.model.curves.len();
-        for (pi, (position_offset, position, node)) in ordered_point_candidates(semantic, graph)
+        // The model is accumulated across streams. Completion must not retry
+        // unresolved curves that an earlier stream already admitted.
+        let procedural_start = ir.model.procedural_curves.len();
+        for (pi, (position, node)) in ordered_point_candidates(semantic, graph)
             .into_iter()
             .enumerate()
         {
             let pid = PointId(format!("nx:s{si}:pt#{pi}"));
             let vid = VertexId(format!("nx:s{si}:v#{pi}"));
-            if let Some(node) = node {
-                annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
-            } else {
-                annotations
-                    .note(&pid, source_stream, position_offset as u64)
-                    .tag("POINT");
-            }
+            annotate_node(&mut annotations, &pid, source_stream, node, "POINT");
             annotations.derived(&pid, "position");
             ir.model.points.push(Point {
                 id: pid.clone(),
@@ -170,13 +308,10 @@ pub(crate) fn try_decode_geometry(
                 point: pid.clone(),
                 tolerance: None,
             });
-            if let Some(node) = node {
-                points_by_xmt.insert(node.xmt, pid);
-            }
+            points_by_xmt.insert(node.xmt, pid);
             counts.points += 1;
         }
-
-        for (fi, (offset, geometry, node)) in ordered_surface_candidates(semantic, graph)
+        for (fi, (geometry, node)) in ordered_surface_candidates(semantic, graph)
             .into_iter()
             .enumerate()
         {
@@ -193,31 +328,22 @@ pub(crate) fn try_decode_geometry(
                 | SurfaceGeometry::Unknown { .. } => {}
             }
             let id = SurfaceId(format!("nx:s{si}:surf#{fi}"));
-            if let Some(node) = node {
-                annotate_node(
-                    &mut annotations,
-                    &id,
-                    source_stream,
-                    node,
-                    surface_tag(&geometry),
-                );
-            } else {
-                annotations
-                    .note(&id, source_stream, offset as u64)
-                    .tag(surface_tag(&geometry));
-            }
+            annotate_node(
+                &mut annotations,
+                &id,
+                source_stream,
+                node,
+                surface_tag(&geometry),
+            );
             annotations.derived(&id, "geometry");
             ir.model.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
                 source_object: None,
             });
-            if let Some(node) = node {
-                surfaces_by_xmt.insert(node.xmt, id);
-            }
+            surfaces_by_xmt.insert(node.xmt, id);
         }
-
-        for (fi, surf) in crate::nurbs::surfaces(semantic).into_iter().enumerate() {
+        for (fi, surf) in nurbs_surfaces.into_iter().enumerate() {
             counts.nurbs_surfaces += 1;
             let id = SurfaceId(format!("nx:s{si}:nurbs-surf#{fi}"));
             annotations
@@ -233,13 +359,13 @@ pub(crate) fn try_decode_geometry(
                 surfaces_by_xmt.insert(node.xmt, id);
             }
         }
-
         let saved_offset_carriers = saved_offset_carriers(
             &ir,
             graph,
             &view.offset_surfaces,
             &surfaces_by_xmt,
             ir.tolerances.linear,
+            &adaptive_geometry_budget,
         );
         for (oi, offset) in view.offset_surfaces.iter().copied().enumerate() {
             let Some(support) = surfaces_by_xmt.get(&offset.support).cloned() else {
@@ -285,6 +411,7 @@ pub(crate) fn try_decode_geometry(
                     // OFFSET_SURF status fields do not select parameter direction.
                     u_sense: None,
                     v_sense: None,
+                    support_extension: Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear),
                     extension_flags: Vec::new(),
                     revision_form: None,
                 },
@@ -344,7 +471,6 @@ pub(crate) fn try_decode_geometry(
             surfaces_by_xmt.insert(blend.xmt, surface_id);
             counts.blend_surfaces += 1;
         }
-
         for (procedural_index, support_xmts, offsets) in pending_blend_supports {
             let supports = [0, 1].map(|side| {
                 surfaces_by_xmt
@@ -368,7 +494,7 @@ pub(crate) fn try_decode_geometry(
             *slots = supports;
         }
 
-        for (ci, (offset, geometry, node)) in ordered_curve_candidates(semantic, graph)
+        for (ci, (geometry, node)) in ordered_curve_candidates(semantic, graph)
             .into_iter()
             .enumerate()
         {
@@ -387,31 +513,22 @@ pub(crate) fn try_decode_geometry(
                 | CurveGeometry::Unknown { .. } => {}
             }
             let id = CurveId(format!("nx:s{si}:crv#{ci}"));
-            if let Some(node) = node {
-                annotate_node(
-                    &mut annotations,
-                    &id,
-                    source_stream,
-                    node,
-                    curve_tag(&geometry),
-                );
-            } else {
-                annotations
-                    .note(&id, source_stream, offset as u64)
-                    .tag(curve_tag(&geometry));
-            }
+            annotate_node(
+                &mut annotations,
+                &id,
+                source_stream,
+                node,
+                curve_tag(&geometry),
+            );
             annotations.derived(&id, "geometry");
             ir.model.curves.push(Curve {
                 id: id.clone(),
                 geometry,
                 source_object: None,
             });
-            if let Some(node) = node {
-                curves_by_xmt.insert(node.xmt, id);
-            }
+            curves_by_xmt.insert(node.xmt, id);
         }
-
-        for (ci, crv) in crate::nurbs::curves(semantic).into_iter().enumerate() {
+        for (ci, crv) in nurbs_curves.into_iter().enumerate() {
             counts.nurbs_curves += 1;
             let id = CurveId(format!("nx:s{si}:nurbs-crv#{ci}"));
             annotations
@@ -428,7 +545,7 @@ pub(crate) fn try_decode_geometry(
             }
         }
 
-        for (pi, pcurve) in crate::nurbs::pcurves(semantic).into_iter().enumerate() {
+        for (pi, pcurve) in nurbs_pcurves.into_iter().enumerate() {
             let id = PcurveId(format!("nx:s{si}:pcurve#{pi}"));
             annotations
                 .note(&id, source_stream, pcurve.pos as u64)
@@ -446,7 +563,6 @@ pub(crate) fn try_decode_geometry(
                 pcurves_by_xmt.insert(node.xmt, id);
             }
         }
-
         let intersection_scan = view.intersections.clone();
         counts
             .intersection_rejections
@@ -462,6 +578,40 @@ pub(crate) fn try_decode_geometry(
             .into_iter()
             .map(|curve| (curve.xmt, curve))
             .collect();
+        let intersection_support_uv = {
+            let model_index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+            intersection_constructions
+                .iter()
+                .filter_map(|construction| {
+                    let charted = charted_intersections.get(&construction.xmt)?;
+                    let mut support_uv = validate_serialized_support_uv_with_index(
+                        &model_index,
+                        &surfaces_by_xmt,
+                        charted.supports,
+                        &charted.points,
+                        charted.fit_tolerance,
+                        &charted.support_uv,
+                        &serialized_support_uv_geometry_budget,
+                    );
+                    if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
+                        &model_index,
+                        &surfaces_by_xmt,
+                        charted.supports,
+                        &charted.points,
+                        charted.fit_tolerance,
+                        &charted.ext_support_uv,
+                        &serialized_support_uv_geometry_budget,
+                    ) {
+                        for side in 0..2 {
+                            if support_uv[side].is_none() {
+                                support_uv[side].clone_from(&ext_support_uv[side]);
+                            }
+                        }
+                    }
+                    Some((construction.xmt, support_uv))
+                })
+                .collect::<BTreeMap<_, _>>()
+        };
         for (ci, construction) in intersection_constructions.into_iter().enumerate() {
             let curve_id = CurveId(format!("nx:s{si}:intersection-crv#{ci}"));
             let procedural_id = ProceduralCurveId(format!("nx:s{si}:intersection#{ci}"));
@@ -484,12 +634,22 @@ pub(crate) fn try_decode_geometry(
                     ))
                 });
             if let Some(charted) = charted {
+                if let Some(support_uv) = intersection_support_uv.get(&construction.xmt) {
+                    for (side, lane) in support_uv.iter().enumerate() {
+                        if lane.is_some() {
+                            validated_support_uv_lanes.insert((procedural_id.clone(), side));
+                        }
+                    }
+                }
                 pending_ext11_support_uv.push((
                     procedural_id.clone(),
                     charted.points.clone(),
                     charted.parameters.clone(),
                     charted.fit_tolerance,
-                    charted.ext_support_uv.clone(),
+                    SerializedSupportUv {
+                        values: charted.support_uv.clone(),
+                        ext11: charted.ext_support_uv.clone(),
+                    },
                 ));
             }
             annotations
@@ -541,28 +701,10 @@ pub(crate) fn try_decode_geometry(
                 id: procedural_id,
                 curve: curve_id.clone(),
                 definition: if let Some(charted) = charted {
-                    let mut support_uv = validate_serialized_support_uv(
-                        &ir,
-                        &surfaces_by_xmt,
-                        charted.supports,
-                        &charted.points,
-                        charted.fit_tolerance,
-                        &charted.support_uv,
-                    );
-                    if let Some(ext_support_uv) = assign_ext11_support_uv(
-                        &ir,
-                        &surfaces_by_xmt,
-                        charted.supports,
-                        &charted.points,
-                        charted.fit_tolerance,
-                        &charted.ext_support_uv,
-                    ) {
-                        for side in 0..2 {
-                            if support_uv[side].is_none() {
-                                support_uv[side].clone_from(&ext_support_uv[side]);
-                            }
-                        }
-                    }
+                    let support_uv = intersection_support_uv
+                        .get(&construction.xmt)
+                        .cloned()
+                        .unwrap_or([None, None]);
                     let first = intersection_side(
                         &ir,
                         &surfaces_by_xmt,
@@ -613,7 +755,6 @@ pub(crate) fn try_decode_geometry(
             curves_by_xmt.insert(construction.xmt, curve_id);
             counts.intersection_curves += 1;
         }
-
         for (procedural_index, spine_xmt) in pending_blend_spines {
             let Some(spine) = curves_by_xmt.get(&spine_xmt).cloned() else {
                 continue;
@@ -627,15 +768,39 @@ pub(crate) fn try_decode_geometry(
             };
             *slot = Some(spine);
         }
-
         let trimmed_curves = &view.trimmed_curves;
         let mut normalized_pcurves = BTreeSet::new();
+        let mut invalid_pcurves = BTreeSet::new();
+        let curve_indices: BTreeMap<_, _> = ir
+            .model
+            .curves
+            .iter()
+            .enumerate()
+            .map(|(index, curve)| (curve.id.clone(), index))
+            .collect();
+        let surface_indices: BTreeMap<_, _> = ir
+            .model
+            .surfaces
+            .iter()
+            .enumerate()
+            .map(|(index, surface)| (surface.id.clone(), index))
+            .collect();
+        let pcurve_indices: BTreeMap<_, _> = ir
+            .model
+            .pcurves
+            .iter()
+            .enumerate()
+            .map(|(index, pcurve)| (pcurve.id.clone(), index))
+            .collect();
         let surface_curves = &view.surface_curves;
         loop {
             let mapped = curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len();
             for trim in trimmed_curves {
                 if let Some(basis) = curves_by_xmt.get(&trim.basis).cloned() {
-                    let parameters = canonical_trim_range(&ir, &basis, trim.parameters);
+                    let parameters = curve_indices
+                        .get(&basis)
+                        .and_then(|index| ir.model.curves.get(*index))
+                        .and_then(|curve| canonical_trim_range(&curve.geometry, trim.parameters));
                     curves_by_xmt.insert(trim.xmt, basis);
                     if let Some(parameters) = parameters {
                         trim_ranges.insert(trim.xmt, parameters);
@@ -654,16 +819,14 @@ pub(crate) fn try_decode_geometry(
                     if !normalized_pcurves.contains(&pcurve) {
                         let support = surfaces_by_xmt
                             .get(&surface_curve.surface)
-                            .and_then(|id| {
-                                ir.model.surfaces.iter().find(|surface| surface.id == *id)
-                            })
+                            .and_then(|id| surface_indices.get(id))
+                            .and_then(|index| ir.model.surfaces.get(*index))
                             .map(|surface| surface.geometry.clone());
                         let normalized = if let (Some(support), Some(carrier)) = (
                             support,
-                            ir.model
-                                .pcurves
-                                .iter_mut()
-                                .find(|candidate| candidate.id == pcurve),
+                            pcurve_indices
+                                .get(&pcurve)
+                                .and_then(|index| ir.model.pcurves.get_mut(*index)),
                         ) {
                             normalize_pcurve_parameters(&mut carrier.geometry, &support).is_some()
                         } else {
@@ -671,12 +834,15 @@ pub(crate) fn try_decode_geometry(
                         };
                         if !normalized {
                             pcurves_by_xmt.remove(&surface_curve.pcurve);
-                            ir.model.pcurves.retain(|candidate| candidate.id != pcurve);
+                            invalid_pcurves.insert(pcurve.clone());
                             continue;
                         }
                         normalized_pcurves.insert(pcurve.clone());
                     }
-                    if let Some(carrier) = ir.model.pcurves.iter_mut().find(|p| p.id == pcurve) {
+                    if let Some(carrier) = pcurve_indices
+                        .get(&pcurve)
+                        .and_then(|index| ir.model.pcurves.get_mut(*index))
+                    {
                         carrier.fit_tolerance = decoded_tolerance(surface_curve.tolerance);
                     }
                     pcurves_by_xmt.insert(surface_curve.xmt, pcurve);
@@ -692,7 +858,12 @@ pub(crate) fn try_decode_geometry(
                 break;
             }
         }
-
+        if !invalid_pcurves.is_empty() {
+            ir.model
+                .pcurves
+                .retain(|candidate| !invalid_pcurves.contains(&candidate.id));
+            intersection_index.reindex_pcurves_after_prune(&ir);
+        }
         retain_unresolved_topology_carriers(
             &mut ir,
             si,
@@ -703,8 +874,17 @@ pub(crate) fn try_decode_geometry(
             source_stream,
             &mut annotations,
         );
-
-        emit_topology(
+        let intersection_starts = IntersectionEntityStarts {
+            loops: ir.model.loops.len(),
+            faces: ir.model.faces.len(),
+            edges: ir.model.edges.len(),
+            coedges: ir.model.coedges.len(),
+            pcurves: ir.model.pcurves.len(),
+            procedural_curves: procedural_start,
+        };
+        adaptive_geometry_budget.clear_blend_frame_cache();
+        completion_geometry_budget.clear_blend_frame_cache();
+        let initial_endpoint_witnesses = emit_topology(
             &mut ir,
             si,
             graph,
@@ -716,21 +896,97 @@ pub(crate) fn try_decode_geometry(
             &trim_ranges,
             source_stream,
             &mut annotations,
+            &mut intersection_index,
+            intersection_starts,
+            procedural_start,
+            &exact_transfer_budget,
+            &transfer_budget,
+            &adaptive_geometry_budget,
+            &completion_geometry_budget,
         );
-        invalidate_inconsistent_support_uv(&mut ir, &pending_ext11_support_uv);
-        complete_ext11_support_uv(&mut ir, &pending_ext11_support_uv);
+        // Topology completion adds incidence and pcurve carriers, but does
+        // not change surface or model-curve geometry. Keep its successful
+        // blend-geometry certificates for support validation and attachment.
+        // Once earlier completion has consumed half the shared allowance,
+        // isolate each remaining validation lane. This preserves ordinary
+        // whole-lane proofs while preventing one recursive support from
+        // starving every later attachment candidate.
+        let isolate_validation_lanes =
+            completion_geometry_budget.remaining() <= MAX_PCURVE_COMPLETION_GEOMETRY_WORK / 2;
+        let support_uv_validation =
+            invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+                &mut ir,
+                &pending_ext11_support_uv,
+                &validated_support_uv_lanes,
+                &support_uv_validation_budget,
+                &completion_geometry_budget,
+                isolate_validation_lanes,
+            );
+        support_uv_lane_geometry_exhausted |= support_uv_validation.lane_geometry_exhausted;
+        let newly_validated_endpoint_witnesses = support_uv_validation.endpoint_witnesses;
+        serialized_support_uv_geometry_budget.clear_blend_frame_cache();
+        complete_ext11_support_uv_with_budget(
+            &mut ir,
+            &pending_ext11_support_uv,
+            &serialized_support_uv_geometry_budget,
+        );
+        support_uv_geometry_budget.clear_blend_frame_cache();
+        coupled_support_uv_geometry_budget.clear_blend_frame_cache();
         complete_parameterization_equivalent_support_uv(&mut ir);
-        complete_support_uv(&mut ir, &pending_ext11_support_uv);
-        attach_completed_intersection_pcurves(
+        let mut completed_endpoint_witnesses = BTreeMap::new();
+        support_uv_lane_geometry_exhausted |=
+            complete_support_uv_with_budget_and_endpoint_witnesses(
+                &mut ir,
+                &pending_ext11_support_uv,
+                &support_budget,
+                &support_uv_geometry_budget,
+                &coupled_support_budget,
+                &coupled_support_uv_geometry_budget,
+                &mut completed_endpoint_witnesses,
+            );
+        let mut validated_endpoint_witnesses = initial_endpoint_witnesses;
+        for (key, witnesses) in validated_support_uv_endpoint_witnesses(
+            &ir,
+            &pending_ext11_support_uv,
+            &validated_support_uv_lanes,
+        ) {
+            validated_endpoint_witnesses
+                .entry(key)
+                .or_default()
+                .extend(witnesses);
+        }
+        for (key, witness) in newly_validated_endpoint_witnesses {
+            validated_endpoint_witnesses
+                .entry(key)
+                .or_default()
+                .extend(witness);
+        }
+        for (key, witnesses) in completed_endpoint_witnesses {
+            validated_endpoint_witnesses
+                .entry(key)
+                .or_default()
+                .extend(witnesses);
+        }
+        for (key, witnesses) in &validated_endpoint_witnesses {
+            model_endpoint_witnesses
+                .entry(key.clone())
+                .or_default()
+                .extend(witnesses.iter().cloned());
+        }
+        attach_completed_intersection_pcurves_for_stream_with_budget(
             &mut ir,
             graph,
             &format!("nx:s{si}"),
+            intersection_starts.coedges,
+            intersection_starts.procedural_curves,
             source_stream,
             &mut annotations,
+            &validated_endpoint_witnesses,
+            &completion_geometry_budget,
         );
-
         // Preserve the whole inflated stream verbatim so nothing is dropped.
-        let mut unknown = unknown_stream(si, stream);
+        let unknown_index = unknowns.len();
+        let mut unknown = unknown_stream_metadata(si, stream);
         unknown.links.extend(
             ir.model.surfaces[first_surface..]
                 .iter()
@@ -747,7 +1003,27 @@ pub(crate) fn try_decode_geometry(
             .tag(stream.kind.label());
         annotations.exactness(&unknown.id, Exactness::Derived);
         unknowns.push(unknown);
+        stream_unknowns.push((si, unknown_index));
     }
+
+    intersection_index.complete_from_model(&mut ir);
+    let completion_sources = completion_streams
+        .iter()
+        .map(|(si, source_stream)| IntersectionCompletionSource {
+            prefix: format!("nx:s{si}"),
+            graph: parsed.stream(*si).view_for_geometry().graph.as_ref(),
+            source_stream: *source_stream,
+            coedge_start: 0,
+            procedural_start: 0,
+        })
+        .collect::<Vec<_>>();
+    attach_completed_intersection_pcurves_for_model_with_budget(
+        &mut ir,
+        &completion_sources,
+        &mut annotations,
+        &model_endpoint_witnesses,
+        &completion_geometry_budget,
+    );
 
     if counts.points == 0 && counts.surfaces() == 0 && counts.curves() == 0 {
         return Ok(None);
@@ -759,29 +1035,43 @@ pub(crate) fn try_decode_geometry(
         "admit NX entities",
     )?;
 
-    let rmfastload_ids = scan
-        .container
-        .rmfastload_object_id_table()
-        .map(|(_, table)| {
-            table
-                .object_ids
-                .into_iter()
-                .map(|object_id| object_id.value)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
     // Extract once: body selection and annotation attachment both read it.
-    let model =
-        crate::native::NativeModel::extract(ctx, root, &scan.container, &scan.streams, &parsed);
-    let mut active_body_selection = select_active_body(&mut ir, &body_node_ids, &rmfastload_ids);
+    let model = crate::native::NativeModel::extract(
+        ctx,
+        root,
+        &scan.container,
+        &scan.streams,
+        &mut parsed,
+        terminal_lineage,
+    );
+    let mut active_body_selection = if let Some((selected, _, source)) = &preselection {
+        let selected_hits = selected
+            .iter()
+            .filter_map(|body| body_node_ids.get(body))
+            .map(BTreeSet::len)
+            .sum::<usize>();
+        apply_preselected_active_body_selection(&mut ir, selected, source, Some(selected_hits))
+    } else {
+        select_active_body(&mut ir, &body_node_ids, &rmfastload_ids)
+    };
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
     }
     classify_body_kinds(&mut ir);
-    if crate::native::attach_annotations(&mut ir, &model, scan, &mut annotations, &mut unknowns)
-        .is_err()
-    {
-        return Ok(None);
+    match crate::native::attach_annotations(
+        ctx,
+        &mut ir,
+        &model,
+        scan,
+        &mut annotations,
+        &mut unknowns,
+    ) {
+        Ok(()) => {}
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    }
+    for (si, unknown_index) in stream_unknowns {
+        retain_unknown_stream_data(ctx, &scan.streams[si], &mut unknowns[unknown_index])?;
     }
     prune_unreferenced_unknown_carriers(&mut ir);
     finalize_point_topology(&mut ir, &mut annotations);
@@ -797,16 +1087,35 @@ pub(crate) fn try_decode_geometry(
     retain_live_unknown_links(&ir, &mut unknowns, &mut annotations);
     let mut annotations = annotations.build();
     retain_live_annotations(&ir, &unknowns, &mut annotations);
+    let completion_budget = CompletionBudgetStatus {
+        exact_boundary_exhausted: transfer_budget_exhausted(&exact_transfer_budget),
+        transfer_exhausted: transfer_budget_exhausted(&transfer_budget),
+        support_uv_validation_exhausted: support_uv_budget_exhausted(&support_uv_validation_budget),
+        support_uv_exhausted: support_uv_budget_exhausted(&support_budget),
+        coupled_support_uv_exhausted: support_uv_budget_exhausted(&coupled_support_budget),
+        completion_geometry_exhausted: completion_geometry_budget.exhausted(),
+        serialized_support_uv_geometry_exhausted: serialized_support_uv_geometry_budget.exhausted(),
+        support_uv_geometry_exhausted: support_uv_geometry_budget.exhausted(),
+        coupled_support_uv_geometry_exhausted: coupled_support_uv_geometry_budget.exhausted(),
+        support_uv_lane_geometry_exhausted,
+        transfer_limit,
+        support_uv_validation_limit: support_uv_limit,
+        support_uv_limit,
+        coupled_support_uv_limit: support_uv_limit,
+    };
     let mut report = build_geometry_report(
         scan,
+        parsed.unmatched_tombstone_counts(),
         &ir,
         &counts,
         !ir.model.faces.is_empty(),
         ir.model.bodies.len() > 1 && !active_body_selection,
         ir.model.tessellations.len(),
         &model,
+        completion_budget,
+        adaptive_geometry_budget.exhausted(),
     );
-    report_untransferred_streams(scan, &mut report);
+    report_untransferred_streams(scan, &mut report, true);
     Ok(Some((ir, report, annotations, unknowns)))
 }
 
@@ -871,43 +1180,6 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
     ir.model.curves.retain(|curve| {
         !matches!(curve.geometry, CurveGeometry::Unknown { .. }) || used_curves.contains(&curve.id)
     });
-}
-
-pub(crate) fn unmatched_delta_tombstone_counts(scan: &Scan) -> BTreeMap<&'static str, usize> {
-    let pairs = crate::native::paired_delta_streams(scan);
-    let mut current = pairs
-        .keys()
-        .map(|partition| (*partition, scan.streams[*partition].inflated.clone()))
-        .collect::<BTreeMap<_, _>>();
-    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
-    let mut unmatched = BTreeMap::new();
-    let mut add_counts = |counts: BTreeMap<&'static str, usize>| {
-        for (family, count) in counts {
-            *unmatched.entry(family).or_default() += count;
-        }
-    };
-    for (delta, stream) in scan.streams.iter().enumerate() {
-        if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
-            add_counts(crate::deltas::unmatched_terminal_tombstones_by_family(
-                &[],
-                &stream.inflated,
-            ));
-        }
-    }
-    for (partition, deltas) in pairs {
-        for delta in deltas {
-            let delta_bytes = &scan.streams[delta].inflated;
-            let partition_bytes = current
-                .get_mut(&partition)
-                .expect("paired partition was initialized");
-            add_counts(crate::deltas::unmatched_terminal_tombstones_by_family(
-                partition_bytes,
-                delta_bytes,
-            ));
-            *partition_bytes = crate::deltas::merge_full_records(partition_bytes, delta_bytes);
-        }
-    }
-    unmatched
 }
 
 pub(crate) fn retain_live_annotations(
@@ -984,7 +1256,7 @@ pub(crate) fn topology_body_node_ids(
         .collect();
     body_xmts
         .into_iter()
-        .map(|body_xmt| {
+        .filter_map(|body_xmt| {
             let shells: BTreeSet<_> = graph
                 .of_kind(13)
                 .filter(|shell| {
@@ -1026,25 +1298,115 @@ pub(crate) fn topology_body_node_ids(
                 .iter()
                 .filter_map(|fin| fin.fin_fields().map(|fields| fields.vertex))
                 .collect();
-            let ids = faces
+            let face_ids = faces
+                .iter()
+                .map(|face| face.u32_at(4))
+                .collect::<Option<BTreeSet<_>>>()?;
+            let edges = graph
+                .of_kind(16)
+                .filter(|edge| edge_xmts.contains(&edge.xmt))
+                .collect::<Vec<_>>();
+            if edges.len() != edge_xmts.len() {
+                return None;
+            }
+            let edge_ids = edges
+                .iter()
+                .map(|edge| edge.u32_at(4))
+                .collect::<Option<BTreeSet<_>>>()?;
+            let vertices = graph
+                .of_kind(18)
+                .filter(|vertex| vertex_xmts.contains(&vertex.xmt))
+                .collect::<Vec<_>>();
+            if vertices.len() != vertex_xmts.len() {
+                return None;
+            }
+            let vertex_ids = vertices
+                .iter()
+                .map(|vertex| vertex.u32_at(4))
+                .collect::<Option<BTreeSet<_>>>()?;
+            let ids = face_ids
                 .into_iter()
-                .filter_map(|face| face.u32_at(4))
-                .chain(
-                    graph
-                        .of_kind(16)
-                        .filter(|edge| edge_xmts.contains(&edge.xmt))
-                        .filter_map(|edge| edge.u32_at(4)),
-                )
-                .chain(
-                    graph
-                        .of_kind(18)
-                        .filter(|vertex| vertex_xmts.contains(&vertex.xmt))
-                        .filter_map(|vertex| vertex.u32_at(4)),
-                )
+                .chain(edge_ids)
+                .chain(vertex_ids)
                 .collect();
-            (BodyId(format!("{prefix}:body#{body_xmt}")), ids)
+            Some((BodyId(format!("{prefix}:body#{body_xmt}")), ids))
         })
         .collect()
+}
+
+/// Return body images whose complete topology node sets are inside the active
+/// `RMFastLoad` membership set. This is the same admission predicate used after
+/// topology emission, applied to graph-only body identities before carrier
+/// construction.
+pub(crate) fn rmfastload_selected_bodies(
+    body_node_ids: &BTreeMap<BodyId, BTreeSet<u32>>,
+    rmfastload_ids: &[u32],
+) -> BTreeSet<BodyId> {
+    let active = rmfastload_ids.iter().copied().collect::<BTreeSet<_>>();
+    body_node_ids
+        .iter()
+        .filter(|(_, ids)| !ids.is_empty() && ids.is_subset(&active))
+        .map(|(body, _)| body.clone())
+        .collect()
+}
+
+pub(crate) fn rmfastload_allows_terminal_lineage(
+    body_count: usize,
+    rmfastload_selected: &BTreeSet<BodyId>,
+) -> bool {
+    body_count > 1 && rmfastload_selected.is_empty()
+}
+
+/// Return the stream ordinals that can contain selected body images. A
+/// malformed body identity disables preselection rather than guessing a
+/// stream owner.
+pub(crate) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<BTreeSet<usize>> {
+    selected
+        .iter()
+        .map(|body| body.0.strip_prefix("nx:s")?.split_once(':')?.0.parse().ok())
+        .collect()
+}
+
+fn apply_preselected_active_body_selection(
+    ir: &mut CadIr,
+    selected: &BTreeSet<BodyId>,
+    selector: &str,
+    selected_hits: Option<usize>,
+) -> bool {
+    if selected.is_empty() {
+        return false;
+    }
+    let emitted = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<BTreeSet<_>>();
+    if !selected.is_subset(&emitted) {
+        return false;
+    }
+    prune_inactive_topology(ir, selected);
+    if let Some(source) = &mut ir.source {
+        source
+            .attributes
+            .insert("active_body_selector".to_string(), selector.to_string());
+        let (hit_attribute, count_attribute) = match selector {
+            "rmfastload_object_id_membership" => {
+                (Some("rmfastload_hits"), "rmfastload_active_body_count")
+            }
+            "terminal_feature_body_lineage" => (None, "feature_terminal_body_count"),
+            _ => (None, "active_body_count"),
+        };
+        if let (Some(attribute), Some(selected_hits)) = (hit_attribute, selected_hits) {
+            source
+                .attributes
+                .insert(attribute.to_string(), selected_hits.to_string());
+        }
+        source
+            .attributes
+            .insert(count_attribute.to_string(), selected.len().to_string());
+    }
+    true
 }
 
 pub(crate) fn select_active_body(
@@ -1055,16 +1417,7 @@ pub(crate) fn select_active_body(
     if rmfastload_ids.is_empty() || ir.model.bodies.len() <= 1 {
         return false;
     }
-    let active: BTreeSet<_> = rmfastload_ids.iter().copied().collect();
-    let selected: BTreeSet<_> = ir
-        .model
-        .bodies
-        .iter()
-        .filter_map(|body| {
-            let ids = body_node_ids.get(&body.id)?;
-            (!ids.is_empty() && ids.is_subset(&active)).then(|| body.id.clone())
-        })
-        .collect();
+    let selected = rmfastload_selected_bodies(body_node_ids, rmfastload_ids);
     if selected.is_empty() {
         return false;
     }
@@ -1073,21 +1426,12 @@ pub(crate) fn select_active_body(
         .filter_map(|body| body_node_ids.get(body))
         .map(BTreeSet::len)
         .sum::<usize>();
-    prune_inactive_topology(ir, &selected);
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            "active_body_selector".to_string(),
-            "rmfastload_object_id_membership".to_string(),
-        );
-        source
-            .attributes
-            .insert("rmfastload_hits".to_string(), selected_hits.to_string());
-        source.attributes.insert(
-            "rmfastload_active_body_count".to_string(),
-            selected.len().to_string(),
-        );
-    }
-    true
+    apply_preselected_active_body_selection(
+        ir,
+        &selected,
+        "rmfastload_object_id_membership",
+        Some(selected_hits),
+    )
 }
 
 pub(crate) fn select_terminal_feature_bodies(
@@ -1096,30 +1440,6 @@ pub(crate) fn select_terminal_feature_bodies(
 ) -> bool {
     if ir.model.bodies.len() <= 1 {
         return false;
-    }
-    let bindings = model.segments.segment_body_bindings.as_slice();
-    let statuses = model.segments.segment_body_lineage_statuses.as_slice();
-    if statuses.len() != bindings.len() {
-        return false;
-    }
-    let mut mapped = BTreeSet::new();
-    let mut selected = BTreeSet::new();
-    for (binding, status) in bindings.iter().zip(statuses) {
-        let prefix = format!("nx:s{}:", binding.stream_ordinal);
-        let stream_bodies = ir
-            .model
-            .bodies
-            .iter()
-            .filter(|body| body.id.0.starts_with(&prefix))
-            .map(|body| body.id.clone())
-            .collect::<Vec<_>>();
-        if stream_bodies.is_empty() {
-            continue;
-        }
-        mapped.extend(stream_bodies.iter().cloned());
-        if status.terminal {
-            selected.extend(stream_bodies);
-        }
     }
     let emitted = ir
         .model
@@ -1130,22 +1450,14 @@ pub(crate) fn select_terminal_feature_bodies(
     // A complete terminal mapping resolves composition even when every emitted
     // body is terminal. The absence of pruning is a valid result: it means the
     // retained body images are all final, not that lineage was unresolved.
-    if mapped != emitted || selected.is_empty() {
+    let Some(selected) = crate::native::terminal_feature_body_ids(
+        &emitted,
+        &model.segments.segment_body_bindings,
+        &model.segments.segment_body_lineage_statuses,
+    ) else {
         return false;
-    }
-
-    prune_inactive_topology(ir, &selected);
-    if let Some(source) = &mut ir.source {
-        source.attributes.insert(
-            "active_body_selector".to_string(),
-            "terminal_feature_body_lineage".to_string(),
-        );
-        source.attributes.insert(
-            "feature_terminal_body_count".to_string(),
-            selected.len().to_string(),
-        );
-    }
-    true
+    };
+    apply_preselected_active_body_selection(ir, &selected, "terminal_feature_body_lineage", None)
 }
 
 pub(crate) fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {

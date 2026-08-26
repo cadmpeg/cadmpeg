@@ -27,19 +27,19 @@ test_line_debt = 0
 production_line_debt = 0
 
 [ceilings]
-from_endian_bytes = 47
+from_endian_bytes = 48
 codec_error_malformed_format = 0
 loss_note_struct_literals = 0
 bare_tolerance_literals = 184
-nonliteral_vec_repeat = 37
+nonliteral_vec_repeat = 38
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 362
+test_line_debt = 818
 production_line_debt = 704
 
 [reasons]
-from_endian_bytes = "The remaining 47 calls are intentional exceptions retained after merging the mainline codec work. None reads a bounded decode window as a standard-width scalar."
+from_endian_bytes = "The remaining 48 calls are intentional exceptions retained after merging the mainline codec work. None reads a bounded decode window as a standard-width scalar."
 bare_tolerance_literals = "Merging the Creo level-6 work adds 60 inline scientific-notation tolerances to the 124 already present after the CATIA and SLDPRT merges; the distinct thresholds remain until they are hoisted to intent-named constants without collapsing their values."
-nonliteral_vec_repeat = "merging the SLDPRT level-6 branch adds its one remaining parsed-count repeat to the 36 sites on the long-running CATIA level-6 branch"
-test_line_debt = "merging the SLDPRT level-6 branch combines its 207 lines of oversized-test debt with the 155 lines in crates/cadmpeg-codec-catia/src/families/b2/tests.rs"
+nonliteral_vec_repeat = "The merged CATIA branch retains 36 sites; NX topology preparation keeps one optional census slot per admitted stream; and SLDPRT sweep decoding allocates one scalar output per admitted count."
+test_line_debt = "The merged tree contains 155 lines in CATIA B2 tests, 278 lines in NX tests, 178 lines in the IR evaluator suite, and 207 lines in five SLDPRT test suites."
 production_line_debt = "merged the long-running CATIA level-6 solver branch after main introduced production-file line-debt accounting; crates/cadmpeg-codec-catia/src/solve/mesh_quotient.rs contains the branch's coupled quotient search and contributes the measured 704 lines above the convergence threshold"

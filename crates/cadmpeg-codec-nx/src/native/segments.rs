@@ -529,7 +529,6 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
         return Vec::new();
     };
     let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-    let entry_start = usize::try_from(entry_offset).expect("in-bounds directory offset");
     let sections = container
         .om_sections()
         .into_iter()
@@ -544,13 +543,16 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
             (SegmentIndexSlot::Value, row.value),
         ] {
             let relative = relative as usize;
+            let Some(relative_u64) = u64::try_from(relative).ok() else {
+                continue;
+            };
+            let separated_marker = entry_offset
+                .checked_add(relative_u64)
+                .and_then(|offset| container.bounded_entry_bytes(offset, 4))
+                .is_some_and(|bytes| bytes == [0xc0, 0xd1, 0xf1, 0xed]);
             let (separator_byte_len, schema_role) = if let Some(role) = sections.get(&relative) {
                 (0usize, *role)
-            } else if container
-                .data
-                .get(entry_start + relative..entry_start + relative + 4)
-                == Some(&[0xc0, 0xd1, 0xf1, 0xed])
-            {
+            } else if separated_marker {
                 let Some(role) = sections.get(&(relative + 4)) else {
                     continue;
                 };
@@ -636,7 +638,11 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
             let stream_role = *words.get(pointer_word + 4)?;
             (body_object_index != 0 && body_alias_object_index != 0).then_some(())?;
             Some(SegmentBodyBinding {
-                id: format!("nx:segment-body-bindings:binding#{}", link.stream_ordinal),
+                id: link.id.replacen(
+                    "nx:segment-stream-links:link#",
+                    "nx:segment-body-bindings:binding#",
+                    1,
+                ),
                 stream_link: link.id,
                 stream_ordinal: link.stream_ordinal,
                 stream_kind: link.stream_kind,
@@ -746,6 +752,31 @@ mod tests {
         assert_eq!(bindings[0].body_object_index, 94);
         assert_eq!(bindings[0].body_alias_object_index, 150);
         assert_eq!(bindings[0].stream_role, 19);
+    }
+
+    #[test]
+    fn decode_assigns_distinct_binding_ids_to_repeated_stream_links() {
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            segment_body_binding_repeated_link_payload(),
+        )]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .expect("required invariant");
+        let namespace = result.ir().native.namespace("nx").expect("NX namespace");
+        let links = namespace
+            .arena_as::<super::SegmentStreamLink>("segment_stream_links")
+            .expect("required invariant");
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].stream_ordinal, links[1].stream_ordinal);
+        let bindings = namespace
+            .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
+            .expect("required invariant");
+        assert_eq!(bindings.len(), 2);
+        assert_eq!(bindings[0].id, "nx:segment-body-bindings:binding#0");
+        assert_eq!(bindings[1].id, "nx:segment-body-bindings:binding#1");
+        assert_eq!(bindings[0].stream_link, links[0].id);
+        assert_eq!(bindings[1].stream_link, links[1].id);
     }
 
     #[test]
@@ -896,6 +927,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 2 - u64::from(ordinal),
         };
         let labels = [label(2, "UNITE"), label(1, "EXTRUDE"), label(0, "EXTRUDE")];
@@ -949,6 +981,7 @@ mod tests {
             value: "UNITE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 1 - u64::from(ordinal),
         };
         let labels = [label(1), label(0)];
@@ -1018,6 +1051,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: u64::from(ordinal),
         };
         let labels = [label(2, "EXTRUDE"), label(1, "UNITE"), label(0, "UNITE")];
@@ -1091,6 +1125,7 @@ mod tests {
             value: "DELETE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
@@ -1138,6 +1173,7 @@ mod tests {
             value: "DELETE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let references = [
@@ -1206,6 +1242,7 @@ mod tests {
             value: "DELETE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
@@ -1257,6 +1294,7 @@ mod tests {
             value: "DELETE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
@@ -1312,6 +1350,7 @@ mod tests {
             value: "DELETE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
@@ -1338,6 +1377,7 @@ mod tests {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         }];
@@ -1383,6 +1423,7 @@ mod tests {
             value: "UNITE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let booleans = [FeatureBooleanOperation {
@@ -1405,6 +1446,7 @@ mod tests {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         };
@@ -1452,6 +1494,7 @@ mod tests {
             value: "UNITE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let booleans = [FeatureBooleanOperation {
@@ -1474,6 +1517,7 @@ mod tests {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         }];
@@ -1516,6 +1560,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: u64::from(ordinal),
         };
         // Feature-history labels are newest-first within one section. The raw
@@ -1567,6 +1612,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: u64::from(ordinal),
         };
         let reference = |ordinal: u32| FeatureBodyReference {
@@ -1620,6 +1666,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: u64::from(ordinal),
         };
         let labels = [
@@ -1676,6 +1723,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 1 - u64::from(ordinal),
         };
         let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
@@ -1735,6 +1783,7 @@ mod tests {
             value: "SEW".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let bindings = [SegmentBodyBinding {
@@ -1785,6 +1834,7 @@ mod tests {
             value: "TRIM BODY".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            stable_identity: None,
             source_offset: 0,
         }];
         let bindings = [SegmentBodyBinding {

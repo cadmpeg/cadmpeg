@@ -5,14 +5,14 @@ use super::*;
 use crate::examples::unit_cube;
 use crate::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LawExpression,
-    LawFormula, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, RevisionSurfaceForm, RevisionSurfaceParameterization,
-    RollingBallConstruction, RollingBallJetDerivative, RollingBallJetSite,
-    RollingBallRadiusSelector, RollingBallSide, Surface, SurfaceGeometry, SurfaceParameterAxis,
-    SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout, VariableBlendConstruction,
-    VariableBlendConvexity, VariableBlendCrossSection, VariableBlendRadiusKind,
-    VariableBlendRenderMode, VariableBlendSupportKind, VariableBlendSurfaceSubtype,
-    VariableBlendValue, VariableBlendValuePayload,
+    LawFormula, NurbsCurve, NurbsSurface, OffsetSupportExtension, PcurveGeometry,
+    ProceduralSurface, ProceduralSurfaceDefinition, RevisionSurfaceForm,
+    RevisionSurfaceParameterization, RollingBallConstruction, RollingBallJetDerivative,
+    RollingBallJetSite, RollingBallRadiusSelector, RollingBallSide, Surface, SurfaceGeometry,
+    SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout,
+    VariableBlendConstruction, VariableBlendConvexity, VariableBlendCrossSection,
+    VariableBlendRadiusKind, VariableBlendRenderMode, VariableBlendSupportKind,
+    VariableBlendSurfaceSubtype, VariableBlendValue, VariableBlendValuePayload,
 };
 use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
 use crate::math::{Point2, Point3, Vector3};
@@ -21,6 +21,7 @@ use crate::topology::{Edge, Point, Vertex};
 use crate::transform::{Transform, Transform2};
 use crate::validate::validate_neutral;
 use crate::CadIr;
+use cadmpeg_core::decode::WorkBudget;
 
 mod helix;
 mod law_sweep;
@@ -44,6 +45,7 @@ fn bilinear_surface() -> NurbsSurface {
             Point3::new(1.0, 1.0, 0.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     }
@@ -173,6 +175,157 @@ fn nurbs_surface_inverse_distinguishes_closest_and_tolerance_contracts() {
 }
 
 #[test]
+fn budgeted_nurbs_surface_inverse_stops_before_unbounded_patch_work() {
+    let surface = bilinear_surface();
+    let point = Point3::new(0.3, 0.7, 0.0);
+    let budget = WorkBudget::new(0);
+
+    assert!(nurbs_surface_parameter_within_tolerance_with_budget(
+        &surface, point, None, 1.0e-10, &budget,
+    )
+    .is_none());
+    assert!(budget.exhausted());
+
+    let budget = WorkBudget::new(10_000);
+    let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
+        &surface, point, None, 1.0e-10, &budget,
+    )
+    .expect("a valid surface fits within a larger caller-owned budget");
+    assert!((parameters.u - 0.3).abs() < 1.0e-12);
+    assert!((parameters.v - 0.7).abs() < 1.0e-12);
+    assert!(budget.consumed() > 0);
+}
+
+#[test]
+fn budgeted_nurbs_surface_inverse_accepts_a_fit_qualified_seed_first() {
+    const FIT_TOLERANCE: f64 = 1.0e-12;
+
+    let surface = bilinear_surface();
+    let point = Point3::new(0.3, 0.7, 0.0);
+    let budget = WorkBudget::new(12);
+    let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
+        &surface,
+        point,
+        Some(Point2::new(0.3, 0.7)),
+        FIT_TOLERANCE,
+        &budget,
+    )
+    .expect("a fit-qualified continuation seed does not need global search");
+
+    assert_eq!(parameters, Point2::new(0.3, 0.7));
+    assert_eq!(budget.consumed(), 12);
+}
+
+#[test]
+fn budgeted_nurbs_surface_inverse_refines_an_approximate_seed_before_global_search() {
+    const FIT_TOLERANCE: f64 = 1.0e-10;
+    const PARAMETER_TOLERANCE: f64 = 1.0e-12;
+
+    let surface = bilinear_surface();
+    let point = Point3::new(0.3, 0.7, 0.0);
+    let budget = WorkBudget::new(256);
+    let parameters = nurbs_surface_parameter_within_tolerance_with_budget(
+        &surface,
+        point,
+        Some(Point2::new(0.29, 0.69)),
+        FIT_TOLERANCE,
+        &budget,
+    )
+    .expect("a nearby seed should be refined before global patch search");
+
+    assert!((parameters.u - 0.3).abs() <= PARAMETER_TOLERANCE);
+    assert!((parameters.v - 0.7).abs() <= PARAMETER_TOLERANCE);
+    assert!(budget.consumed() > 0);
+}
+
+#[test]
+fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
+    let surface = bilinear_surface();
+    let budget = WorkBudget::new(3);
+    assert!(nurbs_surface_point_with_budget(&surface, 0.25, 0.75, &budget).is_none());
+    assert!(budget.exhausted());
+
+    let budget = WorkBudget::new(12);
+    assert!(nurbs_surface_point_with_budget(&surface, 0.25, 0.75, &budget).is_some());
+    assert_eq!(budget.consumed(), 12);
+
+    let budget = WorkBudget::new(27);
+    assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_none());
+    assert!(budget.exhausted());
+
+    let budget = WorkBudget::new(28);
+    assert!(nurbs_surface_partials_with_budget(&surface, 0.25, 0.75, &budget).is_some());
+    assert_eq!(budget.consumed(), 28);
+
+    let transformed = SurfaceGeometry::Transformed {
+        basis: Box::new(SurfaceGeometry::Nurbs(surface)),
+        transform: Transform {
+            rows: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        },
+    };
+    let budget = WorkBudget::new(12);
+    assert!(surface_point_with_budget(&transformed, 0.25, 0.75, &budget).is_none());
+    assert!(budget.exhausted());
+    let budget = WorkBudget::new(13);
+    assert_eq!(
+        surface_point_with_budget(&transformed, 0.25, 0.75, &budget),
+        Some(Point3::new(0.25, 0.75, 1.0))
+    );
+    assert_eq!(budget.consumed(), 13);
+}
+
+#[test]
+fn budgeted_model_surface_charges_nurbs_directrix_work() {
+    let directrix_id = CurveId("budgeted-directrix".into());
+    let surface_id = SurfaceId("budgeted-sweep".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: directrix_id.clone(),
+        geometry: CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        }),
+        source_object: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("budgeted-sweep-construction".into()),
+        surface: surface_id.clone(),
+        definition: ProceduralSurfaceDefinition::LinearSweep {
+            directrix: directrix_id,
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let budget = WorkBudget::new(5);
+    assert!(
+        model_surface_point_by_id_with_budget(&index, &surface_id, 0.25, 2.0, &budget).is_none()
+    );
+    assert!(budget.exhausted());
+    let budget = WorkBudget::new(6);
+    assert_eq!(
+        model_surface_point_by_id_with_budget(&index, &surface_id, 0.25, 2.0, &budget),
+        Some(Point3::new(0.25, 0.0, 2.0))
+    );
+    assert_eq!(budget.consumed(), 6);
+}
+
+#[test]
 fn nurbs_surface_local_inverse_returns_a_forward_checked_candidate() {
     let surface = bilinear_surface();
     let point = Point3::new(0.3, 0.7, 0.2);
@@ -202,6 +355,7 @@ fn nurbs_surface_inverse_handles_rational_internal_spans() {
             Point3::new(1.0, 1.0, 0.0),
         ],
         weights: Some(vec![1.0, 1.0, 0.7, 0.7, 1.0, 1.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -252,6 +406,7 @@ fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
         v_count: 1,
         control_points: vec![Point3::new(1.0, 2.0, 3.0)],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -277,6 +432,7 @@ fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
         v_count: 1,
         control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -310,6 +466,7 @@ fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
             Point3::new(1.0, 1.0, 0.0),
         ],
         weights: Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -568,6 +725,7 @@ fn a_surface_isoline_reproduces_the_surface_along_its_free_parameter() {
             Point3::new(3.0, -1.0, 5.0),
         ],
         weights: Some(vec![1.0, 2.0, 0.5, 1.5, 3.0, 0.25]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -618,6 +776,7 @@ fn bilinear_surface_partials_follow_stored_parameterization() {
             Point3::new(2.0, 3.0, 0.0),
         ],
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -648,6 +807,7 @@ fn quadratic_surface_second_partials_follow_stored_parameterization() {
             })
             .collect(),
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -702,6 +862,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
                 distance: 2.0,
                 u_sense: None,
                 v_sense: None,
+                support_extension: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },
@@ -716,6 +877,7 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
                 distance: -5.0,
                 u_sense: None,
                 v_sense: None,
+                support_extension: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },
@@ -729,11 +891,137 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
         model_surface_point_by_id(&index, &second_id, 1.0e16, -1.0e16),
         Some(Point3::new(1.0e16, -1.0e16, -3.0))
     );
+    let budget = WorkBudget::new(2);
+    assert!(
+        model_surface_point_by_id_with_budget(&index, &second_id, 1.0e16, -1.0e16, &budget,)
+            .is_none()
+    );
+    assert!(budget.exhausted());
+    let budget = WorkBudget::new(3);
+    assert_eq!(
+        model_surface_point_by_id_with_budget(&index, &second_id, 1.0e16, -1.0e16, &budget,),
+        Some(Point3::new(1.0e16, -1.0e16, -3.0))
+    );
+    assert_eq!(budget.consumed(), 3);
     let partials = model_surface_partials_by_id(&index, &second_id, 1.0e16, -1.0e16)
         .expect("transformed plane evaluates");
     assert_eq!(partials.point, Point3::new(1.0e16, -1.0e16, -3.0));
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
+fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
+    let support_id = SurfaceId("support".into());
+    let offset_id = SurfaceId("offset".into());
+    let construction = ProceduralSurfaceId("offset-construction".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.surfaces = vec![
+        Surface {
+            id: support_id.clone(),
+            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                u_degree: 1,
+                v_degree: 2,
+                u_knots: vec![0.0, 0.0, 1.0, 1.0],
+                v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                u_count: 2,
+                v_count: 3,
+                control_points: [0.0, 1.0]
+                    .into_iter()
+                    .flat_map(|u| {
+                        [(0.0, 0.0), (0.5, 0.0), (1.0, 1.0)]
+                            .into_iter()
+                            .map(move |(v, z)| Point3::new(u, v, z))
+                    })
+                    .collect(),
+                weights: None,
+                normal_reversed: false,
+                u_periodic: false,
+                v_periodic: false,
+            }),
+            source_object: None,
+        },
+        Surface {
+            id: offset_id.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: construction.clone(),
+            },
+            source_object: None,
+        },
+    ];
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction,
+        surface: offset_id.clone(),
+        definition: ProceduralSurfaceDefinition::Offset {
+            support: support_id,
+            distance: 0.0,
+            u_sense: None,
+            v_sense: None,
+            support_extension: Some(OffsetSupportExtension::Linear),
+            extension_flags: Vec::new(),
+            revision_form: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+
+    let point =
+        model_surface_point_by_id(&index, &offset_id, 0.25, 1.2).expect("linearly extended offset");
+
+    let epsilon = 64.0 * f64::EPSILON;
+    assert!((point.x - 0.25).abs() <= epsilon);
+    assert!((point.y - 1.2).abs() <= epsilon);
+    assert!((point.z - 1.4).abs() <= epsilon);
+}
+
+#[test]
+fn offset_uses_the_nurbs_carrier_normal_orientation() {
+    let support_id = SurfaceId("support".into());
+    let offset_id = SurfaceId("offset".into());
+    let construction = ProceduralSurfaceId("offset-construction".into());
+    let mut support = bilinear_surface();
+    support.normal_reversed = true;
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.surfaces = vec![
+        Surface {
+            id: support_id.clone(),
+            geometry: SurfaceGeometry::Nurbs(support),
+            source_object: None,
+        },
+        Surface {
+            id: offset_id.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: construction.clone(),
+            },
+            source_object: None,
+        },
+    ];
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction,
+        surface: offset_id.clone(),
+        definition: ProceduralSurfaceDefinition::Offset {
+            support: support_id,
+            distance: 2.0,
+            u_sense: None,
+            v_sense: None,
+            support_extension: None,
+            extension_flags: Vec::new(),
+            revision_form: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let point =
+        model_surface_point_by_id(&crate::index::ModelIndex::new(&ir), &offset_id, 0.2, 0.3)
+            .expect("oriented offset point");
+
+    let expected = Point3::new(0.2, 0.3, -2.0);
+    let epsilon = 64.0 * f64::EPSILON;
+    assert!((point.x - expected.x).abs() <= epsilon);
+    assert!((point.y - expected.y).abs() <= epsilon);
+    assert!((point.z - expected.z).abs() <= epsilon);
 }
 
 #[test]
@@ -787,6 +1075,7 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
                 distance: 2.0,
                 u_sense: None,
                 v_sense: None,
+                support_extension: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },
@@ -1391,6 +1680,7 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
             Point3::new(2.0, 3.0, 0.0),
         ],
         weights: Some(vec![1.0, 1.0, 2.0, 2.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };
@@ -1423,6 +1713,7 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
             Point3::new(2.0, 3.0, 1.0),
         ],
         weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     };

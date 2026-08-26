@@ -2,9 +2,10 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
-use std::io::Cursor;
+use std::{collections::BTreeSet, io::Cursor};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::ids::BodyId;
 
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
@@ -637,6 +638,62 @@ fn decode_assembly_reports_external_dependency() {
 }
 
 #[test]
+fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
+    let mut stream = b"PS\0\0 (partition) SCH_TEST_1_9999".to_vec();
+    stream.resize(64, b'.');
+    let file = prt_with_partition(&stream);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = (stream.len() * 2) as u64;
+
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &options)
+        .expect("live stream and final metadata copy fit the retained budget");
+
+    assert!(!result.report().geometry_transferred);
+    assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
+}
+
+#[test]
+fn decode_refuses_opaque_container_copy_when_retained_budget_is_exhausted() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 64])]);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+
+    let error = NxCodec
+        .decode(&mut Cursor::new(file), &options)
+        .expect_err("opaque payload copy must be budgeted");
+
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.context.operation == "retain NX opaque container payload"
+    ));
+}
+
+#[test]
+fn decode_refuses_invalid_preview_copy_when_retained_budget_is_exhausted() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 64])]);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_retained_bytes = 1;
+
+    let error = NxCodec
+        .decode(&mut Cursor::new(file), &options)
+        .expect_err("invalid preview copy must be budgeted");
+
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.context.operation == "retain NX invalid JPEG preview"
+    ));
+}
+
+#[test]
 fn decode_retains_every_rmfastload_active_body() {
     let mut cur = Cursor::new(prt_with_two_active_bodies_and_rmfastload());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
@@ -657,6 +714,51 @@ fn decode_retains_every_rmfastload_active_body() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+}
+
+#[test]
+fn rmfastload_membership_precedes_terminal_lineage_for_any_complete_match() {
+    let first = BodyId("nx:s3:body#first".into());
+    let second = BodyId("nx:s8:body#second".into());
+    let selected = BTreeSet::from([first.clone()]);
+    assert!(!super::rmfastload_allows_terminal_lineage(2, &selected));
+    assert!(!super::rmfastload_allows_terminal_lineage(
+        2,
+        &BTreeSet::from([first, second]),
+    ));
+    assert!(super::rmfastload_allows_terminal_lineage(
+        2,
+        &BTreeSet::new()
+    ));
+    assert!(!super::rmfastload_allows_terminal_lineage(1, &selected));
+}
+
+#[test]
+fn rmfastload_membership_declines_when_a_referenced_topology_entity_is_missing() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 16, 99);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(super::topology_body_node_ids(0, &graph).is_empty());
+}
+
+#[test]
+fn decode_preselection_retains_skipped_rmfastload_stream_as_unknown() {
+    let mut cur = Cursor::new(prt_with_two_bodies_and_rmfastload());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert!(result
+        .ir()
+        .native_unknowns("nx")
+        .unwrap()
+        .iter()
+        .any(|unknown| unknown.id.0 == "nx:container:parasolid#1"));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -737,6 +839,23 @@ fn container_only_preserves_streams_without_geometry() {
     assert!(result.report().container_only);
     assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
     assert!(result.ir().model.points.is_empty());
+}
+
+#[test]
+fn container_only_does_not_decode_bounded_object_model_records() {
+    let mut cur = Cursor::new(prt_with_indexed_om_section());
+    let opts = options_in(DecodeMode::Salvage, true);
+    let result = NxCodec.decode(&mut cur, &opts).unwrap();
+
+    assert_eq!(result.ir().model.entity_count(), 0);
+    assert!(result.ir().model.features.is_empty());
+    assert!(result.ir().model.sketches.is_empty());
+    assert!(result
+        .ir()
+        .native_unknowns("nx")
+        .unwrap()
+        .iter()
+        .any(|unknown| unknown.id.0.starts_with("nx:om-section-")));
 }
 
 #[test]
@@ -842,6 +961,64 @@ fn decode_retains_unsupported_named_stream_payloads() {
             .any(|loss| loss.message.contains(name)));
     }
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
+    let member = b"0123456789abcdef0123456789abcdef:Off";
+    let mut toggle = vec![1];
+    toggle.extend_from_slice(&1_u32.to_le_bytes());
+    toggle.extend_from_slice(&(member.len() as u16).to_le_bytes());
+    toggle.extend_from_slice(member);
+    toggle.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
+
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let namespace = result
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("NX native namespace");
+    assert_eq!(namespace.arenas["saved_toggle_streams"].len(), 1);
+    assert_eq!(namespace.arenas["saved_toggle_entries"].len(), 1);
+    assert!(result.ir().native_unknowns("nx").unwrap().is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != crate::loss::NxLossCode::ContainerStreamOpaque.kind()));
+    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+}
+
+#[test]
+fn container_only_retains_typed_saved_toggle_payload() {
+    let member = b"0123456789abcdef0123456789abcdef:On";
+    let mut toggle = vec![1];
+    toggle.extend_from_slice(&1_u32.to_le_bytes());
+    toggle.extend_from_slice(&(member.len() as u16).to_le_bytes());
+    toggle.extend_from_slice(member);
+    toggle.extend_from_slice(&[1, 2, 3, 4]);
+    let toggle_len = toggle.len() as u64;
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
+
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(file),
+            &options_in(DecodeMode::Salvage, true),
+        )
+        .unwrap();
+    assert_eq!(result.ir().native_unknowns("nx").unwrap().len(), 1);
+    assert_eq!(
+        result.source_fidelity().retained_records[0].byte_len,
+        toggle_len
+    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::NxLossCode::ContainerStreamOpaque.kind()));
 }
 
 #[test]
@@ -1229,6 +1406,9 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
     assert!(losses[0]
         .message
         .contains("Suppression state remains unresolved for 1 NX feature history operation"));
+    assert!(losses[0]
+        .message
+        .contains("no admitted operation-to-state-object-to-typed-value relation is present"));
     assert!(losses[1].message.contains("DELETE (1)"));
 }
 

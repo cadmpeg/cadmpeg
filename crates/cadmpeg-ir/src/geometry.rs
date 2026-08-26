@@ -18,6 +18,18 @@ fn default_true() -> bool {
     true
 }
 
+/// Parameter-space continuation used when an offset evaluates beyond its
+/// support's active NURBS rectangle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum OffsetSupportExtension {
+    /// Continue the support's terminal polynomial patch.
+    Natural,
+    /// Continue boundary tangents as ruled linear strips.
+    Linear,
+}
+
 /// A tensor-product NURBS surface.
 ///
 /// Control points use u-major order. `weights == None` denotes a non-rational
@@ -42,6 +54,9 @@ pub struct NurbsSurface {
     /// Per-pole weights in control-point order; `None` denotes non-rational.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weights: Option<Vec<f64>>,
+    /// Whether the carrier's oriented normal is opposite `Pu × Pv`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub normal_reversed: bool,
     /// Whether the surface is periodic in u.
     pub u_periodic: bool,
     /// Whether the surface is periodic in v.
@@ -659,6 +674,9 @@ pub enum ProceduralSurfaceDefinition {
         /// Native V parameter-direction sense enum, when carried.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         v_sense: Option<i64>,
+        /// Support continuation law outside its active NURBS rectangle.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        support_extension: Option<OffsetSupportExtension>,
         /// Ordered conditional ASM extension flags. A revision-gated offset
         /// carries no such tail; its boolean run travels in `revision_form`.
         extension_flags: Vec<bool>,

@@ -1874,6 +1874,7 @@ mod tests {
                         Point3::new(1.0, 1.0, 0.0),
                     ],
                     weights: None,
+                    normal_reversed: false,
                     u_periodic: false,
                     v_periodic: false,
                 }),

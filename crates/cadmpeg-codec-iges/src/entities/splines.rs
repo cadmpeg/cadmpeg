@@ -861,6 +861,7 @@ pub(super) fn project(
                 v_count,
                 control_points,
                 weights: None,
+                normal_reversed: false,
                 u_periodic: false,
                 v_periodic: false,
             }),

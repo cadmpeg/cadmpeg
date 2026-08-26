@@ -739,6 +739,7 @@ fn same_basis_ruled_surface(
             .flat_map(|(first, second)| [first, second])
             .collect(),
         weights,
+        normal_reversed: false,
         u_periodic: first.periodic && second.periodic,
         v_periodic: false,
     })
@@ -850,6 +851,7 @@ fn ruled_surface_carrier(
         v_count: 2,
         control_points,
         weights,
+        normal_reversed: false,
         u_periodic: first.periodic && second.periodic,
         v_periodic: false,
     })
@@ -1597,6 +1599,7 @@ pub(super) fn project(
                 v_count: 2,
                 control_points,
                 weights,
+                normal_reversed: false,
                 u_periodic: placed_directrix.periodic,
                 v_periodic: false,
             }),
@@ -1856,6 +1859,7 @@ pub(super) fn project(
                 v_count,
                 control_points,
                 weights: Some(weights),
+                normal_reversed: false,
                 u_periodic: generatrix.periodic,
                 v_periodic: super::curve_conversion::angularly_equal(
                     end_angle - start_angle,
@@ -2217,6 +2221,7 @@ pub(super) fn project(
             v_count: v_count_u32,
             control_points,
             weights,
+            normal_reversed: false,
             u_periodic: flags[3] == Some(1),
             v_periodic: flags[4] == Some(1),
         };
@@ -2400,6 +2405,7 @@ pub(super) fn project(
                 distance: signed_distance,
                 u_sense: Some(0),
                 v_sense: Some(0),
+                support_extension: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },

@@ -2513,11 +2513,23 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             definition => definition,
         };
         match definition {
-            FeatureDefinition::DatumPointUnresolved
+            FeatureDefinition::DatumAxisUnresolved
+            | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::BridgeCurveUnresolved
             | FeatureDefinition::LoftUnresolved
+            | FeatureDefinition::ThroughCurveMeshUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
+            | FeatureDefinition::ExtractFaceUnresolved
+            | FeatureDefinition::CopyFaceUnresolved
+            | FeatureDefinition::LinkedFaceUnresolved
+            | FeatureDefinition::FillHoleUnresolved
+            | FeatureDefinition::MoveObjectUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved
+            | FeatureDefinition::DeleteFaceUnresolved
+            | FeatureDefinition::MirrorFaceUnresolved
+            | FeatureDefinition::SubdivisionBodyUnresolved
+            | FeatureDefinition::TopologyOptimizationUnresolved
             | FeatureDefinition::ExtrudeUnresolved
             | FeatureDefinition::RevolveUnresolved
             | FeatureDefinition::FilletUnresolved => {}
@@ -4527,6 +4539,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
             FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlaneUnresolved
+            | FeatureDefinition::BrepUnresolved
+            | FeatureDefinition::MoveFaceUnresolved
+            | FeatureDefinition::CylinderUnresolved
+            | FeatureDefinition::ConeUnresolved
+            | FeatureDefinition::SphereUnresolved
+            | FeatureDefinition::ThreadUnresolved
+            | FeatureDefinition::DetailedThreadUnresolved
             | FeatureDefinition::SketchBlockDefinition { .. }
             | FeatureDefinition::StoredGeometry
             | FeatureDefinition::Native { .. } => {}

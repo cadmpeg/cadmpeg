@@ -589,6 +589,7 @@ fn targeted_surface_resolution_rejects_conflicting_exact_carriers() {
             v_knots: vec![0.0, 0.0, 1.0, 1.0],
             control_points: vec![cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0); 4],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         })),

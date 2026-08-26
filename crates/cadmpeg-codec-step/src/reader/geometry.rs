@@ -5149,6 +5149,7 @@ fn nurbs_surface(
         v_count,
         control_points,
         weights,
+        normal_reversed: false,
         u_periodic,
         v_periodic,
     })

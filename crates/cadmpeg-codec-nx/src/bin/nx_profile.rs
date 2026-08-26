@@ -56,6 +56,7 @@ struct FixtureEvidence {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum VerificationStatus {
+    Inapplicable,
     Missing,
     Verified,
 }
@@ -188,6 +189,8 @@ impl std::error::Error for WorkerFailure {}
 // Keep the bound per worker so one pathological file cannot stall the profile,
 // while allowing the largest supported object-model sections to finish.
 const WORKER_TIMEOUT: Duration = Duration::from_secs(600);
+const NX_LOSS_NAMESPACE: &str = "nx";
+const EXTERNAL_ASSEMBLY_LOSS_CODE: &str = "assembly.components-external";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = env::args_os().skip(1);
@@ -257,7 +260,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 10,
+        version: 11,
         format: "nx",
         fixtures,
         totals,
@@ -385,6 +388,7 @@ fn rederivation_boundary_counts(fixtures: &[FixtureEvidence]) -> Vec<Rederivatio
     let mut counts = BTreeMap::<(String, Option<String>), usize>::new();
     for boundary in fixtures
         .iter()
+        .filter(|fixture| fixture.rederivation != VerificationStatus::Inapplicable)
         .filter_map(|fixture| fixture.rederivation_boundary.as_ref())
     {
         *counts
@@ -421,7 +425,16 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
         .iter()
         .filter(|finding| finding.severity >= Severity::Error)
         .count();
-    let (rederivation, rederivation_boundary) = neutral_rederivation_evidence(decoded.ir());
+    let part_design_applicable = !decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| is_external_assembly_loss(&loss.code));
+    let (rederivation, rederivation_boundary) = if part_design_applicable {
+        neutral_rederivation_evidence(decoded.ir())
+    } else {
+        (VerificationStatus::Inapplicable, None)
+    };
     Ok(DecodedFixtureEvidence {
         canonical_sha256: canonical_sha256(decoded.ir())?,
         native_namespace_version: decoded
@@ -453,6 +466,10 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
         rederivation,
         rederivation_boundary,
     })
+}
+
+fn is_external_assembly_loss(code: &cadmpeg_ir::report::LossKind) -> bool {
+    code.namespace() == NX_LOSS_NAMESPACE && code.local_code() == EXTERNAL_ASSEMBLY_LOSS_CODE
 }
 
 /// Return the target's effective color under the neutral appearance contract.
@@ -685,6 +702,22 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
         .iter()
         .filter(|fixture| fixture.entities.faces == 0 || fixture.all_faces_colored)
         .count();
+    let part_design_total = fixtures
+        .iter()
+        .filter(|fixture| fixture.rederivation != VerificationStatus::Inapplicable)
+        .count();
+    let without_part_design_loss = fixtures
+        .iter()
+        .filter(|fixture| {
+            fixture.rederivation != VerificationStatus::Inapplicable
+                && fixture
+                    .losses
+                    .get(&LossCategory::DesignIntent)
+                    .copied()
+                    .unwrap_or(0)
+                    == 0
+        })
+        .count();
     let rederivation_verified = fixtures
         .iter()
         .filter(|fixture| fixture.rederivation == VerificationStatus::Verified)
@@ -694,6 +727,12 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
         id,
         passed: count == total,
         observed: format!("{count}/{total} fixtures"),
+        required,
+    };
+    let part_design_assertion = |id, count, required| Assertion {
+        id,
+        passed: count == part_design_total,
+        observed: format!("{count}/{part_design_total} applicable fixtures"),
         required,
     };
     let rows = vec![
@@ -731,10 +770,10 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
         ),
         (
             "L4",
-            vec![assertion(
+            vec![part_design_assertion(
                 "complete_design_records",
-                without(LossCategory::DesignIntent),
-                "no fixture reports a design-intent loss",
+                without_part_design_loss,
+                "no applicable single-part fixture reports a design-intent loss",
             )],
         ),
         (
@@ -765,15 +804,15 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
         (
             "L6",
             vec![
-                assertion(
+                part_design_assertion(
                     "design_domain_loss_empty",
-                    without(LossCategory::DesignIntent),
-                    "no fixture reports a design-intent loss",
+                    without_part_design_loss,
+                    "no applicable single-part fixture reports a design-intent loss",
                 ),
-                assertion(
+                part_design_assertion(
                     "saved_body_census_rederived",
                     rederivation_verified,
-                    "neutral feature evaluation reproduces every saved current-body census",
+                    "neutral feature evaluation reproduces every applicable saved current-body census",
                 ),
             ],
         ),
@@ -827,6 +866,31 @@ mod tests {
                     .as_bytes(),
             )
         );
+    }
+
+    #[test]
+    fn external_assembly_applicability_uses_the_complete_local_loss_identity() {
+        use cadmpeg_ir::report::{LossKind, LossTaxonomy};
+
+        let external = LossKind::namespaced(
+            NX_LOSS_NAMESPACE,
+            EXTERNAL_ASSEMBLY_LOSS_CODE,
+            LossTaxonomy::AssemblyComponentsExternal,
+        );
+        let wrong_namespace = LossKind::namespaced(
+            "other",
+            EXTERNAL_ASSEMBLY_LOSS_CODE,
+            LossTaxonomy::AssemblyComponentsExternal,
+        );
+        let wrong_code = LossKind::namespaced(
+            NX_LOSS_NAMESPACE,
+            "assembly.other",
+            LossTaxonomy::AssemblyComponentsExternal,
+        );
+
+        assert!(is_external_assembly_loss(&external));
+        assert!(!is_external_assembly_loss(&wrong_namespace));
+        assert!(!is_external_assembly_loss(&wrong_code));
     }
 
     #[test]
@@ -1215,6 +1279,23 @@ mod tests {
         let gates = capability_gates(&[evidence]);
 
         assert!(gates.iter().all(|gate| gate.passed));
+    }
+
+    #[test]
+    fn external_only_assembly_is_inapplicable_to_part_design_gates() {
+        let mut assembly = fixture();
+        assembly.rederivation = VerificationStatus::Inapplicable;
+        assembly.losses.insert(LossCategory::DesignIntent, 2);
+
+        let gates = capability_gates(&[assembly]);
+
+        assert!(gates.iter().all(|gate| gate.passed));
+        assert_eq!(
+            gates[3].assertions[0].observed, "1/1 fixtures",
+            "assembly topology remains in the cumulative profile"
+        );
+        assert_eq!(gates[4].assertions[0].observed, "0/0 applicable fixtures");
+        assert_eq!(gates[6].assertions[1].observed, "0/0 applicable fixtures");
     }
 
     #[test]

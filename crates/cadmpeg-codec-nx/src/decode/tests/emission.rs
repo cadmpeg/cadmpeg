@@ -339,12 +339,12 @@ fn decode_orders_graph_only_origin_before_later_nonzero_point() {
     let graph = crate::topology::Graph::parse(&stream);
     let points = crate::decode::ordered_point_candidates(&stream, &graph);
     assert_eq!(points.len(), 2);
-    assert_eq!(points[0].0, first);
-    assert_eq!(points[0].1, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
-    assert_eq!(points[0].2.map(|node| node.xmt), Some(11));
-    assert_eq!(points[1].0, stream.len() - 40);
-    assert_eq!(points[1].1, cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0));
-    assert_eq!(points[1].2.map(|node| node.xmt), Some(77));
+    assert_eq!(points[0].1.pos, first);
+    assert_eq!(points[0].0, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(points[0].1.xmt, 11);
+    assert_eq!(points[1].1.pos, stream.len() - 40);
+    assert_eq!(points[1].0, cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0));
+    assert_eq!(points[1].1.xmt, 77);
 }
 
 #[test]
@@ -379,17 +379,34 @@ fn decode_orders_graph_only_escaped_analytics_before_later_records() {
     let graph = crate::topology::Graph::parse(&stream);
     let surfaces = crate::decode::ordered_surface_candidates(&stream, &graph);
     assert_eq!(surfaces.len(), 2);
-    assert_eq!(surfaces[0].0, first_surface);
-    assert_eq!(surfaces[0].2.map(|node| node.xmt), Some(6));
-    assert_eq!(surfaces[1].0, second_surface_offset);
-    assert_eq!(surfaces[1].2.map(|node| node.xmt), Some(77));
+    assert_eq!(surfaces[0].1.pos, first_surface);
+    assert_eq!(surfaces[0].1.xmt, 6);
+    assert_eq!(surfaces[1].1.pos, second_surface_offset);
+    assert_eq!(surfaces[1].1.xmt, 77);
 
     let curves = crate::decode::ordered_curve_candidates(&stream, &graph);
     assert_eq!(curves.len(), 2);
-    assert_eq!(curves[0].0, first_curve);
-    assert_eq!(curves[0].2.map(|node| node.xmt), Some(9));
-    assert_eq!(curves[1].0, second_curve_offset);
-    assert_eq!(curves[1].2.map(|node| node.xmt), Some(78));
+    assert_eq!(curves[0].1.pos, first_curve);
+    assert_eq!(curves[0].1.xmt, 9);
+    assert_eq!(curves[1].1.pos, second_curve_offset);
+    assert_eq!(curves[1].1.xmt, 78);
+}
+
+#[test]
+fn decode_rejects_scanner_geometry_with_an_ambiguous_record_identity() {
+    let mut plane = record(50, 91);
+    put_ref(&mut plane, 2, 77);
+    plane[18] = b'+';
+    put_vec3(&mut plane, 19, [0.01, 0.02, 0.03]);
+    put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
+    let mut stream = plane.clone();
+    stream.extend(plane);
+
+    assert_eq!(crate::geometry::surfaces(&stream).len(), 2);
+    let graph = crate::topology::Graph::parse(&stream);
+    assert!(graph.get(50, 77).is_none());
+    assert!(crate::decode::ordered_surface_candidates(&stream, &graph).is_empty());
 }
 
 #[test]
@@ -678,6 +695,176 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
 
 #[test]
 fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
+    let mut ir = cylinder_plane_transfer_fixture(std::f64::consts::TAU, 0.01);
+
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &ir.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    let pcurve = context.sides[1].pcurve.as_ref().unwrap();
+    let PcurveGeometry::Nurbs { control_points, .. } = pcurve else {
+        unreachable!()
+    };
+    assert!(control_points.len() > 2);
+    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).unwrap();
+        let point =
+            cadmpeg_ir::eval::surface_point(&ir.model.surfaces[1].geometry, uv.u, uv.v).unwrap();
+        let angle = std::f64::consts::TAU * parameter;
+        assert!((point.x - 10.0 * angle.cos()).abs() < 0.01);
+        assert!((point.y - 10.0 * angle.sin()).abs() < 0.01);
+        assert!(point.z.abs() < 0.01);
+    }
+}
+
+#[test]
+fn opposite_intersection_chart_transfer_fails_closed_at_sample_budget() {
+    const TIGHT_EDGE_TOLERANCE: f64 = 0.0001;
+
+    let mut ir =
+        cylinder_plane_transfer_fixture(std::f64::consts::TAU * 10_000.0, TIGHT_EDGE_TOLERANCE);
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &ir.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    assert!(context.sides[1].pcurve.is_none());
+}
+
+#[test]
+fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget() {
+    const CONTACT_FIT_TOLERANCE: f64 = 1.0e-8;
+    const CANDIDATE_COUNT: usize = 300;
+
+    let source_pcurve = PcurveGeometry::Line {
+        origin: Point2::new(0.0, 0.0),
+        direction: Point2::new(1.0, 0.0),
+    };
+    let mut ir = blend_contact_transfer_fixture(
+        CANDIDATE_COUNT,
+        &source_pcurve,
+        CONTACT_FIT_TOLERANCE,
+        true,
+    );
+
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+
+    assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            return false;
+        };
+        context.sides[1].pcurve.is_some()
+    }));
+}
+
+#[test]
+fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
+    const CONTACT_FIT_TOLERANCE: f64 = 1.0e-2;
+
+    let source_pcurve = PcurveGeometry::Nurbs {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        control_points: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(0.2, 0.0),
+            Point2::new(1.0, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+    let mut ir = blend_contact_transfer_fixture(1, &source_pcurve, CONTACT_FIT_TOLERANCE, true);
+
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &ir.model.procedural_curves[1].definition
+    else {
+        unreachable!()
+    };
+    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[1].pcurve.as_ref()
+    else {
+        panic!("adaptive blend-contact transfer did not produce a pcurve")
+    };
+    let source_pcurve = context.sides[0].pcurve.as_ref().unwrap();
+    let target_pcurve = context.sides[1].pcurve.as_ref().unwrap();
+    assert!(control_points.len() > 2);
+    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let source_uv = cadmpeg_ir::eval::pcurve_uv(source_pcurve, parameter).unwrap();
+        let target_uv = cadmpeg_ir::eval::pcurve_uv(target_pcurve, parameter).unwrap();
+        assert!((source_uv.u - target_uv.u).abs() <= CONTACT_FIT_TOLERANCE);
+        assert_eq!(source_uv.v, target_uv.v);
+    }
+}
+
+#[test]
+fn opposite_intersection_complete_blend_boundary_transfers_many_candidates_without_contact_chart() {
+    const BLEND_BOUNDARY_FIT_TOLERANCE: f64 = 1.0e-8;
+    const CANDIDATE_COUNT: usize = 300;
+
+    let source_pcurve = PcurveGeometry::Line {
+        origin: Point2::new(0.0, 0.0),
+        direction: Point2::new(1.0, 0.0),
+    };
+    let mut ir = blend_contact_transfer_fixture(
+        CANDIDATE_COUNT,
+        &source_pcurve,
+        BLEND_BOUNDARY_FIT_TOLERANCE,
+        false,
+    );
+
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+
+    assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            return false;
+        };
+        context.sides[1].pcurve.is_some()
+    }));
+}
+
+#[test]
+fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
+    let mut ir = cylinder_plane_transfer_fixture(std::f64::consts::TAU, 0.01);
+    let mut later = ir.model.procedural_curves[0].clone();
+    later.id = cadmpeg_ir::ids::ProceduralCurveId("synthetic:later-intersection".into());
+    ir.model.procedural_curves.push(later);
+
+    let transfer_budget = cadmpeg_core::decode::WorkBudget::new(
+        crate::decode::pcurves::MAX_COMPLETION_TRANSFER_SAMPLES,
+    );
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
+        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    );
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(
+        &mut ir,
+        1,
+        &transfer_budget,
+        &geometry_budget,
+    );
+
+    let ProceduralCurveDefinition::Intersection { context: first, .. } =
+        &ir.model.procedural_curves[0].definition
+    else {
+        unreachable!()
+    };
+    assert!(first.sides[1].pcurve.is_none());
+    let ProceduralCurveDefinition::Intersection { context: later, .. } =
+        &ir.model.procedural_curves[1].definition
+    else {
+        unreachable!()
+    };
+    assert!(later.sides[1].pcurve.is_some());
+}
+
+fn cylinder_plane_transfer_fixture(
+    source_pcurve_angle: f64,
+    edge_tolerance: f64,
+) -> cadmpeg_ir::document::CadIr {
     use cadmpeg_ir::geometry::{
         Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, Surface,
     };
@@ -729,7 +916,7 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
                         pcurve_parameter_range: None,
                         pcurve: Some(PcurveGeometry::Line {
                             origin: Point2::new(0.0, 0.0),
-                            direction: Point2::new(std::f64::consts::TAU, 0.0),
+                            direction: Point2::new(source_pcurve_angle, 0.0),
                         }),
                     },
                     IntcurveSupportSide {
@@ -751,30 +938,170 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
         start: VertexId("synthetic:start".into()),
         end: VertexId("synthetic:end".into()),
         param_range: Some([0.0, 1.0]),
-        tolerance: Some(0.01),
+        tolerance: Some(edge_tolerance),
+    });
+    ir
+}
+
+fn blend_contact_transfer_fixture(
+    candidate_count: usize,
+    source_pcurve: &PcurveGeometry,
+    tolerance: f64,
+    contact_on_source_support: bool,
+) -> cadmpeg_ir::document::CadIr {
+    use cadmpeg_ir::geometry::{
+        BlendSupport, Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve,
+        ProceduralSurface, Surface,
+    };
+    use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let support = SurfaceId("synthetic:blend-contact-support".into());
+    let other_support = SurfaceId("synthetic:blend-contact-other-support".into());
+    let offset = SurfaceId("synthetic:blend-contact-offset".into());
+    let target = SurfaceId("synthetic:blend-contact-target".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: support.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: other_support.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: offset.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 2.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: target.clone(),
+            geometry: SurfaceGeometry::Procedural {
+                construction: ProceduralSurfaceId("synthetic:blend-contact-construction".into()),
+            },
+            source_object: None,
+        },
+    ]);
+
+    let spine = CurveId("synthetic:blend-contact-spine".into());
+    ir.model.curves.push(Curve {
+        id: spine.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 2.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let contact_pcurve = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        weights: None,
+        periodic: false,
+    };
+    let contact_surface = if contact_on_source_support {
+        offset
+    } else {
+        other_support.clone()
+    };
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: ProceduralCurveId("synthetic:blend-contact-spine-construction".into()),
+        curve: spine.clone(),
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(contact_surface),
+                        pcurve_parameter_range: None,
+                        pcurve: Some(contact_pcurve),
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(other_support.clone()),
+                        pcurve_parameter_range: None,
+                        pcurve: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("synthetic:blend-contact-construction".into()),
+        surface: target.clone(),
+        definition: ProceduralSurfaceDefinition::Blend {
+            supports: [
+                Some(BlendSupport {
+                    surface: support.clone(),
+                    reversed: false,
+                }),
+                Some(BlendSupport {
+                    surface: other_support,
+                    reversed: false,
+                }),
+            ],
+            spine: Some(spine),
+            radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
+            cross_section: BlendCrossSection::Circular,
+            native: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
     });
 
-    crate::decode::complete_intersection_pcurves_from_opposite_charts(&mut ir);
-
-    let ProceduralCurveDefinition::Intersection { context, .. } =
-        &ir.model.procedural_curves[0].definition
-    else {
-        unreachable!()
-    };
-    let pcurve = context.sides[1].pcurve.as_ref().unwrap();
-    let PcurveGeometry::Nurbs { control_points, .. } = pcurve else {
-        unreachable!()
-    };
-    assert!(control_points.len() > 2);
-    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter).unwrap();
-        let point =
-            cadmpeg_ir::eval::surface_point(&ir.model.surfaces[1].geometry, uv.u, uv.v).unwrap();
-        let angle = std::f64::consts::TAU * parameter;
-        assert!((point.x - 10.0 * angle.cos()).abs() < 0.01);
-        assert!((point.y - 10.0 * angle.sin()).abs() < 0.01);
-        assert!(point.z.abs() < 0.01);
+    for index in 0..candidate_count {
+        let curve = CurveId(format!("synthetic:blend-contact-curve-{index}"));
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId(format!("synthetic:blend-contact-intersection-{index}")),
+            curve,
+            definition: ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(support.clone()),
+                            pcurve_parameter_range: None,
+                            pcurve: Some(source_pcurve.clone()),
+                        },
+                        IntcurveSupportSide {
+                            surface: Some(target.clone()),
+                            pcurve_parameter_range: None,
+                            pcurve: None,
+                        },
+                    ],
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
+            },
+            cache_fit_tolerance: Some(tolerance),
+        });
     }
+    ir
 }
 
 #[test]
@@ -895,7 +1222,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         tolerance: Some(1.0e-8),
     });
 
-    crate::decode::complete_intersection_pcurves_from_opposite_charts(&mut ir);
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &ir.model.procedural_curves[0].definition
@@ -937,6 +1264,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                     Point3::new(10.0, 5.0, 0.0),
                 ],
                 weights: None,
+                normal_reversed: false,
                 u_periodic: false,
                 v_periodic: false,
             }),
@@ -1015,7 +1343,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     });
 
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::complete_exact_boundary_intersection_pcurves(&mut ir, &mut annotations);
+    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(&mut ir, &mut annotations);
 
     let ProceduralCurveDefinition::TolerantIntersection {
         supports,
@@ -1175,7 +1503,7 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
         cache_fit_tolerance: Some(0.25),
     });
 
-    crate::decode::complete_exact_boundary_intersection_pcurves(
+    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
         &mut ir,
         &mut cadmpeg_ir::AnnotationBuilder::new(),
     );

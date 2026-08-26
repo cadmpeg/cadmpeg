@@ -954,6 +954,7 @@ mod tests {
                 Point3::new(2.0, 1.0, 0.0),
             ],
             weights: Some(vec![tiny; 4]),
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -977,6 +978,7 @@ mod tests {
             v_count: 2,
             control_points,
             weights,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
