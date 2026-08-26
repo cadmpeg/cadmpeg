@@ -2,8 +2,6 @@
 
 use cadmpeg_ir::features::FeatureDefinition;
 
-use super::*;
-
 #[test]
 fn nx_extract_datum_axis_retains_unresolved_axis_family() {
     for kind in ["DATUM_AXIS", "EXTRACT_DATUM_AXIS"] {

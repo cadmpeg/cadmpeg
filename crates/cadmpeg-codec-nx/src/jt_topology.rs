@@ -4,6 +4,8 @@
 const MAX_TOPOLOGY_ITEMS: usize = 1_000_000;
 const MAX_TOPOLOGY_SLOTS: usize = 8_000_000;
 
+use cadmpeg_core::decode::alloc_filled;
+
 /// Decoded polygon in topological-vertex visit order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Polygon {
@@ -170,12 +172,9 @@ impl Decoder<'_> {
             return None;
         }
         let index = self.vertices.len();
-        let mut faces = Vec::new();
-        faces.try_reserve_exact(valence).ok()?;
-        faces.resize_with(valence, || None);
         self.vertices.try_reserve(1).ok()?;
         self.vertices.push(Vertex {
-            faces,
+            faces: alloc_filled(valence, None, "nx JT vertex face slots").ok()?,
             group,
             flags,
         });
@@ -292,9 +291,6 @@ impl Decoder<'_> {
             let face_attribute_count =
                 u32::try_from(attribute_mask.iter().filter(|&&bit| bit).count()).ok()?;
             let attribute_end = self.attribute_count.checked_add(face_attribute_count)?;
-            let mut vertices = Vec::new();
-            vertices.try_reserve_exact(degree).ok()?;
-            vertices.resize_with(degree, || None);
             let mut attributes = Vec::new();
             attributes
                 .try_reserve_exact(usize::try_from(face_attribute_count).ok()?)
@@ -304,7 +300,7 @@ impl Decoder<'_> {
             self.removed.try_reserve(1).ok()?;
             self.active.try_reserve(1).ok()?;
             self.faces.push(Face {
-                vertices,
+                vertices: alloc_filled(degree, None, "nx JT face vertex slots").ok()?,
                 empty: degree,
                 attribute_mask,
                 attributes,

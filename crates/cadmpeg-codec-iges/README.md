@@ -1,11 +1,13 @@
 # cadmpeg-codec-iges
 
-`cadmpeg-codec-iges` inspects, decodes, and writes IGES 5.1, 5.2, and 5.3
+`cadmpeg-codec-iges` inspects, decodes, and writes IGES 4.0, 5.0, 5.1, 5.2, and 5.3
 Fixed ASCII files through `CadIr`.
 
-Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
-for the Fixed ASCII mechanical/document envelope. Bounded semantic writing
-is an extra; the L9 gate remains open.
+Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
+for the Fixed ASCII mechanical/document envelope. Semantic decode is bounded,
+validates the returned `CadIr`, accounts for every retained Directory Entry,
+and gates generated output through the checked-in round-trip and FreeCAD
+acceptance workflows.
 
 ## Install
 
@@ -34,8 +36,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 The result holds the decoded `CadIr` and a `DecodeReport`. Read
 `report.losses` before trusting geometry. Set
-`DecodeOptions::container_only` for card and Global metadata without entity
-decode. `IgesCodec::inspect` returns section structure, Directory census, and
+`DecodeOptions::container_only` for card and Global metadata plus native
+retention without semantic geometry projection. `IgesCodec::inspect` returns section structure, Directory census, and
 reference findings. Compressed ASCII and Binary representations are detected
 and inspected by name and refused for semantic decode.
 
@@ -53,8 +55,30 @@ validates topology ownership, edge spans, radial incidence, and supported
 surface and pcurve geometry before output. Unsupported neutral or native
 content is explicitly refused. Edited source documents may report
 `passthrough_record_omitted` losses for native direction, display, or
-occurrence-expansion records that are not regenerated. The independent
-FreeCAD gate is [`scripts/verify-iges-freecad.py`](../../scripts/verify-iges-freecad.py).
+occurrence-expansion records that are not regenerated. The bounded full-file
+gate is [`scripts/verify-iges-bounded.py`](../../scripts/verify-iges-bounded.py).
+CI runs it with `--roundtrip` to convert every successful decode to IGES 5.3,
+then decode and validate the generated file;
+the independent FreeCAD gate is
+[`scripts/verify-iges-freecad.py`](../../scripts/verify-iges-freecad.py).
+The reproducible FreeCAD geometry profile uses
+[`scripts/prepare-iges-freecad-golden.py`](../../scripts/prepare-iges-freecad-golden.py)
+and [`scripts/iges-freecad-expectations.json`](../../scripts/iges-freecad-expectations.json):
+
+```sh
+python3 scripts/prepare-iges-freecad-golden.py \
+  --output-dir "$HOME/side2/tmp/iges-l9/freecad"
+CADMPEG_IGES_INPUT_DIR="$HOME/side2/tmp/iges-l9/freecad" \
+CADMPEG_IGES_EXPECTATIONS=scripts/iges-freecad-expectations.json \
+CADMPEG_IGES_REPORT="$HOME/side2/tmp/iges-l9/freecad-report.json" \
+FreeCADCmd scripts/verify-iges-freecad.py
+```
+
+The CI FreeCAD job also materializes every successful writer golden and imports
+one edited neutral point document at each target version. Its broad pass allows
+an empty import for presentation-only output but rejects null or invalid
+shapes; the exact geometry pass keeps the topology and measure expectations
+above.
 
 ## Data model
 
@@ -69,8 +93,23 @@ parameters keep their native scale.
 Records that block faithful transfer land in `DecodeReport::losses`.
 `native.iges` retains physical cards and typed or generic entity data.
 `SourceFidelity` retains the complete source image and its SHA-256 digest;
-`transfer_ledger` is not populated. Coverage for each envelope lives in the
+`transfer_ledger` records every non-null Directory entity and verifies its
+closure against the decoded model. Coverage for each envelope lives in the
 [format-support profile][support].
+
+## Stress inputs
+
+Regenerate the deterministic stress corpus into a directory of your choice:
+
+```sh
+cargo run -p cadmpeg-codec-iges --bin iges_stress -- OUTPUT_DIRECTORY
+```
+
+Six files, 3–8 MB each, cover composite chains, trimmed surfaces, counted
+lists, trailing pointer groups, annotation text runs, and free curves. Add
+`--fast` for a ~0.5 MB smoke set. Output is byte-stable: the crate's tests
+pin each file's length and SHA-256, so a deliberate change to the emitted
+bytes must repin those digests from a fresh run.
 
 ## Documentation
 

@@ -763,8 +763,8 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
         closed: false,
         solid: true,
         ruled: false,
+        linearize: false,
         max_degree: None,
-        check_compatibility: None,
         allow_multi_profile_faces: None,
     };
     ir.model.features.push(Feature {
@@ -1642,8 +1642,8 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         closed: false,
         solid: false,
         ruled: false,
+        linearize: false,
         max_degree: None,
-        check_compatibility: None,
         allow_multi_profile_faces: None,
     };
     super::append_design_intent_losses(&ir, &mut losses);
@@ -1817,8 +1817,8 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             closed: false,
             solid: false,
             ruled: false,
+            linearize: false,
             max_degree: None,
-            check_compatibility: None,
             allow_multi_profile_faces: None,
         }
         .body_output_family(),

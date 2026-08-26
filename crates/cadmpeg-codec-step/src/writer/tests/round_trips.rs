@@ -3,59 +3,187 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 
-use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::eval::pcurve_uv;
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
 
-use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::test_support::export;
+use crate::{write_step, StepCodec, StepSchema, StepUnsupportedPolicy, StepWriteOptions};
+
+fn curve_geometry_for_sheet_pcurve(geometry: &PcurveGeometry) -> Option<CurveGeometry> {
+    let point = |point: Point2| Point3::new(point.u, point.v, 0.0);
+    let vector = |vector: Point2| Vector3::new(vector.u, vector.v, 0.0);
+    let line = |origin: Point2, direction: Point2| {
+        let length = direction.u.hypot(direction.v);
+        (length.is_finite() && length > 0.0).then(|| CurveGeometry::Line {
+            origin: point(origin),
+            direction: vector(Point2::new(direction.u / length, direction.v / length)),
+        })
+    };
+    match geometry {
+        PcurveGeometry::Line { origin, direction } => line(*origin, *direction),
+        PcurveGeometry::Circle {
+            center,
+            x_axis,
+            radius,
+            ..
+        } => Some(CurveGeometry::Circle {
+            center: point(*center),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: vector(*x_axis),
+            radius: *radius,
+        }),
+        PcurveGeometry::Ellipse {
+            center,
+            x_axis,
+            major_radius,
+            minor_radius,
+            ..
+        } => Some(CurveGeometry::Ellipse {
+            center: point(*center),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: vector(*x_axis),
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        }),
+        PcurveGeometry::Parabola {
+            vertex,
+            x_axis,
+            focal_distance,
+            ..
+        } => Some(CurveGeometry::Parabola {
+            vertex: point(*vertex),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: vector(*x_axis),
+            focal_distance: *focal_distance,
+        }),
+        PcurveGeometry::Hyperbola {
+            center,
+            x_axis,
+            major_radius,
+            minor_radius,
+            ..
+        } => Some(CurveGeometry::Hyperbola {
+            center: point(*center),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: vector(*x_axis),
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        }),
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        } => Some(CurveGeometry::Nurbs(NurbsCurve {
+            degree: *degree,
+            knots: knots.clone(),
+            control_points: control_points.iter().copied().map(point).collect(),
+            weights: weights.clone(),
+            periodic: *periodic,
+        })),
+        PcurveGeometry::Transformed { basis, transform } => {
+            let CurveGeometry::Line { origin, direction } = curve_geometry_for_sheet_pcurve(basis)?
+            else {
+                return None;
+            };
+            let transform = Transform {
+                rows: [
+                    [
+                        transform.rows[0][0],
+                        transform.rows[0][1],
+                        0.0,
+                        transform.rows[0][2],
+                    ],
+                    [
+                        transform.rows[1][0],
+                        transform.rows[1][1],
+                        0.0,
+                        transform.rows[1][2],
+                    ],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            };
+            let direction = transform.apply_vector(direction);
+            let length = direction.norm();
+            (length.is_finite() && length > 0.0).then(|| CurveGeometry::Line {
+                origin: transform.apply_point(origin),
+                direction: direction.scale(1.0 / length),
+            })
+        }
+        PcurveGeometry::Trimmed { basis, .. } => curve_geometry_for_sheet_pcurve(basis),
+        PcurveGeometry::Offset { distance, basis } => {
+            let (origin, direction) = basis.line_parameters()?;
+            let length = direction.u.hypot(direction.v);
+            if !length.is_finite() || length == 0.0 {
+                return None;
+            }
+            line(
+                Point2::new(
+                    origin.u - distance * direction.v / length,
+                    origin.v + distance * direction.u / length,
+                ),
+                Point2::new(direction.u / length, direction.v / length),
+            )
+        }
+        PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Hyperbolic { .. } => None,
+    }
+}
 
 fn align_sheet_edge_to_pcurve(ir: &mut CadIr, geometry: &PcurveGeometry) {
     let pcurve_id = ir.model.pcurves[0].id.clone();
-    let edge_id = ir
-        .model
-        .coedges
-        .iter()
-        .find(|coedge| {
-            coedge
-                .pcurves
-                .iter()
-                .any(|pcurve| pcurve.pcurve == pcurve_id)
-        })
-        .expect("sheet pcurve coedge")
-        .edge
-        .clone();
-    let edge = ir
-        .model
-        .edges
-        .iter()
-        .find(|edge| edge.id == edge_id)
-        .expect("sheet pcurve edge");
-    let vertex_ids = [edge.start.clone(), edge.end.clone()];
-    let point_ids = vertex_ids.map(|vertex_id| {
+    let (curve_id, point_ids) = {
+        let edge_id = ir
+            .model
+            .coedges
+            .iter()
+            .find(|coedge| {
+                coedge
+                    .pcurves
+                    .iter()
+                    .any(|pcurve| pcurve.pcurve == pcurve_id)
+            })
+            .expect("sheet pcurve coedge")
+            .edge
+            .clone();
+        let edge = ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.id == edge_id)
+            .expect("sheet pcurve edge");
+        (
+            edge.curve.clone().expect("sheet pcurve edge curve"),
+            [edge.start.clone(), edge.end.clone()],
+        )
+    };
+    if let Some(curve_geometry) = curve_geometry_for_sheet_pcurve(geometry) {
+        ir.model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == curve_id)
+            .expect("sheet pcurve curve")
+            .geometry = curve_geometry;
+    }
+    let point_ids = point_ids.map(|vertex_id| {
         ir.model
             .vertices
             .iter()
@@ -655,6 +783,224 @@ fn reports_entity_counts_and_no_geometry_loss_for_cube() {
 }
 
 #[test]
+fn writer_round_trips_binding_scoped_appearance_visibility() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let appearance = AppearanceId("test:appearance#hidden".into());
+    ir.model.appearances.push(Appearance {
+        id: appearance.clone(),
+        name: Some("hidden face".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.8,
+            g: 0.2,
+            b: 0.1,
+            a: 1.0,
+        }),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:appearance-binding#hidden-face".into(),
+        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+        appearance,
+        source_entity_id: None,
+        object_type: None,
+        visible: Some(false),
+        channels: std::collections::BTreeMap::new(),
+    });
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("write hidden appearance binding");
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+    let text = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(text.contains("INVISIBILITY"));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode hidden appearance binding");
+    assert!(decoded
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| binding.visible == Some(false)));
+}
+
+#[test]
+fn writer_round_trips_surface_appearance_transparency() {
+    const EPS_ALPHA: f32 = 0.000_001;
+
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let appearance = AppearanceId("test:appearance#transparent".into());
+    let second_appearance = AppearanceId("test:appearance#more-transparent".into());
+    ir.model.appearances.push(Appearance {
+        id: appearance.clone(),
+        name: Some("transparent face".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.8,
+            g: 0.2,
+            b: 0.1,
+            a: 0.35,
+        }),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    ir.model.appearances.push(Appearance {
+        id: second_appearance.clone(),
+        name: Some("more transparent face".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.8,
+            g: 0.2,
+            b: 0.1,
+            a: 0.65,
+        }),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:appearance-binding#transparent-face".into(),
+        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+        appearance,
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:appearance-binding#more-transparent-face".into(),
+        target: AppearanceTarget::Face(ir.model.faces[1].id.clone()),
+        appearance: second_appearance,
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: std::collections::BTreeMap::new(),
+    });
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("write transparent surface appearance");
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+    let text = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(text.contains("SURFACE_STYLE_TRANSPARENT"));
+    assert!(text.contains("SURFACE_STYLE_RENDERING_WITH_PROPERTIES"));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode transparent surface appearance");
+    let alphas = decoded
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .filter_map(|appearance| appearance.base_color.map(|color| color.a))
+        .collect::<Vec<_>>();
+    assert_eq!(alphas.len(), 2);
+    assert!(alphas.iter().any(|alpha| (*alpha - 0.35).abs() < EPS_ALPHA));
+    assert!(alphas.iter().any(|alpha| (*alpha - 0.65).abs() < EPS_ALPHA));
+}
+
+#[test]
+fn writer_round_trips_presentation_layer_visibility() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: LayerId("test:layer#hidden".into()),
+        name: "hidden layer".into(),
+        description: Some("layer visibility".into()),
+        visible: Some(false),
+        items: vec![PresentationItem::Body { body }],
+    });
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("write hidden presentation layer");
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+    let text = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(text.contains("PRESENTATION_LAYER_ASSIGNMENT('hidden layer','layer visibility',"));
+    assert!(text.contains("INVISIBILITY"));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode hidden presentation layer");
+    let layer = decoded
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .find(|layer| layer.name == "hidden layer")
+        .expect("decoded hidden presentation layer");
+    assert_eq!(layer.visible, Some(false));
+    assert_ne!(decoded.ir().model.bodies[0].visible, Some(false));
+}
+
+#[test]
+fn writer_round_trips_empty_presentation_layer_label() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: LayerId("test:layer#unnamed".into()),
+        name: String::new(),
+        description: Some("unnamed layer".into()),
+        visible: Some(false),
+        items: vec![PresentationItem::Body { body }],
+    });
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("write empty-label presentation layer");
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+    let text = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(text.contains("PRESENTATION_LAYER_ASSIGNMENT('','unnamed layer',"));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode empty-label presentation layer");
+    let layer = decoded
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .find(|layer| layer.name.is_empty())
+        .expect("decoded empty-label presentation layer");
+    assert_eq!(layer.description.as_deref(), Some("unnamed layer"));
+    assert_eq!(layer.visible, Some(false));
+    assert!(matches!(
+        layer.items.as_slice(),
+        [PresentationItem::Body { .. }]
+    ));
+}
+
+#[test]
 fn analytic_surfaces_map_to_their_step_entities() {
     // Build one doc per analytic kind and check the keyword appears.
     let cases: Vec<(SurfaceGeometry, &str)> = vec![
@@ -875,4 +1221,35 @@ fn writer_declares_each_supported_target_schema_exactly() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode target-schema output");
     }
+}
+
+#[test]
+fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
+    let bytes = include_bytes!("../../../tests/fixtures/noncanonical_solid_angle.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode noncanonical unit fixture");
+    let mut output = Vec::new();
+    write_step(decoded.ir(), &mut output, &StepWriteOptions::default())
+        .expect("export salvaged IR");
+
+    let (exchange, diagnostics) = crate::parse::parse(&output).expect("parse repaired output");
+    assert!(diagnostics.is_empty());
+    let unit = exchange
+        .records
+        .values()
+        .find(|record| {
+            record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "SOLID_ANGLE_UNIT")
+        })
+        .expect("exported solid-angle unit");
+    assert_eq!(
+        unit.partials
+            .iter()
+            .map(|partial| partial.name.as_str())
+            .collect::<Vec<_>>(),
+        ["NAMED_UNIT", "SI_UNIT", "SOLID_ANGLE_UNIT"]
+    );
 }

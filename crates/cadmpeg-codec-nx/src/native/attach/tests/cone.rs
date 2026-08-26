@@ -4,8 +4,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::FeatureDefinition;
 
-use super::*;
-
 #[test]
 fn nx_cone_retains_body_family_without_dimensions() {
     let mut source_properties = BTreeMap::new();

@@ -5,7 +5,7 @@ use cadmpeg_ir::geometry::NurbsCurve;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 /// Angular slack this module allows when bounding or dividing a sweep.
-pub(super) const ANGULAR_TOLERANCE: f64 = std::f64::consts::TAU * 1.0e-12;
+pub(crate) const ANGULAR_TOLERANCE: f64 = std::f64::consts::TAU * 1.0e-12;
 
 pub(super) fn angularly_equal(left: f64, right: f64) -> bool {
     (left - right).abs() <= ANGULAR_TOLERANCE
@@ -62,8 +62,16 @@ pub(crate) fn elliptical_arc_nurbs(
     let mut control_points = Vec::with_capacity(spans * 2 + 1);
     let mut weights = Vec::with_capacity(spans * 2 + 1);
     for span in 0..spans {
-        let start = interval[0] + step * span as f64;
-        let end = interval[0] + step * (span + 1) as f64;
+        let start = if span == 0 {
+            interval[0]
+        } else {
+            interval[0] + step * span as f64
+        };
+        let end = if span + 1 == spans {
+            interval[1]
+        } else {
+            interval[0] + step * (span + 1) as f64
+        };
         let middle = (start + end) * 0.5;
         let middle_weight = ((end - start) * 0.5).cos();
         if !middle_weight.is_finite() || middle_weight <= 0.0 {

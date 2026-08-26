@@ -2,7 +2,7 @@
 //! Bounded-curve wrappers.
 
 use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::Point3;
 
 use cadmpeg_core::decode::View;
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
@@ -540,10 +539,12 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(
-        regenerated.ir().model.bodies[0].name.as_deref(),
-        Some("Steel")
-    );
+    assert!(regenerated
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.name.as_deref() == Some("Steel")));
     assert!(regenerated
         .ir()
         .model

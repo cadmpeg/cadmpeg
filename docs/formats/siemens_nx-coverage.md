@@ -42,8 +42,9 @@ geometry in the cumulative L0–L6 gates.
 | L5   | Incomplete                   | Body/face appearance evidence passes; the cumulative gate remains pending until the lower L4 design-domain gate closes.                                 |
 | L6   | Incomplete                   | Close sketch constraints and dimensions, all expression forms, every feature construction, inactive configurations, and re-derivation coherence.        |
 
-The full validation profile passes cumulatively through L3. Profile version 11
-records saved-body re-derivation as separate L6 evidence, marks external-only
+The codec public score is L2. The selected-body and terminal-lineage
+validation profile passes cumulatively through L3 and shows as extras.
+Profile version 11 records saved-body re-derivation as separate L6 evidence, marks external-only
 assemblies inapplicable to single-part design gates, identifies the first unsupported
 feature family and history ordinal, aggregates exact loss messages and re-derivation
 boundaries, discovers nested fixtures, and bounds each worker decode independently.

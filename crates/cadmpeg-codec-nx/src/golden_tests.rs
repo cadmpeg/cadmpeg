@@ -2,7 +2,6 @@
 //! Golden serialized decode/inspect snapshots. NX snapshots are code-built and
 //! regenerated with `UPDATE_GOLDEN=1 cargo test-fast golden` (workspace build).
 //! See `docs/golden-coverage-floors.toml` for the zlib/flate2 backend note.
-#![allow(unused_imports)]
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 

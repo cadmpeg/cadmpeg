@@ -1116,6 +1116,7 @@ mod tests {
             appearance: appearance_id,
             source_entity_id: None,
             object_type: None,
+            visible: None,
             channels: BTreeMap::new(),
         });
 
@@ -1198,6 +1199,7 @@ mod tests {
             appearance: appearance_id.clone(),
             source_entity_id: None,
             object_type: None,
+            visible: None,
             channels: BTreeMap::new(),
         });
         assert!(!has_effective_color(&ir, None, &target));
@@ -1214,6 +1216,7 @@ mod tests {
             appearance: appearance_id,
             source_entity_id: None,
             object_type: None,
+            visible: None,
             channels: BTreeMap::new(),
         });
         assert!(!has_effective_color(&ir, None, &target));

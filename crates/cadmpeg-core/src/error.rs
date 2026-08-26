@@ -39,6 +39,19 @@ pub enum CodecError {
         .0.dimension, .0.reason, .0.limit, .0.used, .0.additional
     )]
     ResourceLimit(ResourceLimit),
+    /// Strict decode mode refused a reported loss.
+    ///
+    /// Never reported as [`CodecError::Malformed`]: a strict refusal is a
+    /// statement about the decode mode, not about the input. The bytes can be
+    /// well formed and still refuse under strict mode. The strict-mode gate in
+    /// the `Codec` decode wrapper is the only construction site.
+    #[error("strict mode rejects {loss_code}: {message}")]
+    StrictRefusal {
+        /// Stable `namespace/code` form of the refusing loss.
+        loss_code: String,
+        /// The refusing loss's own message, without any refusal prefix.
+        message: String,
+    },
     /// The codec does not implement a required capability.
     #[error("not implemented yet: {0}")]
     NotImplemented(String),
@@ -48,6 +61,11 @@ pub enum CodecError {
 }
 
 impl CodecError {
+    /// Builds a malformed-container error from a displayable message.
+    pub fn malformed(message: impl std::fmt::Display) -> Self {
+        Self::Malformed(message.to_string())
+    }
+
     /// Builds a truncation error at a qualified source location.
     pub const fn truncated(location: SourceLocation, operation: &'static str) -> Self {
         Self::Truncated {
@@ -57,5 +75,31 @@ impl CodecError {
                 location: Some(location),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CodecError;
+
+    #[test]
+    fn malformed_constructor_formats_the_message_once() {
+        let error = CodecError::malformed(format_args!("field {} is invalid", 7));
+
+        assert_eq!(error.to_string(), "malformed container: field 7 is invalid");
+    }
+
+    #[test]
+    fn a_strict_refusal_names_the_loss_and_claims_no_container_defect() {
+        let error = CodecError::StrictRefusal {
+            loss_code: "step/parse.noncanonical-syntax".into(),
+            message: "complex partial records are not alphabetical".into(),
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "strict mode rejects step/parse.noncanonical-syntax: complex partial \
+             records are not alphabetical"
+        );
     }
 }

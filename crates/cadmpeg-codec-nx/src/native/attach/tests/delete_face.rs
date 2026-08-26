@@ -4,8 +4,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::FeatureDefinition;
 
-use super::*;
-
 #[test]
 fn nx_body_writing_delete_face_retains_unresolved_family() {
     let mut source_properties = BTreeMap::new();

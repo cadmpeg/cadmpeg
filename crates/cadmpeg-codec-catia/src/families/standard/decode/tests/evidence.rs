@@ -628,7 +628,8 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         &surface_indices,
         std::slice::from_ref(&support),
         std::slice::from_ref(&limit_curve),
-    );
+    )
+    .expect("limit-curve binding allocation");
     let [limit_candidates] = limit_bindings.as_slice() else {
         panic!("one edge limit-curve domain");
     };
@@ -662,7 +663,8 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         &surface_indices,
         &[support.clone(), support],
         &[limit_curve],
-    );
+    )
+    .expect("limit-curve binding allocation");
     assert_eq!(duplicated, vec![vec![*binding], vec![*binding]]);
     let reversed = resolve_standard_limit_curve_binding(limit_candidates, [1, 0])
         .expect("the solved endpoint pair selects the limit curve");
@@ -1302,7 +1304,8 @@ fn standard_line_rows_keep_complete_relation_before_face_frontiers() {
     });
     let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
     let candidates = [domain.clone(), domain];
-    let groups = standard_curve_branch_groups(&supports, &candidates);
+    let groups =
+        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
     let assignment = [None, None];
 
     let constrained = standard_curve_branch_candidates_after_partial_assignment(
@@ -1327,7 +1330,8 @@ fn standard_branch_ranking_stops_when_its_work_budget_is_exhausted() {
     });
     let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
     let candidates = [domain.clone(), domain];
-    let groups = standard_curve_branch_groups(&supports, &candidates);
+    let groups =
+        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
     let budget = WorkBudget::new(1);
 
     assert!(standard_curve_branch_candidates_after_partial_assignment(

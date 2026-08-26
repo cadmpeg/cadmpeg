@@ -492,11 +492,11 @@ fn container_refuses_a_file_that_is_not_a_zip() {
         .args(["inspect", "container", file.to_str().unwrap()])
         .assert()
         .code(2)
-        .stderr(predicate::str::contains("as a ZIP container"));
+        .stderr(predicate::str::contains("as a ZIP or CFB container"));
 }
 
 #[test]
-fn diff_reports_identity_length_and_the_first_difference() {
+fn cmp_reports_identity_length_and_the_first_difference() {
     let dir = tempdir().unwrap();
     let base: Vec<u8> = (0u8..32).collect();
     let same = write(dir.path(), "same.bin", &base);
@@ -505,7 +505,7 @@ fn diff_reports_identity_length_and_the_first_difference() {
     cadmpeg()
         .args([
             "inspect",
-            "diff",
+            "cmp",
             same.to_str().unwrap(),
             copy.to_str().unwrap(),
         ])
@@ -523,14 +523,14 @@ fn diff_reports_identity_length_and_the_first_difference() {
     cadmpeg()
         .args([
             "inspect",
-            "diff",
+            "cmp",
             same.to_str().unwrap(),
             other.to_str().unwrap(),
             "--gap",
             "0",
         ])
         .assert()
-        .success()
+        .code(1)
         .stdout(
             predicate::str::contains("first difference: 0x00000005 (5)")
                 .and(predicate::str::contains("differing bytes: 2 of 32"))
@@ -541,7 +541,7 @@ fn diff_reports_identity_length_and_the_first_difference() {
 }
 
 #[test]
-fn diff_coalesces_runs_at_the_requested_gap() {
+fn cmp_coalesces_runs_at_the_requested_gap() {
     let dir = tempdir().unwrap();
     let base = vec![0u8; 16];
     let mut variant = base.clone();
@@ -554,17 +554,41 @@ fn diff_coalesces_runs_at_the_requested_gap() {
     cadmpeg()
         .args([
             "inspect",
-            "diff",
+            "cmp",
             a.to_str().unwrap(),
             b.to_str().unwrap(),
             "--gap",
             "3",
         ])
         .assert()
-        .success()
+        .code(1)
         .stdout(
             predicate::str::contains("runs (gap 3): 1")
                 .and(predicate::str::contains("0x00000002..0x00000007  5 bytes")),
+        );
+}
+
+#[test]
+fn cmp_exits_one_when_only_lengths_differ() {
+    let dir = tempdir().unwrap();
+    let prefix = b"shared-prefix";
+    let shorter = write(dir.path(), "short.bin", prefix);
+    let mut longer_bytes = prefix.to_vec();
+    longer_bytes.extend_from_slice(b"extra");
+    let longer = write(dir.path(), "long.bin", &longer_bytes);
+
+    cadmpeg()
+        .args([
+            "inspect",
+            "cmp",
+            shorter.to_str().unwrap(),
+            longer.to_str().unwrap(),
+        ])
+        .assert()
+        .code(1)
+        .stdout(
+            predicate::str::contains("length differs")
+                .and(predicate::str::contains("the common prefix is identical")),
         );
 }
 
@@ -608,7 +632,7 @@ fn inspect_without_an_input_or_a_subcommand_is_a_usage_error() {
 #[test]
 fn inspect_help_lists_every_byte_subcommand() {
     let mut expected = predicate::str::contains("hex").boxed();
-    for name in ["read", "find", "strings", "struct", "container", "diff"] {
+    for name in ["read", "find", "strings", "struct", "container", "cmp"] {
         expected = expected.and(predicate::str::contains(name)).boxed();
     }
     cadmpeg()
@@ -633,6 +657,88 @@ fn extract_fixture(dir: &Path) -> PathBuf {
     archive.write_all(&[0x42u8; 512]).unwrap();
     archive.finish().unwrap();
     path
+}
+
+const CFB_SECTOR: usize = 512;
+const CFB_FREE: u32 = 0xffff_ffff;
+const CFB_END: u32 = 0xffff_fffe;
+const CFB_FAT: u32 = 0xffff_fffd;
+
+/// One FAT sector, eight data sectors of 0x5a, and a directory with Root Entry
+/// plus a 4096-byte Payload stream. Same construction as the inspect container
+/// unit fixture.
+fn compound_fixture() -> Vec<u8> {
+    let mut file = vec![0_u8; CFB_SECTOR * 11];
+    file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    put_u16(&mut file, 24, 0x003e);
+    put_u16(&mut file, 26, 3);
+    put_u16(&mut file, 28, 0xfffe);
+    put_u16(&mut file, 30, 9);
+    put_u16(&mut file, 32, 6);
+    put_u32(&mut file, 44, 1);
+    put_u32(&mut file, 48, 0);
+    put_u32(&mut file, 56, 4096);
+    put_u32(&mut file, 60, CFB_END);
+    put_u32(&mut file, 68, CFB_END);
+    for index in 0..109 {
+        put_u32(&mut file, 76 + index * 4, CFB_FREE);
+    }
+    put_u32(&mut file, 76, 9);
+    let directory = sector_mut(&mut file, 0);
+    for entry in directory.chunks_exact_mut(128) {
+        entry[68..80].fill(0xff);
+    }
+    directory_entry(directory, 0, "Root Entry", 5, 1, CFB_END, 0);
+    directory_entry(directory, 1, "Payload", 2, CFB_FREE, 1, 4096);
+    for sector in 1..=8 {
+        sector_mut(&mut file, sector).fill(0x5a);
+    }
+    let fat = sector_mut(&mut file, 9);
+    fat.fill(0xff);
+    put_u32(fat, 0, CFB_END);
+    for sector in 1..8 {
+        put_u32(fat, sector * 4, (sector + 1) as u32);
+    }
+    put_u32(fat, 8 * 4, CFB_END);
+    put_u32(fat, 9 * 4, CFB_FAT);
+    file
+}
+
+fn directory_entry(
+    directory: &mut [u8],
+    index: usize,
+    name: &str,
+    object_type: u8,
+    child: u32,
+    start: u32,
+    size: u64,
+) {
+    let entry = &mut directory[index * 128..(index + 1) * 128];
+    let units = name.encode_utf16().collect::<Vec<_>>();
+    for (offset, unit) in units.iter().enumerate() {
+        put_u16(entry, offset * 2, *unit);
+    }
+    put_u16(entry, 64, ((units.len() + 1) * 2) as u16);
+    entry[66] = object_type;
+    entry[67] = 1;
+    put_u32(entry, 68, CFB_FREE);
+    put_u32(entry, 72, CFB_FREE);
+    put_u32(entry, 76, child);
+    put_u32(entry, 116, start);
+    entry[120..128].copy_from_slice(&size.to_le_bytes());
+}
+
+fn sector_mut(file: &mut [u8], sector: usize) -> &mut [u8] {
+    let start = (sector + 1) * CFB_SECTOR;
+    &mut file[start..start + CFB_SECTOR]
+}
+
+fn put_u16(bytes: &mut [u8], offset: usize, value: u16) {
+    bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
+fn put_u32(bytes: &mut [u8], offset: usize, value: u32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
 #[test]
@@ -866,12 +972,39 @@ fn container_json_lists_entries_under_the_envelope() {
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["schema_version"], 6);
     assert_eq!(value["command"], "inspect container");
+    assert_eq!(value["container_kind"], "zip");
     let entries = value["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 2);
     // Raw names in JSON: no shell quoting.
     assert_eq!(entries[0]["name"], "Body[Active].brp");
     assert_eq!(entries[0]["compression"], "stored");
     assert_eq!(entries[0]["uncompressed_size"], 17);
+}
+
+#[test]
+fn container_lists_cfb_directory_rows() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "doc.cfb", &compound_fixture());
+
+    cadmpeg()
+        .args(["inspect", "container", file.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("stream")
+                .and(predicate::str::contains("Payload"))
+                .and(predicate::str::contains("4096")),
+        );
+
+    let output = cadmpeg()
+        .args(["inspect", "container", "--json", file.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["command"], "inspect container");
+    assert_eq!(value["container_kind"], "cfb");
 }
 
 #[test]

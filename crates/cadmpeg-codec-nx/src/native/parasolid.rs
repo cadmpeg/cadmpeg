@@ -3,6 +3,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use cadmpeg_core::decode::alloc_filled;
 
 use crate::deltas::Census;
 
@@ -866,6 +867,13 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
         }
         if let Some(trailer) = census.terminal_null_references {
             let bytes = &stream.inflated[trailer.offset..trailer.end];
+            let Ok(references) = alloc_filled(
+                trailer.count.into(),
+                1_u32,
+                "nx Parasolid terminal null references",
+            ) else {
+                continue;
+            };
             events
                 .terminal_null_references
                 .push(ParasolidDeltasTerminalNullReferences {
@@ -874,7 +882,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                         trailer.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
-                    references: std::iter::repeat_n(1_u32, trailer.count.into()).collect(),
+                    references,
                     byte_len: bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                     inflated_offset: trailer.offset as u64,
@@ -3201,11 +3209,7 @@ pub fn parasolid_topology_attribute_fields_have_untransferred_values(
 
 #[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
-    use std::io::{Cursor, Write};
-
-    use flate2::write::ZlibEncoder;
-    use flate2::Compression;
+    use std::io::Cursor;
 
     use crate::parasolid::Stream;
     use crate::test_support::many_face_partition_stream;
@@ -3855,19 +3859,16 @@ mod tests {
         assert_eq!(events.residual_spans[1].byte_len, 2);
     }
 
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     use cadmpeg_ir::geometry::{
-        BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-        ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
+        BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition,
+        SurfaceGeometry,
     };
-    use cadmpeg_ir::math::{Point2, Vector3};
+
     use cadmpeg_ir::report::LossCategory;
 
-    use cadmpeg_ir::Exactness;
-
-    use crate::container;
-    use crate::parasolid::{self, StreamKind};
+    use crate::parasolid::StreamKind;
     use crate::test_support::*;
     use crate::NxCodec;
 

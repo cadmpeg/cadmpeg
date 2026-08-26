@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 
 use crate::native::SldprtNative;
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
@@ -39,7 +40,7 @@ pub(crate) fn write_semantic_with_records(
         .map(|namespace| {
             if !crate::native::native_version_supported(namespace.version) {
                 let version = namespace.version;
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "unsupported SLDPRT native namespace version {version}"
                 )));
             }
@@ -290,13 +291,13 @@ fn assign_configuration_indices(
             ));
         }
         if !names.insert(name) {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "SLDPRT repeats configuration name {name:?}"
             )));
         }
         if let Some(index) = configuration.source_index {
             if !used.insert(index) {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "duplicate SLDPRT configuration source index {index}"
                 )));
             }
@@ -694,7 +695,7 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
 
 pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     let bytes = serde_json::to_vec(&ir.model.pmi)
-        .map_err(|error| CodecError::Malformed(format!("cannot hash SLDPRT PMI: {error}")))?;
+        .map_err(|error| CodecError::malformed(format_args!("cannot hash SLDPRT PMI: {error}")))?;
     Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }
 
@@ -721,7 +722,7 @@ fn configuration_partitions(
         .iter()
         .find(|body| !configured.contains(&body.id))
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "SLDPRT body {} belongs to no configuration",
             body.id.0
         )));
@@ -736,7 +737,7 @@ fn configuration_partitions(
         })
         .map(|(configuration, bodies)| {
             let index = configuration.source_index.ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT configuration {} has no assigned source index",
                     configuration.id.0
                 ))
@@ -785,7 +786,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .iter()
         .find(|id| !ir.model.bodies.iter().any(|body| &body.id == *id))
     {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "configuration references missing body {}",
             id.0
         )));
@@ -1040,7 +1041,7 @@ fn patch_retained_swobjects_metadata(
             .iter_mut()
             .find_map(|(candidate, _, payload)| (*candidate == stream).then_some(payload))
             .ok_or_else(|| {
-                CodecError::Malformed(format!(
+                CodecError::malformed(format_args!(
                     "SLDPRT metadata attribute {} references a missing SWObjects section",
                     attribute.id
                 ))
@@ -1367,7 +1368,7 @@ fn resolved_feature_payload(
         .filter_map(|(offset, bytes)| (bytes == MARKER).then_some(offset))
         .collect::<Vec<_>>();
     if expected_offsets.len() != lane.sketch_entities.len() {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "feature-input lane {} has {} markers but {} native records",
             lane.id,
             expected_offsets.len(),
@@ -1397,7 +1398,7 @@ fn resolved_feature_payload(
                     *expected_offset,
                 )
         {
-            return Err(CodecError::Malformed(format!(
+            return Err(CodecError::malformed(format_args!(
                 "feature-input lane {} has inconsistent marker order",
                 lane.id
             )));
@@ -2171,6 +2172,12 @@ pub(super) fn sequential_tessellation(
     }
     let triangle_count = u32::try_from(mesh.triangles.len())
         .map_err(|_| CodecError::Malformed("tessellation triangle count overflow".into()))?;
+    let strip_lengths = alloc_filled(
+        triangle_count as usize,
+        3_u32,
+        "SLDPRT tessellation triangle strips",
+    )?;
+    let triangles = triangles_from_strips(&strip_lengths)?;
     Ok(cadmpeg_ir::tessellation::Tessellation {
         id: mesh.id.clone(),
         body: mesh.body.clone(),
@@ -2178,9 +2185,9 @@ pub(super) fn sequential_tessellation(
         chordal_deflection: mesh.chordal_deflection,
         source_object: mesh.source_object.clone(),
         vertices,
-        triangles: triangles_from_strips(&vec![3; triangle_count as usize])?,
+        triangles,
         feature_edges: Vec::new(),
-        strip_lengths: vec![3; triangle_count as usize],
+        strip_lengths,
         normals,
         corner_normals: Vec::new(),
         triangle_groups: Vec::new(),
@@ -2194,7 +2201,7 @@ fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
     if narrowed.is_finite() {
         Ok(narrowed)
     } else {
-        Err(CodecError::Malformed(format!(
+        Err(CodecError::malformed(format_args!(
             "SLDPRT tessellation {role} exceeds f32 range"
         )))
     }
@@ -3446,6 +3453,7 @@ mod nurbs_write_tests {
         ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
             id: cadmpeg_ir::ids::PmiId("sldprt:model:pmi#A1".into()),
             name: Some("datum A".into()),
+            visible: None,
             targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
                 source_id: "F1".into(),
             }],

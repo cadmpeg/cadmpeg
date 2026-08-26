@@ -4,8 +4,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::FeatureDefinition;
 
-use super::*;
-
 #[test]
 fn nx_body_writing_thread_labels_retain_distinct_unresolved_families() {
     let mut source_properties = BTreeMap::new();

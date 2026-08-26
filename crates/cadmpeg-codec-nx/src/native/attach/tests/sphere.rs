@@ -4,8 +4,6 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::FeatureDefinition;
 
-use super::*;
-
 #[test]
 fn nx_body_writing_sphere_retains_primitive_family_without_dimensions() {
     let mut source_properties = BTreeMap::new();

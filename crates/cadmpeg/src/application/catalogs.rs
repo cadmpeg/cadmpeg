@@ -377,12 +377,17 @@ mod tests {
             panic!("markerless ZIP must remain ambiguous");
         };
         assert_eq!(confidence, Confidence::Low);
+        let expected = if cfg!(feature = "step") {
+            vec!["fcstd", "f3d", "step"]
+        } else {
+            vec!["fcstd", "f3d"]
+        };
         assert_eq!(
             candidates
                 .iter()
                 .map(|value| value.format_id())
                 .collect::<Vec<_>>(),
-            ["fcstd", "f3d"]
+            expected
         );
     }
 

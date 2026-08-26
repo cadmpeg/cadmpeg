@@ -35,6 +35,7 @@ use crate::records::{
     DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, SketchCurveGeometry, SketchCurveIdentity,
 };
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -4938,8 +4939,8 @@ pub(crate) fn project_fixed_loft(
         closed: false,
         solid: true,
         ruled: false,
+        linearize: false,
         max_degree: None,
-        check_compatibility: None,
         allow_multi_profile_faces: None,
     })
 }
@@ -5675,7 +5676,12 @@ pub(crate) fn project_surface_patch(
     if groups.len() != boundary_count || scope.surface_patch_boundaries.len() != boundary_count {
         return None;
     }
-    let mut occupied = vec![false; scope.reference_members.len()];
+    let mut occupied = alloc_filled(
+        scope.reference_members.len(),
+        false,
+        "f3d surface patch reference occupancy",
+    )
+    .ok()?;
     for boundary in &groups {
         let group_ordinal = usize::try_from(boundary.scope_reference_ordinal).ok()?;
         let member_ordinal = group_ordinal.checked_add(1)?;

@@ -2,8 +2,6 @@
 
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
 
-use super::*;
-
 #[test]
 fn nx_shell_preserves_family_without_assigning_construction_roles() {
     assert!(matches!(

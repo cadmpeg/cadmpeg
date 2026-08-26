@@ -351,7 +351,7 @@ pub(crate) fn sync_changed_feature_scalars(
                 .native_payload
                 .get_mut(offset..offset + 8)
                 .ok_or_else(|| {
-                    cadmpeg_core::CodecError::Malformed(format!(
+                    cadmpeg_core::CodecError::malformed(format_args!(
                         "SLDPRT scalar {} lies outside its payload",
                         scalar.id
                     ))

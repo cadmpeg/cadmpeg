@@ -199,12 +199,12 @@
                 44,
                 48,
                 44,
+                48,
+                44,
                 49,
                 44,
                 51,
                 59,
-                32,
-                32,
                 32,
                 32,
                 32,
@@ -1375,8 +1375,6 @@
                 32,
                 32,
                 32,
-                32,
-                32,
                 32
               ],
               "directory_sequence": 1,
@@ -1414,12 +1412,12 @@
                 44,
                 48,
                 44,
+                48,
+                44,
                 49,
                 44,
                 51,
                 59,
-                32,
-                32,
                 32,
                 32,
                 32,
@@ -1517,12 +1515,20 @@
                   "start": 12,
                   "value": {
                     "kind": "integer",
-                    "value": 1
+                    "value": 0
                   }
                 },
                 {
                   "end": 15,
                   "start": 14,
+                  "value": {
+                    "kind": "integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "end": 17,
+                  "start": 16,
                   "value": {
                     "kind": "integer",
                     "value": 3
@@ -1536,7 +1542,7 @@
                 {
                   "expected": "type-316-or-type-322-or-type-406-or-type-422",
                   "kind": "parameter",
-                  "parameter_index": 6,
+                  "parameter_index": 7,
                   "raw_pointer": 3,
                   "resolution": "resolved",
                   "target": "iges:entity:directory#3"
@@ -2109,8 +2115,11 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [],
           "network_definitions": [],
           "network_instances": [],
           "primitive_solids": [],
@@ -2218,6 +2227,8 @@
               "source_entity": "iges:entity:directory#5"
             }
           ],
+          "quarantined_directory_records": [],
+          "quarantined_parameter_records": [],
           "rectangular_arrays": [],
           "segmented_visibility": [],
           "selected_components": [],
@@ -2232,7 +2243,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 2
+        "version": 6
       }
     },
     "source": {
@@ -2251,7 +2262,7 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 0.001
     },
     "units": {
       "length": "millimeter"
@@ -2268,7 +2279,7 @@
       "entity.406.form.11=1",
       "entity.406.form.27=1",
       "parameter_records=3",
-      "parameter_tokens=34",
+      "parameter_tokens=35",
       "external_references=0",
       "references.resolved=1"
     ],
@@ -2300,10 +2311,10 @@
     "retained_records": [
       {
         "byte_len": 1053,
-        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMTYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAxMTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBPV05FUiAgICAgICAwRCAgICAgIDIKICAgICA0MDYgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICA0MDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAyNyAgICAgICAgICAgICAgICAgR0VORVJJQyAgICAgICAwRCAgICAgIDQKICAgICA0MDYgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDUKICAgICA0MDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAxMSAgICAgICAgICAgICAgICAgVEFCVUxBUiAgICAgICAwRCAgICAgIDYKMTE2LDAsMCwwLDAsMSwzOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKNDA2LDE0LDRITUVUQSw2LDAsLDEsNDIsMiwzLjUsMyw1SFNURUVMLDQsMSw2LDE7ICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKNDA2LDksNSwxLDEsMiwyLDUwLDI1LDMzLDQ2OyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDA2UDAwMDAwMDMgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMTYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAxMTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBPV05FUiAgICAgICAwRCAgICAgIDIKICAgICA0MDYgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICA0MDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAyNyAgICAgICAgICAgICAgICAgR0VORVJJQyAgICAgICAwRCAgICAgIDQKICAgICA0MDYgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDUKICAgICA0MDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAxMSAgICAgICAgICAgICAgICAgVEFCVUxBUiAgICAgICAwRCAgICAgIDYKMTE2LDAsMCwwLDAsMCwxLDM7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKNDA2LDE0LDRITUVUQSw2LDAsLDEsNDIsMiwzLjUsMyw1SFNURUVMLDQsMSw2LDE7ICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKNDA2LDksNSwxLDEsMiwyLDUwLDI1LDMzLDQ2OyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDA2UDAwMDAwMDMgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
         "id": "iges:file:source-image#0",
         "offset": 0,
-        "sha256": "13d4ad880c84f2cc6d09c7536e90f7af335ce3bf94454d3ce5668e2aaed07186",
+        "sha256": "dd60876e75880fd72e2c7a47d7334426345ee99ddc2e052928c2e14de86aebe0",
         "stream": "iges"
       }
     ],

@@ -51,49 +51,31 @@ fn anonymous<'a>(
 pub(crate) fn decode(
     data: &[u8],
     range: Range<usize>,
-    scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Detail, GeometryError> {
     let (mut outer, next, minor) = anonymous(data, range.start, range.end, archive, "detail")?;
-    if next != range.end || !(0..=1).contains(&minor) {
+    if next != range.end || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: range.start,
             message: format!("unsupported detail version 1.{minor}"),
         });
     }
     let view_start = outer.position();
-    let (view, view_next, view_minor) =
+    let (view, view_next, _view_minor) =
         anonymous(data, view_start, outer.end(), archive, "detail view state")?;
-    if view_minor != 0 {
-        return Err(GeometryError::UnsupportedVersion {
-            offset: view_start,
-            message: format!("unsupported detail view-state version 1.{view_minor}"),
-        });
-    }
     let view_range = view.position()..view.end();
     outer.skip(view_next - outer.position())?;
 
     let boundary_start = outer.position();
-    let (mut boundary, boundary_next, boundary_minor) = anonymous(
+    let (mut boundary, boundary_next, _boundary_minor) = anonymous(
         data,
         boundary_start,
         outer.end(),
         archive,
         "detail boundary",
     )?;
-    if boundary_minor != 0 {
-        return Err(GeometryError::UnsupportedVersion {
-            offset: boundary_start,
-            message: format!("unsupported detail boundary version 1.{boundary_minor}"),
-        });
-    }
-    let geometry = crate::surfaces::read_nurbs_curve(&mut boundary, scale)?;
-    if boundary.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            boundary.position(),
-            "detail boundary has trailing bytes",
-        ));
-    }
+    let geometry = crate::surfaces::read_nurbs_curve(&mut boundary, 1.0)?;
+    boundary.skip_remaining()?;
     outer.skip(boundary_next - outer.position())?;
     let page_per_model_ratio = if minor >= 1 { outer.f64()? } else { 0.0 };
     if !page_per_model_ratio.is_finite() || page_per_model_ratio < 0.0 {
@@ -102,12 +84,7 @@ pub(crate) fn decode(
             "detail page-to-model ratio is invalid",
         ));
     }
-    if outer.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            outer.position(),
-            "detail has trailing bytes",
-        ));
-    }
+    outer.skip_remaining()?;
     Ok(Detail {
         source_range: range,
         view_range,
@@ -134,6 +111,23 @@ mod tests {
 
     fn boundary() -> Vec<u8> {
         let mut bytes = vec![0x11];
+        for value in [2_i32, 0, 2, 2, 0, 0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend([0; 48]);
+        bytes.extend(2_i32.to_le_bytes());
+        bytes.extend(0.0_f64.to_le_bytes());
+        bytes.extend(1.0_f64.to_le_bytes());
+        bytes.extend(2_i32.to_le_bytes());
+        for value in [0.0_f64, 0.0, 2.0, 0.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.push(0);
+        bytes
+    }
+
+    fn boundary_3d() -> Vec<u8> {
+        let mut bytes = vec![0x11];
         for value in [3_i32, 0, 2, 2, 0, 0] {
             bytes.extend(value.to_le_bytes());
         }
@@ -142,7 +136,7 @@ mod tests {
         bytes.extend(0.0_f64.to_le_bytes());
         bytes.extend(1.0_f64.to_le_bytes());
         bytes.extend(2_i32.to_le_bytes());
-        for value in [0.0_f64, 0.0, 0.0, 2.0, 0.0, 0.0] {
+        for value in [0.0_f64, 0.0, 7.0, 2.0, 0.0, 8.0] {
             bytes.extend(value.to_le_bytes());
         }
         bytes.push(0);
@@ -151,20 +145,56 @@ mod tests {
 
     #[test]
     fn decodes_boundary_and_bounds_native_view_state() {
-        let view = anonymous(0, &[7, 8, 9]);
-        let boundary = anonymous(0, &boundary());
+        let view = anonymous(2, &[7, 8, 9]);
+        let mut boundary_body = boundary();
+        boundary_body.extend([0xaa, 0xbb]);
+        let boundary = anonymous(4, &boundary_body);
         let mut content = view;
         content.extend(boundary);
         content.extend(0.5_f64.to_le_bytes());
-        let bytes = anonymous(1, &content);
+        content.extend([0xcc, 0xdd]);
+        let bytes = anonymous(4, &content);
 
         let detail =
-            decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8).expect("required invariant");
+            decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect("required invariant");
         assert_eq!(detail.page_per_model_ratio, 0.5);
         assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
         let CurveGeometry::Nurbs(boundary) = detail.boundary.geometry else {
             panic!("detail boundary must be NURBS");
         };
-        assert_eq!(boundary.control_points[1].x, 20.0);
+        assert_eq!(boundary.control_points[1].x, 2.0);
+    }
+
+    #[test]
+    fn minor_zero_defaults_ratio_and_skips_outer_suffix() {
+        let view = anonymous(0, &[7, 8, 9]);
+        let boundary = anonymous(0, &boundary());
+        let mut content = view;
+        content.extend(boundary);
+        content.extend([0xcc, 0xdd]);
+        let bytes = anonymous(0, &content);
+
+        let detail =
+            decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect("required invariant");
+
+        assert_eq!(detail.page_per_model_ratio, 0.0);
+        assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
+    }
+
+    #[test]
+    fn preserves_three_dimensional_boundary_poles() {
+        let view = anonymous(0, &[]);
+        let boundary = anonymous(0, &boundary_3d());
+        let mut content = view;
+        content.extend(boundary);
+        let bytes = anonymous(0, &content);
+
+        let detail =
+            decode(&bytes, 0..bytes.len(), ArchiveVersion::V5).expect("required invariant");
+        let CurveGeometry::Nurbs(boundary) = detail.boundary.geometry else {
+            panic!("detail boundary must be NURBS");
+        };
+        assert_eq!(boundary.control_points[0].z, 7.0);
+        assert_eq!(boundary.control_points[1].z, 8.0);
     }
 }

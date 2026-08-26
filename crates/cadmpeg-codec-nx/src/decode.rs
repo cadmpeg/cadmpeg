@@ -24,49 +24,44 @@ use crate::loss::NxLossCode;
 use crate::parasolid::{self, Stream, StreamKind};
 
 mod jpeg;
-#[allow(unused_imports)]
 pub(crate) use jpeg::jpeg_dimensions;
 
 mod report;
 #[allow(unused_imports)]
-pub(crate) use report::{append_design_intent_losses, build_geometry_report};
+pub(crate) use report::append_design_intent_losses;
 
 mod feature_completeness;
 #[allow(unused_imports)]
 pub(crate) use feature_completeness::{
     active_configuration_state_is_incomplete, body_selection_is_incomplete,
-    body_selections_overlap, chamfer_definition_is_incomplete, chamfer_spec_is_incomplete,
-    combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
-    datum_plane_is_incomplete, delete_body_definition_is_incomplete, directions_are_perpendicular,
-    draft_definition_is_incomplete, edge_selection_is_incomplete, explicit_body_ids,
+    body_selections_overlap, chamfer_definition_is_incomplete, combine_definition_is_incomplete,
+    datum_coordinate_system_is_incomplete, datum_plane_is_incomplete,
+    delete_body_definition_is_incomplete, edge_selection_is_incomplete,
     extend_surface_definition_is_incomplete, extrude_definition_is_incomplete,
     extrude_extent_is_incomplete, extrude_start_is_incomplete, face_blend_definition_is_incomplete,
     face_selection_is_incomplete, face_selections_overlap, fillet_definition_is_incomplete,
     finite_feature_point, hole_auxiliary_semantics_are_incomplete, hole_definition_is_incomplete,
-    hole_feature_is_incomplete, hole_kind_is_incomplete, incomplete_expression_parameters,
-    loft_definition_is_incomplete, loft_section_is_incomplete,
-    offset_surface_definition_is_incomplete, output_free_local_body_construction,
-    output_free_native_snapshot, output_free_pattern_construction,
-    output_free_trim_surface_construction, path_ref_is_incomplete,
-    pattern_composition_is_incomplete, pattern_feature_is_incomplete, pattern_is_incomplete,
+    hole_feature_is_incomplete, incomplete_expression_parameters, loft_definition_is_incomplete,
+    loft_section_is_incomplete, offset_surface_definition_is_incomplete,
+    output_free_local_body_construction, output_free_native_snapshot,
+    output_free_pattern_construction, output_free_trim_surface_construction,
+    path_ref_is_incomplete, pattern_feature_is_incomplete, pattern_is_incomplete,
     pattern_occurrence_count, positive_feature_length, profile_dependency_is_incomplete,
     profile_ref_is_incomplete, projected_curve_direction_is_incomplete, radius_spec_is_incomplete,
     replace_face_definition_is_incomplete, resolved_body_selection_len,
     revolve_definition_is_incomplete, revolve_feature_is_incomplete, rib_definition_is_incomplete,
-    rib_feature_is_incomplete, selection_ids_are_incomplete, sew_bodies_definition_is_incomplete,
-    shell_definition_is_incomplete, sphere_definition_is_incomplete,
-    sweep_definition_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
-    termination_dependency_is_incomplete, termination_is_incomplete,
-    thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
-    trim_surface_definition_is_incomplete, unit_feature_direction, valid_draft_angle,
-    valid_feature_direction, valid_increasing_locations,
+    rib_feature_is_incomplete, sew_bodies_definition_is_incomplete, shell_definition_is_incomplete,
+    sphere_definition_is_incomplete, sweep_definition_is_incomplete, sweep_mode_is_incomplete,
+    sweep_orientation_is_incomplete, termination_dependency_is_incomplete,
+    termination_is_incomplete, thicken_definition_is_incomplete,
+    trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
+    unit_feature_direction, valid_draft_angle, valid_feature_direction,
 };
 
 mod geometry_work;
 
 mod pcurves;
 #[cfg(test)]
-#[allow(unused_imports)]
 pub(crate) use pcurves::blend_boundary_parameter_from_support_spine;
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -90,6 +85,7 @@ pub(crate) use pcurves::{
     complete_intersection_pcurves_from_coedge_incidence,
     complete_intersection_supports_from_edge_incidence,
     complete_tolerant_intersection_pcurves_from_serialized_branches_with_budget,
+    exact_analytic_isocurve_pcurve,
 };
 
 mod offset;

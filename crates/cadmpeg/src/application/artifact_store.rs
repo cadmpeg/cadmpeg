@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_container::compound::CompoundPrefixProbe;
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::codec::ExportPlan;
 use cadmpeg_ir::report::{DecodeReport, ExportReport};
 use cadmpeg_ir::{decode_sidecar_path, DecodeSidecar, SourceFidelity};
@@ -41,7 +42,8 @@ impl ArtifactStore {
     pub fn read_detection_input(path: &Path, prefix_len: usize, max_bytes: u64) -> Result<Vec<u8>> {
         let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
         let mut bytes = Vec::with_capacity(prefix_len);
-        let mut chunk = vec![0_u8; 64 * 1024].into_boxed_slice();
+        let mut chunk =
+            alloc_filled(64 * 1024, 0_u8, "cli artifact detection chunk")?.into_boxed_slice();
         while bytes.len() < prefix_len {
             let chunk_len = (prefix_len - bytes.len()).min(chunk.len());
             let read = file.read(&mut chunk[..chunk_len])?;

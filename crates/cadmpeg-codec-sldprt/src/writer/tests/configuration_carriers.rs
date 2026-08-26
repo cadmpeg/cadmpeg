@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
@@ -1247,7 +1246,7 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
 }
 
 #[test]
-fn semantic_writer_preserves_body_material() {
+fn semantic_writer_preserves_unbound_material_definition() {
     let mut decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_material(
@@ -1270,20 +1269,19 @@ fn semantic_writer_preserves_body_material() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(
-        regenerated.ir().model.bodies[0].name.as_deref(),
-        Some("Steel")
-    );
-    let color = regenerated.ir().model.bodies[0].color.unwrap();
-    assert!((color.r - 32.0 / 255.0).abs() < 1e-6);
-    assert!((color.g - 64.0 / 255.0).abs() < 1e-6);
-    assert!((color.b - 128.0 / 255.0).abs() < 1e-6);
-    assert!(regenerated
+    assert!(regenerated.ir().model.bodies[0].name.is_none());
+    assert!(regenerated.ir().model.bodies[0].color.is_none());
+    let appearance = regenerated
         .ir()
         .model
         .appearances
         .iter()
-        .any(|appearance| appearance.name.as_deref() == Some("Steel")));
+        .find(|appearance| appearance.name.as_deref() == Some("Steel"))
+        .unwrap();
+    let color = appearance.base_color.unwrap();
+    assert!((color.r - 32.0 / 255.0).abs() < 1e-6);
+    assert!((color.g - 64.0 / 255.0).abs() < 1e-6);
+    assert!((color.b - 128.0 / 255.0).abs() < 1e-6);
 }
 
 #[test]
@@ -1300,6 +1298,12 @@ fn semantic_writer_rejects_overlong_material_names() {
         .unwrap();
     decoded.ir_mut().model.appearances[0].name = Some("M".repeat(256));
     decoded.ir_mut().model.bodies[0].name = Some("M".repeat(256));
+    decoded.ir_mut().model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
+        r: 32.0 / 255.0,
+        g: 64.0 / 255.0,
+        b: 128.0 / 255.0,
+        a: 1.0,
+    });
     let error = SldprtCodec
         .write_preserved_with_source_fidelity(
             decoded.ir(),

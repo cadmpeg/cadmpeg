@@ -2,8 +2,6 @@
 
 use cadmpeg_ir::features::{FeatureDefinition, SurfaceExtension};
 
-use super::*;
-
 #[test]
 fn nx_enlarge_preserves_surface_extension_family_without_roles() {
     assert!(matches!(

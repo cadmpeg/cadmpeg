@@ -5,8 +5,6 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::ids::BodyId;
 
-use super::*;
-
 #[test]
 fn nx_brep_projects_to_stored_geometry_only_with_unique_result_bodies() {
     let body = BodyId("body#1".into());

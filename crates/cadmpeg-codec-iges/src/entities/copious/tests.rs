@@ -1,34 +1,80 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::{self, Cursor, Read, Seek, SeekFrom};
+use std::io::Cursor;
 
 use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
-    SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, VertexId,
-};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
-};
-use cadmpeg_ir::units::Units;
-use cadmpeg_ir::CadIr;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::loss::IgesLossCode;
 use crate::test_support::*;
-use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
+use crate::IgesCodec;
+
+use super::presentation_use_flag_valid;
+
+#[test]
+fn presentation_copious_forms_require_the_annotation_use_flag() {
+    for form in [20, 21, 31, 32, 33, 34, 35, 36, 37, 38, 40] {
+        assert!(presentation_use_flag_valid(form, 1), "{form}");
+        assert!(!presentation_use_flag_valid(form, 0), "{form}");
+        assert!(!presentation_use_flag_valid(form, 2), "{form}");
+    }
+    assert!(presentation_use_flag_valid(11, 0));
+}
+
+#[test]
+fn decode_refuses_a_copious_tuple_count_over_its_projection_limit() {
+    let error = IgesCodec
+        .decode(
+            &mut Cursor::new(copious_data_file(12, b"106,2,1000001;", "00000000")),
+            &DecodeOptions::default(),
+        )
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::Codec("iges_copious_tuples")
+                && limit.limit == 1_000_000
+                && limit.used == 1_000_000
+                && limit.additional == 1
+    ));
+}
+
+#[test]
+fn decode_rejects_presentation_copious_forms_without_annotation_use_flag() {
+    let globals = [
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;".as_slice(),
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;".as_slice(),
+    ];
+    for global in globals {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file_with_global(
+                    &[OwnedTestEntity {
+                        entity_type: 106,
+                        form: 40,
+                        label: "WITNESS".into(),
+                        status: "00000000",
+                        parameters: "106,1,3,0,0,0,1,0,2,0;".into(),
+                    }],
+                    global,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(result.ir().model.curves.is_empty());
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::EntityNotProjected.kind()
+                && loss
+                    .message
+                    .contains("Type 106 presentation forms require Entity Use Flag 01")
+        }));
+    }
+}
 
 #[test]
 fn decode_projects_copious_linear_paths_with_segment_parameters() {
@@ -60,6 +106,74 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
 }
 
 #[test]
+fn v4_one_tuple_linear_path_is_projected_as_its_authored_point() {
+    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global_and_line_fonts(
+                &[OwnedTestEntity {
+                    entity_type: 106,
+                    form: 11,
+                    label: "V4PATH".into(),
+                    status: "00000000",
+                    parameters: "106,1,1,0,3,4;".into(),
+                }],
+                global_v4,
+                &[(1, 1)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().model.vertices.len(), 1);
+    assert!(result.ir().model.curves.is_empty());
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::SourceDialectUnverified.kind()),
+        "{:#?}",
+        result.report()
+    );
+}
+
+#[test]
+fn v5_one_tuple_linear_path_keeps_the_later_minimum() {
+    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[OwnedTestEntity {
+                    entity_type: 106,
+                    form: 11,
+                    label: "V5PATH".into(),
+                    status: "00000000",
+                    parameters: "106,1,1,0,3,4;".into(),
+                }],
+                global_v5,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss
+                .message
+                .contains("linear paths require at least 2 tuple(s)")
+    }));
+}
+
+#[test]
 fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
     let result = IgesCodec
         .decode(
@@ -83,9 +197,33 @@ fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
 }
 
 #[test]
+fn decode_preserves_crossing_segments_in_a_copious_linear_path() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(copious_data_file(
+                12,
+                b"106,2,4,0,0,0,1,1,0,0,1,0,1,0,0;",
+                "00000000",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(path) = &result.ir().model.curves[0].geometry
+    else {
+        panic!("expected a degree-one path carrier");
+    };
+    assert_eq!(path.control_points.len(), 4);
+    assert!(path.control_points[1].x > path.control_points[0].x);
+    assert!(path.control_points[1].y > path.control_points[0].y);
+    assert!(path.control_points[3].x > path.control_points[0].x);
+    assert!(result.report().losses.is_empty());
+}
+
+#[test]
 fn decode_closes_form_63_with_the_global_minimum_resolution() {
-    for (gap, decoded) in [("0.000999", true), ("0.001001", false)] {
-        let parameters = format!("106,1,3,0,0,0,1,0,0,{gap};");
+    for (gap, decoded) in [("0.000999", true), ("0.001", false), ("0.001001", false)] {
+        let parameters = format!("106,1,4,0,0,0,1,0,0,1,{gap},0;");
         let result = IgesCodec
             .decode(
                 &mut Cursor::new(copious_data_file(63, parameters.as_bytes(), "00000000")),
@@ -112,6 +250,49 @@ fn decode_closes_form_63_with_the_global_minimum_resolution() {
                 .message
                 .contains("endpoints disagree beyond the minimum resolution")));
         }
+    }
+}
+
+#[test]
+fn decode_rejects_a_form_63_non_endpoint_duplicate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(copious_data_file(
+                63,
+                b"106,1,5,0,0,0,1,0,1,1,1,0,0,0;",
+                "00000000",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir().model.curves.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("coincident non-endpoint points")));
+}
+
+#[test]
+fn decode_rejects_form_63_self_intersections_without_duplicate_points() {
+    for parameters in [
+        b"106,1,5,0,0,0,1,1,0,1,1,0,0,0;".as_slice(),
+        b"106,1,4,0,0,0,2,0,1,0,0,0;".as_slice(),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(copious_data_file(63, parameters, "00000000")),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        assert!(result.ir().model.curves.is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
     }
 }
 
@@ -146,22 +327,84 @@ fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
 }
 
 #[test]
-fn strict_decode_rejects_an_attributed_projection_loss() {
+fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 106,
+                    form: 11,
+                    label: "COPIOUS".into(),
+                    status: "00000000",
+                    parameters: "106,1,2,0,0,0,1,9,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 116,
+                    form: 0,
+                    label: "P0".into(),
+                    status: "00000000",
+                    parameters: "116,0,0,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 116,
+                    form: 0,
+                    label: "P1".into(),
+                    status: "00000000",
+                    parameters: "116,1,0,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 116,
+                    form: 0,
+                    label: "P2".into(),
+                    status: "00000000",
+                    parameters: "116,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 402,
+                    form: 1,
+                    label: "GROUP".into(),
+                    status: "00000000",
+                    parameters: "402,1,1;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.curves.len(), 1);
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("tuple array is truncated")));
+
+    let native = result.ir().native.namespace("iges").unwrap();
+    let copious = &native.arenas["copious_data"][0];
+    assert_eq!(copious.fields()["declared_tuple_count"], 2);
+    assert_eq!(copious.fields()["tuples"].as_array().unwrap().len(), 2);
+    let entity = native.arenas["entities"]
+        .iter()
+        .find(|record| record.fields()["directory_sequence"] == 1)
+        .expect("copious entity");
+    assert!(entity.fields()["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn strict_decode_reports_an_attributed_projection_loss_without_refusal() {
     let bytes = copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000");
     let mut options = DecodeOptions::default();
     options.policy.mode = DecodeMode::Strict;
 
-    let error = IgesCodec
-        .decode(&mut Cursor::new(bytes), &options)
-        .unwrap_err();
+    let result = IgesCodec.decode(&mut Cursor::new(bytes), &options).unwrap();
 
-    assert!(error.to_string().contains(&format!(
-        "strict mode rejects {}",
-        IgesLossCode::EntityNotProjected.kind()
-    )));
-    assert!(error
-        .to_string()
-        .contains("interpretation flag disagrees with the entity form"));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
 }
 
 #[test]
@@ -194,7 +437,15 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
         .unwrap();
     assert!(!witness.report().geometry_transferred);
     assert!(witness.ir().model.curves.is_empty());
-    assert!(witness.report().losses.is_empty());
+    assert!(witness
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+    assert_eq!(
+        witness.report().transfer_ledger.entries[0].note.as_deref(),
+        Some("native record retained; semantic projection omitted with an attributed loss")
+    );
     let validation = cadmpeg_ir::validate_neutral(witness.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

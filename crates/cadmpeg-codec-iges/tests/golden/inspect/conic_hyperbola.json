@@ -67,8 +67,9 @@
     "iges_version=5.3",
     "entities=1",
     "entity.104.form.2=1",
-    "parameter_records=1",
-    "parameter_tokens=12",
-    "external_references=0"
+    "parameter_records=0",
+    "parameter_tokens=0",
+    "external_references=0",
+    "loss.iges/parameter.data-quarantined=1"
   ]
 }

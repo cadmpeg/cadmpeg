@@ -1,27 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports)]
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
-use std::{collections::BTreeMap, io::Cursor};
+use cadmpeg_ir::geometry::{PcurveGeometry, ProceduralCurveDefinition};
+use cadmpeg_ir::math::Point2;
+use std::collections::BTreeMap;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
-};
-use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
-use cadmpeg_ir::Exactness;
-
-use crate::container;
-use crate::parasolid::{self, StreamKind};
 use crate::test_support::*;
-use crate::NxCodec;
-
-use super::*;
 
 #[test]
 fn intersection_support_completion_requires_one_unique_incident_complement() {

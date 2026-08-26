@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NURBS, offset, blend, and compact-carrier surface decode tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::LossTaxonomy;
 
-use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
@@ -433,7 +431,10 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
     let error = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
         .expect_err("strict refuses the untyped-surface census");
-    assert!(error.to_string().contains("strict mode rejects sldprt/"));
+    let cadmpeg_core::CodecError::StrictRefusal { loss_code, .. } = &error else {
+        panic!("a strict refusal is a policy class, not a container defect: {error:?}");
+    };
+    assert!(loss_code.starts_with("sldprt/"), "unexpected: {loss_code}");
 }
 
 #[test]

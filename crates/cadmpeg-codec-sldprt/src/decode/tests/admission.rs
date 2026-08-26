@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Container admission, strict-mode, and resource-limit decode tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
-use cadmpeg_ir::LossTaxonomy;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
 use crate::test_support::*;
@@ -128,10 +126,10 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
-        Err(cadmpeg_core::CodecError::Malformed(message)) => {
+        Err(cadmpeg_core::CodecError::StrictRefusal { loss_code, .. }) => {
             assert!(
-                message.contains("strict mode rejects sldprt/"),
-                "unexpected message: {message}"
+                loss_code.starts_with("sldprt/"),
+                "unexpected loss code: {loss_code}"
             );
         }
         other => panic!("strict decode must reject unrepresentable geometry, got {other:?}"),

@@ -2,8 +2,6 @@
 
 use cadmpeg_ir::features::FeatureDefinition;
 
-use super::*;
-
 #[test]
 fn nx_extract_face_retains_family_without_unproven_roles() {
     let definition = super::non_boolean_feature_definition("EXTRACT_FACE", &[], None, None, None);

@@ -8,10 +8,10 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::{validate_neutral, validate_neutral_with_source_fidelity, CadIr, SourceFidelity};
 
-pub use crate::application::ValidationMode;
 use crate::application::{
     build_encoder, export_target, ArtifactStore, ConversionPolicy, ConversionRefusal,
     EncoderRequest, ForcedInput, InputCatalog, NativeValidatorCatalog, ResolveSourceError,
@@ -73,15 +73,15 @@ pub struct ConversionPlan {
     pub report: Option<PathBuf>,
     /// Stream a binary output format to standard output instead of refusing.
     pub binary_stdout: bool,
-    /// Neutral validation policy.
-    pub validation: ValidationMode,
+    /// Write even if the check finds errors.
+    pub allow_errors: bool,
     /// Export a geometry format when decoding transferred no geometry.
     pub allow_empty: bool,
     /// Refuse to export when the decode reported any loss.
     pub reject_lossy: bool,
     /// Explicit Rhino output archive version when the flag was supplied.
     #[cfg(feature = "rhino")]
-    pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
+    pub rhino_target: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// STEP writer options when a STEP-only flag was supplied.
     #[cfg(feature = "step")]
     pub step_options: Option<cadmpeg_codec_step::StepWriteOptions>,
@@ -191,8 +191,8 @@ pub fn inspect(
     Ok(())
 }
 
-/// Decode a native CAD file and write canonical CADIR JSON.
-pub fn decode(
+/// Dump a native CAD file and write CADIR JSON.
+pub fn dump(
     catalogs: &AppCatalogs,
     path: &Path,
     out: Option<&Path>,
@@ -201,7 +201,30 @@ pub fn decode(
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
 ) -> Result<()> {
-    let outcome = loader::load_artifact(&catalogs.inputs, path, args.options(), forced)?;
+    let outcome = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            let Some(report_path) = report_path else {
+                return Err(error);
+            };
+            let Some(refusal) = decode_failure_refusal(&error) else {
+                return Err(error);
+            };
+            write_command_report(
+                path,
+                Some(report_path),
+                force,
+                "dump",
+                CommandReportBody {
+                    decode_report: None,
+                    check_report: None,
+                    export: None,
+                    refusal: Some(&refusal),
+                },
+            )?;
+            return Err(refusal.into());
+        }
+    };
     print_load_notices(&outcome.notices);
     let loaded = &outcome.document;
     export_ir(
@@ -217,17 +240,17 @@ pub fn decode(
     if let Some(report) = loaded.decode_report() {
         print_decode_report(&mut io::stderr(), report)?;
     }
-    // Decode does not validate. Convert/validate compose validate_neutral +
+    // Dump does not check. Convert/check compose validate_neutral +
     // fidelity + native; salvage mode may emit IR with findings.
-    eprintln!("validation: not run (successful decode is not a valid IR; run `cadmpeg validate`)");
+    eprintln!("check: not run (a successful dump is not a checked model; run `cadmpeg check`)");
     write_command_report(
         path,
         report_path,
         force,
-        "decode",
+        "dump",
         CommandReportBody {
             decode_report: loaded.decode_report(),
-            validation_report: None,
+            check_report: None,
             export: None,
             refusal: None,
         },
@@ -235,8 +258,18 @@ pub fn decode(
     Ok(())
 }
 
-/// Load and validate CADIR, printing a human-readable or JSON report.
-pub fn validate_cmd(
+fn decode_failure_refusal(error: &anyhow::Error) -> Option<ConversionRefusal> {
+    let codec_error = error.downcast_ref::<CodecError>()?;
+    if matches!(codec_error, CodecError::Io(_)) {
+        return None;
+    }
+    Some(ConversionRefusal::DecodeFailed {
+        message: format!("decode failed: {error:#}"),
+    })
+}
+
+/// Load and check CADIR, printing a human-readable or JSON report.
+pub fn check_cmd(
     catalogs: &AppCatalogs,
     path: &Path,
     forced: Option<ForcedInput>,
@@ -258,8 +291,8 @@ pub fn validate_cmd(
         loaded.fidelity(),
         losses(loaded.decode_report()),
     );
-    let validate_refusal = (!report.is_ok()).then(|| ConversionRefusal::ValidationFailed {
-        message: format!("validation found {} error(s)", report.error_count()),
+    let check_refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
+        message: format!("check found {} error(s)", report.error_count()),
         decode_report: loaded.decode_report().cloned(),
         validation: report.clone(),
     });
@@ -267,21 +300,21 @@ pub fn validate_cmd(
         path,
         report_path,
         force,
-        "validate",
+        "check",
         &serde_json::json!({
             "decode_report": loaded.decode_report(),
-            "validation_report": report,
+            "check_report": report,
         }),
-        validate_refusal.as_ref(),
+        check_refusal.as_ref(),
     )?;
     if json {
         let mut payload = serde_json::json!({
             "schema_version": CLI_SCHEMA_VERSION,
-            "command": "validate",
+            "command": "check",
             "decode_report": loaded.decode_report(),
-            "validation_report": report,
+            "check_report": report,
         });
-        match &validate_refusal {
+        match &check_refusal {
             Some(refusal) => {
                 let fields = refusal.report_fields();
                 payload["status"] = fields["status"].clone();
@@ -294,27 +327,15 @@ pub fn validate_cmd(
         }
         writeln!(stdout, "{}", serde_json::to_string_pretty(&payload)?)?;
     } else {
-        print_validation_report(&mut stdout, &report)?;
+        print_check_report(&mut stdout, &report)?;
     }
-    if let Some(refusal) = validate_refusal {
+    if let Some(refusal) = check_refusal {
         return Err(refusal.into());
     }
     Ok(())
 }
 
-/// Decode if needed and export without validating CADIR.
-pub fn export(
-    catalogs: &AppCatalogs,
-    path: &Path,
-    format: Option<Format>,
-    out: Option<&Path>,
-    plan: &ConversionPlan,
-    args: &DecodeArgs,
-) -> Result<()> {
-    execute_conversion(catalogs, path, format, out, plan, args, "export")
-}
-
-/// Decode if needed, validate CADIR, and export.
+/// Convert a CAD file to another format.
 pub fn convert(
     catalogs: &AppCatalogs,
     path: &Path,
@@ -323,7 +344,7 @@ pub fn convert(
     plan: &ConversionPlan,
     args: &DecodeArgs,
 ) -> Result<()> {
-    execute_conversion(catalogs, path, format, out, plan, args, "convert")
+    execute_conversion(catalogs, path, format, out, plan, args)
 }
 
 fn execute_conversion(
@@ -333,7 +354,6 @@ fn execute_conversion(
     out: Option<&Path>,
     plan: &ConversionPlan,
     args: &DecodeArgs,
-    command: &'static str,
 ) -> Result<()> {
     let format = resolve_format(format, out)?;
     let target = export_target(
@@ -345,7 +365,7 @@ fn execute_conversion(
         #[cfg(feature = "iges")]
         plan.iges_options,
         #[cfg(feature = "rhino")]
-        plan.rhino_version,
+        plan.rhino_target,
     )
     .map_err(anyhow::Error::from)?;
 
@@ -361,7 +381,7 @@ fn execute_conversion(
         ConversionPolicy {
             force: plan.force,
             binary_stdout: plan.binary_stdout,
-            validation: plan.validation,
+            allow_errors: plan.allow_errors,
             allow_empty: plan.allow_empty,
             reject_lossy: plan.reject_lossy,
             destination: out.map(Path::to_path_buf),
@@ -373,24 +393,20 @@ fn execute_conversion(
                 let mut stderr = io::stderr();
                 if let Some(report) = refusal.decode_report() {
                     print_decode_report(&mut stderr, report)?;
-                    if matches!(plan.validation, ValidationMode::Skipped) {
-                        eprintln!("note: export skips IR validation; use `convert` to validate");
-                    } else {
-                        writeln!(stderr)?;
-                    }
+                    writeln!(stderr)?;
                 }
-                if let Some(validation) = refusal.validation_report() {
-                    print_validation_report(&mut stderr, validation)?;
+                if let Some(validation) = refusal.check_report() {
+                    print_check_report(&mut stderr, validation)?;
                 }
                 if refusal.may_write_report() {
                     write_command_report(
                         path,
                         plan.report.as_deref(),
                         plan.force,
-                        command,
+                        "convert",
                         CommandReportBody {
                             decode_report: refusal.decode_report(),
-                            validation_report: refusal.validation_report(),
+                            check_report: refusal.check_report(),
                             export: None,
                             refusal: Some(refusal),
                         },
@@ -405,14 +421,10 @@ fn execute_conversion(
     let mut stderr = io::stderr();
     if let Some(report) = prepared.document.decode_report() {
         print_decode_report(&mut stderr, report)?;
-        if matches!(plan.validation, ValidationMode::Skipped) {
-            eprintln!("note: export skips IR validation; use `convert` to validate");
-        } else {
-            writeln!(stderr)?;
-        }
+        writeln!(stderr)?;
     }
     if let Some(validation) = &prepared.validation {
-        print_validation_report(&mut stderr, validation)?;
+        print_check_report(&mut stderr, validation)?;
     }
     let decode_report = prepared.document.decode_report().cloned();
     let validation = prepared.validation.clone();
@@ -421,17 +433,17 @@ fn execute_conversion(
         path,
         plan.report.as_deref(),
         plan.force,
-        command,
+        "convert",
         CommandReportBody {
             decode_report: decode_report.as_ref(),
-            validation_report: validation.as_ref(),
+            check_report: validation.as_ref(),
             export: Some(&report),
             refusal: None,
         },
     )
 }
 
-/// Structurally compare two decoded models.
+/// Compare two CAD files.
 pub fn diff(
     catalogs: &AppCatalogs,
     a: DiffInput<'_>,
@@ -682,7 +694,7 @@ fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format
     Format::from_path(out).ok_or_else(|| anyhow!("cannot infer format; pass -f"))
 }
 
-/// Writes CADIR for the decode command (no conversion refusals).
+/// Writes CADIR for the dump command (no conversion refusals).
 #[allow(clippy::too_many_arguments)]
 fn export_ir(
     ir: &CadIr,
@@ -756,7 +768,7 @@ fn export_ir(
 #[derive(Clone, Copy)]
 struct CommandReportBody<'a> {
     decode_report: Option<&'a DecodeReport>,
-    validation_report: Option<&'a ValidationReport>,
+    check_report: Option<&'a ValidationReport>,
     export: Option<&'a ExportReport>,
     refusal: Option<&'a ConversionRefusal>,
 }
@@ -775,7 +787,7 @@ fn write_command_report(
         command,
         &serde_json::json!({
             "decode_report": body.decode_report,
-            "validation_report": body.validation_report,
+            "check_report": body.check_report,
             "export": body.export,
         }),
         body.refusal,
@@ -879,10 +891,10 @@ fn print_decode_report(writer: &mut impl Write, report: &DecodeReport) -> io::Re
     Ok(())
 }
 
-fn print_validation_report(writer: &mut impl Write, report: &ValidationReport) -> io::Result<()> {
+fn print_check_report(writer: &mut impl Write, report: &ValidationReport) -> io::Result<()> {
     writeln!(
         writer,
-        "validation: {} ({} error(s), {} warning(s))",
+        "check: {} ({} error(s), {} warning(s))",
         if report.is_ok() { "OK" } else { "FAILED" },
         report.error_count(),
         report.warning_count()

@@ -234,6 +234,23 @@ fn retains_every_reference_to_a_shared_side_entry() {
     assert_eq!(span.classification, "named_opaque");
     assert_eq!(span.owner.as_deref(), Some(shared.id.as_str()));
     assert!(crate::validate_native(result.ir()).is_empty());
+
+    let mut corrupted = result.ir().clone();
+    let mut corrupted_entries = entries.clone();
+    corrupted_entries
+        .iter_mut()
+        .find(|entry| entry.name == "Shared.bin")
+        .expect("shared entry")
+        .referenced_by
+        .pop();
+    corrupted
+        .native
+        .namespace_mut("fcstd")
+        .set_arena("entries", &corrupted_entries)
+        .expect("replace entries");
+    assert!(crate::validate_native(&corrupted)
+        .iter()
+        .any(|finding| finding.check == cadmpeg_ir::Check::ReferentialIntegrity));
 }
 
 #[test]

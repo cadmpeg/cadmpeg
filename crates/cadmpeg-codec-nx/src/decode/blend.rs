@@ -11,6 +11,7 @@ use super::offset::{
 };
 use super::support_uv::parameterization_equivalent_surfaces_with_index;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
+use cadmpeg_core::decode::alloc_filled;
 #[cfg(test)]
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget;
@@ -2196,9 +2197,7 @@ fn homogeneous_pcurve_spans(
             weights.to_vec()
         }
         Some(_) => return None,
-        None => {
-            cadmpeg_core::decode::alloc_filled(count, 1.0, "nx homogeneous curve weights").ok()?
-        }
+        None => alloc_filled(count, 1.0, "nx blend curve weights").ok()?,
     };
     let coordinate_scale = control_points
         .iter()
@@ -2577,7 +2576,7 @@ pub(crate) fn insert_homogeneous_curve_knot<const DIMENSION: usize>(
         return Some(());
     }
     let inserted_count = count.checked_add(1)?;
-    let mut inserted = cadmpeg_core::decode::alloc_filled(
+    let mut inserted = alloc_filled(
         inserted_count,
         [0.0; DIMENSION],
         "nx inserted homogeneous curve controls",
@@ -3766,7 +3765,7 @@ pub(crate) fn closest_nurbs_curve_parameter_with_budget(
             weights.clone()
         }
         Some(_) => return None,
-        None => cadmpeg_core::decode::alloc_filled(count, 1.0, "nx NURBS curve weights").ok()?,
+        None => alloc_filled(count, 1.0, "nx blend curve weights").ok()?,
     };
     let coordinate_scale = curve
         .control_points

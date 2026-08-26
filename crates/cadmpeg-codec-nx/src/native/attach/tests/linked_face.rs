@@ -2,8 +2,6 @@
 
 use cadmpeg_ir::features::FeatureDefinition;
 
-use super::*;
-
 #[test]
 fn nx_linked_face_retains_body_affecting_family_without_roles() {
     let definition = super::non_boolean_feature_definition("LINKED_FACE", &[], None, None, None);

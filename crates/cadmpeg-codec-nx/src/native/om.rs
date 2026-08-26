@@ -4913,7 +4913,7 @@ mod tests {
 
     use super::*;
     use crate::container;
-    use crate::parasolid::{self, StreamKind};
+
     use crate::test_support::*;
     use crate::NxCodec;
 

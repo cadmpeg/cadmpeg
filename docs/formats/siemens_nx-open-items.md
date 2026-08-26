@@ -242,7 +242,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must define the enclosing grammar or discriminator that distinguishes a six-byte tombstone from the same byte pattern inside another bounded payload. The following record family must not participate in tombstone identity.
 
-### PS-31. Fixed-node frame ownership
+### PS-40. Fixed-node frame ownership
 
 **Question.** Which stream invariant owns a fixed-node frame when the node does not participate in a complete body-topology graph?
 
@@ -251,6 +251,127 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** We must identify the sequential or enclosing owner of a fixed frame that has no complete-topology or typed-reference owner. The proof must exclude complete-looking fixed records inside opaque payloads.
 
 **Conflict.** The ambiguity baseline still rejects several fixed-node families when `node_id` is greater than `1,000,000`. The cutoff cannot reject a topology node that completes the body graph or a uniquely referenced ownership or carrier node. It can still reject a valid unowned fixed frame.
+
+### PS-29. Interleaved body revision sequences
+
+**Question.** How does a deltas stream that holds more than one body sequence select the current revision of each body?
+
+**Known.** `siemens_nx.md` §7.2 "BODY (`00 0c`) records delimit body revisions. The record prefix is" defines the revision prefix, the monotonic `node_id` counter, and the rule that the final validated BODY envelope begins the current revision. `siemens_nx.md` §9.2 "A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body" states that a `node_id` reset begins another interleaved body sequence.
+
+**Need.** We must reconcile the two current-revision rules, or state that paired partition and deltas streams hold exactly one body sequence. The §7.2 last-envelope rule merges every other sequence's current-revision records as historical.
+
+**Conflict.** The two rules disagree when a stream holds interleaved sequences. The §7.2 rule takes the last envelope in the stream, which belongs to one sequence, so the current-revision records of every other sequence fall before that offset and merge as historical. The decoder applies the §7.2 rule and never reads `node_id` for sequencing. The §9.2 `xmt == 3` delimiter is also not enforced. We must reconcile the two sections, or state that paired partition and deltas streams hold exactly one body sequence.
+
+**Note.** The closure selects monotonic runs with `revision_direction`, which chooses the direction with fewer violations and uses the opposite transitions as resets. This is an order heuristic with no serialized sequence identity. An interleaved sequence such as alternating body revisions can be grouped as one run and lose a current revision. The synthetic tests do not establish the ownership rule.
+
+### PS-30. Fixed-record field shift selection
+
+**Question.** Which field establishes the escape and large-index shift of a fixed analytic record, and what bounds a record that the ownership graph does not own?
+
+**Known.** `siemens_nx.md` §4.1 "Lengths are logical, before escape/large-index shifts. Each code is a Parasolid XT node ty" defines the tags and the record lengths before escape and large-index shifts. `siemens_nx.md` §6 "All geometric doubles are finite binary64 values in meters" states that the format imposes no model-magnitude bound.
+
+**Need.** We must know the shift field so that recovery does not need a magnitude test. A model larger than one kilometer loses its recovered carriers, and an unrelated byte run can enter the model as an analytic carrier.
+
+**Conflict.** The decoder recovers records that the ownership graph does not own by trying six field shifts in order and accepting the first whose payload passes a magnitude test. `crates/cadmpeg-codec-nx/src/geometry.rs` rejects a coordinate at or above `1.0e3` meters and a radius outside `1.0e-9` to `1.0e3`. Those bounds contradict §6. A model larger than one kilometer loses its recovered carriers, and an unrelated byte run inside a payload can pass the test and enter the model as an analytic carrier. Recovered carriers are not separable from graph-resolved carriers in the model, and an unreferenced recovered surface or curve is never removed. We must know the shift field so that recovery does not need a magnitude test.
+
+**Note.** The closure replaces the shift scan with direct and escaped frame candidates and a parser-derived boundary check. No serialized field establishes the choice, and the successor boundary is itself recognized by the same candidate parser. If both candidates end at recognized tags, or neither does because of a trailer, a valid record is omitted; a false recognized successor can select the wrong reading.
+
+### PS-31. `OFFSET_SURF` discriminator and true-offset roles
+
+**Question.** What do the `OFFSET_SURF` discriminator byte and `true_offset` field select?
+
+**Known.** `siemens_nx.md` §6.1 "**OFFSET_SURF (60):** discriminator byte `+19` (`V`/`I`/`U`), `true_offset:u8 +20` (`0`/`1`), base surface ref" defines the layout and the evaluation `P = base(u,v) + offset_distance * unit_normal(u,v)`. It assigns no role to the discriminator or to `true_offset`.
+
+**Need.** We must know the roles before the transferred surface states a parameter-direction sense. The decoder writes a forward sense for both parameters on every offset surface. If either field selects parameter reversal, every transferred offset surface states the wrong sense, and the sense comparison between two offset surfaces cannot separate them.
+
+**Note.** The closure changes the specification to say that `V`, `I`, and `U` are status values and that neither field affects parameter direction. The tests only mutate synthetic bytes and assert that the decoder leaves senses unset. No serialized comparison establishes either field's meaning or rules out an orientation role.
+
+### PS-32. Procedural-intersection support ordering
+
+**Question.** Which reference of a type-38 construction is the primary support?
+
+**Known.** `siemens_nx.md` §6.3 "For the `0x5a` delta twin the layout is fixed (primary = ref[0], bridge = ref[1]); for t" gives the rule: the `0x5a` twin has a fixed layout, and a type-38 construction takes its primary reference from the `0x00cc` marker, where marker 2 selects reference 0 and marker 3 selects reference 1.
+
+**Need.** We must decide the primary-support rule so that a type-38 construction with two surface references does not attach its support lane to the wrong surface. The serialized-lane path does not apply the chart-tolerance test, so nothing later rejects the wrong attachment.
+
+**Conflict.** The decoder does not apply this rule. `construction_supports` in `crates/cadmpeg-codec-nx/src/intersection.rs` tests reference 0 and then reference 1 for surface identity and takes the first that is a surface. The marker is decoded and retained, but it selects only the tuple width. The two rules agree when one reference is a type-59 bridge, and they disagree when both references resolve to surface records and the marker is 3. The support lane then attaches to the wrong surface. `siemens_nx.md` §6.3 also requires every evaluable lane point to reproduce its chart point inside the chart tolerance; the serialized-lane path does not apply that test, so nothing later rejects the wrong attachment.
+
+**Note.** The closure validates support-UV lanes against the selected surface but does not independently establish that marker 3 reverses support order. The marker test and fixture were authored together with the rule. If the marker selects another values-array mode, both surface identity and pcurve attachment are wrong.
+
+### PS-33. Chart point layout selection
+
+**Question.** Which field selects the `Hvec` layout of a `CHART_s` point array?
+
+**Known.** `siemens_nx.md` §6.3 "Hvec form depends on the stream: partition streams use **`xyz3`** (`x,y,z` meters); delt" gives the rule: the stream kind selects the layout. `siemens_nx.md` §6 "All geometric doubles are finite binary64 values in meters" states that the format imposes no model-magnitude bound.
+
+**Need.** We must decide the layout selector so that a wide record is not read as narrow triples that cross field boundaries, and so that a charted intersection of a larger model is not dropped by the magnitude test.
+
+**Conflict.** The decoder does not apply the stream rule. `chart_points` in `crates/cadmpeg-codec-nx/src/intersection.rs` tries the wide layout first, accepts it when every tangent is near unit norm and the native parameters ascend, and otherwise reads the same bytes with the narrow stride. The caller separates partition bytes from replacement-stream bytes already, so the stream kind is available and unused. A wide record that fails the norm test is then read as narrow triples that cross field boundaries, and the resulting point sequence is transferred as curve geometry. The same function rejects any coordinate at or above one hundred meters, which contradicts §6 and drops every charted intersection of a larger model.
+
+**Note.** The closure passes a `StreamKind` into the parser, but the ext11 branch still admits points through tangent and parameter plausibility checks. The stream-kind mapping and the synthetic fixtures were introduced together; a serialized chart from corpus records has not yet verified that outer stream kind is the layout discriminator.
+
+### PS-34. B-spline form-code semantics
+
+**Question.** What does each B-spline form code mean?
+
+**Known.** `siemens_nx.md` §9.3 "A type-126 B-surface descriptor stores U/V periodic logical flags" names the descriptor fields and assigns the former form-code positions as knot types. `siemens_nx.md` §9.3 "The B-spline knot type does not determine whether a control grid is rational or periodic." excludes one interpretation. The specification does not provide independent evidence for the value meanings.
+
+**Need.** We must know the meaning of each code. The decoder admits the codes `1`, `4`, `5`, and `6`, and transfers the single code `6` as the periodic flag of the surface, curve, or pcurve. A periodic carrier whose code is not `6` transfers as open, so its seam trims as a boundary. Periodicity also gates the offset-surface cache relation, so a wrong flag admits or discards that relation.
+
+**Note.** The closure moves periodicity to logical bytes and relabels the former form bytes as knot types, but the value meanings are asserted by the changed specification and synthetic descriptor tests. The current parser retains knot types only as an admission gate; their semantics remain unverified against corpus records.
+
+### PS-35. Escaped and direct fixed-record disambiguation
+
+**Question.** Which test separates a direct large-index fixed record from an escaped record when the byte after the type is `ff`?
+
+**Known.** `siemens_nx.md` §5.1 "Any topology or geometry fixed node may place an envelope escape byte `ff`" states that the complete family field grammar disambiguates the two readings. `siemens_nx.md` §4.2 "Status-framed fixed records use a status byte in `0..=1` after each encoded reference." requires that exactly one reading ends before a recognized node type.
+
+**Need.** We must decide which test separates the two readings so that a direct record whose remainder byte is `ff` keeps its identity, and so that BODY and REGION records are not selected by candidate order.
+
+**Conflict.** The decoder applies neither test. `Graph::parse` in `crates/cadmpeg-codec-nx/src/topology.rs` builds both readings, filters each by family framing, and then prefers the escaped reading on a quality tie. The quality function scores only SHELL records and returns zero for every other kind, so the escaped reading always wins for FACE, LOOP, EDGE, FIN, VERTEX, and POINT. A direct record whose remainder byte is `ff` is then indexed under a different identity, and every reference that names it fails to resolve. The same comparison decides which of two records with equal type and identity keeps the graph slot, and it discards the other without reporting a loss. The family-framing filter that the specification names as the disambiguator tests only SHELL, FACE, LOOP, EDGE, FIN, VERTEX, and POINT records, and admits every other kind unconditionally. For BODY and REGION the stated rule therefore selects nothing, and the reading comes from candidate order.
+
+**Note.** The original closure removed the old shell-only preference, but the current graph still ranks candidates in `topology.rs:718-856` with body-shape, boundary, reference-count, and node-quality heuristics. The ambiguity debt was not removed; it was generalized and is tracked again by PS-38.
+
+### PS-36. Standalone `0x5a` record anchor
+
+**Question.** What anchors a standalone `0x5a` intersection record in a deltas stream?
+
+**Known.** `siemens_nx.md` §4.2 "The type-38 form has the header" gives the exact schema prefix, in which the name `intersection_data` precedes the `0x5a` tag at a fixed distance. `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after their six construction references" states that these records occur standalone and need no following recognized tag.
+
+**Need.** We must know the anchor to admit exactly the real records. The decoder treats every `0x5a` byte as a candidate and accepts it when a header reference equals one, or when the name occurs anywhere in about eighty preceding bytes. Neither condition is the fixed prefix. A record whose header is farther upstream is dropped, and a payload byte run that satisfies the structural tests enters the model as a curve.
+
+**Note.** The closure introduces an exact header constant and a stream-global `schema_anchor_seen` flag. The tests construct the header from that same constant. A valid variant header may be rejected, and an unrelated later `0x5a` can be admitted after one earlier anchor. Scope and alternate forms need independent serialized evidence.
+
+### PS-37. NURBS record count and degree limits
+
+**Question.** What bounds the counts, degrees, and pole counts of B-spline support records?
+
+**Known.** `siemens_nx.md` §9.3 "Type 127 stores `00 7f [ff], 0000, count:u16 BE, xmt, value[count]:u16 BE`. Type 128 uses the same envelope and sto" defines the array-record envelopes and states that counts are nonzero and identities are non-null. `siemens_nx.md` §6.2 "Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rationa" gives the basis constraints that relate degree, pole count, and multiplicity sums.
+
+**Need.** We must know the bounds, or confirm that the basis constraints are the only ones. The decoder locates these records by scanning the complete stream and admits a record only inside fixed numeric ranges for the array count, the degree, the pole count, and the distinct-knot count. A surface or curve outside those ranges is omitted, and its face keeps an unresolved carrier.
+
+**Note.** The closure changes several descriptor fields from narrow reads to wider reads and removes explicit ceilings, then validates basis cardinality. The synthetic large-cardinality tests are constructed for that interpretation; corpus records have not yet verified the field widths or the absence of a format/resource bound. The count and degree rule remains open.
+
+### PS-38. Fixed-record candidate ranking
+
+**Question.** What serialized evidence selects one complete fixed-record interpretation when direct, escaped, or overlapping candidates all pass structural parsing?
+
+**Known.** `siemens_nx.md` §5.1 requires the complete family grammar and record boundary to establish fixed-record identity. It does not define body-shape preference, reference-count preference, node-quality ranking, or an ownership rule based on scan order.
+
+**Need.** We must know the discriminator before indexing a candidate by `(type, XMT)` or discarding an overlapping candidate. A wrong choice changes topology ownership and every dependent geometry relation.
+
+**Note.** `Graph::parse` in `crates/cadmpeg-codec-nx/src/topology.rs:718-856` accepts the highest-ranked candidate after reference filtering and falls back to heuristic ranking when no candidate resolves. `crates/cadmpeg-codec-nx/src/framing.rs:24-77` supplies multiple complete interpretations. **Evidence:** the comparator uses body-shape, recognized-boundary, reference-count, and node-quality preferences; no serialized discriminator is read. **Counter-evidence:** reference-consistency checks and equal-score rejection discard some ambiguous candidates, and the ranking can be intended as recovery for malformed streams. **Failure:** if an incidental `00 kind` sequence occurs inside a valid record, or if direct and escaped readings both end at recognized boundaries, the comparator can retain one reading without a serialized discriminator, changing topology ownership and dependent geometry. This is a new selection debt found in the 2026-08-10 hostile sweep.
+
+### PS-39. Cross-form intersection XMT identity
+
+**Question.** Can a type-38 construction and a schema-anchored single-byte `0x5a` construction share one stream-local XMT, and if so, which construction owns the chart and carrier relations?
+
+**Known.** `siemens_nx.md` §6.3 distinguishes the type-38 and `intersection_data` construction forms. The decoder uses stream-local XMT values for chart, construction, and carrier lookup. The specification does not define collision handling across the two construction forms.
+
+**Need.** We must know whether the two forms share one identity namespace or are mutually exclusive before joining charts and emitting native construction records.
+
+**Note.** `crates/cadmpeg-codec-nx/src/intersection.rs:367-376` chains both forms, `crates/cadmpeg-codec-nx/src/native/parasolid.rs:1391-1414` emits both under one intersection-record identity stem, and `crates/cadmpeg-codec-nx/src/decode.rs:1317-1331` and `1468-1476` use last-write-wins maps keyed only by XMT. **Evidence:** the construction forms share the stream-local XMT key and no cross-form collision check exists. **Counter-evidence:** the format may guarantee that the forms are mutually exclusive or that their XMT namespaces cannot collide; no raw record establishes either rule. **Failure:** if both forms occur with one XMT, iteration order selects one chart and one carrier relation without rejecting the ambiguity. This issue was found in the hostile sweep.
+
 
 ## 2. Object model and body composition
 
@@ -861,6 +982,17 @@ assigns control geometry, continuity, or terminal semantics.
 
 **Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded block and payload lanes do not assign unique input, objective, or result-mode roles.
 
+### OM-60. `RMFastLoad` membership table location
+
+**Question.** Which field gives the position of the `RMFastLoad` active object-id table?
+
+**Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the table as a little-endian count word followed by exactly that many ordered identity words, and states that FACE, EDGE, and VERTEX identities share the space. It does not give the position of the table.
+
+**Need.** We must know the position field. The decoder walks forward from the class marker and takes the first offset whose count word and following identity words fall inside fixed numeric ranges. The count must reach fifty, so a part with fewer active identities never matches its own table, and the active-body selection silently does not run. A count above the upper range is rejected the same way. This location rule supplies the input to the membership decision in OM-33.
+
+**Note.** `crates/cadmpeg-codec-nx/src/container.rs:400-435` takes the first count after the `UGS::Solid::Topol` marker whose candidate span reaches the product record. A plausible earlier count inside the bounded range can win before the real membership table, and the closure tests only synthetic placement. The first-candidate rule is not yet verified by a corpus field or invalidation witness, so this item is reopened.
+
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
@@ -955,3 +1087,14 @@ The closure test only exercises already-populated `ParasolidAttributeFieldUse` v
 **Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes. `siemens_nx.md` §7.1 "An explicit display-color assignment addresses a face when" defines the complete face appearance relation; a palette color is not a physical-material assignment.
 
 **Need.** We must know the relation to assign physical-material state to neutral faces without treating a display color, texture asset, or topology attribute as a material identity.
+### AM-11. JT 9 high-degree lane count
+
+**Question.** What field gives the number of high-degree face-attribute-mask lanes in a JT 9 topologically compressed representation?
+
+**Known.** `siemens_nx.md` §2.3 "The JT 9 topologically compressed representation begins with Int32 Compressed Data Packet Mk. 2" defines the fixed prefix packets, the split packets, the vertex-record header agreement test, and the rule that exactly one lane count must satisfy it. It states that one or more high-degree lanes occur. It gives no count field and no maximum.
+
+**Need.** We must know the field to frame the packet sequence directly. The decoder tries lane counts from one to sixty-four and keeps the unique count that satisfies the agreement test. Sixty-four is not a format bound. A representation that carries more lanes matches no count, and the decoder then drops the topology, vertex-record, and coordinate-array data and every mesh derived from them.
+
+**Note.** The closure removed the `1..=64` ceiling and scans until a unique vertex-header agreement in `crates/cadmpeg-codec-nx/src/native/display_jt.rs:817-911`, but a corpus JT representation has not yet verified that the packet stream has no count field or maximum. The regression fixture was constructed with sixty-five lanes to exercise the new scan. The lane-count rule remains unsupported, so this item is reopened.
+
+## 4. Test evidence

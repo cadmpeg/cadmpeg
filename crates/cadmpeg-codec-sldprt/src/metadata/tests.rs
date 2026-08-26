@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SWObjects` document-metadata decode and write-back tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
 use crate::test_support::*;

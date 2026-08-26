@@ -2,8 +2,6 @@
 
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
 
-use super::*;
-
 #[test]
 fn nx_symbolic_thread_retains_cosmetic_family_without_roles() {
     let definition =

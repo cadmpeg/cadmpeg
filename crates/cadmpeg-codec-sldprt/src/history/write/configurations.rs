@@ -1,37 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Configuration records for native write.
 
-#![allow(unused_imports)]
-use crate::classification::{
-    classify, classify_type_token, classify_xml_element, native_object_class,
-    principal_plane_with_siblings, FeatureClass, NativeClassKind,
-};
-use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
-use cadmpeg_core::decode::View;
+use crate::records::{Configuration, FeatureHistory};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
-use cadmpeg_ir::features::{
-    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    ConfigurationBodies, ConfigurationId, CosmeticThreadExtent, CurveProjectionDirection,
-    CurveProjectionDirectionState, DatumPlaneReference, DesignConfiguration, DesignParameter,
-    DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection,
-    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode,
-    HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
-    PatternKind, PatternSeed, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
-    ScaleCenter, ScaleFactors, SketchSpace, SplitFaceTool, SurfaceExtension, SweepMode,
-    Termination, TrimRegion, VariableRadius, VertexSelection, WrapMode,
-};
-use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::AttributeId;
-use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Body, Edge, Face};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::Exactness;
-use sha2::{Digest, Sha256};
+use cadmpeg_ir::features::{DesignConfiguration, ParameterValue};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Write as _;
 
 use super::features::synchronize_history_content_order;
 use crate::history::configuration::{
@@ -348,7 +321,7 @@ pub(crate) fn patch_configuration_parameter_scalars(
             lane.native_payload
                 .get_mut(offset..offset + 8)
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "SLDPRT scalar {} lies outside its payload",
                         scalar.id
                     ))

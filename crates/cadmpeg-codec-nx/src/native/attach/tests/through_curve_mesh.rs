@@ -2,8 +2,6 @@
 
 use cadmpeg_ir::features::FeatureDefinition;
 
-use super::*;
-
 #[test]
 fn nx_through_curve_mesh_retains_surface_family_without_roles() {
     let definition =

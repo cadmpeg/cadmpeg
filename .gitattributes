@@ -13,3 +13,4 @@ crates/*/tests/golden/**/*.bin binary
 # to a different document.
 crates/*/tests/golden/fixtures/** binary
 crates/*/tests/fixtures/** binary
+crates/*/src/**/tests/data/** binary

@@ -1208,7 +1208,7 @@ pub fn extract_streams<'a>(
                 continue;
             }
             let Some((inflated, consumed)) = inflate_stream(ctx, part_view, offset)? else {
-                return Err(CodecError::Malformed(format!(
+                return Err(CodecError::malformed(format_args!(
                     "invalid indexed zlib member at file offset {}",
                     start + offset
                 )));

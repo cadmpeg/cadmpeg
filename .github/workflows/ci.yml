@@ -130,6 +130,25 @@ jobs:
         # running, so a separate `cargo build` step would be redundant.
         run: cargo test-fast
 
+      - name: Bounded IGES decode and round-trip gate
+        # Give every synthesized IGES fixture independent decode, validation,
+        # conversion, generated-file decode, and generated-file validation
+        # deadlines under the unattended resource profile. Use the production
+        # profile so the deadline measures codec behavior rather than an
+        # unoptimized debug binary.
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v scripts/test_verify_iges_bounded.py
+          mkdir -p "$HOME/side2/tmp/iges-l9"
+          cargo build -q --release -p cadmpeg --no-default-features --features iges
+          python3 scripts/verify-iges-bounded.py \
+            crates/cadmpeg-codec-iges/tests/golden/fixtures \
+            --cadmpeg target/release/cadmpeg \
+            --limits service \
+            --timeout 30 \
+            --roundtrip \
+            --report "$HOME/side2/tmp/iges-l9/iges-bounded-report.json"
+
       - name: Independent Inventor evidence test
         run: python3 -m unittest -v scripts/test_inventor_evidence.py
 
@@ -260,7 +279,7 @@ jobs:
       - name: Install cargo-audit
         # Prebuilt binary; rustsec/audit-check compiled cargo-audit from
         # source on every run and dominated the pipeline's wall-clock.
-        uses: taiki-e/install-action@v2.85.11
+        uses: taiki-e/install-action@v2.86.3
         with:
           tool: cargo-audit
 

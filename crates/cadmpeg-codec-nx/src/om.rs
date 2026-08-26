@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{alloc_filled, View};
 
 pub(crate) mod registry;
 
@@ -4016,10 +4016,7 @@ pub fn fset_payload_reference_graph(
     let decode_reference = |at: &mut usize| {
         let offset = *at;
         (record.payload.get(offset) == Some(&0x90)).then_some(())?;
-        let object_index = u32::from(u16::from_be_bytes([
-            *record.payload.get(offset + 1)?,
-            *record.payload.get(offset + 2)?,
-        ]));
+        let object_index = u32::from(View::u16_be_at(record.payload, offset + 1)?);
         let width = 3;
         *at += width;
         Some(PayloadObjectReference {
@@ -7169,13 +7166,7 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
             Some(u32::from(prefix - 0x80) * 256 + u32::from(*bytes.get(at + 1)?)),
             at + 2,
         )),
-        0x90 => Some((
-            Some(u32::from(u16::from_be_bytes([
-                *bytes.get(at + 1)?,
-                *bytes.get(at + 2)?,
-            ]))),
-            at + 3,
-        )),
+        0x90 => Some((Some(u32::from(View::u16_be_at(bytes, at + 1)?)), at + 3)),
         0xff => Some((None, at + 1)),
         _ => None,
     }
@@ -8632,7 +8623,14 @@ pub fn counted_record_references(
         let mut run = Vec::with_capacity(count);
         for index in 0..count {
             let token = at + 2 + index * 3;
-            let value = u16::from_be_bytes([bytes[token + 1], bytes[token + 2]]);
+            let Some(value) = View::u16_be_at(bytes, token + 1) else {
+                run.clear();
+                break;
+            };
+            if usize::from(value) >= record_count {
+                run.clear();
+                break;
+            }
             run.push(ReferenceValue {
                 offset: base_offset + token,
                 kind: ReferenceKind::RecordOrdinal16,
@@ -9538,8 +9536,7 @@ pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
 pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
     let values = offset_store_control_values(bytes)?;
     let mut suffix_minima =
-        cadmpeg_core::decode::alloc_filled(values.len(), u32::MAX, "nx offset-store suffix minima")
-            .ok()?;
+        alloc_filled(values.len(), u32::MAX, "nx offset-store suffix minima").ok()?;
     for index in (0..values.len().saturating_sub(1)).rev() {
         suffix_minima[index] = suffix_minima[index + 1].min(values[index + 1]);
     }

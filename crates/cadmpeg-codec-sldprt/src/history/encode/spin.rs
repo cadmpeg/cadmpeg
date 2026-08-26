@@ -99,7 +99,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             if let Some(axis) = construction.axis {
                 if !valid_direction(axis.direction) {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "SLDPRT feature {} has a degenerate revolution axis",
                         feature.id
                     )));
@@ -117,7 +117,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 let profile_source =
                     profile_source(profile, record_sources, feature_sources, sketch_sources)
                         .ok_or_else(|| {
-                            CodecError::Malformed(format!(
+                            CodecError::malformed(format_args!(
                                 "SLDPRT feature {} references a missing revolution profile",
                                 feature.id
                             ))
@@ -192,7 +192,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     cadmpeg_ir::features::SweepSection::Profile(profile) => Some(
                         profile_source(profile, record_sources, feature_sources, sketch_sources)
                             .ok_or_else(|| {
-                                CodecError::Malformed(format!(
+                                CodecError::malformed(format_args!(
                                     "SLDPRT feature {} references a missing sweep profile",
                                     feature.id
                                 ))
@@ -209,7 +209,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let path_source = match path {
                 Some(path) => Some(
                     path_source(path, record_sources, sketch_sources).ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                        CodecError::malformed(format_args!(
                             "SLDPRT feature {} references a missing sweep path",
                             feature.id
                         ))
@@ -258,7 +258,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     parameters.insert("Scale".into(), scale.to_string());
                 }
                 Some(_) => {
-                    return Err(CodecError::Malformed(format!(
+                    return Err(CodecError::malformed(format_args!(
                         "SLDPRT feature {} has an invalid sweep scale",
                         feature.id
                     )))
@@ -313,8 +313,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         closed: &bool,
         solid: &bool,
         ruled: &bool,
+        linearize: &bool,
         max_degree: &Option<u32>,
-        check_compatibility: &Option<bool>,
         allow_multi_profile_faces: &Option<bool>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
@@ -326,8 +326,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if centerline.is_some()
                 || !solid
                 || *ruled
+                || *linearize
                 || max_degree.is_some()
-                || check_compatibility.is_some()
                 || allow_multi_profile_faces.is_some()
             {
                 return Err(CodecError::NotImplemented(format!(
@@ -367,7 +367,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 })
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "SLDPRT feature {} references a missing loft profile",
                         feature.id
                     ))
@@ -377,7 +377,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 .map(|path| path_source(path, record_sources, sketch_sources))
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| {
-                    CodecError::Malformed(format!(
+                    CodecError::malformed(format_args!(
                         "SLDPRT feature {} references a missing loft guide",
                         feature.id
                     ))

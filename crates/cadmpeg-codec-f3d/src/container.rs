@@ -95,7 +95,7 @@ pub(crate) fn read_entry_bounded(
     name: &str,
 ) -> Result<Vec<u8>, CodecError> {
     if declared_size > MAX_INFLATED_ENTRY_BYTES {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
         )));
     }
@@ -118,7 +118,7 @@ pub(crate) fn read_entry_bounded(
         bytes.extend_from_slice(&chunk[..read]);
     }
     if bytes.len() as u64 > MAX_INFLATED_ENTRY_BYTES {
-        return Err(CodecError::Malformed(format!(
+        return Err(CodecError::malformed(format_args!(
             "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
         )));
     }
@@ -226,7 +226,7 @@ impl<'a> ContainerScan<'a> {
     pub fn entry_bytes(&self, name: &str) -> Result<&'a [u8], CodecError> {
         self.entry_view(name)
             .map(View::window)
-            .ok_or_else(|| CodecError::Malformed(format!("entry {name} not found")))
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {name} not found")))
     }
 
     /// Returns an entry's payload view.

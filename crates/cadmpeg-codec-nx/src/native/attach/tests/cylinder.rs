@@ -2,8 +2,6 @@
 
 use cadmpeg_ir::features::FeatureDefinition;
 
-use super::*;
-
 #[test]
 fn nx_cylinder_retains_body_affecting_family_without_dimensions() {
     let definition = super::non_boolean_feature_definition("CYLINDER", &[], None, None, None);

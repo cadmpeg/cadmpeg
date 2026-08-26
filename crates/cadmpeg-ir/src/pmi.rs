@@ -5,7 +5,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{BodyId, EdgeId, FaceId, OccurrenceId, PmiId, ProductDefinitionId, VertexId};
+use crate::ids::{
+    BodyId, CurveId, EdgeId, FaceId, OccurrenceId, PmiId, PointId, ProductDefinitionId, VertexId,
+};
 use crate::transform::Transform;
 
 /// A model object qualified by an annotation.
@@ -32,6 +34,16 @@ pub enum PmiTarget {
     Vertex {
         /// Qualified vertex.
         vertex: VertexId,
+    },
+    /// Geometric point.
+    Point {
+        /// Qualified point.
+        point: PointId,
+    },
+    /// Geometric curve carrier.
+    Curve {
+        /// Qualified curve.
+        curve: CurveId,
     },
     /// Product prototype.
     Product {
@@ -90,6 +102,25 @@ pub enum DimensionKind {
     /// Radius.
     Radius,
     /// Source-defined dimensional subtype.
+    Other(String),
+}
+
+/// Geometric form of a datum target feature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DatumTargetForm {
+    /// Point target.
+    Point,
+    /// Line target.
+    Line,
+    /// Rectangular target.
+    Rectangle,
+    /// Circular target.
+    Circle,
+    /// Circular-curve target.
+    CircularCurve,
+    /// Source-defined or invalid target form.
     Other(String),
 }
 
@@ -178,6 +209,16 @@ pub enum PmiDefinition {
         /// Ordered datum references.
         references: Vec<DatumReference>,
     },
+    /// Datum target feature and its geometric form.
+    DatumTarget {
+        /// Geometric form of the target feature.
+        form: DatumTargetForm,
+        /// Target identifier shown with the datum target.
+        identification: String,
+        /// Shape aspects that provide the datum-target basis.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        basis: Vec<PmiTarget>,
+    },
     /// Geometric tolerance, zone units, modifiers, and optional datum system.
     GeometricTolerance {
         /// Tolerance characteristic.
@@ -240,6 +281,9 @@ pub struct PmiAnnotation {
     /// Display or source name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Whether the source explicitly displays this annotation occurrence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visible: Option<bool>,
     /// Qualified model objects.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<PmiTarget>,
@@ -262,6 +306,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: datum_id.clone(),
             name: Some("datum A".into()),
+            visible: None,
             targets: vec![PmiTarget::ShapeAspect {
                 source_id: "#10".into(),
             }],
@@ -272,6 +317,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("test:model:pmi#system".into()),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::DatumSystem {
                 references: vec![DatumReference {
@@ -288,11 +334,34 @@ mod tests {
     }
 
     #[test]
+    fn curve_target_resolves_against_the_curve_arena() {
+        let mut ir = crate::examples::unit_cube();
+        let curve = ir.model.curves[0].id.clone();
+        ir.model.pmi.push(PmiAnnotation {
+            id: PmiId("synthetic:model:pmi#curve-target".into()),
+            name: Some("curve target".into()),
+            visible: None,
+            targets: vec![PmiTarget::Curve { curve }],
+            definition: PmiDefinition::Dimension {
+                dimension: DimensionKind::Size,
+                nominal: None,
+                lower_deviation: None,
+                upper_deviation: None,
+                limits_and_fits: None,
+            },
+        });
+        ir.finalize();
+
+        assert!(validate_neutral(&ir, Vec::new()).is_ok());
+    }
+
+    #[test]
     fn unresolved_semantic_reference_is_invalid() {
         let mut ir = CadIr::empty(Units::default());
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("test:model:pmi#graphic".into()),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::Presentation {
                 text: None,
@@ -315,6 +384,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: dimension_id.clone(),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::Dimension {
                 dimension: DimensionKind::Size,
@@ -327,6 +397,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("test:model:pmi#system".into()),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::DatumSystem {
                 references: vec![DatumReference {
@@ -340,6 +411,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("test:model:pmi#tolerance".into()),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::GeometricTolerance {
                 tolerance: GeometricToleranceKind::Position,
@@ -373,6 +445,7 @@ mod tests {
         ir.model.pmi.push(PmiAnnotation {
             id: PmiId("test:model:pmi#graphic".into()),
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::Presentation {
                 text: None,
