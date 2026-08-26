@@ -781,6 +781,33 @@ fn width_coded_endpoint_distances_resolve_forward_class18_records() {
 }
 
 #[test]
+fn fixed_owner_boundary_cycle_rejects_cross_source_endpoint_network() {
+    let (bytes, _, _, endpoint_records) = b2_fixed_owner_boundary_cycle_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(
+        crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
+            &bytes, &records,
+        )
+        .len(),
+        1
+    );
+
+    let split = endpoint_records[1][1];
+    let split_records = crate::wire::records::consolidated_records_in_ranges(
+        &bytes,
+        [0..split, split..bytes.len()],
+    );
+    assert!(
+        crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
+            &bytes,
+            &split_records,
+        )
+        .is_empty(),
+        "a fixed-owner cycle cannot join endpoint records across bounded sources"
+    );
+}
+
+#[test]
 fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 
