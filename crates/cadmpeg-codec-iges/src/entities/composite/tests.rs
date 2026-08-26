@@ -1162,6 +1162,189 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
 }
 
 #[test]
+fn trimming_active_nurbs_subranges_preserves_a_rational_curve() {
+    const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
+    let curve = NurbsCurve {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 0.0),
+            Point3::new(2.0, -1.0, 0.0),
+            Point3::new(4.0, 0.0, 0.0),
+        ],
+        weights: Some(vec![1.0, 0.5, 2.0, 1.0]),
+        periodic: false,
+    };
+    let interval = [0.25, 1.5];
+    let trimmed = trim_nurbs_to_interval(&curve, interval)
+        .expect("a bounded active interval has an exact NURBS subrange");
+
+    assert_eq!(trimmed.knots.first(), Some(&interval[0]));
+    assert_eq!(trimmed.knots.last(), Some(&interval[1]));
+    assert_eq!(
+        trimmed.weights.as_ref().map(Vec::len),
+        Some(trimmed.control_points.len())
+    );
+    for parameter in [0.25, 0.5, 1.0, 1.5] {
+        let before = cadmpeg_ir::eval::nurbs_curve_point(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            curve.weights.as_deref(),
+            parameter,
+        )
+        .expect("source NURBS evaluates");
+        let after = cadmpeg_ir::eval::nurbs_curve_point(
+            trimmed.degree,
+            &trimmed.knots,
+            &trimmed.control_points,
+            trimmed.weights.as_deref(),
+            parameter,
+        )
+        .expect("trimmed NURBS evaluates");
+        assert!(before.distance(after) <= EPS_TRIMMED_NURBS);
+    }
+}
+
+#[test]
+fn concatenation_accepts_exact_active_nurbs_subranges() {
+    const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
+    let curve = NurbsCurve {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 0.0),
+            Point3::new(2.0, -1.0, 0.0),
+            Point3::new(4.0, 0.0, 0.0),
+        ],
+        weights: Some(vec![1.0, 0.5, 2.0, 1.0]),
+        periodic: false,
+    };
+    let first =
+        trim_nurbs_to_interval(&curve, [0.0, 1.0]).expect("first active NURBS interval is exact");
+    let second =
+        trim_nurbs_to_interval(&curve, [1.0, 2.0]).expect("second active NURBS interval is exact");
+    let concatenated = concatenate_nurbs(vec![(first, [0.0, 1.0]), (second, [1.0, 2.0])], None)
+        .expect("evaluated active endpoints join exactly");
+
+    for parameter in [0.25, 0.75, 1.25, 1.75] {
+        let before = cadmpeg_ir::eval::nurbs_curve_point(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            curve.weights.as_deref(),
+            parameter,
+        )
+        .expect("source NURBS evaluates");
+        let after = cadmpeg_ir::eval::nurbs_curve_point(
+            concatenated.nurbs.degree,
+            &concatenated.nurbs.knots,
+            &concatenated.nurbs.control_points,
+            concatenated.nurbs.weights.as_deref(),
+            parameter,
+        )
+        .expect("concatenated NURBS evaluates");
+        assert!(before.distance(after) <= EPS_TRIMMED_NURBS);
+    }
+}
+
+#[test]
+fn trimming_supports_degree_zero_and_nonclamped_nurbs() {
+    const EPS_TRIMMED_NURBS: f64 = 1.0e-9;
+    let piecewise_constant = NurbsCurve {
+        degree: 0,
+        knots: vec![0.0, 1.0, 2.0],
+        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        weights: None,
+        periodic: false,
+    };
+    let nonclamped = NurbsCurve {
+        degree: 2,
+        knots: vec![0.0, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0],
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 0.0),
+            Point3::new(2.0, -1.0, 0.0),
+            Point3::new(4.0, 0.0, 0.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+
+    for (curve, interval, parameters) in [
+        (piecewise_constant, [0.5, 1.5], vec![0.75, 1.25]),
+        (nonclamped, [1.0, 3.0], vec![1.25, 2.0, 2.75]),
+    ] {
+        let trimmed = trim_nurbs_to_interval(&curve, interval)
+            .expect("a valid active interval has an exact NURBS subrange");
+        for parameter in parameters {
+            let before = cadmpeg_ir::eval::nurbs_curve_point(
+                curve.degree,
+                &curve.knots,
+                &curve.control_points,
+                curve.weights.as_deref(),
+                parameter,
+            )
+            .expect("source NURBS evaluates");
+            let after = cadmpeg_ir::eval::nurbs_curve_point(
+                trimmed.degree,
+                &trimmed.knots,
+                &trimmed.control_points,
+                trimmed.weights.as_deref(),
+                parameter,
+            )
+            .expect("trimmed NURBS evaluates");
+            assert!(before.distance(after) <= EPS_TRIMMED_NURBS);
+        }
+    }
+}
+
+#[test]
+fn concatenation_preserves_degree_zero_spans() {
+    let point = Point3::new(1.0, 2.0, 3.0);
+    let first = (
+        NurbsCurve {
+            degree: 0,
+            knots: vec![0.0, 1.0, 2.0],
+            control_points: vec![point, point],
+            weights: None,
+            periodic: false,
+        },
+        [0.0, 2.0],
+    );
+    let second = (
+        NurbsCurve {
+            degree: 0,
+            knots: vec![0.0, 1.0],
+            control_points: vec![point],
+            weights: None,
+            periodic: false,
+        },
+        [0.0, 1.0],
+    );
+    let concatenated = concatenate_nurbs(vec![first, second], None)
+        .expect("degree-zero spans with an exact join concatenate");
+
+    assert_eq!(concatenated.nurbs.degree, 0);
+    assert_eq!(concatenated.nurbs.knots, vec![0.0, 1.0, 2.0, 3.0]);
+    assert_eq!(concatenated.nurbs.control_points, vec![point, point, point]);
+    for parameter in [0.5, 1.5, 2.5] {
+        assert_eq!(
+            cadmpeg_ir::eval::nurbs_curve_point(
+                concatenated.nurbs.degree,
+                &concatenated.nurbs.knots,
+                &concatenated.nurbs.control_points,
+                concatenated.nurbs.weights.as_deref(),
+                parameter,
+            ),
+            Some(point)
+        );
+    }
+}
+
+#[test]
 fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
     let mut curve = NurbsCurve {
         degree: 1,
