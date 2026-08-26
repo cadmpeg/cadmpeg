@@ -2879,6 +2879,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     );
 
     ContainerSummary {
+        dialects: Vec::new(),
         format: "creo".to_string(),
         container_kind: "psb".to_string(),
         entries,

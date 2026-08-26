@@ -2123,6 +2123,8 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
 
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "rhino".to_string(),
         attributes: BTreeMap::from([("archive_version".to_string(), "1".to_string())]),
     });
@@ -2429,6 +2431,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<DecodeResult, CodecError> {
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
+dialects: Vec::new(),
             format: "rhino".to_string(),
             container_only: false,
             geometry_transferred: decoded > 0

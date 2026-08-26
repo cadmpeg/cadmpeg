@@ -4454,6 +4454,7 @@ impl<'a> Builder<'a> {
 
     fn finish_report(&self) -> ExportReport {
         ExportReport {
+            target: None,
             format: "step".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::TargetRecords,

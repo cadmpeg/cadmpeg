@@ -1547,6 +1547,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     );
 
     ContainerSummary {
+        dialects: Vec::new(),
         format: "catia".to_string(),
         container_kind: "v5-cfv2".to_string(),
         entries,

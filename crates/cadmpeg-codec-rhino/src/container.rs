@@ -1114,6 +1114,7 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
             .map(|diagnostic| diagnostic.message.clone()),
     );
     ContainerSummary {
+        dialects: Vec::new(),
         format: "rhino".to_string(),
         container_kind: "3dm-chunks".to_string(),
         entries,
@@ -1139,6 +1140,8 @@ fn source_meta(scan: &Scan<'_>) -> SourceMeta {
         scan.definitions.definitions.len().to_string(),
     );
     SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "rhino".to_string(),
         attributes,
     }
@@ -1174,6 +1177,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
         DecodeReport {
+            dialects: Vec::new(),
             format: "rhino".to_string(),
             container_only: true,
             geometry_transferred: false,
@@ -1200,6 +1204,7 @@ pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
     let header = parse_header(data).map_err(framing_error)?;
     if header_only(header.archive_version) {
         return Ok(ContainerSummary {
+            dialects: Vec::new(),
             format: "rhino".to_string(),
             container_kind: "3dm-chunks".to_string(),
             entries: Vec::new(),

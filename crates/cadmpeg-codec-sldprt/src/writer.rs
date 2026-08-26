@@ -3692,6 +3692,8 @@ mod nurbs_write_tests {
         });
         let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
         ir.source = Some(cadmpeg_ir::document::SourceMeta {
+            declared: std::collections::BTreeMap::new(),
+            dialect: None,
             format: "sldprt".into(),
             attributes: std::collections::BTreeMap::from([(
                 PMI_LOCAL_DIGEST_ATTRIBUTE.into(),

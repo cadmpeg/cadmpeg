@@ -9,9 +9,10 @@
 //! every verdict here concerns exactly the two documents passed in.
 //!
 //! The comparison covers units, tolerances, every model and native arena, and
-//! [`crate::document::SourceMeta`] — the source format id and its attributes,
-//! where a codec records the program version, the object count, and the rest of
-//! what it read out of the container.
+//! [`crate::document::SourceMeta`] — the source format id, its primary-layer
+//! dialect, the version fields that layer declared, and its attributes, where a
+//! codec records the program version, the object count, and the rest of what it
+//! read out of the container.
 //!
 //! One class of attribute is carved out. A machine-local digest, named by the
 //! [`cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX`] convention, is a bitwise
@@ -60,6 +61,18 @@ pub struct AttributeChange {
 pub struct SourceDiff {
     /// `(left, right)` source format ids, present only when they differ.
     pub format_change: Option<(String, String)>,
+    /// `(left, right)` primary-layer dialect ids, present only when they differ.
+    ///
+    /// Rendered as the plain ids; an absent dialect renders as `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dialect_change: Option<(Option<String>, Option<String>)>,
+    /// Differing declared version fields, each a difference.
+    ///
+    /// Declarations are read verbatim out of the source, so two decodes of one
+    /// file agree here exactly. A difference means the two documents came from
+    /// sources that declared different things.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub declared: Vec<AttributeChange>,
     /// Differing attributes, each a difference.
     pub attributes: Vec<AttributeChange>,
     /// Differing machine-local digest attributes, reported for information and
@@ -76,7 +89,10 @@ impl SourceDiff {
     /// [`Self::local_digests`] is not consulted.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.format_change.is_none() && self.attributes.is_empty()
+        self.format_change.is_none()
+            && self.dialect_change.is_none()
+            && self.declared.is_empty()
+            && self.attributes.is_empty()
     }
 }
 
@@ -266,34 +282,46 @@ fn diff_source(left: &CadIr, right: &CadIr) -> SourceDiff {
     let absent = SourceMeta::default();
     let left = left.source.as_ref().unwrap_or(&absent);
     let right = right.source.as_ref().unwrap_or(&absent);
+    let left_dialect = left.dialect.as_ref().map(|id| id.as_str().to_owned());
+    let right_dialect = right.dialect.as_ref().map(|id| id.as_str().to_owned());
     let mut result = SourceDiff {
         format_change: (left.format != right.format)
             .then(|| (left.format.clone(), right.format.clone())),
+        dialect_change: (left_dialect != right_dialect)
+            .then(|| (left_dialect.clone(), right_dialect.clone())),
+        declared: attribute_changes(&left.declared, &right.declared),
         ..SourceDiff::default()
     };
-    let keys = left
-        .attributes
-        .keys()
-        .chain(right.attributes.keys())
-        .collect::<std::collections::BTreeSet<_>>();
-    for key in keys {
-        let before = left.attributes.get(key);
-        let after = right.attributes.get(key);
-        if before == after {
-            continue;
-        }
-        let change = AttributeChange {
-            key: key.clone(),
-            left: before.cloned(),
-            right: after.cloned(),
-        };
-        if is_local_digest_attribute(key) {
+    for change in attribute_changes(&left.attributes, &right.attributes) {
+        if is_local_digest_attribute(&change.key) {
             result.local_digests.push(change);
         } else {
             result.attributes.push(change);
         }
     }
     result
+}
+
+/// Compare two string maps by key, reporting one change per differing key in
+/// key order.
+fn attribute_changes(
+    left: &BTreeMap<String, String>,
+    right: &BTreeMap<String, String>,
+) -> Vec<AttributeChange> {
+    left.keys()
+        .chain(right.keys())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|key| {
+            let before = left.get(key);
+            let after = right.get(key);
+            (before != after).then(|| AttributeChange {
+                key: key.clone(),
+                left: before.cloned(),
+                right: after.cloned(),
+            })
+        })
+        .collect()
 }
 
 /// Compare units, tolerances, source metadata, and every entity arena by stable
@@ -323,6 +351,8 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::diff;
     use crate::compare;
     use crate::examples::unit_cube;
@@ -487,6 +517,8 @@ mod tests {
     fn with_source(attributes: &[(&str, &str)]) -> crate::CadIr {
         let mut ir = unit_cube();
         ir.source = Some(crate::document::SourceMeta {
+            declared: BTreeMap::new(),
+            dialect: None,
             format: "synthetic".into(),
             attributes: attributes
                 .iter()
@@ -597,5 +629,66 @@ mod tests {
     fn identical_documents_have_empty_diff() {
         let ir = unit_cube();
         assert!(diff(&ir, &ir).is_empty());
+    }
+
+    /// The dialect and its declared fields are compared, so a divergence there
+    /// cannot pass as agreement.
+    #[test]
+    fn a_dialect_or_declared_divergence_is_a_difference() {
+        let mut left = with_source(&[]);
+        let mut right = left.clone();
+        left.source.as_mut().unwrap().dialect =
+            Some(cadmpeg_core::dialect::DialectId::pinned("rhino:archive-70"));
+        right.source.as_mut().unwrap().dialect =
+            Some(cadmpeg_core::dialect::DialectId::pinned("rhino:archive-80"));
+
+        let result = diff(&left, &right);
+        assert!(!result.is_empty());
+        assert_eq!(
+            result.source.dialect_change,
+            Some((
+                Some("rhino:archive-70".to_owned()),
+                Some("rhino:archive-80".to_owned())
+            ))
+        );
+
+        let mut declared_left = with_source(&[]);
+        let mut declared_right = declared_left.clone();
+        declared_left
+            .source
+            .as_mut()
+            .unwrap()
+            .declared
+            .insert("archive_version".into(), "70".into());
+        declared_right
+            .source
+            .as_mut()
+            .unwrap()
+            .declared
+            .insert("archive_version".into(), "80".into());
+
+        let declared = diff(&declared_left, &declared_right);
+        assert!(!declared.is_empty());
+        assert!(declared.source.dialect_change.is_none());
+        assert_eq!(
+            declared.source.declared,
+            [super::AttributeChange {
+                key: "archive_version".into(),
+                left: Some("70".into()),
+                right: Some("80".into()),
+            }]
+        );
+        assert!(declared.source.attributes.is_empty());
+    }
+
+    /// The staged fields add nothing to the serialized diff while they are
+    /// empty, which is what keeps this output stable across the migration.
+    #[test]
+    fn an_unpopulated_dialect_adds_no_key_to_the_serialized_diff() {
+        let ir = with_source(&[]);
+        let rendered = serde_json::to_string(&diff(&ir, &ir).source).unwrap();
+
+        assert!(!rendered.contains("dialect_change"), "{rendered}");
+        assert!(!rendered.contains("declared"), "{rendered}");
     }
 }

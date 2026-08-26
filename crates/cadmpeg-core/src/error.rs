@@ -2,6 +2,7 @@
 //! Errors returned by codec parsing and resource enforcement.
 
 use crate::decode::{ErrorContext, ResourceLimit, SourceLocation};
+use crate::dialect::DialectMatch;
 
 /// Errors a codec can raise.
 ///
@@ -55,6 +56,25 @@ pub enum CodecError {
         /// The refusing loss's own message, without any refusal prefix.
         message: String,
     },
+    /// The document was identified, and its dialect is not supported.
+    ///
+    /// Never reported as [`CodecError::WrongFormat`]: the bytes are this
+    /// codec's format, and the codec says so by carrying the identification it
+    /// made. Identity survives refusal, so a caller can name what it was handed
+    /// even though nothing was decoded.
+    ///
+    /// The identification is boxed: it is the widest payload any variant of
+    /// this enum carries, and every `Result<_, CodecError>` in the workspace
+    /// would otherwise grow to its width.
+    #[error("unsupported {format} dialect: {message}")]
+    UnsupportedDialect {
+        /// Format layer that refused.
+        format: String,
+        /// The identification made before the refusal.
+        dialect_match: Box<DialectMatch>,
+        /// Why the identified dialect is not supported.
+        message: String,
+    },
     /// The codec does not implement a required capability.
     #[error("not implemented yet: {0}")]
     NotImplemented(String),
@@ -83,7 +103,10 @@ impl CodecError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::CodecError;
+    use crate::dialect::{Admission, DialectId, DialectMatch};
 
     #[test]
     fn malformed_constructor_formats_the_message_once() {
@@ -104,5 +127,32 @@ mod tests {
             "strict mode rejects step/parse.noncanonical-syntax: complex partial \
              records are not alphabetical"
         );
+    }
+
+    #[test]
+    fn a_dialect_refusal_keeps_the_identification_it_refused() {
+        let error = CodecError::UnsupportedDialect {
+            format: "acis".into(),
+            dialect_match: Box::new(DialectMatch {
+                format: "acis".into(),
+                dialect: Some(DialectId::pinned("acis:save-format-700")),
+                declared: BTreeMap::from([("save_format".to_owned(), "700".to_owned())]),
+                admission: Admission::Refused,
+            }),
+            message: "save format 700 has no read grammar".into(),
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "unsupported acis dialect: save format 700 has no read grammar"
+        );
+        let CodecError::UnsupportedDialect { dialect_match, .. } = &error else {
+            panic!("the variant just built is the one matched");
+        };
+        assert_eq!(
+            dialect_match.dialect.as_ref().map(DialectId::as_str),
+            Some("acis:save-format-700")
+        );
+        assert_eq!(dialect_match.declared["save_format"], "700");
     }
 }

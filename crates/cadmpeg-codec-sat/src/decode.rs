@@ -147,6 +147,8 @@ fn build_result(
 ) -> Result<DecodeResult, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: FORMAT.to_string(),
         attributes,
     });
@@ -187,6 +189,7 @@ fn build_result(
         stats.unknown_surface_faces,
     );
     let report = DecodeReport {
+        dialects: Vec::new(),
         format: FORMAT.to_string(),
         container_only: false,
         geometry_transferred,
@@ -209,10 +212,13 @@ fn build_result(
 fn unsupported_result(message: &str, attributes: BTreeMap<String, String>) -> DecodeResult {
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: FORMAT.to_string(),
         attributes,
     });
     let report = DecodeReport {
+        dialects: Vec::new(),
         format: FORMAT.to_string(),
         container_only: false,
         geometry_transferred: false,

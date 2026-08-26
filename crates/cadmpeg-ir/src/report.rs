@@ -4,6 +4,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use cadmpeg_core::dialect::{DialectId, DialectMatch};
+
 use crate::provenance::SourceProvenance;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -647,6 +649,15 @@ pub struct DecodeReport {
     /// Per-source disposition ledger for decoded records and entities.
     #[serde(default, skip_serializing_if = "TransferLedger::is_empty")]
     pub transfer_ledger: TransferLedger,
+    /// Dialect identification, one entry per format layer the decode read.
+    ///
+    /// Empty while a codec has not yet been migrated to classify. Once
+    /// populated, exactly one entry's `format` equals [`Self::format`]: that
+    /// entry is the primary layer, and it is the one mirrored into
+    /// [`crate::document::SourceMeta::dialect`]. See
+    /// [`cadmpeg_core::dialect::debug_assert_primary_layer`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dialects: Vec<DialectMatch>,
 }
 
 /// Final disposition of one source record or semantic object.
@@ -788,6 +799,12 @@ pub struct ExportReport {
     pub losses: Vec<LossNote>,
     /// Informational details about the export path.
     pub notes: Vec<String>,
+    /// The concrete dialect written, including on replay and patch paths, where
+    /// the encoder states what the preserved dialect was.
+    ///
+    /// `None` while an encoder has not yet been migrated to state its target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<DialectId>,
 }
 
 /// Which of an encoder's write paths produced the exported bytes.

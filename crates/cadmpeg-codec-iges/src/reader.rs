@@ -40,6 +40,8 @@ fn source_meta(global: &global::ResolvedGlobal, representation: &str) -> SourceM
         attributes.insert("native_file_name".into(), value);
     }
     SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "iges".into(),
         attributes,
     }
@@ -554,6 +556,7 @@ fn decode_with_occurrence_limits(
     Ok(DecodeResult::new(
         ir,
         DecodeReport {
+            dialects: Vec::new(),
             format: "iges".into(),
             container_only: options.container_only,
             geometry_transferred,

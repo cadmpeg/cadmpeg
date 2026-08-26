@@ -156,6 +156,7 @@ pub(crate) fn inspect(
         }
     }
     Ok(ContainerSummary {
+        dialects: Vec::new(),
         format: FORMAT.to_string(),
         container_kind: "stream".to_string(),
         entries: vec![ContainerEntry {

@@ -289,6 +289,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     }
 
     ContainerSummary {
+        dialects: Vec::new(),
         format: "nx".to_string(),
         container_kind: if scan.container.is_legacy_cfb() {
             "cfb"

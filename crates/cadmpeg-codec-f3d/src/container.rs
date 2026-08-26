@@ -518,6 +518,7 @@ pub fn summarize(scan: &ContainerScan<'_>) -> ContainerSummary {
     );
 
     ContainerSummary {
+        dialects: Vec::new(),
         format: "f3d".to_string(),
         container_kind: "zip".to_string(),
         entries: scan.entries.clone(),

@@ -317,6 +317,7 @@ impl SldprtCodec {
     ) -> Result<ExportReport, CodecError> {
         let write_path = Self::write_preserved_with_annotations(ir, annotations, records, writer)?;
         Ok(ExportReport {
+            target: None,
             format: "sldprt".into(),
             census: cadmpeg_ir::EntityCensus {
                 basis: cadmpeg_ir::CensusBasis::IrArenas,

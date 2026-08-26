@@ -3090,6 +3090,8 @@ fn source_meta(scan: &ContainerScan, header: Option<&StreamHeader>) -> SourceMet
     add_preview_metadata(scan, &mut attributes);
     add_solidworks_xml_metadata(scan, &mut attributes);
     SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "sldprt".to_string(),
         attributes,
     }
@@ -3296,6 +3298,7 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     append_swift_pmi_losses(scan, &mut losses);
     DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -3384,6 +3387,8 @@ fn build_metadata_ir(
     }
 
     ir.source = Some(SourceMeta {
+        declared: BTreeMap::new(),
+        dialect: None,
         format: "sldprt".to_string(),
         attributes,
     });
@@ -4605,6 +4610,7 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     append_swift_pmi_losses(scan, &mut losses);
 
     DecodeReport {
+        dialects: Vec::new(),
         format: "sldprt".to_string(),
         container_only,
         geometry_transferred: false,

@@ -4,6 +4,8 @@
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
+use cadmpeg_core::dialect::{Admission, DialectId, DialectMatch};
+
 use crate::codec::{CadirEncoder, Encoder};
 use crate::examples::{directed_subd_sum, unit_cube};
 use crate::report::{LossKind, LossNote, LossTaxonomy, TransferLedger};
@@ -47,6 +49,7 @@ fn decode_result(ir: CadIr) -> DecodeResult {
     DecodeResult::new(
         ir,
         DecodeReport {
+            dialects: Vec::new(),
             format: "test".into(),
             container_only: false,
             geometry_transferred: true,
@@ -196,4 +199,60 @@ fn a_container_only_strict_decode_keeps_its_losses_and_is_admitted() {
             .count(),
         1
     );
+}
+
+/// The primary layer needs no marker field: exactly one entry names the
+/// report's own format, and `DecodeResult::new` is the construction path that
+/// says so.
+#[test]
+fn a_decode_result_accepts_dialects_with_one_primary_layer() {
+    let mut ir = unit_cube();
+    ir.source = None;
+    let mut report = DecodeReport {
+        dialects: vec![
+            dialect_layer("test", "test:only"),
+            dialect_layer("acis", "acis:save-format-217"),
+        ],
+        format: "test".into(),
+        container_only: false,
+        geometry_transferred: true,
+        coverage: BTreeMap::new(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: TransferLedger::default(),
+    };
+    let result = DecodeResult::new(ir.clone(), report.clone(), SourceFidelity::default());
+
+    assert_eq!(result.report().dialects.len(), 2);
+
+    // An empty list is the staged state and stays admissible.
+    report.dialects.clear();
+    let staged = DecodeResult::new(ir, report, SourceFidelity::default());
+    assert!(staged.report().dialects.is_empty());
+}
+
+#[test]
+#[should_panic(expected = "must contain exactly one entry naming it")]
+fn a_decode_result_refuses_dialects_with_no_primary_layer() {
+    let report = DecodeReport {
+        dialects: vec![dialect_layer("acis", "acis:save-format-217")],
+        format: "test".into(),
+        container_only: false,
+        geometry_transferred: true,
+        coverage: BTreeMap::new(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: TransferLedger::default(),
+    };
+
+    DecodeResult::new(unit_cube(), report, SourceFidelity::default());
+}
+
+fn dialect_layer(format: &str, id: &'static str) -> DialectMatch {
+    DialectMatch {
+        format: format.into(),
+        dialect: Some(DialectId::pinned(id)),
+        declared: BTreeMap::new(),
+        admission: Admission::Admitted,
+    }
 }

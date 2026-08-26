@@ -487,6 +487,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
     }
 
     DecodeReport {
+        dialects: Vec::new(),
         format: "nx".to_string(),
         container_only,
         geometry_transferred: false,

@@ -190,6 +190,7 @@ fn report(
     counts: BTreeMap<String, usize>,
 ) -> ExportReport {
     ExportReport {
+        target: None,
         format: "iges".into(),
         census: EntityCensus {
             basis: CensusBasis::TargetRecords,

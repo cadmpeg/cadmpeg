@@ -82,7 +82,7 @@ pub fn document_local_sha256_with_charge<E>(
         ir_version: ir.ir_version(),
         source: ir.source.as_ref().map(|source| {
             let mut source = source.clone();
-            source.attributes.remove("document_local_sha256");
+            source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
             source
         }),
         units: &ir.units,
@@ -268,8 +268,11 @@ fn encode_hex(digest: &[u8]) -> String {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
+    use std::collections::BTreeMap;
+
     use super::{
-        canonical_json_sha256, document_local_sha256, document_local_sha256_with_charge, sha256_hex,
+        canonical_json_sha256, document_local_sha256, document_local_sha256_with_charge,
+        sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE,
     };
     use crate::document::CadIr;
     use crate::examples::unit_cube;
@@ -478,9 +481,14 @@ mod tests {
     fn pinned_document_with_source() -> CadIr {
         let mut ir = pinned_document();
         ir.source = Some(crate::document::SourceMeta {
+            declared: BTreeMap::new(),
+            dialect: None,
             format: "pin".into(),
             attributes: [
-                ("document_local_sha256".to_owned(), "stale".to_owned()),
+                (
+                    DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
+                    "stale".to_owned(),
+                ),
                 ("file_size".to_owned(), "4096".to_owned()),
             ]
             .into_iter()
@@ -520,7 +528,7 @@ mod tests {
         normalized.finalize();
         normalized.source = ir.source.as_ref().map(|source| {
             let mut source = source.clone();
-            source.attributes.remove("document_local_sha256");
+            source.attributes.remove(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE);
             source
         });
         let unknowns = ir
@@ -540,9 +548,14 @@ mod tests {
         ir.model.faces.reverse();
         ir.model.surfaces.reverse();
         ir.source = Some(crate::SourceMeta {
+            declared: BTreeMap::new(),
+            dialect: None,
             format: "synthetic".into(),
             attributes: [
-                ("document_local_sha256".to_owned(), "stale".to_owned()),
+                (
+                    DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.to_owned(),
+                    "stale".to_owned(),
+                ),
                 ("active_brep".to_owned(), "body#0".to_owned()),
             ]
             .into_iter()
@@ -604,7 +617,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .attributes
-            .insert("document_local_sha256".into(), hash.clone());
+            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), hash.clone());
         assert_eq!(
             crate::hash::document_local_sha256(&recorded, "synthetic", source_image),
             hash

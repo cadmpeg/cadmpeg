@@ -118,6 +118,7 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
         notes.push(format!("ProgramVersion={version}"));
     }
     ContainerSummary {
+        dialects: Vec::new(),
         format: "fcstd".into(),
         container_kind: "zip".into(),
         entries: scan.entries.clone(),
