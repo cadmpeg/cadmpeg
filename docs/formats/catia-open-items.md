@@ -440,14 +440,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Resolve the `ec` tail roles and its axis-frame source before transferring that layout as a neutral plane support.
 
-### SN-33. Spine grammar arbitration
-
-**Question.** Which container field distinguishes a standard-nested spine from an FBB-only spine when the file admits both edge-table grammars, or neither?
-
-**Known.** `catia.md` §1 "Detection invariants: a standard file has one nested inner" gives the detection invariants, and the variant table gives an FBB-only spine as a nested container with FBB face rows and `05 08 01` vertices but no standard edge-row table. An admitted standard edge-table grammar establishes a complete nested FBB spine and owns route selection over a coherent E5 walk. When only the FBB-only grammar is admitted, the spine is partial and a coherent E5 walk owns route selection; without that walk, the FBB-only route applies. `crates/cadmpeg-codec-catia/src/container.rs` tries the standard edge-table grammar first, then the FBB-only two-table grammar, and then classifies by the count of `EDGE_DELIMITER` occurrences. The delimiter is not sufficient to distinguish the two grammars because FBB-only widths one and three reuse it.
-
-**Need.** We must resolve the remaining state where neither edge-table grammar admits, and establish the source rule if both grammars admit the same byte region. The variant fixes the decode route: `StandardNested` uses the complete standard spine, `FbbOnly` uses the partial-spine route, and `E5Stream` uses the coherent E5 graph.
-
 ### SN-37. Fixed-nine owner boundary cycle
 
 **Question.** Which fixed-nine references form a face-boundary incidence witness, and what identity does that witness establish?

@@ -1286,10 +1286,10 @@ fn identify_fbb_variant(brep: &[u8], census: &Census) -> Variant {
     if crate::families::standard::fbb::fbb_only_edge_count(brep).is_some() {
         return Variant::FbbOnly;
     }
-    if census.edge_delimiters > 0 {
-        Variant::StandardNested
-    } else {
+    if census.edge_delimiters == 0 && census.vertex_markers > 0 {
         Variant::FbbOnly
+    } else {
+        Variant::Unknown
     }
 }
 

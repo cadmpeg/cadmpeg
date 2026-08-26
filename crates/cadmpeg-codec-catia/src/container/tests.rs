@@ -142,6 +142,50 @@ fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
 }
 
 #[test]
+fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
+    let inner = InnerDir {
+        inner: 0,
+        descriptors: Vec::new(),
+    };
+    let mut brep = vec![0x30, 0x04, 0x04, 0xff, 0, 0, 0, 0];
+    brep.extend_from_slice(EDGE_DELIMITER.as_slice());
+    let census = Census {
+        fbb_runs: 1,
+        edge_delimiters: 1,
+        ..Census::default()
+    };
+
+    assert_eq!(
+        crate::families::standard::fbb::standard_edge_count(&brep),
+        None
+    );
+    assert_eq!(
+        crate::families::standard::fbb::fbb_only_edge_count(&brep),
+        None
+    );
+    assert_eq!(
+        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, false),
+        Variant::Unknown
+    );
+
+    let no_vertex_brep = vec![0x30, 0x04, 0x04, 0xff, 0, 0, 0, 0];
+    let no_vertex_census = Census {
+        fbb_runs: 1,
+        ..Census::default()
+    };
+    assert_eq!(
+        identify_variant(
+            Some(&inner),
+            Some(&no_vertex_brep),
+            Some(&no_vertex_brep),
+            &no_vertex_census,
+            false,
+        ),
+        Variant::Unknown
+    );
+}
+
+#[test]
 fn coherent_e5_stream_precedes_a_partial_fbb_spine() {
     let inner = InnerDir {
         inner: 0,
