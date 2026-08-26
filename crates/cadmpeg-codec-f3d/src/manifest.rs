@@ -14,6 +14,8 @@ const MAX_REGISTRY_ENTRIES: usize = 64;
 const MAX_ASSET_FOLDERS: usize = 64;
 const MAX_TOP_LEVEL_MANIFEST_BYTES: usize = 16 * 1024 * 1024;
 const DESIGN_ASSET_TYPE: &str = "FusionAssetType";
+/// The only top-level manifest version this codec parses.
+const TOP_LEVEL_MANIFEST_VERSION: &str = "3-2-0-0";
 
 pub(crate) const GENERATED_DESIGN_ASSET_BASE: &str = "FusionAssetName";
 pub(crate) const GENERATED_DESIGN_ASSET_FOLDER: &str = "FusionAssetName[Active]";
@@ -185,7 +187,15 @@ pub(crate) fn parse_top_level(bytes: &[u8]) -> Result<TopLevelManifest, CodecErr
         ));
     }
     let mut cursor = Cursor::new(bytes);
-    cursor.expect_ascii("top-level manifest version", "3-2-0-0")?;
+    let version = cursor.ascii("top-level manifest version")?;
+    if version != TOP_LEVEL_MANIFEST_VERSION {
+        // A readable version that names another writer generation is a
+        // recognized document this codec does not parse, not corrupt bytes.
+        return Err(CodecError::NotImplemented(format!(
+            "F3D manifest version {version} is not supported \
+             (expected {TOP_LEVEL_MANIFEST_VERSION})"
+        )));
+    }
     cursor.expect_ascii("top-level manifest kind", "FusionDocType")?;
     cursor.expect_utf16("top-level manifest extension", ".f3d")?;
     let _display_name = cursor.utf16("top-level manifest display name")?;
@@ -541,7 +551,7 @@ pub(crate) fn encode_top_level(
     }
 
     let mut out = Vec::new();
-    push_ascii(&mut out, "3-2-0-0")?;
+    push_ascii(&mut out, TOP_LEVEL_MANIFEST_VERSION)?;
     push_ascii(&mut out, "FusionDocType")?;
     push_utf16(&mut out, ".f3d")?;
     push_utf16(&mut out, "Fusion Document")?;
@@ -876,6 +886,43 @@ mod tests {
         })
         .unwrap();
         assert_eq!(folder, "Design Base");
+    }
+
+    #[test]
+    fn unsupported_top_level_manifest_version_is_not_corruption() {
+        let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+        let mut supported = Vec::new();
+        push_ascii(&mut supported, TOP_LEVEL_MANIFEST_VERSION).unwrap();
+        assert!(bytes.starts_with(&supported));
+        let mut replacement = Vec::new();
+        push_ascii(&mut replacement, "3-3-0-0").unwrap();
+        bytes.splice(0..supported.len(), replacement);
+
+        let error = parse_top_level(&bytes).unwrap_err();
+        assert!(
+            matches!(&error, CodecError::NotImplemented(message) if message.contains("3-3-0-0")
+                && message.contains(TOP_LEVEL_MANIFEST_VERSION)),
+            "expected an unsupported-version refusal, found {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_broken_top_level_manifest_version_field_stays_malformed() {
+        let complete = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+
+        let truncated = parse_top_level(&complete[..6]).unwrap_err();
+        assert!(
+            matches!(truncated, CodecError::Malformed(_)),
+            "expected a malformed truncation, found {truncated:?}"
+        );
+
+        let mut non_ascii = complete.clone();
+        non_ascii[4] = 0x01;
+        let error = parse_top_level(&non_ascii).unwrap_err();
+        assert!(
+            matches!(error, CodecError::Malformed(_)),
+            "expected a malformed non-ASCII version, found {error:?}"
+        );
     }
 
     #[test]
