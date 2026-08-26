@@ -190,7 +190,10 @@ fn b2_reference_list_parser_reads_compact_refs_and_unit_tail() {
 
 #[test]
 fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
-    use crate::families::b2::records::B2OwnerReferenceEncoding;
+    use crate::{
+        families::b2::records::{B2OwnerIdentityEncoding, B2OwnerReferenceEncoding},
+        wire::bytes::AllocationReferenceEncoding,
+    };
 
     let packets = crate::families::b2::records::b2_owner_packets(&b2_owner_packet_stream());
     assert_eq!(packets.len(), 1);
@@ -202,6 +205,16 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
     assert_eq!(
         packets[0].references,
         [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]
+    );
+    assert_eq!(
+        packets[0].identity_encodings,
+        std::array::from_fn(
+            |index| B2OwnerIdentityEncoding::Allocation(if index % 2 == 0 {
+                AllocationReferenceEncoding::TaggedU16
+            } else {
+                AllocationReferenceEncoding::BackwardDistance
+            })
+        )
     );
     assert_eq!(
         packets[0].numeric_tail.header,
@@ -225,6 +238,32 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
         packets[0].references,
         [216, 3, 540, 7, 223, 19, 545, 31, 606]
     );
+    assert_eq!(
+        packets[0].identity_encodings,
+        std::array::from_fn(|index| {
+            if index % 2 == 0 {
+                B2OwnerIdentityEncoding::Allocation(AllocationReferenceEncoding::WidthCoded)
+            } else {
+                B2OwnerIdentityEncoding::RawU8
+            }
+        })
+    );
+
+    let packets =
+        crate::families::b2::records::b2_owner_packets(&b2_all_compact_owner_packet_stream());
+    assert_eq!(packets.len(), 1);
+    assert_eq!(
+        packets[0].reference_encoding,
+        B2OwnerReferenceEncoding::AllCompact
+    );
+    assert_eq!(
+        packets[0].references,
+        [278, 324, 276, 268, 277, 374, 199, 195, 279]
+    );
+    assert_eq!(
+        packets[0].identity_encodings,
+        [B2OwnerIdentityEncoding::Allocation(AllocationReferenceEncoding::WidthCoded); 9]
+    );
 }
 
 #[test]
@@ -245,6 +284,287 @@ fn b2_owner_packet_parser_rejects_invalid_numeric_tail_framing() {
         invalid[tail + offset..tail + offset + replacement.len()].copy_from_slice(&replacement);
         assert!(crate::families::b2::records::b2_owner_packets(&invalid).is_empty());
     }
+}
+
+#[test]
+fn fixed_owner_backward_identities_resolve_in_the_local_allocation_sequence() {
+    let (mut bytes, target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let targets =
+        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records);
+
+    assert_eq!(
+        targets
+            .iter()
+            .map(|target| (
+                target.owner_pos,
+                target.slot,
+                target.distance,
+                target.target_pos,
+                target.target_class,
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (owner_pos, 0, 1, target_positions[4], 0x5e),
+            (owner_pos, 2, 4, target_positions[1], 0x5e),
+            (owner_pos, 4, 2, target_positions[3], 0x5e),
+            (owner_pos, 6, 3, target_positions[2], 0x5d),
+            (owner_pos, 8, 5, target_positions[0], 0x5d),
+        ]
+    );
+
+    let records = crate::wire::records::consolidated_records_in_sources(
+        &bytes,
+        [
+            std::iter::once(0..owner_pos),
+            std::iter::once(owner_pos..bytes.len()),
+        ],
+    );
+    let packets = crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records);
+    let [packet] = packets.as_slice() else {
+        panic!("one source-scoped owner packet")
+    };
+    assert_eq!(packet.source_index, 1);
+    assert!(
+        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records)
+            .is_empty()
+    );
+
+    bytes.insert(owner_pos, 0x00);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert!(
+        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records)
+            .is_empty()
+    );
+}
+
+#[test]
+fn fixed_owner_backward_identities_do_not_cross_group_separator() {
+    let (mut bytes, _target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
+    bytes.splice(owner_pos..owner_pos, b2_group_stream());
+    let records = crate::wire::records::consolidated_records(&bytes);
+
+    assert!(
+        crate::families::b2::records::b2_owner_identity_targets_from_records(&bytes, &records)
+            .is_empty()
+    );
+}
+
+#[test]
+fn fixed_owner_boundary_requires_one_simple_four_edge_cycle() {
+    use std::collections::HashMap;
+
+    use crate::families::b2::records::{b2_closed_owner_boundary_edges, B2OwnerIdentityTarget};
+
+    let targets = [(5, 13), (1, 10), (7, 16), (3, 14)]
+        .into_iter()
+        .map(|(slot, target_pos)| B2OwnerIdentityTarget {
+            owner_pos: 20,
+            source_index: 0,
+            slot,
+            distance: 1,
+            target_pos,
+            target_class: 0x5e,
+        })
+        .collect::<Vec<_>>();
+    let endpoints = HashMap::from([
+        (10, [100, 101]),
+        (13, [102, 103]),
+        (14, [100, 102]),
+        (16, [101, 103]),
+    ]);
+
+    let edges = b2_closed_owner_boundary_edges(&targets, &endpoints)
+        .expect("four class-5e targets close a cycle");
+    assert_eq!(edges.map(|edge| edge.slot), [1, 3, 5, 7]);
+    assert_eq!(edges[0].endpoint_records, [100, 101]);
+
+    let mut open = endpoints.clone();
+    open.insert(16, [101, 104]);
+    assert!(b2_closed_owner_boundary_edges(&targets, &open).is_none());
+
+    let mut mixed_classes = targets.clone();
+    mixed_classes[0].target_class = 0x5d;
+    assert!(b2_closed_owner_boundary_edges(&mixed_classes, &endpoints).is_none());
+
+    let mut duplicate = endpoints;
+    duplicate.insert(16, [100, 101]);
+    assert!(b2_closed_owner_boundary_edges(&targets, &duplicate).is_none());
+}
+
+#[test]
+fn owner_chart_requires_exact_source_closed_selector_rectangle() {
+    use crate::families::b2::records::{
+        B2OwnerChartBridge, B2OwnerChartCarrier, B2OwnerChartSideAxis,
+    };
+
+    for (carrier_class, carrier, carrier_selector, side_axis) in [
+        (
+            0x28,
+            B2OwnerChartCarrier::B28,
+            0x05,
+            B2OwnerChartSideAxis::FirstParameter,
+        ),
+        (
+            0x2b,
+            B2OwnerChartCarrier::B2b,
+            0x09,
+            B2OwnerChartSideAxis::SecondParameter,
+        ),
+        (
+            0x32,
+            B2OwnerChartCarrier::A32,
+            0x11,
+            B2OwnerChartSideAxis::SecondParameter,
+        ),
+    ] {
+        let bytes = b2_owner_chart_stream(carrier_class);
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let [chart] = crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records)
+            .try_into()
+            .unwrap_or_else(|charts: Vec<_>| {
+                panic!("one class-{carrier_class:02x} owner chart, got {charts:?}")
+            });
+        assert_eq!(chart.source_index, 0);
+        assert_eq!(chart.carrier, carrier);
+        assert_eq!(chart.side_axis, side_axis);
+        let B2OwnerChartBridge::SupportedSurface {
+            carrier_surface,
+            support_surfaces,
+            support_pcurves,
+            controls,
+            construction_radius,
+            ..
+        } = chart.bridge
+        else {
+            panic!("five-reference supported surface")
+        };
+        assert_eq!(
+            [
+                carrier_surface,
+                support_surfaces[0],
+                support_surfaces[1],
+                support_pcurves[0],
+                support_pcurves[1]
+            ]
+            .map(|reference| reference.value),
+            [1, 100, 0, 101, 1]
+        );
+        assert_eq!(
+            carrier_surface.encoding,
+            crate::wire::bytes::AllocationReferenceEncoding::BackwardDistance
+        );
+        assert_eq!(controls, [carrier_selector, 0x05, 0x03, 0x05, 0x01, 0x05]);
+        assert_eq!(construction_radius, 1.0);
+        assert_eq!(
+            chart.parameter_points.map(|point| point.prefix),
+            [0x05, 0x09, 0x0d, 0x11]
+        );
+
+        let owner_pos = chart.owner_pos;
+        let records = crate::wire::records::consolidated_records_in_sources(
+            &bytes,
+            [
+                std::iter::once(0..owner_pos),
+                std::iter::once(owner_pos..bytes.len()),
+            ],
+        );
+        assert!(
+            crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records).is_empty()
+        );
+    }
+}
+
+#[test]
+fn owner_chart_applies_to_width_coded_identity_dialect() {
+    use crate::families::b2::records::{B2OwnerChartCarrier, B2OwnerReferenceEncoding};
+
+    for (carrier_class, carrier) in [
+        (0x28, B2OwnerChartCarrier::B28),
+        (0x2b, B2OwnerChartCarrier::B2b),
+        (0x32, B2OwnerChartCarrier::A32),
+    ] {
+        let bytes = b2_width_coded_owner_chart_stream(carrier_class);
+        let packets = crate::families::b2::records::b2_owner_packets(&bytes);
+        assert_eq!(packets.len(), 1);
+        assert_eq!(
+            packets[0].reference_encoding,
+            B2OwnerReferenceEncoding::WidthCodedStrong
+        );
+        assert_eq!(packets[0].references, [278, 1, 276, 2, 277, 3, 199, 4, 279]);
+
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let [chart] = crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records)
+            .try_into()
+            .unwrap_or_else(|charts: Vec<_>| {
+                panic!("one width-coded class-{carrier_class:02x} owner chart, got {charts:?}")
+            });
+        assert_eq!(chart.carrier, carrier);
+        assert_eq!(
+            chart.parameter_points.map(|point| point.prefix),
+            [0x05, 0x09, 0x0d, 0x11]
+        );
+    }
+}
+
+#[test]
+fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
+    use crate::families::b2::records::B2OwnerChartBridge;
+
+    let bytes = b2_owner_chart_stream_with_extended_bridge();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let [chart] = crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records)
+        .try_into()
+        .unwrap_or_else(|charts: Vec<_>| panic!("one extended owner chart, got {charts:?}"));
+    let B2OwnerChartBridge::Extended {
+        references,
+        controls,
+        terminal_controls,
+        ..
+    } = chart.bridge
+    else {
+        panic!("eight-reference extended bridge")
+    };
+    assert_eq!(
+        references.map(|reference| reference.value),
+        [1, 100, 0, 101, 1, 2, 3, 4]
+    );
+    assert_eq!(controls, [0x11, 0x09, 0x05, 0x05]);
+    assert_eq!(terminal_controls, [0x01, 0x05]);
+}
+
+#[test]
+fn owner_chart_rejects_selector_order_bound_mismatch_and_unframed_gap() {
+    let valid = b2_owner_chart_stream(0x2b);
+    let records = crate::wire::records::consolidated_records(&valid);
+    let side_05 = records
+        .iter()
+        .find(|record| record.class == 0x18)
+        .expect("first owner-chart side");
+
+    let mut wrong_selector = valid.clone();
+    wrong_selector[side_05.payload.start] = 0x09;
+    let records = crate::wire::records::consolidated_records(&wrong_selector);
+    assert!(
+        crate::families::b2::records::b2_owner_charts_from_records(&wrong_selector, &records)
+            .is_empty()
+    );
+
+    let mut wrong_bound = valid.clone();
+    wrong_bound[side_05.payload.start + 2..side_05.payload.start + 10]
+        .copy_from_slice(&8.0f64.to_le_bytes());
+    let records = crate::wire::records::consolidated_records(&wrong_bound);
+    assert!(
+        crate::families::b2::records::b2_owner_charts_from_records(&wrong_bound, &records)
+            .is_empty()
+    );
+
+    let mut separated = valid;
+    separated.insert(side_05.range.start, 0x00);
+    let records = crate::wire::records::consolidated_records(&separated);
+    assert!(
+        crate::families::b2::records::b2_owner_charts_from_records(&separated, &records).is_empty()
+    );
 }
 
 #[test]
@@ -278,7 +598,69 @@ fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
 }
 
 #[test]
-fn b2_link_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
+fn b2_class5b5c_parser_retains_complete_source_local_control_lanes() {
+    let bytes = b2_class5b5c_stream();
+    let records = crate::families::b2::records::b2_class5b5c_records(&bytes);
+    assert_eq!(records.len(), 3);
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.class)
+            .collect::<Vec<_>>(),
+        [0x5b, 0x5c, 0x5b]
+    );
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.width)
+            .collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    assert_eq!(
+        records.iter().map(|record| record.flag).collect::<Vec<_>>(),
+        [0x13, 0x03, 0x83]
+    );
+    assert!(records.iter().all(|record| {
+        record.source_index == 0
+            && record.source_offset == record.pos
+            && record.byte_len == 4 + usize::from(record.width) + record.payload.len()
+    }));
+
+    let mut invalid_flag = bytes;
+    invalid_flag[1] = 0x04;
+    assert_eq!(
+        crate::families::b2::records::b2_class5b5c_records(&invalid_flag)
+            .iter()
+            .map(|record| record.class)
+            .collect::<Vec<_>>(),
+        [0x5c, 0x5b]
+    );
+}
+
+#[test]
+fn b2_class5b5c_parser_retains_bounded_source_coordinates() {
+    let bytes = b2_class5b5c_stream();
+    let split = 12 + 15;
+    let records = crate::wire::records::consolidated_records_in_sources(
+        &bytes,
+        [
+            std::iter::once(0..split),
+            std::iter::once(split..bytes.len()),
+        ],
+    );
+    let controls =
+        crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records);
+    assert_eq!(
+        controls
+            .iter()
+            .map(|record| (record.source_index, record.source_offset))
+            .collect::<Vec<_>>(),
+        [(0, 0), (0, 12), (1, 0)]
+    );
+}
+
+#[test]
+fn b2_face_node_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
     let mut bytes = Vec::new();
     for payload in [
         &[0x82, 0x04, 0x5d, 0x03, 0x05][..],
@@ -289,49 +671,129 @@ fn b2_link_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
         bytes.extend_from_slice(&[0xb2, 0x03, 0x5f, u8::try_from(payload.len()).unwrap(), 0x05]);
         bytes.extend_from_slice(payload);
     }
-    let links = crate::families::b2::records::b2_links_5f(&bytes);
-    assert_eq!(links.len(), 4);
-    assert!(links.iter().all(|link| link.header_token == 5));
+    let nodes = crate::families::b2::records::b2_face_nodes_5f(&bytes);
+    assert_eq!(nodes.len(), 4);
+    assert!(nodes.iter().all(|node| node.header_token == 5));
     assert_eq!(
-        links.iter().map(|link| link.target).collect::<Vec<_>>(),
+        nodes.iter().map(|node| node.target).collect::<Vec<_>>(),
         [0x5d, 0x025d, 0x0001_025d, 0x0101_025d]
     );
 
     let malformed = [
         0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x04, 0x5d, 0x00, 0x03, 0x05,
     ];
-    assert!(crate::families::b2::records::b2_links_5f(&malformed).is_empty());
+    assert!(crate::families::b2::records::b2_face_nodes_5f(&malformed).is_empty());
 }
 
 #[test]
-fn b2_linked_owner_requires_adjacency_and_successor_identity() {
-    let pairs = crate::families::b2::records::b2_linked_owners(&b2_linked_owner_stream());
+fn b2_face_node_5f_parser_retains_strong_targets_and_terminal_pairs() {
+    use crate::families::b2::records::B2FaceNode5fTargetEncoding;
+
+    let mut bytes = vec![
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x0a, 0x34, 0x12, 0x03, 0x05,
+    ];
+    bytes.extend_from_slice(&[
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x0a, 0x78, 0x56, 0x0f, 0x05,
+    ]);
+
+    let nodes = crate::families::b2::records::b2_face_nodes_5f(&bytes);
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes[0].target, 0x1234);
+    assert_eq!(
+        nodes[0].target_encoding,
+        B2FaceNode5fTargetEncoding::TaggedU16Strong
+    );
+    assert_eq!(nodes[0].terminal, [0x03, 0x05]);
+    assert_eq!(nodes[1].target, 0x5678);
+    assert_eq!(nodes[1].terminal, [0x0f, 0x05]);
+
+    let mut owner_stream = vec![
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x0a, 0xeb, 0x03, 0x03, 0x05,
+    ];
+    owner_stream.extend_from_slice(&b2_owner_packet_stream());
+    let related = crate::families::b2::records::b2_adjacent_face_owners(&owner_stream);
+    assert_eq!(related.len(), 1);
+    assert_eq!(
+        related[0].face_node.target_encoding,
+        B2FaceNode5fTargetEncoding::TaggedU16Strong
+    );
+}
+
+#[test]
+fn b2_adjacent_face_owner_requires_adjacency_and_successor_identity() {
+    let pairs =
+        crate::families::b2::records::b2_adjacent_face_owners(&b2_adjacent_face_owner_stream());
     assert_eq!(pairs.len(), 1);
-    assert_eq!(pairs[0].link.target, 1003);
+    assert_eq!(pairs[0].face_node.target, 1003);
     assert_eq!(pairs[0].owner.references[8], 1004);
 
-    let mut separated = b2_link_5f_stream();
+    let mut separated = b2_face_node_5f_stream();
     separated.extend_from_slice(&[0xb2, 0x03, 0x2e, 0x01, 0x05, 0x05]);
     separated.extend_from_slice(&b2_owner_packet_stream());
-    assert!(crate::families::b2::records::b2_linked_owners(&separated).is_empty());
+    assert!(crate::families::b2::records::b2_adjacent_face_owners(&separated).is_empty());
 }
 
 #[test]
-fn b2_counted_owner_closes_variable_reference_lane_and_successor_link() {
-    let bytes = b2_linked_counted_owner_stream();
+fn b2_secondary_face_node_terminal_requires_all_compact_owner() {
+    let secondary = b2_adjacent_secondary_face_owner_stream();
+    let pairs = crate::families::b2::records::b2_adjacent_face_owners(&secondary);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].face_node.terminal, [0x03, 0x03]);
+    assert_eq!(pairs[0].face_node.target, 278);
+    assert_eq!(pairs[0].owner.references[8], 279);
+
+    let owner_start = secondary
+        .windows(3)
+        .position(|window| window == [0xb2, 0x03, 0x62])
+        .expect("owner frame");
+    let mut tagged = b2_adjacent_face_owner_stream();
+    let tagged_owner_start = tagged
+        .windows(3)
+        .position(|window| window == [0xb2, 0x03, 0x62])
+        .expect("tagged owner frame");
+    tagged[tagged_owner_start - 1] = 0x03;
+    assert!(crate::families::b2::records::b2_adjacent_face_owners(&tagged).is_empty());
+
+    let mut unknown_terminal = secondary;
+    unknown_terminal[owner_start - 1] = 0x07;
+    assert!(crate::families::b2::records::b2_adjacent_face_owners(&unknown_terminal).is_empty());
+}
+
+#[test]
+fn b2_counted_owner_closes_variable_reference_lane_and_face_node_relation() {
+    let bytes = b2_adjacent_face_counted_owner_stream();
     let owners = crate::families::b2::records::b2_counted_owners(&bytes);
     assert_eq!(owners.len(), 1);
     assert_eq!(owners[0].references, [911, 7, 263, 258, 281, 276, 917]);
     assert_eq!(owners[0].tail, [0x83, 0x41, 0x92, 0x00, 0x01]);
 
-    let linked = crate::families::b2::records::b2_linked_counted_owners(&bytes);
-    assert_eq!(linked.len(), 1);
-    assert_eq!(linked[0].link.target, 916);
-    assert_eq!(linked[0].owner.references.last(), Some(&917));
+    let related = crate::families::b2::records::b2_adjacent_face_counted_owners(&bytes);
+    assert_eq!(related.len(), 1);
+    assert_eq!(related[0].face_node.target, 916);
+    assert_eq!(related[0].owner.references.last(), Some(&917));
 
     let mut wrong_successor = bytes;
     wrong_successor[35] = 0x99;
-    assert!(crate::families::b2::records::b2_linked_counted_owners(&wrong_successor).is_empty());
+    assert!(
+        crate::families::b2::records::b2_adjacent_face_counted_owners(&wrong_successor).is_empty()
+    );
+}
+
+#[test]
+fn b2_counted_owner_maps_mixed_tokens_to_local_edge_ordinals() {
+    let bytes = [
+        0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x0f, 0x05, 0x89,
+        0x19, 0x0b, 0x15, 0x23, 0x11, 0x3b, 0x0d, 0x53, 0x21, 0x84, 0x41, 0xff, 0x0f, 0x01,
+    ];
+    let owners = crate::families::b2::records::b2_counted_owners(&bytes);
+    let [owner] = owners.as_slice() else {
+        panic!("one compact counted owner")
+    };
+    assert_eq!(owner.references, [6, 2, 5, 8, 4, 14, 3, 20, 8]);
+
+    let related = crate::families::b2::records::b2_adjacent_face_counted_owners(&bytes);
+    assert_eq!(related.len(), 1);
+    assert_eq!(related[0].face_node.target, 7);
 }
 
 #[test]
@@ -409,8 +871,37 @@ fn b2_edge_node_parser_reads_tagged_and_raw_vertex_identities() {
     assert_eq!(nodes[0].start_parameter_ref, 2);
     assert_eq!(nodes[0].end_parameter_ref, 1);
     assert_eq!(nodes[0].tail, 0x01);
-    assert_eq!(nodes[1].start_vertex_ref, 207);
-    assert_eq!(nodes[1].end_vertex_ref, 231);
+    assert_eq!(nodes[1].start_vertex_ref, 51);
+    assert_eq!(nodes[1].end_vertex_ref, 57);
+}
+
+#[test]
+fn b2_edge_node_parser_reads_raw_allocation_references_in_every_slot() {
+    use crate::wire::bytes::AllocationReferenceEncoding;
+
+    let bytes = [
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f, 0x07, 0x0b, 0x21,
+    ];
+    let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
+    let [node] = nodes.as_slice() else {
+        panic!("one compact edge node")
+    };
+    assert_eq!(node.curve_ref, 0);
+    assert_eq!(node.start_vertex_ref, 2);
+    assert_eq!(node.end_vertex_ref, 3);
+    assert_eq!(node.start_parameter_ref, 1);
+    assert_eq!(node.end_parameter_ref, 2);
+    assert_eq!(
+        node.reference_encodings,
+        [
+            AllocationReferenceEncoding::OwnedChild,
+            AllocationReferenceEncoding::BackwardDistance,
+            AllocationReferenceEncoding::OwnedChild,
+            AllocationReferenceEncoding::OwnedChild,
+            AllocationReferenceEncoding::OwnedChild,
+        ]
+    );
+    assert_eq!(node.tail, 0x21);
 }
 
 #[test]
@@ -743,32 +1234,48 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .collect(),
     );
 
-    let bytes = b2_link_5f_stream();
+    let bytes = b2_class5b5c_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     compare(
-        "class 5f links",
-        crate::families::b2::records::b2_links_5f(&bytes)
+        "class 5b/5c control records",
+        crate::families::b2::records::b2_class5b5c_records(&bytes)
             .into_iter()
             .map(|record| record.pos)
             .collect(),
-        crate::families::b2::records::b2_links_5f_from_records(&bytes, &records)
+        crate::families::b2::records::b2_class5b5c_records_from_records(&bytes, &records)
             .into_iter()
             .map(|record| record.pos)
             .collect(),
     );
 
-    let bytes = b2_linked_owner_stream();
+    let bytes = b2_face_node_5f_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
-    assert_eq!(
-        crate::families::b2::records::b2_linked_owners_from_records(&bytes, &records),
-        crate::families::b2::records::b2_linked_owners(&bytes)
+    compare(
+        "class 5f face nodes",
+        crate::families::b2::records::b2_face_nodes_5f(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_face_nodes_5f_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
     );
 
-    let bytes = b2_linked_counted_owner_stream();
+    let bytes = b2_adjacent_face_owner_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
     assert_eq!(
-        crate::families::b2::records::b2_linked_counted_owners_from_records(&bytes, &records),
-        crate::families::b2::records::b2_linked_counted_owners(&bytes)
+        crate::families::b2::records::b2_adjacent_face_owners_from_records(&bytes, &records),
+        crate::families::b2::records::b2_adjacent_face_owners(&bytes)
+    );
+
+    let bytes = b2_adjacent_face_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(
+        crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
+            &bytes, &records
+        ),
+        crate::families::b2::records::b2_adjacent_face_counted_owners(&bytes)
     );
 
     let bytes = b2_parameter_point_stream();
@@ -1233,7 +1740,7 @@ fn b2_cone_parser_reads_orthonormal_slant_chart() {
     assert_eq!(cones[0].apex, [1.0, 2.0, 3.0]);
     assert_eq!(cones[0].axis, [0.0, 0.0, 1.0]);
     assert_eq!(cones[0].half_angle, 0.25);
-    assert_eq!(cones[0].pre_angular_range_scalar, 4.0);
+    assert_eq!(cones[0].reference_radius, 4.0);
     assert_eq!(cones[0].angular_range, [0.5, 0.5 + std::f64::consts::PI]);
     assert_eq!(cones[0].slant_range, [2.0, 8.0]);
     assert_eq!(cones[0].angular_scale, 3.0);
@@ -1602,4 +2109,47 @@ fn consolidated_edge_nodes_require_canonical_headers_and_terminal_controls() {
     let mut invalid_terminal = bytes;
     *invalid_terminal.last_mut().expect("edge terminal") = 0x03;
     assert!(crate::families::b2::records::b2_edge_nodes(&invalid_terminal).is_empty());
+}
+
+#[test]
+fn consolidated_edge_nodes_accept_width_coded_terminal_two() {
+    let mut bytes = b2_edge_node_stream();
+    *bytes.last_mut().expect("edge terminal") = 0x02;
+
+    let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
+    let [node] = nodes.as_slice() else {
+        panic!("width-coded terminal-two edge node")
+    };
+    assert_eq!(node.tail, 0x02);
+
+    let mut object_stream_only_terminal = bytes;
+    *object_stream_only_terminal
+        .last_mut()
+        .expect("edge terminal") = 0x26;
+    assert!(crate::families::b2::records::b2_edge_nodes(&object_stream_only_terminal).is_empty());
+}
+
+#[test]
+fn consolidated_edge_nodes_decode_terminal_allocation_reference_forms() {
+    use crate::wire::bytes::AllocationReferenceEncoding;
+
+    for (tail, value, encoding) in [
+        (0x01, 0, AllocationReferenceEncoding::BackwardDistance),
+        (0x02, 0, AllocationReferenceEncoding::Selector2),
+        (0x21, 8, AllocationReferenceEncoding::BackwardDistance),
+        (0x22, 8, AllocationReferenceEncoding::Selector2),
+        (0x25, 9, AllocationReferenceEncoding::BackwardDistance),
+        (0x29, 10, AllocationReferenceEncoding::BackwardDistance),
+        (0x2a, 10, AllocationReferenceEncoding::Selector2),
+    ] {
+        let mut bytes = b2_edge_node_stream();
+        *bytes.last_mut().expect("edge terminal") = tail;
+        let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
+        let [node] = nodes.as_slice() else {
+            panic!("one terminal allocation-reference edge node")
+        };
+        assert_eq!(node.terminal_value, value);
+        assert_eq!(node.terminal_encoding, encoding);
+        assert_eq!(node.tail, tail);
+    }
 }

@@ -169,26 +169,13 @@ fn pcurve_requires_one_complete_clamped_bezier_frame() {
     let tail = payload.len() - 36;
     let mut alternate_scalar = payload.clone();
     alternate_scalar[tail + 10..tail + 18].copy_from_slice(&2.5_f64.to_le_bytes());
-    assert_eq!(
-        parse_pcurve(&record(alternate_scalar.clone()))
-            .expect("alternate positive suffix scalar")
-            .class_21_suffix_scalar,
-        Some(2.5)
-    );
+    assert!(parse_pcurve(&record(alternate_scalar.clone())).is_none());
     let base = parse_pcurve(&record(payload.clone())).expect("base pcurve");
-    let alternate = parse_pcurve(&record(alternate_scalar)).expect("alternate pcurve");
-    assert_eq!(base.distinct_knots, alternate.distinct_knots);
-    assert_eq!(base.multiplicities, alternate.multiplicities);
-    assert_eq!(base.control_points, alternate.control_points);
-    assert_eq!(
-        pcurve_parameter_domain(&base),
-        pcurve_parameter_domain(&alternate)
-    );
     for parameter in [0.0, 0.25, 0.5, 1.0] {
         assert_eq!(
             evaluate_pcurve(&base, parameter),
-            evaluate_pcurve(&alternate, parameter),
-            "suffix scalar must not change standalone pcurve evaluation at {parameter}"
+            Some([parameter, 0.0]),
+            "zero-origin class-21 pcurve evaluates at its local station {parameter}"
         );
     }
     let mut wrong_family = record(payload.clone());
@@ -223,6 +210,72 @@ fn pcurve_requires_one_complete_clamped_bezier_frame() {
     let mut non_finite = payload;
     non_finite[tail + 10..tail + 18].copy_from_slice(&f64::INFINITY.to_le_bytes());
     assert!(parse_pcurve(&record(non_finite)).is_none());
+}
+
+#[test]
+fn class21_pcurve_rebases_nonzero_origin_to_zero_based_stations() {
+    let payload = crate::test_support::b5_linear_pcurve_payload_with_knots(
+        7,
+        [10.0, 20.0],
+        [0.0, 0.0],
+        [1.0, 0.0],
+    );
+    let pcurve = parse_pcurve(&B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x21,
+        object_id: 2,
+        payload,
+    })
+    .expect("translated class-21 pcurve");
+
+    assert_eq!(
+        pcurve.parameterization,
+        B5PcurveParameterization::Translated {
+            native_origin: 10.0,
+        }
+    );
+    assert_eq!(pcurve.distinct_knots, [10.0, 20.0]);
+    assert_eq!(pcurve.class_21_suffix_scalar, Some(10.0));
+    assert_eq!(pcurve_parameter_domain(&pcurve), Some([0.0, 10.0]));
+    assert_eq!(
+        pcurve_nurbs_knots(&pcurve),
+        Some(vec![0.0, 0.0, 10.0, 10.0])
+    );
+    assert_eq!(evaluate_pcurve(&pcurve, 0.0), Some([0.0, 0.0]));
+    assert_eq!(evaluate_pcurve(&pcurve, 10.0), Some([1.0, 0.0]));
+
+    let pcurves = BTreeMap::from([(2, pcurve)]);
+    let surfaces = BTreeMap::from([(
+        7,
+        B5Surface::Plane {
+            origin: [0.0, 0.0, 0.0],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
+        },
+    )]);
+    let opaque_pcurves = BTreeMap::new();
+    let profiles = BTreeMap::new();
+    let edge_parameter_incidences = BTreeMap::new();
+    let parameter_incidences = BTreeMap::new();
+    let geometry = B5PcurveContext {
+        pcurves: &pcurves,
+        opaque_pcurves: &opaque_pcurves,
+        surfaces: &surfaces,
+        profiles: &profiles,
+        edge_parameter_incidences: &edge_parameter_incidences,
+        parameter_incidences: &parameter_incidences,
+    };
+    assert_eq!(
+        lift_parameter_incidence(2, 0.0, &geometry),
+        Some([0.0, 0.0, 0.0])
+    );
+    assert_eq!(
+        lift_parameter_incidence(2, 10.0, &geometry),
+        Some([1.0, 0.0, 0.0])
+    );
 }
 
 #[test]
@@ -870,6 +923,7 @@ fn native_vertex_identity_retains_finite_separated_lifts_with_tolerance() {
             control_points: vec![[0.0, 0.0], [1.0, 0.0]],
             weights: None,
             parameter_range: None,
+            parameterization: B5PcurveParameterization::Native,
             class_21_suffix_scalar: None,
             lifted_endpoints: Some(endpoints),
         },
@@ -948,6 +1002,7 @@ fn edge_parameter_incidences_select_typed_pcurve_endpoint_loci() {
             control_points: vec![[0.0, 0.0], [10.0, 0.0]],
             weights: None,
             parameter_range: None,
+            parameterization: B5PcurveParameterization::Native,
             class_21_suffix_scalar: None,
             lifted_endpoints: Some([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]),
         },
@@ -1028,6 +1083,7 @@ fn missing_edge_parameter_incidence_uses_complete_pcurve_domain() {
             control_points: vec![[2.0, 0.0], [8.0, 0.0]],
             weights: None,
             parameter_range: Some([2.0, 8.0]),
+            parameterization: B5PcurveParameterization::Native,
             class_21_suffix_scalar: None,
             lifted_endpoints: None,
         },
@@ -1263,6 +1319,7 @@ fn conflicting_geometric_endpoints_defer_one_edge_to_native_identity() {
         control_points: vec![[0.0, 0.0], [1.0, 0.0]],
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: Some(endpoints),
     };

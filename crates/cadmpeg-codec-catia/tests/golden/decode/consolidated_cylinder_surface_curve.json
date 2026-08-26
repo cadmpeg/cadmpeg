@@ -337,6 +337,7 @@
           "catalog_entries": [],
           "catalogs": [],
           "consolidated_circles": [],
+          "consolidated_class5b5c_records": [],
           "consolidated_class61_records": [],
           "consolidated_cone_faces": [],
           "consolidated_cones": [],
@@ -473,7 +474,17 @@
                 2,
                 1
               ],
+              "reference_encodings": [
+                "backward_distance",
+                "tagged_u8",
+                "tagged_u8",
+                "backward_distance",
+                "backward_distance"
+              ],
+              "source_index": 0,
               "tail": 33,
+              "terminal_encoding": "backward_distance",
+              "terminal_value": 8,
               "uses": {
                 "references": [
                   [
@@ -663,14 +674,22 @@
               "identity": 139,
               "incident_edge_nodes": [
                 "catia:consolidated:edge-node#0"
-              ]
+              ],
+              "reference_values": [
+                139
+              ],
+              "source_index": 0
             },
             {
               "id": "catia:consolidated:vertex-identity#1",
               "identity": 142,
               "incident_edge_nodes": [
                 "catia:consolidated:edge-node#0"
-              ]
+              ],
+              "reference_values": [
+                142
+              ],
+              "source_index": 0
             }
           ],
           "design_objects": [],
@@ -706,7 +725,7 @@
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
         },
-        "version": 276
+        "version": 288
       }
     },
     "source": {
@@ -1071,6 +1090,7 @@
       "transferred_native_operation_definition_chain_value_count": 0,
       "transferred_native_operation_definition_value_count": 0,
       "transferred_native_operation_parameter_count": 0,
+      "transferred_native_operation_range_count": 0,
       "transferred_native_sketch_entity_count": 0,
       "transferred_parameter_count": 0,
       "transferred_principal_plane_record_count": 0,

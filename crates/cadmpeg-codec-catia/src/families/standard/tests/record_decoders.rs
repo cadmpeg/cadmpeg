@@ -2,9 +2,14 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
-use crate::families::standard::records::{StandardFaceBounds, StandardSurfaceRecord};
+use crate::families::standard::fbb::FbbPopulationLayout;
+use crate::families::standard::records::{
+    StandardCurveGeometry, StandardCurveSupport, StandardFaceBounds, StandardSurfacePopulation,
+    StandardSurfaceRecord, SurfacePrefix,
+};
 use crate::test_support::{
     a8_freeform_curve_stream, a8_surface_stream, append_b5_record, b5_closed_triangle_stream,
+    compact_standard_triangle_topology_stream, fbb_mixed_boundary_topology_stream,
     fbb_only_quad_topology_stream, le_f32, le_f64, standard_quad_topology_stream,
 };
 
@@ -164,6 +169,33 @@ fn standard_topology_recovers_a_quad_boundary_and_port_vertices() {
 }
 
 #[test]
+fn compact_standard_topology_recovers_a_triangle_boundary_and_vertices() {
+    let bytes = compact_standard_triangle_topology_stream();
+    let topology = crate::families::standard::fbb::parse_standard(&bytes)
+        .expect("valid compact standard topology");
+
+    assert_eq!(topology.face_count(), 1);
+    assert_eq!(topology.edge_rows().len(), 3);
+    assert_eq!(topology.vertex_points().len(), 3);
+    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 3);
+    assert_eq!(
+        crate::families::standard::fbb::standard_edge_count(&bytes),
+        Some(3)
+    );
+    assert_eq!(
+        crate::families::standard::fbb::standard_vertex_points(&bytes)
+            .expect("compact standard vertex table")
+            .len(),
+        3
+    );
+    assert_eq!(
+        crate::solve::missing_edge::standard_mesh_edge_ports(&bytes)
+            .expect("compact standard mesh port quotient"),
+        vec![[0, 1], [1, 2], [2, 0]]
+    );
+}
+
+#[test]
 fn standard_counted_vertex_table_excludes_incidental_markers() {
     let mut bytes = standard_quad_topology_stream();
     bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
@@ -271,12 +303,12 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
     assert_eq!(topology.logical_vertex_count(), 8);
     assert_eq!(topology.vertex_points().len(), 4);
-    let table_ports =
-        crate::solve::missing_edge::fbb_edge_port_identities(&bytes).expect("scoped FBB ports");
+    let table_ports = crate::solve::missing_edge::fbb_global_edge_port_identities(&bytes)
+        .expect("global FBB handle ports");
     assert_eq!(table_ports[0][1], table_ports[1][0]);
     assert_eq!(table_ports[1][1], table_ports[2][0]);
     assert_eq!(table_ports[2][1], table_ports[3][0]);
-    assert_ne!(table_ports[3][1], table_ports[4][0]);
+    assert_eq!(table_ports[3][1], table_ports[4][0]);
     assert_eq!(table_ports[4][1], table_ports[5][0]);
     assert_eq!(table_ports[5][1], table_ports[6][0]);
     assert_eq!(table_ports[6][1], table_ports[7][0]);
@@ -357,6 +389,23 @@ fn fbb_only_topology_uses_complete_boundary_runs_and_scoped_ports() {
 }
 
 #[test]
+fn fbb_topology_recovers_unique_flanking_rows_without_reclassifying_complete_rows() {
+    let bytes = fbb_mixed_boundary_topology_stream();
+    let topology = crate::families::standard::topology::parse_fbb(&bytes)
+        .expect("mixed FBB boundary topology");
+    assert_eq!(topology.face_count(), 1);
+    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 5);
+    assert_eq!(
+        topology.edge_rows()[0].boundary_layout,
+        crate::families::standard::topology::EdgeBoundaryLayout::InteriorWithFlankingCorners
+    );
+    assert!(topology.edge_rows()[1..].iter().all(|row| {
+        row.boundary_layout
+            == crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun
+    }));
+}
+
+#[test]
 fn fbb_topology_reads_u16_mesh_and_edge_handles() {
     let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 6, 0, 0, 0, 6];
     for handle in [1u16, 0x1010, 0x1011, 0x1012, 0x1013, 0x1010] {
@@ -424,8 +473,31 @@ fn fbb_topology_reads_u8_mesh_and_edge_handles() {
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
     assert_eq!(
-        crate::families::standard::fbb::standard_face_frame_vectors(&bytes),
+        crate::families::standard::fbb::standard_face_frame_vectors(&bytes, 1),
         [Some([0.0, 0.0, 1.0])]
+    );
+}
+
+#[test]
+fn fbb_frame_vectors_concatenate_unique_population_chains() {
+    let mut bytes = vec![0x01, 0x49, 0x02, 0xff, 6, 0, 0, 0];
+    for value in [0.0f32, 0.0, 1.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+    for handle in [0x10u16, 0x11, 0x12] {
+        bytes.extend_from_slice(&handle.to_be_bytes());
+    }
+    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
+    bytes.extend_from_slice(&[0x01, 0x49, 0x01, 0xff, 3, 0, 0, 0]);
+    for value in [0.0f32, 0.0, 1.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+    bytes.extend_from_slice(&[0x20, 0x21, 0x22]);
+    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd3, 0xd3, 0xd3, 0xd3]);
+
+    assert_eq!(
+        crate::families::standard::fbb::standard_face_frame_vectors(&bytes, 2),
+        [Some([0.0, 0.0, 1.0]), Some([0.0, 0.0, 1.0]),]
     );
 }
 
@@ -693,7 +765,7 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
     bytes.extend_from_slice(&[0x78, 0x56, 0, 0, 0x1a, 0, 0x33, 0x33]);
     bytes.resize(analytic + 72, 0);
     bytes.push(0xff);
-    bytes.push(0x60);
+    bytes.extend_from_slice(&[0x60, 1, 0, 0, 0x00, 0x02, 0x00, 0x33, 0x36, 0, 1]);
 
     let records = crate::families::standard::records::standard_surface_records(&bytes, 2)
         .expect("surface roster");
@@ -718,6 +790,76 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
         StandardSurfaceRecord::Analytic(prefix)
             if prefix.pos == analytic + 5 && prefix.target == 0x5678 && prefix.kind == 0x33
     ));
+    assert_eq!(
+        crate::families::standard::records::standard_surface_record_groups(&bytes).len(),
+        1
+    );
+    let populations = crate::families::standard::records::standard_surface_populations(&bytes);
+    assert_eq!(populations.len(), 1);
+    assert_eq!(populations[0].records.len(), 2);
+    assert_eq!(populations[0].supports.len(), 1);
+    assert_eq!(populations[0].supports[0].faces, [0, 1]);
+}
+
+#[test]
+fn source_order_pairs_only_source_closed_populations_with_matching_cardinalities() {
+    let population = |faces: usize, edges: usize, seed: usize| StandardSurfacePopulation {
+        records: (0..faces)
+            .map(|offset| {
+                StandardSurfaceRecord::Analytic(SurfacePrefix {
+                    pos: seed + offset,
+                    target: u32::try_from(seed + offset).expect("small test target"),
+                    kind: 0x33,
+                })
+            })
+            .collect(),
+        supports: (0..edges)
+            .map(|offset| StandardCurveSupport {
+                pos: seed + offset,
+                tag: u32::try_from(seed + offset).expect("small test tag"),
+                faces: [0, faces.saturating_sub(1)],
+                geometry: StandardCurveGeometry::Line,
+            })
+            .collect(),
+    };
+    let layout = |face_count: usize, edge_count: usize, vertex_count: usize, start: usize| {
+        FbbPopulationLayout {
+            face_start: start,
+            face_count,
+            after_faces: start + face_count * 8,
+            edge_count,
+            vertex_count,
+            fbb_edge_table: true,
+        }
+    };
+    let layouts = vec![layout(2, 3, 4, 10), layout(2, 3, 4, 20)];
+    let populations = vec![population(2, 3, 100), population(2, 3, 200)];
+
+    let pairs =
+        crate::families::standard::records::pair_standard_populations(&layouts, &populations)
+            .expect("source-ordered population relation");
+    assert_eq!(pairs.len(), 2);
+    assert_eq!(pairs[0].0.face_start, 10);
+    assert!(matches!(
+        &pairs[0].1.records[0],
+        StandardSurfaceRecord::Analytic(prefix) if prefix.pos == 100
+    ));
+    assert_eq!(pairs[1].0.face_start, 20);
+    assert!(matches!(
+        &pairs[1].1.records[0],
+        StandardSurfaceRecord::Analytic(prefix) if prefix.pos == 200
+    ));
+
+    let mut mismatched = populations.clone();
+    mismatched[1] = population(2, 2, 200);
+    assert!(
+        crate::families::standard::records::pair_standard_populations(&layouts, &mismatched,)
+            .is_none()
+    );
+    assert!(
+        crate::families::standard::records::pair_standard_populations(&layouts[..1], &populations,)
+            .is_none()
+    );
 }
 
 #[test]
@@ -847,10 +989,11 @@ fn plane_bounds_record(
 }
 
 #[test]
-fn plane_bounds_withhold_duplicate_tags_and_slack_only_containment() {
+fn plane_bounds_withhold_duplicates_and_excessive_containment_error() {
     let duplicate_tag = 0x0001_0203;
     let invalid_tag = 0x0004_0506;
     let valid_tag = 0x0007_0809;
+    let rounded_tag = 0x000a_0b0c;
     let mut bytes = plane_bounds_record(
         duplicate_tag,
         [1.0, 2.0, 3.0],
@@ -879,17 +1022,34 @@ fn plane_bounds_withhold_duplicate_tags_and_slack_only_containment() {
         [0.0, 0.0, 5.0],
         2.0,
     ));
+    bytes.extend(plane_bounds_record(
+        rounded_tag,
+        [0.0, 0.0, 50.0],
+        [2.5, 2.5, 0.0],
+        [5.210_867_5e-7, 1.554_135_7e-7, 50.0],
+        2.5,
+    ));
     let normals = HashMap::from([
         (duplicate_tag, [1.0, 0.0, 0.0]),
         (invalid_tag, [0.0, 1.0, 0.0]),
         (valid_tag, [0.0, 0.0, 1.0]),
+        (rounded_tag, [0.0, 0.0, 1.0]),
     ]);
 
     let planes = crate::families::standard::records::plane_params(&bytes, &normals);
 
-    assert_eq!(planes.len(), 1);
+    assert_eq!(planes.len(), 2);
     assert_eq!(planes[0].target, valid_tag);
     assert_eq!(planes[0].origin, Point3::new(0.0, 0.0, 5.0));
+    assert_eq!(planes[1].target, rounded_tag);
+    assert_eq!(
+        planes[1].origin,
+        Point3::new(
+            f64::from(5.210_867_5e-7_f32),
+            f64::from(1.554_135_7e-7_f32),
+            50.0,
+        )
+    );
 }
 
 #[test]
@@ -1071,6 +1231,8 @@ fn standard_freeform_tag_resolves_standalone_a8_rolling_ball() {
                     degree: 5,
                     ..
                 },
+                source:
+                    crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }
         )
     ));
@@ -1092,6 +1254,28 @@ fn standard_object_evidence_rejects_cross_stream_edge_owner_conflicts() {
         &HashSet::new(),
     );
     assert!(evidence.edge_owner_faces.is_empty());
+}
+
+#[test]
+fn standard_object_evidence_keeps_face_owner_from_unresolved_surface() {
+    let mut stream = b5_closed_triangle_stream();
+    let face = crate::families::b5::graph::object_stream_frames(&stream)
+        .into_iter()
+        .find(|frame| frame.class == 0x5f)
+        .expect("face frame")
+        .start;
+    stream[face + 10..face + 12].copy_from_slice(&999u16.to_le_bytes());
+
+    let evidence = crate::families::standard::decode::standard_object_evidence_from_streams(
+        [stream],
+        &HashSet::new(),
+        &HashSet::new(),
+    );
+
+    assert_eq!(
+        evidence.edge_owner_faces.get(&300),
+        Some(&HashSet::from([500]))
+    );
 }
 
 #[test]
@@ -1156,6 +1340,8 @@ fn standard_face_resolves_a_rolling_ball_result_carrier() {
             crate::families::standard::decode::StandardSurfaceProcedure::RollingBall {
                 carrier_object_id: 110,
                 definition: cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet { .. },
+                source:
+                    crate::families::standard::decode::StandardRollingBallSource::ObjectStreamA8,
             }
         )
     ));
@@ -1208,6 +1394,40 @@ fn standard_duplicate_edge_face_uses_object_stream_owner_identity() {
         &HashMap::from([(700, HashSet::from([20]))]),
     );
     assert_eq!(ambiguous, [[0, 0]]);
+}
+
+#[test]
+fn standard_duplicate_edge_face_keeps_second_slot_open_for_one_owner_occurrence() {
+    use crate::families::standard::records::{
+        StandardCurveGeometry, StandardCurveSupport, StandardSurfaceRecord,
+    };
+
+    let mut edge_faces = vec![[0, 0]];
+    let supports = [StandardCurveSupport {
+        pos: 0,
+        tag: 700,
+        faces: [0, 0],
+        geometry: StandardCurveGeometry::Bspline,
+    }];
+    let records = [10u32, 20]
+        .into_iter()
+        .map(|target| {
+            StandardSurfaceRecord::Analytic(crate::families::standard::records::SurfacePrefix {
+                pos: 0,
+                target,
+                kind: 0x33,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    crate::families::standard::decode::apply_standard_native_edge_faces(
+        &mut edge_faces,
+        &supports,
+        &records,
+        &HashMap::from([(700, HashSet::from([10]))]),
+    );
+
+    assert_eq!(edge_faces, [[0, 0]]);
 }
 
 #[test]

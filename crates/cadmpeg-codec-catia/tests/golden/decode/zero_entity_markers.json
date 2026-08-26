@@ -47,6 +47,7 @@
           "catalog_entries": [],
           "catalogs": [],
           "consolidated_circles": [],
+          "consolidated_class5b5c_records": [],
           "consolidated_class61_records": [],
           "consolidated_cone_faces": [],
           "consolidated_cones": [],
@@ -138,7 +139,7 @@
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
         },
-        "version": 276
+        "version": 288
       }
     },
     "source": {
@@ -443,6 +444,7 @@
       "transferred_native_operation_definition_chain_value_count": 0,
       "transferred_native_operation_definition_value_count": 0,
       "transferred_native_operation_parameter_count": 0,
+      "transferred_native_operation_range_count": 0,
       "transferred_native_sketch_entity_count": 0,
       "transferred_parameter_count": 0,
       "transferred_principal_plane_record_count": 0,

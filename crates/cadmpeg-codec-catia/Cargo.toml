@@ -31,6 +31,7 @@ cadmpeg-ir.workspace = true
 sha2.workspace = true
 memchr.workspace = true
 serde.workspace = true
+serde-value.workspace = true
 schemars = { workspace = true, optional = true }
 
 [dev-dependencies]

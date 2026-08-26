@@ -30,6 +30,34 @@ pub(super) fn validate_consolidated_class61_records(
     Ok(())
 }
 
+pub(super) fn validate_consolidated_class5b5c_records(
+    records: &[CatiaConsolidatedClass5b5cRecord],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, record) in records.iter().enumerate() {
+        let expected_len = 4u64
+            .checked_add(u64::from(record.width))
+            .and_then(|len| len.checked_add(u64::try_from(record.payload.len()).ok()?));
+        let source_order_valid = index == 0
+            || (
+                records[index - 1].source_index,
+                records[index - 1].source_offset,
+            ) < (record.source_index, record.source_offset);
+        if record.id != format!("catia:consolidated:class5b5c-record#{index}")
+            || !matches!(record.width, 1..=3)
+            || !matches!(record.flag, 0x03 | 0x13 | 0x83)
+            || !matches!(record.class, 0x5b | 0x5c)
+            || expected_len != Some(record.byte_len)
+            || !source_order_valid
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated class-0x5b/0x5c record `{}` is structurally invalid",
+                record.id
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn validate_consolidated_groups(
     groups: &[CatiaConsolidatedGroup],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -180,7 +208,7 @@ pub(super) fn validate_consolidated_cones(
                 .chain(&cone.axis)
                 .chain(&[
                     cone.half_angle,
-                    cone.pre_angular_range_scalar,
+                    cone.reference_radius,
                     cone.angular_range[0],
                     cone.angular_range[1],
                     cone.slant_range[0],
@@ -375,19 +403,7 @@ pub(super) fn validate_consolidated_parameter_points(
     points: &[CatiaConsolidatedParameterPoint],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, point) in points.iter().enumerate() {
-        let payload_valid = match &point.payload {
-            CatiaConsolidatedParameterPointPayload::Uv { uv } => {
-                point.layout == 0x12 && uv.iter().all(|value| value.is_finite())
-            }
-            CatiaConsolidatedParameterPointPayload::StationUv { station, uv } => {
-                point.layout == 0x1a
-                    && station.is_finite()
-                    && uv.iter().all(|value| value.is_finite())
-            }
-            CatiaConsolidatedParameterPointPayload::FiveScalars { values } => {
-                point.layout == 0x2a && values.iter().all(|value| value.is_finite())
-            }
-        };
+        let payload_valid = point.payload.is_valid_for_layout(point.layout);
         let frame_overhead = point.byte_len.checked_sub(u64::from(point.layout));
         if point.id != format!("catia:consolidated:parameter-point#{index}")
             || !matches!(frame_overhead, Some(5..=7))

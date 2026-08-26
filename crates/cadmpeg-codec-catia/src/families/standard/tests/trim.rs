@@ -145,6 +145,31 @@ fn trim_packet_retains_primitive_partition_lengths() {
 }
 
 #[test]
+fn trim_chain_accepts_width_matched_u16be_primitive_lengths() {
+    let mut bytes = vec![0x01, 0x4b, 0x01, 0x01, 0xff];
+    bytes.extend_from_slice(&6u32.to_le_bytes());
+    for value in [1.0f32, 0.0, 0.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3u16.to_be_bytes());
+    for handle in 10u16..16 {
+        bytes.extend_from_slice(&handle.to_be_bytes());
+    }
+
+    let [record] = parse_trim_chain(&bytes, bytes.len(), 1, 2)
+        .expect("width-matched primitive packet")
+        .try_into()
+        .expect("one packet");
+    assert_eq!(record.independent_count, 1);
+    assert_eq!(record.strip_lengths, [3]);
+    assert!(record.fan_lengths.is_empty());
+    assert_eq!(record.frame_vector, Some([1.0, 0.0, 0.0]));
+
+    let layout = parse_trim_record_layout(&bytes, 0, 2).expect("unique packet layout");
+    assert_eq!(layout.end, bytes.len());
+}
+
+#[test]
 fn standard_edge_row_arity_uses_widened_count_form() {
     let mut bytes = Vec::new();
     for (kind, handles) in [(1, [10u16, 11]), (2, [20, 21])] {
@@ -212,16 +237,16 @@ fn coordinate_rows_canonicalize_logical_vertex_labels() {
         &left_candidate,
         &right_candidate
     ));
-    let left = canonicalize_mesh_vertex_labels(left_candidate.0, &left_candidate.1);
-    let right = canonicalize_mesh_vertex_labels(right_candidate.0, &right_candidate.1);
+    let left = canonicalize_mesh_vertex_labels(&left_candidate.0, &left_candidate.1);
+    let right = canonicalize_mesh_vertex_labels(&right_candidate.0, &right_candidate.1);
 
     assert_eq!(left, right);
     assert_eq!(left.expect("canonical topology").1, vec![0, 1]);
 
-    let forward = canonicalize_mesh_vertex_labels(topology(0, 1), &[0, 1]);
+    let forward = canonicalize_mesh_vertex_labels(&topology(0, 1), &[0, 1]);
     let mut reversed = topology(0, 1);
     reversed.faces[0].boundaries[0].coedges[0].reversed = true;
-    let reversed = canonicalize_mesh_vertex_labels(reversed, &[0, 1]);
+    let reversed = canonicalize_mesh_vertex_labels(&reversed, &[0, 1]);
     assert_eq!(forward, reversed);
 }
 
@@ -367,6 +392,76 @@ fn mesh_candidate_comparison_preserves_same_class_edge_row_interchange() {
 }
 
 #[test]
+fn mesh_candidate_comparison_collapses_unbound_observable_edge_gauge() {
+    let edge_rows = vec![
+        EdgeRow {
+            kind: 2,
+            handles: vec![10, 11],
+            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        },
+        EdgeRow {
+            kind: 2,
+            handles: vec![20, 21],
+            boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+        },
+    ];
+    let topology = |swapped: bool| StandardTopology {
+        faces: vec![FaceTopology {
+            boundaries: vec![Boundary {
+                coedges: if swapped {
+                    vec![
+                        CoedgeUse {
+                            edge_row: 1,
+                            reversed: false,
+                            start_vertex: 0,
+                            end_vertex: 1,
+                        },
+                        CoedgeUse {
+                            edge_row: 0,
+                            reversed: false,
+                            start_vertex: 1,
+                            end_vertex: 2,
+                        },
+                    ]
+                } else {
+                    vec![
+                        CoedgeUse {
+                            edge_row: 0,
+                            reversed: false,
+                            start_vertex: 0,
+                            end_vertex: 1,
+                        },
+                        CoedgeUse {
+                            edge_row: 1,
+                            reversed: false,
+                            start_vertex: 1,
+                            end_vertex: 2,
+                        },
+                    ]
+                },
+            }],
+        }],
+        edge_rows: edge_rows.clone(),
+        vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        logical_vertex_count: 3,
+    };
+    let left = (topology(false), vec![0, 1, 2]);
+    let right = (topology(true), vec![0, 1, 2]);
+    let edge_geometry = [MeshEdgeGeometry::Line, MeshEdgeGeometry::Line];
+    let edge_candidates = vec![vec![[0, 1], [1, 2]], vec![[0, 1], [1, 2]]];
+    let edge_identity_evidence = [false, false];
+
+    assert!(!mesh_candidates_equivalent(&left, &right));
+    assert!(mesh_candidates_equivalent_with_gauge(
+        &left,
+        &right,
+        &edge_geometry,
+        &edge_candidates,
+        &edge_identity_evidence,
+    ));
+}
+
+#[test]
 fn mesh_candidate_comparison_rejects_two_invalid_candidates() {
     let invalid = (
         StandardTopology {
@@ -423,6 +518,38 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
     }));
     assert_eq!(standard_face_count(&bytes), None);
     assert!(crate::families::standard::fbb::parse_standard(&bytes).is_none());
+}
+
+#[test]
+fn fbb_population_layout_keeps_counts_before_endpoint_solving() {
+    let mut bytes = crate::test_support::fbb_only_quad_topology_stream();
+    bytes.push(0);
+    bytes.extend(crate::test_support::fbb_only_quad_topology_stream());
+
+    let layouts = fbb_population_layouts(&bytes);
+    assert_eq!(layouts.len(), 2);
+    assert!(layouts.iter().all(|layout| {
+        layout.face_count == 1 && layout.edge_count == 4 && layout.vertex_count == 4
+    }));
+}
+
+#[test]
+fn fbb_population_spine_retains_the_preceding_trim_chain() {
+    let bytes = crate::test_support::fbb_only_quad_topology_stream();
+    let layouts = fbb_population_layouts(&bytes);
+    let [layout] = layouts.as_slice() else {
+        panic!("one source-closed FBB population");
+    };
+
+    let spine = population_spine(&bytes, layout).expect("isolated FBB spine");
+    let isolated_layouts = fbb_population_layouts(spine);
+    let [isolated] = isolated_layouts.as_slice() else {
+        panic!("isolated spine remains source-closed");
+    };
+    assert_eq!(isolated.face_count, layout.face_count);
+    assert_eq!(isolated.edge_count, layout.edge_count);
+    assert_eq!(isolated.vertex_count, layout.vertex_count);
+    assert_eq!(isolated.fbb_edge_table, layout.fbb_edge_table);
 }
 
 #[test]

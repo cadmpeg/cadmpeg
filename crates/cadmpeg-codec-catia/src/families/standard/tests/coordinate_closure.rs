@@ -11,6 +11,74 @@ fn endpoint_ports_propagate_resolved_pairs_to_unresolved_edges() {
 }
 
 #[test]
+fn ordered_endpoint_seed_orients_a_seedless_port_component() {
+    let ports = [[10, 11]];
+    let pairs = [Some([0, 1])];
+    let ordered = [Some([1, 0])];
+
+    assert_eq!(
+        propagate_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered),
+        Some(vec![Some([1, 0])])
+    );
+}
+
+#[test]
+fn ordered_endpoint_seed_must_agree_with_the_unordered_candidate() {
+    assert_eq!(
+        propagate_edge_port_points_with_ordered_seeds(
+            &[[10, 11]],
+            &[Some([0, 1])],
+            &[Some([0, 2])],
+        ),
+        None
+    );
+}
+
+#[test]
+fn deferred_port_component_closure_reaches_transitive_neighbors() {
+    let ports = [[10, 11], [11, 12], [12, 13], [20, 21]];
+    let mut deferred = [true, false, false, false];
+
+    assert!(expand_deferred_edge_port_components(&ports, &mut deferred));
+    assert_eq!(deferred, [true, true, true, false]);
+}
+
+#[test]
+fn deferred_mesh_port_component_does_not_orient_unordered_neighbors() {
+    let ports = [[10, 11], [11, 10], [12, 10], [13, 11], [10, 97], [11, 98]];
+    let pairs = [
+        Some([0, 1]),
+        Some([0, 1]),
+        Some([0, 2]),
+        Some([0, 3]),
+        Some([0, 79]),
+        Some([0, 79]),
+    ];
+
+    assert_eq!(
+        propagate_edge_port_points_with_ordered_seeds_and_deferred(
+            &ports,
+            &pairs,
+            &[],
+            &[true, false, false, false, false, false],
+        ),
+        Some(vec![None, None, None, None, None, None]),
+    );
+}
+
+#[test]
+fn partial_ordered_endpoint_seed_resolves_a_row_without_native_ports() {
+    let ports = [Some([10, 11]), None];
+    let pairs = [Some([0, 1]), None];
+    let ordered = [Some([1, 0]), Some([2, 3])];
+
+    assert_eq!(
+        propagate_partial_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered),
+        Some(vec![Some([1, 0]), Some([2, 3])])
+    );
+}
+
+#[test]
 fn partial_endpoint_ports_propagate_known_components_only() {
     let ports = [
         Some([10, 11]),
@@ -22,7 +90,7 @@ fn partial_endpoint_ports_propagate_known_components_only() {
     let pairs = [Some([0, 1]), Some([1, 2]), Some([8, 9]), None, Some([3, 0])];
 
     assert_eq!(
-        propagate_partial_edge_port_points(&ports, &pairs),
+        propagate_partial_edge_port_points_with_ordered_seeds(&ports, &pairs, &[]),
         Some(vec![
             Some([0, 1]),
             Some([1, 2]),
@@ -34,25 +102,7 @@ fn partial_endpoint_ports_propagate_known_components_only() {
 }
 
 #[test]
-fn unbound_native_edge_pair_must_be_unique_in_the_geometric_domain() {
-    use crate::families::standard::decode::unique_unbound_native_endpoint_pair;
-
-    assert_eq!(
-        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[7, 2], [2, 7], [1, 4]]),
-        Some([2, 7])
-    );
-    assert_eq!(
-        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[7, 2], [2, 4]]),
-        None
-    );
-    assert_eq!(
-        unique_unbound_native_endpoint_pair(&[2, 4, 7], &[[1, 4], [2, 9]]),
-        None
-    );
-}
-
-#[test]
-fn native_edge_carrier_binding_uses_unique_unused_endpoint_identity() {
+fn native_edge_carrier_binding_requires_equal_object_identity() {
     use crate::families::standard::decode::standard_native_support_edge_ids;
     use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
 
@@ -70,44 +120,14 @@ fn native_edge_carrier_binding_uses_unique_unused_endpoint_identity() {
             geometry: StandardCurveGeometry::Line,
         },
     ];
-    let native_edges = BTreeMap::from([(70, [10, 11]), (71, [12, 13])]);
     let native_support_ids = HashSet::from([70, 71]);
-    let vertex_roster = [10, 11, 12, 13];
     assert_eq!(
-        standard_native_support_edge_ids(
-            &supports,
-            &native_edges,
-            &native_support_ids,
-            Some(&vertex_roster),
-            &[vec![0, 1], vec![2, 3]],
-        )
-        .expect("native edge bindings allocation"),
-        vec![Some(70), Some(71)]
-    );
-
-    let ambiguous_edges = BTreeMap::from([(71, [10, 11]), (72, [10, 11])]);
-    let ambiguous_support_ids = HashSet::from([71, 72]);
-    assert_eq!(
-        standard_native_support_edge_ids(
-            &supports[1..],
-            &ambiguous_edges,
-            &ambiguous_support_ids,
-            Some(&vertex_roster),
-            &[vec![0, 1]],
-        )
-        .expect("native edge bindings allocation"),
-        vec![None]
+        standard_native_support_edge_ids(&supports, &native_support_ids),
+        vec![Some(70), None]
     );
 
     assert_eq!(
-        standard_native_support_edge_ids(
-            &supports[1..],
-            &BTreeMap::new(),
-            &HashSet::from([900]),
-            None,
-            &[vec![2, 3]],
-        )
-        .expect("native edge bindings allocation"),
+        standard_native_support_edge_ids(&supports[1..], &HashSet::from([900])),
         vec![Some(900)]
     );
 }
@@ -161,6 +181,25 @@ fn endpoint_port_domains_propagate_pair_correlation_to_a_fixpoint() {
     assert_eq!(
         prune_edge_candidates_by_port_domains(&ports, &candidates),
         Some(vec![vec![[0, 1]], vec![[1, 4]], vec![[4, 6]]])
+    );
+}
+
+#[test]
+fn deferred_port_rows_do_not_constrain_open_face_components() {
+    let ports = [[10, 11], [11, 12], [12, 13]];
+    let candidates = [vec![[0, 1]], vec![[1, 2]], vec![[3, 4]]];
+
+    assert_eq!(
+        prune_edge_candidates_by_port_domains(&ports, &candidates),
+        None
+    );
+    assert_eq!(
+        prune_edge_candidates_by_port_domains_with_deferred(
+            &ports,
+            &candidates,
+            &[false, true, true],
+        ),
+        Some(candidates.to_vec())
     );
 }
 
@@ -914,6 +953,63 @@ fn mesh_assignment_endpoint_cycles_reject_crossed_edge_order() {
 }
 
 #[test]
+fn quotient_ordered_cycles_use_physical_ports_for_sorted_pairs() {
+    let singleton = |point| Arc::new(HashSet::from([point]));
+    let mut quotient = MeshQuotient {
+        union: UnionFind::new(6),
+        domains: [
+            singleton(1),
+            singleton(2),
+            singleton(1),
+            singleton(0),
+            singleton(0),
+            singleton(2),
+        ]
+        .into(),
+        members: (0..6).map(|node| vec![node]).collect(),
+    };
+    quotient.merge(4, 3).expect("first fixed-direction corner");
+    quotient.merge(2, 0).expect("second fixed-direction corner");
+    quotient.merge(1, 5).expect("third boundary corner");
+    let candidates = vec![vec![[1, 2]], vec![[0, 1]], vec![[0, 2]]];
+    let domain = [MeshFaceBoundaryDomain::Ordered(vec![
+        MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 2,
+                    start: 0,
+                    end: 0,
+                    reversed: Some(true),
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 0,
+                    end: 0,
+                    reversed: Some(true),
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 0,
+                    reversed: None,
+                },
+            ]],
+        },
+    ])];
+
+    assert!(quotient
+        .close_coordinate_roots_for_incidence_with_budget(
+            3,
+            &candidates,
+            &[[0, 0]; 3],
+            1,
+            &domain,
+            Some(&WorkBudget::new(10_000)),
+        )
+        .is_some());
+}
+
+#[test]
 fn mesh_assignment_endpoint_cycles_index_incident_candidates() {
     let dense = (0..10)
         .flat_map(|left| ((left + 1)..10).map(move |right| [left, right]))
@@ -1200,56 +1296,62 @@ fn duplicate_face_slot_requires_one_joint_carrier_and_mesh_assignment() {
 }
 
 #[test]
-fn duplicate_face_slots_do_not_budget_forced_assignments() {
-    const EDGE_COUNT: usize = 5_000;
+fn duplicate_face_slot_without_admitted_alternate_remains_unresolved() {
+    let serialized = [[0, 0], [0, 0]];
+    let allowed = [Vec::new(), vec![1]];
+
+    let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |faces| {
+        faces == [[0, 0], [0, 1]]
+    })
+    .expect("the unresolved same-face slot remains in the joint assignment");
+
+    assert_eq!(resolved, [[0, 0], [0, 1]]);
+}
+
+#[test]
+fn duplicate_face_assignment_visitor_keeps_alternates_correlated() {
+    let serialized = [[0, 0], [1, 1], [0, 2]];
+    let allowed = [vec![2, 1, 0], Vec::new(), Vec::new()];
+    let mut assignments = Vec::new();
+
+    let outcome = visit_duplicate_face_assignments(&serialized, &allowed, 3, 4, |assignment| {
+        assignments.push(assignment.to_vec());
+        true
+    });
+
+    assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Complete));
+    assert_eq!(
+        assignments,
+        vec![
+            vec![[0, 0], [1, 1], [0, 2]],
+            vec![[0, 1], [1, 1], [0, 2]],
+            vec![[0, 2], [1, 1], [0, 2]],
+        ]
+    );
+}
+
+#[test]
+fn duplicate_face_assignment_visitor_reports_the_bound() {
+    let serialized = [[0, 0], [0, 0]];
+    let allowed = [vec![1, 2], vec![1, 2]];
+    let mut visits = 0;
+
+    let outcome = visit_duplicate_face_assignments(&serialized, &allowed, 3, 3, |_| {
+        visits += 1;
+        true
+    });
+
+    assert_eq!(outcome, Some(DuplicateFaceAssignmentVisit::Exhausted));
+    assert_eq!(visits, 3);
+}
+
+#[test]
+fn one_admitted_alternate_does_not_force_a_second_face() {
+    const EDGE_COUNT: usize = 8;
     let serialized = vec![[0, 0]; EDGE_COUNT];
     let allowed = vec![vec![1, 1]; EDGE_COUNT];
 
-    let resolved = unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| true)
-        .expect("forced duplicate-face assignments");
-
-    assert_eq!(resolved, vec![[0, 1]; EDGE_COUNT]);
-}
-
-#[test]
-fn face_endpoint_candidates_require_one_closed_local_cycle() {
-    let faces = [[0, 1], [0, 2], [0, 3]];
-    assert_eq!(
-        face_endpoint_candidates_close(&faces, &[vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]], 0,),
-        FaceEndpointClosureOutcome::Closed
-    );
-    assert_eq!(
-        face_endpoint_candidates_close(&faces, &[vec![[0, 1]], vec![[1, 2]], vec![[3, 4]]], 0,),
-        FaceEndpointClosureOutcome::Rejected
-    );
-}
-
-#[test]
-fn face_endpoint_candidates_do_not_budget_fixed_cycle_size() {
-    const EDGE_COUNT: usize = 65_537;
-    let faces = vec![[0, 0]; EDGE_COUNT];
-    let candidates = (0..EDGE_COUNT)
-        .map(|edge| vec![[edge, (edge + 1) % EDGE_COUNT]])
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        face_endpoint_candidates_close(&faces, &candidates, 0),
-        FaceEndpointClosureOutcome::Closed
-    );
-}
-
-#[test]
-fn face_endpoint_candidates_report_an_incomplete_search() {
-    const EDGE_COUNT: usize = 17;
-    let faces = vec![[0, 0]; EDGE_COUNT];
-    let candidates = (0..EDGE_COUNT)
-        .map(|edge| vec![[edge * 2, edge * 2 + 1], [100 + edge * 2, 101 + edge * 2]])
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        face_endpoint_candidates_close(&faces, &candidates, 0),
-        FaceEndpointClosureOutcome::Exhausted
-    );
+    assert!(unique_duplicate_face_assignment(&serialized, &allowed, 2, |_| true).is_none());
 }
 
 #[test]
@@ -1335,6 +1437,23 @@ fn exact_mesh_occurrences_complete_duplicate_face_slot() {
 }
 
 #[test]
+fn one_mesh_occurrence_keeps_duplicate_face_slot_unresolved() {
+    let run = MeshEdgeRun {
+        edge: 0,
+        face: 1,
+        cycle: 0,
+        start: 0,
+        segment_count: 1,
+        reversed: false,
+    };
+
+    let faces = resolve_edge_faces_from_runs(&[[1, 1]], &[run])
+        .expect("a single occurrence does not conflict with the serialized wildcard");
+
+    assert_eq!(faces, vec![[1, 1]]);
+}
+
+#[test]
 fn ambiguous_mesh_occurrences_defer_duplicate_face_slot() {
     let run = |face| MeshEdgeRun {
         edge: 0,
@@ -1404,6 +1523,72 @@ fn native_edge_identities_bind_ambiguous_coordinate_pairs() {
     assert_eq!(
         bind_edge_port_candidates(&ports, &candidates),
         Some(vec![[0, 1], [2, 3], [0, 2], [1, 3]])
+    );
+}
+
+#[test]
+fn mesh_edge_ports_allow_one_coordinate_row_at_multiple_ports() {
+    let ports = [[10, 11], [12, 13]];
+    let candidates = [vec![[0, 1]], vec![[0, 2]]];
+
+    assert_eq!(
+        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        Some(vec![[0, 1], [0, 2]])
+    );
+}
+
+#[test]
+fn mesh_edge_ports_reject_multiple_unordered_assignments() {
+    let ports = [[10, 11]];
+    let candidates = [vec![[0, 1], [0, 2]]];
+
+    assert_eq!(
+        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        None
+    );
+}
+
+#[test]
+fn mesh_edge_ports_resolve_shared_port_without_point_bijection() {
+    let ports = [[10, 11], [10, 12], [11, 13]];
+    let candidates = [vec![[0, 1]], vec![[0, 2]], vec![[1, 3]]];
+
+    assert_eq!(
+        unique_mesh_edge_port_candidate_pairs(&ports, &candidates),
+        Some(vec![[0, 1], [0, 2], [1, 3]])
+    );
+}
+
+#[test]
+fn deferred_mesh_edge_ports_do_not_constrain_settled_rows() {
+    let ports = [[10, 11], [20, 21]];
+    let candidates = [vec![[0, 1]], vec![[2, 3]]];
+
+    assert_eq!(
+        unique_mesh_edge_port_candidate_pairs_with_deferred(&ports, &candidates, &[false, true],),
+        Some(vec![Some([0, 1]), None])
+    );
+}
+
+#[test]
+fn deferred_mesh_edge_port_components_leave_all_connected_rows_unresolved() {
+    let ports = [[10, 11], [11, 10], [12, 10], [13, 11], [10, 97], [11, 98]];
+    let candidates = [
+        vec![[0, 1]],
+        vec![[0, 1]],
+        vec![[0, 2]],
+        vec![[0, 3], [1, 3]],
+        vec![[0, 79]],
+        vec![[0, 79]],
+    ];
+
+    assert_eq!(
+        unique_mesh_edge_port_candidate_pairs_with_deferred(
+            &ports,
+            &candidates,
+            &[true, false, false, false, false, false],
+        ),
+        Some(vec![None, None, None, None, None, None]),
     );
 }
 

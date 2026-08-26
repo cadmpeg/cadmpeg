@@ -26,8 +26,8 @@ pub struct E5Topology {
     /// Class-`0xff` trimmed edge-use records, keyed by their `record_id`.
     /// Only edges reachable from a resolved face's loops are retained.
     pub edges: BTreeMap<u32, E5Edge>,
-    /// Class-`0x96` (line), `0x97` (circle), and `0xa0` (spline jet) pcurve
-    /// records, keyed by `record_id`.
+    /// Class-`0x96` (line), `0x97` (circle), `0xa0` (spline jet), and
+    /// `0xaa` (NURBS) pcurve records, keyed by `record_id`.
     pub pcurves: BTreeMap<u32, E5Pcurve>,
     /// Class-`0x0e` parameter-bound records, keyed by `record_id`.
     pub bounds: BTreeMap<u32, E5Bounds>,
@@ -107,7 +107,8 @@ pub struct E5BoundEntry {
 }
 
 /// A resolved E5 pcurve: a 2D curve in a surface's parameter space, decoded
-/// from a class-`0x96` (line), `0x97` (circle), or `0xa0` (spline jet)
+/// from a class-`0x96` (line), `0x97` (circle), `0xa0` (spline jet), or
+/// `0xaa` (NURBS)
 /// record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq)]
 pub enum E5Pcurve {
@@ -160,6 +161,22 @@ pub enum E5Pcurve {
         second_derivatives: Vec<[f64; 2]>,
         /// `[0.0, knots.last()]` parameter range, validated against the
         /// knot span.
+        range: [f64; 2],
+    },
+    /// Class `0xaa`: a tensor-product-free NURBS p-curve with one surface
+    /// reference, distinct knots and multiplicities, and 2D control points.
+    Nurbs {
+        /// `record_id` of the owning surface carrier.
+        surface: u32,
+        /// B-spline degree.
+        degree: u32,
+        /// Distinct knot values in strictly increasing order.
+        knots: Vec<f64>,
+        /// Multiplicity for each distinct knot.
+        multiplicities: Vec<u32>,
+        /// `(u, v)` control points in parameter order.
+        control_points: Vec<[f64; 2]>,
+        /// Effective parameter domain of the expanded knot vector.
         range: [f64; 2],
     },
 }
@@ -316,14 +333,15 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
         .collect::<Option<_>>()?;
     let pcurves: BTreeMap<u32, E5Pcurve> = records
         .iter()
-        .filter(|record| matches!(record.class, 0x96 | 0x97 | 0xa0))
+        .filter(|record| matches!(record.class, 0x96 | 0x97 | 0xa0 | 0xaa))
         .map(|record| parse_pcurve(record).map(|pcurve| (record.id, pcurve)))
         .collect::<Option<_>>()?;
     for pcurve in pcurves.values() {
         let surface = match pcurve {
             E5Pcurve::Line { surface, .. }
             | E5Pcurve::Circle { surface, .. }
-            | E5Pcurve::Jet { surface, .. } => *surface,
+            | E5Pcurve::Jet { surface, .. }
+            | E5Pcurve::Nurbs { surface, .. } => *surface,
         };
         if !by_id
             .get(&surface)
@@ -385,7 +403,8 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
                 let surface = match pcurve {
                     E5Pcurve::Line { surface, .. }
                     | E5Pcurve::Circle { surface, .. }
-                    | E5Pcurve::Jet { surface, .. } => *surface,
+                    | E5Pcurve::Jet { surface, .. }
+                    | E5Pcurve::Nurbs { surface, .. } => *surface,
                 };
                 if surface != raw.surface {
                     return None;
@@ -485,8 +504,21 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
     })
 }
 
+/// Return the serialized surface reference for each valid class-`0x00` face.
+///
+/// This is the narrow face-to-carrier relation used by standard freeform
+/// aliases. It does not claim that the complete E5 topology graph is closed.
+#[must_use]
+pub fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
+    records(bytes)
+        .into_iter()
+        .filter(|record| record.class == 0x00)
+        .filter_map(|record| parse_face(&record).map(|face| (face.id, face.surface)))
+        .collect()
+}
+
 fn is_surface_carrier_class(class: u8) -> bool {
-    matches!(class, 0xc8 | 0xc9 | 0xca | 0xcc)
+    matches!(class, 0xc8 | 0xc9 | 0xca | 0xcc | 0xe7)
 }
 
 /// Checks that a curve-support side resolves to a direct p-curve or to a
@@ -650,8 +682,104 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
             })
         }
         0xa0 => parse_jet_pcurve(record.payload, position, surface),
+        0xaa => parse_nurbs_pcurve(record.payload, position, surface),
         _ => None,
     }
+}
+
+const E5_NURBS_PCURVE_TAIL_BYTES: usize = 37;
+
+fn parse_nurbs_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5Pcurve> {
+    let mut view = View::over_retained(payload);
+    view.seek(position)?;
+    if view.u16_le()? != 0 {
+        return None;
+    }
+    let degree = view.u32_le()?;
+    let zero0 = view.u32_le()?;
+    let zero1 = view.u32_le()?;
+    let knot_count = usize::try_from(view.u32_le()?).ok()?;
+    let zero2 = view.u32_le()?;
+    if degree == 0 || knot_count == 0 || [zero0, zero1, zero2] != [0; 3] {
+        return None;
+    }
+    let knot_count_u64 = u64::try_from(knot_count).ok()?;
+    let knots = view.read_counted(knot_count_u64, 8, View::f64_le)?;
+    let multiplicities = view.read_counted(knot_count_u64, 4, View::u32_le)?;
+    let max_control_count = view.remaining().checked_sub(E5_NURBS_PCURVE_TAIL_BYTES)? / 16;
+    let (expanded_knots, control_count) =
+        expand_nurbs_knots_limited(degree, &knots, &multiplicities, max_control_count)?;
+    let control_points = view.read_counted(u64::try_from(control_count).ok()?, 16, |view| {
+        Some([view.f64_le()?, view.f64_le()?])
+    })?;
+    if view.remaining() != E5_NURBS_PCURVE_TAIL_BYTES
+        || knots.iter().any(|knot| !knot.is_finite())
+        || control_points
+            .iter()
+            .flatten()
+            .copied()
+            .any(|value| !value.is_finite())
+    {
+        return None;
+    }
+    let range = [
+        *expanded_knots.get(usize::try_from(degree).ok()?)?,
+        *expanded_knots.get(control_count)?,
+    ];
+    if !range.into_iter().all(f64::is_finite) || range[0] >= range[1] {
+        return None;
+    }
+    view.skip(E5_NURBS_PCURVE_TAIL_BYTES)?;
+    view.is_empty().then_some(E5Pcurve::Nurbs {
+        surface,
+        degree,
+        knots,
+        multiplicities,
+        control_points,
+        range,
+    })
+}
+
+pub(crate) fn expand_nurbs_knots(
+    degree: u32,
+    knots: &[f64],
+    multiplicities: &[u32],
+) -> Option<(Vec<f64>, usize)> {
+    expand_nurbs_knots_limited(degree, knots, multiplicities, usize::MAX)
+}
+
+fn expand_nurbs_knots_limited(
+    degree: u32,
+    knots: &[f64],
+    multiplicities: &[u32],
+    max_control_count: usize,
+) -> Option<(Vec<f64>, usize)> {
+    if knots.len() != multiplicities.len()
+        || knots.is_empty()
+        || knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] >= pair[1])
+        || multiplicities.contains(&0)
+    {
+        return None;
+    }
+    let total = multiplicities
+        .iter()
+        .try_fold(0usize, |total, multiplicity| {
+            total.checked_add(usize::try_from(*multiplicity).ok()?)
+        })?;
+    let degree = usize::try_from(degree).ok()?;
+    let control_count = total.checked_sub(degree.checked_add(1)?)?;
+    if control_count <= degree || control_count > max_control_count {
+        return None;
+    }
+    let mut expanded = Vec::with_capacity(total);
+    for (knot, multiplicity) in knots.iter().zip(multiplicities) {
+        expanded.extend(std::iter::repeat_n(
+            *knot,
+            usize::try_from(*multiplicity).ok()?,
+        ));
+    }
+    (expanded.len() == total).then_some((expanded, control_count))
 }
 
 fn parse_jet_pcurve(payload: &[u8], position: usize, surface: u32) -> Option<E5Pcurve> {
@@ -1085,21 +1213,7 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
             if root.class != 0x08 {
                 return None;
             }
-            let (faces, mut position) = wire::counted_refs(root.payload, false)?;
-            if root.payload.get(position)
-                != Some(&(0x80u8.checked_add(u8::try_from(faces.len()).ok()?)?))
-            {
-                return None;
-            }
-            position += 1;
-            let sign_bytes = root.payload.get(position..)?;
-            if sign_bytes.len() != (faces.len() + 2) * 2 {
-                return None;
-            }
-            let signs: Vec<i16> = sign_bytes
-                .chunks_exact(2)
-                .map(|bytes| View::i16_le_at(bytes, 0))
-                .collect::<Option<Vec<_>>>()?;
+            let (faces, signs) = parse_body_root(root.payload)?;
             if signs.iter().any(|sign| !matches!(sign, -1 | 1))
                 || faces
                     .iter()
@@ -1115,6 +1229,41 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
             })
         })
         .collect()
+}
+
+fn parse_body_root(payload: &[u8]) -> Option<(Vec<u32>, Vec<i16>)> {
+    let (faces, mut position) = if payload.first() == Some(&0x08) {
+        let count = usize::from(*payload.get(1)?);
+        let mut position = 2;
+        let mut faces = Vec::with_capacity(count);
+        for _ in 0..count {
+            let face = wire::object_ref(payload, &mut position, false)?;
+            if face > u32::from(u16::MAX) {
+                return None;
+            }
+            faces.push(face);
+        }
+        (faces, position)
+    } else {
+        wire::counted_refs(payload, false)?
+    };
+    let count = u8::try_from(faces.len()).ok()?;
+    if payload.get(position..position + 2) == Some(&[0x08, count]) {
+        position += 2;
+    } else if faces.len() <= 0x7f && payload.get(position) == Some(&0x80u8.checked_add(count)?) {
+        position += 1;
+    } else {
+        return None;
+    }
+    let sign_bytes = payload.get(position..)?;
+    if sign_bytes.len() != (faces.len() + 2) * 2 {
+        return None;
+    }
+    let signs = sign_bytes
+        .chunks_exact(2)
+        .map(|bytes| View::i16_le_at(bytes, 0))
+        .collect::<Option<Vec<_>>>()?;
+    Some((faces, signs))
 }
 
 fn records(bytes: &[u8]) -> Vec<Record<'_>> {
@@ -1393,6 +1542,67 @@ mod tests {
         };
         let supports = BTreeMap::from([(1, support(1, vec![2, 3])), (2, support(2, vec![1, 3]))]);
         assert!(!curve_support_reference_closes(1, &pcurves, &supports));
+    }
+
+    #[test]
+    fn aa_nurbs_pcurve_decodes_distinct_knots_and_poles() {
+        let mut payload = vec![0x81, 0x87, 0, 0];
+        for value in [1_u32, 0, 0, 2, 0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [0.0_f64, 1.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [2_u32, 2] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        for point in [[0.0_f64, 0.0], [1.0, 1.0]] {
+            for value in point {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        payload.extend_from_slice(&[0; 37]);
+        let mut truncated = payload.clone();
+        truncated.pop();
+        assert!(parse_nurbs_pcurve(&truncated, 2, 7).is_none());
+
+        let E5Pcurve::Nurbs {
+            surface,
+            degree,
+            knots,
+            multiplicities,
+            control_points,
+            range,
+        } = parse_nurbs_pcurve(&payload, 2, 7).expect("AA NURBS pcurve")
+        else {
+            panic!("AA record did not produce a NURBS pcurve");
+        };
+        assert_eq!(surface, 7);
+        assert_eq!(degree, 1);
+        assert_eq!(knots, [0.0, 1.0]);
+        assert_eq!(multiplicities, [2, 2]);
+        assert_eq!(control_points, [[0.0, 0.0], [1.0, 1.0]]);
+        assert_eq!(range, [0.0, 1.0]);
+    }
+
+    #[test]
+    fn body_root_accepts_widened_u16_face_roster() {
+        let mut payload = vec![0x08, 2];
+        payload.extend_from_slice(&[0x10, 0x16]);
+        payload.extend_from_slice(&[0x18, 0x01, 0x16]);
+        payload.extend_from_slice(&[0x08, 2]);
+        payload.extend_from_slice(
+            &[
+                1_i16.to_le_bytes(),
+                (-1_i16).to_le_bytes(),
+                1_i16.to_le_bytes(),
+                (-1_i16).to_le_bytes(),
+            ]
+            .concat(),
+        );
+        let (faces, signs) = parse_body_root(&payload).expect("widened body root");
+        assert_eq!(faces, [0x1600, 0x1601]);
+        assert_eq!(signs, [1, -1, 1, -1]);
     }
 
     #[test]

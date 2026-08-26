@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::{alloc_filled, WorkBudget};
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::Point3;
 
 use super::records::ZeroEntitySupportRun;
@@ -127,13 +127,27 @@ fn endpoint_pair_candidates_inner(
         );
     }
 
-    let mut visited = alloc_filled(
-        occurrences.len(),
-        false,
-        "catia zero-entity occurrence visits",
-    )
-    .ok()?;
     let mut candidates = Vec::new();
+    // Face components can contain several distinct edges with the same
+    // endpoint locus. A reciprocal singleton radial match is still a
+    // complete geometric relation and must not be merged with its siblings.
+    for (index, neighbors) in radial_matches.iter().enumerate() {
+        let [neighbor] = neighbors.as_slice() else {
+            continue;
+        };
+        if index >= *neighbor || radial_matches[*neighbor].as_slice() != [index] {
+            continue;
+        }
+        let [first, second] = [occurrences[index], occurrences[*neighbor]];
+        candidates.push(ZeroEntityEndpointPairCandidate {
+            face_record_ordinals: [first.face_record_ordinal, second.face_record_ordinal],
+            support_record_ordinals: [first.support_record_ordinal, second.support_record_ordinal],
+            model_endpoints: first.model_endpoints,
+            model_midpoint: first.model_midpoint,
+        });
+    }
+
+    let mut visited = vec![false; occurrences.len()];
     for start in 0..occurrences.len() {
         if visited[start] {
             continue;
@@ -158,6 +172,9 @@ fn endpoint_pair_candidates_inner(
         }
         for mut pair in by_face_component.into_values() {
             if pair.len() != 2 || !endpoint_matches[pair[0]].contains(&pair[1]) {
+                continue;
+            }
+            if radial_matches[pair[0]].len() == 1 && radial_matches[pair[1]].len() == 1 {
                 continue;
             }
             pair.sort_by_key(|index| occurrences[*index].support_record_ordinal);
@@ -209,12 +226,7 @@ fn endpoint_locus_candidates_inner(
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
         cells.entry(endpoint_cell(*point)).or_default().push(index);
     }
-    let mut neighbors = alloc_filled(
-        endpoints.len(),
-        Vec::new(),
-        "catia zero-entity endpoint neighbors",
-    )
-    .ok()?;
+    let mut neighbors = vec![Vec::new(); endpoints.len()];
     for (index, (_, _, point)) in endpoints.iter().enumerate() {
         let cell = endpoint_cell(*point);
         for dx in -1..=1 {
@@ -244,8 +256,7 @@ fn endpoint_locus_candidates_inner(
         }
     }
 
-    let mut visited =
-        alloc_filled(endpoints.len(), false, "catia zero-entity endpoint visits").ok()?;
+    let mut visited = vec![false; endpoints.len()];
     let mut candidates = Vec::new();
     for start in 0..endpoints.len() {
         if visited[start] {
@@ -307,12 +318,7 @@ fn endpoint_match_graph(
                 .push(index);
         }
     }
-    let mut matches = alloc_filled(
-        occurrences.len(),
-        Vec::new(),
-        "catia zero-entity occurrence matches",
-    )
-    .ok()?;
+    let mut matches = vec![Vec::new(); occurrences.len()];
     for (index, occurrence) in occurrences.iter().enumerate() {
         let mut possible = HashSet::new();
         for endpoint in occurrence.model_endpoints {
@@ -462,6 +468,25 @@ mod tests {
             [[1, 2], [3, 4], [5, 6], [7, 8]]
         );
         assert!(endpoint_pair_candidates(&occurrences[..4]).is_empty());
+    }
+
+    #[test]
+    fn singleton_radial_pairs_survive_a_shared_face_component() {
+        let shared_endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+        let occurrences = [
+            occurrence(10, 1, shared_endpoints, Point3::new(0.5, 1.0, 0.0)),
+            occurrence(11, 2, shared_endpoints, Point3::new(0.5, 1.0, 0.0)),
+            occurrence(10, 3, shared_endpoints, Point3::new(0.5, 2.0, 0.0)),
+            occurrence(11, 4, shared_endpoints, Point3::new(0.5, 2.0, 0.0)),
+        ];
+
+        assert_eq!(
+            endpoint_pair_candidates(&occurrences)
+                .iter()
+                .map(|candidate| candidate.support_record_ordinals)
+                .collect::<Vec<_>>(),
+            [[1, 2], [3, 4]]
+        );
     }
 
     #[test]

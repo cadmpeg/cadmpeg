@@ -4,7 +4,10 @@
 #![allow(clippy::unwrap_used)]
 use crate::container::{DIR_MAGIC, OUTER_MAGIC};
 
-use super::test_topology::{fbb_only_quad_surface_stream, fbb_only_quad_topology_stream};
+use super::test_topology::{
+    fbb_only_quad_surface_stream, fbb_only_quad_topology_stream,
+    fbb_only_quad_unmatched_edge_topology_stream,
+};
 use super::{be32, be_f32, le_f32, le_f64};
 
 pub(crate) fn summary_preview_segment() -> Vec<u8> {
@@ -62,6 +65,13 @@ pub(crate) fn outer_body_catpart(body: &[u8]) -> Vec<u8> {
 pub(crate) fn fbb_only_quad_catpart() -> Vec<u8> {
     standard_catpart_from_streams(
         &fbb_only_quad_topology_stream(),
+        &fbb_only_quad_surface_stream(),
+    )
+}
+
+pub(crate) fn fbb_only_quad_unmatched_edge_catpart() -> Vec<u8> {
+    standard_catpart_from_streams(
+        &fbb_only_quad_unmatched_edge_topology_stream(),
         &fbb_only_quad_surface_stream(),
     )
 }
@@ -457,6 +467,18 @@ pub(crate) fn surface_alias_stream() -> Vec<u8> {
     bytes.extend_from_slice(&[0xff, 2, 3, 7]);
     bytes.extend_from_slice(&0x1122_3344u32.to_le_bytes());
     bytes.extend_from_slice(&0x5566_7788u32.to_le_bytes());
+    bytes
+}
+
+pub(crate) fn grouped_surface_alias_stream(lead: u32, tag: u32, group_id: u32) -> Vec<u8> {
+    let mut bytes = vec![0x02, 0x00];
+    bytes.extend_from_slice(&0xafu32.to_le_bytes());
+    bytes.extend_from_slice(&group_id.to_le_bytes());
+    bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
+    let mut alias = surface_alias_stream();
+    alias[..4].copy_from_slice(&lead.to_le_bytes());
+    alias[8..12].copy_from_slice(&tag.to_le_bytes());
+    bytes.extend(alias);
     bytes
 }
 

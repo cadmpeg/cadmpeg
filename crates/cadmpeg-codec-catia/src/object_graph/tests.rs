@@ -1362,6 +1362,19 @@ fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
 }
 
 #[test]
+fn outer_alias_parser_retains_exact_unclassified_0133_lead() {
+    use crate::object_graph::AliasLead;
+
+    let mut bytes = surface_alias_stream();
+    bytes[..4].copy_from_slice(&0x0000_0133u32.to_le_bytes());
+    let [row] = crate::object_graph::surface_aliases(&bytes)
+        .try_into()
+        .expect("one unclassified alias row");
+    assert_eq!(row.lead, AliasLead::Unclassified(0x0000_0133));
+    assert_eq!(row.entity_record_ordinal, 7);
+}
+
+#[test]
 fn outer_alias_parser_rejects_marker_literals_without_an_alias_lead() {
     for lead in [0u32, 0x15] {
         let mut bytes = surface_alias_stream();

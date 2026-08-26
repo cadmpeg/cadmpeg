@@ -22,7 +22,13 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 276;
+pub const CATIA_NATIVE_VERSION: u32 = 288;
+/// Native schema version that links width-coded owner-chart supports to alias rows.
+#[cfg(test)]
+pub(crate) const CATIA_OWNER_CHART_ALIAS_VERSION: u32 = 286;
+/// Native schema version that resolves grouped aliases to persistent surface tags.
+#[cfg(test)]
+pub(crate) const CATIA_ALIAS_SURFACE_TAG_VERSION: u32 = 285;
 /// Native schema version associating exact scalar nominals with `Range` intervals.
 #[cfg(test)]
 pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
@@ -200,20 +206,38 @@ pub enum CatiaOwnerReferenceEncoding {
     TaggedU16Strong,
     /// Strong identities use width-coded compact integers.
     WidthCodedStrong,
+    /// All nine identities use the compact-integer reference grammar.
+    AllCompact,
 }
 
-/// Allocation link immediately preceding a consolidated owner packet.
+/// Target encoding of a consolidated class-`0x5f` face node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaOwnerAllocationLink {
-    /// Link-record byte offset.
+#[serde(rename_all = "snake_case")]
+pub enum CatiaFaceNodeTargetEncoding {
+    /// Width-coded compact target.
+    Compact,
+    /// Strong persistent target encoded as `0x0a <u16le>`.
+    TaggedU16Strong,
+}
+
+/// Derived class-`0x5f` face-node relation associated with a consolidated
+/// class-`0x62` packet within one bounded record source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaFaceNodeRelation {
+    /// Face-node record byte offset.
     pub byte_offset: u64,
-    /// Complete framed-record byte length.
+    /// Complete face-node to packet span.
     pub byte_len: u64,
     /// Width-coded header token.
     pub header_token: u32,
-    /// Allocation identity whose successor is the owner's final reference.
+    /// Target encoding selected after the `0x82` lead.
+    pub target_encoding: CatiaFaceNodeTargetEncoding,
+    /// Class-`0x5f` target retained by the enclosing source-scoped relation.
     pub target: u32,
+    /// Two terminal bytes of the face-node payload.
+    pub terminal: [u8; 2],
 }
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
@@ -226,8 +250,113 @@ pub struct CatiaOwnerNumericTail {
     pub lower: [f64; 2],
     /// Upper coordinate pair of a strictly increasing binary64 box.
     pub upper: [f64; 2],
-    /// Three strictly increasing binary32 bounds in serialization order.
+    /// Three strictly increasing binary32 bounds in serialization order. In
+    /// an all-compact owner these are the model-space X, Y, and Z bounds.
     pub bounds: [[f32; 2]; 3],
+}
+
+/// One fixed-nine owner identity resolved within its allocation source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaOwnerIdentityTarget {
+    /// Zero-based identity slot in the fixed-nine packet.
+    pub slot: u8,
+    /// Decoded backward distance.
+    pub distance: u32,
+    /// Byte offset of the selected class-`0x5d` or class-`0x5e` record.
+    pub target_byte_offset: u64,
+    /// Selected record class.
+    pub target_class: u8,
+}
+
+/// Parameter axis held constant by selectors `0x05` and `0x09` in a
+/// consolidated owner chart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaOwnerChartSideAxis {
+    /// First surface parameter.
+    FirstParameter,
+    /// Second surface parameter.
+    SecondParameter,
+}
+
+/// Family-and-class carrier production that opens an owner chart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaOwnerChartCarrier {
+    /// B-family class-`0x28` cylinder carrier.
+    B28,
+    /// B-family class-`0x2b` torus carrier.
+    B2b,
+    /// A-family class-`0x32` carrier.
+    A32,
+}
+
+/// One allocation-local reference in an owner-chart bridge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaOwnerChartBridgeReference {
+    /// Decoded allocation-local value.
+    pub value: u32,
+    /// Wire addressing form retained from the allocation-reference token.
+    pub encoding: CatiaAllocationReferenceEncoding,
+    /// Exact outer alias row selected by a unique width-coded support tag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias_row: Option<String>,
+    /// Canonical persistent surface tag selected through the alias row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_surface_tag: Option<u32>,
+}
+
+/// Structurally complete class-`0x37` owner-chart bridge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CatiaOwnerChartBridge {
+    /// Five-reference supported-surface construction.
+    SupportedSurface {
+        /// Record byte offset.
+        byte_offset: u64,
+        /// Constructed carrier surface.
+        carrier_surface: CatiaOwnerChartBridgeReference,
+        /// Two supporting surfaces.
+        support_surfaces: [CatiaOwnerChartBridgeReference; 2],
+        /// Pcurves on the supporting surfaces.
+        support_pcurves: [CatiaOwnerChartBridgeReference; 2],
+        /// Six construction controls in storage order.
+        controls: [u8; 6],
+        /// Positive construction radius.
+        construction_radius: f64,
+    },
+    /// Eight-reference A-family production without an assigned object role.
+    Extended {
+        /// Record byte offset.
+        byte_offset: u64,
+        /// Counted allocation references in storage order.
+        references: [CatiaOwnerChartBridgeReference; 8],
+        /// Four controls before the zero lane.
+        controls: [u8; 4],
+        /// Two terminal controls after the zero lane.
+        terminal_controls: [u8; 2],
+    },
+}
+
+/// Source-closed carrier chart terminated by an owner packet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaOwnerChartRelation {
+    /// Carrier record byte offset.
+    pub carrier_byte_offset: u64,
+    /// Family-and-class carrier production.
+    pub carrier: CatiaOwnerChartCarrier,
+    /// Immediately following class-`0x37` bridge record.
+    pub bridge: CatiaOwnerChartBridge,
+    /// Axis held constant by selectors `0x05` and `0x09`.
+    pub side_axis: CatiaOwnerChartSideAxis,
+    /// Byte offsets of selectors `0x05`, `0x09`, `0x0d`, and `0x11`.
+    pub parameter_point_byte_offsets: [u64; 4],
 }
 
 /// Structurally decoded payload of a class-`0x62` consolidated owner packet.
@@ -241,6 +370,8 @@ pub enum CatiaOwnerPacketPayload {
         reference_encoding: CatiaOwnerReferenceEncoding,
         /// Nine persistent identities in serialization order.
         references: [u32; 9],
+        /// Exact wire addressing form of each identity in source order.
+        identity_encodings: [CatiaOwnerIdentityEncoding; 9],
         /// Structurally decoded 62-byte class-specific numeric tail.
         numeric_tail: CatiaOwnerNumericTail,
     },
@@ -255,6 +386,31 @@ pub enum CatiaOwnerPacketPayload {
     },
 }
 
+/// One fixed-nine boundary edge retained when four resolved class-`0x5e`
+/// targets close one simple owner-local cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaOwnerBoundaryEdge {
+    /// Identity slot in the fixed-nine packet.
+    pub slot: u8,
+    /// Resolved class-`0x5e` edge-record offset.
+    pub byte_offset: u64,
+    /// Resolved class-`0x5d` endpoint-record offsets, in edge order.
+    pub endpoint_records: [u64; 2],
+}
+
+/// Owner-local boundary evidence derived from a closed fixed-nine cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaOwnerBoundaryCycle {
+    /// Source-scoped class-`0x5f` face node that precedes this boundary
+    /// allocation and closes its checked identity, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face_node: Option<CatiaFaceNodeRelation>,
+    /// Four edge targets in fixed-nine slot order.
+    pub edges: [CatiaOwnerBoundaryEdge; 4],
+}
+
 /// Exact class-`0x62` consolidated owner packet.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -263,13 +419,26 @@ pub struct CatiaConsolidatedOwnerPacket {
     pub id: String,
     /// Record byte offset.
     pub byte_offset: u64,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
     /// Width-coded header token.
     pub header_token: u32,
     /// Count-specific reference lane and tail.
     pub payload: CatiaOwnerPacketPayload,
-    /// Structurally adjacent allocation link, when present.
+    /// Backward-distance identities resolved within this packet's contiguous
+    /// class-`0x5d`/`0x5e` allocation sequence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub identity_targets: Vec<CatiaOwnerIdentityTarget>,
+    /// Source-scoped class-`0x5f` face node, when the packet relation closes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub allocation_link: Option<CatiaOwnerAllocationLink>,
+    pub face_node: Option<CatiaFaceNodeRelation>,
+    /// Complete carrier/reference/side chart that this packet terminates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_chart: Option<CatiaOwnerChartRelation>,
+    /// Closed owner-local four-edge boundary, when all four resolved targets
+    /// form one simple cycle in the bounded record source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boundary_cycle: Option<CatiaOwnerBoundaryCycle>,
 }
 
 /// One structurally complete consolidated `B:29` cone chart.
@@ -290,8 +459,8 @@ pub struct CatiaConsolidatedCone {
     pub axis: [f64; 3],
     /// Cone half-angle in radians.
     pub half_angle: f64,
-    /// Scalar immediately preceding the active angular interval.
-    pub pre_angular_range_scalar: f64,
+    /// Reference radius of the conical surface, independent of the active chart ranges.
+    pub reference_radius: f64,
     /// Active azimuth interval.
     pub angular_range: [f64; 2],
     /// Native slant-coordinate interval, including zero at the apex.
@@ -410,6 +579,11 @@ pub struct CatiaConsolidatedEmbeddedCylinder {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CatiaConsolidatedParameterPointPayload {
+    /// One retained scalar after two zero tuple fields are elided.
+    Scalar {
+        /// Stored scalar.
+        value: f64,
+    },
     /// Two surface-chart coordinates.
     Uv {
         /// Surface-chart coordinates.
@@ -429,6 +603,22 @@ pub enum CatiaConsolidatedParameterPointPayload {
     },
 }
 
+#[cfg(test)]
+impl CatiaConsolidatedParameterPointPayload {
+    fn is_valid_for_layout(&self, layout: u8) -> bool {
+        match self {
+            Self::Scalar { value } => layout == 0x0a && value.is_finite(),
+            Self::Uv { uv } => layout == 0x12 && uv.iter().all(|value| value.is_finite()),
+            Self::StationUv { station, uv } => {
+                layout == 0x1a && station.is_finite() && uv.iter().all(|value| value.is_finite())
+            }
+            Self::FiveScalars { values } => {
+                layout == 0x2a && values.iter().all(|value| value.is_finite())
+            }
+        }
+    }
+}
+
 /// One complete consolidated `B:18` parameter-space record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -439,7 +629,7 @@ pub struct CatiaConsolidatedParameterPoint {
     pub byte_offset: u64,
     /// Complete framed-record length.
     pub byte_len: u64,
-    /// Payload-layout discriminator (`0x12`, `0x1a`, or `0x2a`).
+    /// Payload-layout discriminator (`0x0a`, `0x12`, `0x1a`, or `0x2a`).
     pub layout: u8,
     /// First byte of the two-byte class-specific prefix.
     pub prefix: u8,
@@ -674,6 +864,37 @@ pub struct CatiaConsolidatedClass61Record {
     pub payload: CatiaConsolidatedClass61Payload,
 }
 
+/// One complete consolidated B-family class-`0x5b` or class-`0x5c` record.
+///
+/// These records retain their source-local control lane. The payload has no
+/// assigned semantic fields or cross-source identity relation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaConsolidatedClass5b5cRecord {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: u64,
+    /// Logical offset within the bounded record source.
+    pub source_offset: u64,
+    /// Complete framed-record byte length.
+    pub byte_len: u64,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent frame flag.
+    pub flag: u8,
+    /// Record class (`0x5b` or `0x5c`).
+    pub class: u8,
+    /// Width-coded frame header token.
+    pub header_token: u32,
+    /// Complete opaque payload in source order.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    pub payload: Vec<u8>,
+}
+
 /// Structurally decoded payload of a consolidated class-`0x61` record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -763,6 +984,36 @@ pub struct CatiaConsolidatedEdgeRun {
     pub endpoint_loci: Option<[[f64; 3]; 2]>,
 }
 
+/// Wire addressing form of one width-coded allocation reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaAllocationReferenceEncoding {
+    /// `4n+1` backward framed-record distance.
+    BackwardDistance,
+    /// `4n+3` zero-based ordinal in the immediately owned allocation.
+    OwnedChild,
+    /// `4w` followed by a `w`-byte little-endian value.
+    WidthCoded,
+    /// Untagged `4n+2` selector form.
+    Selector2,
+    /// `06 <u8>`.
+    TaggedU8,
+    /// `0a <u16le>`.
+    TaggedU16,
+}
+
+/// Wire addressing form of one fixed-nine owner identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaOwnerIdentityEncoding {
+    /// One token from the allocation-reference grammar.
+    Allocation(CatiaAllocationReferenceEncoding),
+    /// Raw one-byte weak identity in the width-coded alternating dialect.
+    RawU8,
+}
+
 /// One structurally complete width-coded class-`0x5e` edge node.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -771,20 +1022,43 @@ pub struct CatiaConsolidatedEdgeNode {
     pub id: String,
     /// Record byte offset.
     pub byte_offset: u64,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
     /// Header-token width in bytes.
     pub width: u8,
     /// Independent framing flag.
     pub flag: u8,
     /// Width-coded header token.
     pub header_token: u32,
+    /// Owning compact class-`0x62` packet, when selected by its allocation roster.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocation_owner: Option<String>,
+    /// Zero-based frame ordinal after the compact owner packet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocation_ordinal: Option<u32>,
     /// Allocation-local curve-support reference.
     pub curve_ref: u32,
-    /// Global native endpoint identities in edge direction.
+    /// Middle reference pair. These are endpoint addresses only when an
+    /// allocation walk or complete edge-use run proves that layout.
     pub vertex_refs: [u32; 2],
-    /// Retained vertex-identity records in edge direction.
+    /// Resolved structural endpoint records in edge direction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint_records: Option<[u64; 2]>,
+    /// Retained vertex identities in edge direction. Empty strings mean that
+    /// the five-reference layout remains unresolved.
     pub vertices: [String; 2],
-    /// Allocation-local endpoint selectors.
+    /// Final reference pair. Complete edge-use runs interpret these as
+    /// allocation-local side selectors; other layouts retain them untyped.
     pub parameter_selectors: [u32; 2],
+    /// Wire addressing forms of curve, vertex, and parameter references.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_encodings: Option<[CatiaAllocationReferenceEncoding; 5]>,
+    /// Decoded value of the one-byte terminal allocation reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_value: Option<u32>,
+    /// Wire addressing form of the terminal allocation reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_encoding: Option<CatiaAllocationReferenceEncoding>,
     /// Terminal layout byte.
     pub tail: u8,
     /// Adjacent class-`0x23..=0x25` edge-definition frame.
@@ -875,14 +1149,25 @@ pub struct CatiaConsolidatedEdgeUses {
     pub senses: [u8; 2],
 }
 
-/// One global endpoint identity retained by consolidated topology edge nodes.
+/// One endpoint identity retained by consolidated topology edge nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CatiaConsolidatedVertexIdentity {
     /// Stable native-record identity assigned in first-incidence order.
     pub id: String,
-    /// Global native endpoint identity.
+    /// First raw endpoint-address operand associated with this identity.
     pub identity: u32,
+    /// Bounded record source that owns this identity namespace.
+    pub source_index: usize,
+    /// Resolved structural endpoint record, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint_record: Option<u64>,
+    /// Raw endpoint-address operands associated with this identity.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reference_values: Vec<u32>,
+    /// Compact allocation scope for the identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocation_owner: Option<String>,
     /// Incident consolidated edge nodes in source order.
     pub incident_edge_nodes: Vec<String>,
 }
@@ -1035,6 +1320,9 @@ pub struct CatiaAliasRow {
     /// Group-allocation header immediately preceding this alias core.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<AliasGroupMembership>,
+    /// Canonical persistent surface-roster tag selected by this alias row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_surface_tag: Option<u32>,
 }
 
 /// One exact `7C0B` value block adjacent to its source-schema catalog.
@@ -1370,6 +1658,8 @@ pub enum CatiaEntitySuffixTrailer {
     Token8152,
     /// Exact trailer token `81 DB`.
     Token81DB,
+    /// Exact trailer token `81 92`.
+    Token8192,
     /// Exact trailer token `81 93`.
     Token8193,
     /// Exact fixed trailer `FE F6 00{16}`.
@@ -1534,8 +1824,12 @@ pub struct CatiaRangeInterval {
 pub enum CatiaRangeNominalFraming {
     /// Prefix code `D8` and trailer `81 93`.
     D8Token8193,
+    /// Prefix code `D8` and trailer `81 DB`.
+    D8Token81DB,
     /// Prefix code `DC` and trailer `81 DB`.
     DCToken81DB,
+    /// Prefix code `DF` and trailer `81 92`.
+    DFToken8192,
 }
 
 /// One finite nominal associated with a complete `Range` interval.
@@ -1561,6 +1855,8 @@ pub enum CatiaConstraintRangeFraming {
     DimensionC1,
     /// `CstAttr_Dimension` selected with prefix code `DC`.
     DimensionDC,
+    /// `CstAttr_Dimension` selected with prefix code `DF` and trailer `81 92`.
+    DimensionDF,
     /// `ComplexCst` selected with prefix code `C9`.
     ComplexC9,
 }
@@ -3125,6 +3421,9 @@ fn constraint_range(
         ("CstAttr_Dimension", 0xdc, CatiaEntitySuffixTrailer::Token81DB) => {
             CatiaConstraintRangeFraming::DimensionDC
         }
+        ("CstAttr_Dimension", 0xdf, CatiaEntitySuffixTrailer::Token8192) => {
+            CatiaConstraintRangeFraming::DimensionDF
+        }
         ("ComplexCst", 0xc9, CatiaEntitySuffixTrailer::Empty) => {
             CatiaConstraintRangeFraming::ComplexC9
         }
@@ -3245,7 +3544,9 @@ fn range_nominal(suffix_value: Option<&CatiaEntitySuffixValue>) -> Option<CatiaR
     }
     let framing = match (suffix.prefix_code, suffix.trailer) {
         (0xd8, CatiaEntitySuffixTrailer::Token8193) => CatiaRangeNominalFraming::D8Token8193,
+        (0xd8, CatiaEntitySuffixTrailer::Token81DB) => CatiaRangeNominalFraming::D8Token81DB,
         (0xdc, CatiaEntitySuffixTrailer::Token81DB) => CatiaRangeNominalFraming::DCToken81DB,
+        (0xdf, CatiaEntitySuffixTrailer::Token8192) => CatiaRangeNominalFraming::DFToken8192,
         _ => return None,
     };
     let CatiaEntitySuffixPayload::Evaluation {
@@ -3481,6 +3782,7 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         [0x81, 0x4a] => CatiaEntitySuffixTrailer::Token814A,
         [0x81, 0x52] => CatiaEntitySuffixTrailer::Token8152,
         [0x81, 0xdb] => CatiaEntitySuffixTrailer::Token81DB,
+        [0x81, 0x92] => CatiaEntitySuffixTrailer::Token8192,
         [0x81, 0x93] => CatiaEntitySuffixTrailer::Token8193,
         [0xfe, 0xf6, rest @ ..] if rest.len() == 16 && rest.iter().all(|byte| *byte == 0) => {
             CatiaEntitySuffixTrailer::FixedZeroFrame
@@ -5268,6 +5570,10 @@ define_catia_arenas! {
         /// Complete consolidated class-`0x61` records.
         pub stored;
     },
+    consolidated_class5b5c_records: CatiaConsolidatedClass5b5cRecord {
+        /// Complete source-local consolidated class-`0x5b`/`0x5c` records.
+        pub stored;
+    },
     consolidated_cone_faces: CatiaConsolidatedConeFace {
         /// Complete consolidated cone-face chart descriptors.
         pub stored;
@@ -5333,7 +5639,7 @@ define_catia_arenas! {
         pub stored;
     },
     consolidated_vertex_identities: CatiaConsolidatedVertexIdentity {
-        /// Global endpoint identities and their consolidated edge incidence.
+        /// Scoped endpoint identities and their consolidated edge incidence.
         pub stored;
     },
     design_objects: CatiaDesignObject {
@@ -5781,6 +6087,31 @@ fn consolidated_class61_records(
         .collect()
 }
 
+fn consolidated_class5b5c_records(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedClass5b5cRecord> {
+    let mut control_records =
+        crate::families::b2::records::b2_class5b5c_records_from_records(bytes, records);
+    control_records.sort_by_key(|record| (record.source_index, record.source_offset));
+    control_records
+        .into_iter()
+        .enumerate()
+        .map(|(index, record)| CatiaConsolidatedClass5b5cRecord {
+            id: format!("catia:consolidated:class5b5c-record#{index}"),
+            byte_offset: record.pos as u64,
+            source_index: record.source_index as u64,
+            source_offset: record.source_offset as u64,
+            byte_len: record.byte_len as u64,
+            width: record.width,
+            flag: record.flag,
+            class: record.class,
+            header_token: record.header_token,
+            payload: record.payload,
+        })
+        .collect()
+}
+
 fn consolidated_groups(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
@@ -5852,7 +6183,7 @@ fn consolidated_cones(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<Catia
             direction_y: cone.t2,
             axis: cone.axis,
             half_angle: cone.half_angle,
-            pre_angular_range_scalar: cone.pre_angular_range_scalar,
+            reference_radius: cone.reference_radius,
             angular_range: cone.angular_range,
             slant_range: cone.slant_range,
             angular_scale: cone.angular_scale,
@@ -5968,6 +6299,9 @@ fn consolidated_parameter_points(
         .enumerate()
         .map(|(index, point)| {
             let payload = match point.payload {
+                B2ParameterPointPayload::Scalar { value } => {
+                    CatiaConsolidatedParameterPointPayload::Scalar { value }
+                }
                 B2ParameterPointPayload::Uv { uv } => {
                     CatiaConsolidatedParameterPointPayload::Uv { uv }
                 }
@@ -6342,10 +6676,11 @@ fn zero_entity_ownership_roots(
     bytes: &[u8],
     range: Range<usize>,
 ) -> Vec<CatiaZeroEntityOwnershipRoot> {
-    crate::families::zero_entity::records::zero_entity_ownership_root_in_range(bytes, range)
+    crate::families::zero_entity::records::zero_entity_ownership_roots_in_range(bytes, range)
         .into_iter()
-        .map(|root| CatiaZeroEntityOwnershipRoot {
-            id: "catia:zero-entity:ownership-root#0".to_string(),
+        .enumerate()
+        .map(|(index, root)| CatiaZeroEntityOwnershipRoot {
+            id: format!("catia:zero-entity:ownership-root#{index}"),
             face_roster_byte_offset: root.face_roster_pos as u64,
             face_roster_record_ordinal: root.face_roster_record_ordinal,
             face_slots: root.face_slots,
@@ -6397,25 +6732,156 @@ fn consolidated_owner_packets(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<CatiaConsolidatedOwnerPacket> {
-    let links = crate::families::b2::records::b2_linked_owners_from_records(bytes, records)
+    let owner_charts = crate::families::b2::records::b2_owner_charts_from_records(bytes, records)
         .into_iter()
-        .map(|linked| (linked.owner.pos, linked.link))
-        .chain(
-            crate::families::b2::records::b2_linked_counted_owners_from_records(bytes, records)
-                .into_iter()
-                .map(|linked| (linked.owner.pos, linked.link)),
-        )
+        .map(|chart| {
+            let native_reference =
+                |reference: crate::families::b2::records::B2OwnerChartBridgeReference| {
+                    CatiaOwnerChartBridgeReference {
+                        value: reference.value,
+                        encoding: native_allocation_reference_encoding(reference.encoding),
+                        alias_row: None,
+                        canonical_surface_tag: None,
+                    }
+                };
+            (
+                (chart.source_index, chart.owner_pos),
+                CatiaOwnerChartRelation {
+                    carrier_byte_offset: chart.carrier_pos as u64,
+                    carrier: match chart.carrier {
+                        crate::families::b2::records::B2OwnerChartCarrier::B28 => {
+                            CatiaOwnerChartCarrier::B28
+                        }
+                        crate::families::b2::records::B2OwnerChartCarrier::B2b => {
+                            CatiaOwnerChartCarrier::B2b
+                        }
+                        crate::families::b2::records::B2OwnerChartCarrier::A32 => {
+                            CatiaOwnerChartCarrier::A32
+                        }
+                    },
+                    bridge: match chart.bridge {
+                        crate::families::b2::records::B2OwnerChartBridge::SupportedSurface {
+                            pos,
+                            carrier_surface,
+                            support_surfaces,
+                            support_pcurves,
+                            controls,
+                            construction_radius,
+                        } => CatiaOwnerChartBridge::SupportedSurface {
+                            byte_offset: pos as u64,
+                            carrier_surface: native_reference(carrier_surface),
+                            support_surfaces: support_surfaces.map(native_reference),
+                            support_pcurves: support_pcurves.map(native_reference),
+                            controls,
+                            construction_radius,
+                        },
+                        crate::families::b2::records::B2OwnerChartBridge::Extended {
+                            pos,
+                            references,
+                            controls,
+                            terminal_controls,
+                        } => CatiaOwnerChartBridge::Extended {
+                            byte_offset: pos as u64,
+                            references: references.map(native_reference),
+                            controls,
+                            terminal_controls,
+                        },
+                    },
+                    side_axis: match chart.side_axis {
+                        crate::families::b2::records::B2OwnerChartSideAxis::FirstParameter => {
+                            CatiaOwnerChartSideAxis::FirstParameter
+                        }
+                        crate::families::b2::records::B2OwnerChartSideAxis::SecondParameter => {
+                            CatiaOwnerChartSideAxis::SecondParameter
+                        }
+                    },
+                    parameter_point_byte_offsets: chart
+                        .parameter_points
+                        .map(|point| point.pos as u64),
+                },
+            )
+        })
         .collect::<HashMap<_, _>>();
+    let mut identity_targets = HashMap::<(usize, usize), Vec<CatiaOwnerIdentityTarget>>::new();
+    for target in
+        crate::families::b2::records::b2_owner_identity_targets_from_records(bytes, records)
+    {
+        identity_targets
+            .entry((target.source_index, target.owner_pos))
+            .or_default()
+            .push(CatiaOwnerIdentityTarget {
+                slot: target.slot,
+                distance: target.distance,
+                target_byte_offset: target.target_pos as u64,
+                target_class: target.target_class,
+            });
+    }
+    let boundary_cycles =
+        crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
+            bytes, records,
+        )
+        .into_iter()
+        .map(|cycle| {
+            (
+                (cycle.source_index, cycle.owner_pos),
+                CatiaOwnerBoundaryCycle {
+                    face_node: cycle.face_node.map(|face_node| CatiaFaceNodeRelation {
+                        byte_offset: face_node.pos as u64,
+                        byte_len: (cycle.owner_pos - face_node.pos) as u64,
+                        header_token: face_node.header_token,
+                        target_encoding: match face_node.target_encoding {
+                            crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
+                                CatiaFaceNodeTargetEncoding::Compact
+                            }
+                            crate::families::b2::records::B2FaceNode5fTargetEncoding::TaggedU16Strong => {
+                                CatiaFaceNodeTargetEncoding::TaggedU16Strong
+                            }
+                        },
+                        target: face_node.target,
+                        terminal: face_node.terminal,
+                    }),
+                    edges: cycle.edges.map(|edge| CatiaOwnerBoundaryEdge {
+                        slot: edge.slot,
+                        byte_offset: edge.target_pos as u64,
+                        endpoint_records: edge.endpoint_records.map(|pos| pos as u64),
+                    }),
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let face_nodes =
+        crate::families::b2::records::b2_adjacent_face_owners_from_records(bytes, records)
+            .into_iter()
+            .map(|linked| {
+                (
+                    (linked.owner.source_index, linked.owner.pos),
+                    linked.face_node,
+                )
+            })
+            .chain(
+                crate::families::b2::records::b2_adjacent_face_counted_owners_from_records(
+                    bytes, records,
+                )
+                .into_iter()
+                .map(|linked| {
+                    (
+                        (linked.owner.source_index, linked.owner.pos),
+                        linked.face_node,
+                    )
+                }),
+            )
+            .collect::<HashMap<_, _>>();
     let fixed = crate::families::b2::records::b2_owner_packets_from_records(bytes, records);
     let fixed_positions = fixed
         .iter()
-        .map(|packet| packet.pos)
+        .map(|packet| (packet.source_index, packet.pos))
         .collect::<HashSet<_>>();
     let mut packets = fixed
         .into_iter()
         .map(|packet| {
             (
                 packet.pos,
+                packet.source_index,
                 packet.header_token,
                 CatiaOwnerPacketPayload::FixedNine {
                     reference_encoding: match packet.reference_encoding {
@@ -6425,8 +6891,21 @@ fn consolidated_owner_packets(
                         crate::families::b2::records::B2OwnerReferenceEncoding::WidthCodedStrong => {
                             CatiaOwnerReferenceEncoding::WidthCodedStrong
                         }
+                        crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact => {
+                            CatiaOwnerReferenceEncoding::AllCompact
+                        }
                     },
                     references: packet.references,
+                    identity_encodings: packet.identity_encodings.map(|encoding| match encoding {
+                        crate::families::b2::records::B2OwnerIdentityEncoding::Allocation(
+                            encoding,
+                        ) => CatiaOwnerIdentityEncoding::Allocation(
+                            native_allocation_reference_encoding(encoding),
+                        ),
+                        crate::families::b2::records::B2OwnerIdentityEncoding::RawU8 => {
+                            CatiaOwnerIdentityEncoding::RawU8
+                        }
+                    }),
                     numeric_tail: CatiaOwnerNumericTail {
                         header: packet.numeric_tail.header,
                         lower: packet.numeric_tail.lower,
@@ -6439,10 +6918,11 @@ fn consolidated_owner_packets(
         .chain(
             crate::families::b2::records::b2_counted_owners_from_records(bytes, records)
                 .into_iter()
-                .filter(|packet| !fixed_positions.contains(&packet.pos))
+                .filter(|packet| !fixed_positions.contains(&(packet.source_index, packet.pos)))
                 .map(|packet| {
                     (
                         packet.pos,
+                        packet.source_index,
                         packet.header_token,
                         CatiaOwnerPacketPayload::Counted {
                             references: packet.references,
@@ -6452,21 +6932,38 @@ fn consolidated_owner_packets(
                 }),
         )
         .collect::<Vec<_>>();
-    packets.sort_by_key(|(pos, _, _)| *pos);
+    packets.sort_by_key(|(pos, source_index, _, _)| (*pos, *source_index));
     packets
         .into_iter()
         .map(
-            |(pos, header_token, payload)| CatiaConsolidatedOwnerPacket {
+            |(pos, source_index, header_token, payload)| CatiaConsolidatedOwnerPacket {
                 id: format!("catia:consolidated:owner-packet#{pos:010}"),
                 byte_offset: pos as u64,
+                source_index,
                 header_token,
                 payload,
-                allocation_link: links.get(&pos).map(|link| CatiaOwnerAllocationLink {
-                    byte_offset: link.pos as u64,
-                    byte_len: (pos - link.pos) as u64,
-                    header_token: link.header_token,
-                    target: link.target,
-                }),
+                identity_targets: identity_targets
+                    .remove(&(source_index, pos))
+                    .unwrap_or_default(),
+                face_node: face_nodes
+                    .get(&(source_index, pos))
+                    .map(|face_node| CatiaFaceNodeRelation {
+                    byte_offset: face_node.pos as u64,
+                    byte_len: (pos - face_node.pos) as u64,
+                    header_token: face_node.header_token,
+                    target_encoding: match face_node.target_encoding {
+                        crate::families::b2::records::B2FaceNode5fTargetEncoding::Compact => {
+                            CatiaFaceNodeTargetEncoding::Compact
+                        }
+                        crate::families::b2::records::B2FaceNode5fTargetEncoding::TaggedU16Strong => {
+                            CatiaFaceNodeTargetEncoding::TaggedU16Strong
+                        }
+                    },
+                    target: face_node.target,
+                        terminal: face_node.terminal,
+                    }),
+                owner_chart: owner_charts.get(&(source_index, pos)).cloned(),
+                boundary_cycle: boundary_cycles.get(&(source_index, pos)).copied(),
             },
         )
         .collect()
@@ -6550,7 +7047,31 @@ fn consolidated_edge_nodes(
         .filter(|record| {
             record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x5e
         })
-        .map(|record| (record.range.start, (record.width, record.flag)))
+        .map(|record| {
+            (
+                record.range.start,
+                (record.width, record.flag, record.source_index),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let owned_nodes =
+        crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
+            bytes, records,
+        )
+        .into_iter()
+        .map(|owned| (owned.node.pos, (owned.owner_pos, owned.allocation_ordinal)))
+        .collect::<HashMap<_, _>>();
+    let compact_endpoints =
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            bytes, records,
+        )
+        .into_iter()
+        .map(|binding| {
+            (
+                binding.node.pos,
+                binding.endpoint_records.map(|pos| pos as u64),
+            )
+        })
         .collect::<HashMap<_, _>>();
     let use_runs = crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
         bytes, records,
@@ -6614,17 +7135,31 @@ fn consolidated_edge_nodes(
         .into_iter()
         .enumerate()
         .filter_map(|(index, node)| {
-            let (width, flag) = frames.get(&node.pos)?;
+            let (width, flag, source_index) = frames.get(&node.pos)?;
+            let owner = owned_nodes.get(&node.pos);
             Some(CatiaConsolidatedEdgeNode {
                 id: format!("catia:consolidated:edge-node#{index}"),
                 byte_offset: node.pos as u64,
+                source_index: *source_index,
                 width: *width,
                 flag: *flag,
                 header_token: node.header_token,
+                allocation_owner: owner
+                    .map(|(pos, _)| format!("catia:consolidated:owner-packet#{pos:010}")),
+                allocation_ordinal: owner.map(|(_, ordinal)| *ordinal),
                 curve_ref: node.curve_ref,
                 vertex_refs: [node.start_vertex_ref, node.end_vertex_ref],
+                endpoint_records: compact_endpoints.get(&node.pos).copied(),
                 vertices: [String::new(), String::new()],
                 parameter_selectors: [node.start_parameter_ref, node.end_parameter_ref],
+                reference_encodings: Some(
+                    node.reference_encodings
+                        .map(native_allocation_reference_encoding),
+                ),
+                terminal_value: Some(node.terminal_value),
+                terminal_encoding: Some(native_allocation_reference_encoding(
+                    node.terminal_encoding,
+                )),
                 tail: node.tail,
                 definition: use_runs.get(&node.pos).and_then(|(_, value)| value.clone()),
                 uses: use_runs.get(&node.pos).map(|(value, _)| value.clone()),
@@ -6646,6 +7181,31 @@ fn native_consolidated_edge_definition(
         header_token: definition.header_token,
         payload: definition.payload,
         data: definition.data,
+    }
+}
+
+fn native_allocation_reference_encoding(
+    encoding: crate::wire::bytes::AllocationReferenceEncoding,
+) -> CatiaAllocationReferenceEncoding {
+    match encoding {
+        crate::wire::bytes::AllocationReferenceEncoding::BackwardDistance => {
+            CatiaAllocationReferenceEncoding::BackwardDistance
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::OwnedChild => {
+            CatiaAllocationReferenceEncoding::OwnedChild
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::WidthCoded => {
+            CatiaAllocationReferenceEncoding::WidthCoded
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::Selector2 => {
+            CatiaAllocationReferenceEncoding::Selector2
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::TaggedU8 => {
+            CatiaAllocationReferenceEncoding::TaggedU8
+        }
+        crate::wire::bytes::AllocationReferenceEncoding::TaggedU16 => {
+            CatiaAllocationReferenceEncoding::TaggedU16
+        }
     }
 }
 
@@ -6674,20 +7234,47 @@ fn native_consolidated_edge_uses(
 fn consolidated_vertex_identities(
     nodes: &mut [CatiaConsolidatedEdgeNode],
 ) -> Vec<CatiaConsolidatedVertexIdentity> {
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    enum IdentityKey {
+        EndpointRecord(u64),
+        Unresolved(usize, Option<String>, u32),
+    }
+
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
-    let mut identity_indices = HashMap::<u32, usize>::new();
+    let mut identity_indices = HashMap::<IdentityKey, usize>::new();
     for node in nodes {
+        if node.endpoint_records.is_none() && node.uses.is_none() {
+            continue;
+        }
         for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
-            let index = *identity_indices.entry(identity).or_insert_with(|| {
+            let endpoint_record = node.endpoint_records.map(|records| records[endpoint]);
+            let key = endpoint_record.map_or_else(
+                || {
+                    IdentityKey::Unresolved(
+                        node.source_index,
+                        node.allocation_owner.clone(),
+                        identity,
+                    )
+                },
+                IdentityKey::EndpointRecord,
+            );
+            let index = *identity_indices.entry(key.clone()).or_insert_with(|| {
                 let index = identities.len();
                 identities.push(CatiaConsolidatedVertexIdentity {
                     id: format!("catia:consolidated:vertex-identity#{index}"),
                     identity,
+                    source_index: node.source_index,
+                    endpoint_record,
+                    reference_values: vec![identity],
+                    allocation_owner: node.allocation_owner.clone(),
                     incident_edge_nodes: Vec::new(),
                 });
                 index
             });
             let vertex = &mut identities[index];
+            if !vertex.reference_values.contains(&identity) {
+                vertex.reference_values.push(identity);
+            }
             node.vertices[endpoint].clone_from(&vertex.id);
             if vertex.incident_edge_nodes.last() != Some(&node.id) {
                 vertex.incident_edge_nodes.push(node.id.clone());
@@ -6873,13 +7460,144 @@ fn external_reference_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaExterna
         .collect()
 }
 
+fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) {
+    let mut stored_by_group = HashMap::<(u32, u32), Option<u32>>::new();
+    for row in rows.iter() {
+        let Some(group) = row.group.as_ref() else {
+            continue;
+        };
+        if row.lead != AliasLead::SurfaceSupportStorage {
+            continue;
+        }
+        stored_by_group
+            .entry((group.prototype, group.group_id))
+            .and_modify(|stored| *stored = None)
+            .or_insert(Some(row.tag));
+    }
+    for row in rows {
+        row.canonical_surface_tag = match row.lead {
+            AliasLead::SurfaceSupportStorage => Some(row.tag),
+            AliasLead::NonSurfaceAlias => row.group.as_ref().and_then(|group| {
+                stored_by_group
+                    .get(&(group.prototype, group.group_id))
+                    .copied()
+                    .flatten()
+            }),
+            _ => None,
+        };
+    }
+}
+
+fn resolve_owner_chart_support_aliases(
+    packets: &mut [CatiaConsolidatedOwnerPacket],
+    aliases: &[CatiaAliasRow],
+) {
+    let mut unique_by_tag = HashMap::<u32, Option<&CatiaAliasRow>>::new();
+    for alias in aliases {
+        unique_by_tag
+            .entry(alias.tag)
+            .and_modify(|unique| *unique = None)
+            .or_insert(Some(alias));
+    }
+    let resolve = |reference: &mut CatiaOwnerChartBridgeReference| {
+        reference.alias_row = None;
+        reference.canonical_surface_tag = None;
+        if reference.encoding != CatiaAllocationReferenceEncoding::WidthCoded {
+            return;
+        }
+        let Some(alias) = unique_by_tag.get(&reference.value).copied().flatten() else {
+            return;
+        };
+        reference.alias_row = Some(alias.id.clone());
+        reference.canonical_surface_tag = alias.canonical_surface_tag;
+    };
+    for packet in packets {
+        let Some(chart) = packet.owner_chart.as_mut() else {
+            continue;
+        };
+        let CatiaOwnerChartBridge::SupportedSurface {
+            support_surfaces,
+            support_pcurves,
+            ..
+        } = &mut chart.bridge
+        else {
+            continue;
+        };
+        for reference in support_surfaces.iter_mut().chain(support_pcurves) {
+            resolve(reference);
+        }
+    }
+}
+
+#[cfg(test)]
+fn validate_alias_surface_tags(
+    rows: &[CatiaAliasRow],
+    required: bool,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    if !required {
+        return Ok(());
+    }
+    let mut expected = rows.to_vec();
+    resolve_alias_surface_tags(&mut expected);
+    if rows
+        .iter()
+        .zip(expected)
+        .all(|(row, expected)| row.canonical_surface_tag == expected.canonical_surface_tag)
+    {
+        Ok(())
+    } else {
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "alias rows have invalid canonical surface tags".to_string(),
+        ))
+    }
+}
+
+#[cfg(test)]
+fn validate_owner_chart_support_aliases(
+    packets: &[CatiaConsolidatedOwnerPacket],
+    aliases: &[CatiaAliasRow],
+    required: bool,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    if !required {
+        return Ok(());
+    }
+    let mut expected = packets.to_vec();
+    resolve_owner_chart_support_aliases(&mut expected, aliases);
+    if packets == expected {
+        Ok(())
+    } else {
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "owner-chart support references have invalid alias links".to_string(),
+        ))
+    }
+}
+
+#[cfg(test)]
+fn validate_alias_links(
+    rows: &[CatiaAliasRow],
+    packets: &[CatiaConsolidatedOwnerPacket],
+    version: u32,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    validate_alias_surface_tags(rows, version >= CATIA_ALIAS_SURFACE_TAG_VERSION)?;
+    validate_owner_chart_support_aliases(packets, rows, version >= CATIA_OWNER_CHART_ALIAS_VERSION)
+}
+
 impl CatiaNative {
     /// Decode CATIA-native records using container-bounded consolidated
     /// record sources.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn decode_with_record_ranges(bytes: &[u8], ranges: &[Range<usize>]) -> Self {
         let consolidated_records =
             crate::wire::records::consolidated_records_in_ranges(bytes, ranges.iter().cloned());
+        Self::decode_with_records(bytes, &consolidated_records)
+    }
+
+    /// Decode CATIA-native records from descriptor-scoped logical sources.
+    #[must_use]
+    pub(crate) fn decode_with_record_sources(bytes: &[u8], sources: &[Vec<Range<usize>>]) -> Self {
+        let consolidated_records =
+            crate::wire::records::consolidated_records_in_sources(bytes, sources.iter().cloned());
         Self::decode_with_records(bytes, &consolidated_records)
     }
 
@@ -7137,6 +7855,7 @@ impl CatiaNative {
                     extents_overlap(row_start, 24, catalog.byte_offset, catalog.byte_len)
                 })
         });
+        resolve_alias_surface_tags(&mut alias_rows);
         let design_objects = design_objects(&object_graphs, &entity_records);
         let part_graph = {
             let mut graphs = object_graphs.iter().filter(|graph| {
@@ -7198,6 +7917,8 @@ impl CatiaNative {
         let consolidated_circles = consolidated_circles(bytes, consolidated_records);
         let consolidated_class61_records =
             consolidated_class61_records(bytes, consolidated_records);
+        let consolidated_class5b5c_records =
+            consolidated_class5b5c_records(bytes, consolidated_records);
         let consolidated_parameter_points =
             consolidated_parameter_points(bytes, consolidated_records);
         let consolidated_cone_faces =
@@ -7208,7 +7929,9 @@ impl CatiaNative {
         let consolidated_embedded_cylinders =
             consolidated_embedded_cylinders(bytes, consolidated_records, &consolidated_groups);
         let consolidated_line_profiles = consolidated_line_profiles(bytes, consolidated_records);
-        let consolidated_owner_packets = consolidated_owner_packets(bytes, consolidated_records);
+        let mut consolidated_owner_packets =
+            consolidated_owner_packets(bytes, consolidated_records);
+        resolve_owner_chart_support_aliases(&mut consolidated_owner_packets, &alias_rows);
         let consolidated_pcurves = consolidated_pcurves(bytes, consolidated_records);
         let consolidated_plane_carriers = consolidated_plane_carriers(bytes, consolidated_records);
         let consolidated_reference_lists =
@@ -7269,6 +7992,7 @@ impl CatiaNative {
             catalogs,
             consolidated_circles,
             consolidated_class61_records,
+            consolidated_class5b5c_records,
             consolidated_cone_faces,
             consolidated_cones,
             consolidated_cylinders,
@@ -7414,6 +8138,7 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
             f2: row.f2,
             f3: row.f3,
             group: row.group,
+            canonical_surface_tag: None,
         }
     }
 }

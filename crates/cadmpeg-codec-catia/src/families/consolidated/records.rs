@@ -11,26 +11,27 @@ use cadmpeg_ir::math::{Point3, Vector3};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-#[cfg(test)]
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
 use crate::families::a5a8::records::{
     a5_pcurves_from_records, a5_surfaces_from_records, FreeformSurface,
 };
 use crate::families::b2::records::{
-    b2_circles_from_records, b2_class25_descriptors_from_records, b2_cone_point,
+    b2_adjacent_face_counted_owners_from_records, b2_circles_from_records,
+    b2_class25_descriptors_from_records, b2_closed_owner_boundary_edges, b2_cone_point,
     b2_cones_from_records, b2_cylinder_point, b2_cylinders_from_records,
     b2_edge_nodes_from_records, b2_edge_parameters_from_records,
-    b2_embedded_cylinders_from_records, b2_pcurves_from_records, b2_plane_carriers_from_records,
-    b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records, b2_tori_from_records,
-    b2_torus_geometry, b2_use_metadata_from_records, point_distance, B2Circle, B2Class25Descriptor,
-    B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder, B2PlaneCarrier, B2Sphere,
-    B2Torus, B2UseMetadata,
+    b2_embedded_cylinders_from_records, b2_face_nodes_5f_from_records,
+    b2_owner_identity_targets_from_records, b2_owner_packets_from_records, b2_pcurves_from_records,
+    b2_plane_carriers_from_records, b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records,
+    b2_tori_from_records, b2_torus_geometry, b2_use_metadata_from_records, point_distance,
+    B2Circle, B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters,
+    B2EmbeddedCylinder, B2FaceNode5f, B2PlaneCarrier, B2Sphere, B2Torus, B2UseMetadata,
 };
 use crate::wire::bytes::{
     allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
+    AllocationReferenceEncoding,
 };
 use crate::wire::records::{
     consolidated_records, records_are_contiguous, scan_vertex_record_ranges, ConsolidatedFamily,
@@ -123,6 +124,40 @@ pub struct ConsolidatedEdgeUseRun {
     pub node: B2EdgeNode,
     /// Whether the use references and endpoint selectors close one allocation chain.
     pub identity_chain_consistent: bool,
+}
+
+/// Compact edge node selected by its zero-based ordinal in one face-owner allocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConsolidatedOwnedEdgeNode {
+    /// Byte offset of the owning class-`0x62` packet.
+    pub owner_pos: usize,
+    /// Zero-based frame ordinal after the owner packet.
+    pub allocation_ordinal: u32,
+    /// Selected compact edge node.
+    pub node: B2EdgeNode,
+}
+
+/// Compact edge endpoints resolved through structural allocation references.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConsolidatedCompactEdgeEndpoints {
+    /// Edge node whose endpoint references closed under the local allocation grammar.
+    pub node: B2EdgeNode,
+    /// Byte offsets of the resolved endpoint records, in edge order.
+    pub endpoint_records: [usize; 2],
+}
+
+/// One fixed-nine owner boundary closed by four resolved class-`0x5e` edges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ConsolidatedOwnerBoundaryCycle {
+    /// Bounded record source containing the owner and its local targets.
+    pub source_index: usize,
+    /// Class-`0x62` owner-record offset.
+    pub owner_pos: usize,
+    /// Source-scoped class-`0x5f` face node associated with this boundary
+    /// allocation, when the cycle prelude closes its checked identity.
+    pub face_node: Option<B2FaceNode5f>,
+    /// Four edge targets in fixed-nine slot order.
+    pub edges: [crate::families::b2::records::B2OwnerBoundaryEdge; 4],
 }
 
 /// Framed edge definition structurally owned by an adjacent oriented-use run.
@@ -637,7 +672,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
-    records
+    let preceding = records
         .windows(3)
         .enumerate()
         .filter_map(|(index, window)| {
@@ -674,7 +709,9 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 .checked_sub(1)
                 .and_then(|preceding| records.get(preceding))
                 .filter(|record| {
-                    record.range.end == use0.range.start
+                    record.source_index == use0.source_index
+                        && record.source_range.end == use0.source_range.start
+                        && record.physically_contiguous
                         && record.family == ConsolidatedFamily::B
                         && matches!(record.class, 0x23..=0x25)
                 })
@@ -696,6 +733,336 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 node,
                 identity_chain_consistent,
             })
+        })
+        .collect::<Vec<_>>();
+    let succeeding = records.windows(4).filter_map(|window| {
+        let [node_record, definition_record, use0, use1] = window else {
+            return None;
+        };
+        if !records_are_contiguous(window)
+            || node_record.family != ConsolidatedFamily::B
+            || node_record.class != 0x5e
+            || definition_record.family != ConsolidatedFamily::B
+            || !matches!(definition_record.class, 0x23..=0x25)
+            || use0.family != ConsolidatedFamily::B
+            || use0.class != 0x06
+            || use1.family != ConsolidatedFamily::B
+            || use1.class != 0x06
+        {
+            return None;
+        }
+        let node = *nodes.get(&node_record.range.start)?;
+        let uses = [
+            uses.get(&use0.range.start)?.clone(),
+            uses.get(&use1.range.start)?.clone(),
+        ];
+        let definition_data = consolidated_edge_definition_data(
+            definition_record.class,
+            &data[definition_record.payload.clone()],
+        );
+        let identity_chain_consistent = match &definition_data {
+            Some(ConsolidatedEdgeDefinitionData::Compact24 { operand }) => {
+                operand
+                    .checked_add(1)
+                    .zip(operand.checked_add(2))
+                    .is_some_and(|(first, second)| {
+                        uses[0].references.as_deref() == Some(&[node.start_parameter_ref, first])
+                            && uses[1].references.as_deref()
+                                == Some(&[node.end_parameter_ref, second])
+                    })
+                    && [node.start_parameter_ref, node.end_parameter_ref] == [1, 2]
+            }
+            _ => false,
+        };
+        Some(ConsolidatedEdgeUseRun {
+            definition: Some(ConsolidatedEdgeDefinition {
+                pos: definition_record.range.start,
+                width: definition_record.width,
+                flag: definition_record.flag,
+                class: definition_record.class,
+                header_token: definition_record.header_token,
+                payload: data[definition_record.payload.clone()].to_vec(),
+                data: definition_data,
+            }),
+            uses,
+            node,
+            identity_chain_consistent,
+        })
+    });
+    preceding.into_iter().chain(succeeding).collect()
+}
+
+/// Resolve compact owner references that land exactly on class-`0x5e` frames.
+pub(crate) fn consolidated_owned_edge_nodes_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedOwnedEdgeNode> {
+    let indices = records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| (record.range.start, index))
+        .collect::<BTreeMap<_, _>>();
+    let nodes = b2_edge_nodes_from_records(data, records)
+        .into_iter()
+        .map(|node| (node.pos, node))
+        .collect::<BTreeMap<_, _>>();
+    let mut owned = Vec::new();
+    for relation in b2_adjacent_face_counted_owners_from_records(data, records) {
+        let Some(&owner_index) = indices.get(&relation.owner.pos) else {
+            continue;
+        };
+        for (allocation_ordinal, encoding) in relation
+            .owner
+            .references
+            .into_iter()
+            .zip(relation.owner.reference_encodings)
+        {
+            if encoding != AllocationReferenceEncoding::OwnedChild {
+                continue;
+            }
+            let Some(target_index) = usize::try_from(allocation_ordinal)
+                .ok()
+                .and_then(|ordinal| owner_index.checked_add(1 + ordinal))
+                .filter(|target| *target < records.len())
+            else {
+                continue;
+            };
+            if !records_are_contiguous(&records[owner_index..=target_index]) {
+                continue;
+            }
+            let target = &records[target_index];
+            if target.family != ConsolidatedFamily::B || target.class != 0x5e {
+                continue;
+            }
+            let Some(&node) = nodes.get(&target.range.start) else {
+                continue;
+            };
+            if owned
+                .last()
+                .is_some_and(|previous: &ConsolidatedOwnedEdgeNode| {
+                    previous.owner_pos == relation.owner.pos && previous.node.pos == node.pos
+                })
+            {
+                continue;
+            }
+            owned.push(ConsolidatedOwnedEdgeNode {
+                owner_pos: relation.owner.pos,
+                allocation_ordinal,
+                node,
+            });
+        }
+    }
+    owned
+}
+
+/// Resolve compact edge endpoint references through the framed allocation walk.
+pub(crate) fn consolidated_compact_edge_endpoints_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedCompactEdgeEndpoints> {
+    struct EndpointResolver<'a> {
+        records: &'a [ConsolidatedRecord],
+        nodes: &'a HashMap<usize, B2EdgeNode>,
+        allocation_locations: &'a HashMap<usize, (usize, usize)>,
+        allocation_scopes: &'a [Vec<usize>],
+        active: HashSet<(usize, usize)>,
+        memo: HashMap<(usize, usize), Option<usize>>,
+    }
+
+    impl EndpointResolver<'_> {
+        fn resolve(&mut self, record_index: usize, endpoint: usize) -> Option<usize> {
+            let key = (record_index, endpoint);
+            if let Some(cached) = self.memo.get(&key) {
+                return *cached;
+            }
+            if !self.active.insert(key) {
+                return None;
+            }
+            let result = (|| {
+                let node = self.nodes.get(&record_index)?;
+                let reference = [node.start_vertex_ref, node.end_vertex_ref][endpoint];
+                let encoding = node.reference_encodings[endpoint + 1];
+                let &(scope, allocation_ordinal) = self.allocation_locations.get(&record_index)?;
+                let target = match encoding {
+                    AllocationReferenceEncoding::OwnedChild => allocation_ordinal
+                        .checked_add(1)?
+                        .checked_add(usize::try_from(reference).ok()?)
+                        .and_then(|target| self.allocation_scopes.get(scope)?.get(target))
+                        .copied()?,
+                    AllocationReferenceEncoding::BackwardDistance => {
+                        let target =
+                            allocation_ordinal.checked_sub(usize::try_from(reference).ok()?)?;
+                        *self.allocation_scopes.get(scope)?.get(target)?
+                    }
+                    AllocationReferenceEncoding::WidthCoded => {
+                        let target = record_index.checked_add(usize::try_from(reference).ok()?)?;
+                        let target_record = self.records.get(target)?;
+                        if target_record.source_index
+                            != self.records.get(record_index)?.source_index
+                            || target_record.family != ConsolidatedFamily::B
+                            || target_record.class != 0x18
+                        {
+                            return None;
+                        }
+                        return Some(target);
+                    }
+                    AllocationReferenceEncoding::Selector2
+                    | AllocationReferenceEncoding::TaggedU8
+                    | AllocationReferenceEncoding::TaggedU16 => return None,
+                };
+                let target_record = self.records.get(target)?;
+                if target_record.family != ConsolidatedFamily::B {
+                    return None;
+                }
+                match target_record.class {
+                    0x5d => Some(target),
+                    0x5e => self.resolve(target, 1),
+                    _ => None,
+                }
+            })();
+            self.active.remove(&key);
+            self.memo.insert(key, result);
+            result
+        }
+    }
+
+    let by_pos = b2_edge_nodes_from_records(data, records)
+        .into_iter()
+        .map(|node| (node.pos, node))
+        .collect::<HashMap<_, _>>();
+    let nodes = records
+        .iter()
+        .enumerate()
+        .filter_map(|(index, record)| {
+            by_pos
+                .get(&record.range.start)
+                .copied()
+                .map(|node| (index, node))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut allocation_scopes = vec![Vec::new()];
+    let mut allocation_locations = HashMap::new();
+    for (index, record) in records.iter().enumerate() {
+        if index > 0
+            && (records[index - 1].source_index != record.source_index
+                || records[index - 1].source_range.end != record.source_range.start)
+        {
+            allocation_scopes.push(Vec::new());
+        }
+        if record.family == ConsolidatedFamily::B && matches!(record.class, 0x5d | 0x5e) {
+            let scope = allocation_scopes.len() - 1;
+            let ordinal = allocation_scopes[scope].len();
+            allocation_scopes[scope].push(index);
+            allocation_locations.insert(index, (scope, ordinal));
+        }
+    }
+    let mut resolver = EndpointResolver {
+        records,
+        nodes: &nodes,
+        allocation_locations: &allocation_locations,
+        allocation_scopes: &allocation_scopes,
+        active: HashSet::new(),
+        memo: HashMap::new(),
+    };
+    let mut endpoints = nodes
+        .iter()
+        .filter_map(|(&record_index, &node)| {
+            let vertices = [0, 1].map(|endpoint| resolver.resolve(record_index, endpoint));
+            let [Some(start), Some(end)] = vertices else {
+                return None;
+            };
+            Some(ConsolidatedCompactEdgeEndpoints {
+                node,
+                endpoint_records: [records[start].range.start, records[end].range.start],
+            })
+        })
+        .collect::<Vec<_>>();
+    endpoints.sort_by_key(|binding| binding.node.pos);
+    endpoints
+}
+
+/// Derive owner-local four-edge boundary cycles from fixed-nine references.
+/// Every returned endpoint is closed by the same bounded record source as its
+/// owner. Other fixed-nine roles remain unclassified.
+pub(crate) fn consolidated_owner_boundary_cycles_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedOwnerBoundaryCycle> {
+    let endpoint_records = consolidated_compact_edge_endpoints_from_records(data, records)
+        .into_iter()
+        .map(|binding| (binding.node.pos, binding.endpoint_records))
+        .collect::<HashMap<_, _>>();
+    let face_nodes = b2_face_nodes_5f_from_records(data, records)
+        .into_iter()
+        .map(|node| (node.pos, node))
+        .collect::<BTreeMap<_, _>>();
+    let record_indices = records
+        .iter()
+        .enumerate()
+        .map(|(index, record)| (record.range.start, index))
+        .collect::<BTreeMap<_, _>>();
+    let record_sources = records
+        .iter()
+        .map(|record| (record.range.start, record.source_index))
+        .collect::<HashMap<_, _>>();
+    let mut targets_by_owner = BTreeMap::<(usize, usize), Vec<_>>::new();
+    for target in b2_owner_identity_targets_from_records(data, records) {
+        targets_by_owner
+            .entry((target.source_index, target.owner_pos))
+            .or_default()
+            .push(target);
+    }
+    b2_owner_packets_from_records(data, records)
+        .into_iter()
+        .filter_map(|packet| {
+            let targets = targets_by_owner.get(&(packet.source_index, packet.pos))?;
+            let edges = b2_closed_owner_boundary_edges(targets, &endpoint_records)?;
+            let face_node = (|| {
+                let first_edge_pos = edges.iter().map(|edge| edge.target_pos).min()?;
+                let &first_edge_index = record_indices.get(&first_edge_pos)?;
+                let node_index = first_edge_index.checked_sub(1)?;
+                let node_record = records.get(node_index)?;
+                let face_node = face_nodes.get(&node_record.range.start)?;
+                if !matches!(face_node.terminal, [0x27, 0x03 | 0x05]) {
+                    return None;
+                }
+                let &owner_index = record_indices.get(&packet.pos)?;
+                if owner_index <= first_edge_index
+                    || !records_are_contiguous(&records[node_index..=owner_index])
+                {
+                    return None;
+                }
+                let span = &records[first_edge_index..owner_index];
+                if span.iter().any(|record| {
+                    record.family != ConsolidatedFamily::B || !matches!(record.class, 0x5d | 0x5e)
+                }) || span.iter().filter(|record| record.class == 0x5e).count() != 4
+                {
+                    return None;
+                }
+                if edges.iter().any(|edge| {
+                    !span
+                        .iter()
+                        .any(|record| record.range.start == edge.target_pos)
+                }) {
+                    return None;
+                }
+                (packet.references[8].checked_add(10) == Some(face_node.target))
+                    .then_some(*face_node)
+            })();
+            edges
+                .iter()
+                .all(|edge| {
+                    record_sources.get(&edge.target_pos) == Some(&packet.source_index)
+                        && edge.endpoint_records.iter().all(|endpoint| {
+                            record_sources.get(endpoint) == Some(&packet.source_index)
+                        })
+                })
+                .then_some(ConsolidatedOwnerBoundaryCycle {
+                    source_index: packet.source_index,
+                    owner_pos: packet.pos,
+                    face_node,
+                    edges,
+                })
         })
         .collect()
 }

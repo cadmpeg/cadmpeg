@@ -2,8 +2,8 @@
 //! nested CATIA V5 B-rep streams.
 
 use crate::families::standard::fbb::{
-    boundary_cycles, cover_cycle, largest_fbb_run, parse_fbb_edge_tables, parse_trim_chain,
-    parse_vertex_table,
+    boundary_cycles, classify_fbb_edge_layouts, cover_cycle, largest_fbb_run,
+    parse_fbb_edge_tables, parse_trim_chain, parse_vertex_table,
 };
 use crate::solve::matching::unique_coordinate_bijection;
 use crate::solve::missing_edge::{standard_mesh_boundary_assignments, MeshFaceBoundaryAssignment};
@@ -302,9 +302,9 @@ impl StandardTopology {
 }
 
 /// The boundary meaning of an edge-row handle sequence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum EdgeBoundaryLayout {
-    /// The first and last handles are endpoint ports outside the trim-handle
+    /// The first and last handles are endpoint ports in the global trim-handle
     /// namespace; the handles between them match the boundary.
     InteriorWithFlankingCorners,
     /// Every handle belongs to the trim boundary, including both endpoints.
@@ -386,7 +386,7 @@ pub struct CoedgeUse {
     pub end_vertex: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TrimRecord {
     pub(crate) triangles: Vec<[u32; 3]>,
     pub(crate) frame_vector: Option<[f64; 3]>,
@@ -980,9 +980,11 @@ pub(crate) fn incidence_cycles(
 #[must_use]
 pub fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, _, vertex_header, handle_width) = parse_fbb_edge_tables(bytes, after_faces)?;
+    let (mut edge_rows, _, vertex_header, handle_width) =
+        parse_fbb_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
+    classify_fbb_edge_layouts(&mut edge_rows, &trims)?;
     reconstruct(edge_rows, vertex_points, &trims)
 }
 

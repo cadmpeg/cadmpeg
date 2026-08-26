@@ -593,6 +593,221 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
 }
 
 #[test]
+fn consolidated_edge_use_run_accepts_compact_successor_layout() {
+    use crate::families::b2::records::B2UseSense;
+    use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
+
+    let bytes = [
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f, 0x07, 0x0b, 0x21, 0xb2, 0x03, 0x24, 0x04,
+        0x05, 0x81, 0x29, 0x0f, 0x87, 0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 0x05, 0x2d, 0x88, 0xb2,
+        0x03, 0x06, 0x04, 0x05, 0x82, 0x09, 0x31, 0x84,
+    ];
+    let runs = crate::families::consolidated::records::consolidated_edge_use_runs(&bytes);
+    let [run] = runs.as_slice() else {
+        panic!("one successor-layout edge run")
+    };
+    assert!(run.identity_chain_consistent);
+    assert_eq!(run.uses[0].sense, Some(B2UseSense::Sense88));
+    assert_eq!(run.uses[1].sense, Some(B2UseSense::Sense84));
+    assert_eq!(run.uses[0].references.as_deref(), Some(&[1, 11][..]));
+    assert_eq!(run.uses[1].references.as_deref(), Some(&[2, 12][..]));
+    assert_eq!(
+        run.definition.as_ref().and_then(|value| value.data.clone()),
+        Some(ConsolidatedEdgeDefinitionData::Compact24 { operand: 10 })
+    );
+}
+
+#[test]
+fn compact_owner_ordinal_selects_the_owned_edge_node() {
+    let bytes = [
+        0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x08, 0x05, 0x82,
+        0x0b, 0x21, 0x84, 0x41, 0xff, 0x0f, 0x01, 0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00, 0xb2,
+        0x03, 0x05, 0x03, 0x05, 0x82, 0x0b, 0x57, 0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f,
+        0x07, 0x0b, 0x21,
+    ];
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let owned = crate::families::consolidated::records::consolidated_owned_edge_nodes_from_records(
+        &bytes, &records,
+    );
+    let [owned] = owned.as_slice() else {
+        panic!("one owner-selected edge node")
+    };
+    assert_eq!(owned.owner_pos, 9);
+    assert_eq!(owned.allocation_ordinal, 2);
+    assert_eq!(owned.node.pos, 37);
+}
+
+#[test]
+fn compact_endpoint_walk_resolves_children_and_backward_edge_links() {
+    let first_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x20, 0x03, 0x07, 0x06, 0x30, 0x06, 0x31, 0x21,
+    ];
+    let vertex = [0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00];
+    let second_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x21, 0x09, 0x0d, 0x06, 0x32, 0x06, 0x33, 0x21,
+    ];
+    let first_vertex_pos = first_edge.len();
+    let second_vertex_pos = first_vertex_pos + vertex.len();
+    let mut bytes = first_edge.to_vec();
+    bytes.extend_from_slice(&vertex);
+    bytes.extend_from_slice(&vertex);
+    bytes.extend_from_slice(&second_edge);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let endpoints =
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &bytes, &records,
+        );
+
+    assert_eq!(endpoints.len(), 2);
+    assert_eq!(
+        endpoints[0].endpoint_records,
+        [first_vertex_pos, second_vertex_pos]
+    );
+    assert_eq!(
+        endpoints[1].endpoint_records,
+        [first_vertex_pos, second_vertex_pos]
+    );
+}
+
+#[test]
+fn width_coded_endpoint_distances_resolve_forward_class18_records() {
+    let edge = [
+        0xb2, 0x03, 0x5e, 0x0a, 0x05, 0x03, 0x08, 0x02, 0x00, 0x08, 0x03, 0x00, 0x07, 0x0b, 0x21,
+    ];
+    let filler = [0xb2, 0x03, 0x05, 0x01, 0x05, 0x01];
+    let endpoint = [0xb2, 0x03, 0x18, 0x01, 0x05, 0x01];
+    let first_endpoint = edge.len() + filler.len();
+    let second_endpoint = first_endpoint + endpoint.len();
+    let mut bytes = edge.to_vec();
+    bytes.extend_from_slice(&filler);
+    bytes.extend_from_slice(&endpoint);
+    bytes.extend_from_slice(&endpoint);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.class)
+            .collect::<Vec<_>>(),
+        [0x5e, 0x05, 0x18, 0x18]
+    );
+    let nodes = crate::families::b2::records::b2_edge_nodes_from_records(&bytes, &records);
+    assert_eq!(nodes.len(), 1);
+    assert_eq!([nodes[0].start_vertex_ref, nodes[0].end_vertex_ref], [2, 3]);
+    let endpoints =
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &bytes, &records,
+        );
+
+    let [resolved] = endpoints.as_slice() else {
+        panic!("one edge with two forward endpoint records")
+    };
+    assert_eq!(resolved.endpoint_records, [first_endpoint, second_endpoint]);
+
+    let split_sources = crate::wire::records::consolidated_records_in_ranges(
+        &bytes,
+        [0..edge.len(), edge.len()..bytes.len()],
+    );
+    assert!(
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &bytes,
+            &split_sources,
+        )
+        .is_empty(),
+        "a forward endpoint walk cannot cross bounded record sources"
+    );
+
+    let mut reordered = endpoint.to_vec();
+    let edge_pos = reordered.len();
+    reordered.extend_from_slice(&edge);
+    let filler_pos = reordered.len();
+    reordered.extend_from_slice(&filler);
+    let second_endpoint_pos = reordered.len();
+    reordered.extend_from_slice(&endpoint);
+    let records = crate::wire::records::consolidated_records_in_sources(
+        &reordered,
+        [[
+            edge_pos..filler_pos,
+            filler_pos..second_endpoint_pos,
+            0..endpoint.len(),
+            second_endpoint_pos..reordered.len(),
+        ]],
+    );
+    let endpoints =
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &reordered, &records,
+        );
+    let [resolved] = endpoints.as_slice() else {
+        panic!("one edge can walk across physical extents in logical source order")
+    };
+    assert_eq!(resolved.endpoint_records, [0, second_endpoint_pos]);
+
+    let mut spanning = edge.to_vec();
+    let filler_start = spanning.len();
+    spanning.extend_from_slice(&[0xa5, 0x03, 0x34]);
+    spanning.extend_from_slice(&8u32.to_le_bytes());
+    spanning.extend_from_slice(&[0x05, 0, 1, 2, 3, 4, 5, 6, 7]);
+    let spanning_first_endpoint = spanning.len();
+    spanning.extend_from_slice(&endpoint);
+    let spanning_second_endpoint = spanning.len();
+    spanning.extend_from_slice(&endpoint);
+    let split = filler_start + 10;
+    let records = crate::wire::records::consolidated_records_in_sources(
+        &spanning,
+        [[0..split, split..spanning.len()]],
+    );
+    assert!(!records[1].physically_contiguous);
+    let endpoints =
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &spanning, &records,
+        );
+    let [resolved] = endpoints.as_slice() else {
+        panic!("a spanning frame remains in forward-distance ordinal accounting")
+    };
+    assert_eq!(
+        resolved.endpoint_records,
+        [spanning_first_endpoint, spanning_second_endpoint]
+    );
+
+    let mut wrong_class = bytes;
+    wrong_class[first_endpoint + 2] = 0x19;
+    let records = crate::wire::records::consolidated_records(&wrong_class);
+    assert!(
+        crate::families::consolidated::records::consolidated_compact_edge_endpoints_from_records(
+            &wrong_class,
+            &records,
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn fixed_owner_boundary_cycle_rejects_cross_source_endpoint_network() {
+    let (bytes, _, _, endpoint_records) = b2_fixed_owner_boundary_cycle_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(
+        crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
+            &bytes, &records,
+        )
+        .len(),
+        1
+    );
+
+    let split = endpoint_records[1][1];
+    let split_records = crate::wire::records::consolidated_records_in_ranges(
+        &bytes,
+        [0..split, split..bytes.len()],
+    );
+    assert!(
+        crate::families::consolidated::records::consolidated_owner_boundary_cycles_from_records(
+            &bytes,
+            &split_records,
+        )
+        .is_empty(),
+        "a fixed-owner cycle cannot join endpoint records across bounded sources"
+    );
+}
+
+#[test]
 fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 
@@ -604,7 +819,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     assert_eq!(
         crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &plain),
         Some(ConsolidatedEdgeDefinitionData::Scalar25 {
-            operands: [1, 0xe7, 3463],
+            operands: [1, 57, 3463],
             persistent_lead: Some(0x0a),
             values: vec![1.0, 2.0, 1e-6, 3.0, 4.0, 1.0, 5.0, 1e-6],
         })
@@ -621,7 +836,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     assert!(matches!(
         crate::families::consolidated::records::consolidated_edge_definition_data(0x25, &segmented),
         Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
-            operands: [1, 0xe7, 3463],
+            operands: [1, 57, 3463],
             persistent_lead: Some(0x0a),
             marker: 0x82,
             ref trailing,
@@ -674,7 +889,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
             .and_then(|definition| definition.data.as_ref()),
         Some(
             crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar25 {
-                operands: [1, 0xe7, 3463],
+                operands: [1, 57, 3463],
                 persistent_lead: Some(0x0a),
                 ..
             }

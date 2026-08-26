@@ -130,6 +130,41 @@ fn native_namespace_retains_consolidated_class61_records() {
 }
 
 #[test]
+fn native_namespace_retains_class5b5c_control_records_without_assigning_roles() {
+    let native = crate::native::CatiaNative::decode(&b2_class5b5c_stream());
+    let records = &native.consolidated_class5b5c_records;
+    assert_eq!(records.len(), 3);
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.class)
+            .collect::<Vec<_>>(),
+        [0x5b, 0x5c, 0x5b]
+    );
+    assert_eq!(records[0].source_index, 0);
+    assert_eq!(records[0].source_offset, records[0].byte_offset);
+    assert_eq!(records[1].width, 2);
+    assert!(records.iter().all(|record| !record.payload.is_empty()));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA class-0x5b/0x5c records");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA class-0x5b/0x5c records"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_class5b5c_records[0].class = 0x5a;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA class-0x5b/0x5c record");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
 fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
     let native = crate::native::CatiaNative::decode(&b2_parameter_point_stream());
     let [uv, station_uv, five_scalars, station_uv_last] =
@@ -418,7 +453,7 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
     assert_eq!(cone.direction_y, [0.0, 1.0, 0.0]);
     assert_eq!(cone.axis, [0.0, 0.0, 1.0]);
     assert_eq!(cone.half_angle, 0.25);
-    assert_eq!(cone.pre_angular_range_scalar, 4.0);
+    assert_eq!(cone.reference_radius, 4.0);
     assert_eq!(cone.angular_range, [0.5, 0.5 + std::f64::consts::PI]);
     assert_eq!(cone.slant_range, [2.0, 8.0]);
     assert_eq!(cone.angular_scale, 3.0);
@@ -744,13 +779,16 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
 }
 
 #[test]
-fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
-    let native = crate::native::CatiaNative::decode(&b2_linked_owner_stream());
+fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
+    let native = crate::native::CatiaNative::decode(&b2_adjacent_face_owner_stream());
     let [packet] = native.consolidated_owner_packets.as_slice() else {
         panic!("one consolidated owner packet")
     };
+    assert_eq!(packet.source_index, 0);
+    assert!(packet.identity_targets.is_empty());
     let crate::native::CatiaOwnerPacketPayload::FixedNine {
         references,
+        identity_encodings,
         numeric_tail,
         ..
     } = &packet.payload
@@ -758,14 +796,29 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
         panic!("fixed-nine owner payload")
     };
     assert_eq!(*references, [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]);
+    assert_eq!(
+        *identity_encodings,
+        std::array::from_fn(
+            |index| crate::native::CatiaOwnerIdentityEncoding::Allocation(if index % 2 == 0 {
+                crate::native::CatiaAllocationReferenceEncoding::TaggedU16
+            } else {
+                crate::native::CatiaAllocationReferenceEncoding::BackwardDistance
+            },)
+        )
+    );
     assert_eq!(numeric_tail.header, [0x84, 0x41, 0xbb, 0x05, 0x0d]);
     assert_eq!(numeric_tail.lower, [-0.0, 4.5]);
     assert_eq!(numeric_tail.upper, [12.25, 7.0]);
     assert_eq!(numeric_tail.bounds, [[-2.0, 1.0], [3.5, 4.0], [5.25, 6.0]]);
-    let link = packet.allocation_link.expect("allocation-successor link");
-    assert_eq!(link.byte_len, 11);
-    assert_eq!(link.target, 1003);
-    assert_eq!(link.target + 1, references[8]);
+    let face_node = packet.face_node.expect("face-node relation");
+    assert_eq!(face_node.byte_len, 11);
+    assert_eq!(
+        face_node.target_encoding,
+        crate::native::CatiaFaceNodeTargetEncoding::Compact
+    );
+    assert_eq!(face_node.target, 1003);
+    assert_eq!(face_node.terminal, [0x03, 0x05]);
+    assert_eq!(face_node.target + 1, references[8]);
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
@@ -778,9 +831,9 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
 
     let mut invalid = native;
     invalid.consolidated_owner_packets[0]
-        .allocation_link
+        .face_node
         .as_mut()
-        .expect("allocation-successor link")
+        .expect("face-node relation")
         .target -= 1;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
@@ -790,8 +843,297 @@ fn native_namespace_retains_consolidated_owner_packet_and_allocation_link() {
 }
 
 #[test]
-fn native_namespace_retains_count_framed_owner_packet_and_allocation_link() {
-    let native = crate::native::CatiaNative::decode(&b2_linked_counted_owner_stream());
+fn native_namespace_retains_fixed_owner_allocation_targets() {
+    let (bytes, target_positions, owner_pos) = b2_width_coded_owner_with_allocation_stream();
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+
+    assert_eq!(packet.byte_offset, owner_pos as u64);
+    assert_eq!(packet.source_index, 0);
+    assert_eq!(
+        packet
+            .identity_targets
+            .iter()
+            .map(|target| (
+                target.slot,
+                target.distance,
+                target.target_byte_offset,
+                target.target_class,
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (0, 1, target_positions[4] as u64, 0x5e),
+            (2, 4, target_positions[1] as u64, 0x5e),
+            (4, 2, target_positions[3] as u64, 0x5e),
+            (6, 3, target_positions[2] as u64, 0x5d),
+            (8, 5, target_positions[0] as u64, 0x5d),
+        ]
+    );
+}
+
+#[test]
+fn native_namespace_retains_closed_fixed_owner_boundary_cycle() {
+    let (bytes, edge_positions, owner_pos, endpoint_records) =
+        b2_fixed_owner_boundary_cycle_stream();
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+
+    assert_eq!(packet.byte_offset, owner_pos as u64);
+    let cycle = packet
+        .boundary_cycle
+        .as_ref()
+        .expect("closed fixed-owner boundary cycle");
+    assert!(cycle.face_node.is_none());
+    assert_eq!(
+        cycle.edges.map(|edge| edge.byte_offset),
+        edge_positions.map(|position| position as u64)
+    );
+    assert_eq!(
+        cycle.edges.map(|edge| edge.endpoint_records),
+        endpoint_records.map(|pair| pair.map(|position| position as u64))
+    );
+}
+
+#[test]
+fn native_namespace_retains_boundary_face_node_for_checked_cycle_prelude() {
+    let (bytes, edge_positions, owner_pos, endpoint_records, face_node_pos) =
+        b2_fixed_owner_boundary_face_node_cycle_stream();
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+    let cycle = packet
+        .boundary_cycle
+        .as_ref()
+        .expect("closed fixed-owner boundary cycle");
+    let face_node = cycle
+        .face_node
+        .as_ref()
+        .expect("source-scoped boundary face node");
+    assert_eq!(face_node.byte_offset, face_node_pos as u64);
+    assert_eq!(face_node.byte_len, (owner_pos - face_node_pos) as u64);
+    assert_eq!(face_node.target, 1014);
+    assert_eq!(face_node.terminal, [0x27, 0x05]);
+    assert_eq!(
+        cycle.edges.map(|edge| edge.byte_offset),
+        edge_positions.map(|position| position as u64)
+    );
+    assert_eq!(
+        cycle.edges.map(|edge| edge.endpoint_records),
+        endpoint_records.map(|pair| pair.map(|position| position as u64))
+    );
+
+    let mut wrong_terminal = bytes.clone();
+    wrong_terminal[face_node_pos + 12] = 0x04;
+    let native = crate::native::CatiaNative::decode(&wrong_terminal);
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+    assert!(packet
+        .boundary_cycle
+        .as_ref()
+        .expect("cycle survives terminal change")
+        .face_node
+        .is_none());
+
+    let mut wrong_identity = bytes;
+    wrong_identity[face_node_pos + 9] = 0xe1;
+    let native = crate::native::CatiaNative::decode(&wrong_identity);
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+    assert!(packet
+        .boundary_cycle
+        .as_ref()
+        .expect("cycle survives identity change")
+        .face_node
+        .is_none());
+}
+
+#[test]
+fn native_namespace_retains_source_closed_owner_chart() {
+    let native = crate::native::CatiaNative::decode(&b2_owner_chart_stream(0x2b));
+    let [packet] = native.consolidated_owner_packets.as_slice() else {
+        panic!("one consolidated owner packet")
+    };
+    let chart = packet.owner_chart.as_ref().expect("owner chart relation");
+    assert_eq!(chart.carrier, crate::native::CatiaOwnerChartCarrier::B2b);
+    assert_eq!(
+        chart.side_axis,
+        crate::native::CatiaOwnerChartSideAxis::SecondParameter
+    );
+    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+        byte_offset,
+        carrier_surface,
+        support_surfaces,
+        support_pcurves,
+        controls,
+        construction_radius,
+    } = &chart.bridge
+    else {
+        panic!("supported-surface owner bridge")
+    };
+    assert!(chart.carrier_byte_offset < *byte_offset);
+    assert!(*byte_offset < chart.parameter_point_byte_offsets[0]);
+    assert_eq!(
+        [
+            carrier_surface.value,
+            support_surfaces[0].value,
+            support_surfaces[1].value,
+            support_pcurves[0].value,
+            support_pcurves[1].value,
+        ],
+        [1, 100, 0, 101, 1]
+    );
+    assert_eq!(
+        carrier_surface.encoding,
+        crate::native::CatiaAllocationReferenceEncoding::BackwardDistance
+    );
+    assert_eq!(*controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
+    assert_eq!(*construction_radius, 1.0);
+    assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA owner chart");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA owner chart"),
+        native
+    );
+}
+
+#[test]
+fn owner_chart_width_coded_supports_select_unique_alias_rows() {
+    let mut bytes = b2_owner_chart_stream(0x2b);
+    bytes.extend(grouped_surface_alias_stream(0, 100, 0x148));
+    bytes.extend(grouped_surface_alias_stream(1, 200, 0x148));
+    let mut pcurve_alias = surface_alias_stream();
+    pcurve_alias[8..12].copy_from_slice(&101u32.to_le_bytes());
+    bytes.extend(pcurve_alias);
+    let mut local_collision = surface_alias_stream();
+    local_collision[8..12].copy_from_slice(&1u32.to_le_bytes());
+    bytes.extend(local_collision);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let chart = native.consolidated_owner_packets[0]
+        .owner_chart
+        .as_ref()
+        .expect("owner chart");
+    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+        carrier_surface,
+        support_surfaces,
+        support_pcurves,
+        ..
+    } = &chart.bridge
+    else {
+        panic!("supported-surface bridge")
+    };
+    let surface_alias = native
+        .alias_rows
+        .iter()
+        .find(|alias| alias.tag == 100)
+        .expect("support-surface alias");
+    let pcurve_alias = native
+        .alias_rows
+        .iter()
+        .find(|alias| alias.tag == 101)
+        .expect("support-pcurve alias");
+    assert_eq!(
+        support_surfaces[0].alias_row.as_deref(),
+        Some(surface_alias.id.as_str())
+    );
+    assert_eq!(support_surfaces[0].canonical_surface_tag, Some(200));
+    assert_eq!(
+        support_pcurves[0].alias_row.as_deref(),
+        Some(pcurve_alias.id.as_str())
+    );
+    assert_eq!(support_pcurves[0].canonical_surface_tag, Some(101));
+    assert_ne!(
+        support_pcurves[1].encoding,
+        crate::native::CatiaAllocationReferenceEncoding::WidthCoded
+    );
+    assert_eq!(support_pcurves[1].alias_row, None);
+    assert_eq!(support_pcurves[1].canonical_surface_tag, None);
+    assert_eq!(carrier_surface.alias_row, None);
+    assert_eq!(carrier_surface.canonical_surface_tag, None);
+
+    let mut legacy = native.clone();
+    let Some(chart) = legacy.consolidated_owner_packets[0].owner_chart.as_mut() else {
+        panic!("owner chart")
+    };
+    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+        support_surfaces,
+        support_pcurves,
+        ..
+    } = &mut chart.bridge
+    else {
+        panic!("supported-surface bridge")
+    };
+    for reference in support_surfaces.iter_mut().chain(support_pcurves) {
+        reference.alias_row = None;
+        reference.canonical_surface_tag = None;
+    }
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    legacy
+        .store(&mut namespace)
+        .expect("store legacy chart links");
+    namespace.version = crate::native::CATIA_OWNER_CHART_ALIAS_VERSION - 1;
+    crate::native::CatiaNative::load(&namespace).expect("load legacy chart links");
+
+    let mut invalid = native;
+    let Some(chart) = invalid.consolidated_owner_packets[0].owner_chart.as_mut() else {
+        panic!("owner chart")
+    };
+    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+        support_surfaces, ..
+    } = &mut chart.bridge
+    else {
+        panic!("supported-surface bridge")
+    };
+    support_surfaces[0].canonical_surface_tag = Some(100);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid support alias");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
+fn owner_chart_duplicate_alias_tags_remain_unresolved() {
+    let mut bytes = b2_owner_chart_stream(0x2b);
+    for lead in [1u32, 0x8e] {
+        let mut alias = surface_alias_stream();
+        alias[..4].copy_from_slice(&lead.to_le_bytes());
+        alias[8..12].copy_from_slice(&100u32.to_le_bytes());
+        bytes.extend(alias);
+    }
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let chart = native.consolidated_owner_packets[0]
+        .owner_chart
+        .as_ref()
+        .expect("owner chart");
+    let crate::native::CatiaOwnerChartBridge::SupportedSurface {
+        support_surfaces, ..
+    } = &chart.bridge
+    else {
+        panic!("supported-surface bridge")
+    };
+    assert_eq!(support_surfaces[0].alias_row, None);
+    assert_eq!(support_surfaces[0].canonical_surface_tag, None);
+}
+
+#[test]
+fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
+    let native = crate::native::CatiaNative::decode(&b2_adjacent_face_counted_owner_stream());
     let [packet] = native.consolidated_owner_packets.as_slice() else {
         panic!("one consolidated owner packet")
     };
@@ -801,10 +1143,10 @@ fn native_namespace_retains_count_framed_owner_packet_and_allocation_link() {
     };
     assert_eq!(references, &[911, 7, 263, 258, 281, 276, 917]);
     assert_eq!(tail, &[0x83, 0x41, 0x92, 0x00, 0x01]);
-    let link = packet.allocation_link.expect("allocation-successor link");
-    assert_eq!(link.target, 916);
+    let face_node = packet.face_node.expect("face-node relation");
+    assert_eq!(face_node.target, 916);
     assert_eq!(
-        link.target + 1,
+        face_node.target + 1,
         *references.last().expect("final owner reference")
     );
 
@@ -965,6 +1307,129 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 }
 
 #[test]
+fn compact_owner_does_not_type_unresolved_edge_references_as_vertices() {
+    let allocation = [
+        0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x08, 0x05, 0x82,
+        0x0b, 0x21, 0x84, 0x41, 0xff, 0x0f, 0x01, 0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00, 0xb2,
+        0x03, 0x05, 0x03, 0x05, 0x82, 0x0b, 0x57, 0xb2, 0x03, 0x5e, 0x06, 0x05, 0x03, 0x09, 0x0f,
+        0x07, 0x0b, 0x21,
+    ];
+    let bytes = allocation.repeat(2);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.consolidated_edge_nodes.len(), 2);
+    assert!(native.consolidated_vertex_identities.is_empty());
+    assert_ne!(
+        native.consolidated_edge_nodes[0].allocation_owner,
+        native.consolidated_edge_nodes[1].allocation_owner
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[0].allocation_ordinal,
+        Some(2)
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[1].allocation_ordinal,
+        Some(2)
+    );
+    assert_eq!(native.consolidated_edge_nodes[0].vertices, ["", ""]);
+    assert_eq!(native.consolidated_edge_nodes[1].vertices, ["", ""]);
+}
+
+#[test]
+fn compact_vertex_identity_uses_resolved_endpoint_records() {
+    let first_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x20, 0x03, 0x07, 0x06, 0x30, 0x06, 0x31, 0x21,
+    ];
+    let vertex = [0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00];
+    let second_edge = [
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x06, 0x21, 0x09, 0x0d, 0x06, 0x32, 0x06, 0x33, 0x21,
+    ];
+    let first_vertex_pos = first_edge.len() as u64;
+    let second_vertex_pos = first_vertex_pos + vertex.len() as u64;
+    let mut bytes = first_edge.to_vec();
+    bytes.extend_from_slice(&vertex);
+    bytes.extend_from_slice(&vertex);
+    bytes.extend_from_slice(&second_edge);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.consolidated_edge_nodes.len(), 2);
+    assert_eq!(native.consolidated_vertex_identities.len(), 2);
+    assert_eq!(
+        native.consolidated_edge_nodes[0].endpoint_records,
+        Some([first_vertex_pos, second_vertex_pos])
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[1].endpoint_records,
+        Some([first_vertex_pos, second_vertex_pos])
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[0].vertices,
+        native.consolidated_edge_nodes[1].vertices
+    );
+    assert_eq!(
+        native
+            .consolidated_vertex_identities
+            .iter()
+            .map(|identity| identity.endpoint_record)
+            .collect::<Vec<_>>(),
+        vec![Some(first_vertex_pos), Some(second_vertex_pos)]
+    );
+}
+
+#[test]
+fn width_coded_forward_endpoints_merge_by_class18_record_identity() {
+    fn edge(start_distance: u8, end_distance: u8) -> Vec<u8> {
+        vec![
+            0xb2,
+            0x03,
+            0x5e,
+            0x0a,
+            0x05,
+            0x03,
+            0x08,
+            start_distance,
+            0x00,
+            0x08,
+            end_distance,
+            0x00,
+            0x07,
+            0x0b,
+            0x21,
+        ]
+    }
+
+    let filler = [0xb2, 0x03, 0x05, 0x01, 0x05, 0x01];
+    let endpoint = [0xb2, 0x03, 0x18, 0x01, 0x05, 0x01];
+    let mut bytes = edge(4, 5);
+    bytes.extend_from_slice(&edge(3, 4));
+    bytes.extend_from_slice(&filler);
+    bytes.extend_from_slice(&filler);
+    let first_endpoint = bytes.len() as u64;
+    bytes.extend_from_slice(&endpoint);
+    let second_endpoint = bytes.len() as u64;
+    bytes.extend_from_slice(&endpoint);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.consolidated_edge_nodes.len(), 2);
+    assert_eq!(native.consolidated_vertex_identities.len(), 2);
+    assert_eq!(
+        native.consolidated_edge_nodes[0].endpoint_records,
+        Some([first_endpoint, second_endpoint])
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[0].vertices,
+        native.consolidated_edge_nodes[1].vertices
+    );
+    assert_eq!(
+        native
+            .consolidated_vertex_identities
+            .iter()
+            .map(|identity| identity.endpoint_record)
+            .collect::<Vec<_>>(),
+        [Some(first_endpoint), Some(second_endpoint)]
+    );
+}
+
+#[test]
 fn native_namespace_merges_shared_consolidated_vertex_identity() {
     let mut bytes = a5_native_edge_run_stream(6, 139, 142);
     bytes.extend_from_slice(&a5_native_edge_run_stream(9, 142, 151));
@@ -991,6 +1456,112 @@ fn native_namespace_merges_shared_consolidated_vertex_identity() {
 }
 
 #[test]
+fn native_vertex_identity_namespace_is_bounded_by_record_source() {
+    let first = a5_native_edge_run_stream(6, 14, 15);
+    let mut bytes = first.clone();
+    bytes.extend_from_slice(&a5_native_edge_run_stream(9, 15, 16));
+    let native = crate::native::CatiaNative::decode_with_record_ranges(
+        &bytes,
+        &[0..first.len(), first.len()..bytes.len()],
+    );
+
+    assert_eq!(native.consolidated_edge_runs.len(), 2);
+    assert_eq!(native.consolidated_vertex_identities.len(), 4);
+    assert_eq!(
+        native
+            .consolidated_edge_nodes
+            .iter()
+            .map(|node| node.source_index)
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+    let repeated = native
+        .consolidated_vertex_identities
+        .iter()
+        .filter(|vertex| vertex.identity == 15)
+        .collect::<Vec<_>>();
+    assert_eq!(repeated.len(), 2);
+    assert_eq!(repeated[0].source_index, 0);
+    assert_eq!(repeated[1].source_index, 1);
+    assert_ne!(
+        native.consolidated_edge_nodes[0].vertices[1],
+        native.consolidated_edge_nodes[1].vertices[0]
+    );
+}
+
+#[test]
+fn explicit_vertex_encodings_share_one_complete_run_identity_namespace() {
+    fn replace_node(mut stream: Vec<u8>, payload: &[u8]) -> Vec<u8> {
+        let node = stream
+            .windows(3)
+            .position(|window| window == [0xb2, 0x03, 0x5e])
+            .expect("edge node frame");
+        stream.truncate(node);
+        stream.extend_from_slice(&[
+            0xb2,
+            0x03,
+            0x5e,
+            u8::try_from(payload.len()).expect("bounded edge payload"),
+            0x05,
+        ]);
+        stream.extend_from_slice(payload);
+        stream
+    }
+
+    let mut bytes = a5_native_edge_run_stream(6, 14, 15);
+    let tagged_u16 = replace_node(
+        a5_native_edge_run_stream(9, 15, 16),
+        &[37, 0x0a, 15, 0, 0x0a, 16, 0, 9, 5, 0x21],
+    );
+    bytes.extend_from_slice(&tagged_u16);
+    let selector2 = replace_node(
+        a5_native_edge_run_stream(12, 16, 17),
+        &[49, 4 * 16 + 2, 4 * 17 + 2, 9, 5, 0x21],
+    );
+    bytes.extend_from_slice(&selector2);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    assert_eq!(native.consolidated_edge_runs.len(), 3);
+    assert_eq!(native.consolidated_vertex_identities.len(), 4);
+    assert_eq!(
+        native.consolidated_edge_nodes[0]
+            .reference_encodings
+            .unwrap()[1..3],
+        [
+            crate::native::CatiaAllocationReferenceEncoding::TaggedU8,
+            crate::native::CatiaAllocationReferenceEncoding::TaggedU8,
+        ]
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[1]
+            .reference_encodings
+            .unwrap()[1..3],
+        [
+            crate::native::CatiaAllocationReferenceEncoding::TaggedU16,
+            crate::native::CatiaAllocationReferenceEncoding::TaggedU16,
+        ]
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[0].vertices[1],
+        native.consolidated_edge_nodes[1].vertices[0]
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[2]
+            .reference_encodings
+            .unwrap()[1..3],
+        [
+            crate::native::CatiaAllocationReferenceEncoding::Selector2,
+            crate::native::CatiaAllocationReferenceEncoding::Selector2,
+        ]
+    );
+    assert_eq!(
+        native.consolidated_edge_nodes[1].vertices[1],
+        native.consolidated_edge_nodes[2].vertices[0]
+    );
+}
+
+#[test]
 fn native_namespace_retains_standalone_consolidated_edge_nodes() {
     let bytes = b2_edge_node_stream();
     let native = crate::native::CatiaNative::decode(&bytes);
@@ -1002,13 +1573,15 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
     assert_eq!(node.width, 1);
     assert_eq!(node.flag, 0x03);
     assert_eq!(node.header_token, 5);
+    assert_eq!(node.terminal_value, Some(8));
+    assert_eq!(
+        node.terminal_encoding,
+        Some(crate::native::CatiaAllocationReferenceEncoding::BackwardDistance)
+    );
     assert_eq!(node.vertex_refs, [889, 895]);
     assert!(node.uses.is_none());
-    assert_eq!(native.consolidated_vertex_identities.len(), 2);
-    assert_eq!(
-        native.consolidated_vertex_identities[0].incident_edge_nodes,
-        ["catia:consolidated:edge-node#0"]
-    );
+    assert_eq!(node.vertices, ["", ""]);
+    assert!(native.consolidated_vertex_identities.is_empty());
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native

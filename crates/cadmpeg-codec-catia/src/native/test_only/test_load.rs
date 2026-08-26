@@ -1,6 +1,7 @@
 use super::test_consolidated::{
-    validate_consolidated_circles, validate_consolidated_class61_records,
-    validate_consolidated_cone_faces, validate_consolidated_cones, validate_consolidated_cylinders,
+    validate_consolidated_circles, validate_consolidated_class5b5c_records,
+    validate_consolidated_class61_records, validate_consolidated_cone_faces,
+    validate_consolidated_cones, validate_consolidated_cylinders,
     validate_consolidated_embedded_cylinders, validate_consolidated_groups,
     validate_consolidated_line_profiles, validate_consolidated_parameter_points,
     validate_consolidated_pcurves, validate_consolidated_plane_carriers,
@@ -1024,6 +1025,17 @@ impl CatiaNative {
             namespace.arena_as("consolidated_class61_records")?;
         consolidated_class61_records.sort_by_key(|record| record.byte_offset);
         validate_consolidated_class61_records(&consolidated_class61_records)?;
+        let mut consolidated_class5b5c_records: Vec<CatiaConsolidatedClass5b5cRecord> = if namespace
+            .arenas
+            .contains_key("consolidated_class5b5c_records")
+        {
+            namespace.arena_as("consolidated_class5b5c_records")?
+        } else {
+            Vec::new()
+        };
+        consolidated_class5b5c_records
+            .sort_by_key(|record| (record.source_index, record.source_offset));
+        validate_consolidated_class5b5c_records(&consolidated_class5b5c_records)?;
         let mut consolidated_cone_faces: Vec<CatiaConsolidatedConeFace> =
             namespace.arena_as("consolidated_cone_faces")?;
         consolidated_cone_faces.sort_by_key(|face| face.byte_offset);
@@ -1157,12 +1169,14 @@ impl CatiaNative {
             &finjpl_segments,
             &value_blocks,
         )?;
+        validate_alias_links(&alias_rows, &consolidated_owner_packets, namespace.version)?;
         Ok(Self {
             version: namespace.version,
             alias_rows,
             catalogs,
             consolidated_circles,
             consolidated_class61_records,
+            consolidated_class5b5c_records,
             consolidated_cone_faces,
             consolidated_cones,
             consolidated_cylinders,

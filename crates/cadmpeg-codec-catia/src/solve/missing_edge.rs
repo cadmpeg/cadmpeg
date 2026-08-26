@@ -4,15 +4,16 @@
 
 use crate::families::standard::fbb::{
     boundary_cycles, largest_fbb_run, parse_edge_tables, parse_fbb_edge_tables,
-    parse_standard_edge_tables, parse_trim_chain, parse_vertex_table, selected_standard_run,
+    parse_standard_edge_tables_scoped, parse_standard_edge_tables_with_width, parse_trim_chain,
+    parse_vertex_table, selected_standard_run,
 };
-use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord};
 #[cfg(test)]
 use crate::families::standard::topology::{reconstruct_mesh_selection, StandardTopology};
+use crate::families::standard::topology::{EdgeBoundaryLayout, EdgeRow, TrimRecord};
 use crate::solve::mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS;
 use crate::solve::UnionFind;
-use cadmpeg_core::decode::{alloc_filled, WorkBudget};
-use std::collections::{HashMap, HashSet};
+use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 /// Return the counted physical edge rows in their serialized table order.
@@ -26,21 +27,46 @@ pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
     parse_edge_tables(bytes, after_faces).map(|(rows, _)| rows)
 }
 
-pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+fn standard_edge_port_identities_with_namespace(
+    bytes: &[u8],
+    global: bool,
+) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = selected_standard_run(bytes)?;
-    let (edge_rows, _) = parse_standard_edge_tables(bytes, after_faces)?;
+    let (edge_rows, scopes, _, _) = parse_standard_edge_tables_scoped(bytes, after_faces)?;
+    let mut identity_by_handle = HashMap::new();
+    let mut next_identity = 0u32;
     edge_rows
         .iter()
-        .enumerate()
-        .map(|(edge, row)| {
+        .zip(scopes)
+        .map(|(row, scope)| {
             row.handles.first().zip(row.handles.last())?;
-            let start = edge.checked_mul(2)?;
-            Some([u32::try_from(start).ok()?, u32::try_from(start + 1).ok()?])
+            if !global && row.boundary_layout != EdgeBoundaryLayout::CompleteBoundaryRun {
+                let start = next_identity;
+                next_identity = next_identity.checked_add(2)?;
+                return Some([start, start.checked_add(1)?]);
+            }
+            let mut pair = [0; 2];
+            for (port, handle) in [*row.handles.first()?, *row.handles.last()?]
+                .into_iter()
+                .enumerate()
+            {
+                let key = (if global { 0 } else { scope }, handle);
+                let identity = if let Some(identity) = identity_by_handle.get(&key) {
+                    *identity
+                } else {
+                    let identity = next_identity;
+                    next_identity = next_identity.checked_add(1)?;
+                    identity_by_handle.insert(key, identity);
+                    identity
+                };
+                pair[port] = identity;
+            }
+            Some(pair)
         })
         .collect()
 }
 
-pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+fn fbb_edge_port_identities_with_namespace(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, scopes, _, _) = parse_fbb_edge_tables(bytes, after_faces)?;
     let mut identity_by_handle = HashMap::new();
@@ -54,18 +80,249 @@ pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
                 .enumerate()
             {
                 let next = u32::try_from(identity_by_handle.len()).ok()?;
-                pair[port] = *identity_by_handle.entry((scope, handle)).or_insert(next);
+                let key = (if global { 0 } else { scope }, handle);
+                pair[port] = *identity_by_handle.entry(key).or_insert(next);
             }
             Some(pair)
         })
         .collect()
 }
 
-/// Select the endpoint-identity grammar belonging to the detected spine
-/// family. Standard rows use row-local endpoint ports; FBB-only rows use
-/// table-scoped complete-boundary handles.
+const INDEXED_VISUALIZATION_POINT_MARKER: [u8; 6] = [0xff, 0xff, 0x02, 0x00, 0x01, 0xff];
+const INDEXED_VISUALIZATION_POINT_HEADER_LEN: usize = 19;
+const RAW_VISUALIZATION_POINT_STRIDE: usize = 12;
+
+/// Bind trim-handle endpoints through the indexed visualization-point lane.
+///
+/// Admission is atomic: the file must contain one structurally complete table,
+/// every terminal handle must select a decoded vertex coordinate exactly, and
+/// every decoded vertex coordinate must be selected by at least one terminal
+/// handle. Unsupported table modes are left unbound.
+pub(crate) fn visualization_endpoint_pairs(
+    source: &[u8],
+    edge_rows: &[EdgeRow],
+    point_coordinates: &[[f32; 3]],
+) -> Option<Vec<[usize; 2]>> {
+    let mut markers = source
+        .windows(INDEXED_VISUALIZATION_POINT_MARKER.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| {
+            (bytes == INDEXED_VISUALIZATION_POINT_MARKER).then_some(offset)
+        });
+    let marker = markers.next()?;
+    if markers.next().is_some() {
+        return None;
+    }
+    let count = usize::try_from(View::u32_le_at(source, marker.checked_add(6)?)?).ok()?;
+    let indexed_count = usize::try_from(View::u32_le_at(source, marker.checked_add(11)?)?).ok()?;
+    let mode = *source.get(marker.checked_add(18)?)?;
+    if source.get(marker.checked_add(10)?)? != &0xff
+        || source.get(marker.checked_add(15)?..marker.checked_add(18)?)? != [0, 0, 0]
+        || indexed_count > count
+    {
+        return None;
+    }
+    let table = marker.checked_add(INDEXED_VISUALIZATION_POINT_HEADER_LEN)?;
+
+    let mut point_by_bits = HashMap::with_capacity(point_coordinates.len());
+    for (point, coordinates) in point_coordinates.iter().enumerate() {
+        let key = coordinates.map(f32::to_bits);
+        if point_by_bits.insert(key, point).is_some() {
+            return None;
+        }
+    }
+    let terminal_handles = edge_rows
+        .iter()
+        .flat_map(|row| [row.handles.first(), row.handles.last()])
+        .flatten()
+        .copied()
+        .collect::<HashSet<_>>();
+    if terminal_handles
+        .iter()
+        .any(|handle| usize::try_from(*handle).map_or(true, |handle| handle >= count))
+    {
+        return None;
+    }
+    let point_by_handle = match mode {
+        0 => compressed_visualization_point_bindings(
+            source,
+            table,
+            count,
+            &terminal_handles,
+            &point_by_bits,
+        )?,
+        1 if count.saturating_sub(indexed_count) <= 1 => raw_visualization_point_bindings(
+            source,
+            table,
+            count,
+            &terminal_handles,
+            &point_by_bits,
+        )?,
+        _ => return None,
+    };
+    if point_by_handle
+        .values()
+        .copied()
+        .collect::<HashSet<_>>()
+        .len()
+        != point_coordinates.len()
+    {
+        return None;
+    }
+
+    edge_rows
+        .iter()
+        .map(|row| {
+            Some([
+                *point_by_handle.get(row.handles.first()?)?,
+                *point_by_handle.get(row.handles.last()?)?,
+            ])
+        })
+        .collect()
+}
+
+fn raw_visualization_point_bindings(
+    source: &[u8],
+    table: usize,
+    count: usize,
+    terminal_handles: &HashSet<u32>,
+    point_by_bits: &HashMap<[u32; 3], usize>,
+) -> Option<HashMap<u32, usize>> {
+    let extent = count
+        .checked_mul(RAW_VISUALIZATION_POINT_STRIDE)?
+        .checked_add(table)?;
+    source.get(table..extent)?;
+    terminal_handles
+        .iter()
+        .map(|handle| {
+            let index = usize::try_from(*handle).ok()?;
+            let at = table.checked_add(index.checked_mul(RAW_VISUALIZATION_POINT_STRIDE)?)?;
+            let key = [
+                View::f32_le_at(source, at)?.to_bits(),
+                View::f32_le_at(source, at.checked_add(4)?)?.to_bits(),
+                View::f32_le_at(source, at.checked_add(8)?)?.to_bits(),
+            ];
+            Some((*handle, *point_by_bits.get(&key)?))
+        })
+        .collect()
+}
+
+fn compressed_visualization_point_bindings(
+    source: &[u8],
+    controls: usize,
+    count: usize,
+    terminal_handles: &HashSet<u32>,
+    point_by_bits: &HashMap<[u32; 3], usize>,
+) -> Option<HashMap<u32, usize>> {
+    let packed_len = count.checked_add(3)? / 4;
+    let delimiter = controls.checked_add(packed_len)?;
+    if *source.get(delimiter)? != 0xff {
+        return None;
+    }
+    let scalar_count_at = delimiter.checked_add(1)?;
+    let scalar_count = usize::try_from(View::u32_le_at(source, scalar_count_at)?).ok()?;
+    let scalars = scalar_count_at.checked_add(4)?;
+    let scalar_extent = scalar_count.checked_mul(4)?.checked_add(scalars)?;
+    source.get(controls..scalar_extent)?;
+
+    let mut previous = None::<[u32; 3]>;
+    let mut scalar = 0usize;
+    let mut bindings = HashMap::with_capacity(terminal_handles.len());
+    for index in 0..count {
+        let packed = *source.get(controls.checked_add(index / 4)?)?;
+        let code = (packed >> (2 * (index % 4))) & 3;
+        let mut read_scalar = || {
+            if scalar >= scalar_count {
+                return None;
+            }
+            let at = scalars.checked_add(scalar.checked_mul(4)?)?;
+            scalar = scalar.checked_add(1)?;
+            Some(View::f32_le_at(source, at)?.to_bits())
+        };
+        let point = match (code, previous) {
+            (0, _) => [read_scalar()?, read_scalar()?, read_scalar()?],
+            (1, Some(previous)) => previous,
+            (2, Some(previous)) => [previous[0], previous[1], read_scalar()?],
+            (3, Some(previous)) => [previous[0], read_scalar()?, read_scalar()?],
+            _ => return None,
+        };
+        previous = Some(point);
+        let handle = u32::try_from(index).ok()?;
+        if terminal_handles.contains(&handle) {
+            bindings.insert(handle, *point_by_bits.get(&point)?);
+        }
+    }
+    (scalar == scalar_count && bindings.len() == terminal_handles.len()).then_some(bindings)
+}
+
+pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    standard_edge_port_identities_with_namespace(bytes, false)
+}
+
+pub(crate) fn fbb_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    fbb_edge_port_identities_with_namespace(bytes, false)
+}
+
+pub(crate) fn standard_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    standard_edge_port_identities_with_namespace(bytes, true)
+}
+
+pub(crate) fn fbb_global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    fbb_edge_port_identities_with_namespace(bytes, true)
+}
+
+/// Select conservative endpoint identities for the bounded topology solver.
 pub(crate) fn edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     standard_edge_port_identities(bytes).or_else(|| fbb_edge_port_identities(bytes))
+}
+
+/// Select endpoint identities from every row's terminal handles in the
+/// file-global trim-handle namespace.
+pub(crate) fn global_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+    standard_global_edge_port_identities(bytes).or_else(|| fbb_global_edge_port_identities(bytes))
+}
+
+pub(crate) fn solver_ports(bytes: &[u8], global: bool) -> Option<Vec<[u32; 2]>> {
+    if global {
+        global_edge_port_identities(bytes)
+    } else {
+        edge_port_identities(bytes)
+    }
+}
+
+/// Extend deferred rows to the complete connected components of the supplied
+/// endpoint-port graph. A port-domain inference is valid only when every row
+/// in the component contributes a settled endpoint relation.
+pub(crate) fn expand_deferred_edge_port_components(
+    edge_ports: &[[u32; 2]],
+    deferred_edges: &mut [bool],
+) -> bool {
+    if edge_ports.len() != deferred_edges.len() {
+        return false;
+    }
+    let mut deferred_ports = deferred_edges
+        .iter()
+        .enumerate()
+        .filter(|(_, deferred)| **deferred)
+        .flat_map(|(edge, _)| edge_ports[edge])
+        .collect::<HashSet<_>>();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for (edge, ports) in edge_ports.iter().enumerate() {
+            if !deferred_edges[edge] && !ports.iter().any(|port| deferred_ports.contains(port)) {
+                continue;
+            }
+            if !deferred_edges[edge] {
+                deferred_edges[edge] = true;
+                changed = true;
+            }
+            for port in ports {
+                changed |= deferred_ports.insert(*port);
+            }
+        }
+    }
+    true
 }
 
 /// Collapse physical edge endpoints through every exact trim-mesh occurrence.
@@ -74,7 +331,7 @@ pub(crate) fn edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
 #[must_use]
 pub fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let analysis = standard_mesh_analysis(bytes)?;
-    let local_ports = edge_port_identities(bytes)?;
+    let local_ports = global_edge_port_identities(bytes)?;
     mesh_edge_ports(&analysis, &local_ports)
 }
 
@@ -226,40 +483,34 @@ fn mesh_edge_occurrences(
         .collect()
 }
 
+#[derive(Debug)]
 struct StandardMeshAnalysis {
     edge_rows: Vec<EdgeRow>,
     cycles: Vec<Vec<Vec<u32>>>,
     occurrences: Vec<Vec<MeshEdgeOccurrence>>,
+    fixed_complete_row_spans: bool,
 }
 
 fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
     let (face_start, face_count, after_faces) = selected_standard_run(bytes)?;
-    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
-    let mut solutions = Vec::new();
-    for width in [1, 2, 3] {
-        // Each width is an independent grammar candidate. A malformed or
-        // ambiguous candidate must not mask a complete candidate at another
-        // width.
-        let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
-            continue;
-        };
-        let Some(cycles) = trims
-            .iter()
-            .map(|trim| boundary_cycles(&trim.triangles))
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        let Some(occurrences) = mesh_edge_occurrences(&edge_rows, &cycles) else {
-            continue;
-        };
-        solutions.push((cycles, occurrences));
-    }
-    let [(cycles, occurrences)] = <[_; 1]>::try_from(solutions).ok()?;
+    let (edge_rows, handle_width, fixed_complete_row_spans) =
+        parse_standard_edge_tables_with_width(bytes, after_faces)
+            .map(|(rows, _, width)| (rows, width, false))
+            .or_else(|| {
+                parse_fbb_edge_tables(bytes, after_faces)
+                    .map(|(rows, _, _, width)| (rows, width, true))
+            })?;
+    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
+    let cycles = trims
+        .iter()
+        .map(|trim| boundary_cycles(&trim.triangles))
+        .collect::<Option<Vec<_>>>()?;
+    let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
     Some(StandardMeshAnalysis {
         edge_rows,
         cycles,
         occurrences,
+        fixed_complete_row_spans,
     })
 }
 
@@ -308,6 +559,351 @@ pub(crate) fn resolve_standard_edge_faces(
         return Some(serialized.to_vec());
     };
     resolve_edge_faces_from_runs(serialized, &runs)
+}
+
+fn repeated_edge_face_handle_candidates_from_sets(
+    edge_rows: &[EdgeRow],
+    face_handles: &[HashSet<u32>],
+    serialized: &[[usize; 2]],
+) -> Option<Vec<Vec<usize>>> {
+    if edge_rows.len() != serialized.len()
+        || serialized
+            .iter()
+            .flatten()
+            .any(|face| *face >= face_handles.len())
+    {
+        return None;
+    }
+    for (row, faces) in edge_rows.iter().zip(serialized) {
+        if !row
+            .handles
+            .iter()
+            .all(|handle| face_handles[faces[0]].contains(handle))
+        {
+            return None;
+        }
+    }
+    let mut candidates = alloc_filled(
+        edge_rows.len(),
+        Vec::new(),
+        "catia_repeated_edge_handle_face_candidates",
+    )
+    .ok()?;
+    for (edge, (row, faces)) in edge_rows.iter().zip(serialized).enumerate() {
+        if faces[0] != faces[1] || row.handles.len() < 2 {
+            continue;
+        }
+        let unique_handles = row.handles.iter().copied().collect::<HashSet<_>>();
+        let mut matching = face_handles
+            .iter()
+            .enumerate()
+            .filter(|(face, _)| *face != faces[0])
+            .filter_map(|(face, handles)| {
+                let shared = unique_handles
+                    .iter()
+                    .filter(|handle| handles.contains(handle))
+                    .count();
+                let qualifies = if unique_handles.len() >= 4 {
+                    shared >= 3 && shared >= unique_handles.len().div_ceil(2)
+                } else {
+                    shared == unique_handles.len()
+                };
+                qualifies.then_some(face)
+            })
+            .collect::<Vec<_>>();
+        if unique_handles.len() >= 4 && matching.len() != 1 {
+            matching.clear();
+        }
+        candidates[edge] = matching;
+    }
+    Some(candidates)
+}
+
+/// Return positive second-face candidates from the global trim-handle
+/// namespace. The relation abstains for the complete file unless every edge
+/// row is contained by its first serialized face packet.
+pub(crate) fn standard_repeated_edge_face_handle_candidates(
+    bytes: &[u8],
+    serialized: &[[usize; 2]],
+) -> Option<Vec<Vec<usize>>> {
+    let (face_start, face_count, after_faces) = selected_standard_run(bytes)?;
+    let (edge_rows, handle_width) = parse_standard_edge_tables_with_width(bytes, after_faces)
+        .map(|(rows, _, width)| (rows, width))
+        .or_else(|| {
+            parse_fbb_edge_tables(bytes, after_faces).map(|(rows, _, _, width)| (rows, width))
+        })?;
+    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
+    let face_handles = trims
+        .into_iter()
+        .map(|trim| trim.handles.into_iter().collect::<HashSet<_>>())
+        .collect::<Vec<_>>();
+    repeated_edge_face_handle_candidates_from_sets(&edge_rows, &face_handles, serialized)
+}
+
+/// Refine unresolved repeated-face domains with positive trim-handle evidence.
+///
+/// A row already resolved to two distinct faces has consumed its repeated slot;
+/// later candidate sources cannot reopen it. For an unresolved row, common
+/// carrier and handle candidates are preferred, while handle evidence supplies
+/// the domain when carrier geometry abstains.
+pub(crate) fn refine_repeated_edge_face_candidates(
+    edge_faces: &[[usize; 2]],
+    allowed_faces: &mut [Vec<usize>],
+    handle_face_candidates: &[Vec<usize>],
+) -> Option<()> {
+    if edge_faces.len() != allowed_faces.len() || edge_faces.len() != handle_face_candidates.len() {
+        return None;
+    }
+    for (edge, (allowed, handle_candidates)) in allowed_faces
+        .iter_mut()
+        .zip(handle_face_candidates)
+        .enumerate()
+    {
+        if edge_faces[edge][0] != edge_faces[edge][1] {
+            allowed.clear();
+            continue;
+        }
+        if handle_candidates.is_empty() {
+            continue;
+        }
+        let intersection = allowed
+            .iter()
+            .copied()
+            .filter(|face| handle_candidates.contains(face))
+            .collect::<Vec<_>>();
+        *allowed = if intersection.is_empty() {
+            handle_candidates.clone()
+        } else {
+            intersection
+        };
+    }
+    Some(())
+}
+
+/// Resolve optional second-face incidences by complete endpoint-degree closure.
+///
+/// A repeated serialized pair contributes one use to its named face. Each
+/// admitted alternate either remains unused or supplies a second distinct face.
+/// Return every assignment found by the bounded search that gives degree two
+/// at every used face vertex.
+pub(crate) fn repeated_face_endpoint_closures(
+    edge_faces: &[[usize; 2]],
+    allowed_faces: &[Vec<usize>],
+    endpoint_pairs: &[[usize; 2]],
+    face_count: usize,
+) -> Option<Vec<Vec<[usize; 2]>>> {
+    const MAX_STATES: usize = 65_536;
+    const MAX_SOLUTIONS: usize = 4_096;
+
+    fn add_pair(degrees: &mut BTreeMap<usize, u8>, pair: [usize; 2]) -> Option<()> {
+        let start_add = 1 + u8::from(pair[0] == pair[1]);
+        if degrees
+            .get(&pair[0])
+            .copied()
+            .unwrap_or_default()
+            .checked_add(start_add)?
+            > 2
+            || (pair[0] != pair[1]
+                && degrees
+                    .get(&pair[1])
+                    .copied()
+                    .unwrap_or_default()
+                    .checked_add(1)?
+                    > 2)
+        {
+            return None;
+        }
+        *degrees.entry(pair[0]).or_default() += start_add;
+        if pair[0] != pair[1] {
+            *degrees.entry(pair[1]).or_default() += 1;
+        }
+        Some(())
+    }
+
+    fn remove_pair(degrees: &mut BTreeMap<usize, u8>, pair: [usize; 2]) {
+        let start_add = 1 + u8::from(pair[0] == pair[1]);
+        let start = degrees.get_mut(&pair[0]).expect("assigned face endpoint");
+        *start -= start_add;
+        if *start == 0 {
+            degrees.remove(&pair[0]);
+        }
+        if pair[0] != pair[1] {
+            let end = degrees.get_mut(&pair[1]).expect("assigned face endpoint");
+            *end -= 1;
+            if *end == 0 {
+                degrees.remove(&pair[1]);
+            }
+        }
+    }
+
+    struct Search<'a> {
+        branches: &'a [(usize, Vec<usize>)],
+        owners: &'a [usize],
+        endpoint_pairs: &'a [[usize; 2]],
+        states: usize,
+        exhausted: bool,
+        solutions: Vec<Vec<usize>>,
+    }
+
+    impl Search<'_> {
+        fn visit(
+            &mut self,
+            degrees: &mut [BTreeMap<usize, u8>],
+            assignment: &mut [usize],
+            used: &mut [bool],
+        ) {
+            if self.exhausted {
+                return;
+            }
+            if used.iter().all(|used| *used) {
+                if degrees
+                    .iter()
+                    .all(|face| face.values().all(|degree| *degree == 2))
+                {
+                    if self.solutions.len() == MAX_SOLUTIONS {
+                        self.exhausted = true;
+                    } else {
+                        self.solutions.push(assignment.to_vec());
+                    }
+                }
+                return;
+            }
+            let deficit = degrees.iter().enumerate().find_map(|(face, points)| {
+                points
+                    .iter()
+                    .find_map(|(&point, &degree)| (degree == 1).then_some((face, point)))
+            });
+            let mut choices = Vec::<(usize, usize)>::new();
+            if let Some((face, point)) = deficit {
+                for (branch, (edge, faces)) in self.branches.iter().enumerate() {
+                    if used[branch] || !self.endpoint_pairs[*edge].contains(&point) {
+                        continue;
+                    }
+                    choices.extend(
+                        faces
+                            .iter()
+                            .copied()
+                            .filter(|candidate| *candidate == face)
+                            .map(|candidate| (branch, candidate)),
+                    );
+                }
+            } else {
+                let branch = used
+                    .iter()
+                    .position(|used| !*used)
+                    .expect("unassigned branch");
+                choices.extend(
+                    self.branches[branch]
+                        .1
+                        .iter()
+                        .copied()
+                        .map(|face| (branch, face)),
+                );
+            }
+            for (branch, face) in choices {
+                if self.states >= MAX_STATES {
+                    self.exhausted = true;
+                    return;
+                }
+                self.states += 1;
+                let (edge, _) = &self.branches[branch];
+                let owner = self.owners[branch];
+                let adds_incidence = face != owner;
+                if adds_incidence
+                    && add_pair(&mut degrees[face], self.endpoint_pairs[*edge]).is_none()
+                {
+                    continue;
+                }
+                assignment[branch] = face;
+                used[branch] = true;
+                self.visit(degrees, assignment, used);
+                used[branch] = false;
+                if adds_incidence {
+                    remove_pair(&mut degrees[face], self.endpoint_pairs[*edge]);
+                }
+                if self.exhausted {
+                    return;
+                }
+            }
+        }
+    }
+
+    if edge_faces.len() != allowed_faces.len()
+        || edge_faces.len() != endpoint_pairs.len()
+        || edge_faces.iter().flatten().any(|face| *face >= face_count)
+        || allowed_faces
+            .iter()
+            .flatten()
+            .any(|face| *face >= face_count)
+    {
+        return None;
+    }
+    let mut degrees = vec![BTreeMap::<usize, u8>::new(); face_count];
+    for (edge, faces) in edge_faces.iter().copied().enumerate() {
+        add_pair(&mut degrees[faces[0]], endpoint_pairs[edge])?;
+        if faces[1] != faces[0] {
+            add_pair(&mut degrees[faces[1]], endpoint_pairs[edge])?;
+        }
+    }
+    let mut branches = Vec::new();
+    for (edge, faces) in edge_faces.iter().enumerate() {
+        if faces[0] != faces[1] || allowed_faces[edge].is_empty() {
+            continue;
+        }
+        let mut choices = vec![faces[0]];
+        choices.extend(
+            allowed_faces[edge]
+                .iter()
+                .copied()
+                .filter(|face| *face != faces[0]),
+        );
+        choices.sort_unstable();
+        choices.dedup();
+        branches.push((edge, choices));
+    }
+    if branches.is_empty() {
+        return Some(
+            degrees
+                .iter()
+                .all(|face| face.values().all(|degree| *degree == 2))
+                .then(|| edge_faces.to_vec())
+                .into_iter()
+                .collect(),
+        );
+    }
+    let owners = branches
+        .iter()
+        .map(|(edge, _)| edge_faces[*edge][0])
+        .collect::<Vec<_>>();
+    let mut search = Search {
+        branches: &branches,
+        owners: &owners,
+        endpoint_pairs,
+        states: 0,
+        exhausted: false,
+        solutions: Vec::new(),
+    };
+    search.visit(
+        &mut degrees,
+        &mut vec![0; branches.len()],
+        &mut vec![false; branches.len()],
+    );
+    if search.exhausted {
+        return None;
+    }
+    Some(
+        search
+            .solutions
+            .into_iter()
+            .map(|solution| {
+                let mut completed = edge_faces.to_vec();
+                for ((edge, _), face) in branches.iter().zip(solution) {
+                    completed[*edge][1] = face;
+                }
+                completed
+            })
+            .collect(),
+    )
 }
 
 pub(crate) fn unique_duplicate_face_assignment<F>(
@@ -384,15 +980,17 @@ where
     let mut assignment = serialized.to_vec();
     let mut branches = Vec::new();
     for edge in unresolved {
-        let mut options = allowed_faces[edge]
-            .iter()
-            .copied()
-            .filter(|face| *face != assignment[edge][0])
-            .collect::<Vec<_>>();
+        let mut options = vec![assignment[edge][0]];
+        options.extend(
+            allowed_faces[edge]
+                .iter()
+                .copied()
+                .filter(|face| *face != assignment[edge][0]),
+        );
         options.sort_unstable();
         options.dedup();
         match options.as_slice() {
-            [] => return None,
+            [] => unreachable!("the serialized face is always retained"),
             [face] => assignment[edge][1] = *face,
             _ => branches.push((edge, options)),
         }
@@ -416,6 +1014,108 @@ where
         .map(|[solution]| solution)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DuplicateFaceAssignmentVisit {
+    Complete,
+    Stopped,
+    Exhausted,
+}
+
+/// Visit concrete second-face assignments without materializing their product.
+///
+/// A repeated slot retains its serialized one-face incidence as one choice and
+/// adds each distinct admitted second face as another. The visitor returns
+/// `true` to continue and `false` to stop after a solved or terminal result.
+pub(crate) fn visit_duplicate_face_assignments<F>(
+    serialized: &[[usize; 2]],
+    allowed_faces: &[Vec<usize>],
+    face_count: usize,
+    max_assignments: usize,
+    mut visitor: F,
+) -> Option<DuplicateFaceAssignmentVisit>
+where
+    F: FnMut(&[[usize; 2]]) -> bool,
+{
+    fn visit<F>(
+        branches: &[(usize, Vec<usize>)],
+        at: usize,
+        assignment: &mut [[usize; 2]],
+        max_assignments: usize,
+        visited: &mut usize,
+        visitor: &mut F,
+    ) -> DuplicateFaceAssignmentVisit
+    where
+        F: FnMut(&[[usize; 2]]) -> bool,
+    {
+        if at == branches.len() {
+            if *visited >= max_assignments {
+                return DuplicateFaceAssignmentVisit::Exhausted;
+            }
+            *visited += 1;
+            return if visitor(assignment) {
+                DuplicateFaceAssignmentVisit::Complete
+            } else {
+                DuplicateFaceAssignmentVisit::Stopped
+            };
+        }
+        let (edge, choices) = &branches[at];
+        for &face in choices {
+            assignment[*edge][1] = face;
+            match visit(
+                branches,
+                at + 1,
+                assignment,
+                max_assignments,
+                visited,
+                visitor,
+            ) {
+                DuplicateFaceAssignmentVisit::Complete => {}
+                terminal => return terminal,
+            }
+        }
+        DuplicateFaceAssignmentVisit::Complete
+    }
+
+    if serialized.len() != allowed_faces.len()
+        || serialized.iter().flatten().any(|face| *face >= face_count)
+        || allowed_faces
+            .iter()
+            .flatten()
+            .any(|face| *face >= face_count)
+    {
+        return None;
+    }
+    let mut assignment = serialized.to_vec();
+    let mut branches = Vec::<(usize, Vec<usize>)>::new();
+    for (edge, faces) in serialized.iter().enumerate() {
+        let allowed = &allowed_faces[edge];
+        if faces[0] != faces[1] {
+            if !allowed.is_empty() {
+                return None;
+            }
+            continue;
+        }
+        let mut choices = vec![faces[0]];
+        choices.extend(allowed.iter().copied().filter(|face| *face != faces[0]));
+        choices.sort_unstable();
+        choices.dedup();
+        if choices.len() > 1 {
+            branches.push((edge, choices));
+        }
+    }
+    branches.sort_unstable_by_key(|(edge, choices)| (choices.len(), *edge));
+
+    let mut visited = 0;
+    Some(visit(
+        &branches,
+        0,
+        &mut assignment,
+        max_assignments,
+        &mut visited,
+        &mut visitor,
+    ))
+}
+
 /// Complete repeated standard edge-face slots when carrier incidence and a
 /// complete trim-boundary partition select one common assignment.
 pub(crate) fn resolve_standard_duplicate_edge_faces(
@@ -424,134 +1124,19 @@ pub(crate) fn resolve_standard_duplicate_edge_faces(
     allowed_faces: &[Vec<usize>],
 ) -> Option<Vec<[usize; 2]>> {
     let face_count = selected_standard_run(bytes)?.1;
+    let context = StandardMeshBoundaryContext::parse(bytes, serialized);
     unique_duplicate_face_assignment(serialized, allowed_faces, face_count, |assignment| {
-        standard_mesh_boundary_assignments(bytes, assignment, None).is_some()
+        context.as_ref().map_or_else(
+            || standard_mesh_boundary_assignments(bytes, assignment, None).is_some(),
+            |base| {
+                base.with_edge_faces(assignment)
+                    .and_then(|context| {
+                        standard_mesh_boundary_assignments_from_context(&context, None)
+                    })
+                    .is_some()
+            },
+        )
     })
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum FaceEndpointClosureOutcome {
-    Closed,
-    Rejected,
-    Exhausted,
-}
-
-/// Test whether one face can select endpoint pairs that form closed cycles.
-/// The search is bounded independently of the global incidence solver.
-pub(crate) fn face_endpoint_candidates_close(
-    edge_faces: &[[usize; 2]],
-    candidates: &[Vec<[usize; 2]>],
-    face: usize,
-) -> FaceEndpointClosureOutcome {
-    const MAX_STATES: usize = 65_536;
-
-    fn pair_fits(degrees: &HashMap<usize, u8>, pair: [usize; 2]) -> bool {
-        let left = usize::from(degrees.get(&pair[0]).copied().unwrap_or(0));
-        let right = usize::from(degrees.get(&pair[1]).copied().unwrap_or(0));
-        if pair[0] == pair[1] {
-            left + 2 <= 2
-        } else {
-            left < 2 && right < 2
-        }
-    }
-
-    pub(crate) fn adjust(degrees: &mut HashMap<usize, u8>, pair: [usize; 2], increase: bool) {
-        for point in pair {
-            if increase {
-                *degrees.entry(point).or_default() += 1;
-            } else {
-                let remove = if let Some(degree) = degrees.get_mut(&point) {
-                    *degree -= 1;
-                    *degree == 0
-                } else {
-                    false
-                };
-                if remove {
-                    degrees.remove(&point);
-                }
-            }
-        }
-    }
-
-    pub(crate) fn search(
-        all_edges: &[usize],
-        branches: &[(usize, Vec<[usize; 2]>)],
-        at: usize,
-        selected: &mut [[usize; 2]],
-        degrees: &mut HashMap<usize, u8>,
-        states: &mut usize,
-    ) -> Option<bool> {
-        if at == branches.len() {
-            return Some(incidence_cycles(all_edges, selected).is_some());
-        }
-        let (edge, candidates) = &branches[at];
-        let viable = candidates
-            .iter()
-            .copied()
-            .filter(|pair| pair_fits(degrees, *pair))
-            .collect::<Vec<_>>();
-        if viable.len() > 1 {
-            if *states >= MAX_STATES {
-                return None;
-            }
-            *states += 1;
-        }
-        for pair in viable {
-            adjust(degrees, pair, true);
-            selected[*edge] = pair;
-            if search(all_edges, branches, at + 1, selected, degrees, states)? {
-                return Some(true);
-            }
-            adjust(degrees, pair, false);
-        }
-        Some(false)
-    }
-
-    if edge_faces.len() != candidates.len() {
-        return FaceEndpointClosureOutcome::Rejected;
-    }
-    let edges = edge_faces
-        .iter()
-        .enumerate()
-        .filter_map(|(edge, faces)| faces.contains(&face).then_some(edge))
-        .collect::<Vec<_>>();
-    if edges.is_empty() {
-        return FaceEndpointClosureOutcome::Rejected;
-    }
-    let Ok(mut selected) = alloc_filled(
-        candidates.len(),
-        [0; 2],
-        "catia missing-edge selected endpoints",
-    ) else {
-        return FaceEndpointClosureOutcome::Rejected;
-    };
-    let mut degrees = HashMap::new();
-    let mut branches = Vec::new();
-    for &edge in &edges {
-        let mut options = candidates[edge].clone();
-        for pair in &mut options {
-            pair.sort_unstable();
-        }
-        options.sort_unstable();
-        options.dedup();
-        match options.as_slice() {
-            [] => return FaceEndpointClosureOutcome::Rejected,
-            [pair] => {
-                if !pair_fits(&degrees, *pair) {
-                    return FaceEndpointClosureOutcome::Rejected;
-                }
-                selected[edge] = *pair;
-                adjust(&mut degrees, *pair, true);
-            }
-            _ => branches.push((edge, options)),
-        }
-    }
-    branches.sort_unstable_by_key(|(edge, options)| (options.len(), *edge));
-    match search(&edges, &branches, 0, &mut selected, &mut degrees, &mut 0) {
-        Some(true) => FaceEndpointClosureOutcome::Closed,
-        Some(false) => FaceEndpointClosureOutcome::Rejected,
-        None => FaceEndpointClosureOutcome::Exhausted,
-    }
 }
 
 pub(crate) fn resolve_edge_faces_from_runs(
@@ -616,7 +1201,9 @@ enum MeshFaceAssignmentDomain {
 
 #[derive(Debug, Clone)]
 pub(crate) struct StandardMeshBoundaryContext {
+    analysis: Arc<StandardMeshAnalysis>,
     edge_rows: Vec<EdgeRow>,
+    fixed_complete_row_spans: bool,
     coverage: Vec<MeshFaceCoverage>,
     edge_ports: Vec<[u32; 2]>,
     edge_runs: Vec<MeshEdgeRun>,
@@ -625,12 +1212,20 @@ pub(crate) struct StandardMeshBoundaryContext {
 
 impl StandardMeshBoundaryContext {
     pub(crate) fn parse(bytes: &[u8], edge_faces: &[[usize; 2]]) -> Option<Self> {
-        let analysis = standard_mesh_analysis(bytes)?;
+        Self::parse_ports(bytes, edge_faces, false)
+    }
+
+    pub(crate) fn parse_ports(
+        bytes: &[u8],
+        edge_faces: &[[usize; 2]],
+        global_handle_ports: bool,
+    ) -> Option<Self> {
+        let analysis = Arc::new(standard_mesh_analysis(bytes)?);
         if analysis.edge_rows.len() != edge_faces.len() {
             return None;
         }
         let coverage = mesh_face_coverage(&analysis, edge_faces)?;
-        let local_ports = edge_port_identities(bytes)?;
+        let local_ports = solver_ports(bytes, global_handle_ports)?;
         let edge_ports = mesh_edge_ports(&analysis, &local_ports)?;
         let edge_runs = mesh_edge_runs(&analysis)?;
         let cycle_lengths = analysis
@@ -638,12 +1233,29 @@ impl StandardMeshBoundaryContext {
             .iter()
             .map(|cycles| cycles.iter().map(Vec::len).collect())
             .collect();
+        let edge_rows = analysis.edge_rows.clone();
+        let fixed_complete_row_spans = analysis.fixed_complete_row_spans;
         Some(Self {
-            edge_rows: analysis.edge_rows,
+            analysis,
+            edge_rows,
+            fixed_complete_row_spans,
             coverage,
             edge_ports,
             edge_runs,
             cycle_lengths,
+        })
+    }
+
+    fn with_edge_faces(&self, edge_faces: &[[usize; 2]]) -> Option<Self> {
+        let coverage = mesh_face_coverage(&self.analysis, edge_faces)?;
+        Some(Self {
+            analysis: Arc::clone(&self.analysis),
+            edge_rows: self.edge_rows.clone(),
+            fixed_complete_row_spans: self.fixed_complete_row_spans,
+            coverage,
+            edge_ports: self.edge_ports.clone(),
+            edge_runs: self.edge_runs.clone(),
+            cycle_lengths: self.cycle_lengths.clone(),
         })
     }
 }
@@ -1019,7 +1631,8 @@ fn standard_mesh_missing_edge_assignment_domains(
         gaps: &[MeshBoundaryGap],
         cycle_lengths: &[usize],
         missing: &[usize],
-        _rows: &[EdgeRow],
+        rows: &[EdgeRow],
+        fixed_complete_row_spans: bool,
         constraints: PlacementConstraints<'_>,
         canonicalize_spans: bool,
         remaining_states: &mut usize,
@@ -1029,6 +1642,8 @@ fn standard_mesh_missing_edge_assignment_domains(
             gaps: &'a [MeshBoundaryGap],
             cycle_lengths: &'a [usize],
             missing: &'a [usize],
+            rows: &'a [EdgeRow],
+            fixed_complete_row_spans: bool,
             edge_ports: Option<&'a [[u32; 2]]>,
             corner_ports: &'a HashMap<MeshCorner, u32>,
             edge_points: Option<&'a [Arc<HashSet<usize>>]>,
@@ -1175,19 +1790,25 @@ fn standard_mesh_missing_edge_assignment_domains(
                     }
                     let edge = self.missing[rank];
                     let remaining = target - offset;
-                    let canonical_span = self
-                        .canonical_spans
-                        .then(|| {
-                            if self.canonical_gap_partitions {
-                                return Some(1);
-                            }
-                            self.missing
-                                .iter()
-                                .enumerate()
-                                .filter(|(other, _)| *other != rank && used & (1 << other) == 0)
-                                .try_fold(remaining, |available, _| available.checked_sub(1))
-                        })
+                    let row_span = (self.fixed_complete_row_spans
+                        && self.rows[edge].boundary_layout
+                            == EdgeBoundaryLayout::CompleteBoundaryRun)
+                        .then(|| self.rows[edge].handles.len().checked_sub(1))
                         .flatten();
+                    let canonical_span = row_span.or_else(|| {
+                        self.canonical_spans
+                            .then(|| {
+                                if self.canonical_gap_partitions {
+                                    return Some(1);
+                                }
+                                self.missing
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(other, _)| *other != rank && used & (1 << other) == 0)
+                                    .try_fold(remaining, |available, _| available.checked_sub(1))
+                            })
+                            .flatten()
+                    });
                     let spans: Box<dyn Iterator<Item = usize>> = if let Some(span) = canonical_span
                     {
                         Box::new(std::iter::once(span))
@@ -1275,6 +1896,8 @@ fn standard_mesh_missing_edge_assignment_domains(
             gaps,
             cycle_lengths,
             missing,
+            rows,
+            fixed_complete_row_spans,
             edge_ports,
             corner_ports,
             edge_points,
@@ -1569,6 +2192,10 @@ fn standard_mesh_missing_edge_assignment_domains(
         .zip(edge_point_transitions.as_deref());
     let coverage = &context.coverage;
     let edge_ports = &context.edge_ports;
+    let complete_boundary_ports = edge_rows
+        .iter()
+        .all(|row| row.boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun);
+    let placement_ports = complete_boundary_ports.then_some(edge_ports.as_slice());
     let singleton_edge_points = edge_candidates.map(|candidates| {
         candidates
             .iter()
@@ -1586,16 +2213,18 @@ fn standard_mesh_missing_edge_assignment_domains(
     for run in edge_runs {
         let length = context.cycle_lengths[run.face][run.cycle];
         let end = (run.start + run.segment_count) % length;
-        let ports = edge_ports[run.edge];
-        let oriented = if run.reversed {
-            [ports[1], ports[0]]
-        } else {
-            ports
-        };
-        for (corner, port) in [(run.start, oriented[0]), (end, oriented[1])] {
-            match corner_ports.insert((run.face, run.cycle, corner), port) {
-                Some(stored) if stored != port => return None,
-                Some(_) | None => {}
+        if edge_rows[run.edge].boundary_layout == EdgeBoundaryLayout::CompleteBoundaryRun {
+            let ports = edge_ports[run.edge];
+            let oriented = if run.reversed {
+                [ports[1], ports[0]]
+            } else {
+                ports
+            };
+            for (corner, port) in [(run.start, oriented[0]), (end, oriented[1])] {
+                match corner_ports.insert((run.face, run.cycle, corner), port) {
+                    Some(stored) if stored != port => return None,
+                    Some(_) | None => {}
+                }
             }
         }
         if let Some(candidates) = edge_candidates {
@@ -1670,8 +2299,9 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
+                    context.fixed_complete_row_spans,
                     (
-                        Some(edge_ports),
+                        placement_ports,
                         &corner_ports,
                         endpoint_constraints,
                         &corner_points,
@@ -1687,6 +2317,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
+                    context.fixed_complete_row_spans,
                     (None, &HashMap::new(), endpoint_constraints, &corner_points),
                     canonicalize_spans,
                     &mut remaining_states,
@@ -1699,6 +2330,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                     cycle_lengths,
                     &face.missing_edges,
                     edge_rows,
+                    context.fixed_complete_row_spans,
                     (None, &HashMap::new(), None, &MeshCornerPoints::new()),
                     canonicalize_spans,
                     &mut remaining_states,
@@ -1710,8 +2342,10 @@ fn standard_mesh_missing_edge_assignment_domains(
                 defer_validation.then(|| MeshFaceAssignmentDomain::DeferredValidation(face.clone()))
             })
     });
-    let domains = assignment_results.collect::<Option<Vec<_>>>()?;
-    Some((domains, edge_runs.clone()))
+    Some((
+        assignment_results.collect::<Option<Vec<_>>>()?,
+        edge_runs.clone(),
+    ))
 }
 
 pub(crate) fn standard_mesh_missing_edge_assignments(
@@ -1738,8 +2372,9 @@ pub(crate) fn standard_mesh_missing_edge_assignments(
 }
 
 /// Project complete unmatched-edge assignments to the placement domain for
-/// each face. Every unmatched row may cover any positive remaining span;
-/// row arity fixes a span only after its interior handles match the boundary.
+/// each face. FBB complete rows cover exactly one segment per adjacent handle
+/// pair. Standard interior rows remain open-span until their sample chain is
+/// matched to the boundary.
 #[cfg(test)]
 #[must_use]
 pub fn standard_mesh_missing_edge_placements(
@@ -1816,12 +2451,15 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                     .collect::<Vec<_>>();
                 for run in runs.iter().filter(|run| run.face == face) {
                     let length = cycles[run.cycle].length;
+                    let fixed_direction = edge_candidates.is_none()
+                        || context.edge_rows[run.edge].boundary_layout
+                            == EdgeBoundaryLayout::CompleteBoundaryRun;
                     cycles[run.cycle].exact_uses.push((
                         MeshBoundaryEdgeCandidate {
                             edge: run.edge,
                             start: run.start,
                             end: (run.start + run.segment_count) % length,
-                            reversed: Some(run.reversed),
+                            reversed: fixed_direction.then_some(run.reversed),
                         },
                         run.segment_count,
                     ));
@@ -1848,13 +2486,16 @@ pub(crate) fn standard_mesh_boundary_domains_from_context(
                     )
                     .ok()?;
                     for run in runs.iter().filter(|run| run.face == face) {
+                        let fixed_direction = edge_candidates.is_none()
+                            || context.edge_rows[run.edge].boundary_layout
+                                == EdgeBoundaryLayout::CompleteBoundaryRun;
                         boundaries[run.cycle].push((
                             MeshBoundaryEdgeCandidate {
                                 edge: run.edge,
                                 start: run.start,
                                 end: (run.start + run.segment_count)
                                     % cycle_lengths[face][run.cycle],
-                                reversed: edge_candidates.is_none().then_some(run.reversed),
+                                reversed: fixed_direction.then_some(run.reversed),
                             },
                             run.segment_count,
                         ));
@@ -2171,27 +2812,18 @@ fn standard_mesh_assignment_corner_points(
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
 ) -> Option<(Vec<Vec<Vec<MeshEdgePlacementCandidate>>>, MeshCornerPoints)> {
-    let edge_rows = standard_edge_rows(bytes)?;
+    let analysis = standard_mesh_analysis(bytes)?;
+    let edge_rows = &analysis.edge_rows;
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
         return None;
     }
-    let runs = standard_mesh_edge_runs(bytes)?;
+    let runs = mesh_edge_runs(&analysis)?;
     let assignments = standard_mesh_missing_edge_assignments(bytes, edge_faces, None, true)?;
-    let (face_start, face_count, _) = selected_standard_run(bytes)?;
-    let cycle_solutions = [1, 2, 3]
-        .into_iter()
-        .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))
-        .map(|trims| {
-            trims
-                .iter()
-                .map(|trim| {
-                    boundary_cycles(&trim.triangles)
-                        .map(|cycles| cycles.iter().map(Vec::len).collect::<Vec<_>>())
-                })
-                .collect::<Option<Vec<_>>>()
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let [cycle_lengths] = <[Vec<Vec<usize>>; 1]>::try_from(cycle_solutions).ok()?;
+    let cycle_lengths = analysis
+        .cycles
+        .iter()
+        .map(|cycles| cycles.iter().map(Vec::len).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
     let mut corner_points = MeshCornerPoints::new();
     let mut run_constraints = Vec::new();
     for run in runs {
@@ -2473,6 +3105,16 @@ pub fn standard_mesh_placement_endpoint_pairs(
     Some(domains)
 }
 
+fn bind_port_point(port_points: &mut HashMap<u32, usize>, port: u32, point: usize) -> bool {
+    match port_points.entry(port) {
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(point);
+            true
+        }
+        std::collections::hash_map::Entry::Occupied(entry) => *entry.get() == point,
+    }
+}
+
 /// Propagate byte-level endpoint ports through independently resolved physical
 /// edge endpoint pairs. The result is rejected atomically when any port mapping
 /// contradicts a resolved pair.
@@ -2481,7 +3123,27 @@ pub fn propagate_edge_port_points(
     edge_ports: &[[u32; 2]],
     endpoint_pairs: &[Option<[usize; 2]>],
 ) -> Option<Vec<Option<[usize; 2]>>> {
+    propagate_edge_port_points_with_ordered_seeds(edge_ports, endpoint_pairs, &[])
+}
+
+/// Propagate endpoint points through physical edge ports, retaining an
+/// independently decoded orientation when one is available.
+///
+/// `ordered_endpoint_pairs` is indexed like `edge_ports`. A supplied pair is
+/// in the physical row direction, not merely an unordered candidate. It must
+/// agree with an existing candidate when that candidate is present. Such a
+/// seed is the only valid way to orient a port component whose resolved rows
+/// all carry the same unordered pair.
+#[must_use]
+pub fn propagate_edge_port_points_with_ordered_seeds(
+    edge_ports: &[[u32; 2]],
+    endpoint_pairs: &[Option<[usize; 2]>],
+    ordered_endpoint_pairs: &[Option<[usize; 2]>],
+) -> Option<Vec<Option<[usize; 2]>>> {
     if edge_ports.len() != endpoint_pairs.len() {
+        return None;
+    }
+    if !ordered_endpoint_pairs.is_empty() && ordered_endpoint_pairs.len() != endpoint_pairs.len() {
         return None;
     }
     let mut resolved = endpoint_pairs.to_vec();
@@ -2494,6 +3156,25 @@ pub fn propagate_edge_port_points(
     }
     let mut port_points = HashMap::<u32, usize>::new();
 
+    if !ordered_endpoint_pairs.is_empty() {
+        for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
+            let Some(ordered) = ordered else { continue };
+            if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
+                return None;
+            }
+            let ports = edge_ports[edge];
+            if ports[0] == ports[1] && ordered[0] != ordered[1] {
+                return None;
+            }
+            if !bind_port_point(&mut port_points, ports[0], ordered[0])
+                || !bind_port_point(&mut port_points, ports[1], ordered[1])
+            {
+                return None;
+            }
+            resolved[edge] = Some(*ordered);
+        }
+    }
+
     for (&port, edges) in &edges_by_port {
         let mut intersection: Option<HashSet<usize>> = None;
         for &edge in edges {
@@ -2505,8 +3186,9 @@ pub fn propagate_edge_port_points(
             });
         }
         if let Some(points) = intersection {
-            if points.len() == 1 {
-                port_points.insert(port, *points.iter().next()?);
+            if points.len() == 1 && !bind_port_point(&mut port_points, port, *points.iter().next()?)
+            {
+                return None;
             }
         }
     }
@@ -2538,6 +3220,7 @@ pub fn propagate_edge_port_points(
                     port_points.insert(ports[0], left);
                     inserted.push(ports[0]);
                 }
+                (Some(_), None) | (None, Some(_)) => return None,
                 (Some(left_point), Some(right_point))
                     if !same_unordered_pair([left_point, right_point], [left, right]) =>
                 {
@@ -2571,20 +3254,71 @@ pub fn propagate_edge_port_points(
         .zip(resolved.iter().copied())
         .filter_map(|(ports, pair)| pair.map(|pair| (ports, vec![pair])))
         .unzip();
-    edge_port_candidate_assignment(&resolved_ports, &resolved_candidates, false)?;
+    edge_port_candidate_assignment(&resolved_ports, &resolved_candidates, false, true)?;
     Some(resolved)
 }
 
-/// Propagate endpoint points through the subgraph of edges carrying native
-/// endpoint identities. Edges without a native identity pair remain
-/// unresolved and do not weaken or invalidate known components.
+/// Propagate endpoint points while leaving every port component that touches
+/// an unresolved row to the joint topology solver. Independently ordered
+/// seeds remain usable, but unordered candidate rows in that component do not
+/// orient or constrain one another prematurely.
 #[must_use]
-pub fn propagate_partial_edge_port_points(
+pub(crate) fn propagate_edge_port_points_with_ordered_seeds_and_deferred(
+    edge_ports: &[[u32; 2]],
+    endpoint_pairs: &[Option<[usize; 2]>],
+    ordered_endpoint_pairs: &[Option<[usize; 2]>],
+    deferred_edges: &[bool],
+) -> Option<Vec<Option<[usize; 2]>>> {
+    if edge_ports.len() != endpoint_pairs.len()
+        || deferred_edges.len() != endpoint_pairs.len()
+        || (!ordered_endpoint_pairs.is_empty()
+            && ordered_endpoint_pairs.len() != endpoint_pairs.len())
+    {
+        return None;
+    }
+    let mut effective_deferred = deferred_edges.to_vec();
+    if !expand_deferred_edge_port_components(edge_ports, &mut effective_deferred) {
+        return None;
+    }
+    let mut masked_pairs = endpoint_pairs.to_vec();
+    for (edge, deferred) in effective_deferred.into_iter().enumerate() {
+        if deferred
+            && ordered_endpoint_pairs
+                .get(edge)
+                .copied()
+                .flatten()
+                .is_none()
+        {
+            masked_pairs[edge] = None;
+        }
+    }
+    propagate_edge_port_points_with_ordered_seeds(edge_ports, &masked_pairs, ordered_endpoint_pairs)
+}
+
+/// Propagate ordered endpoint seeds through the subset of rows with native
+/// port identities. Rows without a port pair retain their independent seed or
+/// candidate, but cannot participate in port propagation.
+#[must_use]
+pub fn propagate_partial_edge_port_points_with_ordered_seeds(
     edge_ports: &[Option<[u32; 2]>],
     endpoint_pairs: &[Option<[usize; 2]>],
+    ordered_endpoint_pairs: &[Option<[usize; 2]>],
 ) -> Option<Vec<Option<[usize; 2]>>> {
     if edge_ports.len() != endpoint_pairs.len() {
         return None;
+    }
+    if !ordered_endpoint_pairs.is_empty() && ordered_endpoint_pairs.len() != endpoint_pairs.len() {
+        return None;
+    }
+    let mut resolved = endpoint_pairs.to_vec();
+    if !ordered_endpoint_pairs.is_empty() {
+        for (edge, ordered) in ordered_endpoint_pairs.iter().enumerate() {
+            let Some(ordered) = ordered else { continue };
+            if resolved[edge].is_some_and(|pair| !same_unordered_pair(pair, *ordered)) {
+                return None;
+            }
+            resolved[edge] = Some(*ordered);
+        }
     }
     let known = edge_ports
         .iter()
@@ -2592,19 +3326,39 @@ pub fn propagate_partial_edge_port_points(
         .filter_map(|(edge, ports)| ports.map(|ports| (edge, ports)))
         .collect::<Vec<_>>();
     if known.is_empty() {
-        return Some(endpoint_pairs.to_vec());
+        return Some(resolved);
     }
     let ports = known.iter().map(|(_, ports)| *ports).collect::<Vec<_>>();
     let pairs = known
         .iter()
-        .map(|(edge, _)| endpoint_pairs[*edge])
+        .map(|(edge, _)| resolved[*edge])
         .collect::<Vec<_>>();
-    let propagated = propagate_edge_port_points(&ports, &pairs)?;
-    let mut resolved = endpoint_pairs.to_vec();
+    let ordered = known
+        .iter()
+        .map(|(edge, _)| ordered_endpoint_pairs.get(*edge).copied().flatten())
+        .collect::<Vec<_>>();
+    let propagated = propagate_edge_port_points_with_ordered_seeds(&ports, &pairs, &ordered)?;
     for ((edge, _), pair) in known.into_iter().zip(propagated) {
         resolved[edge] = pair;
     }
     Some(resolved)
+}
+
+#[derive(Clone, Copy)]
+enum PortCandidateSearchMode {
+    FirstNative,
+    UniqueNative,
+    UniqueMesh,
+}
+
+impl PortCandidateSearchMode {
+    fn requires_unique(self) -> bool {
+        matches!(self, Self::UniqueNative | Self::UniqueMesh)
+    }
+
+    fn enforces_point_bijection(self) -> bool {
+        matches!(self, Self::FirstNative | Self::UniqueNative)
+    }
 }
 
 struct PortCandidateSearch<'a> {
@@ -2618,7 +3372,7 @@ struct PortCandidateSearch<'a> {
     ambiguous: bool,
     exhausted: bool,
     states: usize,
-    require_unique: bool,
+    mode: PortCandidateSearchMode,
 }
 
 impl PortCandidateSearch<'_> {
@@ -2633,10 +3387,11 @@ impl PortCandidateSearch<'_> {
                     self.port_points
                         .get(&port)
                         .is_none_or(|stored| *stored == *point)
-                        && self
-                            .point_ports
-                            .get(point)
-                            .is_none_or(|stored| *stored == port)
+                        && (!self.mode.enforces_point_bijection()
+                            || self
+                                .point_ports
+                                .get(point)
+                                .is_none_or(|stored| *stored == port))
                 })
         });
         oriented
@@ -2647,7 +3402,9 @@ impl PortCandidateSearch<'_> {
         for (&port, point) in self.ports[edge].iter().zip(points) {
             if let std::collections::hash_map::Entry::Vacant(entry) = self.port_points.entry(port) {
                 entry.insert(point);
-                self.point_ports.insert(point, port);
+                if self.mode.enforces_point_bijection() {
+                    self.point_ports.insert(point, port);
+                }
                 inserted.push((port, point));
             }
         }
@@ -2659,7 +3416,9 @@ impl PortCandidateSearch<'_> {
         self.edge_pairs[edge] = None;
         for (port, point) in inserted {
             self.port_points.remove(&port);
-            self.point_ports.remove(&point);
+            if self.mode.enforces_point_bijection() {
+                self.point_ports.remove(&point);
+            }
         }
     }
 
@@ -2674,7 +3433,10 @@ impl PortCandidateSearch<'_> {
         // still contain symmetric coordinate assignments. Ambiguity beyond
         // this bound is retained for later paths rather than partially bound.
         const MAX_STATES: usize = 1_024;
-        if self.ambiguous || self.exhausted || (!self.require_unique && self.solution.is_some()) {
+        if self.ambiguous
+            || self.exhausted
+            || (!self.mode.requires_unique() && self.solution.is_some())
+        {
             return;
         }
         let mut propagated = Vec::new();
@@ -2730,7 +3492,7 @@ impl PortCandidateSearch<'_> {
                     })
                     .collect::<Vec<_>>();
                 match &self.solution_key {
-                    Some(solution) if self.require_unique && *solution != key => {
+                    Some(solution) if self.mode.requires_unique() && *solution != key => {
                         self.ambiguous = true;
                     }
                     None => {
@@ -2752,7 +3514,7 @@ impl PortCandidateSearch<'_> {
                     let inserted = self.assign(edge, points);
                     self.search();
                     self.unassign(edge, inserted);
-                    if !self.require_unique && self.solution.is_some() {
+                    if !self.mode.requires_unique() && self.solution.is_some() {
                         break 'candidates;
                     }
                 }
@@ -2769,13 +3531,63 @@ pub fn bind_edge_port_candidates(
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
 ) -> Option<Vec<[usize; 2]>> {
-    edge_port_candidate_assignment(ports, candidates, true)
+    edge_port_candidate_assignment(ports, candidates, true, true)
+}
+
+/// Resolve mesh-port endpoint candidates without imposing a point-to-port
+/// bijection. Mesh ports are occurrence identities: several incident ports
+/// may terminate at one coordinate row. The result is canonicalized as
+/// unordered endpoint pairs and is returned only when port equality admits
+/// exactly one such assignment.
+#[must_use]
+pub fn unique_mesh_edge_port_candidate_pairs(
+    ports: &[[u32; 2]],
+    candidates: &[Vec<[usize; 2]>],
+) -> Option<Vec<[usize; 2]>> {
+    let mut pairs = edge_port_candidate_assignment(ports, candidates, true, false)?;
+    for pair in &mut pairs {
+        pair.sort_unstable();
+    }
+    Some(pairs)
+}
+
+/// Resolve only settled mesh-port rows when repeated-face rows still carry
+/// an open face domain. Deferred rows contribute neither candidate support nor
+/// connectivity to this search and remain unresolved in the result.
+#[must_use]
+pub fn unique_mesh_edge_port_candidate_pairs_with_deferred(
+    ports: &[[u32; 2]],
+    candidates: &[Vec<[usize; 2]>],
+    deferred_edges: &[bool],
+) -> Option<Vec<Option<[usize; 2]>>> {
+    if ports.len() != candidates.len() || deferred_edges.len() != candidates.len() {
+        return None;
+    }
+    let mut effective_deferred = deferred_edges.to_vec();
+    if !expand_deferred_edge_port_components(ports, &mut effective_deferred) {
+        return None;
+    }
+    let settled = (0..ports.len())
+        .filter(|edge| !effective_deferred[*edge])
+        .collect::<Vec<_>>();
+    let settled_ports = settled.iter().map(|edge| ports[*edge]).collect::<Vec<_>>();
+    let settled_candidates = settled
+        .iter()
+        .map(|edge| candidates[*edge].clone())
+        .collect::<Vec<_>>();
+    let settled_pairs = unique_mesh_edge_port_candidate_pairs(&settled_ports, &settled_candidates)?;
+    let mut resolved = candidates.iter().map(|_| None).collect::<Vec<_>>();
+    for (edge, pair) in settled.into_iter().zip(settled_pairs) {
+        resolved[edge] = Some(pair);
+    }
+    Some(resolved)
 }
 
 fn edge_port_candidate_assignment(
     ports: &[[u32; 2]],
     candidates: &[Vec<[usize; 2]>],
     require_unique: bool,
+    enforce_point_bijection: bool,
 ) -> Option<Vec<[usize; 2]>> {
     if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
         return None;
@@ -2789,9 +3601,11 @@ fn edge_port_candidate_assignment(
                 dependencies.union(previous, edge);
             }
         }
-        for point in candidates[edge].iter().flatten() {
-            if let Some(previous) = edge_by_point.insert(*point, edge) {
-                dependencies.union(previous, edge);
+        if enforce_point_bijection {
+            for point in candidates[edge].iter().flatten() {
+                if let Some(previous) = edge_by_point.insert(*point, edge) {
+                    dependencies.union(previous, edge);
+                }
             }
         }
     }
@@ -2814,6 +3628,12 @@ fn edge_port_candidate_assignment(
             .iter()
             .map(|edge| candidates[*edge].clone())
             .collect::<Vec<_>>();
+        let mode = match (require_unique, enforce_point_bijection) {
+            (false, true) => PortCandidateSearchMode::FirstNative,
+            (true, true) => PortCandidateSearchMode::UniqueNative,
+            (true, false) => PortCandidateSearchMode::UniqueMesh,
+            (false, false) => return None,
+        };
         let mut search = PortCandidateSearch {
             ports: &component_ports,
             candidates: &component_candidates,
@@ -2825,7 +3645,7 @@ fn edge_port_candidate_assignment(
             ambiguous: false,
             exhausted: false,
             states: 0,
-            require_unique,
+            mode,
         };
         search.search();
         if search.ambiguous || search.exhausted {
@@ -2939,3 +3759,6 @@ pub(crate) fn motif_port_points(
         && seen.values().copied().collect::<HashSet<_>>().len() == vertex_count)
         .then_some(seen)
 }
+
+#[cfg(test)]
+mod tests;

@@ -259,9 +259,24 @@ current levels require those matrices and representative fixtures.
   same graph's paired entity and object record, and that source object's
   complete owner chain reaches one transferred Sketch before another
   transferred feature. The source object record is retained as one unresolved
-  native operand. The transfer assigns no neutral sketch entity, locus,
-  parameter, driving state, or dimensional role; exact selector, framing,
-  evaluation, and opcode-offset properties remain available on the constraint.
+  native operand. A paired Range interval with a finite nominal whose bits
+  equal the finite CstAttr_Dimension evaluation supplies one neutral
+  millimetre length parameter on the constraint; the nominal framing, bits,
+  and opcode offset remain parameter properties. The transfer assigns no
+  neutral sketch entity, locus, dimensional subtype, driving state, or
+  operation role; exact selector, framing, evaluation, and opcode-offset
+  properties remain available on the constraint.
+  An exact two-selector `Range`/`CstAttr_Dimension` production transfers a
+  document PMI dimension when its admitted dimension framing carries a finite
+  nominal, the paired constraint evaluation is finite, and the two scalar
+  values have identical binary64 bits. The transfer carries the nullable lower
+  and upper range slots as millimetre deviations and derives the PMI identity
+  from the native entity identity. It assigns the selector name as an opaque
+  dimension kind and no target or sketch binding; the exact selector, framing,
+  evaluation, and range source remain in the native namespace. A range that
+  enters the proven sketch-constraint lane is not duplicated as PMI. Range-only
+  intervals and other selector sequences remain native until their semantic
+  owner is established.
   Exact schema-configuration `Configuration` records retain the first
   reference's payload-relative byte offset, selected value-schema ordinal,
   entry, and name, and retain the second reference as an independently resolved,
@@ -292,6 +307,16 @@ current levels require those matrices and representative fixtures.
   with its paired entity record. The entity keeps the source field identity and
   class as native geometry. Coordinates, placement, construction state,
   profiles, and constraints remain unresolved under DI-15 through DI-22.
+- An exact source-closed relation from an admitted `2DPoint` field to a
+  complete `ConstraintDYS` field transfers one unresolved native sketch
+  constraint when both fields are selected by the same transferred `Sketch`
+  owner list and their graph, entity, design-object, class-entry, and owner
+  identities agree. The point entity, target field and entity, and every
+  source/reference offset remain available. Every outbound target-field
+  reference remains in source order with its identity, container, offset,
+  resolution state, and resolved target identity/class when available.
+  Constraint type, coordinates, parameters, driving or active state, and solver
+  semantics remain unresolved; this slice does not raise the CATIA score.
 - A transferred typed parameter receives a feature owner only when its exact
   entity record selects an object record whose design-object owner chain
   reaches a transferred feature through a complete acyclic prefix. The nearest
@@ -303,28 +328,54 @@ current levels require those matrices and representative fixtures.
   tie-breaker. This records parameter order and ownership only; it does not
   assign a parameter to an operation role such as profile, direction, extent,
   or output.
-- Opaque native operation definitions expose exact feature-owned parameter
-  expressions in their scope-unique neutral-name keyed `parameters` map. The
-  first nonempty source name is retained. Empty names and later collisions use
-  deterministic `Parameter` or `#n` suffix names and retain the original
-  spelling in `source_name`. The map records generic feature inputs only; it
-  does not assign operation roles.
+- Typed unresolved operation definitions expose the admitted CATIA operation
+  family without asserting unresolved operands: `Prism_EndLimit_Length`,
+  `Prism_ThickThin1`, and `Prism_ThickThin2` are unresolved extrusions,
+  `Revol_ThickThin1` is an
+  unresolved revolution, `Sweep_ThickThin1` is a sweep with unresolved section,
+  path, and result mode, `EdgeFillet` is an unresolved fillet, and
+  `CircPattern_RadialNumber` is an unresolved circular pattern. Exact
+  definition-bound values remain in `Feature.source_properties` under stable
+  `catia_definition_` keys. Feature-owned parameter expressions remain model
+  parameters and are copied under `catia_parameter_<neutral-name>` source
+  properties. These values record generic feature inputs only; they do not
+  assign operation roles, pattern seeds, an axis, an angle, or an instance
+  count.
+- Exact source-schema `Range` fields whose entity record is linked through a
+  listed field object on a complete operation owner chain are copied to
+  `Feature.source_properties` under `catia_range_<ordinal>_*`. The projection
+  retains selectors, prefix, nullable slots, nominal framing, and incidence
+  counts. It does not assign an extent, parameter, PMI, sketch, or other
+  operation role; semantic ownership remains unresolved under DI-18.
 - A transferred feature receives a structural `parent` only when its exact
   `owner_design_object` incidence selects another design object that also
   transfers as a feature. Self-links and owner cycles do not create neutral
-  history links. Structural parent transfer does not assign operation
-  dependencies.
+  history links. A payload reference from one transferred feature's design
+  object to a different transferred feature, or to a target whose complete
+  owner-design-object chain reaches that feature, transfers one structural
+  dependency when the target feature has an earlier ordinal. Preserve first
+  relation order and deduplicate by target. Storage selectors, unresolved
+  targets, incomplete or cyclic owner chains, self-links, and forward targets
+  do not establish dependencies. This link does not assign an operation role.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node with the design object's first-field byte offset as its source
   history ordinal. Schema fields named `PRTSketch` or `Sketch` do not establish
   sketch instances.
-- Exact separator-form owner declarations for the admitted native operation
-  classes `EdgeFillet`, `Prism_ThickThin1`, `Prism_ThickThin2`,
-  `Revol_ThickThin1`, and `Sweep_ThickThin1` transfer opaque native operation
-  nodes with source order, identity, and structural parent linkage. Their
-  operands, profiles, directions, extents, outputs, dependencies, and typed
-  parameter roles remain unresolved; this slice does not raise the CATIA score.
+- Exact separator-form owner declarations for `GSMPlaneAngle` and
+  `GSMPlaneOffset` transfer unresolved constructed-reference-plane family nodes
+  with source order, identity, and structural parent linkage. The transfer does
+  not assign support, angle, signed offset, normal, in-plane frame, or
+  construction dependencies; this slice does not raise the CATIA score.
+- Exact separator-form owner declarations for the admitted operation classes
+  `EdgeFillet`, `Prism_EndLimit_Length`, `Prism_ThickThin1`,
+  `Prism_ThickThin2`, `Revol_ThickThin1`, `Sweep_ThickThin1`, and
+  `CircPattern_RadialNumber` transfer family-specific unresolved feature nodes
+  with source order, identity, and structural parent linkage. Their operands,
+  profiles, directions, axes, extents, outputs, edge groups, radii, pattern
+  seeds, pattern axis, pattern angle, pattern count, operation-specific
+  dependency roles, and regeneration semantics remain unresolved; this slice
+  does not raise the CATIA score.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.
@@ -344,6 +395,15 @@ current levels require those matrices and representative fixtures.
   closure, endpoint resolution, and distinct reconstructed topology. Bounded
   search exhaustion is partitioned into quotient preparation, incidence
   enumeration, and endpoint resolution.
+- Same-carrier standard cone line rows retain only endpoint pairs whose segment
+  is a straight generator through the analytically derived cone apex. The
+  existing endpoint surface-membership and trim-incidence checks remain
+  independent gates.
+- FBB-only groups with one exact native endpoint pair for every edge row can
+  close topology directly from their two counted edge tables and counted vertex
+  table. This path reuses the existing face-incidence and edge-class quotient,
+  does not infer endpoint identities from trim order, and falls through to the
+  bounded mesh solver when the direct closure is not complete.
 - The standard face spine admits both unflagged `30 04 04 ff` and flagged
   `b0 04 04 ff` rows. Standard edge-table handle width is selected uniquely
   from one, two, or three bytes by landing on the complete counted vertex
@@ -419,6 +479,17 @@ current levels require those matrices and representative fixtures.
   edge's face carriers, both consolidated pcurves bind to the corresponding
   face coedges. The partner face receives the uniquely selected free-form
   carrier, and the edge construction uses the two face surfaces directly.
+  An explicit class-`0x20` support identity that equals one unique standard
+  `00 33` carrier tag uses that carrier's stored chart directly. Its pcurve
+  endpoint lifts must select the same serialized edge endpoints before the
+  edge or face-side binding is admitted; duplicate tags, unknown carriers,
+  and failed lifts remain unbound.
+  An explicit support identity may first pass through the unique outer alias
+  closure: a direct alias preserves its tag, and a grouped alias selects the
+  unique direct target in the same group. Duplicate raw alias tags, missing or
+  multiply targeted groups, and failed canonicalization do not fall back to
+  the raw identity. This closure does not rewrite B5 object-stream or
+  allocation namespaces.
   Opposite edge or coedge traversal reverses the corresponding pcurve
   parameterization. A missing or multiply matching edge, support carrier, face
   carrier, or coedge remains unbound.

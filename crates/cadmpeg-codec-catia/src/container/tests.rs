@@ -53,20 +53,29 @@ fn test_descriptor(name: &str, physical_offset: u32, length: u32) -> Descriptor 
     }
 }
 
+fn fbb_only_tables_with_shared_delimiter() -> Vec<u8> {
+    let mut bytes = vec![0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2];
+    for (kind, handles) in [(1u8, [1u8, 2]), (2, [2, 3])] {
+        bytes.extend_from_slice(&[0x01, kind, 0x01, 0x02, 0x02]);
+        bytes.extend_from_slice(&handles);
+        bytes.extend_from_slice(super::EDGE_DELIMITER.as_slice());
+    }
+    bytes.extend_from_slice(&[0x01, 0x06, 0x00]);
+    bytes
+}
+
 #[test]
-fn coherent_e5_stream_overrides_nested_fbb_markers() {
-    let inner = InnerDir {
-        inner: 0,
-        descriptors: Vec::new(),
-    };
-    let census = Census {
-        fbb_runs: 2,
-        edge_delimiters: 1,
-        ..Census::default()
-    };
+fn nested_fbb_spine_precedes_a_coherent_e5_stream() {
+    let scan = scan_bytes(standard_catpart());
     assert_eq!(
-        identify_variant(Some(&inner), Some(&[]), &census, true),
-        Variant::E5Stream
+        identify_variant(
+            scan.inner.as_ref(),
+            scan.brep.as_deref(),
+            scan.main_data_stream.as_deref(),
+            &scan.census,
+            true,
+        ),
+        Variant::StandardNested
     );
 }
 
@@ -77,7 +86,7 @@ fn coherent_e5_stream_overrides_zero_entity_markers() {
         ..Census::default()
     };
     assert_eq!(
-        identify_variant(None, None, &census, true),
+        identify_variant(None, None, None, &census, true),
         Variant::E5Stream
     );
 }
@@ -100,7 +109,97 @@ fn coherent_e5_stream_overrides_an_inner_body_without_brep_streams() {
         descriptors: Vec::new(),
     };
     assert_eq!(
-        identify_variant(Some(&inner), None, &Census::default(), true),
+        identify_variant(Some(&inner), None, None, &Census::default(), true),
+        Variant::E5Stream
+    );
+}
+
+#[test]
+fn fbb_only_grammar_wins_when_its_delimiter_is_shared_with_standard() {
+    let inner = InnerDir {
+        inner: 0,
+        descriptors: Vec::new(),
+    };
+    let brep = fbb_only_tables_with_shared_delimiter();
+    let census = Census {
+        fbb_runs: 1,
+        edge_delimiters: 2,
+        ..Census::default()
+    };
+
+    assert_eq!(
+        crate::families::standard::fbb::standard_edge_count(&brep),
+        None
+    );
+    assert_eq!(
+        crate::families::standard::fbb::fbb_only_edge_count(&brep),
+        Some(2)
+    );
+    assert_eq!(
+        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, false),
+        Variant::FbbOnly
+    );
+}
+
+#[test]
+fn unadmitted_fbb_region_is_unknown_even_with_delimiter_markers() {
+    let inner = InnerDir {
+        inner: 0,
+        descriptors: Vec::new(),
+    };
+    let mut brep = vec![0x30, 0x04, 0x04, 0xff, 0, 0, 0, 0];
+    brep.extend_from_slice(EDGE_DELIMITER.as_slice());
+    let census = Census {
+        fbb_runs: 1,
+        edge_delimiters: 1,
+        ..Census::default()
+    };
+
+    assert_eq!(
+        crate::families::standard::fbb::standard_edge_count(&brep),
+        None
+    );
+    assert_eq!(
+        crate::families::standard::fbb::fbb_only_edge_count(&brep),
+        None
+    );
+    assert_eq!(
+        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, false),
+        Variant::Unknown
+    );
+
+    let no_vertex_brep = vec![0x30, 0x04, 0x04, 0xff, 0, 0, 0, 0];
+    let no_vertex_census = Census {
+        fbb_runs: 1,
+        ..Census::default()
+    };
+    assert_eq!(
+        identify_variant(
+            Some(&inner),
+            Some(&no_vertex_brep),
+            Some(&no_vertex_brep),
+            &no_vertex_census,
+            false,
+        ),
+        Variant::Unknown
+    );
+}
+
+#[test]
+fn coherent_e5_stream_precedes_a_partial_fbb_spine() {
+    let inner = InnerDir {
+        inner: 0,
+        descriptors: Vec::new(),
+    };
+    let brep = fbb_only_tables_with_shared_delimiter();
+    let census = Census {
+        fbb_runs: 1,
+        edge_delimiters: 2,
+        ..Census::default()
+    };
+
+    assert_eq!(
+        identify_variant(Some(&inner), Some(&brep), Some(&brep), &census, true),
         Variant::E5Stream
     );
 }
@@ -399,6 +498,7 @@ fn container_summary_exposes_extent_flags_in_logical_order() {
         external_references: Vec::new(),
         finjpl_segments: Vec::new(),
         outer_container_declarations: Vec::new(),
+        surface_alias_tags: std::collections::HashMap::new(),
         census: Census::default(),
         variant: Variant::Unknown,
     };
@@ -509,6 +609,7 @@ fn outer_data_declaration_assigns_class_to_its_uuid_stream() {
         external_references: Vec::new(),
         finjpl_segments: Vec::new(),
         outer_container_declarations: declarations,
+        surface_alias_tags: std::collections::HashMap::new(),
         census: Census::default(),
         variant: Variant::Unknown,
     };
@@ -848,9 +949,27 @@ fn consolidated_record_sources_follow_physical_stream_extents() {
             })
         })
         .collect::<Vec<_>>();
+    let expected_sources = inner
+        .descriptors
+        .iter()
+        .map(|descriptor| {
+            descriptor
+                .extents
+                .iter()
+                .map(|extent| {
+                    let start = inner.inner + extent.phys_off as usize;
+                    start..start + extent.phys_len as usize
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
         crate::container::consolidated_record_ranges(&scan),
         expected
+    );
+    assert_eq!(
+        crate::container::consolidated_record_sources(&scan),
+        expected_sources
     );
     assert!(crate::container::consolidated_record_ranges(&scan)
         .iter()

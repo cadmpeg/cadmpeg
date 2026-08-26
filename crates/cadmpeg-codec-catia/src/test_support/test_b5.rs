@@ -11,18 +11,29 @@ pub(crate) fn append_b5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload:
 }
 
 pub(crate) fn b5_linear_pcurve_payload(surface: u16, start: [f64; 2], end: [f64; 2]) -> Vec<u8> {
+    b5_linear_pcurve_payload_with_knots(surface, [0.0, 1.0], start, end)
+}
+
+pub(crate) fn b5_linear_pcurve_payload_with_knots(
+    surface: u16,
+    knots: [f64; 2],
+    start: [f64; 2],
+    end: [f64; 2],
+) -> Vec<u8> {
+    let [knot0, knot1] = knots;
+    assert!(knot0.is_finite() && knot0 < knot1 && knot1.is_finite());
     let mut payload = vec![0x81, 0x18];
     payload.extend_from_slice(&surface.to_le_bytes());
     payload.extend_from_slice(&[0x01, 5, 1, 1, 9, 1]);
-    payload.extend_from_slice(&le_f64(0.0));
-    payload.extend_from_slice(&le_f64(1.0));
+    payload.extend_from_slice(&le_f64(knot0));
+    payload.extend_from_slice(&le_f64(knot1));
     payload.extend_from_slice(&[9, 9]);
     for uv in [start, end] {
         payload.extend_from_slice(&le_f64(uv[0]));
         payload.extend_from_slice(&le_f64(uv[1]));
     }
     payload.extend_from_slice(&[0x05, 0x05]);
-    for value in [0.0, 1.0, 1.0, 0.0] {
+    for value in [0.0, knot1 - knot0, 1.0, 0.0] {
         payload.extend_from_slice(&le_f64(value));
     }
     payload.extend_from_slice(&[0x00, 0x07]);

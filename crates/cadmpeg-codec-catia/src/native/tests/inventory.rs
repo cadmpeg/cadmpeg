@@ -537,6 +537,10 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
             .target_slot,
         0x17b
     );
+    assert_eq!(
+        native.alias_rows[0].canonical_surface_tag,
+        Some(0x0012_3456)
+    );
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
@@ -573,6 +577,73 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+
+    let mut legacy = crate::native::CatiaNative::decode(&bytes);
+    for row in &mut legacy.alias_rows {
+        row.canonical_surface_tag = None;
+    }
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    legacy
+        .store(&mut namespace)
+        .expect("store legacy alias rows");
+    namespace.version = crate::native::CATIA_ALIAS_SURFACE_TAG_VERSION - 1;
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace)
+            .expect("load legacy alias rows")
+            .alias_rows,
+        legacy.alias_rows
+    );
+}
+
+#[test]
+fn grouped_non_surface_alias_selects_the_unique_surface_storage_tag() {
+    let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
+    bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.alias_rows.len(), 2);
+    assert_eq!(native.alias_rows[0].canonical_surface_tag, Some(0x5678));
+    assert_eq!(native.alias_rows[1].canonical_surface_tag, Some(0x5678));
+
+    let mut invalid = native;
+    invalid.alias_rows[0].canonical_surface_tag = Some(0x1234);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid alias closure");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
+fn grouped_non_surface_alias_rejects_ambiguous_surface_storage() {
+    let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
+    bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
+    bytes.extend(grouped_surface_alias_stream(1, 0x9abc, 0x148));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.alias_rows.len(), 3);
+    assert_eq!(native.alias_rows[0].canonical_surface_tag, None);
+    assert_eq!(native.alias_rows[1].canonical_surface_tag, Some(0x5678));
+    assert_eq!(native.alias_rows[2].canonical_surface_tag, Some(0x9abc));
+}
+
+#[test]
+fn pre_route_surface_alias_map_closes_only_unique_group_targets() {
+    let mut bytes = grouped_surface_alias_stream(0, 0x1234, 0x148);
+    bytes.extend(grouped_surface_alias_stream(1, 0x5678, 0x148));
+
+    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
+    assert_eq!(tags.get(&0x1234), Some(&Some(0x5678)));
+    assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
+
+    bytes.extend(grouped_surface_alias_stream(1, 0x9abc, 0x148));
+    let tags = crate::object_graph::surface_alias_tag_map(&bytes);
+    assert_eq!(tags.get(&0x1234), Some(&None));
+    assert_eq!(tags.get(&0x5678), Some(&Some(0x5678)));
+    assert_eq!(tags.get(&0x9abc), Some(&Some(0x9abc)));
 }
 
 #[test]

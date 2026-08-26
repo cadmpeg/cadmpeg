@@ -8,14 +8,15 @@
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::families::a5a8::records::FreeformSurface;
 use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
-    allocation_ref, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
+    allocation_reference, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
+    AllocationReferenceEncoding,
 };
 #[cfg(test)]
 use crate::wire::records::{b_family_frames, consolidated_records};
@@ -24,17 +25,7 @@ use crate::wire::records::{
     ConsolidatedPcurve, ConsolidatedRecord,
 };
 
-const EPS_PLANE_DIRECTION_UNIT: f64 = 1.0e-9;
-const EPS_PARAMETER_RANGE: f64 = 1.0e-6;
-const EPS_SPATIAL_CIRCLE_UNIT: f64 = 1.0e-12;
-const EPS_SPATIAL_CIRCLE_ORTHO: f64 = 1.0e-12;
-const EPS_CONE_RANGE_START: f64 = 1.0e-12;
-const EPS_CONE_DIRECTION_UNIT: f64 = 1.0e-9;
-const EPS_CONE_FRAME_ORTHO: f64 = 1.0e-9;
-const EPS_ANALYTIC_FRAME_UNIT: f64 = 1.0e-12;
-const EPS_ANALYTIC_FRAME_ORTHO: f64 = 1.0e-12;
-const EPS_ANALYTIC_AXIS_UNIT: f64 = 1.0e-9;
-const EPS_ANALYTIC_AXIS_RANGE: f64 = 1.0e-9;
+const B2_GROUP_SEPARATOR_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
 /// kind-`0x01` `b2 03 30` construction-use record.
@@ -61,7 +52,7 @@ pub struct B2ParameterPoint {
     pub pos: usize,
     /// Exclusive end of the complete framed record.
     pub end: usize,
-    /// Payload-layout discriminator (`0x12`, `0x1a`, or `0x2a`).
+    /// Payload-layout discriminator (`0x0a`, `0x12`, `0x1a`, or `0x2a`).
     pub layout: u8,
     /// First byte of the two-byte class-specific prefix.
     pub prefix: u8,
@@ -74,6 +65,11 @@ pub struct B2ParameterPoint {
 /// Layout-specific scalar lane of a class-`0x18` parameter-space record.
 #[derive(Debug, Clone, PartialEq)]
 pub enum B2ParameterPointPayload {
+    /// One retained scalar after two zero tuple fields are elided (`L=0x0a`).
+    Scalar {
+        /// Stored scalar.
+        value: f64,
+    },
     /// Two-coordinate UV point (`L=0x12`).
     Uv {
         /// Surface-chart coordinates.
@@ -170,7 +166,7 @@ pub struct B2OwnerNumericTail {
     pub lower: [f64; 2],
     /// Upper coordinate pair of a strictly increasing binary64 box.
     pub upper: [f64; 2],
-    /// Three strictly increasing binary32 bounds in serialization order.
+    /// Model-space X, Y, and Z bounds in serialization order.
     pub bounds: [[f32; 2]; 3],
 }
 
@@ -180,14 +176,131 @@ pub struct B2OwnerNumericTail {
 pub struct B2OwnerPacket {
     /// Record byte offset.
     pub pos: usize,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
     /// Width-coded header token.
     pub header_token: u32,
-    /// Encoding selected by the first strong reference token.
+    /// Reference grammar selected by the complete fixed-nine reference lane.
     pub reference_encoding: B2OwnerReferenceEncoding,
     /// Nine compact persistent identities following the `0x89` count.
     pub references: [u32; 9],
+    /// Exact wire addressing form of each identity in source order.
+    pub identity_encodings: [B2OwnerIdentityEncoding; 9],
     /// Fixed-width class-specific numeric tail.
     pub numeric_tail: B2OwnerNumericTail,
+}
+
+/// One fixed-nine owner identity resolved by its backward-distance token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct B2OwnerIdentityTarget {
+    /// Owning class-`0x62` packet offset.
+    pub owner_pos: usize,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
+    /// Zero-based identity slot in the fixed-nine packet.
+    pub slot: u8,
+    /// Decoded backward distance.
+    pub distance: u32,
+    /// Selected class-`0x5d` or class-`0x5e` record offset.
+    pub target_pos: usize,
+    /// Selected record class.
+    pub target_class: u8,
+}
+
+/// One fixed-nine identity that resolves to a closed owner-boundary edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct B2OwnerBoundaryEdge {
+    /// Identity slot in the fixed-nine packet.
+    pub slot: u8,
+    /// Resolved class-`0x5e` edge-record offset.
+    pub target_pos: usize,
+    /// Resolved class-`0x5d` endpoint-record offsets, in edge order.
+    pub endpoint_records: [usize; 2],
+}
+
+/// Parameter axis held constant by selectors `0x05` and `0x09` in an owner
+/// chart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum B2OwnerChartSideAxis {
+    /// Selectors `0x05` and `0x09` carry the lower and upper first-parameter
+    /// sides.
+    FirstParameter,
+    /// Selectors `0x05` and `0x09` carry the lower and upper second-parameter
+    /// sides.
+    SecondParameter,
+}
+
+/// Carrier production that opens a fixed owner chart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum B2OwnerChartCarrier {
+    /// B-family class-`0x28` cylinder carrier.
+    B28,
+    /// B-family class-`0x2b` torus carrier.
+    B2b,
+    /// A-family class-`0x32` carrier.
+    A32,
+}
+
+/// One allocation-local reference in a class-`0x37` owner-chart bridge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct B2OwnerChartBridgeReference {
+    /// Decoded allocation-local value.
+    pub value: u32,
+    /// Wire addressing form retained from the allocation-reference token.
+    pub encoding: AllocationReferenceEncoding,
+}
+
+/// Structurally complete class-`0x37` owner-chart bridge.
+#[derive(Debug, Clone, PartialEq)]
+pub enum B2OwnerChartBridge {
+    /// Five-reference supported-surface construction.
+    SupportedSurface {
+        /// Record byte offset.
+        pos: usize,
+        /// Constructed carrier surface.
+        carrier_surface: B2OwnerChartBridgeReference,
+        /// Two supporting surfaces.
+        support_surfaces: [B2OwnerChartBridgeReference; 2],
+        /// Pcurves on the two supporting surfaces.
+        support_pcurves: [B2OwnerChartBridgeReference; 2],
+        /// Six construction controls in storage order.
+        controls: [u8; 6],
+        /// Positive construction radius.
+        construction_radius: f64,
+    },
+    /// Eight-reference A-family production without an assigned object role.
+    Extended {
+        /// Record byte offset.
+        pos: usize,
+        /// Counted allocation references in storage order.
+        references: [B2OwnerChartBridgeReference; 8],
+        /// Four controls before the zero lane.
+        controls: [u8; 4],
+        /// Two terminal controls after the zero lane.
+        terminal_controls: [u8; 2],
+    },
+}
+
+/// One source-closed carrier chart terminated by a fixed-nine owner packet.
+///
+/// The relation is admitted only when the four ordered class-`0x18` records
+/// reproduce the owner's complete parameter rectangle.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2OwnerChart {
+    /// Fixed-nine owner packet offset.
+    pub owner_pos: usize,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
+    /// Carrier record offset.
+    pub carrier_pos: usize,
+    /// Family-and-class carrier production.
+    pub carrier: B2OwnerChartCarrier,
+    /// Immediately following class-`0x37` bridge record.
+    pub bridge: B2OwnerChartBridge,
+    /// Axis held constant by selectors `0x05` and `0x09`.
+    pub side_axis: B2OwnerChartSideAxis,
+    /// Ordered selector records `0x05`, `0x09`, `0x0d`, and `0x11`.
+    pub parameter_points: [B2ParameterPoint; 4],
 }
 
 /// Count-framed class-`0x62` owner record with a class-specific tail.
@@ -195,10 +308,14 @@ pub struct B2OwnerPacket {
 pub struct B2CountedOwner {
     /// Record byte offset.
     pub pos: usize,
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
     /// Width-coded header token.
     pub header_token: u32,
     /// Persistent identities selected by the leading `0x80+n` count.
     pub references: Vec<u32>,
+    /// Addressing form of each count-selected reference.
+    pub reference_encodings: Vec<AllocationReferenceEncoding>,
     /// Nonempty class-specific bytes after the reference lane.
     pub tail: Vec<u8>,
 }
@@ -211,6 +328,17 @@ pub enum B2OwnerReferenceEncoding {
     /// Strong identities use width-coded compact integers and weak identities
     /// are raw one-byte values.
     WidthCodedStrong,
+    /// All nine identities use the compact-integer reference grammar.
+    AllCompact,
+}
+
+/// Wire addressing form of one identity in a fixed-nine owner packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum B2OwnerIdentityEncoding {
+    /// One token from the allocation-reference grammar.
+    Allocation(AllocationReferenceEncoding),
+    /// Raw one-byte weak identity in the width-coded alternating dialect.
+    RawU8,
 }
 
 /// Count-prefixed class-`0x61` reference record.
@@ -243,33 +371,76 @@ pub struct B2Long61 {
     pub scalar: f64,
 }
 
-/// Fixed-shape class-`0x5f` link record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct B2Link5f {
+/// Structurally complete consolidated class-`0x5b` or class-`0x5c` record.
+///
+/// The complete payload is retained as an opaque body. No field role is
+/// assigned until a source-closed relation establishes one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct B2Class5b5cRecord {
     /// Record byte offset.
     pub pos: usize,
-    /// Width-coded header token.
+    /// Zero-based bounded record-source ordinal.
+    pub source_index: usize,
+    /// Logical offset within the bounded record source.
+    pub source_offset: usize,
+    /// Complete framed-record byte length.
+    pub byte_len: usize,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent frame flag.
+    pub flag: u8,
+    /// Record class (`0x5b` or `0x5c`).
+    pub class: u8,
+    /// Width-coded frame header token.
     pub header_token: u32,
-    /// Width-coded persistent target between `0x82` and the `03 05` tail.
-    pub target: u32,
+    /// Complete opaque payload in source order.
+    pub payload: Vec<u8>,
 }
 
-/// Adjacent class-`0x5f` link and class-`0x62` owner packet joined by their
-/// allocation-successor identity.
+/// Target encoding of a structurally complete class-`0x5f` node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum B2FaceNode5fTargetEncoding {
+    /// Width-coded compact target.
+    Compact,
+    /// Strong persistent target encoded as `0x0a <u16le>`.
+    TaggedU16Strong,
+}
+
+/// Structurally complete class-`0x5f` node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct B2FaceNode5f {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Complete framed-record byte length.
+    pub byte_len: usize,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Target encoding selected after the `0x82` lead.
+    pub target_encoding: B2FaceNode5fTargetEncoding,
+    /// Persistent target between the `0x82` lead and the terminal pair.
+    pub target: u32,
+    /// Two terminal bytes that exhaust the complete payload.
+    pub terminal: [u8; 2],
+}
+
+/// Derived adjacent class-`0x5f` node and class-`0x62` packet relation.
+///
+/// This relation retains source adjacency and the successor identity. It does
+/// not assign a higher-level object or allocation role to either record.
 #[derive(Debug, Clone, PartialEq)]
-pub struct B2LinkedOwner {
-    /// Fixed link immediately preceding the owner packet.
-    pub link: B2Link5f,
+pub struct B2AdjacentFaceOwner {
+    /// Class-`0x5f` node immediately preceding the class-`0x62` packet.
+    pub face_node: B2FaceNode5f,
     /// Nine-reference owner packet.
     pub owner: B2OwnerPacket,
 }
 
-/// Adjacent class-`0x5f` link and count-framed class-`0x62` owner joined by
-/// the owner's allocation-successor identity.
+/// Derived adjacent class-`0x5f` node and count-framed class-`0x62` packet
+/// relation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct B2LinkedCountedOwner {
-    /// Fixed link immediately preceding the owner packet.
-    pub link: B2Link5f,
+pub struct B2AdjacentFaceCountedOwner {
+    /// Class-`0x5f` node immediately preceding the class-`0x62` packet.
+    pub face_node: B2FaceNode5f,
     /// Count-framed owner packet.
     pub owner: B2CountedOwner,
 }
@@ -342,7 +513,13 @@ pub struct B2EdgeNode {
     pub start_parameter_ref: u32,
     /// Allocation-local end-parameter selector.
     pub end_parameter_ref: u32,
-    /// Terminal layout byte following the five references.
+    /// Addressing forms of the five references in payload order.
+    pub reference_encodings: [AllocationReferenceEncoding; 5],
+    /// Decoded value of the one-byte terminal allocation reference.
+    pub terminal_value: u32,
+    /// Wire addressing form of the terminal allocation reference.
+    pub terminal_encoding: AllocationReferenceEncoding,
+    /// Terminal byte following the five references.
     pub tail: u8,
 }
 
@@ -419,9 +596,8 @@ pub fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
         .collect()
 }
 
-/// Decode length-closed `b2/b3/b4 03 5e` records containing one compact curve
-/// reference, two persistent vertex references, two compact parameter
-/// references, and one terminal byte.
+/// Decode length-closed `b2/b3/b4 03 5e` records containing five
+/// allocation-local references and one terminal byte.
 #[must_use]
 #[cfg(test)]
 pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
@@ -450,14 +626,24 @@ pub(crate) fn b2_edge_nodes_from_records(
                 return None;
             }
             let mut at = frame.payload;
-            let curve_ref = compact_int(data, &mut at)?;
-            let start_vertex_ref = allocation_ref(data, &mut at)?;
-            let end_vertex_ref = allocation_ref(data, &mut at)?;
-            let start_parameter_ref = compact_int(data, &mut at)?;
-            let end_parameter_ref = compact_int(data, &mut at)?;
-            let tail = *data.get(at)?;
-            (at + 1 == frame.end && matches!(tail, 0x01 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a))
-                .then_some(B2EdgeNode {
+            let references = (0..5)
+                .map(|_| allocation_reference(data, &mut at))
+                .collect::<Option<Vec<_>>>()?;
+            let references: [_; 5] = references.try_into().ok()?;
+            let [curve_ref, start_vertex_ref, end_vertex_ref, start_parameter_ref, end_parameter_ref] =
+                references.map(|reference| reference.value);
+            let reference_encodings = references.map(|reference| reference.encoding);
+            let terminal_at = at;
+            let tail = *data.get(terminal_at)?;
+            let terminal = allocation_reference(data, &mut at)?;
+            let terminal_allowed = at == frame.end
+                && at == terminal_at + 1
+                && matches!(
+                    (terminal.encoding, terminal.value),
+                    (AllocationReferenceEncoding::BackwardDistance, 0 | 8 | 9 | 10)
+                        | (AllocationReferenceEncoding::Selector2, 0 | 8 | 10)
+                );
+            terminal_allowed.then_some(B2EdgeNode {
                     pos: frame.pos,
                     header_token: frame.header_token,
                     curve_ref,
@@ -465,6 +651,9 @@ pub(crate) fn b2_edge_nodes_from_records(
                     end_vertex_ref,
                     start_parameter_ref,
                     end_parameter_ref,
+                    reference_encodings,
+                    terminal_value: terminal.value,
+                    terminal_encoding: terminal.encoding,
                     tail,
                 })
         })
@@ -577,29 +766,37 @@ pub(crate) fn b2_counted_owners_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2CountedOwner> {
-    b_family_frames_from_records(records, 0x62)
+    b2_owner_frames(records)
         .into_iter()
-        .filter_map(|frame| {
+        .filter_map(|(frame, source_index)| {
             let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
             if count == 0 {
                 return None;
             }
             let mut at = frame.payload + 1;
             let references = (0..count)
-                .map(|_| persistent_ref(data, &mut at))
+                .map(|_| allocation_reference(data, &mut at))
                 .collect::<Option<Vec<_>>>()?;
             (at < frame.end).then(|| B2CountedOwner {
                 pos: frame.pos,
+                source_index,
                 header_token: frame.header_token,
-                references,
+                reference_encodings: references
+                    .iter()
+                    .map(|reference| reference.encoding)
+                    .collect(),
+                references: references
+                    .into_iter()
+                    .map(|reference| reference.value)
+                    .collect(),
                 tail: data[at..frame.end].to_vec(),
             })
         })
         .collect()
 }
 
-/// Decode width-coded class-`0x62` owner packets whose counted references and
-/// fixed numeric tail consume the complete frame.
+/// Decode fixed-nine class-`0x62` owner packets whose references and numeric
+/// tail consume the complete frame.
 #[must_use]
 #[cfg(test)]
 pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
@@ -611,46 +808,440 @@ pub(crate) fn b2_owner_packets_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<B2OwnerPacket> {
-    b_family_frames_from_records(records, 0x62)
+    b2_owner_frames(records)
         .into_iter()
-        .filter_map(|frame| {
-            if data.get(frame.payload) != Some(&0x89) {
+        .filter_map(|(frame, source_index)| {
+            let candidates = [
+                B2OwnerReferenceEncoding::TaggedU16Strong,
+                B2OwnerReferenceEncoding::WidthCodedStrong,
+                B2OwnerReferenceEncoding::AllCompact,
+            ]
+            .into_iter()
+            .filter_map(|encoding| b2_fixed_owner_packet(data, frame, encoding))
+            .collect::<Vec<_>>();
+            let [mut packet] = candidates.try_into().ok()?;
+            packet.source_index = source_index;
+            Some(packet)
+        })
+        .collect()
+}
+
+/// Resolve backward-distance identities in fixed-nine owner packets within
+/// one contiguous record source and its local class-`0x5d`/`0x5e` allocation
+/// sequence. The explicit class-`0x65` group separator starts a new
+/// allocation sequence even when its frame is physically contiguous.
+pub(crate) fn b2_owner_identity_targets_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2OwnerIdentityTarget> {
+    let packets = b2_owner_packets_from_records(data, records)
+        .into_iter()
+        .map(|packet| ((packet.source_index, packet.pos), packet))
+        .collect::<BTreeMap<_, _>>();
+    let mut allocation = Vec::<usize>::new();
+    let mut targets = Vec::new();
+    for (index, record) in records.iter().enumerate() {
+        if index > 0 && !crate::wire::records::records_are_contiguous(&records[index - 1..=index]) {
+            allocation.clear();
+        }
+        if record.family == crate::wire::records::ConsolidatedFamily::B
+            && record.class == 0x65
+            && data
+                .get(record.payload.clone())
+                .is_some_and(|payload| payload == B2_GROUP_SEPARATOR_PAYLOAD.as_slice())
+        {
+            allocation.clear();
+            continue;
+        }
+        if record.family == crate::wire::records::ConsolidatedFamily::B
+            && matches!(record.class, 0x5d | 0x5e)
+        {
+            allocation.push(index);
+        }
+        let Some(packet) = packets.get(&(record.source_index, record.range.start)) else {
+            continue;
+        };
+        for (slot, (distance, encoding)) in (0u8..).zip(
+            packet
+                .references
+                .iter()
+                .copied()
+                .zip(packet.identity_encodings),
+        ) {
+            if encoding
+                != B2OwnerIdentityEncoding::Allocation(
+                    AllocationReferenceEncoding::BackwardDistance,
+                )
+            {
+                continue;
+            }
+            let Some(target_index) = usize::try_from(distance)
+                .ok()
+                .and_then(|distance| allocation.len().checked_sub(distance))
+                .and_then(|ordinal| allocation.get(ordinal))
+                .copied()
+            else {
+                continue;
+            };
+            let target = &records[target_index];
+            targets.push(B2OwnerIdentityTarget {
+                owner_pos: packet.pos,
+                source_index: packet.source_index,
+                slot,
+                distance,
+                target_pos: target.range.start,
+                target_class: target.class,
+            });
+        }
+    }
+    targets
+}
+
+/// Select a fixed-nine boundary only when its complete resolved target set is
+/// one simple four-edge cycle. The endpoint records remain allocation-local;
+/// this predicate does not assign a face or promote the records to a global
+/// identity namespace.
+pub(crate) fn b2_closed_owner_boundary_edges(
+    targets: &[B2OwnerIdentityTarget],
+    endpoint_records: &HashMap<usize, [usize; 2]>,
+) -> Option<[B2OwnerBoundaryEdge; 4]> {
+    if targets.len() != 4 || targets.iter().any(|target| target.target_class != 0x5e) {
+        return None;
+    }
+    let mut edges = targets
+        .iter()
+        .map(|target| {
+            Some(B2OwnerBoundaryEdge {
+                slot: target.slot,
+                target_pos: target.target_pos,
+                endpoint_records: *endpoint_records.get(&target.target_pos)?,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    edges.sort_unstable_by_key(|edge| edge.slot);
+    if edges.windows(2).any(|pair| pair[0].slot == pair[1].slot)
+        || edges
+            .iter()
+            .any(|edge| edge.endpoint_records[0] == edge.endpoint_records[1])
+    {
+        return None;
+    }
+
+    let mut edge_keys = HashSet::new();
+    let mut degrees = BTreeMap::<usize, usize>::new();
+    for edge in &edges {
+        let [start, end] = edge.endpoint_records;
+        let key = if start < end {
+            [start, end]
+        } else {
+            [end, start]
+        };
+        if !edge_keys.insert(key) {
+            return None;
+        }
+        *degrees.entry(start).or_default() += 1;
+        *degrees.entry(end).or_default() += 1;
+    }
+    (degrees.len() == 4 && degrees.values().all(|degree| *degree == 2))
+        .then(|| edges.try_into().expect("four owner boundary edges"))
+}
+
+/// Decode source-closed carrier/reference/side/owner chart productions.
+pub(crate) fn b2_owner_charts_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2OwnerChart> {
+    let owners = b2_owner_packets_from_records(data, records)
+        .into_iter()
+        .map(|owner| ((owner.source_index, owner.pos), owner))
+        .collect::<BTreeMap<_, _>>();
+    let parameter_points = b2_parameter_points_from_records(data, records)
+        .into_iter()
+        .map(|point| (point.pos, point))
+        .collect::<BTreeMap<_, _>>();
+
+    records
+        .windows(7)
+        .filter_map(|window| {
+            let [carrier, references, side_05, side_09, side_0d, side_11, owner_record] = window
+            else {
+                return None;
+            };
+            let carrier_kind = match (carrier.family, carrier.class) {
+                (ConsolidatedFamily::B, 0x28) => B2OwnerChartCarrier::B28,
+                (ConsolidatedFamily::B, 0x2b) => B2OwnerChartCarrier::B2b,
+                (ConsolidatedFamily::A, 0x32) => B2OwnerChartCarrier::A32,
+                _ => return None,
+            };
+            if !crate::wire::records::records_are_contiguous(window)
+                || window.iter().any(|record| !record.physically_contiguous)
+                || window[1..]
+                    .iter()
+                    .any(|record| record.family != ConsolidatedFamily::B)
+                || references.class != 0x37
+                || [side_05.class, side_09.class, side_0d.class, side_11.class] != [0x18; 4]
+                || owner_record.class != 0x62
+            {
                 return None;
             }
-            let mut at = frame.payload + 1;
-            let reference_encoding = if data.get(at) == Some(&0x0a) {
-                B2OwnerReferenceEncoding::TaggedU16Strong
-            } else {
-                B2OwnerReferenceEncoding::WidthCodedStrong
-            };
-            let mut references = [0u32; 9];
-            for (index, reference) in references.iter_mut().enumerate() {
-                *reference = match (reference_encoding, index % 2) {
-                    (B2OwnerReferenceEncoding::TaggedU16Strong, 0) => {
-                        persistent_ref(data, &mut at)?
-                    }
-                    (B2OwnerReferenceEncoding::TaggedU16Strong, 1)
-                    | (B2OwnerReferenceEncoding::WidthCodedStrong, 0) => {
-                        compact_int(data, &mut at)?
-                    }
-                    (B2OwnerReferenceEncoding::WidthCodedStrong, 1) => {
-                        let value = u32::from(*data.get(at)?);
-                        at += 1;
-                        value
-                    }
-                    _ => unreachable!(),
-                };
+            let owner = owners.get(&(owner_record.source_index, owner_record.range.start))?;
+            let bridge = owner_chart_bridge(data, references, carrier_kind)?;
+            let points = [side_05, side_09, side_0d, side_11]
+                .map(|record| parameter_points.get(&record.range.start).cloned())
+                .into_iter()
+                .collect::<Option<Vec<_>>>()?;
+            let points: [B2ParameterPoint; 4] = points.try_into().ok()?;
+            if points.each_ref().map(|point| point.prefix) != [0x05, 0x09, 0x0d, 0x11]
+                || !owner_chart_bounds_match(carrier_kind, &points, &owner.numeric_tail)
+            {
+                return None;
             }
-            let numeric_tail = b2_owner_numeric_tail(data.get(at..frame.end)?)?;
-            Some(B2OwnerPacket {
-                pos: frame.pos,
-                header_token: frame.header_token,
-                reference_encoding,
-                references,
-                numeric_tail,
+            Some(B2OwnerChart {
+                owner_pos: owner.pos,
+                source_index: owner.source_index,
+                carrier_pos: carrier.range.start,
+                carrier: carrier_kind,
+                bridge,
+                side_axis: if carrier_kind == B2OwnerChartCarrier::B28 {
+                    B2OwnerChartSideAxis::FirstParameter
+                } else {
+                    B2OwnerChartSideAxis::SecondParameter
+                },
+                parameter_points: points,
             })
         })
         .collect()
+}
+
+fn owner_chart_bridge(
+    data: &[u8],
+    record: &ConsolidatedRecord,
+    carrier: B2OwnerChartCarrier,
+) -> Option<B2OwnerChartBridge> {
+    let frames = b_family_frames_from_records(std::slice::from_ref(record), 0x37);
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    if frame.header_token != 5 {
+        return None;
+    }
+    let count = match *data.get(frame.payload)? {
+        0x85 => 5,
+        0x88 => 8,
+        _ => return None,
+    };
+    let mut at = frame.payload + 1;
+    let references = (0..count)
+        .map(|_| {
+            let reference = allocation_reference(data, &mut at)?;
+            Some(B2OwnerChartBridgeReference {
+                value: reference.value,
+                encoding: reference.encoding,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if references.first().map(|reference| reference.value) != Some(1) {
+        return None;
+    }
+    let carrier_selector = *data.get(at)?;
+    let expected_selector = match carrier {
+        B2OwnerChartCarrier::B28 => 0x05,
+        B2OwnerChartCarrier::B2b => 0x09,
+        B2OwnerChartCarrier::A32 => 0x11,
+    };
+    if carrier_selector != expected_selector {
+        return None;
+    }
+    at += 1;
+    if count == 5 {
+        let unit_token = *data.get(at)?;
+        let construction_radius = f64_le(data, at + 1)?;
+        let middle_controls = [*data.get(at + 9)?, *data.get(at + 10)?];
+        let zeros = data.get(at + 11..at + 19)?;
+        let terminal_control = *data.get(at + 19)?;
+        if unit_token != 0x05
+            || construction_radius <= 0.0
+            || !middle_controls
+                .into_iter()
+                .all(|control| matches!(control, 0x03 | 0x05))
+            || zeros != [0; 8]
+            || !matches!(terminal_control, 0x01 | 0x05)
+            || data.get(at + 20) != Some(&0x05)
+            || at + 21 != frame.end
+        {
+            return None;
+        }
+        let [carrier_surface, support_surface_0, support_surface_1, support_pcurve_0, support_pcurve_1]: [B2OwnerChartBridgeReference; 5] =
+            references.try_into().ok()?;
+        Some(B2OwnerChartBridge::SupportedSurface {
+            pos: frame.pos,
+            carrier_surface,
+            support_surfaces: [support_surface_0, support_surface_1],
+            support_pcurves: [support_pcurve_0, support_pcurve_1],
+            controls: [
+                carrier_selector,
+                unit_token,
+                middle_controls[0],
+                middle_controls[1],
+                terminal_control,
+                0x05,
+            ],
+            construction_radius,
+        })
+    } else {
+        let control_tokens: [u8; 3] = data.get(at..at + 3)?.try_into().ok()?;
+        let zeros = data.get(at + 3..at + 11)?;
+        let terminal_control = *data.get(at + 11)?;
+        if control_tokens != [0x09, 0x05, 0x05]
+            || zeros != [0; 8]
+            || terminal_control != 0x01
+            || data.get(at + 12) != Some(&0x05)
+            || at + 13 != frame.end
+        {
+            return None;
+        }
+        Some(B2OwnerChartBridge::Extended {
+            pos: frame.pos,
+            references: references.try_into().ok()?,
+            controls: [
+                carrier_selector,
+                control_tokens[0],
+                control_tokens[1],
+                control_tokens[2],
+            ],
+            terminal_controls: [terminal_control, 0x05],
+        })
+    }
+}
+
+fn owner_chart_bounds_match(
+    carrier: B2OwnerChartCarrier,
+    points: &[B2ParameterPoint; 4],
+    tail: &B2OwnerNumericTail,
+) -> bool {
+    let [first_lower, first_upper, second_lower, second_upper] =
+        if carrier == B2OwnerChartCarrier::B28 {
+            [tail.lower[0], tail.upper[0], tail.lower[1], tail.upper[1]]
+        } else {
+            [tail.lower[1], tail.upper[1], tail.lower[0], tail.upper[0]]
+        };
+    let side_lower = [first_lower, second_lower, second_upper];
+    let side_upper = [first_upper, second_lower, second_upper];
+    let side_05 = parameter_point_matches_tuple(&points[0], side_lower);
+    let side_09 = parameter_point_matches_tuple(&points[1], side_upper);
+    let sides_reversed = parameter_point_matches_tuple(&points[0], side_upper)
+        && parameter_point_matches_tuple(&points[1], side_lower);
+    (side_05 && side_09 || sides_reversed)
+        && parameter_point_contains(&points[2], second_lower)
+        && parameter_point_contains(&points[3], second_upper)
+}
+
+fn parameter_point_scalars(point: &B2ParameterPoint) -> Vec<f64> {
+    match &point.payload {
+        B2ParameterPointPayload::Scalar { value } => vec![*value],
+        B2ParameterPointPayload::Uv { uv } => uv.to_vec(),
+        B2ParameterPointPayload::StationUv { station, uv } => vec![*station, uv[0], uv[1]],
+        B2ParameterPointPayload::FiveScalars { values } => values.to_vec(),
+    }
+}
+
+fn parameter_point_matches_tuple(point: &B2ParameterPoint, expected: [f64; 3]) -> bool {
+    let values = parameter_point_scalars(point);
+    expected
+        .into_iter()
+        .filter(|value| *value != 0.0)
+        .eq(values)
+}
+
+fn parameter_point_contains(point: &B2ParameterPoint, expected: f64) -> bool {
+    expected == 0.0 || parameter_point_scalars(point).contains(&expected)
+}
+
+fn b2_fixed_owner_packet(
+    data: &[u8],
+    frame: ConsolidatedFrame,
+    reference_encoding: B2OwnerReferenceEncoding,
+) -> Option<B2OwnerPacket> {
+    if data.get(frame.payload) != Some(&0x89) {
+        return None;
+    }
+    let mut at = frame.payload + 1;
+    let mut references = [0u32; 9];
+    let mut identity_encodings = [B2OwnerIdentityEncoding::RawU8; 9];
+    for (index, (reference, identity_encoding)) in references
+        .iter_mut()
+        .zip(&mut identity_encodings)
+        .enumerate()
+    {
+        (*reference, *identity_encoding) = match reference_encoding {
+            B2OwnerReferenceEncoding::TaggedU16Strong if index % 2 == 0 => (
+                tagged_u16_ref(data, &mut at)?,
+                B2OwnerIdentityEncoding::Allocation(AllocationReferenceEncoding::TaggedU16),
+            ),
+            B2OwnerReferenceEncoding::TaggedU16Strong => compact_owner_identity(data, &mut at)?,
+            B2OwnerReferenceEncoding::WidthCodedStrong if index % 2 == 0 => {
+                compact_owner_identity(data, &mut at)?
+            }
+            B2OwnerReferenceEncoding::WidthCodedStrong => {
+                let value = u32::from(*data.get(at)?);
+                at += 1;
+                (value, B2OwnerIdentityEncoding::RawU8)
+            }
+            B2OwnerReferenceEncoding::AllCompact => compact_owner_identity(data, &mut at)?,
+        };
+    }
+    let numeric_tail = b2_owner_numeric_tail(data.get(at..frame.end)?)?;
+    Some(B2OwnerPacket {
+        pos: frame.pos,
+        source_index: 0,
+        header_token: frame.header_token,
+        reference_encoding,
+        references,
+        identity_encodings,
+        numeric_tail,
+    })
+}
+
+fn b2_owner_frames(records: &[ConsolidatedRecord]) -> Vec<(ConsolidatedFrame, usize)> {
+    records
+        .iter()
+        .filter(|record| {
+            record.physically_contiguous
+                && record.family == ConsolidatedFamily::B
+                && record.class == 0x62
+        })
+        .map(|record| {
+            (
+                ConsolidatedFrame {
+                    pos: record.range.start,
+                    payload: record.payload.start,
+                    end: record.range.end,
+                    header_token: record.header_token,
+                },
+                record.source_index,
+            )
+        })
+        .collect()
+}
+
+fn compact_owner_identity(data: &[u8], at: &mut usize) -> Option<(u32, B2OwnerIdentityEncoding)> {
+    let lead = *data.get(*at)?;
+    let encoding = match lead % 4 {
+        1 => AllocationReferenceEncoding::BackwardDistance,
+        3 if lead != 0 => AllocationReferenceEncoding::OwnedChild,
+        2 if lead != 0 => AllocationReferenceEncoding::Selector2,
+        0 if lead != 0 => AllocationReferenceEncoding::WidthCoded,
+        _ => return None,
+    };
+    Some((
+        compact_int(data, at)?,
+        B2OwnerIdentityEncoding::Allocation(encoding),
+    ))
+}
+
+fn tagged_u16_ref(data: &[u8], at: &mut usize) -> Option<u32> {
+    (data.get(*at) == Some(&0x0a)).then_some(())?;
+    persistent_ref(data, at)
 }
 
 fn b2_owner_numeric_tail(data: &[u8]) -> Option<B2OwnerNumericTail> {
@@ -791,18 +1382,59 @@ pub(crate) fn b2_long_61_from_records(
         .collect()
 }
 
-/// Decode `82 <width-coded target> 03 05` class-`0x5f` links.
+/// Decode complete B-family class-`0x5b` and class-`0x5c` control records.
+///
+/// The B-family length byte closes the frame. The complete payload stays
+/// opaque until a source-closed field relation is established.
 #[must_use]
 #[cfg(test)]
-pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
+pub fn b2_class5b5c_records(data: &[u8]) -> Vec<B2Class5b5cRecord> {
     let records = consolidated_records(data);
-    b2_links_5f_from_records(data, &records)
+    b2_class5b5c_records_from_records(data, &records)
 }
 
-pub(crate) fn b2_links_5f_from_records(
+pub(crate) fn b2_class5b5c_records_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2Link5f> {
+) -> Vec<B2Class5b5cRecord> {
+    records
+        .iter()
+        .filter_map(|record| {
+            if !record.physically_contiguous
+                || record.family != ConsolidatedFamily::B
+                || !matches!(record.class, 0x5b | 0x5c)
+            {
+                return None;
+            }
+            let payload = data.get(record.payload.clone())?;
+            let byte_len = record.range.end.checked_sub(record.range.start)?;
+            Some(B2Class5b5cRecord {
+                pos: record.range.start,
+                source_index: record.source_index,
+                source_offset: record.source_range.start,
+                byte_len,
+                width: record.width,
+                flag: record.flag,
+                class: record.class,
+                header_token: record.header_token,
+                payload: payload.to_vec(),
+            })
+        })
+        .collect()
+}
+
+/// Decode structurally complete class-`0x5f` nodes.
+#[must_use]
+#[cfg(test)]
+pub fn b2_face_nodes_5f(data: &[u8]) -> Vec<B2FaceNode5f> {
+    let records = consolidated_records(data);
+    b2_face_nodes_5f_from_records(data, &records)
+}
+
+pub(crate) fn b2_face_nodes_5f_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2FaceNode5f> {
     b_family_frames_from_records(records, 0x5f)
         .into_iter()
         .filter_map(|frame| {
@@ -810,32 +1442,45 @@ pub(crate) fn b2_links_5f_from_records(
                 return None;
             }
             let mut at = frame.payload + 1;
-            let target = compact_int(data, &mut at)?;
-            (at + 2 == frame.end && data.get(at..frame.end) == Some(&[0x03, 0x05])).then_some(
-                B2Link5f {
-                    pos: frame.pos,
-                    header_token: frame.header_token,
-                    target,
-                },
-            )
+            let (target_encoding, target) = if data.get(at) == Some(&0x0a) {
+                (
+                    B2FaceNode5fTargetEncoding::TaggedU16Strong,
+                    persistent_ref(data, &mut at)?,
+                )
+            } else {
+                (
+                    B2FaceNode5fTargetEncoding::Compact,
+                    compact_int(data, &mut at)?,
+                )
+            };
+            let terminal = <[u8; 2]>::try_from(data.get(at..frame.end)?).ok()?;
+            Some(B2FaceNode5f {
+                pos: frame.pos,
+                byte_len: frame.end.checked_sub(frame.pos)?,
+                header_token: frame.header_token,
+                target_encoding,
+                target,
+                terminal,
+            })
         })
         .collect()
 }
 
-/// Bind immediately adjacent `5f,62` records when the owner's ninth identity
-/// is the checked successor of the link target.
+/// Bind immediately adjacent `5f,62` records when the terminal admits the
+/// packet dialect and its ninth identity is the checked successor of the node
+/// target.
 #[must_use]
 #[cfg(test)]
-pub fn b2_linked_owners(data: &[u8]) -> Vec<B2LinkedOwner> {
+pub fn b2_adjacent_face_owners(data: &[u8]) -> Vec<B2AdjacentFaceOwner> {
     let records = consolidated_records(data);
-    b2_linked_owners_from_records(data, &records)
+    b2_adjacent_face_owners_from_records(data, &records)
 }
 
-pub(crate) fn b2_linked_owners_from_records(
+pub(crate) fn b2_adjacent_face_owners_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2LinkedOwner> {
-    let links = b2_links_5f_from_records(data, records)
+) -> Vec<B2AdjacentFaceOwner> {
+    let nodes = b2_face_nodes_5f_from_records(data, records)
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
@@ -849,31 +1494,36 @@ pub(crate) fn b2_linked_owners_from_records(
             let [link_record, owner_record] = window else {
                 return None;
             };
-            let link = links.get(&link_record.range.start)?;
+            let face_node = nodes.get(&link_record.range.start)?;
             let owner = owners.get(&owner_record.range.start)?;
-            (link.target.checked_add(1) == Some(owner.references[8])).then(|| B2LinkedOwner {
-                link: *link,
-                owner: owner.clone(),
-            })
+            let terminal_is_admitted = face_node.terminal == [0x03, 0x05]
+                || (face_node.terminal == [0x03, 0x03]
+                    && owner.reference_encoding == B2OwnerReferenceEncoding::AllCompact);
+            (terminal_is_admitted && face_node.target.checked_add(1) == Some(owner.references[8]))
+                .then(|| B2AdjacentFaceOwner {
+                    face_node: *face_node,
+                    owner: owner.clone(),
+                })
         })
         .collect()
 }
 
-/// Bind immediately adjacent `5f,62` records when the count-framed owner's
-/// final identity is the checked successor of the link target.
+/// Bind immediately adjacent `5f,62` records when the count-framed packet's
+/// final identity is the checked successor of the node target.
 #[must_use]
 #[cfg(test)]
-pub fn b2_linked_counted_owners(data: &[u8]) -> Vec<B2LinkedCountedOwner> {
+pub fn b2_adjacent_face_counted_owners(data: &[u8]) -> Vec<B2AdjacentFaceCountedOwner> {
     let records = consolidated_records(data);
-    b2_linked_counted_owners_from_records(data, &records)
+    b2_adjacent_face_counted_owners_from_records(data, &records)
 }
 
-pub(crate) fn b2_linked_counted_owners_from_records(
+pub(crate) fn b2_adjacent_face_counted_owners_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
-) -> Vec<B2LinkedCountedOwner> {
-    let links = b2_links_5f_from_records(data, records)
+) -> Vec<B2AdjacentFaceCountedOwner> {
+    let nodes = b2_face_nodes_5f_from_records(data, records)
         .into_iter()
+        .filter(|value| value.terminal == [0x03, 0x05])
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
     let owners = b2_counted_owners_from_records(data, records)
@@ -886,11 +1536,11 @@ pub(crate) fn b2_linked_counted_owners_from_records(
             let [link_record, owner_record] = window else {
                 return None;
             };
-            let link = links.get(&link_record.range.start)?;
+            let face_node = nodes.get(&link_record.range.start)?;
             let owner = owners.get(&owner_record.range.start)?;
-            (link.target.checked_add(1) == owner.references.last().copied()).then(|| {
-                B2LinkedCountedOwner {
-                    link: *link,
+            (face_node.target.checked_add(1) == owner.references.last().copied()).then(|| {
+                B2AdjacentFaceCountedOwner {
+                    face_node: *face_node,
                     owner: owner.clone(),
                 }
             })
@@ -924,6 +1574,9 @@ pub(crate) fn b2_parameter_points_from_records(
             let control = *data.get(frame.payload + 1)?;
             let at = frame.payload + 2;
             let payload = match layout {
+                0x0a => B2ParameterPointPayload::Scalar {
+                    value: f64_le(data, at)?,
+                },
                 0x12 => B2ParameterPointPayload::Uv {
                     uv: read_f64_array::<2>(data, at)?,
                 },
@@ -940,6 +1593,7 @@ pub(crate) fn b2_parameter_points_from_records(
                 _ => return None,
             };
             let finite = match &payload {
+                B2ParameterPointPayload::Scalar { value } => value.is_finite(),
                 B2ParameterPointPayload::Uv { uv } => uv.iter().all(|v| v.is_finite()),
                 B2ParameterPointPayload::StationUv { station, uv } => {
                     station.is_finite() && uv.iter().all(|v| v.is_finite())
@@ -1049,8 +1703,8 @@ pub(crate) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeome
     let u_axis = Vector3::new(direction[0], direction[1], direction[2]);
     let z_axis = Vector3::new(0.0, 0.0, 1.0);
     let normal = u_axis.cross(z_axis).unit()?;
-    let valid_direction = (u_axis.norm() - 1.0).abs() <= EPS_PLANE_DIRECTION_UNIT
-        && u_axis.z.abs() <= EPS_PLANE_DIRECTION_UNIT
+    let valid_direction = (u_axis.norm() - 1.0).abs() <= 1e-9
+        && u_axis.z.abs() <= 1e-9
         && direction.iter().all(|value| value.is_finite());
     let valid_tail =
         tail.iter().all(|value| value.is_finite()) && tail[0] > 0.0 && tail[1] < tail[2];
@@ -1119,7 +1773,7 @@ fn parameter_in_closed_range(value: f64, range: [f64; 2]) -> bool {
     if !span.is_finite() || span <= 0.0 {
         return false;
     }
-    let tolerance = EPS_PARAMETER_RANGE * span;
+    let tolerance = 1e-6 * span;
     range[0] - tolerance <= value && value <= range[1] + tolerance
 }
 
@@ -1264,9 +1918,9 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
     let radius = values[9];
     let range = [values[10], values[11]];
     if !values.iter().all(|value| value.is_finite())
-        || (ref_norm - 1.0).abs() > EPS_SPATIAL_CIRCLE_UNIT
-        || (transverse_norm - 1.0).abs() > EPS_SPATIAL_CIRCLE_UNIT
-        || orthogonality > EPS_SPATIAL_CIRCLE_ORTHO
+        || (ref_norm - 1.0).abs() > 1e-12
+        || (transverse_norm - 1.0).abs() > 1e-12
+        || orthogonality > 1e-12
         || radius <= 0.0
         || range[0] >= range[1]
         || values[12].to_bits() != 1.0f64.to_bits()
@@ -1421,8 +2075,8 @@ pub struct B2Cone {
     pub axis: [f64; 3],
     /// Cone half-angle in radians.
     pub half_angle: f64,
-    /// Scalar immediately preceding the active angular interval.
-    pub pre_angular_range_scalar: f64,
+    /// Reference radius of the conical surface, independent of the active chart ranges.
+    pub reference_radius: f64,
     /// Active azimuth interval.
     pub angular_range: [f64; 2],
     /// Native slant-coordinate range.
@@ -1733,17 +2387,15 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
             .expect("three second-direction values");
         let axis: [f64; 3] = values[9..12].try_into().expect("three axis values");
         let half_angle = values[12];
-        let pre_angular_range_scalar = values[13];
+        let reference_radius = values[13];
         let angular_range = [values[14], values[15]];
         let mut slant_range = [values[16], values[17]];
         let angular_scale = values[18];
         let angular_domain = [values[21], values[22]];
-        if slant_range[0].abs() <= EPS_CONE_RANGE_START {
+        if slant_range[0].abs() <= 1e-12 {
             slant_range[0] = 0.0;
         }
-        let unit = |v: [f64; 3]| {
-            ((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) - 1.0).abs() < EPS_CONE_DIRECTION_UNIT
-        };
+        let unit = |v: [f64; 3]| ((v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) - 1.0).abs() < 1e-9;
         let cross = [
             t1[1] * t2[2] - t1[2] * t2[1],
             t1[2] * t2[0] - t1[0] * t2[2],
@@ -1756,7 +2408,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
             && cross
                 .iter()
                 .zip(axis)
-                .all(|(cross, axis)| (cross - axis).abs() <= EPS_CONE_FRAME_ORTHO)
+                .all(|(cross, axis)| (cross - axis).abs() <= 1e-9)
             && 0.0 < half_angle
             && half_angle < std::f64::consts::FRAC_PI_2
             && periodic_angular_range_is_valid(angular_range, angular_domain)
@@ -1773,7 +2425,7 @@ pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord])
                 t2,
                 axis,
                 half_angle,
-                pre_angular_range_scalar,
+                reference_radius,
                 angular_range,
                 slant_range,
                 angular_scale,
@@ -1852,11 +2504,11 @@ pub(crate) fn b2_revolutions_from_records(
             || bounds[2] >= bounds[3]
             || [direction_x, direction_y, axis]
                 .into_iter()
-                .any(|direction| (squared_length(direction) - 1.0).abs() > EPS_ANALYTIC_FRAME_UNIT)
+                .any(|direction| (squared_length(direction) - 1.0).abs() > 1e-12)
             || cross
                 .iter()
                 .zip(axis)
-                .any(|(cross, axis)| (cross - axis).abs() > EPS_ANALYTIC_FRAME_ORTHO)
+                .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
             || bounds[0] / angular_scale != 0.5
             || (bounds[1] - bounds[0]) / angular_scale != std::f64::consts::TAU
             || mean_angle_parameter / angular_scale != std::f64::consts::PI + 0.5
@@ -1954,7 +2606,7 @@ pub(crate) fn b2_line_profiles_from_records(
                 .iter()
                 .map(|component| component * component)
                 .sum::<f64>();
-            ((squared_length - 1.0).abs() <= EPS_ANALYTIC_FRAME_UNIT
+            ((squared_length - 1.0).abs() <= 1e-12
                 && values[6].to_bits() == 1.0_f64.to_bits()
                 && values[7] < values[8])
                 .then_some(B2LineProfile {
@@ -2001,7 +2653,7 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
             let dot = |first: [f64; 3], second: [f64; 3]| {
                 first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
             };
-            let unit = |value: [f64; 3]| (dot(value, value) - 1.0).abs() <= EPS_ANALYTIC_FRAME_UNIT;
+            let unit = |value: [f64; 3]| (dot(value, value) - 1.0).abs() <= 1e-12;
             let cross = [
                 direction_x[1] * direction_y[2] - direction_x[2] * direction_y[1],
                 direction_x[2] * direction_y[0] - direction_x[0] * direction_y[2],
@@ -2011,16 +2663,16 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
                 && unit(direction_x)
                 && unit(direction_y)
                 && unit(axis)
-                && dot(direction_x, direction_y).abs() <= EPS_ANALYTIC_FRAME_ORTHO
-                && dot(direction_x, axis).abs() <= EPS_ANALYTIC_FRAME_ORTHO
-                && dot(direction_y, axis).abs() <= EPS_ANALYTIC_FRAME_ORTHO
+                && dot(direction_x, direction_y).abs() <= 1e-12
+                && dot(direction_x, axis).abs() <= 1e-12
+                && dot(direction_y, axis).abs() <= 1e-12
                 && cross
                     .iter()
                     .zip(axis)
                     .map(|(first, second)| (first - second).powi(2))
                     .sum::<f64>()
                     .sqrt()
-                    <= EPS_ANALYTIC_FRAME_ORTHO
+                    <= 1e-12
                 && major_radius > 0.0
                 && minor_radius > 0.0
                 && periodic_angular_range_is_valid(major_angular_range, major_angular_domain)
@@ -2080,7 +2732,7 @@ pub(crate) fn b2_spheres_from_records(
             let chart_origin = values[18];
             let scaled_length_is_radius = |value: [f64; 3]| {
                 let length = value[0].hypot(value[1]).hypot(value[2]);
-                length.is_finite() && ((length / radius) - 1.0).abs() <= EPS_ANALYTIC_FRAME_UNIT
+                length.is_finite() && ((length / radius) - 1.0).abs() <= 1e-12
             };
             (values.iter().all(|value| value.is_finite())
                 && radius > 0.0
@@ -2105,7 +2757,7 @@ pub(crate) fn b2_spheres_from_records(
             cross
                 .iter()
                 .zip(axis)
-                .all(|(cross, axis)| (cross - axis).abs() <= EPS_ANALYTIC_FRAME_ORTHO)
+                .all(|(cross, axis)| (cross - axis).abs() <= 1e-12)
                 .then_some(B2Sphere {
                     pos: frame.pos,
                     center,
@@ -2126,7 +2778,9 @@ pub(crate) fn b2_spheres_from_records(
 pub fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
     b_family_frames(data, 0x65)
         .into_iter()
-        .filter(|frame| data.get(frame.payload..frame.end) == Some(&[0x81, 0x03, 0x05, 0x0d]))
+        .filter(|frame| {
+            data.get(frame.payload..frame.end) == Some(B2_GROUP_SEPARATOR_PAYLOAD.as_slice())
+        })
         .map(|frame| B2GroupSeparator {
             token: frame.header_token,
         })
@@ -2254,7 +2908,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 || vector.iter().any(|value| !value.is_finite())
                 || u_range.iter().any(|value| !value.is_finite())
                 || v_range.iter().any(|value| !value.is_finite())
-                || (vector[0].hypot(vector[1]) - 1.0).abs() > EPS_ANALYTIC_AXIS_UNIT
+                || (vector[0].hypot(vector[1]) - 1.0).abs() > 1e-9
                 || u_range[0] >= u_range[1]
                 || v_range[0] >= v_range[1]
                 || !circle_range_is_full_turn(radius, u_range)
@@ -2338,7 +2992,7 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 || vector.iter().any(|value| !value.is_finite())
                 || u_range.iter().any(|value| !value.is_finite())
                 || v_range.iter().any(|value| !value.is_finite())
-                || (vector[0].hypot(vector[1]) - 1.0).abs() > EPS_ANALYTIC_AXIS_UNIT
+                || (vector[0].hypot(vector[1]) - 1.0).abs() > 1e-9
                 || !range_origin.is_finite()
                 || range_origin.to_bits() != expected_range_origin.to_bits()
                 || u_range[0] >= u_range[1]
@@ -2434,12 +3088,12 @@ pub(crate) fn b2_circles_from_records(
 
 pub(crate) fn circle_range_is_full_turn(radius: f64, range: [f64; 2]) -> bool {
     let relative_span = (range[1] - range[0]) / (std::f64::consts::TAU * radius);
-    relative_span.is_finite() && (relative_span - 1.0).abs() < EPS_ANALYTIC_AXIS_RANGE
+    relative_span.is_finite() && (relative_span - 1.0).abs() < 1e-9
 }
 
 pub(crate) fn circle_range_is_within_full_turn(radius: f64, range: [f64; 2]) -> bool {
     let relative_span = (range[1] - range[0]) / (std::f64::consts::TAU * radius);
-    relative_span.is_finite() && relative_span <= 1.0 + EPS_ANALYTIC_AXIS_RANGE
+    relative_span.is_finite() && relative_span <= 1.0 + 1e-9
 }
 
 /// Decode structurally repeated `b2 03 23` edge-range packets.

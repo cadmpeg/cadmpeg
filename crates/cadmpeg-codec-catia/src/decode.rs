@@ -25,6 +25,7 @@ use crate::families;
 use crate::formula;
 use crate::loss::CatiaLossCode;
 use crate::native::{CatiaNative, CatiaObjectGraph};
+use crate::pmi;
 use crate::sketch;
 
 fn schema_configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
@@ -130,6 +131,9 @@ fn finish_decode(
     unknowns: Vec<UnknownRecord>,
     standard_face_population: bool,
 ) -> Result<DecodeResult, CodecError> {
+    // Retained unknown records are source entities even when a route transfers
+    // no neutral model entity (for example, an unrecognized storage variant).
+    ctx.charge_entities(unknowns.len() as u64, "admit CATIA retained source records")?;
     // Charge route-built entities before native decode and transfer work so
     // max_entities refuses that work rather than only reporting afterward.
     let mut admitted_entities = 0_u64;
@@ -138,8 +142,8 @@ fn finish_decode(
         &mut admitted_entities,
         "admit CATIA route entities",
     )?;
-    let consolidated_record_ranges = container::consolidated_record_ranges(scan);
-    let native = CatiaNative::decode_with_record_ranges(&scan.data, &consolidated_record_ranges);
+    let consolidated_record_sources = container::consolidated_record_sources(scan);
+    let native = CatiaNative::decode_with_record_sources(&scan.data, &consolidated_record_sources);
     let modeling_graph_scope = modeling_graph_scope(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,
@@ -162,11 +166,23 @@ fn finish_decode(
         &design_feature_transfer,
         modeling_graph_scope.as_ref(),
     );
+    let transferred_native_sketch_constraint_records = sketch::transfer_native_sketch_constraints(
+        &mut ir,
+        &native,
+        &design_feature_transfer,
+        modeling_graph_scope.as_ref(),
+    );
     let transferred_constraint_range_records = sketch::transfer_constraint_ranges(
         &mut ir,
         &native,
         &design_feature_transfer,
         modeling_graph_scope.as_ref(),
+    );
+    let transferred_pmi_dimension_count = pmi::transfer_dimensions(
+        &mut ir,
+        &native,
+        modeling_graph_scope.as_ref(),
+        &transferred_constraint_range_records,
     );
     let formula_transfer = formula::transfer_parameters(
         &mut ir,
@@ -823,7 +839,8 @@ fn finish_decode(
                 let (dimensions, complex) = match range.framing {
                     crate::native::CatiaConstraintRangeFraming::DimensionB8
                     | crate::native::CatiaConstraintRangeFraming::DimensionC1
-                    | crate::native::CatiaConstraintRangeFraming::DimensionDC => {
+                    | crate::native::CatiaConstraintRangeFraming::DimensionDC
+                    | crate::native::CatiaConstraintRangeFraming::DimensionDF => {
                         (dimensions + 1, complex)
                     }
                     crate::native::CatiaConstraintRangeFraming::ComplexC9 => {
@@ -837,6 +854,25 @@ fn finish_decode(
                 (total + 1, dimensions, complex, evaluated, unset)
             },
         );
+    let unresolved_dimension_quantity_count = native
+        .entity_records
+        .iter()
+        .filter_map(|record| record.constraint_range.as_ref())
+        .filter(|range| {
+            matches!(
+                range.framing,
+                crate::native::CatiaConstraintRangeFraming::DimensionB8
+                    | crate::native::CatiaConstraintRangeFraming::DimensionC1
+                    | crate::native::CatiaConstraintRangeFraming::DimensionDC
+                    | crate::native::CatiaConstraintRangeFraming::DimensionDF
+            ) && match range.evaluation {
+                crate::native::CatiaEntityEvaluation::Scalar { bits } => {
+                    f64::from_bits(bits).is_finite()
+                }
+                crate::native::CatiaEntityEvaluation::Unset => false,
+            }
+        })
+        .count();
     let IncomingEntityIncidenceCounts {
         total: constraint_range_incoming_reference_count,
         payload: constraint_range_incoming_payload_reference_count,
@@ -1666,6 +1702,9 @@ fn finish_decode(
     let transferred_design_records = transferred_formula_design_records
         .union(&transferred_design_feature_records)
         .chain(transferred_native_sketch_entity_records.intersection(&structurally_owned_records))
+        .chain(
+            transferred_native_sketch_constraint_records.intersection(&structurally_owned_records),
+        )
         .chain(transferred_constraint_range_records.intersection(&structurally_owned_records))
         .cloned()
         .collect::<HashSet<_>>();
@@ -1717,6 +1756,29 @@ fn finish_decode(
                 &entity.geometry,
                 cadmpeg_ir::sketches::SketchGeometry::Native { .. }
             )
+        })
+        .count();
+    let native_operation_feature_ids = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            feature
+                .source_tag
+                .as_deref()
+                .is_some_and(design_feature::is_admitted_native_operation_class)
+        })
+        .map(|feature| feature.id.clone())
+        .collect::<HashSet<_>>();
+    let transferred_native_operation_parameter_count = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            parameter
+                .owner
+                .as_ref()
+                .is_some_and(|owner| native_operation_feature_ids.contains(owner))
         })
         .count();
     report.coverage.extend([
@@ -3182,17 +3244,12 @@ fn finish_decode(
             design_feature_transfer.native_operation_definition_chain_value_count,
         ),
         (
+            "transferred_native_operation_range_count".to_string(),
+            design_feature_transfer.native_operation_range_count,
+        ),
+        (
             "transferred_native_operation_parameter_count".to_string(),
-            ir.model
-                .features
-                .iter()
-                .filter_map(|feature| match &feature.definition {
-                    cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } => {
-                        Some(parameters.len())
-                    }
-                    _ => None,
-                })
-                .sum(),
+            transferred_native_operation_parameter_count,
         ),
         (
             "unresolved_design_record_count".to_string(),
@@ -3219,6 +3276,12 @@ fn finish_decode(
             ir.model.configurations.len(),
         ),
     ]);
+    if transferred_pmi_dimension_count != 0 {
+        report.coverage.insert(
+            "transferred_pmi_dimension_count".to_string(),
+            transferred_pmi_dimension_count,
+        );
+    }
     let untransferred_line_profile_count = native
         .consolidated_line_profiles
         .len()
@@ -3397,6 +3460,15 @@ fn finish_decode(
             formula_transfer.legacy_selector_parameter_count,
             formula_transfer.legacy_formula_count,
         )));
+    }
+    if unresolved_dimension_quantity_count != 0 {
+        report.losses.push(
+            CatiaLossCode::AttributesDimensionQuantityUnresolved.note(format!(
+                "{unresolved_dimension_quantity_count} finite `Range`/`CstAttr_Dimension` \
+                 scalar production(s) remain native because the admitted selectors, suffix \
+                 framing, interval, and owner incidences do not assign a physical quantity."
+            )),
+        );
     }
     if !native.value_blocks.is_empty() {
         report.losses.push(CatiaLossCode::AttributesVisualizationUnbound.note(format!(
