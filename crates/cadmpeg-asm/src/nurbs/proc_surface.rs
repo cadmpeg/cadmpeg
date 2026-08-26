@@ -8,8 +8,8 @@ use crate::nurbs::blend::{
 use crate::nurbs::core::{curve_block, surface_block};
 use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end, NurbsPcurve};
 use crate::nurbs::proc_curve::{
-    embedded_base_curve_resolving_refs, embedded_surface, optional_embedded_surface_with_bounds,
-    optional_helix_revision,
+    embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
+    optional_embedded_surface_with_bounds, optional_helix_revision,
 };
 use crate::nurbs::reader::{normalized, take_native_ident, LEN_TO_MM};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
@@ -1341,6 +1341,8 @@ pub struct EmbeddedSweepSurface {
 pub struct EmbeddedDeformableSurface {
     /// The embedded support surface.
     pub support: SurfaceGeometry,
+    /// Revision-gated fields surrounding the support and shared surface tail.
+    pub revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
     /// The mode-discriminated payload.
     pub data: EmbeddedDeformableSurfaceData,
     /// Six discontinuity arrays.
@@ -3877,13 +3879,69 @@ fn deformable_vector_frame(
     })
 }
 
+fn revision_deformable_mode3(
+    cur: &mut Cur<'_>,
+) -> Option<cadmpeg_ir::geometry::DeformableSurfaceData> {
+    let mut leading_vectors = [Vector3::new(0.0, 0.0, 0.0); 4];
+    for vector in &mut leading_vectors {
+        let value = cur.take_vector3()?;
+        *vector = Vector3::new(value[0], value[1], value[2]);
+    }
+    let leading_parameter = cur.take_f64()?;
+    let leading_flags = [cur.take_bool()?, cur.take_bool()?, cur.take_bool()?];
+    let point = cur.take_position()?;
+    let trailing_point = Point3::new(
+        point[0] * LEN_TO_MM,
+        point[1] * LEN_TO_MM,
+        point[2] * LEN_TO_MM,
+    );
+    let mut trailing_vectors = [Vector3::new(0.0, 0.0, 0.0); 2];
+    for vector in &mut trailing_vectors {
+        let value = cur.take_vector3()?;
+        *vector = Vector3::new(value[0], value[1], value[2]);
+    }
+    let frame_parameter = cur.take_f64()?;
+    let frame_flags = [cur.take_bool()?, cur.take_bool()?];
+    let parameters = [cur.take_f64()?, cur.take_f64()?, cur.take_f64()?];
+    let trailing_flags = [
+        cur.take_bool()?,
+        cur.take_bool()?,
+        cur.take_bool()?,
+        cur.take_bool()?,
+        cur.take_bool()?,
+    ];
+    let trailing_parameter = cur.take_f64()?;
+    let trailing_value = cur.take_long()?;
+    Some(cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3 {
+        leading_vectors,
+        leading_parameter,
+        leading_flags,
+        trailing_point,
+        trailing_vectors,
+        frame_parameter,
+        frame_flags,
+        parameters,
+        trailing_flags,
+        trailing_parameter,
+        trailing_value,
+    })
+}
+
 fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::DeformableSurfaceData;
     let names = ["defm_spl_sur", "defmsur"];
     let (start, _) = toks::find_owned_subtype_marker(toks, &names)?;
     let span = toks::subtype_span(toks, start)?;
     let mut cur = Cur::at(span, 2);
-    let support = embedded_surface(&mut cur)?;
+    let (support, revision_form_head) = if matches!(cur.peek(), Some(Token::Long(_))) {
+        let revision = cur.take_long()?;
+        (revision == 22_506).then_some(())?;
+        let (support, ranges) = embedded_surface_with_ranges(&mut cur)?;
+        let support_bounds = [ranges[0][0], ranges[0][1], ranges[1][0], ranges[1][1]];
+        (support, Some((revision, support_bounds)))
+    } else {
+        (embedded_surface(&mut cur)?, None)
+    };
     let mode = cur.take_long()?;
     let data = match mode {
         1 => {
@@ -3896,6 +3954,9 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
                 frame,
                 parameter_triples,
             })
+        }
+        3 if revision_form_head.is_some() => {
+            EmbeddedDeformableSurfaceData::Resolved(revision_deformable_mode3(&mut cur)?)
         }
         3 => EmbeddedDeformableSurfaceData::Resolved(DeformableSurfaceData::Guided {
             frame: Box::new(deformable_surface_frame(&mut cur)?),
@@ -3988,22 +4049,61 @@ fn defm_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         }
         _ => return None,
     };
-    let (_, cache_end) = surface_block(span, cur.pos())?;
-    cur.set_pos(cache_end);
-    let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
-    let discontinuities = [
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-        cur.take_float_array()?,
-    ];
-    let discontinuity_flag = cur.take_bool()?;
+    let (revision_form, cache_fit_tolerance, discontinuities, discontinuity_flag) =
+        if let Some((revision, support_bounds)) = revision_form_head {
+            let RevisionSurfaceTail {
+                enumeration: tail_enum,
+                fit_tolerance,
+                solved_cache_domains: _,
+                parameterization: tail_parameterization,
+                discontinuities,
+                tail_flag,
+            } = revision_surface_tail(&mut cur)?;
+            (
+                Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    revision,
+                    support_bounds,
+                    reference_endpoints: [None; 2],
+                    second_endpoints: [None; 2],
+                    flags: Vec::new(),
+                    tail_enum,
+                    tail_parameterization,
+                    discontinuities: discontinuities.clone(),
+                    tail_flag,
+                    trailing_flags: Vec::new(),
+                }),
+                fit_tolerance,
+                discontinuities,
+                tail_flag,
+            )
+        } else {
+            let (_, cache_end) = surface_block(span, cur.pos())?;
+            cur.set_pos(cache_end);
+            let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
+            let discontinuities = [
+                cur.take_float_array()?,
+                cur.take_float_array()?,
+                cur.take_float_array()?,
+                cur.take_float_array()?,
+                cur.take_float_array()?,
+                cur.take_float_array()?,
+            ];
+            let discontinuity_flag = cur.take_bool()?;
+            (
+                None,
+                cache_fit_tolerance,
+                discontinuities,
+                discontinuity_flag,
+            )
+        };
+    if revision_form.is_some() {
+        cur.at_scope_end().then_some(())?;
+    }
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Deformable(Box::new(
             EmbeddedDeformableSurface {
                 support,
+                revision_form,
                 data,
                 discontinuities,
                 discontinuity_flag,

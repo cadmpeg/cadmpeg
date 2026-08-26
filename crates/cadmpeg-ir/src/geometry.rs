@@ -838,6 +838,31 @@ pub enum DeformableSurfaceData {
         /// Native trailing selector.
         selector: i64,
     },
+    /// Revision-gated mode-3 deformation payload.
+    RevisionMode3 {
+        /// Four leading deformation vectors.
+        leading_vectors: [Vector3; 4],
+        /// Scalar following the leading vectors.
+        leading_parameter: f64,
+        /// Three flags following the leading scalar.
+        leading_flags: [bool; 3],
+        /// Position anchoring the trailing frame.
+        trailing_point: Point3,
+        /// Two vectors following the trailing point.
+        trailing_vectors: [Vector3; 2],
+        /// Scalar following the trailing vectors.
+        frame_parameter: f64,
+        /// Two flags following the trailing frame scalar.
+        frame_flags: [bool; 2],
+        /// Three ordered scalar parameters following the trailing frame.
+        parameters: [f64; 3],
+        /// Five flags following the ordered scalar parameters.
+        trailing_flags: [bool; 5],
+        /// Scalar preceding the payload's final integer.
+        trailing_parameter: f64,
+        /// Integer closing the revision mode-3 payload.
+        trailing_value: i64,
+    },
 }
 
 /// Four-vector frame used by full deformable surfaces.
@@ -882,6 +907,9 @@ pub struct DeformableSurfaceConstruction {
     pub support: SurfaceId,
     /// Discriminator-selected deformation data.
     pub data: DeformableSurfaceData,
+    /// Revision-gated fields surrounding the support and shared surface tail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_form: Option<RevisionSurfaceForm>,
     /// Six ordered solved-surface discontinuity arrays.
     pub discontinuities: [Vec<f64>; 6],
     /// Native discontinuity tail flag.

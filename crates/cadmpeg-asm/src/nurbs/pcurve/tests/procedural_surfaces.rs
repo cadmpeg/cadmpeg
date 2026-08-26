@@ -98,6 +98,109 @@ fn offset_surface_rejects_nested_cache_substitution() {
 }
 
 #[test]
+fn revision_deformable_surface_mode3_preserves_its_distinct_frame() {
+    for int_width in [4usize, 8] {
+        let mut bytes = vec![0x0f];
+        push_ident(&mut bytes, "defm_spl_sur");
+        push_int(&mut bytes, 0x04, 22_506, int_width);
+        push_ident(&mut bytes, "cone");
+        push_position(&mut bytes, [0.0, 0.0, 0.0]);
+        push_vector(&mut bytes, [0.0, 0.0, 1.0]);
+        push_vector(&mut bytes, [2.0, 0.0, 0.0]);
+        push_f64(&mut bytes, 1.2);
+        bytes.push(0x0b);
+        bytes.push(0x0b);
+        push_f64(&mut bytes, 0.5);
+        push_f64(&mut bytes, 0.866_025_403_784_438_6);
+        push_f64(&mut bytes, 0.25);
+        bytes.push(0x0a);
+        for bound in [0.0, 1.0, 0.0, 1.0] {
+            bytes.push(0x0a);
+            push_f64(&mut bytes, bound);
+        }
+        push_int(&mut bytes, 0x04, 3, int_width);
+        for vector in [
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ] {
+            push_vector(&mut bytes, vector);
+        }
+        push_f64(&mut bytes, 2.5);
+        bytes.extend_from_slice(&[0x0a, 0x0b, 0x0a]);
+        push_position(&mut bytes, [1.0, 2.0, 3.0]);
+        push_vector(&mut bytes, [2.0, 0.0, 0.0]);
+        push_vector(&mut bytes, [0.0, 2.0, 0.0]);
+        push_f64(&mut bytes, 3.5);
+        bytes.extend_from_slice(&[0x0b, 0x0a]);
+        for value in [4.5, 5.5, 6.5] {
+            push_f64(&mut bytes, value);
+        }
+        bytes.extend_from_slice(&[0x0a, 0x0b, 0x0a, 0x0b, 0x0a]);
+        push_f64(&mut bytes, 7.5);
+        push_int(&mut bytes, 0x04, 19, int_width);
+        push_int(&mut bytes, 0x15, 0, int_width);
+        bytes.extend_from_slice(&surface_block(int_width));
+        push_f64(&mut bytes, 0.001);
+        for _ in 0..6 {
+            push_int(&mut bytes, 0x04, 0, int_width);
+        }
+        bytes.push(0x0b);
+        bytes.push(0x10);
+
+        let tokens = lex_test_span(&bytes, int_width);
+        let decoded = crate::nurbs::proc_surface::procedural_surface_resolving_refs(
+            &tokens,
+            &test_table(&bytes, int_width),
+        )
+        .unwrap_or_else(|| panic!("revision deformable surface at width {int_width}"));
+        assert!(
+            (decoded.cache_fit_tolerance.expect("fit tolerance") - 0.01).abs()
+                < f64::EPSILON * 10.0
+        );
+        let DecodedProceduralSurfaceDefinition::Deformable(construction) = decoded.definition
+        else {
+            panic!("expected deformable surface");
+        };
+        let Some(revision_form) = construction.revision_form else {
+            panic!("expected revision form");
+        };
+        assert_eq!(revision_form.revision, 22_506);
+        assert_eq!(revision_form.tail_enum, 0);
+        assert_eq!(
+            revision_form.support_bounds,
+            [Some(0.0), Some(1.0), Some(0.0), Some(1.0)]
+        );
+        let crate::nurbs::proc_surface::EmbeddedDeformableSurfaceData::Resolved(data) =
+            construction.data
+        else {
+            panic!("expected resolved revision mode-3 data")
+        };
+        let cadmpeg_ir::geometry::DeformableSurfaceData::RevisionMode3 {
+            leading_parameter,
+            trailing_point,
+            trailing_vectors,
+            frame_parameter,
+            parameters,
+            trailing_parameter,
+            trailing_value,
+            ..
+        } = data
+        else {
+            panic!("expected revision mode-3 data");
+        };
+        assert_eq!(leading_parameter, 2.5);
+        assert_eq!(trailing_point, Point3::new(10.0, 20.0, 30.0));
+        assert_eq!(trailing_vectors[1], Vector3::new(0.0, 2.0, 0.0));
+        assert_eq!(frame_parameter, 3.5);
+        assert_eq!(parameters, [4.5, 5.5, 6.5]);
+        assert_eq!(trailing_parameter, 7.5);
+        assert_eq!(trailing_value, 19);
+    }
+}
+
+#[test]
 fn taper_surface_uses_direct_construction_cache_then_variant_tail() {
     let variants = [
         ("taper_spl_sur", 0u8),

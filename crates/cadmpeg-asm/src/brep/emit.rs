@@ -389,6 +389,7 @@ fn emit_deformable_surface(
     let support = SurfaceId(format!(
         "{format}:brep:procedural_surface#{i}:deformable:support"
     ));
+    let revision_form = embedded.revision_form;
     out.surfaces.push(Surface {
         id: support.clone(),
         geometry: embedded.support,
@@ -491,6 +492,7 @@ fn emit_deformable_surface(
         construction: Box::new(cadmpeg_ir::geometry::DeformableSurfaceConstruction {
             support,
             data,
+            revision_form,
             discontinuities: embedded.discontinuities,
             discontinuity_flag: embedded.discontinuity_flag,
         }),

@@ -1531,6 +1531,26 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 crate::geometry::DeformableSurfaceData::Minimal { vectors, .. } => {
                     vectors.iter().all(vector_finite)
                 }
+                crate::geometry::DeformableSurfaceData::RevisionMode3 {
+                    leading_vectors,
+                    leading_parameter,
+                    trailing_point,
+                    trailing_vectors,
+                    frame_parameter,
+                    parameters,
+                    trailing_parameter,
+                    ..
+                } => {
+                    leading_vectors.iter().all(vector_finite)
+                        && leading_parameter.is_finite()
+                        && trailing_point.x.is_finite()
+                        && trailing_point.y.is_finite()
+                        && trailing_point.z.is_finite()
+                        && trailing_vectors.iter().all(vector_finite)
+                        && frame_parameter.is_finite()
+                        && parameters.iter().all(|value| value.is_finite())
+                        && trailing_parameter.is_finite()
+                }
             };
             if !data_valid
                 || !construction
