@@ -1994,8 +1994,7 @@ fn try_decode_brep(
     if decoded_sites.is_empty() {
         return None;
     }
-    let active_site = container::select_active_parasolid(scan)
-        .map(|(block, _)| format!("block@{}", block.offset));
+    let active_site = container::select_active_parasolid_site(scan).map(|site| site.site_key());
     let resolved_active_site = active_site
         .as_ref()
         .and_then(|active| decoded_sites.iter().position(|(site, _, _)| site == active));
@@ -3121,17 +3120,16 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
 }
 
 fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
+    let active_configuration_name = container::active_configuration_name(scan);
     for section in scan.sections() {
         let payload = section.payload();
-        if container::payload_family(payload) != "xml"
-            || !payload.windows(12).any(|w| w == b"swSolidWorks")
-        {
+        if container::payload_family(payload) != "xml" {
             continue;
         }
-        let Ok(text) = std::str::from_utf8(payload) else {
+        let Some(text) = container::xml_text(payload) else {
             continue;
         };
-        let Ok(document) = roxmltree::Document::parse(text) else {
+        let Ok(document) = roxmltree::Document::parse(&text) else {
             continue;
         };
         let root = document.root_element();
@@ -3151,9 +3149,15 @@ fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<S
             if let Some(value) = model.attribute("swName") {
                 attributes.insert("sw_name".into(), value.into());
             }
-            if let Some(value) = model.attribute("swConfigurationName") {
-                attributes.insert("sw_configuration_name".into(), value.into());
-            }
+        }
+        if let Some(value) = active_configuration_name.as_deref() {
+            attributes.insert("sw_configuration_name".into(), value.into());
+        } else if let Some(value) = root
+            .descendants()
+            .find(|node| node.has_tag_name("swModel"))
+            .and_then(|model| model.attribute("swConfigurationName"))
+        {
+            attributes.insert("sw_configuration_name".into(), value.into());
         }
         for configuration in root
             .descendants()
@@ -3311,33 +3315,34 @@ fn build_metadata_ir(
     attributes.insert("block_count".to_string(), scan.blocks.len().to_string());
     add_solidworks_xml_metadata(scan, &mut attributes);
 
-    if let Some((block, header)) = container::select_active_parasolid(scan) {
-        attributes.insert(
-            "active_parasolid_block".to_string(),
-            block
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", block.offset)),
-        );
-        attributes.insert("parasolid_schema".to_string(), header.schema.clone());
-        let id = format!("sldprt:file:block#{}", block.offset);
+    if let Some(site) = container::select_active_parasolid_site(scan) {
+        let name = site.name();
+        let (id, offset) = match site.origin {
+            container::ActiveParasolidOrigin::Block(block) => (
+                format!("sldprt:file:block#{}", block.offset),
+                block.offset as u64,
+            ),
+            container::ActiveParasolidOrigin::Compound(stream) => (
+                format!("sldprt:file:compound-stream#{}", stream.directory_id),
+                0,
+            ),
+        };
+        attributes.insert("active_parasolid_block".to_string(), name.clone());
+        attributes.insert("parasolid_schema".to_string(), site.header.schema.clone());
         crate::annotations::note(
             &mut annotations,
             id.clone(),
-            block
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", block.offset)),
+            name,
             0,
             "parasolid_stream",
             Exactness::Unknown,
         );
         unknowns.push(UnknownRecord {
             id: UnknownId(id),
-            offset: block.offset as u64,
-            byte_len: block.uncomp_sz as u64,
-            sha256: sha256_hex(&block.payload),
-            data: Some(block.payload.clone()),
+            offset,
+            byte_len: site.payload.len() as u64,
+            sha256: sha256_hex(site.payload),
+            data: Some(site.payload.to_vec()),
             links: Vec::new(),
         });
     }

@@ -267,3 +267,51 @@ fn decode_uses_the_active_configuration_source_site() {
     );
     assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).is_ok());
 }
+
+#[test]
+fn decode_uses_the_namespaced_manifest_site_without_source_indices() {
+    let mut source = sldprt_with_colliding_sites();
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="First"/><Configuration Name="Second"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/Features",
+        br#"<?xml version="1.0"?><swSolidWorks xmlns="http://www.solidworks.com/sw2003/schema"><swModel id="model-0" swConfigurationName="First" swConfigurationId="0"/><swModel id="model-1" swConfigurationName="Second" swConfigurationId="1"/><swConfigurationList><swConfiguration swID="0" swModelRef="model-0" swMostRecentConfiguration="NO"/><swConfiguration swID="1" swModelRef="model-1" swMostRecentConfiguration="YES"/></swConfigurationList></swSolidWorks>"#,
+    ));
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let second = result
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name.resolved() == Some("Second"))
+        .expect("manifest configuration is projected");
+
+    assert!(second.active.is_active());
+    assert_eq!(second.source_index, Some(1));
+    assert!(!second.bodies.is_empty());
+    assert!(result
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.name.resolved() == Some("First"))
+        .all(|configuration| configuration.active.is_inactive()));
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["sw_configuration_name"],
+        "Second"
+    );
+    assert_eq!(
+        result.ir().source.as_ref().unwrap().attributes["active_parasolid_block"],
+        "Contents/Config-1-Partition"
+    );
+    assert!(!result.report().losses.iter().any(|loss| loss
+        .message
+        .contains("active configuration identity is unresolved")));
+}

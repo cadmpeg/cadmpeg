@@ -23,6 +23,13 @@ right sibling identifiers, child identifier, first sector, and u64 stream size.
 The sibling trees and storage children form slash-qualified stream paths such
 as `Contents/Config-0-Partition`.
 
+A directory slot whose object-type byte is zero is unallocated. Its name,
+links, color, sector, and size fields are not interpreted, even when those
+fields contain nonzero stale bytes. The slot remains in the directory index so
+directory identifiers retain their numeric positions, but it does not enter a
+sibling tree or a storage path. A nonzero object type is `1` for a storage, `2`
+for a stream, or `5` for the root storage.
+
 Streams smaller than the 4096-byte mini-stream cutoff use 64-byte sectors in
 the root storage stream and follow the mini FAT. Other streams follow the
 regular FAT. In both allocation modes, the chain contains exactly
@@ -755,11 +762,19 @@ A compact parting-line Draft uses direct duplicated component-vector records wit
 
 A planar sketch history name ending in `<N>`, where `N` is one or more decimal digits, aliases the uniquely named unsuffixed sketch when both records have the same XML element tag, resolved feature-input class, ordered content, and complete parameter map. The unsuffixed history feature remains the sole owner of the solved sketch geometry, and the geometry-less alias feature depends on that owner. Feature operands naming the alias bind to the owner's sketch and depend on the unsuffixed owner. A missing base, multiple matching bases, or any record-content difference leaves the alias operand native.
 
-Keywords `Configuration` elements carry a non-empty, document-unique `Name`; `Material` carries the configuration material override. Decimal `SourceIndex=N` binds the configuration to `Config-N-Partition`. All other attributes are configuration-local named values. Source indices are document-unique and independent of element order and the resolved-features slot identity. A matching partition supplies the configuration body set. When no `Config-N-Partition` section exists, the body set is empty. A configuration without `SourceIndex` has no partition binding.
+Keywords `Configuration` elements carry a non-empty, document-unique `Name`; `Material` carries the configuration material override. Decimal `SourceIndex=N` binds the configuration to `Config-N-Partition`. All other attributes are configuration-local named values. Source indices are document-unique and independent of element order and the resolved-features slot identity. A matching partition supplies the configuration body set. When no `Config-N-Partition` section exists, the body set is empty. A configuration without `SourceIndex` has no ordinary partition binding; the uniquely manifest-selected configuration receives the selected `swID` when its name binds uniquely.
 
-A configuration whose name equals `swModel/@swConfigurationName` is active. A missing or unmatched active name leaves every configuration inactive.
+The unique `swMostRecentConfiguration="YES"` manifest row is the active
+configuration identity, including when the manifest contains several
+`swModel` rows. A single `swModel/@swConfigurationName` is the name fallback
+when the manifest does not provide a name. A missing or unmatched active name
+leaves the Keywords configuration identity unresolved.
 
-The `swConfigurationList/swConfiguration` element identifies the same configuration by decimal `swID`. `swConfigurationNeedsUpdate="YES"` states that the document carries no current evaluated snapshot for that configuration; its feature and parameter state requires regeneration. `swConfigurationNeedsUpdate="NO"` states that its cached state is current. `swMostRecentConfiguration`, `swConfigurationFlags`, and `swConfigurationAlternateName` are configuration-manifest metadata.
+`swConfigurationNeedsUpdate="YES"` states that the document carries no
+current evaluated snapshot for that configuration; its feature and parameter
+state requires regeneration. `swConfigurationNeedsUpdate="NO"` states that
+its cached state is current. `swConfigurationFlags` and
+`swConfigurationAlternateName` are configuration-manifest metadata.
 
 Keywords `Feature` elements use the `Type` attribute as their operation-family token. All feature instances with the same exact `Type` token use the same feature-input class. A directly object-ID-bound class instance therefore supplies the class of the other instances carrying that token. `Helix/Spiral`, `Surface-Sweep`, and `Thicken` denote helix, surface-sweep, and face-thickening operations independently of the localized display name in `Name`.
 
@@ -1195,11 +1210,31 @@ The schema identifier has the form `SCH_<modeller>_<schema>_<format>`. Partition
 
 ### 3.2 Sites and attribute scope
 
-An attribute id is **not** globally unique. A **site** is one validated outer block (identified by its marker offset). Partition and deltas streams in the same outer block share a site namespace; streams in different outer blocks are distinct sites.
+An attribute id is **not** globally unique. A **site** is one validated outer block (identified by its marker offset) or one named compound stream. Partition and deltas streams in the same outer block share a site namespace; streams in different outer blocks or compound streams are distinct sites.
 
 An untyped surface or curve belongs to the retained outer block or compound stream that contains its site. Merging sites qualifies model entity identities but does not change this document-global source-record identity.
 
-The active Keywords configuration's `SourceIndex=N` selects `Config-N-Partition` as the active B-rep site. A `Deltas`, `GhostPartition`, or `ResolvedFeatures` section is not a partition substitute. Without an explicit active source index, a sole non-ghost partition is the active site; multiple partition sites do not establish active geometry identity.
+The Features manifest is the namespaced `swSolidWorks` XML document in
+`swXmlContents/Features` or the compound-document `Features` stream. Element
+names use their local names with the SolidWorks namespace URI
+`http://www.solidworks.com/sw2003/schema`. Its
+`swConfigurationList/swConfiguration` rows identify configurations by decimal
+`swID`. Exactly one row with `swMostRecentConfiguration="YES"` identifies the
+active configuration; its `swID` selects `Config-<swID>-Partition`. The row's
+`swModelRef` points to the corresponding `swModel` `id`, and the linked
+`swModel` supplies the configuration name. `swConfigurationId` on that model
+has the same value as `swID`.
+
+Selection precedence is a valid `SourceIndex=N` on the active Keywords
+configuration, then the unique manifest row's `swID`, then a sole non-ghost
+partition. A `Deltas`, `GhostPartition`, or `ResolvedFeatures` section is not
+a partition substitute. A manifest with zero or several `YES` rows supplies no
+index. Partition indices need not be dense. When the manifest selects a
+source-less Keywords configuration by name, the selected `swID` establishes
+its partition binding. With one `swModel`, `swConfigurationName` supplies the
+same active name used by the first rule; with several model rows, the linked
+manifest row is authoritative. If no index is established, multiple partition
+sites do not establish active geometry identity.
 
 Compact analytic records, `00 11` coedges, `00 12` vertex-uses, and `00 1d` points use `(site_id, attr)` identity because their attributes can repeat across sites. Bridges (`00 0e`), loop heads (`00 0f`), and edge-uses (`00 10`) carry globally unique attributes, but their references to site-scoped families remain in the referring record's site. Partition and deltas records in one site share an attribute namespace.
 

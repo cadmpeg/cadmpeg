@@ -144,14 +144,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the gap to write the record back without moving or inventing undecoded bytes.
 
-### CM-09. Active body stream selection
-
-**Question.** Which field identifies the active B-rep stream when no configuration record selects one?
-
-**Known.** The active configuration's `SourceIndex=N` selects `Config-N-Partition`. `Config-N-Deltas`, `Config-N-GhostPartition`, and `Config-N-ResolvedFeatures` do not substitute for that partition. Without an explicit active source index, a sole non-ghost partition is active. Multiple partitions leave active geometry identity unresolved. Stream size and container order do not select one.
-
-**Need.** We must define whether another stored field selects one partition when multiple partitions exist and no configuration record supplies `SourceIndex`.
-
 ### CM-10. Parasolid stream boundary
 
 **Question.** What fixes the end of a Parasolid stream inside one block payload?
