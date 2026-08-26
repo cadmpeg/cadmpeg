@@ -46,8 +46,11 @@ cadmpeg convert bracket.f3d -o bracket.igs --iges-target 5.3
 `--reject-step-losses` refuses STEP output before writing when any STEP loss
 note would be reported.
 
-`--iges-target 5.1`, `5.2`, or `5.3` selects the IGES target. The default is
-`5.3`.
+`--iges-target 4.0`, `5.0`, `5.1`, `5.2`, or `5.3` selects the IGES target. The
+default is `5.3`.
+
+`--rhino-target 50`, `60`, `70`, or `80` selects the Rhino archive version. The
+default is `80`. It is valid only for Rhino output.
 
 The output extension selects `step`, `iges`, `fcstd`, `f3d`, `sldprt`, `rhino`, or
 `cadir`. Pass `--format` (alias `--to`) when the filename does not identify
