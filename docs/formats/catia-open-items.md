@@ -540,14 +540,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the difference to validate and write the record.
 
-### OS-10. Exact pcurve suffix scalar
-
-**Question.** What does the positive scalar in the exact `b5 03 21` pcurve suffix control?
-
-**Known.** `catia.md` §6.7 "`b5 03 21` (pcurve):" defines the pcurve geometry and parameter interval independently of this scalar.
-
-**Need.** We must know the role to make the complete pcurve record.
-
 ### OS-11. Class-`0x2c` auxiliary scalars
 
 **Question.** What does each decreasing auxiliary scalar in class-`0x2c` terminal forms `01 09` and `01 15` control?

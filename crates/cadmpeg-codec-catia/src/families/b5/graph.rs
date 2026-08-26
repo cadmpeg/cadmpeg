@@ -584,18 +584,31 @@ pub struct B5Pcurve {
     pub control_points: Vec<[f64; 2]>,
     /// Per-pole rational weights. `None` denotes a polynomial pcurve.
     pub weights: Option<Vec<f64>>,
-    /// Explicit native parameter interval when the pcurve record stores one.
+    /// Explicit occurrence parameter interval when the pcurve record stores one.
     pub parameter_range: Option<[f64; 2]>,
+    /// Coordinate convention for evaluating the stored knot vector.
+    pub parameterization: B5PcurveParameterization,
     /// Positive scalar stored in the exact class-`21` suffix. When a class-`21`
-    /// object-stream jet participates in a translated class-`2c` chart, this
-    /// is the source knot-span witness; standalone pcurve evaluation does not
-    /// use it.
+    /// pcurve is present, it is the length of the zero-based occurrence interval.
     pub class_21_suffix_scalar: Option<f64>,
     /// The curve's two clamped-end poles lifted through `surface` into
     /// world-frame 3D points, or `None` before [`parse`] resolves them or
     /// when the lift fails (unresolved surface, degenerate revolution
     /// scale, or NURBS evaluation failure).
     pub lifted_endpoints: Option<[[f64; 3]; 2]>,
+}
+
+/// Parameter coordinates used by one B5 pcurve record.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum B5PcurveParameterization {
+    /// The pcurve's occurrence coordinate is its serialized knot coordinate.
+    Native,
+    /// The occurrence coordinate starts at zero while the serialized knot
+    /// vector starts at `native_origin`.
+    Translated {
+        /// Native knot coordinate corresponding to occurrence station zero.
+        native_origin: f64,
+    },
 }
 
 /// Exact great-circle fields carried by a class-`1d` sphere pcurve.
@@ -1431,6 +1444,7 @@ fn object_stream_pcurve_candidate(
         control_points,
         weights: None,
         parameter_range: Some(jet.range),
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     })
@@ -1544,6 +1558,7 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
         control_points,
         weights: None,
         parameter_range: Some(parameter_range),
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: Some(scalar(tail, 10)?),
         lifted_endpoints: None,
     })
@@ -2117,7 +2132,7 @@ fn implicit_pcurve_bindings(
 }
 
 pub(crate) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
-    let knots = pcurve_knots(pcurve)?;
+    let knots = pcurve_nurbs_knots(pcurve)?;
     let control_points: Vec<Point2> = pcurve
         .control_points
         .iter()
@@ -2144,8 +2159,27 @@ fn pcurve_knots(pcurve: &B5Pcurve) -> Option<Vec<f64>> {
     Some(knots)
 }
 
-fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
+/// Return the knot vector in the pcurve's occurrence coordinate system.
+pub(crate) fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<f64>> {
     let knots = pcurve_knots(pcurve)?;
+    match pcurve.parameterization {
+        B5PcurveParameterization::Native => Some(knots),
+        B5PcurveParameterization::Translated { native_origin } => {
+            (native_origin.is_finite()).then_some(())?;
+            let translated = knots
+                .into_iter()
+                .map(|knot| knot - native_origin)
+                .collect::<Vec<_>>();
+            translated
+                .iter()
+                .all(|knot| knot.is_finite())
+                .then_some(translated)
+        }
+    }
+}
+
+pub(crate) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
+    let knots = pcurve_nurbs_knots(pcurve)?;
     let degree = usize::try_from(pcurve.degree).ok()?;
     let spline_domain = [
         *knots.get(degree)?,
@@ -4037,10 +4071,13 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     position = view.position();
     let tail = record.payload.get(position..)?;
     let suffix_scalar = scalar(tail, 10)?;
+    let native_origin = *distinct_knots.first()?;
+    let native_span = distinct_knots[1] - native_origin;
     if tail.len() != 36
         || tail.get(..2) != Some(&[0x05, 0x05])
         || scalar(tail, 2)? != 0.0
         || suffix_scalar <= 0.0
+        || suffix_scalar.to_bits() != native_span.to_bits()
         || scalar(tail, 18)? != 1.0
         || scalar(tail, 26)? != 0.0
         || tail.get(34..) != Some(&[0x00, 0x07])
@@ -4056,6 +4093,7 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         control_points,
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Translated { native_origin },
         class_21_suffix_scalar: Some(suffix_scalar),
         lifted_endpoints: None,
     })
@@ -4220,6 +4258,7 @@ fn rational_arc_pcurve(
         control_points,
         weights: Some(weights),
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     })
@@ -4449,6 +4488,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         control_points,
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     })

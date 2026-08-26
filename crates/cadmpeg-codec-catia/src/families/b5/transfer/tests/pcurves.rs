@@ -3,8 +3,8 @@
 use super::super::super::graph::{
     bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, B5ExtrusionDirectrix,
     B5ExtrusionSurface, B5Face, B5Graph, B5Loop, B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve,
-    B5ParameterIncidence, B5Pcurve, B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface,
-    B5SupportedSurfaceParameters, B5Surface,
+    B5ParameterIncidence, B5Pcurve, B5PcurveParameterization, B5Profile, B5SphereGreatCirclePcurve,
+    B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
 };
 use super::super::edges::{
     b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
@@ -130,6 +130,7 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
                 control_points: vec![[0.5, angular_range[0]], [0.5, angular_range[1]]],
                 weights: None,
                 parameter_range: None,
+                parameterization: B5PcurveParameterization::Native,
                 class_21_suffix_scalar: None,
                 lifted_endpoints: None,
             },
@@ -212,6 +213,7 @@ fn affine_and_isoparametric_pcurves_produce_exact_curve_carriers() {
         control_points: vec![[0.0, 2.0], [3.0, 2.0]],
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
@@ -264,6 +266,7 @@ fn analytic_isocurves_accept_finite_nonzero_scales() {
         control_points: vec![[0.0, 0.0], [0.5 * scale, 0.0]],
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
@@ -360,6 +363,7 @@ fn affine_plane_lift_preserves_pcurve_weights() {
         control_points: vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
         weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
@@ -441,6 +445,7 @@ fn isocurve_range_uses_monotone_varying_surface_coordinate() {
         control_points: vec![[4.0, 2.0], [4.0, 6.0], [4.0, 10.0]],
         weights: Some(vec![1.0, 2.0, 1.0]),
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
@@ -535,6 +540,7 @@ fn isoparametric_circle_range_preserves_winding_and_seams() {
         control_points: vec![[11.0, 3.0], [13.0, 3.0]],
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
@@ -751,6 +757,7 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
         control_points: vec![[0.0, 4.0], [3.0 * std::f64::consts::PI, 4.0]],
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
@@ -1194,6 +1201,7 @@ fn torus_chart_lifts_meridians_and_latitudes_exactly() {
         control_points: vec![[0.0, 0.0], [0.0, 4.0 * std::f64::consts::PI]],
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
@@ -1269,6 +1277,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
         control_points: vec![[0.0, 3.0], [4.0, 7.0]],
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };

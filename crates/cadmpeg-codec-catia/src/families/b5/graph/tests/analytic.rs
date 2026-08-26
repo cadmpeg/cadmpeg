@@ -789,6 +789,7 @@ fn pcurve_evaluation_preserves_the_native_parameter() {
         control_points: vec![[2.0, 3.0], [4.0, 7.0]],
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     };
