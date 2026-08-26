@@ -759,6 +759,70 @@ pub(crate) fn synthetic_framed_deformable_surface_smbh(mode: i64) -> Vec<u8> {
     bytes
 }
 
+pub(crate) fn synthetic_revision_deformable_surface_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_minimal_deformable_surface_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::solved_record_limit(&bytes).unwrap();
+    let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).unwrap();
+    let old = &records[9];
+    let mut surface = Vec::new();
+    t_subident(&mut surface, "spline");
+    t_ident(&mut surface, "surface");
+    t_ref(&mut surface, -1);
+    t_long(&mut surface, -1);
+    t_ref(&mut surface, -1);
+    surface.push(0x0f);
+    t_ident(&mut surface, "defm_spl_sur");
+    t_long(&mut surface, 22_506);
+    t_ident(&mut surface, "cone");
+    t_pos(&mut surface, [0.0, 0.0, 0.0]);
+    t_vec(&mut surface, [0.0, 0.0, 1.0]);
+    t_vec(&mut surface, [2.0, 0.0, 0.0]);
+    t_dbl(&mut surface, 1.2);
+    surface.extend_from_slice(&[0x0b, 0x0b]);
+    t_dbl(&mut surface, 0.5);
+    t_dbl(&mut surface, 0.866_025_403_784_438_6);
+    t_dbl(&mut surface, 0.25);
+    surface.push(0x0b);
+    for bound in [0.0, 1.0, 0.0, 1.0] {
+        surface.push(0x0a);
+        t_dbl(&mut surface, bound);
+    }
+    t_long(&mut surface, 3);
+    for vector in [
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0],
+    ] {
+        t_vec(&mut surface, vector);
+    }
+    t_dbl(&mut surface, 2.5);
+    surface.extend_from_slice(&[0x0a, 0x0b, 0x0a]);
+    t_pos(&mut surface, [1.0, 2.0, 3.0]);
+    t_vec(&mut surface, [2.0, 0.0, 0.0]);
+    t_vec(&mut surface, [0.0, 2.0, 0.0]);
+    t_dbl(&mut surface, 3.5);
+    surface.extend_from_slice(&[0x0b, 0x0a]);
+    for value in [4.5, 5.5, 6.5] {
+        t_dbl(&mut surface, value);
+    }
+    surface.extend_from_slice(&[0x0a, 0x0b, 0x0a, 0x0b, 0x0a]);
+    t_dbl(&mut surface, 7.5);
+    t_long(&mut surface, 19);
+    push_native_enum(&mut surface, 0);
+    surface.extend_from_slice(&generated_surface_block());
+    t_dbl(&mut surface, 0.004);
+    for values in [&[][..], &[][..], &[][..], &[][..], &[][..], &[][..]] {
+        append_generated_float_array(&mut surface, values);
+    }
+    surface.push(0x0b);
+    surface.push(0x10);
+    t_end(&mut surface);
+    bytes.splice(old.offset..old.offset + old.len, surface);
+    bytes
+}
+
 pub(crate) fn synthetic_surface_curve_deformable_smbh() -> Vec<u8> {
     let mut bytes = synthetic_minimal_deformable_surface_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();

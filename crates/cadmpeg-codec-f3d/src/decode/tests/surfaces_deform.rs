@@ -205,7 +205,8 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
             }
             DeformableSurfaceData::Minimal { .. }
             | DeformableSurfaceData::SurfaceCurve { .. }
-            | DeformableSurfaceData::Full { .. } => {
+            | DeformableSurfaceData::Full { .. }
+            | DeformableSurfaceData::RevisionMode3 { .. } => {
                 panic!("wrong mode")
             }
         }
@@ -228,6 +229,83 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
             ProceduralSurfaceDefinition::Deformable { .. }
         ));
     }
+}
+
+#[test]
+fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_revision_deformable_surface_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("revision deformable surface decode");
+    let ProceduralSurfaceDefinition::Deformable { construction } =
+        &decoded.ir().model.procedural_surfaces[0].definition
+    else {
+        panic!("expected deformable surface")
+    };
+    let revision_form = construction
+        .revision_form
+        .as_ref()
+        .expect("revision deformable form");
+    assert_eq!(revision_form.revision, 22_506);
+    assert_eq!(
+        revision_form.support_bounds,
+        [Some(0.0), Some(1.0), Some(0.0), Some(1.0)]
+    );
+    let DeformableSurfaceData::RevisionMode3 {
+        leading_parameter,
+        trailing_point,
+        parameters,
+        trailing_value,
+        ..
+    } = &construction.data
+    else {
+        panic!("expected revision mode-3 data")
+    };
+    assert_eq!(*leading_parameter, 2.5);
+    assert_eq!(
+        *trailing_point,
+        cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
+    );
+    assert_eq!(*parameters, [4.5, 5.5, 6.5]);
+    assert_eq!(*trailing_value, 19);
+
+    let (mut source_less, _, _) = decoded.into_parts();
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("revision deformable source-less encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("revision deformable source-less round trip");
+    let ProceduralSurfaceDefinition::Deformable { construction } =
+        &round_trip.ir().model.procedural_surfaces[0].definition
+    else {
+        panic!("expected round-trip deformable surface")
+    };
+    assert_eq!(
+        construction
+            .revision_form
+            .as_ref()
+            .expect("round-trip revision form")
+            .support_bounds,
+        [Some(0.0), Some(1.0), Some(0.0), Some(1.0)]
+    );
+    assert!(matches!(
+        construction.data,
+        DeformableSurfaceData::RevisionMode3 {
+            trailing_value: 19,
+            ..
+        }
+    ));
 }
 
 #[test]

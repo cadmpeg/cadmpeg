@@ -152,15 +152,89 @@ fn native_procedural_surface_definition(
                     "deformable surface requires a native cache-fit tolerance".into(),
                 )
             })?;
-            native_surface_base(bytes, "spline")?;
-            bytes.push(0x0f);
-            native_ident(bytes, "defm_spl_sur")?;
             let support = target
                 .model
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == construction.support)
                 .ok_or_else(|| CodecError::Malformed("deformable support is missing".into()))?;
+            if let Some(form) = &construction.revision_form {
+                if form.revision != 22_506 {
+                    return Err(CodecError::Malformed(
+                        "unsupported revision-gated deformable surface revision".into(),
+                    ));
+                }
+                let DeformableSurfaceData::RevisionMode3 {
+                    leading_vectors,
+                    leading_parameter,
+                    leading_flags,
+                    trailing_point,
+                    trailing_vectors,
+                    frame_parameter,
+                    frame_flags,
+                    parameters,
+                    trailing_flags,
+                    trailing_parameter,
+                    trailing_value,
+                } = &construction.data
+                else {
+                    return Err(CodecError::Malformed(
+                        "revision-gated deformable surface requires mode-3 data".into(),
+                    ));
+                };
+                native_surface_base(bytes, "spline")?;
+                bytes.push(0x0f);
+                native_ident(bytes, "defm_spl_sur")?;
+                native_i64(bytes, form.revision);
+                native_embedded_surface_with_bounds(
+                    bytes,
+                    &support.geometry,
+                    &form.support_bounds,
+                )?;
+                native_i64(bytes, 3);
+                for vector in leading_vectors {
+                    native_vector(bytes, [vector.x, vector.y, vector.z]);
+                }
+                native_f64(bytes, *leading_parameter);
+                for flag in leading_flags {
+                    bytes.push(native_bool(*flag));
+                }
+                native_point(
+                    bytes,
+                    [
+                        trailing_point.x / LEN_TO_MM,
+                        trailing_point.y / LEN_TO_MM,
+                        trailing_point.z / LEN_TO_MM,
+                    ],
+                );
+                for vector in trailing_vectors {
+                    native_vector(bytes, [vector.x, vector.y, vector.z]);
+                }
+                native_f64(bytes, *frame_parameter);
+                for flag in frame_flags {
+                    bytes.push(native_bool(*flag));
+                }
+                for parameter in parameters {
+                    native_f64(bytes, *parameter);
+                }
+                for flag in trailing_flags {
+                    bytes.push(native_bool(*flag));
+                }
+                native_f64(bytes, *trailing_parameter);
+                native_i64(bytes, *trailing_value);
+                native_revision_surface_tail(
+                    bytes,
+                    "deformable surface",
+                    form,
+                    Some(solved_cache),
+                    procedural.cache_fit_tolerance,
+                )?;
+                bytes.push(0x10);
+                return Ok(true);
+            }
+            native_surface_base(bytes, "spline")?;
+            bytes.push(0x0f);
+            native_ident(bytes, "defm_spl_sur")?;
             native_embedded_surface(bytes, &support.geometry)?;
             let write_frame =
                 |bytes: &mut Vec<u8>, frame: &cadmpeg_ir::geometry::DeformableSurfaceFrame| {
@@ -335,6 +409,11 @@ fn native_procedural_surface_definition(
                         native_vector(bytes, [vector.x, vector.y, vector.z]);
                     }
                     native_i64(bytes, *selector);
+                }
+                DeformableSurfaceData::RevisionMode3 { .. } => {
+                    return Err(CodecError::Malformed(
+                        "revision mode-3 deformable data requires its revision form".into(),
+                    ));
                 }
             }
             native_nurbs_surface(bytes, solved_cache)?;
@@ -6018,18 +6097,128 @@ fn native_embedded_surface_with_bounds(
     geometry: &SurfaceGeometry,
     bounds: &[Option<f64>; 4],
 ) -> Result<(), CodecError> {
-    native_embedded_surface(bytes, geometry)?;
-    if matches!(
-        geometry,
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Plane { .. }
-    ) {
-        for bound in bounds {
-            native_optional_f64(bytes, *bound);
+    match geometry {
+        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
+            native_embedded_cone_with_bounds(bytes, geometry, bounds)?;
         }
-    } else if bounds.iter().any(Option::is_some) {
-        return Err(CodecError::Malformed(
-            "support bounds require a spline or plane support".into(),
-        ));
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            native_ident(bytes, "sphere")?;
+            native_point(
+                bytes,
+                [
+                    center.x / LEN_TO_MM,
+                    center.y / LEN_TO_MM,
+                    center.z / LEN_TO_MM,
+                ],
+            );
+            native_f64(bytes, *radius / LEN_TO_MM);
+            native_vector(bytes, [ref_direction.x, ref_direction.y, ref_direction.z]);
+            native_vector(bytes, [axis.x, axis.y, axis.z]);
+            bytes.push(0x0b);
+            for bound in bounds {
+                native_optional_f64(bytes, *bound);
+            }
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            native_ident(bytes, "torus")?;
+            native_point(
+                bytes,
+                [
+                    center.x / LEN_TO_MM,
+                    center.y / LEN_TO_MM,
+                    center.z / LEN_TO_MM,
+                ],
+            );
+            native_vector(bytes, [axis.x, axis.y, axis.z]);
+            native_f64(bytes, *major_radius / LEN_TO_MM);
+            native_f64(bytes, *minor_radius / LEN_TO_MM);
+            native_vector(bytes, [ref_direction.x, ref_direction.y, ref_direction.z]);
+            bytes.push(0x0b);
+            for bound in bounds {
+                native_optional_f64(bytes, *bound);
+            }
+        }
+        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Plane { .. } => {
+            native_embedded_surface(bytes, geometry)?;
+            for bound in bounds {
+                native_optional_f64(bytes, *bound);
+            }
+        }
+        SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. } => {
+            return Err(CodecError::Malformed(
+                "support bounds require an embeddable analytic or spline support".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn native_embedded_cone_with_bounds(
+    bytes: &mut Vec<u8>,
+    geometry: &SurfaceGeometry,
+    bounds: &[Option<f64>; 4],
+) -> Result<(), CodecError> {
+    let (origin, axis, ref_direction, radius, ratio, half_angle) = match geometry {
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => (*origin, *axis, *ref_direction, *radius, 1.0, 0.0),
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } => (*origin, *axis, *ref_direction, *radius, *ratio, *half_angle),
+        _ => {
+            return Err(CodecError::Malformed(
+                "cone bounds helper requires an analytic cone support".into(),
+            ));
+        }
+    };
+    native_ident(bytes, "cone")?;
+    native_point(
+        bytes,
+        [
+            origin.x / LEN_TO_MM,
+            origin.y / LEN_TO_MM,
+            origin.z / LEN_TO_MM,
+        ],
+    );
+    native_vector(bytes, [axis.x, axis.y, axis.z]);
+    native_vector(
+        bytes,
+        [
+            ref_direction.x * radius / LEN_TO_MM,
+            ref_direction.y * radius / LEN_TO_MM,
+            ref_direction.z * radius / LEN_TO_MM,
+        ],
+    );
+    native_f64(bytes, ratio);
+    bytes.extend_from_slice(&[0x0b, 0x0b]);
+    native_f64(bytes, half_angle.sin());
+    native_f64(bytes, half_angle.cos());
+    native_f64(bytes, radius / LEN_TO_MM);
+    bytes.push(0x0b);
+    for bound in bounds {
+        native_optional_f64(bytes, *bound);
     }
     Ok(())
 }
