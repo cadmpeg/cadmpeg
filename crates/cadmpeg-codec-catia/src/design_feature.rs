@@ -15,7 +15,7 @@ use crate::native::{
     CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaEntityRecord, CatiaNative,
     CatiaObjectRecord, CatiaRangeInterval, CatiaRangeNominalFraming,
 };
-use crate::object_graph::{HeadToken, PayloadField, PayloadSubtype};
+use crate::object_graph::{PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DesignFeatureTransfer {
@@ -706,49 +706,21 @@ fn native_operation_candidate<'a>(
 ) -> Option<NativeOperationCandidate<'a>> {
     let owner_record_id = object.owner_record.as_deref()?;
     let owner_record = records.get(owner_record_id).copied()?;
-    // A compact 1A root does not carry separator roles, but its complete
-    // class/storage/null/owner lane is an exact self-owned object anchor.
-    // Accept it only when the selected record, owner slot, and design-object
-    // identity all agree; a class name in an arbitrary field is insufficient.
-    let self_owned_compact_root = object.owner_design_object.is_none()
-        && owner_record.design_object.as_deref() == Some(object.id.as_str())
-        && owner_record.entity_id == Some(object.owner_entity_id)
-        && owner_record.owner_entity_id() == Some(object.owner_entity_id)
-        && owner_record.class_ref.is_some()
-        && matches!(
-            owner_record.head.as_slice(),
-            [
-                HeadToken::Lead(0x1a),
-                HeadToken::Reference(_),
-                HeadToken::Reference(0),
-                HeadToken::NullHandle,
-                HeadToken::Reference(owner),
-            ] if *owner == object.owner_entity_id
-        );
-    let (owner_class_name, owner_class_entry) = object
-        .owner_class
-        .as_ref()
-        .map(|class| (class.name.as_str(), class.entry.as_str()))
-        .or_else(|| {
-            if !self_owned_compact_root {
-                return None;
-            }
-            Some((
-                owner_record.class_name.as_deref()?,
-                owner_record.class_entry.as_deref()?,
-            ))
-        })?;
+    // `owner_class` is populated only by a complete separator-form owner
+    // declaration. A compact root's class entry remains field vocabulary.
+    let owner_class = object.owner_class.as_ref()?;
+    let owner_class_name = owner_class.name.as_str();
+    let owner_class_entry = owner_class.entry.as_str();
     is_admitted_native_operation_class(owner_class_name).then_some(())?;
     (owner_record.class_name.as_deref() == Some(owner_class_name)
         && owner_record.class_entry.as_deref() == Some(owner_class_entry)
         && owner_record.entity_id == Some(object.owner_entity_id)
-        && (owner_record.design_object.as_deref() == object.owner_design_object.as_deref()
-            || self_owned_compact_root))
-        .then_some(NativeOperationCandidate {
-            object,
-            owner_record,
-            kind: owner_class_name,
-        })
+        && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
+    .then_some(NativeOperationCandidate {
+        object,
+        owner_record,
+        kind: owner_class_name,
+    })
 }
 
 pub(crate) fn is_admitted_native_operation_class(name: &str) -> bool {

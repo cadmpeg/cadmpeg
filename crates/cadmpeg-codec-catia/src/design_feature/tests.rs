@@ -16,6 +16,7 @@ use crate::native::{
     CatiaEntitySuffixSchemaValue, CatiaObjectGraph, CatiaObjectOwner,
     CatiaObjectRecordReferenceSource,
 };
+use crate::object_graph::HeadToken;
 use crate::object_graph::ObjectPayload;
 use crate::test_support::*;
 use crate::CatiaCodec;
@@ -183,7 +184,7 @@ fn entity_record(
 }
 
 #[test]
-fn transfers_compact_self_owned_operation_root() {
+fn compact_self_owned_operation_root_remains_an_identity_anchor() {
     let mut object = design_object("operation-object", None);
     object.owner_entity_id = 1;
     object.owner_record = Some("operation-record".to_string());
@@ -224,19 +225,12 @@ fn transfers_compact_self_owned_operation_root() {
 
     let transfer = transfer_design_features(&mut ir, &native, None);
 
-    assert_eq!(ir.model.features.len(), 1);
-    assert_eq!(
-        transfer.native_operation_records,
-        HashSet::from(["operation-record".to_string()])
-    );
-    assert!(matches!(
-        ir.model.features[0].definition,
-        FeatureDefinition::ExtrudeUnresolved
-    ));
+    assert!(ir.model.features.is_empty());
+    assert!(transfer.native_operation_records.is_empty());
 }
 
 #[test]
-fn does_not_promote_unclassified_self_owned_compact_root() {
+fn malformed_compact_root_does_not_promote_an_operation() {
     let mut object = design_object("operation-object", None);
     object.owner_entity_id = 1;
     object.owner_record = Some("operation-record".to_string());

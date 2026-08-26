@@ -456,16 +456,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the serialized quantity source and its join to the constraint-range entity before transferring the scalar and deviations as length, angle, or ratio values.
 
-### DI-25. Compact `1A` operation-class declaration
-
-**Question.** Does a compact self-owned `1A` root declare an operation class?
-
-**Known.** `catia.md` §7.3 "An exact separator-form owner declaration with class name `GSMPlaneAngle`" requires a separator-form declaration with a matching class entry, owner entity, and structural owner for each unresolved operation family node. `crates/cadmpeg-codec-catia/src/design_feature.rs:713-741` also admits a self-owned compact `1A` root that has no structural owner, and reads the operation class name and class entry from that record. Commits on this branch added classes to the admitted operation set, so the compact route now reaches the reference-plane, extrusion, and circular-pattern families.
-
-**Need.** We must know whether the compact root declares a class, because the family node it makes is a neutral feature with a history ordinal.
-
-**Conflict.** `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" states that in compact groups the selected record is an identity anchor and not a class declaration, and that owner class and storage stay unset. `crates/cadmpeg-codec-catia/src/design_feature.rs:728-740` reads the owner class name and class entry from that record.
-
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face
