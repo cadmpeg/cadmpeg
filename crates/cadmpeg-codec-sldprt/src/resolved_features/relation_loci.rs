@@ -369,20 +369,26 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             .map(|entity| SketchLocus::Entity(entity.id.clone()))
             .or_else(|| {
                 let marker = marker(index)?;
+                if matches!(
+                    relation.operands.get(index).map(|operand| operand.kind),
+                    Some(FeatureInputOperandKind::Native(0x837b | 0xbc7c))
+                ) {
+                    if let Some(locus) = qualified_or_linked_point_locus(
+                        marker,
+                        markers_by_id,
+                        loci_by_marker,
+                        sketch_entities,
+                    ) {
+                        return Some(locus);
+                    }
+                }
                 if let Some(entity) = sketch_entities.iter().find(|entity| {
                     entity.native_ref.as_deref() == Some(marker)
                         && matches!(entity.geometry, SketchGeometry::Point { .. })
                 }) {
                     return Some(SketchLocus::Entity(entity.id.clone()));
                 }
-                if matches!(
-                    relation.operands.get(index).map(|operand| operand.kind),
-                    Some(FeatureInputOperandKind::Native(0x837b | 0xbc7c))
-                ) {
-                    loci_by_marker
-                        .get(&qualified_point_marker_key(marker))
-                        .and_then(|loci| unique_locus(loci))
-                } else if dynamic && dynamic_point_operand(relation, index) {
+                if dynamic && dynamic_point_operand(relation, index) {
                     dynamic_marker_point_locus(
                         marker,
                         sketch,
@@ -3042,6 +3048,60 @@ pub(super) fn marker_point_locus(
         loci_by_marker,
         &mut HashSet::new(),
     )
+}
+
+fn qualified_or_linked_point_locus(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchLocus> {
+    let marker = markers_by_id.get(marker_id)?;
+    if matches!(
+        marker.kind,
+        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+    ) {
+        let mut linked = marker
+            .links
+            .iter()
+            .filter(|link| link.entity_ref != marker_id)
+            .filter(|link| {
+                !matches!(
+                    markers_by_id
+                        .get(link.entity_ref.as_str())
+                        .map(|marker| marker.kind),
+                    Some(SketchInputKind::Relation(_))
+                )
+            })
+            .filter_map(|link| {
+                resolved_marker_locus(
+                    &link.entity_ref,
+                    markers_by_id,
+                    loci_by_marker,
+                    &mut HashSet::new(),
+                )
+            })
+            .filter(|locus| {
+                sketch_entities
+                    .iter()
+                    .find(|entity| entity.id == locus_entity(locus))
+                    .is_some_and(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
+            })
+            .collect::<Vec<_>>();
+        linked.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+        linked.dedup();
+        if let Some(locus) = unique_locus(&linked) {
+            return Some(locus);
+        }
+    }
+    if let Some(loci) = loci_by_marker.get(&qualified_point_marker_key(marker_id)) {
+        return unique_locus(loci);
+    }
+    let locus = marker_point_locus(marker_id, markers_by_id, loci_by_marker)?;
+    let entity = sketch_entities
+        .iter()
+        .find(|entity| entity.id == locus_entity(&locus))?;
+    matches!(entity.geometry, SketchGeometry::Point { .. }).then_some(locus)
 }
 
 pub(super) fn qualified_point_marker_key(marker_id: &str) -> String {
