@@ -1014,12 +1014,15 @@ pub(crate) fn decode_plane_support_local_system(
             PlaneSupportFrameLayout::DirectNormalTriples,
         ));
     }
-    let (values, cursor, layout) =
-        if let Some((values, cursor)) = decode_plane_support_special_prefix(body, cache) {
-            (values, cursor, PlaneSupportFrameLayout::SupportTriples)
-        } else {
-            let prefix =
-                decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PlaneSupport)?;
+    if let Some((values, cursor)) = decode_plane_support_special_prefix(body, cache) {
+        (cursor == body.len()).then_some(())?;
+        return Some((
+            finite_local_system_slots(values)?,
+            PlaneSupportFrameLayout::SupportTriples,
+        ));
+    }
+    let primary = decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PlaneSupport)
+        .map(|prefix| {
             let layout = if matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18)) {
                 // Compact support prefixes use the same numeric shape as a
                 // direct frame. Their field grammar, not the values alone,
@@ -1029,9 +1032,211 @@ pub(crate) fn decode_plane_support_local_system(
                 plane_support_layout(&prefix.values, prefix.saw_zero_slot_prefix)
             };
             (prefix.values, prefix.cursor, layout)
+        });
+    let (values, cursor, layout) = primary?;
+    let primary_frame_valid = finite_local_system_slots(values).is_some()
+        && plane_support_values_have_valid_frame(&values, layout);
+    if primary_frame_valid {
+        return (cursor == body.len()).then_some((values, layout));
+    }
+    // Compact image bodies have a distinct token grammar.  Their numeric
+    // values can accidentally form another orthogonal frame when replayed as
+    // coordinate-lane scalars, but that is not an alternate interpretation of
+    // the stored body.  Lane arbitration applies only to the raw generic
+    // support-frame form; the compact forms remain governed by their primary
+    // grammar above.
+    let variants = if matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18)) {
+        Vec::new()
+    } else {
+        decode_plane_support_lane_variants(body, cache)
+    };
+    match variants.as_slice() {
+        [variant] => Some(*variant),
+        [] => {
+            (cursor == body.len()).then_some(())?;
+            Some((finite_local_system_slots(values)?, layout))
+        }
+        _ => None,
+    }
+}
+
+const MAX_PLANE_SUPPORT_LANE_VARIANTS: usize = 64;
+
+fn plane_support_values_have_valid_frame(
+    values: &[f64; 12],
+    layout: PlaneSupportFrameLayout,
+) -> bool {
+    if matches!(layout, PlaneSupportFrameLayout::MatrixColumns) {
+        let first = [values[0], values[3], values[6]];
+        let second = [values[2], values[5], values[8]];
+        return valid_equal_scale_orthogonal_directions(first, second);
+    }
+    let supports = [
+        [values[0], values[1], values[2]],
+        [values[3], values[4], values[5]],
+        [values[6], values[7], values[8]],
+    ];
+    [(0, 1), (0, 2), (1, 2)]
+        .into_iter()
+        .filter(|(first, second)| {
+            valid_equal_scale_orthogonal_directions(supports[*first], supports[*second])
+        })
+        .count()
+        == 1
+}
+
+fn plane_support_coordinate_variants(
+    body: &[u8],
+    offset: usize,
+    slot: usize,
+    cache: &ScalarCache,
+) -> Vec<(f64, usize)> {
+    if slot == 6 && body.get(offset) == Some(&0x4e) {
+        return decode_plane_support_coordinate(body, offset, slot, cache)
+            .into_iter()
+            .collect();
+    }
+    if slot == 8 && body.get(offset) == Some(&0x50) {
+        return decode_plane_support_coordinate(body, offset, slot, cache)
+            .into_iter()
+            .collect();
+    }
+    let mut candidates = Vec::<(f64, usize)>::new();
+    for candidate in [
+        decode_tabulated_cylinder_first_coordinate(body, offset, cache),
+        decode_tabulated_cylinder_second_coordinate(body, offset, cache),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if candidate.0.is_finite()
+            && !candidates
+                .iter()
+                .any(|known| known.1 == candidate.1 && known.0.to_bits() == candidate.0.to_bits())
+        {
+            candidates.push(candidate);
+        }
+    }
+    candidates
+}
+
+fn decode_plane_support_lane_variants(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Vec<([f64; 12], PlaneSupportFrameLayout)> {
+    fn walk(
+        body: &[u8],
+        cache: &ScalarCache,
+        values: &mut Vec<f64>,
+        cursor: usize,
+        saw_zero_slot_prefix: bool,
+        results: &mut Vec<([f64; 12], PlaneSupportFrameLayout)>,
+    ) {
+        if results.len() >= MAX_PLANE_SUPPORT_LANE_VARIANTS {
+            return;
+        }
+        if values.len() == 12 {
+            if cursor != body.len() {
+                return;
+            }
+            let Ok(values) = <[f64; 12]>::try_from(values.as_slice()) else {
+                return;
+            };
+            if !values.into_iter().all(f64::is_finite) {
+                return;
+            }
+            let layout = plane_support_layout(&values, saw_zero_slot_prefix);
+            if matches!(layout, PlaneSupportFrameLayout::DirectNormalTriples)
+                && plane_support_values_have_valid_frame(&values, layout)
+                && !results.iter().any(|(known, known_layout)| {
+                    *known_layout == layout
+                        && known
+                            .iter()
+                            .zip(values)
+                            .all(|(known, value)| known.to_bits() == value.to_bits())
+                })
+            {
+                results.push((values, layout));
+            }
+            return;
+        }
+
+        let slot = values.len();
+        if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) && slot + 3 <= 12 {
+            values.extend([0.0, 1.0, 0.0]);
+            walk(
+                body,
+                cache,
+                values,
+                cursor + 2,
+                saw_zero_slot_prefix,
+                results,
+            );
+            values.truncate(slot);
+        }
+        if body.get(cursor) == Some(&0x18)
+            && body
+                .get(cursor + 1)
+                .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
+        {
+            values.push(0.0);
+            walk(body, cache, values, cursor + 1, true, results);
+            values.pop();
+        }
+        if body.get(cursor) == Some(&0x18)
+            && slot < 11
+            && !plane_support_coordinate_variants(body, cursor + 1, slot + 1, cache).is_empty()
+        {
+            values.push(0.0);
+            walk(body, cache, values, cursor + 1, true, results);
+            values.pop();
+        }
+        if body.get(cursor) == Some(&0x10) {
+            values.push(0.0);
+            walk(
+                body,
+                cache,
+                values,
+                cursor + 1,
+                saw_zero_slot_prefix,
+                results,
+            );
+            values.pop();
+        }
+        if body.get(cursor) == Some(&0x18) && cursor + 1 == body.len() {
+            values.push(0.0);
+            walk(body, cache, values, cursor + 1, true, results);
+            values.pop();
+        }
+
+        let candidates = if slot < 9 {
+            plane_support_coordinate_variants(body, cursor, slot, cache)
+        } else if body.get(cursor) == Some(&0x0e) {
+            vec![(0.5, cursor + 1)]
+        } else if matches!(body.get(cursor), Some(0x0f | 0x10 | 0x18 | 0xe6)) {
+            vec![(0.0, cursor + 1)]
+        } else if slot == 9 {
+            decode_in_row_lane(body, cursor, cache)
+                .or_else(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))
+                .into_iter()
+                .collect()
+        } else {
+            decode_in_row_lane(body, cursor, cache)
+                .or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache))
+                .into_iter()
+                .collect()
         };
-    (cursor == body.len()).then_some(())?;
-    Some((finite_local_system_slots(values)?, layout))
+        for (value, next) in candidates {
+            values.push(value);
+            walk(body, cache, values, next, saw_zero_slot_prefix, results);
+            values.pop();
+        }
+    }
+
+    let mut values = Vec::with_capacity(12);
+    let mut results = Vec::new();
+    walk(body, cache, &mut values, 0, false, &mut results);
+    results
 }
 
 /// Decode a positional plane support frame whose origin uses the named
@@ -2168,6 +2373,57 @@ mod tests {
         assert!(
             decode_positional_plane_local_system_slots(&body, &ScalarCache::default()).is_none()
         );
+    }
+
+    #[test]
+    fn plane_support_frame_selects_an_alternate_coordinate_lane_by_orthogonality() {
+        const EPS_PLANE_SUPPORT_LANE_TEST: f64 = 1e-12;
+
+        let cache = ScalarCache::default();
+        let alternate = f64::from_be_bytes([0xbf, 0xdd, 0, 0, 0, 0, 0, 0]);
+        let first_z = (1.0 - alternate * alternate).sqrt();
+        let mut body = Vec::new();
+        body.extend_from_slice(&positive_subunit_coordinate(first_z));
+        body.push(0x18);
+        body.extend_from_slice(&positive_subunit_coordinate(-alternate));
+        body.extend_from_slice(&[0x18, 0x0f, 0x18]);
+        body.extend_from_slice(&[
+            0xb1, 0, 0, 0, 0, 0, 0, // second-coordinate lane supplies `alternate`
+        ]);
+        body.push(0x18);
+        body.extend_from_slice(&positive_subunit_coordinate(first_z));
+        body.extend_from_slice(&[0x18, 0x18, 0x18]);
+
+        let (slots, layout) = decode_plane_support_local_system(&body, &cache)
+            .expect("lane-ambiguous frame has one valid orthogonal interpretation");
+        assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
+        assert!((slots[6] - alternate).abs() <= EPS_PLANE_SUPPORT_LANE_TEST);
+        assert!(valid_equal_scale_orthogonal_directions(
+            [slots[0], slots[1], slots[2]],
+            [slots[6], slots[7], slots[8]],
+        ));
+    }
+
+    #[test]
+    fn plane_support_frame_does_not_reinterpret_a_missing_primary_parse() {
+        let cache = ScalarCache::default();
+        let alternate =
+            decode_tabulated_cylinder_second_coordinate(&[0xa4, 0, 0, 0, 0, 0, 0], 0, &cache)
+                .expect("synthetic alternate-lane scalar")
+                .0;
+        let first = (1.0 - alternate * alternate).sqrt();
+        let mut body = Vec::new();
+        body.extend_from_slice(&positive_subunit_coordinate(first));
+        body.push(0x18);
+        body.extend_from_slice(&positive_subunit_coordinate(-alternate));
+        body.extend_from_slice(&[0x18, 0x0f, 0x18]);
+        body.extend_from_slice(&[0xa4, 0, 0, 0, 0, 0, 0]);
+        body.push(0x18);
+        body.extend_from_slice(&positive_subunit_coordinate(first));
+        body.extend_from_slice(&[0x18, 0x18, 0x18]);
+
+        assert_eq!(decode_plane_support_lane_variants(&body, &cache).len(), 1);
+        assert!(decode_plane_support_local_system(&body, &cache).is_none());
     }
 
     #[test]
