@@ -1987,4 +1987,5 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
+mod curves;
 mod region_and_surface;
