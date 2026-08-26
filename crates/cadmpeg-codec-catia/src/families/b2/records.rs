@@ -515,7 +515,11 @@ pub struct B2EdgeNode {
     pub end_parameter_ref: u32,
     /// Addressing forms of the five references in payload order.
     pub reference_encodings: [AllocationReferenceEncoding; 5],
-    /// Terminal layout byte following the five references.
+    /// Decoded value of the one-byte terminal allocation reference.
+    pub terminal_value: u32,
+    /// Wire addressing form of the terminal allocation reference.
+    pub terminal_encoding: AllocationReferenceEncoding,
+    /// Terminal byte following the five references.
     pub tail: u8,
 }
 
@@ -629,10 +633,17 @@ pub(crate) fn b2_edge_nodes_from_records(
             let [curve_ref, start_vertex_ref, end_vertex_ref, start_parameter_ref, end_parameter_ref] =
                 references.map(|reference| reference.value);
             let reference_encodings = references.map(|reference| reference.encoding);
-            let tail = *data.get(at)?;
-            (at + 1 == frame.end
-                && matches!(tail, 0x01 | 0x02 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a))
-                .then_some(B2EdgeNode {
+            let terminal_at = at;
+            let tail = *data.get(terminal_at)?;
+            let terminal = allocation_reference(data, &mut at)?;
+            let terminal_allowed = at == frame.end
+                && at == terminal_at + 1
+                && matches!(
+                    (terminal.encoding, terminal.value),
+                    (AllocationReferenceEncoding::BackwardDistance, 0 | 8 | 9 | 10)
+                        | (AllocationReferenceEncoding::Selector2, 0 | 8 | 10)
+                );
+            terminal_allowed.then_some(B2EdgeNode {
                     pos: frame.pos,
                     header_token: frame.header_token,
                     curve_ref,
@@ -641,6 +652,8 @@ pub(crate) fn b2_edge_nodes_from_records(
                     start_parameter_ref,
                     end_parameter_ref,
                     reference_encodings,
+                    terminal_value: terminal.value,
+                    terminal_encoding: terminal.encoding,
                     tail,
                 })
         })

@@ -2128,3 +2128,28 @@ fn consolidated_edge_nodes_accept_width_coded_terminal_two() {
         .expect("edge terminal") = 0x26;
     assert!(crate::families::b2::records::b2_edge_nodes(&object_stream_only_terminal).is_empty());
 }
+
+#[test]
+fn consolidated_edge_nodes_decode_terminal_allocation_reference_forms() {
+    use crate::wire::bytes::AllocationReferenceEncoding;
+
+    for (tail, value, encoding) in [
+        (0x01, 0, AllocationReferenceEncoding::BackwardDistance),
+        (0x02, 0, AllocationReferenceEncoding::Selector2),
+        (0x21, 8, AllocationReferenceEncoding::BackwardDistance),
+        (0x22, 8, AllocationReferenceEncoding::Selector2),
+        (0x25, 9, AllocationReferenceEncoding::BackwardDistance),
+        (0x29, 10, AllocationReferenceEncoding::BackwardDistance),
+        (0x2a, 10, AllocationReferenceEncoding::Selector2),
+    ] {
+        let mut bytes = b2_edge_node_stream();
+        *bytes.last_mut().expect("edge terminal") = tail;
+        let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
+        let [node] = nodes.as_slice() else {
+            panic!("one terminal allocation-reference edge node")
+        };
+        assert_eq!(node.terminal_value, value);
+        assert_eq!(node.terminal_encoding, encoding);
+        assert_eq!(node.tail, tail);
+    }
+}

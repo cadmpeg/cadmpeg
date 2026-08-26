@@ -533,6 +533,8 @@
               ],
               "source_index": 0,
               "tail": 33,
+              "terminal_encoding": "backward_distance",
+              "terminal_value": 8,
               "uses": {
                 "references": [
                   [

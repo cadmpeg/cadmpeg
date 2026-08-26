@@ -1573,6 +1573,11 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
     assert_eq!(node.width, 1);
     assert_eq!(node.flag, 0x03);
     assert_eq!(node.header_token, 5);
+    assert_eq!(node.terminal_value, Some(8));
+    assert_eq!(
+        node.terminal_encoding,
+        Some(crate::native::CatiaAllocationReferenceEncoding::BackwardDistance)
+    );
     assert_eq!(node.vertex_refs, [889, 895]);
     assert!(node.uses.is_none());
     assert_eq!(node.vertices, ["", ""]);

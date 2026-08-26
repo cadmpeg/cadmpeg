@@ -268,9 +268,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the terminal byte of a `b2`, `b3`, or `b4 03 5e` record control?
 
-**Known.** The width-coded record admits terminal bytes `01`, `02`, `21`, `22`, `25`, `29`, and `2a`; the object-stream record additionally admits `26`. Each terminal exhausts the five-reference payload and is retained independently of the endpoint identities.
+**Known.** The width-coded terminal is a single-byte `allocation_ref` with the seven admitted value/form pairs `(0,backward_distance)`, `(0,selector2)`, `(8,backward_distance)`, `(8,selector2)`, `(9,backward_distance)`, `(10,backward_distance)`, and `(10,selector2)`, encoded as `01`, `02`, `21`, `22`, `25`, `29`, and `2a`. The object-stream record additionally admits `(9,selector2)`, encoded as `26`. The raw byte and decoded value/form are retained independently of the endpoint identities, and the terminal exhausts the payload after the five references.
 
-**Need.** We must know its role to validate and write the record.
+**Need.** We must determine what the decoded value means, whether it has any writer-level relation to a successor definition or carrier construction, and whether the four-reference width-coded variant has the same role. Do not use the local successor-layout correlation as a universal endpoint-orientation rule.
 
 ### SN-05. Class-`0x18` descriptors
 

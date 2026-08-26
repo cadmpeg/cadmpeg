@@ -1053,6 +1053,12 @@ pub struct CatiaConsolidatedEdgeNode {
     /// Wire addressing forms of curve, vertex, and parameter references.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_encodings: Option<[CatiaAllocationReferenceEncoding; 5]>,
+    /// Decoded value of the one-byte terminal allocation reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_value: Option<u32>,
+    /// Wire addressing form of the terminal allocation reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_encoding: Option<CatiaAllocationReferenceEncoding>,
     /// Terminal layout byte.
     pub tail: u8,
     /// Adjacent class-`0x23..=0x25` edge-definition frame.
@@ -7150,6 +7156,10 @@ fn consolidated_edge_nodes(
                     node.reference_encodings
                         .map(native_allocation_reference_encoding),
                 ),
+                terminal_value: Some(node.terminal_value),
+                terminal_encoding: Some(native_allocation_reference_encoding(
+                    node.terminal_encoding,
+                )),
                 tail: node.tail,
                 definition: use_runs.get(&node.pos).and_then(|(_, value)| value.clone()),
                 uses: use_runs.get(&node.pos).map(|(value, _)| value.clone()),
