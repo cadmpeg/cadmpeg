@@ -509,3 +509,52 @@ crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality"
 reason = "Creo direct Function 5 scalar equalities transfer as typed solver-scalar relations"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::dialect::{DialectId,DialectMatch,Admission,primary_layer,holds_primary_layer_invariant,debug_assert_primary_layer}"
+reason = "shared dialect vocabulary; DialectId stays an opaque pinned string so the shared layer does not depend on every codec"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-core"
+kind = "signature"
+item = "cadmpeg_core::error::CodecError::UnsupportedDialect"
+reason = "identity survives refusal; replaces per-codec handling of recognized-but-unsupported input"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-core"
+kind = "field"
+item = "cadmpeg_core::container::ContainerSummary::dialects"
+reason = "per-layer dialect identification from inspect; serde-staged so no persisted byte moves"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::DecodeReport::dialects"
+reason = "per-layer dialect identification from decode; serde-staged so no persisted byte moves"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::report::ExportReport::target"
+reason = "the encoder states the concrete dialect it wrote, replay and patch paths included"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::document::{SourceMeta::dialect,SourceMeta::declared}"
+reason = "primary-layer dialect and its verbatim declarations survive a CADIR intermediate; serde-staged so every document digest holds"
+
+[[change]]
+commit = "847cffb75ea6443956905c08ccab43f46b1b573e"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::diff::{SourceDiff::dialect_change,SourceDiff::declared}"
+reason = "the source differ saw only attributes, so a dialect divergence would have compared as agreement"
