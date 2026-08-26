@@ -3606,9 +3606,10 @@ pub(crate) fn project_edge_flange(
         {
             SheetMetalFlangeWidth::FullEdge
         }
-        DesignEdgeWidthMode::Symmetric
-            if let [owner] = operation.width_distance_owner_record_indices.as_slice() =>
-        {
+        DesignEdgeWidthMode::Symmetric => {
+            let [owner] = operation.width_distance_owner_record_indices.as_slice() else {
+                return None;
+            };
             SheetMetalFlangeWidth::Symmetric {
                 width: design_length(parameter(*owner, "EdgeWidth")?)?,
             }
