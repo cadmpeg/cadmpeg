@@ -3,10 +3,11 @@
 
 use super::composite::{bounded_parameter_range_for_curve, curve_carrier_id, CompositeIndex};
 use super::geometry::{
-    declared_unit_vector, entity_loss, resolve_transform, source_object, ProjectionOutcome,
+    declared_unit_vector, entity_loss, resolve_transform, source_object, DeclaredInterval,
+    ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::{Dialect, ProjectedGlobal};
+use crate::global::{Dialect, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
@@ -22,6 +23,49 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_SURFACE_POLES: usize = 1_000_000;
+
+/// Return the source-declared intervals for a Type 128 surface's four
+/// parameter-range fields.
+///
+/// The range fields are after the variable knot, weight, and pole blocks. The
+/// projected surface keeps their parsed representatives in `record_bounds`,
+/// but a trimming consumer must retain the source real-token interval when it
+/// checks a derived p-curve. This is the same declaration interval used when
+/// admitting a Type 128 range against its active knot domain below.
+pub(super) fn type128_parameter_bound_intervals(
+    record: &ParameterRecord,
+    precision: RealPrecision,
+) -> Option<[DeclaredInterval; 4]> {
+    let [u_count, v_count] = [record.count(1), record.count(2)].map(|count| count?.checked_add(1));
+    let [u_degree, v_degree] =
+        [record.integer(3), record.integer(4)].map(|degree| usize::try_from(degree?).ok());
+    let [Some(u_count), Some(v_count), Some(u_degree), Some(v_degree)] =
+        [u_count, v_count, u_degree, v_degree]
+    else {
+        return None;
+    };
+    let u_knot_count = u_count.checked_add(u_degree)?.checked_add(1)?;
+    let v_knot_count = v_count.checked_add(v_degree)?.checked_add(1)?;
+    let pole_count = u_count.checked_mul(v_count)?;
+    let pole_value_count = pole_count.checked_mul(3)?;
+    let range_start = 10usize
+        .checked_add(u_knot_count)?
+        .checked_add(v_knot_count)?
+        .checked_add(pole_count)?
+        .checked_add(pole_value_count)?;
+    (0..4)
+        .map(|offset| {
+            let index = range_start.checked_add(offset)?;
+            let value = record.number(index).filter(|value| value.is_finite())?;
+            Some(DeclaredInterval::around(
+                value,
+                record.number_uncertainty(index, value, precision),
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()
+}
 
 fn tabulated_directrix_type_allowed(entity_type: i64, form: i64, dialect: Dialect) -> bool {
     if matches!(dialect, Dialect::V4_0) {

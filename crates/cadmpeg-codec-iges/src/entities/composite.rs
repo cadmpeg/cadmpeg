@@ -355,98 +355,101 @@ fn select_composite_edge(
         .then(|| (*first).clone())
 }
 
-fn elevate_linear_bezier_to_degree(
-    curve: &mut NurbsCurve,
-    interval: [f64; 2],
-    target_degree: u32,
-) -> bool {
-    if curve.degree != 1
-        || curve.control_points.len() != 2
-        || curve.knots != [interval[0], interval[0], interval[1], interval[1]]
-        || target_degree < 1
-        || curve
+fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
+    point.iter().all(|value| value.is_finite()) && point[0] > 0.0
+}
+
+fn homogeneous_control_points(curve: &NurbsCurve) -> Option<Vec<[f64; 4]>> {
+    let control_count = curve.control_points.len();
+    if curve
+        .weights
+        .as_ref()
+        .is_some_and(|weights| weights.len() != control_count)
+    {
+        return None;
+    }
+    let mut homogeneous = alloc_filled(
+        control_count,
+        [0.0; 4],
+        "iges composite homogeneous control points",
+    )
+    .ok()?;
+    for (index, point) in curve.control_points.iter().enumerate() {
+        let weight = curve
             .weights
             .as_ref()
-            .is_some_and(|weights| weights.len() != 2)
-    {
-        return false;
+            .map_or(Some(1.0), |weights| weights.get(index).copied())?;
+        let homogeneous_point = [weight, weight * point.x, weight * point.y, weight * point.z];
+        if !homogeneous_point_is_valid(&homogeneous_point) {
+            return None;
+        }
+        homogeneous[index] = homogeneous_point;
     }
-    let target_degree = match usize::try_from(target_degree) {
-        Ok(target_degree) if target_degree <= MAX_COMPOSITE_DEGREE => target_degree,
-        _ => return false,
-    };
-    let rational = curve.weights.is_some();
-    let mut homogeneous = curve
-        .control_points
+    Some(homogeneous)
+}
+
+fn euclidean_control_points(
+    homogeneous: Vec<[f64; 4]>,
+    rational: bool,
+) -> Option<(Vec<Point3>, Option<Vec<f64>>)> {
+    let mut control_points = Vec::with_capacity(homogeneous.len());
+    let mut weights = rational.then(|| Vec::with_capacity(homogeneous.len()));
+    for [weight, x, y, z] in homogeneous {
+        if !weight.is_finite() || weight <= 0.0 {
+            return None;
+        }
+        let point = Point3::new(x / weight, y / weight, z / weight);
+        if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
+            return None;
+        }
+        control_points.push(point);
+        if let Some(weights) = &mut weights {
+            weights.push(weight);
+        }
+    }
+    Some((control_points, weights))
+}
+
+fn elevate_bezier_homogeneous(
+    control_points: &[[f64; 4]],
+    source_degree: usize,
+    target_degree: usize,
+) -> Option<Vec<[f64; 4]>> {
+    if control_points.len() != source_degree.checked_add(1)? || target_degree < source_degree {
+        return None;
+    }
+    if control_points
         .iter()
-        .zip(curve.weights.as_deref().unwrap_or(&[1.0, 1.0]))
-        .map(|(point, weight)| {
-            (
-                *weight,
-                *weight * point.x,
-                *weight * point.y,
-                *weight * point.z,
-            )
-        })
-        .collect::<Vec<_>>();
-    if homogeneous.len() != 2
-        || homogeneous.iter().any(|(weight, x, y, z)| {
-            !weight.is_finite()
-                || *weight <= 0.0
-                || !x.is_finite()
-                || !y.is_finite()
-                || !z.is_finite()
-        })
+        .any(|point| !homogeneous_point_is_valid(point))
     {
-        return false;
+        return None;
     }
-    let mut degree = 1_usize;
+    let mut elevated = control_points.to_vec();
+    let mut degree = source_degree;
     while degree < target_degree {
-        let next_degree = degree + 1;
-        let mut elevated = Vec::with_capacity(next_degree + 1);
-        elevated.push(homogeneous[0]);
+        let next_degree = degree.checked_add(1)?;
+        let mut next = Vec::with_capacity(next_degree.checked_add(1)?);
+        next.push(elevated[0]);
         for index in 1..=degree {
             let alpha = index as f64 / next_degree as f64;
-            let previous = homogeneous[index - 1];
-            let current = homogeneous[index];
-            elevated.push((
-                alpha * previous.0 + (1.0 - alpha) * current.0,
-                alpha * previous.1 + (1.0 - alpha) * current.1,
-                alpha * previous.2 + (1.0 - alpha) * current.2,
-                alpha * previous.3 + (1.0 - alpha) * current.3,
-            ));
+            let previous = elevated[index - 1];
+            let current = elevated[index];
+            let point = [
+                alpha * previous[0] + (1.0 - alpha) * current[0],
+                alpha * previous[1] + (1.0 - alpha) * current[1],
+                alpha * previous[2] + (1.0 - alpha) * current[2],
+                alpha * previous[3] + (1.0 - alpha) * current[3],
+            ];
+            if !homogeneous_point_is_valid(&point) {
+                return None;
+            }
+            next.push(point);
         }
-        let Some(last) = homogeneous.last().copied() else {
-            return false;
-        };
-        elevated.push(last);
-        homogeneous = elevated;
+        next.push(*elevated.last()?);
+        elevated = next;
         degree = next_degree;
     }
-    let mut control_points = Vec::with_capacity(homogeneous.len());
-    for (weight, x, y, z) in &homogeneous {
-        if !weight.is_finite() || *weight <= 0.0 {
-            return false;
-        }
-        control_points.push(Point3::new(x / weight, y / weight, z / weight));
-    }
-    curve.degree = target_degree as u32;
-    let Some(knot_count) = target_degree.checked_add(1) else {
-        return false;
-    };
-    let Ok(mut knots) = alloc_filled(knot_count, interval[0], "iges composite elevated knots")
-    else {
-        return false;
-    };
-    let Ok(second_knots) = alloc_filled(knot_count, interval[1], "iges composite elevated knots")
-    else {
-        return false;
-    };
-    knots.extend(second_knots);
-    curve.knots = knots;
-    curve.control_points = control_points;
-    curve.weights = rational.then(|| homogeneous.into_iter().map(|entry| entry.0).collect());
-    true
+    Some(elevated)
 }
 
 #[derive(Debug)]
@@ -518,49 +521,208 @@ fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [
     ))
 }
 
-fn elevate_linear_nurbs_to_degree(
+fn insert_homogeneous_knot(
+    control_points: &[[f64; 4]],
+    knots: &[f64],
+    degree: usize,
+    value: f64,
+) -> Option<(Vec<[f64; 4]>, Vec<f64>)> {
+    let control_count = control_points.len();
+    let last_control = control_count.checked_sub(1)?;
+    let span = knots.iter().rposition(|knot| *knot <= value)?;
+    let multiplicity = knots.iter().filter(|knot| **knot == value).count();
+    if control_count <= degree
+        || span > last_control
+        || multiplicity >= degree
+        || span < degree
+        || knots.len() != control_count.checked_add(degree)?.checked_add(1)?
+    {
+        return None;
+    }
+    let mut inserted_knots = Vec::new();
+    inserted_knots
+        .try_reserve_exact(knots.len().checked_add(1)?)
+        .ok()?;
+    inserted_knots.extend_from_slice(knots.get(..=span)?);
+    inserted_knots.push(value);
+    inserted_knots.extend_from_slice(knots.get(span.checked_add(1)?..)?);
+
+    let inserted_count = control_count.checked_add(1)?;
+    let mut inserted_control_points = alloc_filled(
+        inserted_count,
+        [0.0; 4],
+        "iges composite knot-insertion control points",
+    )
+    .ok()?;
+    let left_end = span.checked_sub(degree)?;
+    let tail_start = span.checked_sub(multiplicity)?;
+    inserted_control_points[..=left_end].copy_from_slice(&control_points[..=left_end]);
+    inserted_control_points[tail_start + 1..]
+        .copy_from_slice(&control_points[tail_start..control_count]);
+    for index in left_end.checked_add(1)?..=tail_start {
+        let denominator = knots[index + degree] - knots[index];
+        if !denominator.is_finite() || denominator <= 0.0 {
+            return None;
+        }
+        let alpha = (value - knots[index]) / denominator;
+        if !alpha.is_finite() || !(0.0..=1.0).contains(&alpha) {
+            return None;
+        }
+        let previous = control_points[index - 1];
+        let current = control_points[index];
+        let point = [
+            alpha * current[0] + (1.0 - alpha) * previous[0],
+            alpha * current[1] + (1.0 - alpha) * previous[1],
+            alpha * current[2] + (1.0 - alpha) * previous[2],
+            alpha * current[3] + (1.0 - alpha) * previous[3],
+        ];
+        if !homogeneous_point_is_valid(&point) {
+            return None;
+        }
+        inserted_control_points[index] = point;
+    }
+    Some((inserted_control_points, inserted_knots))
+}
+
+fn elevate_nurbs_to_degree(
     curve: &mut NurbsCurve,
     interval: [f64; 2],
     target_degree: u32,
     join_tolerance: Option<f64>,
 ) -> bool {
-    if curve.degree != 1
-        || curve.control_points.len() < 2
-        || curve.knots.len() != curve.control_points.len() + 2
+    let Ok(source_degree) = usize::try_from(curve.degree) else {
+        return false;
+    };
+    let target_degree = match usize::try_from(target_degree) {
+        Ok(target_degree) if target_degree <= MAX_COMPOSITE_DEGREE => target_degree,
+        _ => return false,
+    };
+    if target_degree < source_degree {
+        return false;
+    }
+    if target_degree == source_degree {
+        return true;
+    }
+    let control_count = curve.control_points.len();
+    let Some(expected_knot_count) = control_count
+        .checked_add(source_degree)
+        .and_then(|value| value.checked_add(1))
+    else {
+        return false;
+    };
+    if curve.periodic
+        || control_count <= source_degree
+        || curve.knots.len() != expected_knot_count
         || curve.knots.first() != Some(&interval[0])
         || curve.knots.last() != Some(&interval[1])
+        || !interval[0].is_finite()
+        || !interval[1].is_finite()
         || interval[0] >= interval[1]
-        || target_degree <= 1
+        || curve.knots.iter().any(|knot| !knot.is_finite())
+        || !knots_nondecreasing(&curve.knots)
         || curve
             .weights
             .as_ref()
-            .is_some_and(|weights| weights.len() != curve.control_points.len())
+            .is_some_and(|weights| weights.len() != control_count)
     {
         return false;
     }
-    if curve.knots.windows(2).any(|pair| pair[0] > pair[1]) {
+    let boundary_multiplicity =
+        |value: f64| curve.knots.iter().filter(|knot| **knot == value).count();
+    if boundary_multiplicity(interval[0]) != source_degree + 1
+        || boundary_multiplicity(interval[1]) != source_degree + 1
+    {
         return false;
     }
+    let mut homogeneous = homogeneous_control_points(curve).and_then(|points| {
+        points
+            .iter()
+            .all(homogeneous_point_is_valid)
+            .then_some(points)
+    });
+    let mut knots = curve.knots.clone();
+    let mut internal_values = Vec::new();
+    for &knot in &knots {
+        if knot > interval[0] && knot < interval[1] && internal_values.last().copied() != Some(knot)
+        {
+            internal_values.push(knot);
+        }
+    }
+    for value in internal_values {
+        let multiplicity = knots.iter().filter(|knot| **knot == value).count();
+        if multiplicity > source_degree + 1 {
+            return false;
+        }
+        for _ in multiplicity..source_degree {
+            let Some(points) = homogeneous.take() else {
+                return false;
+            };
+            let Some((new_points, new_knots)) =
+                insert_homogeneous_knot(&points, &knots, source_degree, value)
+            else {
+                return false;
+            };
+            homogeneous = Some(new_points);
+            knots = new_knots;
+        }
+    }
+    let Some(homogeneous) = homogeneous else {
+        return false;
+    };
+    let Some(refined_count) = homogeneous.len().checked_sub(1) else {
+        return false;
+    };
+    let Some(refined_knot_count) = refined_count
+        .checked_add(source_degree)
+        .and_then(|value| value.checked_add(2))
+    else {
+        return false;
+    };
+    if knots.len() != refined_knot_count
+        || knots.first() != Some(&interval[0])
+        || knots.last() != Some(&interval[1])
+    {
+        return false;
+    }
+    let rational = curve.weights.is_some();
     let mut pieces = Vec::new();
-    for span in 1..curve.control_points.len() {
-        let start = curve.knots[span];
-        let end = curve.knots[span + 1];
+    for span in source_degree..=refined_count {
+        let start = knots[span];
+        let end = knots[span + 1];
         if !start.is_finite() || !end.is_finite() || start >= end {
             continue;
         }
-        let mut piece = NurbsCurve {
-            degree: 1,
-            knots: vec![start, start, end, end],
-            control_points: vec![curve.control_points[span - 1], curve.control_points[span]],
-            weights: curve
-                .weights
-                .as_ref()
-                .map(|weights| vec![weights[span - 1], weights[span]]),
+        let Some(source_points) = homogeneous.get(span - source_degree..=span) else {
+            return false;
+        };
+        let Some(elevated) =
+            elevate_bezier_homogeneous(source_points, source_degree, target_degree)
+        else {
+            return false;
+        };
+        let Some((control_points, weights)) = euclidean_control_points(elevated, rational) else {
+            return false;
+        };
+        let Some(target_knot_count) = target_degree.checked_add(1) else {
+            return false;
+        };
+        let Ok(mut piece_knots) =
+            alloc_filled(target_knot_count, start, "iges composite elevated knots")
+        else {
+            return false;
+        };
+        let Ok(end_knots) = alloc_filled(target_knot_count, end, "iges composite elevated knots")
+        else {
+            return false;
+        };
+        piece_knots.extend(end_knots);
+        let piece = NurbsCurve {
+            degree: target_degree as u32,
+            knots: piece_knots,
+            control_points,
+            weights,
             periodic: false,
         };
-        if !elevate_linear_bezier_to_degree(&mut piece, [start, end], target_degree) {
-            return false;
-        }
         pieces.push((piece, [start, end]));
     }
     let Some(concatenated) = concatenate_nurbs(pieces, join_tolerance) else {
@@ -593,8 +755,7 @@ fn concatenate_nurbs(
         .unwrap_or_default();
     for (curve, interval) in &mut children {
         if curve.degree < degree
-            && (curve.degree != 1
-                || !elevate_linear_nurbs_to_degree(curve, *interval, degree, join_tolerance))
+            && !elevate_nurbs_to_degree(curve, *interval, degree, join_tolerance)
         {
             return None;
         }

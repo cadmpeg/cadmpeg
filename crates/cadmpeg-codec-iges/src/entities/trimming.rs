@@ -6,10 +6,10 @@ use super::evaluation;
 use super::geometry::{
     entity_loss, linear_nurbs_parameters, planar_polyline_has_self_intersection,
     planar_polylines_intersect, plane_coordinates, source_object, BoundaryEndpoint,
-    BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, ProjectionOutcome,
+    BoundaryVertexDerivation, BoundaryVertexSourceEndpoint, DeclaredInterval, ProjectionOutcome,
 };
 use crate::directory::DirectoryEntry;
-use crate::global::ProjectedGlobal;
+use crate::global::{ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_core::decode::DecodeContext;
@@ -256,17 +256,7 @@ pub(super) struct PcurveSupport<'a> {
     pub(super) factor: f64,
 }
 
-pub(super) fn pcurve_geometry(
-    ir: &CadIr,
-    sequence: u32,
-    support: &PcurveSupport<'_>,
-    tolerance: Option<f64>,
-    ctx: Option<&DecodeContext<'_>>,
-    composite_index: Option<&CompositeIndex>,
-) -> Option<(PcurveGeometry, [f64; 2])> {
-    let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    let (nurbs, range) =
-        bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?;
+fn pcurve_parameter_map(ir: &CadIr, support: &PcurveSupport<'_>) -> Option<(f64, f64, f64, f64)> {
     let procedural = ir
         .model
         .procedural_surfaces
@@ -284,25 +274,41 @@ pub(super) fn pcurve_geometry(
         }
         _ => None,
     };
-    let (u_factor, u_offset, v_factor, v_offset) = match parameter_map {
-        Some(Some(parameter_map)) => parameter_map,
-        Some(None) => return None,
+    match parameter_map {
+        Some(Some(parameter_map)) => Some(parameter_map),
+        Some(None) => None,
         None => match support.geometry {
-            SurfaceGeometry::Plane { .. } => (1.0, 0.0, 1.0, 0.0),
+            SurfaceGeometry::Plane { .. } => Some((1.0, 0.0, 1.0, 0.0)),
             SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
-                (1.0 / support.factor, 0.0, 1.0, 0.0)
+                Some((1.0 / support.factor, 0.0, 1.0, 0.0))
             }
             SurfaceGeometry::Sphere { .. }
             | SurfaceGeometry::Torus { .. }
-            | SurfaceGeometry::Nurbs(_) => (1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0),
+            | SurfaceGeometry::Nurbs(_) => {
+                Some((1.0 / support.factor, 0.0, 1.0 / support.factor, 0.0))
+            }
             SurfaceGeometry::Procedural { construction } => {
-                procedural_pcurve_parameter_map(ir, construction)?
+                procedural_pcurve_parameter_map(ir, construction)
             }
             SurfaceGeometry::Polygonal { .. }
             | SurfaceGeometry::Transformed { .. }
-            | SurfaceGeometry::Unknown { .. } => return None,
+            | SurfaceGeometry::Unknown { .. } => None,
         },
-    };
+    }
+}
+
+pub(super) fn pcurve_geometry(
+    ir: &CadIr,
+    sequence: u32,
+    support: &PcurveSupport<'_>,
+    tolerance: Option<f64>,
+    ctx: Option<&DecodeContext<'_>>,
+    composite_index: Option<&CompositeIndex>,
+) -> Option<(PcurveGeometry, [f64; 2])> {
+    let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
+    let (nurbs, range) =
+        bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance, ctx, composite_index)?;
+    let (u_factor, u_offset, v_factor, v_offset) = pcurve_parameter_map(ir, support)?;
     Some((
         PcurveGeometry::Nurbs {
             degree: nurbs.degree,
@@ -424,6 +430,226 @@ fn procedural_pcurve_parameter_map(
         _ => return None,
     }
     Some((u_map.0, u_map.1, v_map.0, v_map.1))
+}
+
+fn native_sequence_from_id(id: &str, prefix: &str) -> Option<u32> {
+    let suffix = id.strip_prefix(prefix)?;
+    let end = suffix
+        .bytes()
+        .position(|byte| !byte.is_ascii_digit())
+        .unwrap_or(suffix.len());
+    (end > 0).then(|| suffix[..end].parse().ok())?
+}
+
+fn parameter_curve_carrier_id(
+    sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Option<CurveId> {
+    let entry = entries.get(&sequence).copied()?;
+    let carrier_sequence = if entry.entity_type == 142 && entry.form == 0 {
+        records
+            .get(&sequence)
+            .and_then(|record| record.integer(3))
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|sequence| sequence % 2 == 1)?
+    } else {
+        sequence
+    };
+    Some(CurveId(format!("iges:model:curve#D{carrier_sequence}")))
+}
+
+fn surface_parameter_bound_intervals(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    precision: RealPrecision,
+) -> Option<[Option<DeclaredInterval>; 4]> {
+    let bounds = surface_parameter_bounds(index, surface_id)?;
+    let mut intervals = bounds.map(|bound| bound.map(|value| DeclaredInterval::around(value, 0.0)));
+    let Some(sequence) = native_sequence_from_id(&surface_id.0, "iges:model:surface#D") else {
+        return Some(intervals);
+    };
+    let Some(entry) = entries.get(&sequence).copied() else {
+        return Some(intervals);
+    };
+    if entry.entity_type != 128 {
+        return Some(intervals);
+    }
+    let Some(record) = records.get(&sequence).copied() else {
+        return Some(intervals);
+    };
+    if let Some(declared) = super::surfaces::type128_parameter_bound_intervals(record, precision) {
+        for (bound, declared) in intervals.iter_mut().zip(declared) {
+            if bound.is_some() {
+                *bound = Some(declared);
+            }
+        }
+    }
+    Some(intervals)
+}
+
+fn source_curve_control_intervals(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    precision: RealPrecision,
+    factor: f64,
+    active: &mut BTreeSet<CurveId>,
+) -> Option<Vec<[DeclaredInterval; 3]>> {
+    if !active.insert(curve_id.clone()) {
+        return None;
+    }
+    let result = (|| {
+        let curve = ir.model.curves.iter().find(|curve| curve.id == *curve_id)?;
+        if let Some(sequence) = native_sequence_from_id(&curve_id.0, "iges:model:curve#D") {
+            let entry = entries.get(&sequence).copied()?;
+            if entry.entity_type == 102 && entry.form == 0 {
+                let record = records.get(&sequence).copied()?;
+                let child_count = record.count(1)?;
+                let child_ids = (0..child_count)
+                    .map(|offset| {
+                        let child_sequence = record
+                            .integer(offset.checked_add(2)?)
+                            .and_then(|value| u32::try_from(value).ok())?;
+                        parameter_curve_carrier_id(child_sequence, entries, records)
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                let mut controls = Vec::new();
+                for child_id in child_ids {
+                    controls.extend(source_curve_control_intervals(
+                        ir, &child_id, entries, records, precision, factor, active,
+                    )?);
+                }
+                return (!controls.is_empty()).then_some(controls);
+            }
+        }
+        match &curve.geometry {
+            CurveGeometry::Composite { segments, .. } => {
+                let mut controls = Vec::new();
+                for segment in segments {
+                    controls.extend(source_curve_control_intervals(
+                        ir,
+                        &segment.curve,
+                        entries,
+                        records,
+                        precision,
+                        factor,
+                        active,
+                    )?);
+                }
+                (!controls.is_empty()).then_some(controls)
+            }
+            CurveGeometry::Nurbs(nurbs) => {
+                if nurbs.weights.as_ref().is_some_and(|weights| {
+                    weights.len() != nurbs.control_points.len()
+                        || weights
+                            .iter()
+                            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+                }) {
+                    return None;
+                }
+                let exact = || {
+                    nurbs
+                        .control_points
+                        .iter()
+                        .map(|point| {
+                            [point.x, point.y, point.z]
+                                .map(|value| DeclaredInterval::around(value, 0.0))
+                        })
+                        .collect::<Vec<_>>()
+                };
+                let Some(sequence) = native_sequence_from_id(&curve_id.0, "iges:model:curve#D")
+                else {
+                    return Some(exact());
+                };
+                let Some(entry) = entries.get(&sequence).copied() else {
+                    return Some(exact());
+                };
+                if entry.entity_type != 126 {
+                    return Some(exact());
+                }
+                if entry.transform != 0 {
+                    return None;
+                }
+                let record = records.get(&sequence).copied()?;
+                let raw_controls =
+                    super::geometry::type126_declared_control_points(record, precision)?;
+                if raw_controls.len() != nurbs.control_points.len() {
+                    return None;
+                }
+                Some(
+                    raw_controls
+                        .into_iter()
+                        .map(|control| control.map(|value| value.scale(factor)))
+                        .collect(),
+                )
+            }
+            _ => None,
+        }
+    })();
+    active.remove(curve_id);
+    result
+}
+
+fn affine_parameter_interval(
+    value: DeclaredInterval,
+    factor: f64,
+    offset: f64,
+) -> Option<DeclaredInterval> {
+    let mapped = if factor == 1.0 && offset == 0.0 {
+        value
+    } else {
+        value
+            .scale(factor)
+            .add(DeclaredInterval::around(offset, 0.0))
+    };
+    mapped.is_finite().then_some(mapped)
+}
+
+fn source_curve_control_polygon_within_bounds(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    support: &PcurveSupport<'_>,
+    bounds: Option<[Option<DeclaredInterval>; 4]>,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    precision: RealPrecision,
+) -> bool {
+    let Some(bounds) = bounds else {
+        return true;
+    };
+    let Some((u_factor, u_offset, v_factor, v_offset)) = pcurve_parameter_map(ir, support) else {
+        return false;
+    };
+    let Some(controls) = source_curve_control_intervals(
+        ir,
+        curve_id,
+        entries,
+        records,
+        precision,
+        support.factor,
+        &mut BTreeSet::new(),
+    ) else {
+        return false;
+    };
+    !controls.is_empty()
+        && controls.into_iter().all(|[u, v, _]| {
+            let Some(u) = affine_parameter_interval(u, u_factor, u_offset) else {
+                return false;
+            };
+            let Some(v) = affine_parameter_interval(v, v_factor, v_offset) else {
+                return false;
+            };
+            u.is_finite()
+                && v.is_finite()
+                && bounds[0].is_none_or(|bound| u.lower_bound() >= bound.lower_bound())
+                && bounds[1].is_none_or(|bound| u.upper_bound() <= bound.upper_bound())
+                && bounds[2].is_none_or(|bound| v.lower_bound() >= bound.lower_bound())
+                && bounds[3].is_none_or(|bound| v.upper_bound() <= bound.upper_bound())
+        })
 }
 
 fn linear_model_nurbs_points(nurbs: &NurbsCurve, range: [f64; 2]) -> Option<Vec<Point3>> {
@@ -894,10 +1120,22 @@ fn restrict_homogeneous_pcurve(
     split_homogeneous_pcurve(&left, relative_start).map(|(_, right)| right)
 }
 
+#[cfg(test)]
 fn pcurve_within_declared_bounds(
     geometry: &PcurveGeometry,
     range: [f64; 2],
     bounds: Option<[Option<f64>; 4]>,
+    periodic: [bool; 2],
+) -> bool {
+    let bounds = bounds
+        .map(|bounds| bounds.map(|bound| bound.map(|value| DeclaredInterval::around(value, 0.0))));
+    pcurve_within_declared_intervals(geometry, range, bounds, periodic)
+}
+
+fn pcurve_within_declared_intervals(
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+    bounds: Option<[Option<DeclaredInterval>; 4]>,
     periodic: [bool; 2],
 ) -> bool {
     let Some(bounds) = bounds else {
@@ -955,20 +1193,25 @@ fn pcurve_within_declared_bounds(
     if range[0] < first_span.domain[0] || range[1] > last_span.domain[1] {
         return false;
     }
-    let in_bound = |value: f64, lower: Option<f64>, upper: Option<f64>| {
-        value.is_finite()
-            && lower.is_none_or(|lower| lower.is_finite() && value >= lower)
-            && upper.is_none_or(|upper| upper.is_finite() && value <= upper)
-    };
-    let expand_periodic =
-        |lower: Option<f64>, upper: Option<f64>, periodic: bool| match (lower, upper, periodic) {
-            (Some(lower), Some(upper), true) => {
-                let period = upper - lower;
-                (period.is_finite() && period > 0.0)
-                    .then_some((Some(lower - period), Some(upper + period)))
-            }
-            _ => Some((lower, upper)),
+    let in_bound =
+        |value: f64, lower: Option<DeclaredInterval>, upper: Option<DeclaredInterval>| {
+            value.is_finite()
+                && lower.is_none_or(|lower| lower.is_finite() && value >= lower.lower_bound())
+                && upper.is_none_or(|upper| upper.is_finite() && value <= upper.upper_bound())
         };
+    let expand_periodic = |lower: Option<DeclaredInterval>,
+                           upper: Option<DeclaredInterval>,
+                           periodic: bool| match (lower, upper, periodic)
+    {
+        (Some(lower), Some(upper), true) => {
+            let lower = DeclaredInterval::around(lower.lower_bound(), 0.0);
+            let upper = DeclaredInterval::around(upper.upper_bound(), 0.0);
+            let period = upper.subtract(lower);
+            (period.is_finite() && period.is_strictly_positive())
+                .then_some((Some(lower.subtract(period)), Some(upper.add(period))))
+        }
+        _ => Some((lower, upper)),
+    };
     let Some((u_lower, u_upper)) = expand_periodic(bounds[0], bounds[1], periodic[0]) else {
         return false;
     };
@@ -1580,6 +1823,13 @@ pub(super) fn project(
         let face_id = FaceId(format!("iges:model:face#{stem}"));
         let mut candidate_boundary_vertex_derivations = Vec::new();
         let support_parameter_bounds = surface_parameter_bounds(&carrier_index, &surface_id);
+        let support_parameter_intervals = surface_parameter_bound_intervals(
+            &carrier_index,
+            &surface_id,
+            &entries,
+            &records,
+            global.real_precision(),
+        );
         let periodic_parameters = periodic_surface_parameters(&support_geometry);
         let implicit_outer_domain =
             trimmed_surface && !has_explicit_outer && !boundary_sequences.is_empty();
@@ -1648,14 +1898,30 @@ pub(super) fn project(
                     }
                     None => Vec::new(),
                 };
-                if pcurves.iter().any(|(geometry, range)| {
-                    !pcurve_within_declared_bounds(
-                        geometry,
-                        *range,
-                        support_parameter_bounds,
-                        periodic_parameters,
-                    )
-                }) {
+                if pcurves
+                    .iter()
+                    .zip(&segment.pcurves)
+                    .any(|((geometry, range), sequence)| {
+                        !pcurve_within_declared_intervals(
+                            geometry,
+                            *range,
+                            support_parameter_intervals,
+                            periodic_parameters,
+                        ) && !source_curve_control_polygon_within_bounds(
+                            ir,
+                            &CurveId(format!("iges:model:curve#D{sequence}")),
+                            &PcurveSupport {
+                                surface_id: &surface_id,
+                                geometry: &support_geometry,
+                                factor,
+                            },
+                            support_parameter_intervals,
+                            &entries,
+                            &records,
+                            global.real_precision(),
+                        )
+                    })
+                {
                     if segment.parameter_curves_authoritative {
                         losses.push(boundary_parameter_loss(
                             entry,

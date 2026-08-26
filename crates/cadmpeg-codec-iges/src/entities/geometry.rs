@@ -376,9 +376,65 @@ impl DeclaredInterval {
         self.lower <= value && value <= self.upper
     }
 
+    pub(crate) fn is_finite(self) -> bool {
+        self.lower.is_finite() && self.upper.is_finite()
+    }
+
+    pub(crate) fn is_strictly_positive(self) -> bool {
+        self.lower > 0.0
+    }
+
+    pub(crate) fn lower_bound(self) -> f64 {
+        self.lower
+    }
+
+    pub(crate) fn upper_bound(self) -> f64 {
+        self.upper
+    }
+
     pub(crate) fn overlaps(self, other: Self) -> bool {
         self.lower <= other.upper && other.lower <= self.upper
     }
+}
+
+/// Return declared intervals for the Type 126 pole coordinates.
+///
+/// The projected NURBS stores coordinates after unit conversion and placement.
+/// A later consumer that needs to distinguish source uncertainty from arithmetic
+/// roundoff can use this source-space representation before composite-curve
+/// degree elevation and concatenation alter the control polygon.
+pub(super) fn type126_declared_control_points(
+    record: &ParameterRecord,
+    precision: RealPrecision,
+) -> Option<Vec<[DeclaredInterval; 3]>> {
+    let control_count = record.count(1)?.checked_add(1)?;
+    let degree = usize::try_from(record.integer(2)?).ok()?;
+    let knot_count = control_count.checked_add(degree)?.checked_add(1)?;
+    let weight_start = 7usize.checked_add(knot_count)?;
+    let pole_start = weight_start.checked_add(control_count)?;
+    let pole_value_count = control_count.checked_mul(3)?;
+    let range_start = pole_start.checked_add(pole_value_count)?;
+    if record.parameter_end() < range_start.checked_add(2)? {
+        return None;
+    }
+    (0..control_count)
+        .map(|point| {
+            (0..3)
+                .map(|coordinate| {
+                    let index = pole_start
+                        .checked_add(point.checked_mul(3)?)?
+                        .checked_add(coordinate)?;
+                    let value = record.number(index).filter(|value| value.is_finite())?;
+                    Some(DeclaredInterval::around(
+                        value,
+                        record.number_uncertainty(index, value, precision),
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()
+        })
+        .collect()
 }
 
 /// Return whether finite declared intervals prove one affine progression.

@@ -1147,7 +1147,7 @@ fn rational_linear_degree_elevation_preserves_the_curve() {
         0.25,
     )
     .expect("valid rational linear NURBS evaluates before degree elevation");
-    assert!(elevate_linear_bezier_to_degree(&mut curve, [0.0, 1.0], 2));
+    assert!(elevate_nurbs_to_degree(&mut curve, [0.0, 1.0], 2, None));
     let after = cadmpeg_ir::eval::nurbs_curve_point(
         curve.degree,
         &curve.knots,
@@ -1182,12 +1182,7 @@ fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
         2.0,
     )
     .expect("valid multi-span linear NURBS evaluates before degree elevation");
-    assert!(elevate_linear_nurbs_to_degree(
-        &mut curve,
-        [0.5, 2.5],
-        3,
-        None
-    ));
+    assert!(elevate_nurbs_to_degree(&mut curve, [0.5, 2.5], 3, None));
     let after = cadmpeg_ir::eval::nurbs_curve_point(
         curve.degree,
         &curve.knots,
@@ -1198,6 +1193,80 @@ fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
     .expect("valid multi-span linear NURBS evaluates after degree elevation");
     assert_eq!(curve.degree, 3);
     assert!(before.distance(after) <= 1.0e-12);
+}
+
+#[test]
+fn multi_span_degree_zero_elevation_preserves_the_curve() {
+    let point = Point3::new(1.0, 2.0, 3.0);
+    let source = NurbsCurve {
+        degree: 0,
+        knots: vec![0.0, 1.0, 2.0],
+        control_points: vec![point; 2],
+        weights: None,
+        periodic: false,
+    };
+    let mut elevated = source.clone();
+    assert!(elevate_nurbs_to_degree(&mut elevated, [0.0, 2.0], 2, None));
+    assert_eq!(elevated.degree, 2);
+    for parameter in [0.25, 0.75, 1.25, 1.75] {
+        let before = cadmpeg_ir::eval::nurbs_curve_point(
+            source.degree,
+            &source.knots,
+            &source.control_points,
+            source.weights.as_deref(),
+            parameter,
+        )
+        .unwrap();
+        let after = cadmpeg_ir::eval::nurbs_curve_point(
+            elevated.degree,
+            &elevated.knots,
+            &elevated.control_points,
+            elevated.weights.as_deref(),
+            parameter,
+        )
+        .unwrap();
+        assert_eq!(before, after);
+    }
+}
+
+#[test]
+fn multi_span_rational_degree_elevation_preserves_the_curve() {
+    const EPS_DEGREE_ELEVATION: f64 = 1.0e-9;
+    let source = NurbsCurve {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0],
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 0.0),
+            Point3::new(2.0, -1.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+        ],
+        weights: Some(vec![1.0, 2.0, 1.0, 3.0]),
+        periodic: false,
+    };
+    let mut elevated = source.clone();
+    assert!(elevate_nurbs_to_degree(&mut elevated, [0.0, 1.0], 3, None));
+    assert_eq!(elevated.degree, 3);
+    assert_eq!(elevated.weights.as_ref().map(Vec::len), Some(7));
+    for parameter in [0.0, 0.125, 0.5, 0.75, 1.0] {
+        let before = cadmpeg_ir::eval::nurbs_curve_point(
+            source.degree,
+            &source.knots,
+            &source.control_points,
+            source.weights.as_deref(),
+            parameter,
+        )
+        .unwrap();
+        let after = cadmpeg_ir::eval::nurbs_curve_point(
+            elevated.degree,
+            &elevated.knots,
+            &elevated.control_points,
+            elevated.weights.as_deref(),
+            parameter,
+        )
+        .unwrap();
+        assert!(before.distance(after) <= EPS_DEGREE_ELEVATION);
+    }
 }
 
 #[test]
@@ -1240,7 +1309,7 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
     for (index, (curve, interval)) in children.iter_mut().enumerate() {
         if curve.degree < 3 {
             assert!(
-                elevate_linear_nurbs_to_degree(curve, *interval, 3, None),
+                elevate_nurbs_to_degree(curve, *interval, 3, None),
                 "child {index} should elevate"
             );
         }
