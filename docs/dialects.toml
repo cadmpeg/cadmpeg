@@ -324,6 +324,11 @@ witness = "code:crates/cadmpeg-codec-step/src/options.rs:84"
 # 5 is FILE_SCHEMA(('AUTOMOTIVE_DESIGN')). Two more fixture identifiers,
 # 'AP214' and 'AUTOMOTIVE_DESIGN_CC2', match no `StepSchema` variant and
 # classify into `step:unknown`.
+# The reader admits the bare name or the arc-bearing form
+# (`schema_identifier_matches`, parse.rs:1995-2002); the encoder writes
+# `AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }` (options.rs:85). The
+# discriminant is the name; arcs discriminate nothing here, unlike the
+# AP242 editions where they select the row.
 id = "step:ap214"
 title = "STEP AP214 (AUTOMOTIVE_DESIGN)"
 discriminants = { file_schema_identifier = "AUTOMOTIVE_DESIGN" }
@@ -370,7 +375,7 @@ witness = "code:crates/cadmpeg-codec-step/src/options.rs:100"
 # `Admission::Refused`.
 id = "step:part28-xml"
 title = "ISO 10303-28 edition 2 XML encoding"
-discriminants = { xml_root_namespace = "urn:iso:std:iso:10303:-28:ed-2:tech:XMLschema:common | urn:iso.org:standard:10303:part(28):version(2):xmlschema:common" }
+discriminants = { xml_root_namespace = "urn:oid:1.0.10303.28.2.1.1 | urn:iso:std:iso:10303:-28:ed-2:tech:XMLschema:common | urn:iso.org:standard:10303:part(28):version(2):xmlschema:common" }
 seam = "an XML encoding of the same schemas; no Part-21 exchange structure at all"
 witness = "code:crates/cadmpeg-codec-step/src/codec.rs:441"
 
@@ -394,7 +399,10 @@ witness = "code:crates/cadmpeg-codec-step/src/codec.rs:399"
 # Mandatory `unknown` row (B4). A Part-21 exchange whose FILE_SCHEMA
 # identifier matches no `StepSchema` variant is admitted and decoded: the
 # schema string is recorded (reader/mod.rs:1099-1101) and nothing branches on
-# it. Two in-tree fixtures land here: 'AP214' and 'AUTOMOTIVE_DESIGN_CC2'.
+# it. In-tree fixtures land here through two identifiers that match no
+# variant ('AP214', 'AUTOMOTIVE_DESIGN_CC2') and through AP242 declarations
+# that lack the object-identifier arcs an edition requires (`ap242_edition`,
+# options.rs:92-104, matches the arc-bearing form only).
 # Disposition: admitted-unverified.
 id = "step:unknown"
 title = "ISO 10303-21 exchange with an unrecognized FILE_SCHEMA identifier"
@@ -810,11 +818,12 @@ witness = "corpus:crates/cadmpeg-codec-catia/tests/golden/fixtures/outer_directo
 # defect stated exactly. It is a u8 at file offset 8
 # (`splmsstr_header::VERSION_TAG`, crates/cadmpeg-codec-nx/src/layout.rs:74),
 # read with `unwrap_or(0)` (container.rs:957) and stored on
-# `Container::version` (container.rs:815-817). Its three consumers are all
-# formatting: two report notes (decode.rs:507, :518) and one source attribute
-# `ugii_version` that is emitted ONLY on the legacy arm
-# (decode/emit.rs:1198-1202). The modern SPLMSSTR version byte reaches no
-# source attribute at all. It is never compared to anything.
+# `Container::version` (container.rs:815-817). Its consumers are all
+# formatting and identity: two report notes (decode.rs:507, :518), the
+# legacy-arm `ugii_version` attribute (decode/emit.rs:1198-1202), and the
+# modern-arm `splmsstr_version` and `product_version` attributes
+# (decode/emit.rs:1204-1210, the latter from the first OM store section
+# carrying a `store_version` record). It is never compared to anything.
 #
 # The product string is provenance too. `product_record_layout`
 # (om.rs:8992-9011) requires the text to start with `NX ` (om.rs:9001) and
@@ -929,8 +938,9 @@ witness = "corpus:crates/cadmpeg-codec-creo/tests/golden/fixtures/nd_visibgeom_l
 # followed by the `#Pro/ENGINEER` banner (container.rs:66). The same marker
 # bytes later in a payload do not select the layout.
 #
-# No golden fixture exercises this layout: the 29-fixture set is 6 ND,
-# 4 DEPDB, 19 unknown, 0 legacy-ascii, despite dedicated decode machinery
+# No golden fixture exercises this layout: the fixture set splits across
+# ND, DEPDB, and unknown with zero legacy-ascii, despite dedicated decode
+# machinery
 # (`legacy.rs`, `legacy_geometry.rs`, `legacy_feature.rs`, `legacy_family.rs`)
 # and eight layout gates. This row is the clearest fixture gap in the file.
 id = "creo:legacy-ascii"
@@ -964,23 +974,25 @@ witness = "corpus:crates/cadmpeg-codec-creo/tests/golden/fixtures/empty_part.prt
 # --------------------------------------------------------------------------
 # The discriminant is the leading length-prefixed ASCII field of the ZIP-root
 # `Manifest.dat`, compared for exact equality against "3-2-0-0"
-# (`parse_top_level`, crates/cadmpeg-codec-f3d/src/manifest.rs:176-190;
+# (`parse_top_level`, crates/cadmpeg-codec-f3d/src/manifest.rs:179-198;
 # routing at container.rs:435-436). Two co-discriminants follow immediately
-# and are equally exact: the ASCII kind "FusionDocType" (manifest.rs:189) and
-# the UTF-16 extension ".f3d" (manifest.rs:190).
+# and are equally exact: the ASCII kind "FusionDocType" (manifest.rs:199) and
+# the UTF-16 extension ".f3d" (manifest.rs:200).
 #
 # Open grammar question, not decided here. Two further document-wide forks
 # live inside the same manifest and would each be a B1 boundary if the codec
 # owner reads them that way:
 #   generation sentinel -- `generation == 1234` selects a three-extra-word
 #     layout (major/minor/flags); any other value selects a one-extra-word
-#     legacy layout (manifest.rs:196-212). BOTH branches are admitted: this is
+#     legacy layout (manifest.rs:206-217). BOTH branches are admitted: this is
 #     a real fork, not a gate. All four components are parsed and discarded.
-#   asset-manifest revision -- `parse_asset_header` (manifest.rs:404-422)
+#   asset-manifest revision -- `parse_asset_header` (manifest.rs:400-431)
 #     admits revisions 0, 10, 11, 12, 13, 14, 15, 19, and 20 through three
-#     genuinely distinct grammars (manifest.rs:461-473, :475-517, :453-459),
-#     and REFUSES 16, 17, 18, and everything at 21 or above. The refused band
-#     is a gap in the middle of the admitted range, not a ceiling.
+#     genuinely distinct grammars (dispatch at manifest.rs:415-426;
+#     `parse_revision_zero_design_asset` :471, `parse_revision_ten_design_asset`
+#     :485, `parse_current_design_asset` for the rest), and REFUSES 16, 17,
+#     18, and everything at 21 or above. The refused band is a gap in the
+#     middle of the admitted range, not a ceiling.
 # Every in-tree fixture is the single point {version "3-2-0-0", generation
 # 1234, asset revision 20}, so splitting on either fork would produce
 # unwitnessable rows today.
@@ -990,9 +1002,9 @@ witness = "corpus:crates/cadmpeg-codec-creo/tests/golden/fixtures/empty_part.prt
 complete = false
 
 [[dialect]]
-# manifest.rs:188. Fixture verified: the top-level `Manifest.dat` of
+# manifest.rs:190-191. Fixture verified: the top-level `Manifest.dat` of
 # attributes.f3d opens `07 00 00 00` + "3-2-0-0", then "FusionDocType", then
-# UTF-16 ".f3d"; generation 1234 at offset 0x0104; asset revision 20.
+# UTF-16 ".f3d"; generation 1234; asset revision 20.
 id = "f3d:manifest-3-2-0-0"
 title = "Fusion .f3d archive, top-level manifest version 3-2-0-0"
 discriminants = { top_level_manifest_version = "3-2-0-0", top_level_manifest_kind = "FusionDocType", extension_field = ".f3d" }
@@ -1011,16 +1023,14 @@ seam = "no binary manifest and no version field; the document set is named by JS
 witness = "code:crates/cadmpeg-codec-f3d/src/container.rs:445"
 
 [[dialect]]
-# Mandatory `unknown` row (B4). Disposition today is the live defect the
-# design records as §13.2: a manifest version other than "3-2-0-0" yields
-# `CodecError::Malformed` via `expect_ascii` (manifest.rs:107-116) and
-# `error.rs:6-8`, so a newer Fusion file reads as broken bytes. This row is
-# the first `UnsupportedDialect` migration; the identity is real whether or
-# not the disposition is fixed.
+# Mandatory `unknown` row (B4). Disposition: refused with
+# `CodecError::NotImplemented` naming the observed version
+# (manifest.rs:191-198); structural corruption stays `Malformed`. This row
+# is the first `UnsupportedDialect` migration target.
 id = "f3d:unknown"
 title = "Fusion .f3d archive with an unrecognized top-level manifest version"
 discriminants = { top_level_manifest_version = "any other" }
-witness = "code:crates/cadmpeg-codec-f3d/src/manifest.rs:188"
+witness = "code:crates/cadmpeg-codec-f3d/src/manifest.rs:190"
 
 # --------------------------------------------------------------------------
 # Autodesk Inventor
@@ -1117,7 +1127,7 @@ witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:32"
 id = "sat:text"
 title = "Bare ACIS/ASM text stream (SAT/SMT)"
 discriminants = { header_line_1 = "four integer fields", header_line_2 = "leading ASCII digit" }
-seam = "ungated: the text path parses the save format (crates/cadmpeg-asm/src/sat.rs:304) and never compares it, which is the design's §13.6 defect. Kernel layer: acis:text-asm or acis:text-acis, selected by the terminator line"
+seam = "the text path parses the save format (crates/cadmpeg-asm/src/sat.rs:304) and gates ACIS-terminated streams to majors 217 and 218, the same band as the ACIS binary path (crates/cadmpeg-codec-sat/src/decode.rs:128-135); ASM-terminated text streams are admitted at any save format. Kernel layer: acis:text-asm or acis:text-acis, selected by the terminator line"
 witness = "code:crates/cadmpeg-codec-sat/src/detect.rs:35"
 
 [[dialect]]
@@ -1153,8 +1163,8 @@ complete = false
 # `ASM BinaryFile4`: four u32 LE words at 15/19/23/27, strings from 31
 # (asm_header.rs:16-19; `asmheader_binaryfile4` in layout.rs, LEN = 31).
 # Carries a `record_count` word that BinaryFile8 does not.
-# Fixture verified: 2 of the 57 F3D fixtures carry `ASM BinaryFile4` in an
-# archive member; the other 55 carry `ASM BinaryFile8`.
+# Both widths occur among the F3D golden fixtures' archive members;
+# nearly all carry `ASM BinaryFile8`.
 id = "acis:asm-binaryfile-4"
 title = "Autodesk ShapeManager binary stream, 4-byte reference width"
 discriminants = { magic = "ASM BinaryFile4", width_digit = "4" }
