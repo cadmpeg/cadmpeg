@@ -1202,6 +1202,13 @@ pub(crate) fn source_meta(scan: &Scan) -> SourceMeta {
         );
     } else {
         attributes.insert(
+            "splmsstr_version".to_string(),
+            scan.container.version.to_string(),
+        );
+        if let Some(header) = crate::native::store_headers(&scan.container).first() {
+            attributes.insert("product_version".to_string(), header.version.clone());
+        }
+        attributes.insert(
             "footer_offset".to_string(),
             scan.container.footer_offset.to_string(),
         );

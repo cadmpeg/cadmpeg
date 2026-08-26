@@ -80,7 +80,8 @@
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "0",
-          "plain_streams": "0"
+          "plain_streams": "0",
+          "splmsstr_version": "6"
         },
         "format": "nx"
       },
