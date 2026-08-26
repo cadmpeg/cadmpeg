@@ -2467,6 +2467,8 @@ impl<'a> DecodeContext<'a> {
         losses.extend(self.scan.warnings.iter().map(|warning| {
             if integrity_diagnostic(warning) {
                 RhinoLossCode::IntegrityFailure.note(warning.clone())
+            } else if dialect_unverified_diagnostic(warning) {
+                RhinoLossCode::SourceDialectUnverified.note(warning.clone())
             } else if warning.contains(" has invalid color source ") {
                 RhinoLossCode::EnumerationValueDegraded.note(warning.clone())
             } else if brep_mesh_cache_diagnostic(warning) {
@@ -2483,6 +2485,10 @@ impl<'a> DecodeContext<'a> {
         for warning in &self.phase_warnings {
             if integrity_diagnostic(warning) {
                 losses.push(RhinoLossCode::IntegrityFailure.note(warning.clone()));
+                continue;
+            }
+            if dialect_unverified_diagnostic(warning) {
+                losses.push(RhinoLossCode::SourceDialectUnverified.note(warning.clone()));
                 continue;
             }
             if brep_mesh_cache_diagnostic(warning) {
@@ -3374,7 +3380,15 @@ impl<'a> DecodeContext<'a> {
                 } else {
                     self.append_links(source_order, &links);
                     for warning in warnings {
-                        if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
+                        if warning.starts_with(BODY_KIND_GAUGE_PREFIX) {
+                            self.typed_losses.push(
+                                RhinoLossCode::TopologyBodyKindGaugeSubstituted.note(&warning),
+                            );
+                        } else if dialect_unverified_diagnostic(&warning) {
+                            self.typed_losses
+                                .push(RhinoLossCode::SourceDialectUnverified.note(&warning));
+                        } else if let Some(cause) = warning.strip_prefix("Brep topology fallback: ")
+                        {
                             self.typed_losses.push(
                                 RhinoLossCode::TopologyBrepFallback
                                     .note(format!("Brep topology fallback: {cause}")),
@@ -3475,6 +3489,11 @@ fn redundant_field_diagnostic(message: &str) -> bool {
     message.starts_with("redundant ")
         || message.contains(": redundant ")
         || message.contains("invalid optional Brep region topology discarded")
+}
+
+/// True for a diagnostic raised because the archive carries no writer stamp.
+fn dialect_unverified_diagnostic(message: &str) -> bool {
+    message.contains(crate::loss::DIALECT_UNVERIFIED_MARKER)
 }
 
 fn brep_mesh_cache_diagnostic(message: &str) -> bool {
@@ -4378,9 +4397,13 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         .iter()
         .map(|region| region.id.clone())
         .collect();
+    let (body_kind, body_kind_substituted) = brep_body_kind(raw, writer_version);
+    if let Some(warning) = body_kind_substituted {
+        staged.warnings.push(warning);
+    }
     staged.draft.model_mut().bodies.push(Body {
         id: body_id.clone(),
-        kind: brep_body_kind(raw, writer_version),
+        kind: body_kind,
         regions: body_regions,
         transform: None,
         name: association.name.clone(),
@@ -4593,7 +4616,11 @@ fn coedge_sense(reversed_3d: bool, edge_proxy_reversed: bool) -> Sense {
     }
 }
 
-fn brep_body_kind(raw: &crate::brep::RawBrep, writer_version: Option<i64>) -> BodyKind {
+/// Classifies one B-rep body, reporting whether a missing stamp decided it.
+fn brep_body_kind(
+    raw: &crate::brep::RawBrep,
+    writer_version: Option<i64>,
+) -> (BodyKind, Option<String>) {
     let closed = !raw.faces.is_empty()
         && raw.edges.iter().enumerate().all(|(edge, _)| {
             raw.trims
@@ -4602,7 +4629,48 @@ fn brep_body_kind(raw: &crate::brep::RawBrep, writer_version: Option<i64>) -> Bo
                 .count()
                 == 2
         });
-    serialized_brep_body_kind(raw.minor, raw.is_solid, writer_version, closed)
+    let kind = serialized_brep_body_kind(raw.minor, raw.is_solid, writer_version, closed);
+    let substituted =
+        body_kind_rests_on_missing_stamp(raw.minor, raw.is_solid, writer_version, closed).then(
+            || {
+                format!(
+                    "{BODY_KIND_GAUGE_PREFIX}stored solid flag {} was trusted over the \
+                     closed-shell gauge because {}",
+                    raw.is_solid.unwrap_or(-1),
+                    crate::loss::DIALECT_UNVERIFIED_MARKER
+                )
+            },
+        );
+    (kind, substituted)
+}
+
+/// Prefix that promotes a staged Brep warning to the body-kind gauge loss.
+const BODY_KIND_GAUGE_PREFIX: &str = "Brep body kind gauge substituted: ";
+
+/// First openNURBS writer version whose `ON_Brep` stores a meaningful solid flag.
+const SOLID_FLAG_WRITER_VERSION: i64 = 200_210_020;
+
+/// True when a missing writer stamp is what decided the body kind.
+///
+/// The stored solid flag is trusted when the stamp is absent and ignored when
+/// the stamp is older than [`SOLID_FLAG_WRITER_VERSION`], so an unstamped
+/// archive is classified on an assumption the archive does not carry. This
+/// compares the two readings of the same bytes and reports only a disagreement:
+/// where both readings pick the same body kind nothing was substituted.
+fn body_kind_rests_on_missing_stamp(
+    minor: u8,
+    is_solid: Option<i32>,
+    writer_version: Option<i64>,
+    closed: bool,
+) -> bool {
+    writer_version.is_none()
+        && serialized_brep_body_kind(minor, is_solid, None, closed)
+            != serialized_brep_body_kind(
+                minor,
+                is_solid,
+                Some(SOLID_FLAG_WRITER_VERSION - 1),
+                closed,
+            )
 }
 
 fn serialized_brep_body_kind(
@@ -4611,9 +4679,10 @@ fn serialized_brep_body_kind(
     writer_version: Option<i64>,
     closed: bool,
 ) -> BodyKind {
-    let stored = (minor >= 2 && writer_version.is_none_or(|version| version >= 200_210_020))
-        .then_some(is_solid)
-        .flatten();
+    let stored = (minor >= 2
+        && writer_version.is_none_or(|version| version >= SOLID_FLAG_WRITER_VERSION))
+    .then_some(is_solid)
+    .flatten();
     match stored {
         Some(1 | 2) => BodyKind::Solid,
         Some(0) => {

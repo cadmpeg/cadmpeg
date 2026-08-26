@@ -1558,6 +1558,26 @@ fn read_vertices(
     Ok((result, range))
 }
 
+/// Reports a topology array read under the pre-2002 layout for want of a stamp.
+///
+/// On a V3-or-later archive the stored domain is read only when the writer
+/// stamp vouches for it; without a stamp the proxy domain is substituted and the
+/// stored one is never read, so the emitted geometry rests on an assumption the
+/// archive does not carry. An empty array carries no such reading.
+fn unstamped_legacy_layout(
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    count: usize,
+    field: &str,
+) -> Option<String> {
+    (archive.value() >= 3 && writer_version.is_none() && count > 0).then(|| {
+        format!(
+            "Brep {field} read with the pre-2002 layout for {count} records because {}",
+            crate::loss::DIALECT_UNVERIFIED_MARKER
+        )
+    })
+}
+
 fn read_edges(
     bytes: &[u8],
     reader: &mut BoundedReader<'_>,
@@ -1569,6 +1589,9 @@ fn read_edges(
     let mut child = body_reader(bytes, &chunk)?;
     let count = raw_array_start(&mut child, "edge", 44)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
+    if let Some(warning) = unstamped_legacy_layout(archive, writer_version, count, "edge domains") {
+        warnings.push(warning);
+    }
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
         let start = child.position();
@@ -1612,6 +1635,14 @@ fn read_trims(
     let mut child = body_reader(bytes, &chunk)?;
     let count = raw_array_start(&mut child, "trim", 132)?;
     let current = archive.value() >= 3 && writer_version.is_some_and(|v| v >= 200_206_180);
+    if let Some(warning) = unstamped_legacy_layout(
+        archive,
+        writer_version,
+        count,
+        "trim domains and proxy senses",
+    ) {
+        warnings.push(warning);
+    }
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
         let start = child.position();

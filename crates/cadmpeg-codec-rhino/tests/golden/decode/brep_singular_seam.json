@@ -503,6 +503,24 @@
       },
       {
         "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "rhino"
+        },
+        "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep edge domains read with the pre-2002 layout for 1 records because the archive has no writer-version stamp",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "rhino"
+        },
+        "message": "60b5dbc5-e660-11d3-bfe4-0010830122f0: Brep trim domains and proxy senses read with the pre-2002 layout for 4 records because the archive has no writer-version stamp",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "container.integrity-failure",
           "kind": "integrity_failure",
           "namespace": "rhino"

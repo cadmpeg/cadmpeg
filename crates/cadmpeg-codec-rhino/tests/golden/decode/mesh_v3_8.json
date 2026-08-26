@@ -255,6 +255,15 @@
         },
         "message": "object at 177 has nil object UUID",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "rhino"
+        },
+        "message": "rhino:object:record#record-000000-offset-177: ON_Mesh dropped 246 bytes of post-2006 fields (mapping tag, n-gons, double-precision vertices) because the archive has no writer-version stamp",
+        "severity": "warning"
       }
     ],
     "notes": [

@@ -610,7 +610,12 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
             .map(|value| value.version),
         Some((1, 1))
     );
-    assert!(warnings.is_empty());
+    assert!(
+        warnings
+            .iter()
+            .all(|warning| warning.contains(LAYER_PARENT_DIALECT)),
+        "{warnings:?}"
+    );
 
     let mut future_payload = payload.clone();
     future_payload.pop();
@@ -642,7 +647,28 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     assert!(future.opaque_records.is_empty());
 }
 
+/// Marker of the diagnostic raised for an unstamped layer record.
+const LAYER_PARENT_DIALECT: &str = "layer parent link and expanded state were not read";
+
 fn layer_metadata_with_extension(extension: &[u8]) -> settings::DocumentMetadata {
+    let (metadata, warnings) = layer_metadata(extension, None);
+    assert!(
+        warnings
+            .iter()
+            .all(|warning| warning.contains(LAYER_PARENT_DIALECT)),
+        "{warnings:?}"
+    );
+    metadata
+}
+
+/// Parses one layer record, with the writer-version stamp under test control.
+///
+/// A `Some` stamp is delivered the way an archive delivers it: a short
+/// writer-version record in a properties table ahead of the layer table.
+fn layer_metadata(
+    extension: &[u8],
+    writer_version: Option<i64>,
+) -> (settings::DocumentMetadata, Vec<String>) {
     let archive = ArchiveVersion::V8;
     let mut payload = vec![0x1f];
     payload.extend(0_i32.to_le_bytes());
@@ -695,10 +721,47 @@ fn layer_metadata_with_extension(extension: &[u8]) -> settings::DocumentMetadata
         record_count: 1,
         object_typecodes: std::collections::BTreeMap::new(),
     };
+    let mut tables = Vec::new();
+    if let Some(value) = writer_version {
+        tables.push(crate::container::Table {
+            typecode: 0x1000_0014,
+            range: 0..0,
+            body: 0..0,
+            records: vec![crate::container::Record {
+                typecode: 0xa000_0026,
+                range: 0..0,
+                body: 0..0,
+                short: true,
+                value,
+            }],
+            record_count: 1,
+            object_typecodes: std::collections::BTreeMap::new(),
+        });
+    }
+    tables.push(table);
     let mut warnings = Vec::new();
-    let metadata = settings::parse_metadata(&data, archive, &[table], &mut warnings);
-    assert!(warnings.is_empty(), "{warnings:?}");
-    metadata
+    let metadata = settings::parse_metadata(&data, archive, &tables, &mut warnings);
+    (metadata, warnings)
+}
+
+/// The layer parent link rests on the stamp, so the loss follows the stamp.
+#[test]
+fn unstamped_layer_charges_the_parent_link_dialect_loss() {
+    let (_, unstamped) = layer_metadata(&[], None);
+    assert!(
+        unstamped
+            .iter()
+            .any(|warning| warning.contains(LAYER_PARENT_DIALECT)),
+        "{unstamped:?}"
+    );
+
+    let (_, stamped) = layer_metadata(&[], Some(200_912_010));
+    assert!(
+        !stamped
+            .iter()
+            .any(|warning| warning.contains(LAYER_PARENT_DIALECT)),
+        "{stamped:?}"
+    );
 }
 
 fn layer_metadata_with_description(description: &str) -> settings::DocumentMetadata {

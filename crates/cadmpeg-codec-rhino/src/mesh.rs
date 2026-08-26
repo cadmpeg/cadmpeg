@@ -427,7 +427,14 @@ pub(crate) fn decode(
         }
     }
     if major == 3 && minor >= 4 && !post_2006_fields {
-        reader.skip_remaining()?;
+        let dropped = reader.skip_remaining()?;
+        if dropped != 0 && writer_version.is_none() {
+            decoded.warnings.push(format!(
+                "ON_Mesh dropped {dropped} bytes of post-2006 fields (mapping tag, n-gons, \
+                 double-precision vertices) because {}",
+                crate::loss::DIALECT_UNVERIFIED_MARKER
+            ));
+        }
     }
     let skipped = reader.skip_remaining()?;
     if skipped != 0 {
