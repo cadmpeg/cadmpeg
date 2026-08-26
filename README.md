@@ -65,7 +65,7 @@ wrote part.step (2125 entities)
 - **CATIA V5 `.CATPart`**: [L1](docs/format-support.md#support-ladder)
 - **Creo `.prt`**: [L1](docs/format-support.md#support-ladder)
 - **STEP Part 21 AP203/AP214/AP242**: [L9](docs/format-support.md#support-ladder)
-- **IGES 5.1/5.2/5.3 Fixed ASCII**: [L8](docs/format-support.md#support-ladder)
+- **IGES 4.0/5.0/5.1/5.2/5.3 Fixed ASCII**: [L9](docs/format-support.md#support-ladder)
 - **ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` streams**: [L3](docs/format-support.md#support-ladder) (admitted binary and text branches)
 
 [Format support](docs/format-support.md) holds profiles and scoring rules. [`docs/formats/`](docs/formats/) holds byte semantics and open items.
