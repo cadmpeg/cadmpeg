@@ -17,6 +17,7 @@ use crate::IgesCodec;
 use crate::global::Dialect;
 
 const EPS_RATIONAL_RULED: f64 = 1.0e-10;
+const EPS_LINEAR_BEZIER_RULED: f64 = 1.0e-5;
 
 use super::{
     angular_basis, homogeneous_curve_boundary_matches, offset_indicator_parameters,
@@ -156,6 +157,40 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         .any(|loss| loss.code == IgesLossCode::RuledDevelopabilityNotTransferred.kind()));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_projects_an_interval_certified_linear_bezier_ruled_surface() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(interval_certified_linear_bezier_ruled_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == IgesLossCode::EntityNotProjected.kind()
+            && loss.message.contains("entity type 118")
+    }));
+    let surface = result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "iges:model:surface#D5")
+        .and_then(|surface| match &surface.geometry {
+            SurfaceGeometry::Nurbs(surface) => Some(surface),
+            _ => None,
+        })
+        .expect("linear Bezier ruled surface");
+    let midpoint = cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5)
+        .expect("linear Bezier ruled midpoint");
+    assert!(
+        midpoint.distance(Point3::new(1.5, 0.5, 0.0)) <= EPS_LINEAR_BEZIER_RULED,
+        "{midpoint:?}"
+    );
+    assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
 #[test]

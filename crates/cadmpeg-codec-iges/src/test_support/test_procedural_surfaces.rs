@@ -103,3 +103,33 @@ pub(crate) fn trimmed_procedural_line_surface_of_revolution_file() -> Vec<u8> {
         },
     ])
 }
+
+pub(crate) fn interval_certified_linear_bezier_ruled_surface_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 0,
+            label: "BEZIER1".into(),
+            status: "00000000",
+            parameters:
+                "126,3,3,0,0,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,1.000002,0,0,2.000004,0,0,3,0,0,0,1;"
+                    .into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 0,
+            label: "BEZIER2".into(),
+            status: "00000000",
+            parameters:
+                "126,3,3,0,0,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,1,0,1.000002,1,0,2.000004,1,0,3,1,0,0,1;"
+                    .into(),
+        },
+        OwnedTestEntity {
+            entity_type: 118,
+            form: 0,
+            label: "BZRULED".into(),
+            status: "00000000",
+            parameters: "118,1,3,0,0;".into(),
+        },
+    ])
+}

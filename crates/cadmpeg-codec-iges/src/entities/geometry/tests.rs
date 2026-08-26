@@ -10,9 +10,9 @@ use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::math::Vector3;
 
 use super::{
-    base_geometry_line_font_valid, base_geometry_use_flag_valid, enforce_transform_depth,
-    is_finite_nonzero_vector, validate_declared_transform_frame, DeclaredInterval,
-    DeclaredTransformFrameError,
+    base_geometry_line_font_valid, base_geometry_use_flag_valid, declared_affine_progression,
+    enforce_transform_depth, is_finite_nonzero_vector, validate_declared_transform_frame,
+    DeclaredInterval, DeclaredTransformFrameError,
 };
 use crate::global::Dialect;
 use crate::loss::IgesLossCode;
@@ -668,6 +668,22 @@ fn declared_transform_validation_separates_frame_and_handedness_invariants() {
         ),
         Err(DeclaredTransformFrameError::NotOrthonormal)
     );
+}
+
+#[test]
+fn declared_intervals_prove_or_reject_an_affine_control_polygon() {
+    assert!(declared_affine_progression(
+        &[0.0, 1.0, 2.0, 3.0],
+        &[0.0; 4]
+    ));
+    assert!(declared_affine_progression(
+        &[0.0, 1.000_002, 2.000_004, 3.0],
+        &[0.0, 5.0e-6, 5.0e-6, 0.0]
+    ));
+    assert!(!declared_affine_progression(
+        &[0.0, 1.0, 2.2, 3.0],
+        &[0.0; 4]
+    ));
 }
 
 #[test]

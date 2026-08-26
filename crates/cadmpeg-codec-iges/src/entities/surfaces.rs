@@ -117,12 +117,127 @@ fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
     }
 }
 
+fn interval_certified_linear_bezier(
+    geometry: &NurbsCurve,
+    record: &ParameterRecord,
+    global: &ProjectedGlobal,
+) -> bool {
+    if record.integer(0) != Some(126) {
+        return false;
+    }
+    let Ok(degree) = usize::try_from(geometry.degree) else {
+        return false;
+    };
+    let Some(control_count) = degree.checked_add(1) else {
+        return false;
+    };
+    if degree < 2
+        || geometry.weights.is_some()
+        || geometry.periodic
+        || geometry.control_points.len() != control_count
+        || geometry.knots.len() != control_count * 2
+    {
+        return false;
+    }
+    let Some(lower) = geometry.knots.first().copied() else {
+        return false;
+    };
+    let Some(upper) = geometry.knots.last().copied() else {
+        return false;
+    };
+    if !lower.is_finite()
+        || !upper.is_finite()
+        || lower >= upper
+        || geometry.knots[..control_count]
+            .iter()
+            .any(|knot| *knot != lower)
+        || geometry.knots[control_count..]
+            .iter()
+            .any(|knot| *knot != upper)
+        || geometry.control_points.iter().any(|point| {
+            [point.x, point.y, point.z]
+                .into_iter()
+                .any(|value| !value.is_finite())
+        })
+        || geometry
+            .control_points
+            .first()
+            .zip(geometry.control_points.last())
+            .is_none_or(|(first, last)| {
+                let distance = first.distance(*last);
+                !distance.is_finite() || distance <= 0.0
+            })
+    {
+        return false;
+    }
+
+    let Some(k) = record.count(1) else {
+        return false;
+    };
+    let Some(source_degree) = record
+        .integer(2)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return false;
+    };
+    if source_degree != degree || k.checked_add(1) != Some(control_count) {
+        return false;
+    }
+    let Some(knot_count) = control_count
+        .checked_add(degree)
+        .and_then(|count| count.checked_add(1))
+    else {
+        return false;
+    };
+    let Some(weight_start) = 7usize.checked_add(knot_count) else {
+        return false;
+    };
+    let Some(pole_start) = weight_start.checked_add(control_count) else {
+        return false;
+    };
+    let precision = global.real_precision();
+    let mut coordinate_values = [
+        Vec::with_capacity(control_count),
+        Vec::with_capacity(control_count),
+        Vec::with_capacity(control_count),
+    ];
+    let mut coordinate_uncertainties = [
+        Vec::with_capacity(control_count),
+        Vec::with_capacity(control_count),
+        Vec::with_capacity(control_count),
+    ];
+    for control_index in 0..control_count {
+        for coordinate in 0..3 {
+            let Some(index) = pole_start
+                .checked_add(control_index * 3)
+                .and_then(|index| index.checked_add(coordinate))
+            else {
+                return false;
+            };
+            let Some(value) = record.number(index) else {
+                return false;
+            };
+            let uncertainty = record.number_uncertainty(index, value, precision);
+            coordinate_values[coordinate].push(value);
+            coordinate_uncertainties[coordinate].push(uncertainty);
+        }
+    }
+    coordinate_values
+        .into_iter()
+        .zip(coordinate_uncertainties)
+        .all(|(values, uncertainties)| {
+            super::geometry::declared_affine_progression(&values, &uncertainties)
+        })
+}
+
 fn equal_arc_length_parameterization(
     ir: &CadIr,
     first_sequence: u32,
     second_sequence: u32,
     first_interval: [f64; 2],
     second_interval: [f64; 2],
+    records: &BTreeMap<u32, &ParameterRecord>,
+    global: &ProjectedGlobal,
 ) -> bool {
     // A normalized parameter is an arc-length parameter only for a constant-
     // speed carrier. The test is deliberately structural; numerical sampling
@@ -144,7 +259,18 @@ fn equal_arc_length_parameterization(
     if !valid_interval(first_interval) || !valid_interval(second_interval) {
         return false;
     }
-    constant_speed_curve(first) && constant_speed_curve(second)
+    let constant_speed = |sequence: u32, geometry: &CurveGeometry| {
+        if constant_speed_curve(geometry) {
+            return true;
+        }
+        let CurveGeometry::Nurbs(curve) = geometry else {
+            return false;
+        };
+        records
+            .get(&sequence)
+            .is_some_and(|record| interval_certified_linear_bezier(curve, record, global))
+    };
+    constant_speed(first_sequence, first) && constant_speed(second_sequence, second)
 }
 
 fn bounded_evaluable_curve(
@@ -1152,6 +1278,8 @@ pub(super) fn project(
                 second_sequence,
                 first_interval,
                 second_interval,
+                &records,
+                global,
             )
         {
             losses.push(entity_loss(

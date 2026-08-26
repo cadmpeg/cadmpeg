@@ -381,6 +381,53 @@ impl DeclaredInterval {
     }
 }
 
+/// Return whether finite declared intervals prove one affine progression.
+///
+/// A sequence `x[i] = a + i*d` is affine exactly when one value of `d` makes
+/// all intervals `[x[i] - i*d]` overlap. Pairwise bounds on `d` express that
+/// condition without choosing a representative from any source interval. A
+/// non-finite interval or bound is rejected instead of being treated as an
+/// unconstrained value after arithmetic overflow.
+pub(crate) fn declared_affine_progression(values: &[f64], uncertainties: &[f64]) -> bool {
+    if values.len() < 2
+        || values.len() != uncertainties.len()
+        || values
+            .iter()
+            .zip(uncertainties)
+            .any(|(value, uncertainty)| {
+                !value.is_finite() || !uncertainty.is_finite() || *uncertainty < 0.0
+            })
+    {
+        return false;
+    }
+    let intervals = values
+        .iter()
+        .zip(uncertainties)
+        .map(|(value, uncertainty)| DeclaredInterval::around(*value, *uncertainty))
+        .collect::<Vec<_>>();
+    if intervals
+        .iter()
+        .any(|interval| !interval.lower.is_finite() || !interval.upper.is_finite())
+    {
+        return false;
+    }
+    let mut lower = f64::NEG_INFINITY;
+    let mut upper = f64::INFINITY;
+    for first in 0..intervals.len() {
+        for second in first + 1..intervals.len() {
+            let span = (second - first) as f64;
+            let pair_lower = (intervals[second].lower - intervals[first].upper) / span;
+            let pair_upper = (intervals[second].upper - intervals[first].lower) / span;
+            if !pair_lower.is_finite() || !pair_upper.is_finite() {
+                return false;
+            }
+            lower = lower.max(pair_lower);
+            upper = upper.min(pair_upper);
+        }
+    }
+    lower <= upper
+}
+
 fn interval_dot(left: [DeclaredInterval; 3], right: [DeclaredInterval; 3]) -> DeclaredInterval {
     (0..3).fold(DeclaredInterval::around(0.0, 0.0), |sum, index| {
         sum.add(left[index].multiply(right[index]))
