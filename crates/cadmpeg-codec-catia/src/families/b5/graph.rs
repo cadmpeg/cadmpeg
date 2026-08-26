@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
+use cadmpeg_core::decode::{View, WorkBudget};
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
 use cadmpeg_ir::geometry::{
     knots_strictly_increasing, NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -16,16 +16,10 @@ use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are
 use crate::wire;
 
 /// Maximum frame-index, record-materialization, census, and graph-selection
-/// operations admitted for one free-form object population.
-pub(crate) const MAX_OBJECT_STREAM_SELECTION_WORK: usize = 1_000_000;
-const EPS_VERTEX_RESIDUAL_INCREMENT: f64 = 1.0e-9;
-const EPS_FRAME_UNIT: f64 = 1.0e-12;
-const EPS_FRAME_ORTHO: f64 = 1.0e-12;
-const EPS_CHART_RANGE: f64 = 1.0e-12;
-const EPS_SURFACE_UNIT: f64 = 1.0e-12;
-const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
-const EPS_PERIODIC_RANGE: f64 = 1.0e-12;
-const EPS_U_PARAMETER: f64 = 1.0e-12;
+/// operations admitted for one free-form object population. The allowance
+/// covers one indexed-frame pass, topology materialization, dependency
+/// closure, and one bounded graph-resolution pass.
+pub(crate) const MAX_OBJECT_STREAM_SELECTION_WORK: usize = 2_000_000;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
 /// surfaces bound through the in-stream `object_id` map ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)),
@@ -286,8 +280,8 @@ pub enum B5Surface {
         axis: [f64; 3],
         /// Cone half-angle in radians.
         half_angle: f64,
-        /// Scalar immediately preceding the active angular interval.
-        pre_angular_range_scalar: f64,
+        /// Reference radius of the conical surface, independent of the active chart ranges.
+        reference_radius: f64,
         /// Active azimuth interval.
         angular_range: [f64; 2],
         /// Native slant-coordinate range.
@@ -590,18 +584,31 @@ pub struct B5Pcurve {
     pub control_points: Vec<[f64; 2]>,
     /// Per-pole rational weights. `None` denotes a polynomial pcurve.
     pub weights: Option<Vec<f64>>,
-    /// Explicit native parameter interval when the pcurve record stores one.
+    /// Explicit occurrence parameter interval when the pcurve record stores one.
     pub parameter_range: Option<[f64; 2]>,
+    /// Coordinate convention for evaluating the stored knot vector.
+    pub parameterization: B5PcurveParameterization,
     /// Positive scalar stored in the exact class-`21` suffix. When a class-`21`
-    /// object-stream jet participates in a translated class-`2c` chart, this
-    /// is the source knot-span witness; standalone pcurve evaluation does not
-    /// use it.
+    /// pcurve is present, it is the length of the zero-based occurrence interval.
     pub class_21_suffix_scalar: Option<f64>,
     /// The curve's two clamped-end poles lifted through `surface` into
     /// world-frame 3D points, or `None` before [`parse`] resolves them or
     /// when the lift fails (unresolved surface, degenerate revolution
     /// scale, or NURBS evaluation failure).
     pub lifted_endpoints: Option<[[f64; 3]; 2]>,
+}
+
+/// Parameter coordinates used by one B5 pcurve record.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum B5PcurveParameterization {
+    /// The pcurve's occurrence coordinate is its serialized knot coordinate.
+    Native,
+    /// The occurrence coordinate starts at zero while the serialized knot
+    /// vector starts at `native_origin`.
+    Translated {
+        /// Native knot coordinate corresponding to occurrence station zero.
+        native_origin: f64,
+    },
 }
 
 /// Exact great-circle fields carried by a class-`1d` sphere pcurve.
@@ -661,6 +668,8 @@ pub(crate) struct ObjectFrame {
     pub(crate) class: u8,
     pub(crate) object_id: u32,
 }
+
+type DependencyCandidates = HashMap<u32, Option<ObjectFrame>>;
 
 /// A resolved `b5 03 5f` face node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -956,29 +965,34 @@ pub(crate) fn parse_from_records_budgeted(
         .filter_map(parse_offset_surface_fields)
         .collect::<Vec<_>>();
     let mut extrusion_surfaces = BTreeMap::<u32, B5ExtrusionSurface>::new();
-    loop {
-        if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
-            return None;
-        }
-        let mut changed = false;
-        for record in records {
-            if extrusion_surfaces.contains_key(&record.object_id) {
-                continue;
+    let has_extrusion_candidates = records
+        .iter()
+        .any(|record| record.family == 0xb5 && record.class == 0x2c);
+    if has_extrusion_candidates {
+        loop {
+            if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
+                return None;
             }
-            let Some(extrusion) = parse_extrusion_surface_with_context(
-                record,
-                &by_id,
-                &object_stream_pcurves,
-                &offset_constructions,
-                &extrusion_surfaces,
-            ) else {
-                continue;
-            };
-            extrusion_surfaces.insert(record.object_id, extrusion);
-            changed = true;
-        }
-        if !changed {
-            break;
+            let mut changed = false;
+            for record in records {
+                if extrusion_surfaces.contains_key(&record.object_id) {
+                    continue;
+                }
+                let Some(extrusion) = parse_extrusion_surface_with_context(
+                    record,
+                    &by_id,
+                    &object_stream_pcurves,
+                    &offset_constructions,
+                    &extrusion_surfaces,
+                ) else {
+                    continue;
+                };
+                extrusion_surfaces.insert(record.object_id, extrusion);
+                changed = true;
+            }
+            if !changed {
+                break;
+            }
         }
     }
     let extrusion_pcurves = extrusion_surfaces
@@ -993,81 +1007,89 @@ pub(crate) fn parse_from_records_budgeted(
         .collect::<HashSet<_>>();
     let mut offset_surfaces = BTreeMap::new();
     let mut supported_surfaces = BTreeMap::new();
-    loop {
-        if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
-            return None;
-        }
-        let mut changed =
-            resolve_surface_aliases(records, &by_id, &mut surfaces, &mut conflicting_surfaces);
-        for record in records {
-            let Some(offset) = parse_offset_surface(record, &surfaces, &extrusion_surfaces, &by_id)
-            else {
-                continue;
-            };
-            let carrier = if let Some(carrier) = surfaces.get(&offset.carrier_surface).cloned() {
-                carrier
-            } else {
-                let Some(record) = by_id.get(&offset.carrier_surface) else {
+    let has_surface_fixpoint_candidates = !offset_constructions.is_empty()
+        || records.iter().any(|record| {
+            record.family == 0xb5 && matches!(record.class, 0x2e | 0x30 | 0x37 | 0x38 | 0x3b)
+        });
+    if has_surface_fixpoint_candidates {
+        loop {
+            if budget.is_some_and(|budget| !budget.charge_by(records.len())) {
+                return None;
+            }
+            let mut changed =
+                resolve_surface_aliases(records, &by_id, &mut surfaces, &mut conflicting_surfaces);
+            for record in records {
+                let Some(offset) =
+                    parse_offset_surface(record, &surfaces, &extrusion_surfaces, &by_id)
+                else {
                     continue;
                 };
-                B5Surface::Unknown {
-                    family: record.family,
-                    class: record.class,
-                    payload: record.payload.clone(),
+                let carrier = if let Some(carrier) = surfaces.get(&offset.carrier_surface).cloned()
+                {
+                    carrier
+                } else {
+                    let Some(record) = by_id.get(&offset.carrier_surface) else {
+                        continue;
+                    };
+                    B5Surface::Unknown {
+                        family: record.family,
+                        class: record.class,
+                        payload: record.payload.clone(),
+                    }
+                };
+                let before = surfaces.get(&record.object_id).cloned();
+                if !merge_surface_candidate(
+                    &mut surfaces,
+                    &mut conflicting_surfaces,
+                    offset.carrier_surface,
+                    carrier.clone(),
+                ) || !merge_surface_candidate(
+                    &mut surfaces,
+                    &mut conflicting_surfaces,
+                    record.object_id,
+                    carrier,
+                ) {
+                    continue;
                 }
-            };
-            let before = surfaces.get(&record.object_id).cloned();
-            if !merge_surface_candidate(
-                &mut surfaces,
-                &mut conflicting_surfaces,
-                offset.carrier_surface,
-                carrier.clone(),
-            ) || !merge_surface_candidate(
-                &mut surfaces,
-                &mut conflicting_surfaces,
-                record.object_id,
-                carrier,
-            ) {
-                continue;
-            }
-            let surface_changed = surfaces.get(&record.object_id) != before.as_ref();
-            let metadata_changed = offset_surfaces.get(&record.object_id) != Some(&offset);
-            offset_surfaces.insert(record.object_id, offset);
-            changed |= surface_changed || metadata_changed;
-        }
-        for record in records {
-            let Some(construction) = parse_supported_surface(record) else {
-                continue;
-            };
-            let Some(carrier) = surfaces.get(&construction.carrier_surface).cloned() else {
-                continue;
-            };
-            let parameters_match_carrier =
-                supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
-            let before = surfaces.get(&record.object_id).cloned();
-            if merge_surface_candidate(
-                &mut surfaces,
-                &mut conflicting_surfaces,
-                record.object_id,
-                carrier,
-            ) && parameters_match_carrier
-                && supported_surface_pcurves_match(&construction, &by_id, &a8_pcurve_supports)
-                && construction
-                    .support_surfaces
-                    .iter()
-                    .all(|surface| surfaces.contains_key(surface))
-            {
                 let surface_changed = surfaces.get(&record.object_id) != before.as_ref();
-                let metadata_changed =
-                    supported_surfaces.get(&record.object_id) != Some(&construction);
-                supported_surfaces.insert(record.object_id, construction);
+                let metadata_changed = offset_surfaces.get(&record.object_id) != Some(&offset);
+                offset_surfaces.insert(record.object_id, offset);
                 changed |= surface_changed || metadata_changed;
             }
-        }
-        changed |=
-            resolve_surface_aliases(records, &by_id, &mut surfaces, &mut conflicting_surfaces);
-        if !changed {
-            break;
+            for record in records {
+                let Some(construction) = parse_supported_surface(record) else {
+                    continue;
+                };
+                let Some(carrier) = surfaces.get(&construction.carrier_surface).cloned() else {
+                    continue;
+                };
+                let parameters_match_carrier =
+                    supported_surface_parameters_match_carrier(&construction.parameters, &carrier);
+                let before = surfaces.get(&record.object_id).cloned();
+                if merge_surface_candidate(
+                    &mut surfaces,
+                    &mut conflicting_surfaces,
+                    record.object_id,
+                    carrier,
+                ) && parameters_match_carrier
+                    && supported_surface_pcurves_match(&construction, &by_id, &a8_pcurve_supports)
+                    && construction
+                        .support_surfaces
+                        .iter()
+                        .all(|surface| surfaces.contains_key(surface))
+                {
+                    let surface_changed = surfaces.get(&record.object_id) != before.as_ref();
+                    let metadata_changed =
+                        supported_surfaces.get(&record.object_id) != Some(&construction);
+                    supported_surfaces.insert(record.object_id, construction);
+                    changed |= surface_changed || metadata_changed;
+                }
+            }
+            changed |=
+                resolve_surface_aliases(records, &by_id, &mut surfaces, &mut conflicting_surfaces);
+            if !changed {
+                break;
+            }
         }
     }
     offset_surfaces.retain(|object_id, offset| {
@@ -1418,15 +1440,11 @@ fn object_stream_pcurve_candidate(
         surface: jet.support_id,
         degree: jet.degree,
         distinct_knots: jet.knots.clone(),
-        multiplicities: alloc_filled(
-            jet.knots.len(),
-            jet.degree + 1,
-            "catia b5 pcurve multiplicities",
-        )
-        .ok()?,
+        multiplicities: vec![jet.degree + 1; jet.knots.len()],
         control_points,
         weights: None,
         parameter_range: Some(jet.range),
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     })
@@ -1536,11 +1554,11 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
         surface,
         degree,
         distinct_knots,
-        multiplicities: alloc_filled(knot_count, degree + 1, "catia b5 pcurve multiplicities")
-            .ok()?,
+        multiplicities: vec![degree + 1; knot_count],
         control_points,
         weights: None,
         parameter_range: Some(parameter_range),
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: Some(scalar(tail, 10)?),
         lifted_endpoints: None,
     })
@@ -2114,7 +2132,7 @@ fn implicit_pcurve_bindings(
 }
 
 pub(crate) fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
-    let knots = pcurve_knots(pcurve)?;
+    let knots = pcurve_nurbs_knots(pcurve)?;
     let control_points: Vec<Point2> = pcurve
         .control_points
         .iter()
@@ -2141,8 +2159,27 @@ fn pcurve_knots(pcurve: &B5Pcurve) -> Option<Vec<f64>> {
     Some(knots)
 }
 
-fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
+/// Return the knot vector in the pcurve's occurrence coordinate system.
+pub(crate) fn pcurve_nurbs_knots(pcurve: &B5Pcurve) -> Option<Vec<f64>> {
     let knots = pcurve_knots(pcurve)?;
+    match pcurve.parameterization {
+        B5PcurveParameterization::Native => Some(knots),
+        B5PcurveParameterization::Translated { native_origin } => {
+            (native_origin.is_finite()).then_some(())?;
+            let translated = knots
+                .into_iter()
+                .map(|knot| knot - native_origin)
+                .collect::<Vec<_>>();
+            translated
+                .iter()
+                .all(|knot| knot.is_finite())
+                .then_some(translated)
+        }
+    }
+}
+
+pub(crate) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
+    let knots = pcurve_nurbs_knots(pcurve)?;
     let degree = usize::try_from(pcurve.degree).ok()?;
     let spline_domain = [
         *knots.get(degree)?,
@@ -2162,7 +2199,7 @@ fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
 
 /// Clamp a finite occurrence range to a finite, increasing native domain.
 pub(crate) fn bounded_occurrence_range(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
-    const RELATIVE_PARAMETER_TOLERANCE: f64 = 1.0e-10;
+    const RELATIVE_PARAMETER_TOLERANCE: f64 = 1e-10;
 
     let domain_span = domain[1] - domain[0];
     if !domain.into_iter().all(f64::is_finite)
@@ -2288,10 +2325,8 @@ fn bind_native_vertices(
                 if residual > POINT_TOLERANCE && residual.is_finite() {
                     tolerances
                         .entry(locus)
-                        .and_modify(|tolerance| {
-                            *tolerance = tolerance.max(residual + EPS_VERTEX_RESIDUAL_INCREMENT);
-                        })
-                        .or_insert(residual + EPS_VERTEX_RESIDUAL_INCREMENT);
+                        .and_modify(|tolerance| *tolerance = tolerance.max(residual + 1e-9))
+                        .or_insert(residual + 1e-9);
                 }
             }
         }
@@ -2604,7 +2639,7 @@ fn distance_squared(left: [f64; 3], right: [f64; 3]) -> f64 {
 }
 
 fn direction_is_unit(direction: [f64; 3]) -> bool {
-    (distance_squared(direction, [0.0; 3]) - 1.0).abs() <= EPS_FRAME_UNIT
+    (distance_squared(direction, [0.0; 3]) - 1.0).abs() <= 1e-12
 }
 
 fn directions_are_unit_and_orthogonal(first: [f64; 3], second: [f64; 3]) -> bool {
@@ -2613,7 +2648,7 @@ fn directions_are_unit_and_orthogonal(first: [f64; 3], second: [f64; 3]) -> bool
         .zip(second)
         .map(|(left, right)| left * right)
         .sum::<f64>();
-    direction_is_unit(first) && direction_is_unit(second) && dot.abs() <= EPS_FRAME_ORTHO
+    direction_is_unit(first) && direction_is_unit(second) && dot.abs() <= 1e-12
 }
 
 fn directions_form_right_handed_orthonormal_frame(
@@ -2662,7 +2697,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 chart_origin + std::f64::consts::TAU * angular_scale,
             ];
             chart_domain[1].is_finite().then_some(())?;
-            let chart_tolerance = EPS_CHART_RANGE
+            let chart_tolerance = 1e-12
                 * u_range
                     .into_iter()
                     .chain(chart_domain)
@@ -2698,10 +2733,10 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let frame_cross = cross(direction_x, direction_y);
             let opposite_axis = [-axis[0], -axis[1], -axis[2]];
             let half_angle = scalar(&record.payload, 97)?;
-            let pre_angular_range_scalar = scalar(&record.payload, 105)?;
+            let reference_radius = scalar(&record.payload, 105)?;
             let angular_range = [scalar(&record.payload, 113)?, scalar(&record.payload, 121)?];
             let mut slant_range = [scalar(&record.payload, 129)?, scalar(&record.payload, 137)?];
-            if slant_range[0].abs() <= EPS_CHART_RANGE {
+            if slant_range[0].abs() <= 1e-12 {
                 slant_range[0] = 0.0;
             }
             let angular_scale = scalar(&record.payload, 145)?;
@@ -2723,7 +2758,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                     direction_y,
                     axis,
                     half_angle,
-                    pre_angular_range_scalar,
+                    reference_radius,
                     angular_range,
                     slant_range,
                     angular_scale,
@@ -2755,9 +2790,9 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && sphere_angular_ranges_are_valid(azimuth_range, latitude_range)
                 && expected_chart_origin.is_finite()
                 && (chart_origin - expected_chart_origin).abs() <= chart_origin_tolerance
-                && [stored_x, stored_y, stored_axis].iter().all(|direction| {
-                    ((vector_length(*direction) / radius) - 1.0).abs() <= EPS_SURFACE_UNIT
-                })
+                && [stored_x, stored_y, stored_axis]
+                    .iter()
+                    .all(|direction| ((vector_length(*direction) / radius) - 1.0).abs() <= 1e-12)
                 && directions_form_right_handed_orthonormal_frame(direction_x, direction_y, axis))
             .then_some(B5Surface::Sphere {
                 center,
@@ -3074,7 +3109,7 @@ fn analytic_offset_magnitude_agrees(
     source: &B5Surface,
     distance: f64,
 ) -> bool {
-    const RELATIVE_TOLERANCE: f64 = 1.0e-10;
+    const RELATIVE_TOLERANCE: f64 = 1e-10;
     let relative_close = |left: f64, right: f64| {
         (left - right).abs() <= RELATIVE_TOLERANCE * left.abs().max(right.abs())
     };
@@ -3720,9 +3755,8 @@ fn supported_surface_parameters_match_carrier(
     parameters: &B5SupportedSurfaceParameters,
     carrier: &B5Surface,
 ) -> bool {
-    let relative_close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_PARAMETER_AGREEMENT * left.abs().max(right.abs())
-    };
+    let relative_close =
+        |left: f64, right: f64| (left - right).abs() <= 1e-12 * left.abs().max(right.abs());
     match (parameters, carrier) {
         (
             B5SupportedSurfaceParameters::Radius {
@@ -4037,10 +4071,13 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     position = view.position();
     let tail = record.payload.get(position..)?;
     let suffix_scalar = scalar(tail, 10)?;
+    let native_origin = *distinct_knots.first()?;
+    let native_span = distinct_knots[1] - native_origin;
     if tail.len() != 36
         || tail.get(..2) != Some(&[0x05, 0x05])
         || scalar(tail, 2)? != 0.0
         || suffix_scalar <= 0.0
+        || suffix_scalar.to_bits() != native_span.to_bits()
         || scalar(tail, 18)? != 1.0
         || scalar(tail, 26)? != 0.0
         || tail.get(34..) != Some(&[0x00, 0x07])
@@ -4056,6 +4093,7 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         control_points,
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Translated { native_origin },
         class_21_suffix_scalar: Some(suffix_scalar),
         lifted_endpoints: None,
     })
@@ -4116,9 +4154,9 @@ fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         || start >= end
         || period <= 0.0
         || !matches!(orientation, -1.0 | 1.0)
-        || (conjugate_angle - std::f64::consts::FRAC_PI_2).abs() > EPS_PERIODIC_RANGE
+        || (conjugate_angle - std::f64::consts::FRAC_PI_2).abs() > 1e-12
         || !relative_period.is_finite()
-        || (relative_period - 1.0).abs() > EPS_PERIODIC_RANGE
+        || (relative_period - 1.0).abs() > 1e-12
     {
         return None;
     }
@@ -4220,6 +4258,7 @@ fn rational_arc_pcurve(
         control_points,
         weights: Some(weights),
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     })
@@ -4299,7 +4338,7 @@ fn parse_sphere_great_circle_pcurve(
         .chain([u0, u1])
         .map(f64::abs)
         .fold(1.0, f64::max);
-    let u_tolerance = EPS_U_PARAMETER * u_scale;
+    let u_tolerance = 1e-12 * u_scale;
     (direction.abs() == 1.0
         && zero0 == 0.0
         && zero1 == 0.0
@@ -4449,6 +4488,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         control_points,
         weights: None,
         parameter_range: None,
+        parameterization: B5PcurveParameterization::Native,
         class_21_suffix_scalar: None,
         lifted_endpoints: None,
     })
@@ -4479,54 +4519,69 @@ pub(crate) fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B
 
 /// Dependency-admission fixpoint with an optional session work budget.
 ///
-/// Each pass may scan every frame. When `budget` is present, one pass costs
-/// `frames.len()` work units; exhaustion stops further admissions.
+/// The dependency candidates are indexed once by object identity. Earlier
+/// passes rescanned every frame for every newly discovered dependency, which
+/// made a large population spend its bounded work slice on repeated scans
+/// before the selected topology graph could be parsed.
 pub(crate) fn records_from_frames_budgeted(
     bytes: &[u8],
     frames: &[ObjectFrame],
     budget: Option<&WorkBudget<'_>>,
 ) -> Vec<B5Record> {
-    let mut records = framed_records(bytes, frames);
+    let (mut records, candidates) = framed_records_and_dependency_candidates(bytes, frames, budget);
+    admit_dependency_records(bytes, &mut records, &candidates, budget)
+}
+
+/// Materialize one already-indexed topology population.
+///
+/// The caller has already charged the frame index. This path charges each
+/// topology record as it is materialized, then charges each admitted
+/// dependency in the existing closure fixpoint.
+fn records_from_indexed_frames_budgeted(
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<Vec<B5Record>> {
+    let (mut records, candidates) =
+        indexed_topology_records_and_dependency_candidates(bytes, frames, budget)?;
+    let records = admit_dependency_records(bytes, &mut records, &candidates, budget);
+    if budget.is_some_and(WorkBudget::exhausted) {
+        None
+    } else {
+        Some(records)
+    }
+}
+
+fn admit_dependency_records(
+    bytes: &[u8],
+    records: &mut Vec<B5Record>,
+    candidates: &DependencyCandidates,
+    budget: Option<&WorkBudget<'_>>,
+) -> Vec<B5Record> {
     let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
-    let mut pending: HashSet<u32> = records.iter().flat_map(record_references).collect();
+    let mut pending: HashSet<u32> = records
+        .iter()
+        .flat_map(record_references)
+        .filter(|object_id| candidates.get(object_id).is_some_and(Option::is_some))
+        .collect();
     let mut admitted = HashSet::new();
     loop {
         pending.retain(|object_id| !existing.contains(object_id) && !admitted.contains(object_id));
         if pending.is_empty() {
             break;
         }
-        if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
+        if budget.is_some_and(|budget| !budget.charge_by(pending.len())) {
             break;
         }
-        let mut candidates = HashMap::<u32, Option<B5Record>>::new();
-        for frame in frames {
-            if !pending.contains(&frame.object_id)
-                || !is_reference_dependency_class(frame.family, frame.class)
-            {
-                continue;
-            }
-            let header = if frame.family == 0xa8 { 11 } else { 8 };
-            let candidate = B5Record {
-                offset: frame.start,
-                family: frame.family,
-                class: frame.class,
-                object_id: frame.object_id,
-                payload: bytes[frame.start + header..frame.end].to_vec(),
-            };
-            candidates
-                .entry(frame.object_id)
-                .and_modify(|slot| {
-                    if slot.as_ref().is_some_and(|existing| {
-                        existing.family != candidate.family
-                            || existing.class != candidate.class
-                            || existing.payload != candidate.payload
-                    }) {
-                        *slot = None;
-                    }
-                })
-                .or_insert(Some(candidate));
-        }
-        let mut found = candidates.into_values().flatten().collect::<Vec<_>>();
+        let mut found = pending
+            .iter()
+            .filter_map(|object_id| {
+                candidates
+                    .get(object_id)
+                    .and_then(Option::as_ref)
+                    .and_then(|frame| record_from_frame(bytes, frame))
+            })
+            .collect::<Vec<_>>();
         if found.is_empty() {
             break;
         }
@@ -4534,13 +4589,161 @@ pub(crate) fn records_from_frames_budgeted(
         pending.clear();
         for candidate in found {
             admitted.insert(candidate.object_id);
-            pending.extend(record_references(&candidate));
+            pending.extend(
+                record_references(&candidate)
+                    .into_iter()
+                    .filter(|object_id| candidates.get(object_id).is_some_and(Option::is_some)),
+            );
             records.push(candidate);
         }
     }
-    records
+    std::mem::take(records)
 }
 
+/// Build the topology records and the exact dependency index in one frame
+/// pass. The two views used to scan the same frame slice independently, which
+/// spent the bounded selection budget twice before dependency closure began.
+fn framed_records_and_dependency_candidates(
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+    budget: Option<&WorkBudget<'_>>,
+) -> (Vec<B5Record>, DependencyCandidates) {
+    if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
+        return (Vec::new(), HashMap::new());
+    }
+
+    let mut records = Vec::<(usize, B5Record)>::new();
+    let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
+    let mut candidates = DependencyCandidates::new();
+    for frame in frames {
+        if is_reference_dependency_class(frame.family, frame.class)
+            && frame_payload(bytes, frame).is_some()
+        {
+            candidates
+                .entry(frame.object_id)
+                .and_modify(|slot| {
+                    if slot
+                        .as_ref()
+                        .is_some_and(|existing| !same_object_frame(bytes, existing, frame))
+                    {
+                        *slot = None;
+                    }
+                })
+                .or_insert(Some(*frame));
+        }
+        if !((frame.family == 0xb5 && is_topology_class(frame.class))
+            || (frame.family == 0xa8 && matches!(frame.class, 0x34 | 0x62)))
+        {
+            continue;
+        }
+        let Some(record) = record_from_frame(bytes, frame) else {
+            continue;
+        };
+        if seen
+            .get(&frame.object_id)
+            .is_some_and(|(seen_class, seen_payload)| {
+                *seen_class == record.class && *seen_payload == record.payload
+            })
+        {
+            continue;
+        }
+        seen.insert(frame.object_id, (record.class, record.payload.clone()));
+        records.push((frame.end, record));
+    }
+    records.sort_unstable_by(|(left_end, left), (right_end, right)| {
+        left_end
+            .cmp(right_end)
+            .then_with(|| right.offset.cmp(&left.offset))
+    });
+    (
+        records.into_iter().map(|(_, record)| record).collect(),
+        candidates,
+    )
+}
+
+/// Build topology records and dependency candidates from an existing frame
+/// index without charging a second frame walk. Candidate identity conflicts
+/// remain ambiguous until the dependency is requested.
+fn indexed_topology_records_and_dependency_candidates(
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<(Vec<B5Record>, DependencyCandidates)> {
+    let mut records = Vec::<(usize, B5Record)>::new();
+    let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
+    let mut candidates = DependencyCandidates::new();
+    for frame in frames {
+        if is_reference_dependency_class(frame.family, frame.class)
+            && frame_payload(bytes, frame).is_some()
+        {
+            candidates
+                .entry(frame.object_id)
+                .and_modify(|slot| {
+                    if slot
+                        .as_ref()
+                        .is_some_and(|existing| !same_object_frame(bytes, existing, frame))
+                    {
+                        *slot = None;
+                    }
+                })
+                .or_insert(Some(*frame));
+        }
+        if !((frame.family == 0xb5 && is_topology_class(frame.class))
+            || (frame.family == 0xa8 && matches!(frame.class, 0x34 | 0x62)))
+        {
+            continue;
+        }
+        if budget.is_some_and(|budget| !budget.charge()) {
+            return None;
+        }
+        let record = record_from_frame(bytes, frame)?;
+        if seen
+            .get(&frame.object_id)
+            .is_some_and(|(seen_class, seen_payload)| {
+                *seen_class == record.class && *seen_payload == record.payload
+            })
+        {
+            continue;
+        }
+        seen.insert(frame.object_id, (record.class, record.payload.clone()));
+        records.push((frame.end, record));
+    }
+    records.sort_unstable_by(|(left_end, left), (right_end, right)| {
+        left_end
+            .cmp(right_end)
+            .then_with(|| right.offset.cmp(&left.offset))
+    });
+    Some((
+        records.into_iter().map(|(_, record)| record).collect(),
+        candidates,
+    ))
+}
+
+fn same_object_frame(bytes: &[u8], left: &ObjectFrame, right: &ObjectFrame) -> bool {
+    left.family == right.family
+        && left.class == right.class
+        && bytes
+            .get(left.start..left.end)
+            .zip(bytes.get(right.start..right.end))
+            .is_some_and(|(left, right)| left == right)
+}
+
+fn frame_payload<'a>(bytes: &'a [u8], frame: &ObjectFrame) -> Option<&'a [u8]> {
+    let header = if frame.family == 0xa8 { 11 } else { 8 };
+    bytes.get(frame.start.checked_add(header)?..frame.end)
+}
+
+fn record_from_frame(bytes: &[u8], frame: &ObjectFrame) -> Option<B5Record> {
+    Some(B5Record {
+        offset: frame.start,
+        family: frame.family,
+        class: frame.class,
+        object_id: frame.object_id,
+        payload: frame_payload(bytes, frame)?.to_vec(),
+    })
+}
+
+#[cfg(test)]
 fn framed_records(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
     let mut records = Vec::new();
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
@@ -4557,29 +4760,26 @@ fn framed_records(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
         {
             continue;
         }
-        let header = if family == 0xa8 { 11 } else { 8 };
-        let Some(payload) = bytes.get(start + header..end).map(ToOwned::to_owned) else {
+        let frame = ObjectFrame {
+            start,
+            end,
+            family,
+            class,
+            object_id,
+        };
+        let Some(record) = record_from_frame(bytes, &frame) else {
             continue;
         };
         if seen
             .get(&object_id)
             .is_some_and(|(seen_class, seen_payload)| {
-                *seen_class == class && *seen_payload == payload
+                *seen_class == record.class && *seen_payload == record.payload
             })
         {
             continue;
         }
-        seen.insert(object_id, (class, payload.clone()));
-        records.push((
-            end,
-            B5Record {
-                offset: start,
-                family,
-                class,
-                object_id,
-                payload,
-            },
-        ));
+        seen.insert(object_id, (record.class, record.payload.clone()));
+        records.push((end, record));
     }
     // Preserve the historical child-before-wrapper order for records nested in
     // an A8 frame while retaining the walker's bounded admission rules.
@@ -4708,11 +4908,14 @@ pub(crate) fn topology_root_run_ranges(bytes: &[u8]) -> Vec<Range<usize>> {
         .filter(|range| {
             let run = &bytes[range.clone()];
             let frames = object_stream_frames(run);
-            records_from_frames(run, &frames)
-                .iter()
-                .any(|record| matches!(record.class, 0x5f | 0x62))
+            frames.iter().copied().any(is_topology_root_frame)
         })
         .collect()
+}
+
+fn is_topology_root_frame(frame: ObjectFrame) -> bool {
+    (frame.family == 0xb5 && frame.class == 0x5f)
+        || ((frame.family == 0xb5 || frame.family == 0xa8) && frame.class == 0x62)
 }
 
 /// Partition one logical stream into independently resolved object populations.
@@ -4765,8 +4968,8 @@ pub(crate) struct ObjectStreamSelection {
 struct IndexedObjectRun {
     stream_index: usize,
     range: Range<usize>,
-    frames: Vec<ObjectFrame>,
-    records: Vec<B5Record>,
+    frame_range: Range<usize>,
+    topology: bool,
 }
 
 /// Select one topology-root population, or one unrooted run when it is the
@@ -4789,44 +4992,40 @@ pub(crate) fn select_object_stream_population(
         selected: false,
         exhausted: true,
     };
+    let mut stream_frames = Vec::with_capacity(streams.len());
     let mut runs = Vec::new();
     for (stream_index, (stream, ranges)) in streams.iter().zip(stream_ranges).enumerate() {
         let frames = object_stream_frames(stream);
         if budget.is_some_and(|budget| !budget.charge_by(frames.len())) {
             return exhausted();
         }
+        let mut frame_cursor = 0;
         for range in ranges {
-            let run_frames = frames
+            while frame_cursor < frames.len() && frames[frame_cursor].start < range.start {
+                frame_cursor += 1;
+            }
+            let frame_start = frame_cursor;
+            while frame_cursor < frames.len() && frames[frame_cursor].end <= range.end {
+                frame_cursor += 1;
+            }
+            let frame_range = frame_start..frame_cursor;
+            let topology = frames[frame_range.clone()]
                 .iter()
                 .copied()
-                .filter(|frame| frame.start >= range.start && frame.end <= range.end)
-                .collect::<Vec<_>>();
-            // Reserve run indexing before any frame payload is cloned.
-            if budget.is_some_and(|budget| !budget.charge_by(run_frames.len())) {
-                return exhausted();
-            }
-            let records = records_from_frames_budgeted(stream, &run_frames, budget);
-            // Census and population selection each inspect every admitted
-            // typed record.
-            if budget.is_some_and(|budget| !budget.charge_by(records.len().saturating_mul(2))) {
-                return exhausted();
-            }
+                .any(is_topology_root_frame);
             runs.push(IndexedObjectRun {
                 stream_index,
                 range,
-                frames: run_frames,
-                records,
+                frame_range,
+                topology,
             });
         }
+        stream_frames.push(frames);
     }
     let topology_runs = runs
         .iter()
         .enumerate()
-        .filter(|(_, run)| {
-            run.records
-                .iter()
-                .any(|record| matches!(record.class, 0x5f | 0x62))
-        })
+        .filter(|(_, run)| run.topology)
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     let selected_run = match topology_runs.as_slice() {
@@ -4834,11 +5033,16 @@ pub(crate) fn select_object_stream_population(
         [] if runs.len() == 1 => Some((0, false)),
         _ => None,
     };
-    let census_records = runs
-        .iter()
-        .flat_map(|run| run.records.iter().cloned())
-        .collect::<Vec<_>>();
     let Some((selected_index, topology)) = selected_run else {
+        let mut census_records = Vec::new();
+        for run in &runs {
+            let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
+            let records = records_from_frames_budgeted(&streams[run.stream_index], frames, budget);
+            if budget.is_some_and(WorkBudget::exhausted) {
+                return exhausted();
+            }
+            census_records.extend(records);
+        }
         return ObjectStreamSelection {
             source: Vec::new(),
             frames: Vec::new(),
@@ -4851,9 +5055,26 @@ pub(crate) fn select_object_stream_population(
     };
     let selected = &runs[selected_index];
     let selected_stream = &streams[selected.stream_index];
+    let selected_frames = &stream_frames[selected.stream_index][selected.frame_range.clone()];
+    let Some(selected_records) =
+        records_from_indexed_frames_budgeted(selected_stream, selected_frames, budget)
+    else {
+        return exhausted();
+    };
+    let mut census_records = selected_records.clone();
+    for (index, run) in runs.iter().enumerate() {
+        if index == selected_index {
+            continue;
+        }
+        let frames = &stream_frames[run.stream_index][run.frame_range.clone()];
+        let records = records_from_frames_budgeted(&streams[run.stream_index], frames, budget);
+        if budget.is_some_and(WorkBudget::exhausted) {
+            return exhausted();
+        }
+        census_records.extend(records);
+    }
     let mut source = selected_stream[selected.range.clone()].to_vec();
-    let mut frames = selected
-        .frames
+    let mut frames = selected_frames
         .iter()
         .copied()
         .map(|mut frame| {
@@ -4862,8 +5083,7 @@ pub(crate) fn select_object_stream_population(
             frame
         })
         .collect::<Vec<_>>();
-    let mut records = selected
-        .records
+    let mut records = selected_records
         .iter()
         .cloned()
         .map(|mut record| {
@@ -4872,9 +5092,8 @@ pub(crate) fn select_object_stream_population(
         })
         .collect::<Vec<_>>();
     if topology {
-        let referenced = topology_surface_references(&selected.records);
-        let owned_ids = selected
-            .records
+        let referenced = topology_surface_references(&selected_records);
+        let owned_ids = selected_records
             .iter()
             .map(|record| record.object_id)
             .collect::<HashSet<_>>();
@@ -4916,9 +5135,10 @@ pub(crate) fn select_object_stream_population(
         for index in isolated {
             let run = &runs[index];
             let stream = &streams[run.stream_index];
+            let run_frames = &stream_frames[run.stream_index][run.frame_range.clone()];
             let destination = source.len();
             source.extend_from_slice(&stream[run.range.clone()]);
-            frames.extend(run.frames.iter().copied().map(|mut frame| {
+            frames.extend(run_frames.iter().copied().map(|mut frame| {
                 frame.start = destination + frame.start - run.range.start;
                 frame.end = destination + frame.end - run.range.start;
                 frame
@@ -5301,6 +5521,36 @@ pub(crate) fn face_surface_references_from_frames(
         references.push((frame.object_id, surface));
     }
     references
+}
+
+/// Return positive face-to-edge ownership from structurally complete face and
+/// loop records, without requiring their referenced surfaces or p-curves to
+/// resolve into a transferable graph.
+pub(crate) fn edge_face_references_from_frames(
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+) -> HashMap<u32, HashSet<u32>> {
+    let records = records_from_frames(bytes, frames);
+    let edge_ids = records
+        .iter()
+        .filter(|record| record.family == 0xb5 && record.class == 0x5e)
+        .map(|record| record.object_id)
+        .collect::<HashSet<_>>();
+    let loops = typed_loop_records_from_records(&records);
+    let mut owners = HashMap::<u32, HashSet<u32>>::new();
+    for (face, record) in typed_face_records_from_records(&records) {
+        for loop_id in record.references.iter().skip(1) {
+            let Some(loop_record) = loops.get(loop_id) else {
+                continue;
+            };
+            for &edge in &loop_record.edges {
+                if edge_ids.contains(&edge) {
+                    owners.entry(edge).or_default().insert(face);
+                }
+            }
+        }
+    }
+    owners
 }
 
 fn parse_loop(
