@@ -183,7 +183,7 @@ terminal:
 
 Each listed base resolves to exactly one archive folder: either `<base>` or `<base>[Active]`. That folder contains `Manifest.dat`. A **per-asset manifest** starts with its LP-UTF16 base name, a first asset GUID, a second asset GUID, and an LP-ASCII asset type. A `FusionAssetType` prefix continues with a u32 revision.
 
-Revisions 14 and 20 carry a u32 capability count, repeated nonempty unique LP-ASCII capability names with u32 values, LP-ASCII `Neutron3DAssetType`, u8 zero, and an LP-ASCII subtype. The subtype is empty for the root Design asset and names a derived Fusion asset otherwise.
+Revisions 14, 15, 19, and 20 carry a u32 capability count, repeated nonempty unique LP-ASCII capability names with u32 values, LP-ASCII `Neutron3DAssetType`, u8 zero, and an LP-ASCII subtype. The subtype is empty for the root Design asset and names a derived Fusion asset otherwise.
 
 Revision 10 carries the same named capability registry and kind token, followed by u8 zero. Each linked document stores u32 `2`, an LP-UTF16 composite locator containing a version URN, and two LP-UTF16 GUIDs. The root tail starts with u32 values `2, 5, 1, 0` and continues with two LP-ASCII `Design` tokens. Revision 0 instead stores u32 values `3, 1`, LP-ASCII `Neutron3DAssetType`, u8 zero, u32 values `0, 6, 1, 0`, and two LP-ASCII `Design` tokens. These revision-0 and revision-10 root tails end the manifest.
 
