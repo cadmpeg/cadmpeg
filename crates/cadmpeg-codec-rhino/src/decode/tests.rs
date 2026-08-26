@@ -1241,3 +1241,67 @@ fn redundant_field_diagnostics_use_the_typed_repair_loss() {
         "container.redundant-field-repaired"
     );
 }
+
+/// The body-kind and B-rep domain charges reach the report as typed codes.
+///
+/// Both are pushed as warning strings and promoted by
+/// [`BODY_KIND_GAUGE_PREFIX`] and [`dialect_unverified_diagnostic`]. Asserting
+/// the warning text alone would leave the promotion untested, so this asserts
+/// the loss codes the report carries.
+#[test]
+fn missing_stamp_promotes_brep_warnings_to_typed_loss_codes() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let decode_archive = |bytes: Vec<u8>| {
+        crate::RhinoCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesized 3DM archive should decode")
+    };
+    let solid_brep = crate::test_support::object_record(
+        0x10,
+        crate::test_support::BREP_CLASS,
+        &crate::test_support::solid_flagged_brep_payload(1),
+    );
+
+    let unstamped = decode_archive(crate::test_support::archive(std::slice::from_ref(
+        &solid_brep,
+    )));
+    assert_eq!(unstamped.ir().model.bodies.len(), 1);
+    // The stored flag is trusted, though the three edges carry one trim each.
+    assert_eq!(unstamped.ir().model.bodies[0].kind, BodyKind::Solid);
+    assert!(
+        unstamped
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind()),
+        "{:?}",
+        unstamped.report().losses
+    );
+    assert!(
+        unstamped.report().losses.iter().any(|loss| loss.code
+            == RhinoLossCode::SourceDialectUnverified.kind()
+            && loss.message.contains("edge domains")),
+        "{:?}",
+        unstamped.report().losses
+    );
+
+    // A stamp older than both cutoffs keeps the same record layout readable and
+    // vouches for the reading, so the body is gauged as a sheet and nothing is
+    // charged. Any newer stamp would also change the edge and trim layout.
+    let stamped = decode_archive(crate::test_support::archive_writer(
+        "50",
+        200_206_170,
+        &[solid_brep],
+    ));
+    assert_eq!(stamped.ir().model.bodies.len(), 1);
+    assert_eq!(stamped.ir().model.bodies[0].kind, BodyKind::Sheet);
+    assert!(
+        !stamped.report().losses.iter().any(|loss| {
+            loss.code == RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind()
+                || loss.code == RhinoLossCode::SourceDialectUnverified.kind()
+        }),
+        "{:?}",
+        stamped.report().losses
+    );
+}

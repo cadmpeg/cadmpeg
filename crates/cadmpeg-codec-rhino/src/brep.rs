@@ -1564,6 +1564,12 @@ fn read_vertices(
 /// stamp vouches for it; without a stamp the proxy domain is substituted and the
 /// stored one is never read, so the emitted geometry rests on an assumption the
 /// archive does not carry. An empty array carries no such reading.
+///
+/// This needs no agreement guard, unlike the body-kind and material charges.
+/// The two readings consume different byte counts per record, so the stamped
+/// reading shifts every record after the first and the two cannot coincide.
+/// `raw_array_start` cannot rule that out either: its record width is a minimum
+/// size check for the allocation, not the stride of the reading that follows.
 fn unstamped_legacy_layout(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
