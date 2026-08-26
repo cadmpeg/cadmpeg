@@ -2,6 +2,8 @@
 
 #![allow(clippy::unwrap_used)]
 
+mod nurbs;
+
 use std::io::Cursor;
 
 use cadmpeg_core::decode::ResourceDimension;

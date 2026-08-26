@@ -805,12 +805,19 @@ fn elevate_nurbs_to_degree(
         return false;
     };
     curve.degree = concatenated.nurbs.degree;
-    curve.knots = concatenated
+    let mut elevated_knots: Vec<f64> = concatenated
         .nurbs
         .knots
         .into_iter()
         .map(|knot| knot + interval[0])
         .collect();
+    if let Some(first) = elevated_knots.first_mut() {
+        *first = interval[0];
+    }
+    if let Some(last) = elevated_knots.last_mut() {
+        *last = interval[1];
+    }
+    curve.knots = elevated_knots;
     curve.control_points = concatenated.nurbs.control_points;
     curve.weights = concatenated.nurbs.weights;
     curve.periodic = false;
@@ -1067,36 +1074,61 @@ fn bounded_nurbs_for_id(
             axis,
             ref_direction,
             radius,
-        } => Some((
-            circular_arc_nurbs(*center, *axis, *ref_direction, *radius, interval)?,
-            interval,
-        )),
+        } => {
+            let mut nurbs = circular_arc_nurbs(*center, *axis, *ref_direction, *radius, interval)?;
+            anchor_analytic_nurbs_endpoint_poles(
+                &mut nurbs,
+                interval,
+                ir,
+                index,
+                &edge,
+                join_tolerance,
+            )?;
+            Some((nurbs, interval))
+        }
         CurveGeometry::Ellipse {
             center,
             axis,
             major_direction,
             major_radius,
             minor_radius,
-        } => Some((
-            elliptical_arc_nurbs(
+        } => {
+            let mut nurbs = elliptical_arc_nurbs(
                 *center,
                 *axis,
                 *major_direction,
                 *major_radius,
                 *minor_radius,
                 interval,
-            )?,
-            interval,
-        )),
+            )?;
+            anchor_analytic_nurbs_endpoint_poles(
+                &mut nurbs,
+                interval,
+                ir,
+                index,
+                &edge,
+                join_tolerance,
+            )?;
+            Some((nurbs, interval))
+        }
         CurveGeometry::Parabola {
             vertex,
             axis,
             major_direction,
             focal_distance,
-        } => Some((
-            parabolic_arc_nurbs(*vertex, *axis, *major_direction, *focal_distance, interval)?,
-            interval,
-        )),
+        } => {
+            let mut nurbs =
+                parabolic_arc_nurbs(*vertex, *axis, *major_direction, *focal_distance, interval)?;
+            anchor_analytic_nurbs_endpoint_poles(
+                &mut nurbs,
+                interval,
+                ir,
+                index,
+                &edge,
+                join_tolerance,
+            )?;
+            Some((nurbs, interval))
+        }
         _ => None,
     }
 }
@@ -1190,6 +1222,43 @@ fn curve_endpoints(
         point_for_vertex(ir, &edge.start, Some(index))?,
         point_for_vertex(ir, &edge.end, Some(index))?,
     ))
+}
+
+fn anchor_analytic_nurbs_endpoint_poles(
+    nurbs: &mut NurbsCurve,
+    interval: [f64; 2],
+    ir: &CadIr,
+    index: Option<&CompositeIndex>,
+    edge: &CompositeEdge,
+    tolerance: Option<f64>,
+) -> Option<()> {
+    let Some(tolerance) = tolerance else {
+        return Some(());
+    };
+    let start = point_for_vertex(ir, &edge.start, index)?;
+    let end = point_for_vertex(ir, &edge.end, index)?;
+    let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point(
+        nurbs.degree,
+        &nurbs.knots,
+        &nurbs.control_points,
+        nurbs.weights.as_deref(),
+        interval[0],
+    )?;
+    let evaluated_end = cadmpeg_ir::eval::nurbs_curve_point(
+        nurbs.degree,
+        &nurbs.knots,
+        &nurbs.control_points,
+        nurbs.weights.as_deref(),
+        interval[1],
+    )?;
+    if !close_with_tolerance(evaluated_start, start, Some(tolerance))
+        || !close_with_tolerance(evaluated_end, end, Some(tolerance))
+    {
+        return None;
+    }
+    *nurbs.control_points.first_mut()? = start;
+    *nurbs.control_points.last_mut()? = end;
+    Some(())
 }
 
 fn project_native_composite(
