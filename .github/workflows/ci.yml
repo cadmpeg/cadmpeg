@@ -98,6 +98,14 @@ jobs:
           python3 -m unittest -v scripts/test_check_codec_facade.py
           python3 scripts/check-codec-facade.py
 
+      - name: Dialect identity registry
+        # Schema, id grammar, witness form, and the IGES admission lattice in
+        # docs/dialects.toml. Ids are pinned from the commit that adds them.
+        run: |
+          set -euo pipefail
+          python3 -m unittest -v scripts/test_check_dialects.py
+          python3 scripts/check-dialects.py
+
       - name: Format check
         run: cargo fmt --all --check
 
@@ -170,6 +178,9 @@ jobs:
 
       - name: Codec facade unit tests
         run: python3 -m unittest -v scripts/test_check_codec_facade.py
+
+      - name: Dialect registry unit tests
+        run: python3 -m unittest -v scripts/test_check_dialects.py
 
       - name: Documentation tests
         # Reuses the library rlibs the step above built; on its own job this

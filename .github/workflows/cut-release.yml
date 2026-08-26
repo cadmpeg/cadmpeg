@@ -128,6 +128,8 @@ jobs:
           python3 scripts/check-public-api-ledger.py --skip-git-objects
           python3 -m unittest -v scripts/test_check_codec_facade.py
           python3 scripts/check-codec-facade.py
+          python3 -m unittest -v scripts/test_check_dialects.py
+          python3 scripts/check-dialects.py
 
       - name: Cargo gate
         run: |

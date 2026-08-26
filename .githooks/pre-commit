@@ -11,6 +11,15 @@ if git diff --cached --name-only | grep -qE '^docs/formats/.*\.md$'; then
   python3 scripts/check-doc-anchors.py
 fi
 
+# Dialect ids are pinned forever, so a bad edit to the registry must not reach
+# a commit. Run the checker's own synthesized-violation suite first: it is the
+# only thing that proves the rules still fire.
+if git diff --cached --name-only | grep -qE '^docs/dialects\.toml$|^scripts/(check-dialects\.py|test_check_dialects\.py)$'; then
+  echo "pre-commit: scripts/check-dialects.py"
+  python3 scripts/check-dialects.py --self-test
+  python3 scripts/check-dialects.py
+fi
+
 # Only run the Rust gate when the commit stages files that can change its
 # outcome: Rust sources, the manifests or lockfile, the Cargo config (aliases
 # and build flags), or the toolchain pin. A docs-, CI-, or config-only commit
