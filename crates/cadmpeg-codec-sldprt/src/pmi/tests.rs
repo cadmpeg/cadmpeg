@@ -369,6 +369,33 @@ fn key_like_string_inside_value_does_not_steal_field_spans() {
 }
 
 #[test]
+fn invalid_utf8_auxiliary_string_does_not_drop_dimension() {
+    let mut payload = fixture_payload(
+        "D1@Sketch1",
+        "01234567-89ab-cdef-0123-456789abcdef",
+        &[("Linear", 0.025)],
+        "25.000 mm",
+        false,
+        false,
+        false,
+    );
+    let start = payload
+        .windows(b"native-id".len())
+        .position(|window| window == b"native-id")
+        .expect("auxiliary iDString value");
+    payload[start..start + b"native-id".len()]
+        .copy_from_slice(&[0xff, 0xfe, 0xfd, b'n', b'a', b't', b'i', b'v', b'e']);
+
+    let mut losses = Vec::new();
+    let records = parse_payload(&payload, &mut losses);
+
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].cad_text, "D1@Sketch1");
+    assert_eq!(records[0].value, 0.025);
+}
+
+#[test]
 fn malformed_pmi_map_emits_attributed_loss() {
     let payload = fixture_payload(
         "D1@Sketch1",

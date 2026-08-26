@@ -477,8 +477,28 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             crate::records::FeatureInputRelationFamily::PointPointDistance,
         ),
         (
+            "sgPntPntDist",
+            [0xd5, 0x80],
+            crate::records::FeatureInputRelationFamily::PointPointDistance,
+        ),
+        (
+            "sgPntPntDist",
+            [0x38, 0x81],
+            crate::records::FeatureInputRelationFamily::PointPointDistance,
+        ),
+        (
+            "sgPntPntDist",
+            [0xac, 0x80],
+            crate::records::FeatureInputRelationFamily::PointPointDistance,
+        ),
+        (
             "sgLLDist",
             [0x86, 0x83],
+            crate::records::FeatureInputRelationFamily::LineLineDistance,
+        ),
+        (
+            "sgLLDist",
+            [0x0f, 0x81],
             crate::records::FeatureInputRelationFamily::LineLineDistance,
         ),
         (
@@ -497,13 +517,28 @@ fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
             crate::records::FeatureInputRelationFamily::PointPointHorizontalDistance,
         ),
         (
+            "sgPntPntHorDist",
+            [0xd5, 0x80],
+            crate::records::FeatureInputRelationFamily::PointPointHorizontalDistance,
+        ),
+        (
             "sgPntPntVertDist",
             [0xcb, 0x8d],
             crate::records::FeatureInputRelationFamily::PointPointVerticalDistance,
         ),
         (
+            "sgPntPntVertDist",
+            [0xd5, 0x80],
+            crate::records::FeatureInputRelationFamily::PointPointVerticalDistance,
+        ),
+        (
             "sgAnglDim",
             [0xda, 0x8d],
+            crate::records::FeatureInputRelationFamily::Angle,
+        ),
+        (
+            "sgAnglDim",
+            [0xd5, 0x80],
             crate::records::FeatureInputRelationFamily::Angle,
         ),
     ];

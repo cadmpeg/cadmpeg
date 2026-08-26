@@ -143,6 +143,7 @@ fn semantic_writer_rejects_compact_surface_selection_edits() {
                     ordinal: 0,
                     offset: marker as u64,
                     selector: 0,
+                    endpoint_selector: None,
                     object_name_ref: lane
                         .names
                         .iter()

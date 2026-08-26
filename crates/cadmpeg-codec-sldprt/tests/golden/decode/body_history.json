@@ -504,15 +504,6 @@
       },
       {
         "code": {
-          "code": "feature.native-kind-retained",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt"
-        },
-        "message": "1 feature(s) retain their native kind without a complete neutral operation definition.",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "feature.typed-operand-incomplete",
           "kind": "feature_history_retained",
           "namespace": "sldprt"

@@ -3,9 +3,16 @@
 use super::endpoints::{
     compact_indexed_curve_record_end, marker_profile_curve_role, minor_arc_angles,
 };
-use super::markers::{inline_arc_coordinates, marker_native_code, sketch_marker_prefix_at};
+use super::markers::{
+    current_geometry_locus_arc_handle_point, inline_arc_coordinates, marker_native_code,
+    sketch_marker_prefix_at,
+};
 use super::relation_geometry::{
-    declared_entity_handle_circular_marker, implicit_circle_marker, owned_relation_parameters,
+    declared_entity_handle_circular_marker, declared_entity_handle_has_resolved_pair,
+    declared_entity_handle_indexed_circle_dimension_center, declared_entity_handle_owner,
+    declared_entity_handle_point_dimension_center, declared_entity_handle_point_is_declared_radial,
+    declared_slot_handle_dimension_center, direct_point_dimension_center, implicit_circle_marker,
+    owned_relation_parameters, DeclaredEntityHandleOwner,
 };
 use super::relation_loci::{marker_transform_candidates_by_feature, same_dimension_length};
 use super::transforms::{
@@ -15,7 +22,7 @@ use super::transforms::{
 use super::typed_relations::marker_curve_endpoint_markers;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_ANGLE_TOLERANCE};
 use crate::records::{
-    FeatureInputLane, FeatureInputOperand, FeatureInputRelationFamily,
+    FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_core::decode::View;
@@ -234,6 +241,110 @@ fn dimensioned_arc_native_geometry(
     }))
 }
 
+/// Resolve the duplicate-link arc carrier used by a declared entity handle.
+///
+/// The coordinate-less handle is a reference identity, not a second curve.
+/// Exactly two identical links to one earlier arc marker select that marker;
+/// the link local identifier and feature scope must agree.  The arc still
+/// needs the normal endpoint or radial-witness validation, so a duplicate
+/// link cannot turn an arbitrary relation handle into a circular carrier.
+fn unique_linked_declared_entity_handle_arc_carrier<'a>(
+    lanes: &'a [FeatureInputLane],
+    feature: &str,
+    operand: &FeatureInputOperand,
+    expected_radius: f64,
+) -> Option<(&'a SketchInputEntity, DimensionedCurveNative)> {
+    if !expected_radius.is_finite() || expected_radius <= 0.0 {
+        return None;
+    }
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
+    else {
+        return None;
+    };
+    let mut candidates = lane
+        .sketch_entities
+        .iter()
+        .filter(|handle| {
+            handle.feature_ref.as_deref() == Some(feature)
+                && handle.offset < operand.offset
+                && handle.coordinates_m.is_none()
+                && handle.kind == SketchInputKind::LineOrCircle
+        })
+        .filter_map(|handle| {
+            let [first, second] = handle.links.as_slice() else {
+                return None;
+            };
+            if first.entity_ref != second.entity_ref || first.local_id != second.local_id {
+                return None;
+            }
+            let arc = lane.sketch_entities.iter().find(|candidate| {
+                candidate.id == first.entity_ref
+                    && candidate.feature_ref.as_deref() == Some(feature)
+                    && candidate.offset < handle.offset
+                    && candidate.local_id == Some(u32::from(first.local_id))
+                    && candidate.coordinates_m.is_some()
+                    && candidate.kind == SketchInputKind::Arc
+            })?;
+            let curve = dimensioned_arc_native_geometry(lanes, arc, expected_radius)?;
+            Some((arc, curve))
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
+fn unique_declared_entity_handle_circular_carrier<'a>(
+    lanes: &'a [FeatureInputLane],
+    feature: &str,
+    operand: &FeatureInputOperand,
+    expected_radius: f64,
+) -> Option<(&'a SketchInputEntity, DimensionedCurveNative)> {
+    if !expected_radius.is_finite() || expected_radius <= 0.0 {
+        return None;
+    }
+    if let Some(carrier) =
+        unique_linked_declared_entity_handle_arc_carrier(lanes, feature, operand, expected_radius)
+    {
+        return Some(carrier);
+    }
+    if declared_entity_handle_has_resolved_pair(lanes, feature, operand) {
+        return None;
+    }
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
+    else {
+        return None;
+    };
+    let mut candidates = lane
+        .sketch_entities
+        .iter()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
+        .filter(|marker| marker.coordinates_m.is_some())
+        .filter(|marker| {
+            matches!(
+                marker.kind,
+                SketchInputKind::LineOrCircle | SketchInputKind::Arc
+            )
+        })
+        .filter_map(|marker| {
+            let curve = match marker.kind {
+                SketchInputKind::Arc => {
+                    dimensioned_arc_native_geometry(lanes, marker, expected_radius)?
+                }
+                SketchInputKind::LineOrCircle => {
+                    if !unique_native_radial_witness(lane, marker, expected_radius) {
+                        return None;
+                    }
+                    DimensionedCurveNative::Circle {
+                        center: marker.coordinates_m?,
+                    }
+                }
+                _ => return None,
+            };
+            Some((marker, curve))
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
 fn dimensioned_relation_carrier<'a>(
     lanes: &'a [FeatureInputLane],
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
@@ -245,9 +356,88 @@ fn dimensioned_relation_carrier<'a>(
         .entity_ref
         .as_deref()
         .and_then(|id| markers_by_id.get(id).copied());
+    let explicit_point_marker = explicit.is_some_and(|marker| {
+        matches!(
+            marker.kind,
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+        )
+    });
+    if let Some((marker, center)) = declared_slot_handle_dimension_center(lanes, feature, operand) {
+        return Some(DimensionedRelationCarrier {
+            marker,
+            curve: None,
+            center: center.coordinates_m?,
+            construction: Some(true),
+        });
+    }
+    if operand.kind == FeatureInputOperandKind::Native(0x836e) {
+        let marker = declared_entity_handle_indexed_circle_dimension_center(
+            lanes, feature, operand, radius,
+        )?;
+        return Some(DimensionedRelationCarrier {
+            marker,
+            curve: None,
+            center: marker.coordinates_m?,
+            construction: Some(false),
+        });
+    }
+    if matches!(
+        operand.kind,
+        FeatureInputOperandKind::Native(0x80d4 | 0x80d5)
+    ) {
+        let marker = declared_entity_handle_point_dimension_center(lanes, feature, operand)?;
+        return Some(DimensionedRelationCarrier {
+            marker,
+            curve: None,
+            center: marker.coordinates_m?,
+            construction: Some(false),
+        });
+    }
+    let explicit_circular_marker = explicit.is_some_and(|marker| {
+        matches!(
+            marker.kind,
+            SketchInputKind::LineOrCircle | SketchInputKind::Arc
+        )
+    });
+    let explicit_current_arc_handle_point = explicit_point_marker
+        && explicit.is_some_and(|marker| {
+            let Ok(offset) = usize::try_from(marker.offset) else {
+                return false;
+            };
+            lanes.iter().any(|lane| {
+                lane.sketch_entities.iter().any(|candidate| {
+                    candidate.id == marker.id && candidate.feature_ref.as_deref() == Some(feature)
+                }) && current_geometry_locus_arc_handle_point(&lane.native_payload, offset)
+            })
+        });
+    let declared_owner = declared_entity_handle_owner(lanes, operand);
     let declared = declared_entity_handle_circular_marker(lanes, feature, operand, radius);
-    let (marker, encoded_radius) = if let Some((marker, radius)) = declared {
-        (marker, Some(radius))
+    let declared_entity_handle = !matches!(declared_owner, DeclaredEntityHandleOwner::Absent);
+    let (marker, encoded_radius, fallback_curve) = if let Some((marker, radius)) = declared {
+        (marker, Some(radius), None)
+    } else if declared_entity_handle && explicit_current_arc_handle_point {
+        (explicit?, None, None)
+    } else if declared_entity_handle && !explicit_circular_marker {
+        if explicit.is_none() || explicit_point_marker {
+            if let Some((marker, curve)) =
+                unique_declared_entity_handle_circular_carrier(lanes, feature, operand, radius)
+            {
+                (marker, None, Some(curve))
+            } else if matches!(operand.kind, FeatureInputOperandKind::Native(_))
+                && explicit_point_marker
+                && !declared_entity_handle_point_is_declared_radial(lanes, feature, operand)
+            {
+                let marker =
+                    declared_entity_handle_point_dimension_center(lanes, feature, operand)?;
+                (marker, None, None)
+            } else {
+                return None;
+            }
+        } else {
+            // A declared handle blocks point-based guessing. An explicit native
+            // line-or-circle or arc marker remains a direct geometry carrier.
+            return None;
+        }
     } else {
         match explicit {
             Some(marker)
@@ -259,7 +449,7 @@ fn dimensioned_relation_carrier<'a>(
                         | SketchInputKind::Arc
                 ) =>
             {
-                (marker, None)
+                (marker, None, None)
             }
             _ => {
                 let (marker, radius) = implicit_circle_marker(
@@ -269,13 +459,15 @@ fn dimensioned_relation_carrier<'a>(
                     operand.entity_index,
                     radius,
                 )?;
-                (marker, Some(radius))
+                (marker, Some(radius), None)
             }
         }
     };
-    let curve = (marker.kind == SketchInputKind::Arc)
-        .then(|| dimensioned_arc_native_geometry(lanes, marker, radius))
-        .flatten();
+    let curve = fallback_curve.or_else(|| {
+        (marker.kind == SketchInputKind::Arc)
+            .then(|| dimensioned_arc_native_geometry(lanes, marker, radius))
+            .flatten()
+    });
     if marker.kind == SketchInputKind::Arc && curve.is_none() {
         return None;
     }
@@ -304,12 +496,15 @@ fn dimensioned_relation_carrier<'a>(
         return None;
     }
     let construction = native_dimensioned_circle_construction_state(lanes, feature, marker, radius)
+        .or_else(|| direct_point_dimension_center(lanes, feature, operand, radius).map(|_| false))
         .or_else(|| {
-            matches!(
-                marker.kind,
-                SketchInputKind::LineOrCircle | SketchInputKind::Arc
-            )
-            .then_some(false)
+            declared_entity_handle.then_some(false).or_else(|| {
+                matches!(
+                    marker.kind,
+                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                )
+                .then_some(false)
+            })
         });
     Some(DimensionedRelationCarrier {
         marker,
@@ -710,6 +905,28 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                 marker,
                 radius,
             )
+            .or_else(|| {
+                let explicit_center = operand.entity_ref.is_some()
+                    && (declared_entity_handle_point_dimension_center(
+                        lanes,
+                        relation.feature_ref.as_str(),
+                        operand,
+                    )
+                    .is_some()
+                        || direct_point_dimension_center(
+                            lanes,
+                            relation.feature_ref.as_str(),
+                            operand,
+                            radius,
+                        )
+                        .is_some())
+                    && !declared_entity_handle_point_is_declared_radial(
+                        lanes,
+                        relation.feature_ref.as_str(),
+                        operand,
+                    );
+                explicit_center.then_some(false)
+            })
             .or_else(|| lane.native_payload.is_empty().then_some(false));
             let Some(construction) = construction else {
                 continue;
@@ -907,6 +1124,115 @@ pub(super) fn radial_dimension_radius(
     (radius.is_finite() && radius > 0.0).then_some(radius)
 }
 
+/// Remove a native circular marker after its exact circle-dimension relation
+/// has materialized the same geometry.
+///
+/// A direct circular operand is an identity carrier for the dimensioned circle,
+/// not an additional sketch entity. Remove only a native entity that carries
+/// that marker and only when the relation projector left a typed circle linked
+/// to the relation. This keeps unresolved, indirect, and non-circular markers
+/// native.
+fn reconcile_direct_circle_dimension_carriers(
+    entities: &mut Vec<SketchEntity>,
+    sketches: &mut [Sketch],
+    sketch_id: &cadmpeg_ir::sketches::SketchId,
+    feature: &str,
+    lanes: &[FeatureInputLane],
+) {
+    let replacements = lanes
+        .iter()
+        .flat_map(|lane| &lane.relation_instances)
+        .filter(|relation| {
+            relation.feature_ref == feature
+                && relation.family == FeatureInputRelationFamily::CircleDiameter
+        })
+        .filter_map(|relation| {
+            let ([operand] | [_, operand]) = relation.operands.as_slice() else {
+                return None;
+            };
+            let marker_id = operand.entity_ref.as_deref()?;
+            let markers = lanes
+                .iter()
+                .flat_map(|lane| &lane.sketch_entities)
+                .filter(|marker| {
+                    marker.id == marker_id && marker.feature_ref.as_deref() == Some(feature)
+                })
+                .collect::<Vec<_>>();
+            let [marker] = markers.as_slice() else {
+                return None;
+            };
+            if !matches!(marker.kind, SketchInputKind::LineOrCircle)
+                || !marker
+                    .coordinates_m
+                    .is_some_and(|[u, v]| u.is_finite() && v.is_finite())
+            {
+                return None;
+            }
+            let typed_entities = entities
+                .iter()
+                .filter(|entity| {
+                    entity.sketch == *sketch_id
+                        && entity.native_ref.as_deref() == Some(marker.id.as_str())
+                        && entity.geometry_ref.as_deref() == Some(relation.id.as_str())
+                        && matches!(entity.geometry, SketchGeometry::Circle { .. })
+                })
+                .collect::<Vec<_>>();
+            let [typed_entity] = typed_entities.as_slice() else {
+                return None;
+            };
+            Some((marker.id.clone(), typed_entity.id.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    if replacements.is_empty() {
+        return;
+    }
+    let removed = entities
+        .iter()
+        .filter(|entity| {
+            entity.sketch == *sketch_id
+                && matches!(entity.geometry, SketchGeometry::Native { .. })
+                && entity
+                    .native_ref
+                    .as_deref()
+                    .and_then(|native_ref| replacements.get(native_ref))
+                    .is_some()
+        })
+        .filter_map(|entity| {
+            let native_ref = entity.native_ref.as_deref()?;
+            Some((entity.id.clone(), replacements.get(native_ref)?.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    if removed.is_empty() {
+        return;
+    }
+    entities.retain(|entity| !removed.contains_key(&entity.id));
+    if let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) {
+        for profile in &mut sketch.profiles {
+            let usages = std::mem::take(profile);
+            let mut present = usages
+                .iter()
+                .filter(|usage| !removed.contains_key(&usage.entity))
+                .map(|usage| usage.entity.clone())
+                .collect::<HashSet<_>>();
+            let mut updated = Vec::with_capacity(usages.len());
+            for usage in usages {
+                let Some(replacement) = removed.get(&usage.entity) else {
+                    updated.push(usage);
+                    continue;
+                };
+                if present.insert(replacement.clone()) {
+                    updated.push(SketchEntityUse {
+                        entity: replacement.clone(),
+                        reversed: usage.reversed,
+                    });
+                }
+            }
+            *profile = updated;
+        }
+        sketch.profiles.retain(|profile| !profile.is_empty());
+    }
+}
+
 /// Materialize marker-only circles whose radial witnesses have exact radial
 /// dimensions, including repeated circles constrained to the same radius.
 pub(crate) fn project_marker_dimensioned_circles(
@@ -941,6 +1267,9 @@ pub(crate) fn project_marker_dimensioned_circles(
         else {
             continue;
         };
+        reconcile_direct_circle_dimension_carriers(
+            entities, sketches, sketch_id, native_ref, lanes,
+        );
         let radial_dimensions = parameters
             .iter()
             .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
