@@ -47,8 +47,12 @@ use crate::solve::{mesh_gauge::MeshEdgeGeometry, mesh_quotient, missing_edge};
 use crate::variant::Variant;
 use crate::wire::records::ConsolidatedRecord;
 
-const EPS_PARAM_RESOLUTION_SPAN: f64 = 1e-7;
-const EPS_PARAM_TOLERANCE_SPAN: f64 = 1e-9;
+const EPS_STANDARD_DECODE_COARSE_GEOMETRY: f64 = 1.0e-6;
+const EPS_STANDARD_DECODE_RELAXED_GEOMETRY: f64 = 1.0e-7;
+const EPS_STANDARD_DECODE_GEOMETRY: f64 = 1.0e-9;
+
+const EPS_PARAM_RESOLUTION_SPAN: f64 = EPS_STANDARD_DECODE_RELAXED_GEOMETRY;
+const EPS_PARAM_TOLERANCE_SPAN: f64 = EPS_STANDARD_DECODE_GEOMETRY;
 const EPS_SAME_CONE_GENERATOR: f64 = 2e-3;
 const EPS_ANTIPODAL_CIRCLE: f64 = 2e-3;
 const SPHERE_SECTION_ENDPOINT_TOLERANCE: f64 = 2e-3;
@@ -57,10 +61,10 @@ const CYLINDER_PLANE_CONIC_TOLERANCE: f64 = 2e-3;
 const PERPENDICULAR_CYLINDER_CONIC_TOLERANCE: f64 = 2e-3;
 const LINE_SEGMENT_GEOMETRY_TOLERANCE: f64 = 2e-3;
 const ANALYTIC_CURVE_ENDPOINT_TOLERANCE: f64 = 2e-3;
-const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1e-6;
+const SUPPORT_AGREEMENT_TOLERANCE: f64 = EPS_STANDARD_DECODE_COARSE_GEOMETRY;
 const STANDARD_FACE_BOUNDS_TOLERANCE: f64 = 2e-3;
 const NURBS_SURFACE_MEMBERSHIP_TOLERANCE: f64 = 2e-3;
-const NURBS_SHARED_BOUNDARY_TOLERANCE: f64 = 1e-9;
+const NURBS_SHARED_BOUNDARY_TOLERANCE: f64 = EPS_STANDARD_DECODE_GEOMETRY;
 const NURBS_SURFACE_SEEDS_PER_SPAN: usize = 3;
 const NURBS_SURFACE_MAX_SEEDS: usize = 256;
 const NURBS_SURFACE_REFINEMENT_ITERATIONS: usize = 24;
@@ -166,7 +170,7 @@ fn bind_consolidated_revolution_faces_and_seams(
         let normal_norm = normal.norm();
         if !normal_norm.is_finite()
             || normal_norm == 0.0
-            || (normal.dot(*axis) / normal_norm).abs() > 1e-6
+            || (normal.dot(*axis) / normal_norm).abs() > EPS_STANDARD_DECODE_COARSE_GEOMETRY
         {
             return None;
         }
@@ -5761,7 +5765,7 @@ pub(crate) fn intersection_line_direction(
     left: &SurfaceGeometry,
     right: &SurfaceGeometry,
 ) -> Option<Vector3> {
-    const ANGULAR_TOLERANCE: f64 = 1e-9;
+    const ANGULAR_TOLERANCE: f64 = EPS_STANDARD_DECODE_GEOMETRY;
 
     match (left, right) {
         (
@@ -6932,10 +6936,10 @@ pub(crate) fn standard_pcurve_geometry(
                     origin.y + apex_offset * axis.y,
                     origin.z + apex_offset * axis.z,
                 );
-                if start.distance_squared(apex) <= 1e-6 {
+                if start.distance_squared(apex) <= EPS_STANDARD_DECODE_COARSE_GEOMETRY {
                     uv[0].u = uv[1].u;
                 }
-                if end.distance_squared(apex) <= 1e-6 {
+                if end.distance_squared(apex) <= EPS_STANDARD_DECODE_COARSE_GEOMETRY {
                     uv[1].u = uv[0].u;
                 }
             }
@@ -8674,13 +8678,14 @@ pub(crate) fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2
 
     ranges.iter().enumerate().all(|(left_index, left)| {
         ranges[left_index + 1..].iter().all(|right| {
-            let coincident =
-                (right[0] - left[0]).abs() <= 1e-9 && (right[1] - left[1]).abs() <= 1e-9;
+            let coincident = (right[0] - left[0]).abs() <= EPS_STANDARD_DECODE_GEOMETRY
+                && (right[1] - left[1]).abs() <= EPS_STANDARD_DECODE_GEOMETRY;
             coincident
                 || !segments(*left).iter().any(|left| {
-                    segments(*right)
-                        .iter()
-                        .any(|right| left[1].min(right[1]) - left[0].max(right[0]) > 1e-6)
+                    segments(*right).iter().any(|right| {
+                        left[1].min(right[1]) - left[0].max(right[0])
+                            > EPS_STANDARD_DECODE_COARSE_GEOMETRY
+                    })
                 })
         })
     })
@@ -8724,8 +8729,10 @@ pub(crate) fn standard_circle_param_range(
         )
     });
     let range = ranges.next()?;
-    if ranges.any(|other| (other[0] - range[0]).abs() > 1e-9 || (other[1] - range[1]).abs() > 1e-9)
-    {
+    if ranges.any(|other| {
+        (other[0] - range[0]).abs() > EPS_STANDARD_DECODE_GEOMETRY
+            || (other[1] - range[1]).abs() > EPS_STANDARD_DECODE_GEOMETRY
+    }) {
         return None;
     }
     Some(range)
@@ -8871,7 +8878,7 @@ fn circle_axis_from_endpoints(
         return None;
     }
     let normal = start_radius.cross(end_radius);
-    (normal.norm() > 1e-6 * start_length * end_length)
+    (normal.norm() > EPS_STANDARD_DECODE_COARSE_GEOMETRY * start_length * end_length)
         .then(|| unit_vector(normal))
         .flatten()
 }

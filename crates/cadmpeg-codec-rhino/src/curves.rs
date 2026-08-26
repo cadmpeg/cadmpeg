@@ -13,10 +13,13 @@ use crate::objects::parse_class_wrapper;
 use crate::settings::{bbox, interval, plane, Point3 as NativePoint3};
 use crate::wire::Uuid;
 
+const EPS_CURVE_POSITION: f64 = 1.0e-8;
+const EPS_CURVE_DEGENERATE: f64 = 1.0e-10;
+
 /// Maximum embedded curve nesting depth.
 pub(crate) const MAX_CURVE_DEPTH: usize = 32;
 /// Maximum points or polycurve segments in one payload.
-const CIRCLE_TOLERANCE: f64 = 1.0e-10;
+const CIRCLE_TOLERANCE: f64 = EPS_CURVE_DEGENERATE;
 
 const POINT: Uuid = Uuid::from_canonical([
     0xc3, 0x10, 0x1a, 0x1d, 0xf1, 0x57, 0x11, 0xd3, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
@@ -1334,7 +1337,7 @@ fn read_arc(
         return Err(error(reader.position(), "arc interval is not increasing"));
     }
     let delta = angle[1] - angle[0];
-    if delta <= 0.0 || delta > TAU + 1.0e-10 {
+    if delta <= 0.0 || delta > TAU + EPS_CURVE_DEGENERATE {
         return Err(error(reader.position(), "arc angle span is invalid"));
     }
     if !force_nurbs && canonical_circle(&circle, angle, domain, delta) {
@@ -1679,7 +1682,7 @@ fn close_native_point(
         .0
         .iter()
         .zip(expected)
-        .all(|(actual, expected)| (*actual - expected).abs() <= 1.0e-8)
+        .all(|(actual, expected)| (*actual - expected).abs() <= EPS_CURVE_POSITION)
 }
 
 pub(crate) fn error(offset: usize, message: &str) -> GeometryError {

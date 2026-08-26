@@ -31,6 +31,10 @@ use crate::brep::{
 };
 use crate::native::PropertyRecord;
 
+const EPS_TOPOLOGY_TRANSFER_GEOMETRY: f64 = 1.0e-9;
+const EPS_TOPOLOGY_TRANSFER_DEGENERATE: f64 = 1.0e-10;
+const EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY: f64 = 1.0e-12;
+
 type IndexedPolygon = (Vec<Point3>, Option<Vec<f64>>, f64);
 type FacePcurve = (PcurveId, Option<[f64; 2]>);
 
@@ -1302,7 +1306,7 @@ fn normalize_pcurve_parameter_range(
         .into_iter()
         .chain(domain)
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    let tolerance = scale * 1.0e-9;
+    let tolerance = scale * EPS_TOPOLOGY_TRANSFER_GEOMETRY;
     for value in &mut range {
         if (*value - domain[0]).abs() <= tolerance {
             *value = domain[0];
@@ -1477,7 +1481,7 @@ fn similarity(transform: Transform) -> Result<Similarity, CodecError> {
         ),
     ];
     let scale = columns[0].norm();
-    let tolerance = 1.0e-10 * scale.max(1.0);
+    let tolerance = EPS_TOPOLOGY_TRANSFER_DEGENERATE * scale.max(1.0);
     if !scale.is_finite()
         || scale <= 0.0
         || columns
@@ -1774,15 +1778,19 @@ pub(crate) fn normalize_occt_curve_range(
             let [start, end] = range?;
             let sweep = end - start;
             let tau = std::f64::consts::TAU;
-            if !start.is_finite() || !end.is_finite() || (sweep - tau).abs() <= 1.0e-9 {
+            if !start.is_finite()
+                || !end.is_finite()
+                || (sweep - tau).abs() <= EPS_TOPOLOGY_TRANSFER_GEOMETRY
+            {
                 return Some([start, end]);
             }
             let canonical_start = start.rem_euclid(tau);
-            let canonical_start = if (tau - canonical_start).abs() <= 1.0e-12 {
-                0.0
-            } else {
-                canonical_start
-            };
+            let canonical_start =
+                if (tau - canonical_start).abs() <= EPS_TOPOLOGY_TRANSFER_EXACT_GEOMETRY {
+                    0.0
+                } else {
+                    canonical_start
+                };
             Some([canonical_start, canonical_start + sweep])
         }
         CurveGeometry::Parabola { focal_distance, .. } => {

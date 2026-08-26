@@ -23,6 +23,9 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
+const EPS_CURVE_POSITION: f64 = 1.0e-8;
+const EPS_CURVE_GEOMETRY: f64 = 1.0e-9;
+
 pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
 pub(super) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
 
@@ -379,7 +382,8 @@ pub(super) fn compact_bounded_curve_tangent(payload: &[u8], offset: usize) -> Op
     }
     let u = View::f64_le_at(payload, detail + 64)?;
     let v = View::f64_le_at(payload, detail + 72)?;
-    (u.is_finite() && v.is_finite() && (u.hypot(v) - 1.0).abs() <= 1.0e-9).then_some([u, v])
+    (u.is_finite() && v.is_finite() && (u.hypot(v) - 1.0).abs() <= EPS_CURVE_GEOMETRY)
+        .then_some([u, v])
 }
 
 pub(super) fn tangent_bounded_curve(
@@ -1863,7 +1867,7 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
     dimensions_mm: &[f64],
 ) -> Option<[&'a SketchInputEntity; 4]> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = EPS_CURVE_POSITION;
     if dimensions_mm.len() < 2 {
         return None;
     }

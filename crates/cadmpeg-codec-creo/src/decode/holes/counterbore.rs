@@ -19,14 +19,17 @@ use super::super::sketch::{approximately_equal, normalized};
 use super::super::uniqueness::exactly_one;
 use super::drilled::paired_corner_envelope_axis_spans;
 
-const EPS_COUNTERBORE_RADIUS_MATCH: f64 = 1.0e-9;
-const EPS_COUNTERBORE_ENVELOPE_MATCH: f64 = 1.0e-9;
-const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
-const EPS_PARAMETER_DELTA: f64 = 1.0e-9;
-const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
-const EPS_LENGTH_NONZERO: f64 = 1.0e-12;
-const EPS_DEPTH_BOUND: f64 = 1.0e-9;
-const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_COUNTERBORE_GEOMETRY: f64 = 1.0e-9;
+const EPS_COUNTERBORE_EXACT_GEOMETRY: f64 = 1.0e-12;
+
+const EPS_COUNTERBORE_RADIUS_MATCH: f64 = EPS_COUNTERBORE_GEOMETRY;
+const EPS_COUNTERBORE_ENVELOPE_MATCH: f64 = EPS_COUNTERBORE_GEOMETRY;
+const EPS_RADIUS_AGREEMENT: f64 = EPS_COUNTERBORE_GEOMETRY;
+const EPS_PARAMETER_DELTA: f64 = EPS_COUNTERBORE_GEOMETRY;
+const EPS_GEOMETRY_AGREEMENT: f64 = EPS_COUNTERBORE_GEOMETRY;
+const EPS_LENGTH_NONZERO: f64 = EPS_COUNTERBORE_EXACT_GEOMETRY;
+const EPS_DEPTH_BOUND: f64 = EPS_COUNTERBORE_GEOMETRY;
+const EPS_AXIS_ALIGNMENT: f64 = EPS_COUNTERBORE_GEOMETRY;
 
 fn unique_model_surface_geometries(ir: &CadIr) -> Option<BTreeMap<u32, SurfaceGeometry>> {
     let mut geometries = BTreeMap::new();
@@ -850,7 +853,7 @@ pub fn counterbore_source_boundary_circle(
                 else {
                     return None;
                 };
-                ((*candidate - radius).abs() <= 1.0e-9).then_some(())?;
+                ((*candidate - radius).abs() <= EPS_COUNTERBORE_GEOMETRY).then_some(())?;
                 let axis = normalized([axis.x, axis.y, axis.z])?;
                 let plane = reconciled_model_plane(&local_planes, ir, other)?;
                 let normal = normalized(plane.normal)?;

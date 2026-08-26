@@ -9,6 +9,9 @@ include!("../seed_paths.rs");
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 
+const EPS_SEED_GEOMETRY_COARSE_GEOMETRY: f64 = 1.0e-6;
+const EPS_SEED_GEOMETRY_DEGENERATE: f64 = 1.0e-10;
+
 fn main() -> Result<(), CodecError> {
     generate_acis_header_seed();
     generate_f3d_submodule_seeds();
@@ -32,7 +35,7 @@ fn generate_acis_header_seed() {
         header.push(u8::try_from(value.len()).expect("short synthetic string"));
         header.extend_from_slice(value.as_bytes());
     }
-    for value in [1.0_f64, 1.0e-6, 1.0e-10] {
+    for value in [1.0_f64, EPS_SEED_GEOMETRY_COARSE_GEOMETRY, EPS_SEED_GEOMETRY_DEGENERATE] {
         header.push(0x06);
         header.extend_from_slice(&value.to_le_bytes());
     }

@@ -115,7 +115,7 @@ def is_production_rs(path: Path) -> bool:
     if path.suffix != ".rs":
         return False
     parts = path.parts
-    if "tests" in parts or "benches" in parts:
+    if any(part in {"tests", "test_support", "golden_tests", "integration_tests", "benches"} for part in parts):
         return False
     name = path.name
     if name == "tests.rs" or re.search(r"test", name, re.IGNORECASE):

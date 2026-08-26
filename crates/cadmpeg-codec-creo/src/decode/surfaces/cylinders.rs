@@ -31,8 +31,11 @@ use super::super::sketch_transfer::{
 };
 use super::super::uniqueness::exactly_one;
 
-const EPS_ROUND_EDGE_RELATIVE: f64 = 1.0e-9;
-const EPS_ROUND_EDGE_PLANE_RESIDUAL: f64 = 1.0e-8;
+const EPS_CYLINDER_POSITION: f64 = 1.0e-8;
+const EPS_CYLINDER_GEOMETRY: f64 = 1.0e-9;
+
+const EPS_ROUND_EDGE_RELATIVE: f64 = EPS_CYLINDER_GEOMETRY;
+const EPS_ROUND_EDGE_PLANE_RESIDUAL: f64 = EPS_CYLINDER_POSITION;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(in super::super) struct PositionalCylinderTransferSummary {
@@ -61,9 +64,9 @@ enum PerpendicularRoundEdgeFailure {
     CarrierValidationFailure,
 }
 
-const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
-const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
-const EPS_LENGTH_NONZERO: f64 = 1.0e-9;
+const EPS_RADIUS_AGREEMENT: f64 = EPS_CYLINDER_GEOMETRY;
+const EPS_AXIS_ALIGNMENT: f64 = EPS_CYLINDER_GEOMETRY;
+const EPS_LENGTH_NONZERO: f64 = EPS_CYLINDER_GEOMETRY;
 
 pub(in super::super) fn rowless_round_cylinder_pairs(
     round_feature_ids: &BTreeSet<u32>,
@@ -1226,7 +1229,7 @@ pub(in super::super) fn reference_cap_bound_round_frame(
         .copied()
         .map(f64::abs)
         .fold(envelope.diameter.max(1.0), f64::max);
-    let tolerance = 1.0e-9 * scale;
+    let tolerance = EPS_CYLINDER_GEOMETRY * scale;
     let point_matches = |actual: [f64; 3], expected: [f64; 3]| {
         actual
             .iter()
@@ -1256,9 +1259,9 @@ pub(in super::super) fn reference_cap_bound_round_frame(
             circles.iter().any(|circle| {
                 circle.axis.iter().enumerate().all(|(index, component)| {
                     if index == axis_index {
-                        (component.abs() - 1.0).abs() <= 1.0e-9
+                        (component.abs() - 1.0).abs() <= EPS_CYLINDER_GEOMETRY
                     } else {
-                        component.abs() <= 1.0e-9
+                        component.abs() <= EPS_CYLINDER_GEOMETRY
                     }
                 }) && ((point_matches(circle.start, first_corner)
                     && point_matches(circle.end, second_corner))

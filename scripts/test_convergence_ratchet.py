@@ -95,6 +95,13 @@ class StripCfgTest(unittest.TestCase):
 
 
 class PatternFilters(unittest.TestCase):
+    def test_test_support_is_not_production_source(self) -> None:
+        self.assertFalse(
+            ratchet.is_production_rs(
+                Path("crates/codec/src/test_support/fixture_builder.rs")
+            )
+        )
+
     def test_excludes_loss_note_return_and_struct(self) -> None:
         text = (
             "struct LossNote {\n"

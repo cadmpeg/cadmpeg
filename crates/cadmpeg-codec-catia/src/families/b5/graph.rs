@@ -15,6 +15,10 @@ use super::vecmath::{add, cross, scale};
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::wire;
 
+const EPS_B5_GRAPH_GEOMETRY: f64 = 1.0e-9;
+const EPS_B5_GRAPH_DEGENERATE: f64 = 1.0e-10;
+const EPS_B5_GRAPH_EXACT_GEOMETRY: f64 = 1.0e-12;
+
 /// Maximum frame-index, record-materialization, census, and graph-selection
 /// operations admitted for one free-form object population. The allowance
 /// covers one indexed-frame pass, topology materialization, dependency
@@ -2199,7 +2203,7 @@ pub(crate) fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
 
 /// Clamp a finite occurrence range to a finite, increasing native domain.
 pub(crate) fn bounded_occurrence_range(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
-    const RELATIVE_PARAMETER_TOLERANCE: f64 = 1e-10;
+    const RELATIVE_PARAMETER_TOLERANCE: f64 = EPS_B5_GRAPH_DEGENERATE;
 
     let domain_span = domain[1] - domain[0];
     if !domain.into_iter().all(f64::is_finite)
@@ -2325,8 +2329,10 @@ fn bind_native_vertices(
                 if residual > POINT_TOLERANCE && residual.is_finite() {
                     tolerances
                         .entry(locus)
-                        .and_modify(|tolerance| *tolerance = tolerance.max(residual + 1e-9))
-                        .or_insert(residual + 1e-9);
+                        .and_modify(|tolerance| {
+                            *tolerance = tolerance.max(residual + EPS_B5_GRAPH_GEOMETRY);
+                        })
+                        .or_insert(residual + EPS_B5_GRAPH_GEOMETRY);
                 }
             }
         }
@@ -2639,7 +2645,7 @@ fn distance_squared(left: [f64; 3], right: [f64; 3]) -> f64 {
 }
 
 fn direction_is_unit(direction: [f64; 3]) -> bool {
-    (distance_squared(direction, [0.0; 3]) - 1.0).abs() <= 1e-12
+    (distance_squared(direction, [0.0; 3]) - 1.0).abs() <= EPS_B5_GRAPH_EXACT_GEOMETRY
 }
 
 fn directions_are_unit_and_orthogonal(first: [f64; 3], second: [f64; 3]) -> bool {
@@ -2648,7 +2654,9 @@ fn directions_are_unit_and_orthogonal(first: [f64; 3], second: [f64; 3]) -> bool
         .zip(second)
         .map(|(left, right)| left * right)
         .sum::<f64>();
-    direction_is_unit(first) && direction_is_unit(second) && dot.abs() <= 1e-12
+    direction_is_unit(first)
+        && direction_is_unit(second)
+        && dot.abs() <= EPS_B5_GRAPH_EXACT_GEOMETRY
 }
 
 fn directions_form_right_handed_orthonormal_frame(
@@ -2697,7 +2705,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 chart_origin + std::f64::consts::TAU * angular_scale,
             ];
             chart_domain[1].is_finite().then_some(())?;
-            let chart_tolerance = 1e-12
+            let chart_tolerance = EPS_B5_GRAPH_EXACT_GEOMETRY
                 * u_range
                     .into_iter()
                     .chain(chart_domain)
@@ -2736,7 +2744,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let reference_radius = scalar(&record.payload, 105)?;
             let angular_range = [scalar(&record.payload, 113)?, scalar(&record.payload, 121)?];
             let mut slant_range = [scalar(&record.payload, 129)?, scalar(&record.payload, 137)?];
-            if slant_range[0].abs() <= 1e-12 {
+            if slant_range[0].abs() <= EPS_B5_GRAPH_EXACT_GEOMETRY {
                 slant_range[0] = 0.0;
             }
             let angular_scale = scalar(&record.payload, 145)?;
@@ -2790,9 +2798,10 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 && sphere_angular_ranges_are_valid(azimuth_range, latitude_range)
                 && expected_chart_origin.is_finite()
                 && (chart_origin - expected_chart_origin).abs() <= chart_origin_tolerance
-                && [stored_x, stored_y, stored_axis]
-                    .iter()
-                    .all(|direction| ((vector_length(*direction) / radius) - 1.0).abs() <= 1e-12)
+                && [stored_x, stored_y, stored_axis].iter().all(|direction| {
+                    ((vector_length(*direction) / radius) - 1.0).abs()
+                        <= EPS_B5_GRAPH_EXACT_GEOMETRY
+                })
                 && directions_form_right_handed_orthonormal_frame(direction_x, direction_y, axis))
             .then_some(B5Surface::Sphere {
                 center,
@@ -3109,7 +3118,7 @@ fn analytic_offset_magnitude_agrees(
     source: &B5Surface,
     distance: f64,
 ) -> bool {
-    const RELATIVE_TOLERANCE: f64 = 1e-10;
+    const RELATIVE_TOLERANCE: f64 = EPS_B5_GRAPH_DEGENERATE;
     let relative_close = |left: f64, right: f64| {
         (left - right).abs() <= RELATIVE_TOLERANCE * left.abs().max(right.abs())
     };
@@ -3755,8 +3764,9 @@ fn supported_surface_parameters_match_carrier(
     parameters: &B5SupportedSurfaceParameters,
     carrier: &B5Surface,
 ) -> bool {
-    let relative_close =
-        |left: f64, right: f64| (left - right).abs() <= 1e-12 * left.abs().max(right.abs());
+    let relative_close = |left: f64, right: f64| {
+        (left - right).abs() <= EPS_B5_GRAPH_EXACT_GEOMETRY * left.abs().max(right.abs())
+    };
     match (parameters, carrier) {
         (
             B5SupportedSurfaceParameters::Radius {
@@ -4154,9 +4164,9 @@ fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         || start >= end
         || period <= 0.0
         || !matches!(orientation, -1.0 | 1.0)
-        || (conjugate_angle - std::f64::consts::FRAC_PI_2).abs() > 1e-12
+        || (conjugate_angle - std::f64::consts::FRAC_PI_2).abs() > EPS_B5_GRAPH_EXACT_GEOMETRY
         || !relative_period.is_finite()
-        || (relative_period - 1.0).abs() > 1e-12
+        || (relative_period - 1.0).abs() > EPS_B5_GRAPH_EXACT_GEOMETRY
     {
         return None;
     }
@@ -4338,7 +4348,7 @@ fn parse_sphere_great_circle_pcurve(
         .chain([u0, u1])
         .map(f64::abs)
         .fold(1.0, f64::max);
-    let u_tolerance = 1e-12 * u_scale;
+    let u_tolerance = EPS_B5_GRAPH_EXACT_GEOMETRY * u_scale;
     (direction.abs() == 1.0
         && zero0 == 0.0
         && zero1 == 0.0
