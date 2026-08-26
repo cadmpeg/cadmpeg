@@ -41,6 +41,23 @@ The native records therefore establish a closed source-local boundary relation,
 not a cross-source face or edge-support identity. The decoder retains that
 relation and does not feed it into standard face-domain assignment.
 
+## Class-`0x5b`/`0x5c` exhaustion
+
+The corrected release audit covered 53 successful inputs and retained 824
+complete control records: 557 class-`0x5b` records and 267 class-`0x5c`
+records. Only the two closed-cycle witnesses contain a control pair in the
+cycle's bounded neighborhood. In the first witness the pair has source offsets
+`13718` and `13754` and file offsets `61085` and `61121`; in the second it has
+source offsets `7580` and `7614` and file offsets `40217` and `40251`.
+
+The first pair has class-`0x5b` length 36 and class-`0x5c` length 14. The
+second pair has lengths 34 and 19. Each of those length/header shapes also
+occurs outside a closed cycle. The retained payloads contain no admitted
+allocation reference, owner position, face-node target, or standard support
+tag. The adjacent cycle edge nodes retain source-local curve references and
+source-local endpoint records only. This audit supplies no allocation-scoped
+bridge and no additional solver constraint.
+
 ## Neutral comparison
 
 An exact neutral sibling check confirms that the emitted face boundary
