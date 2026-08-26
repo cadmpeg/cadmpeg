@@ -22,9 +22,16 @@
 #                                    or `code:<file>:<line>`.
 #                      seam          why this boundary exists, where it needs
 #                                    saying.
-#                      supersedes /  the cumulative-with-subtraction lattice.
-#                      subtracts     Admitted only where the checker consumes
-#                                    them; IGES is the only consumer today.
+#                      supersedes /  the lattice. A dialect's admitted set is
+#                      adds /        (expansion of `supersedes` union `adds`)
+#                      subtracts     minus `subtracts`. Admitted only where the
+#                                    checker consumes them; IGES is the only
+#                                    consumer today. `subtracts` entries are
+#                                    single `type:form` admissions; `adds`
+#                                    entries are `type:form` or `type:low-high`,
+#                                    because the additive half of the IGES 5.0
+#                                    table includes the implementor-defined
+#                                    form band 5001-9999.
 #
 # Witness rule. Every row carries a witness. A `code:` witness is a
 # placeholder: it proves the discriminant value is read, not that a file
@@ -140,14 +147,9 @@ witness = "spec:IGES 5.3 section 2.2.4.3.23"
 # except the Appendix-I compatibility forms rejected first
 # (profile.rs:88-90, table at profile.rs:115-117).
 #
-# Checker note: `supersedes`/`subtracts` express the subtractive half only.
-# The additive half of 5.0 -- profile.rs:96-111, which admits (141,0), (143,0),
-# (182,0), (204,0), (213,0), (316,0), (214,12), (216,1..=2), (218,1),
-# (228,implementor-defined), (230,1), (402,19), (404,1), (406,19..=26),
-# (410,1), (416,3), (322,0..=2), (422,0..=1) -- has no key in this schema. The
-# checker cannot expand this row to the codec's exported admission set from
-# these two keys alone. Either the schema gains an `adds` key or the checker
-# treats 5.0 as codec-owned.
+# The additive half is `adds`, transcribed from the fall-through match at
+# profile.rs:96-111: eighteen entity types, one entry each. `228:5001-9999` is
+# `implementor_defined_form` (profile.rs:101, defined at profile.rs:124).
 id = "iges:5.0-fixed-ascii"
 title = "IGES 5.0, Fixed ASCII"
 discriminants = { representation = "fixed-ascii", effective_version = "5.0", version_flag = "8" }
@@ -155,6 +157,12 @@ seam = "the Global table stops at field 25; the 4.0 Appendix-I compatibility for
 witness = "spec:IGES 5.3 section 2.2.4.3.23"
 supersedes = ["iges:4.0-fixed-ascii"]
 subtracts = ["402:6", "402:8", "402:10", "402:11", "406:4"]
+# profile.rs:97-109, in source order.
+adds = [
+  "141:0", "143:0", "182:0", "204:0", "213:0", "316:0",
+  "214:12", "216:1-2", "218:1", "228:5001-9999", "230:1", "402:19",
+  "404:1", "406:19-26", "410:1", "416:3", "322:0-2", "422:0-1",
+]
 
 [[dialect]]
 # `Dialect::V5_1` (global.rs:74). 5.1, 5.2, and 5.3 take the unrestricted
@@ -196,6 +204,12 @@ discriminants = { representation = "compressed-ascii", effective_version = "5.0"
 witness = "spec:IGES 5.3 section 2.3.1"
 supersedes = ["iges:4.0-compressed-ascii"]
 subtracts = ["402:6", "402:8", "402:10", "402:11", "406:4"]
+# profile.rs:97-109, in source order.
+adds = [
+  "141:0", "143:0", "182:0", "204:0", "213:0", "316:0",
+  "214:12", "216:1-2", "218:1", "228:5001-9999", "230:1", "402:19",
+  "404:1", "406:19-26", "410:1", "416:3", "322:0-2", "422:0-1",
+]
 
 [[dialect]]
 id = "iges:5.1-compressed-ascii"
@@ -229,6 +243,12 @@ discriminants = { representation = "binary", effective_version = "5.0", version_
 witness = "spec:IGES 5.3 Appendix H.1"
 supersedes = ["iges:4.0-binary"]
 subtracts = ["402:6", "402:8", "402:10", "402:11", "406:4"]
+# profile.rs:97-109, in source order.
+adds = [
+  "141:0", "143:0", "182:0", "204:0", "213:0", "316:0",
+  "214:12", "216:1-2", "218:1", "228:5001-9999", "230:1", "402:19",
+  "404:1", "406:19-26", "410:1", "416:3", "322:0-2", "422:0-1",
+]
 
 [[dialect]]
 id = "iges:5.1-binary"
