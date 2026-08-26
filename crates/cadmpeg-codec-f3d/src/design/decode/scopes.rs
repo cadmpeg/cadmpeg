@@ -576,7 +576,7 @@ pub(crate) fn parse_thread_payload(
     let (form, pitch_marker, trailer_kind) =
         match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
             (DesignThreadForm::Standard, [0, 1, 0, 0, 0]) => {
-                (DesignThreadForm::Standard, 1, ThreadTrailerKind::Standard)
+                (DesignThreadForm::Standard, 0, ThreadTrailerKind::Standard)
             }
             (DesignThreadForm::Standard, [1, 1, 0, 0, 0]) => (
                 DesignThreadForm::StandardLegacy,

@@ -27,7 +27,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     bytes[108..113].copy_from_slice(&[0, 1, 0, 0, 0]);
     bytes[113..121].copy_from_slice(&2.97345f64.to_le_bytes());
     bytes[121..129].copy_from_slice(&2.5732f64.to_le_bytes());
-    bytes[129] = 1;
+    bytes[129] = 0;
     bytes[130..138].copy_from_slice(&0.35f64.to_le_bytes());
     bytes[138..146].copy_from_slice(&2.7568f64.to_le_bytes());
     bytes[146..148].copy_from_slice(&[0, 1]);
@@ -50,6 +50,17 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     assert_thread_construction(
         parse_thread_payload(&bytes, 38, DesignThreadForm::Standard, vec![988]),
         &expected,
+    );
+    let mut invalid_standard_pitch_marker = bytes.clone();
+    invalid_standard_pitch_marker[129] = 1;
+    assert_eq!(
+        parse_thread_payload(
+            &invalid_standard_pitch_marker,
+            38,
+            DesignThreadForm::Standard,
+            vec![988],
+        ),
+        None
     );
 
     let mut scope = DesignParameterScope::empty("f3d:scope#standard-thread", "Thread", 987);
