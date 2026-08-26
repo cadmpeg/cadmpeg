@@ -59,10 +59,11 @@
 //! complete body lineage is unambiguous. Assembly files may contain only
 //! references to external child parts.
 //!
-//! Ordered feature-operation records, body dependencies, Boolean operations,
-//! sketch record lanes, and numeric expressions transfer from the NX object
-//! model. Current-body writers and their complete earlier dependency closure
-//! transfer as active; other operation suppression remains unresolved. Embedded
+//! Ordered feature-operation records, body-write GROUP ownership, body
+//! dependencies, Boolean operations, sketch record lanes, and numeric
+//! expressions transfer from the NX object model. Current-body writers and
+//! their complete earlier dependency closure transfer as active; other
+//! operation suppression remains unresolved. Embedded
 //! JT coordinates and triangle connectivity transfer as canonical tessellations.
 //! Complete design history, assembly occurrence placement, material and appearance
 //! assignment and `.prt` writing are not supported.
@@ -113,7 +114,7 @@ impl CodecBackend for NxCodec {
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {
-        if container::looks_like_nx(prefix) {
+        if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(prefix) {
             Confidence::High
         } else {
             Confidence::No
@@ -272,6 +273,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                 }
             }
         }
+        let legacy_cfb = scan.container.is_legacy_cfb();
         entries.push(ContainerEntry {
             name: format!("parasolid#{si}"),
             role: if stream.kind.is_parasolid() {
@@ -279,8 +281,8 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
             } else {
                 "preview".to_string()
             },
-            compression: "zlib".to_string(),
-            compressed_size: 0,
+            compression: if legacy_cfb { "stored" } else { "zlib" }.to_string(),
+            compressed_size: if legacy_cfb { stream.consumed } else { 0 },
             uncompressed_size: stream.inflated.len() as u64,
             attributes,
         });
@@ -288,7 +290,12 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
 
     ContainerSummary {
         format: "nx".to_string(),
-        container_kind: "splmsstr".to_string(),
+        container_kind: if scan.container.is_legacy_cfb() {
+            "cfb"
+        } else {
+            "splmsstr"
+        }
+        .to_string(),
         entries,
         notes: decode::summary_notes(scan),
     }

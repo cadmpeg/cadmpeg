@@ -363,6 +363,7 @@ fn test_nurbs_surface() -> NurbsSurface {
         v_count: 3,
         control_points,
         weights: None,
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     }

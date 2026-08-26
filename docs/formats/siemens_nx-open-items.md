@@ -218,17 +218,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the name to give the node one stable schema identity.
 
-**Note.** The closure added `INTERSECTION_DATA` as the canonical name and introduced the exact schema header used to recognize it. The tests construct that header from the same implementation constant. The global schema-anchor flag then authorizes later `0x5a` bytes without proving that they remain in the same schema scope. An independent serialized record is required before the name and anchor scope are settled.
+### PS-26. Boundary pcurve relation without a chart
 
-### PS-26. Boundary pcurve completion without a chart
-
-**Question.** Which serialized witness establishes the boundary pcurve of an EDGE whose supports carry no chart and no analytic isocurve relation?
+**Question.** Which serialized relation defines the boundary pcurve of an EDGE whose supports carry no chart and no analytic isocurve relation?
 
 **Known.** `siemens_nx.md` §5.3 "An EDGE may carry null curve reference `1` with a finite tolerance. With a null" defines chart-certified transfer for a null carrier and states that transfer does not synthesize a model-space line between the vertices. `siemens_nx.md` §5.3 "A null `EDGE.curve` may instead have a non-null owning `FIN.curve`. The FIN" defines the FIN-carrier case. Neither defines a boundary pcurve for a plane or quadric support that has no chart.
 
-**Need.** We must know the witness to construct the boundary pcurve from the file. Endpoint inversion alone fixes only the two ends, so the interior of the interval carries no evidence, and a straight parameter-space chart on a plane asserts a straight model-space edge.
-
-**Note.** The implementation now derives an affine candidate and checks it at carrier and support breakpoints. The candidate is not a serialized witness, and the test cases build the carrier and surface directly in IR. Breakpoint agreement does not establish the complete interior rule for an arbitrary serialized boundary. The closure is therefore a conservative gate, not evidence of the NX boundary-pcurve rule.
+**Need.** We must define the relation that fixes the complete parameter-space interior. Endpoint inversion fixes only the interval ends; it does not determine the curve between them.
 
 ### PS-27. Unresolved EDGE end vertex
 
@@ -238,17 +234,23 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the reading to separate a closed edge from an edge that lost one endpoint. Without that rule, the decoder retains neither the edge nor its dependent loop when the end vertex has no decoded POINT.
 
-**Note.** The closure changes the decoder to drop unresolved edges except for one explicit closed-null-FIN case. The regression input is hand-built and malformed; it proves that the new path withholds an ambiguous edge, not that NX defines omission as the serialized rule. A valid implicit or omitted endpoint would be discarded by the current policy.
-
 ### PS-28. Compact tombstone boundary condition
 
 **Question.** Which condition ends a compact tombstone, and does a following byte pair constrain it?
 
 **Known.** `siemens_nx.md` §4.2 "**Tombstone:** a compact 6-byte deletion begins with `type:u16 BE`. A short XMT identity occupies" defines the tombstone as a self-delimiting six-byte form with two identity encodings. `siemens_nx.md` §4.2 "Tombstones form descending contiguous xmt runs that can span topology, geometry, attribute, intersection-auxiliary," defines the runs. Neither states a condition on the bytes after a tombstone.
 
-**Need.** We must know the boundary condition to admit every deletion. The deltas walk resynchronizes byte by byte, so it needs some end condition, and it currently requires the following two bytes to decode as a known node kind. A deletion whose successor bytes open a family that this condition does not name is discarded, the entity survives the merge, and no loss records the discard.
+**Need.** We must define the enclosing grammar or discriminator that distinguishes a six-byte tombstone from the same byte pattern inside another bounded payload. The following record family must not participate in tombstone identity.
 
-**Note.** The closure removes the successor check and relies on the six-byte form. Its opaque-suffix regression is synthetic and does not show that the six-byte pattern cannot occur inside another bounded payload or that every such occurrence is a deletion. The fixed-length interpretation remains unverified against an independent stream.
+### PS-40. Fixed-node frame ownership
+
+**Question.** Which stream invariant owns a fixed-node frame when the node does not participate in a complete body-topology graph?
+
+**Known.** `siemens_nx.md` §4.1 defines `node_id` as a big-endian u32 field with no smaller numerical bound. A full-domain interpretation is admitted when it preserves every baseline record and uniquely changes an incomplete body-topology graph into a complete graph. A typed XMT slot also admits the unique full-domain node of its required family, recursively through procedural carrier dependencies. These proofs admit mixed low and high node identities in topology, ownership, and carrier families. They do not prove a fixed frame with no complete-topology or typed-reference owner. Exact adjacency to complete fixed records on both sides is not an owner: opaque payloads can contain a complete fixed-record-shaped run whose end and start coincide with adjacent candidate boundaries.
+
+**Need.** We must identify the sequential or enclosing owner of a fixed frame that has no complete-topology or typed-reference owner. The proof must exclude complete-looking fixed records inside opaque payloads.
+
+**Conflict.** The ambiguity baseline still rejects several fixed-node families when `node_id` is greater than `1,000,000`. The cutoff cannot reject a topology node that completes the body graph or a uniquely referenced ownership or carrier node. It can still reject a valid unowned fixed frame.
 
 ### PS-29. Interleaved body revision sequences
 
@@ -322,7 +324,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which test separates a direct large-index fixed record from an escaped record when the byte after the type is `ff`?
 
-**Known.** `siemens_nx.md` §5.1 "Any fixed record may place an envelope escape byte `ff` between its type and xmt" states that the complete family field grammar disambiguates the two readings. `siemens_nx.md` §4.2 "Status-framed fixed records use a status byte in `0..=1` after each encoded reference." requires that exactly one reading ends before a recognized node type.
+**Known.** `siemens_nx.md` §5.1 "Any topology or geometry fixed node may place an envelope escape byte `ff`" states that the complete family field grammar disambiguates the two readings. `siemens_nx.md` §4.2 "Status-framed fixed records use a status byte in `0..=1` after each encoded reference." requires that exactly one reading ends before a recognized node type.
 
 **Need.** We must decide which test separates the two readings so that a direct record whose remainder byte is `ff` keeps its identity, and so that BODY and REGION records are not selected by candidate order.
 
@@ -370,13 +372,20 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `crates/cadmpeg-codec-nx/src/intersection.rs:367-376` chains both forms, `crates/cadmpeg-codec-nx/src/native/parasolid.rs:1391-1414` emits both under one intersection-record identity stem, and `crates/cadmpeg-codec-nx/src/decode.rs:1317-1331` and `1468-1476` use last-write-wins maps keyed only by XMT. **Evidence:** the construction forms share the stream-local XMT key and no cross-form collision check exists. **Counter-evidence:** the format may guarantee that the forms are mutually exclusive or that their XMT namespaces cannot collide; no raw record establishes either rule. **Failure:** if both forms occur with one XMT, iteration order selects one chart and one carrier relation without rejecting the ambiguity. This issue was found in the hostile sweep.
 
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization
 
 **Question.** What byte grammar and semantic role does each declared field of each NX OM class use?
 
-**Known.** `siemens_nx.md` §7.1 "UG_PART begins with a 12-byte row table" and `siemens_nx.md` §7.1 "A feature-history operation record begins at the fixed operation-header marker" define OM section boundaries, class and member declarations, store identities, compact indices, and expression records. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines typed fields for selected construction families.
+**Known.** `siemens_nx.md` §7.1 "UG_PART begins with a 12-byte row table" and `siemens_nx.md` §7.1 "A labeled feature-history operation record begins at the fixed operation-header marker" define OM section boundaries, class and member declarations, store identities, compact indices, and expression records. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines typed fields for selected construction families.
+
+The registry token family and the complete reference/class/member declaration
+regions are also defined in `siemens_nx.md` §7.1. Class ordinals exclude the
+reference list, and member owner tokens address that class list. The native
+decoder retains raw suffixes and exposes decoded registry metadata when the
+complete token heads and region boundaries are present.
 
 **Need.** We must know the remaining class grammars to decode feature history, constraints, attributes, and material bindings as typed fields.
 
@@ -384,9 +393,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What geometric quantities and coordinate spaces do the framed scalar pairs in a `SKETCH` construction payload represent?
 
-**Known.** `siemens_nx.md` §2 "An operation label equal to `SKETCH` denotes a sketch history operation." `siemens_nx.md` §7.1 "A sketch payload scalar field is" and `siemens_nx.md` §7.1 "A sketch fixed pair has one of four exact forms:" define sketch record identity and the framed payload lanes but do not assign a model-space frame, sketch entity, or constraint role from equal scalar values.
+**Known.** `siemens_nx.md` §2 "An operation label equal to `SKETCH` denotes a sketch history operation." `siemens_nx.md` §7.1 "A sketch payload scalar field is", `siemens_nx.md` §7.1 "A sketch repeated-type scalar pair is", `siemens_nx.md` §7.1 "A sketch fixed pair has one of four exact forms:", and `siemens_nx.md` §7.1 "A sketch scalar-vector lane is" define sketch record identity and the framed payload lanes. In the exact four fixed-pair branches, each `30` marker plus seven-byte suffix is a shifted binary64 atom whose emitted value is scaled by `1/4`; the first atom of the mixed branch uses the same rule. Shifted binary64 atoms are admitted only for the marker ranges defined in `siemens_nx.md` §7.1; other leading bytes do not form shifted binary64 values. The remaining lanes have no assigned model-space frame, sketch entity, or constraint role.
 
-**Need.** We must know the roles to construct neutral sketch geometry and constraints.
+**Need.** We must identify the entity roles and coordinate space of the scalar fields, repeated pairs, coordinate pairs, scalar-vector lanes, and mixed-pair binary32 value to construct neutral sketch geometry and constraints. The fixed-pair second value and the relationship between the named point records and sketch geometry also require a typed owner or controlled differential.
 
 ### OM-03. `DATUM_PLANE` scalar-pair geometry
 
@@ -394,7 +403,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `siemens_nx.md` §7.1 "A `DATUM_PLANE` payload begins" and `siemens_nx.md` §7.1 "A datum-plane object scalar-pair frame is" and `siemens_nx.md` §7.1 "A datum-plane descriptor block is exactly 40 bytes:" define datum-plane branches, resolved blocks, scalar-pair framing, descriptors, and feature identity.
 
-**Need.** We must know the roles to construct the model-space reference plane.
+**Need.** We must know one complete relation that assigns the framed scalar
+pairs and descriptor or object records to a model-space origin, unit normal,
+and in-plane axis.
+
+**Conflict.** The branch indices select descriptor and object blocks but do not
+assign plane-frame roles. Descriptor blocks carry an identity, schema index,
+and label; scalar-pair frames carry two values. Equal descriptor identities
+between `DATUM_PLANE` and `DATUM_CSYS` records do not assign either operation
+as the source of an origin, axis, or normal.
 
 ### OM-04. `DATUM_CSYS` scalar-pair geometry
 
@@ -402,59 +419,94 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `siemens_nx.md` §7.1 "A `DATUM_CSYS` payload begins" and `siemens_nx.md` §7.1 "An object-payload scalar-pair frame is" define the eight-reference construction lane, logical payload, scalar-pair framing, and feature identity.
 
-**Need.** We must know the roles to construct the model-space coordinate-system frame.
+**Need.** We must know one complete relation that assigns the payload scalar
+fields and pair records to a model-space origin and three orthonormal axes.
+
+**Conflict.** The eight construction references define ordered block identity,
+and the first two blocks define one logical payload. Scalar fields, scalar
+pairs, fixed pairs, and descriptor lanes have separate frames and no serialized
+role relation. Column-row reuse and equal descriptor identity establish block
+or history relations only; they do not assign an origin or axis.
 
 ### OM-05. OM declaration trailing code
 
 **Question.** What does the trailing byte in an OM class or member declaration mean?
 
-**Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the declaration length, `UGS::` or `m_` name, trailing-code boundary, and following registry suffix.
+**Known.** `siemens_nx.md` §7.1 defines the declaration length, `UGS::` or
+`m_` name, and the registry-token byte sequence that follows the name. The
+legacy `trailing_code` field retains the first byte of that sequence.
 
-**Need.** We must know the meaning to validate and transfer declaration metadata.
+**Need.** We must know the code domain and the relation between the trailing
+byte and the declared class or member semantics.
+
+**Conflict.** The byte after the printable `UGS::` or `m_` name is not one
+standalone code domain: it is a direct, compact, wide, or null registry-token
+prefix, and its width depends on that prefix. The decoded token positions do
+not assign a type, visibility, field-value grammar, or object-record binding.
 
 ### OM-06. OM registry suffix fields
 
 **Question.** What does each byte in a bounded OM field-registry suffix mean?
 
-**Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the suffix boundary and the 11-to-14-byte prefix, fingerprint, and terminal-byte decomposition.
+**Known.** `siemens_nx.md` §7.1 defines the registry token family, the
+complete class tail (storage token, base token, eight-byte fingerprint, and
+reference token), and the complete member head (storage token and owner
+token). The native decoder retains the exact declaration suffix and decodes
+these token values when their required bytes are present.
 
-**Need.** We must know the field roles to construct the complete OM schema registry.
+**Need.** We must know the semantic field roles represented by the layout
+prefix, schema fingerprint, terminal byte, and remaining member-suffix bytes.
 
-### OM-07. Offset-store body to segment-image relation
+**Conflict.** The 11–14-byte suffix decomposes into a 2–5-byte prefix,
+eight-byte fingerprint, and one terminal byte for some legacy declarations,
+but that heuristic is not the complete registry grammar. The registry token
+positions do not assign an OM object record to a class or provide the value
+grammar, cardinality, access role, or semantic meaning of each member.
 
-**Question.** How does a primary feature body field that resolves to an offset-store block identify a segment body-image object-index pair?
+### OM-08. Blend-created faces
 
-**Known.** `siemens_nx.md` §2 "A partition or plain cached-body wrapper word begins" and `siemens_nx.md` §2 "A primary feature body field in the object namespace reuses a segment body" define segment body-image tuples and prohibit a relation based only on equal integer values across namespaces. They also define primary-body fields and body selection.
+**Question.** How does a blend construction identify the faces created by that
+blend?
 
-**Need.** We must know the cross-store relation to attach the feature output and lineage to the correct body image.
+**Known.** A nested operation body-write frame retains the persistent body
+identity, partition-local GROUP node, endpoint tag, and write-state body-image
+object. Endpoint tags `10`, `12`, and `15` select the body-image field.
+The `BLEND` and `FACE_BLEND` labels with body-write frames identify edge-blend
+and face-blend operations. When the owned circular blend-carrier projection is
+complete, the corresponding neutral family and constant radius are available.
+The edge or face selections and created-face relation remain separate
+questions. GROUP member XMTs are checked against the exact same-family node in
+the delta-merged partition graph before the guarded unique-node fallback; this
+resolves current topology identities without assigning creation provenance.
+Explicit Boolean operations independently require the body-image object to
+equal the target and exclude every tool. A closed GROUP chain resolves current
+members by topology family and kernel node identity and transfers current FACE,
+EDGE, and VERTEX identities to the feature result state. A labeled or unlabeled
+write whose GROUP records resolve to exactly one partition binds its persistent
+body identity to that partition. When the partition has one body, every labeled
+write with that identity writes that body. Independently, a unique plain-stream
+alias equal to the persistent body identity binds that write to the unique body
+in the selected stream without requiring body-image block resolution.
+Parasolid topology attribute ownership is independently resolved from a valid
+attribute-list head and the first leading reference of each type-81 record; the
+third leading reference is not required for that ownership relation.
 
-**Note.** `crates/cadmpeg-codec-nx/src/native/features.rs:3686-3746` requires one offset store, one data-block use, and one unique segment alias, while `native/segments.rs:137-173` supplies the alias-equality join. The closure test constructs `FeatureBodySegmentUse` inputs and verifies uniqueness; it does not provide an NX record that makes an offset-store block and a segment alias the same object. The integer equality remains a promoted cross-store relation, so this item is reopened.
+**Need.** We must identify the blend construction relation that assigns the
+created-face subset.
 
-### OM-08. Other feature-history object relations
-
-**Question.** What relation does each feature-history object index that is not a primary-body writer or Boolean tool use?
-
-**Known.** `siemens_nx.md` §7.1 "A nested operation object-relation frame is" defines the exact nested frame, canonical endpoint encoding, ordered endpoint retention, and source offsets. The native decoder retains these frames as `feature_operation_object_relations` without assigning endpoint roles. `siemens_nx.md` §2 "Within a feature-history record area, an operation header is encoded as the" and `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §2 "A body-affecting operation record contains exactly one primary-body field" define operation-header inputs, shared-block identity groups, primary-body lineage, and Boolean operands.
-
-**Need.** We must map each retained nested frame to its owning feature relation before constructing feature dependencies or selections. The link tag and endpoint identities alone do not establish a body, operand, input, or output role.
-
-### OM-09. Embedded operation common-frame ownership
-
-**Question.** Which operation owns each embedded common frame, and what do the state-lane fields other than `m_modifiesParasolidData` mean?
-
-**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" and `siemens_nx.md` §7.1 "An exact common frame is" define the exact frame and state-lane boundaries for the admitted operation families. The fourth state byte is the Boolean `m_legacyInactiveModules` field. The fifth state byte is the Boolean `m_modifiesParasolidData` field. The sixth and seventh state bytes are the exact two-byte `m_splitTrackingData` representation. The eighth state byte is the unsigned `m_groupCount` field. Legacy module inactivity is not feature suppression.
-
-**Need.** We must know ownership and field roles to attach the state to the correct operation.
-
-**Note.** Commit `80222d179` removed this item from the ledger without a serialized witness; its relevant change is documentation and common-frame handling, not an independent ownership record. Matching the frame shape across synthetic operations does not prove which operation owns an embedded frame or the meaning of every lane. The item is reopened.
+**Conflict.** GROUP membership assigns topology to the producing feature but
+does not by itself identify which member faces carry a particular blend-surface
+construction.
 
 ### OM-10. Operation suppression fields
 
 **Question.** How do the embedded operation state lanes encode suppression?
 
-**Known.** `siemens_nx.md` §2 "Every feature producing a body in the selected current B-rep is active in the" derives active state for the closed output-and-dependency graph and leaves suppression outside that graph unresolved.
+**Known.** `siemens_nx.md` §2 derives active state from the closed output-and-dependency graph and admits retained-history primary-body and partition-scoped body-write closure witnesses when neutral output projection cannot bind an operation to the selected body. `siemens_nx.md` §7.1 defines the feature-history journal, status rows, diagnostic messages, `m_rollForwardStates` groups, and object state-counter map. An audit-trail section has a distinct role-gated complete-row grammar and the native decoder retains its ordinal, optional selector, timestamp, tagged value, exact row bytes, and source offsets. The native decoder retains exact status codes and payloads, message values and count/severity words, group rows, and counter-map rows. Status code `41` with plain payload is the built, normal state. The first three common-frame state bytes remain an untyped operation-state prefix; bytes 3 through 7 are legacy module inactivity, Parasolid-data mutation, split tracking, and group count. The saved-toggle stream carries independent toggle identities and states. The Parasolid `UGS/ObjectState` class is a one-field code-3 character attribute whose value is an ordinary type-84 string; its owner, when resolved, is a topology attribute-list relation. The OM registry classes `UGS::OM::ObjectStateCollection` and `UGS::OM::ObjectState` are distinct declarations. The `m_objectStateCollection` member has declaration code `78` in both UG_PART and RMFastLoad. That code is not a section-local class ordinal: the UG_PART class ordinals differ, and RMFastLoad does not declare the collection class. The product-anchored control form retains an aligned u32 value lane whose in-range values address same-store data blocks; it does not declare class references. An object record retains its object identifier and bounded bytes, but no class binding or typed field value.
 
 **Need.** We must know the serialized suppression fields to construct operation state for all configurations.
+
+**Conflict.** Neither the common-frame state lane nor the saved-toggle stream identifies a feature suppression value. A status row identifies an object and retains a code, but the code has no suppression meaning by itself. A roll-forward relation row retains two object endpoints, but the operation identity, state-object identity, and typed state value require separate unique joins. The `78` member code does not supply the missing class reference. The OM declarations and product-anchored value lane do not provide a relation from a class declaration to an object record or from an object record to a typed state value. The Parasolid `UGS/ObjectState` lane provides a character value and, when present, a topology owner, but no operation owner or suppression domain.
 
 ### OM-11. `DELETE` nullable-reference roles
 
@@ -464,6 +516,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the slot roles to decode the delete construction independently of its primary-body target.
 
+**Conflict.** Each slot carries only a nullable canonical object index. Unique
+offset-store resolution identifies a block, but the slot has no discriminator,
+schema tag, or independent relation that assigns an object family or semantic
+role. Slot order and five-block concatenation preserve construction order only;
+the separate primary-body field does not label any of these slots.
+
 ### OM-12. Inactive-arrangement body state
 
 **Question.** Which bodies belong to each inactive arrangement, and what per-body state does that arrangement select?
@@ -471,6 +529,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `siemens_nx.md` §2 "`/Root/part/arrangements` has an `Arrangements` root." and `siemens_nx.md` §2 "A unique part-owned `NX_Arrangement` string attribute names the active" define arrangement identity and active body membership. Other arrangements have no body membership without a separate relation.
 
 **Need.** We must know the relation to construct inactive configuration body sets.
+
+**Conflict.** The arrangement XML contains only configuration name, default
+flag, and order. The current B-rep body census has no arrangement key, and the
+active attribute join identifies only the selected configuration. Feature
+closure also describes the current body set, not an alternate arrangement's
+membership or per-body state.
 
 ### OM-13. Inactive-arrangement parameter state
 
@@ -480,6 +544,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the relation to construct inactive configuration parameter maps.
 
+**Conflict.** Neutral parameter identities, evaluated values, ownership scopes,
+and dependencies contain no arrangement identity or per-arrangement override
+selector. The complete parameter map is derived only for the unique active
+configuration after the global parameter graph passes its ownership and order
+checks.
+
 ### OM-14. Operation terminal discriminators
 
 **Question.** What does each type index, flag, and trailing index in an operation terminal discriminator lane mean?
@@ -487,6 +557,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" defines the exact terminal discriminator lanes for the admitted operation payloads and retains their serialized order.
 
 **Need.** We must know the field roles to construct termination, direction, draft, and other operation controls.
+
+**Conflict.** The terminal lane supplies two compact indices, four flag bytes,
+and an ordered trailing-index lane. No serialized type definition, operation
+control declaration, or unique relation assigns those fields to a termination,
+direction, draft, or other semantic control. A link to an immediately
+preceding common frame establishes byte ownership only; it does not assign
+field roles.
 
 ### OM-15. `CPROJ` construction-reference roles
 
@@ -496,6 +573,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to construct a neutral projected curve.
 
+**Conflict.** The three references use one canonical encoding and resolve only
+to offset-store blocks. The fixed middle and suffix markers delimit the field,
+but do not identify a source curve, target surface, direction, or combination
+control. Reconstructed strings remain payload-owned and have no independent
+role relation.
+
 ### OM-16. `CPROJ_CMB` construction-reference roles
 
 **Question.** Which `CPROJ_CMB` construction references select the source curves, target surfaces, directions, and combination controls?
@@ -503,6 +586,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `siemens_nx.md` §7.1 "A `CPROJ_CMB` payload contains at most one construction-reference graph framed as" defines the ordered eight-reference graph, block resolution, and logical payload.
 
 **Need.** We must know the roles to construct the combined projected curves.
+
+**Conflict.** The branch lanes prove repeated-anchor equality and preserve
+branch order, while the tail preserves two additional references. All eight
+non-repeated references still resolve only to offset-store blocks; no field
+marker assigns curve, surface, direction, or combination semantics.
 
 ### OM-17. `FSET` selection roles
 
@@ -512,13 +600,25 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to construct the selected face or feature set.
 
+**Conflict.** The printable selector is retained as an opaque value, and the
+two groups are distinguished only by their serialized first/second position.
+Every reference uses the same object-index form and resolves only to an
+offset-store block. No selector vocabulary, target schema, or relation to a
+face or feature set assigns either group a selection role.
+
 ### OM-18. Pattern construction-reference roles
 
 **Question.** Which ordered references in `Pattern Feature`, `Pattern Geometry`, and `Geometry Instance` select the seed, transform, and pattern controls?
 
-**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph." and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." define the construction graph, logical payload, and counted row forms.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph in one of two exact layouts." and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." define the two construction graph framings, logical payload, and counted row forms.
 
 **Need.** We must know the roles to construct neutral pattern dependencies and transforms.
+
+**Conflict.** The graph layouts distinguish framing variants and preserve slot
+order, but every non-null reference uses the same object-index form. Repeated
+anchors, terminal slots, and the `Geometry Instance` one-reference form do not
+identify a seed, transform, or control family. No relation joins a graph slot
+to a transform row or an operation input with that role.
 
 ### OM-19. Pattern-row scalar roles
 
@@ -528,13 +628,23 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to construct pattern coordinates, spacing, angles, and other controls.
 
+**Conflict.** Row schemas and terminal modes select byte layout and scalar
+width, not physical meaning. The Q1.55 and binary scalar lanes retain finite
+values, order, selectors, and row ordinals, but provide no units, axis or
+spacing labels, or relation to a seed/reference role.
+
 ### OM-20. Pattern-row selector roles
 
 **Question.** What does each compact selector in a counted pattern row select?
 
-**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." defines selector framing, non-null requirements, row ordinals, and exact tokens.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." and §7.1 "`Pattern Feature` payloads contain at most one counted reference lane." define selector framing, non-null requirements, row ordinals, counted references, and exact tokens.
 
 **Need.** We must know the roles to bind each row to its seed or transform operand.
+
+**Conflict.** A row selector is a non-null compact value retained with its
+row ordinal and token offset. The counted reference lane has its own ordered
+object indices, but no serialized equality or ownership field joins either
+lane to a construction-graph reference, seed, or transform operand.
 
 ### OM-21. `Multi Instance Output` roles
 
@@ -544,15 +654,25 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to relate pattern instances to their output bodies or geometry.
 
+**Conflict.** The lane provides selector values, serialized instance and row
+ordinals, an instance count, and trailing object references. These fields are
+bound only by row order and count invariants; no relation identifies a
+selector target, an output-body namespace, or the geometry represented by a
+trailing reference.
+
 ### OM-22. Equal pattern and profile labels
 
 **Question.** What serialized relation establishes identity or a seed relation between blocks that have equal canonical line labels?
 
-**Known.** `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph." define operation input identity by resolved store block. Equal text in distinct pattern and profile blocks does not establish block identity.
+**Known.** `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph in one of two exact layouts." define operation input identity by resolved store block. Equal text in distinct pattern and profile blocks does not establish block identity.
 
 **Need.** We must know the relation to connect a pattern to the correct seed without merging unrelated blocks.
 
-**Note.** Commit `80222d179` removed this item as a documentation-only change. Refusing an equal-label join is a conservative ambiguity policy, not evidence that equal labels never identify a seed or that another serialized relation is absent. The closure cited no pattern/profile record from the corpus, so the item is reopened.
+**Conflict.** A canonical line label is payload content, not a persistent
+object identity. Pattern and profile construction blocks retain separate
+operation-owned block identities; only an exact shared input block or another
+unique serialized relation can join them. Equal text labels do not provide
+that relation.
 
 ### OM-23. `POINT` header fields
 
@@ -562,6 +682,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to select the point construction method and its operand.
 
+**Conflict.** The header reference selects one bounded six-scalar lane and
+the mode selects a serialized branch, but neither field names an operand
+family or construction method. The header-to-lane boundary proves ownership
+only; it does not assign the lane to a model point, support, or other datum
+construction role.
+
 ### OM-24. `POINT` scalar triples
 
 **Question.** What coordinate spaces and construction roles do the two ordered scalar triples in the selected six-scalar `POINT` lane use?
@@ -569,6 +695,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `siemens_nx.md` §7.1 "The header reference selects a six-scalar lane ending in its addressed offset-store block." defines the six-scalar lane, its selected form, values, and exact boundaries. A shared target block does not identify either triple as the model-space point.
 
 **Need.** We must know the roles to construct the datum point at its authored model-space position.
+
+**Conflict.** The selected lane contains two ordered triples of finite scalar
+values and no coordinate-space, axis, unit, or role discriminator. Byte
+continuity across the preceding and selected blocks establishes one lane, not
+which triple is the authored point or how the other triple participates.
 
 ### OM-25. `DRAFT` construction roles
 
@@ -578,13 +709,29 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to construct a neutral draft operation.
 
-### OM-26. `SKIN` construction roles
+**Conflict.** The leading lane, four-reference graph, identity frames,
+scalar lanes, and terminal indices are separately framed and store-resolved,
+but no field-role relation assigns faces, plane, pull direction, angle, or
+termination semantics. Shared store identity and serialized order establish
+construction ownership only.
 
-**Question.** Which ordered `SKIN` references and branch groups select sections, guides, continuity, and terminal controls?
+### OM-26. `SKIN` and `THRU_CURVE` construction roles
 
-**Known.** `siemens_nx.md` §7.1 "The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions." and `siemens_nx.md` §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." define the loft family, common construction envelope, ordered references, and logical payload.
+**Question.** Which ordered `SKIN` and `THRU_CURVE` references and branch groups select sections, guides, continuity, and terminal controls?
+
+**Known.** `siemens_nx.md` §7.1 "The `SKIN` and `THRU_CURVE` operation labels identify loft-family constructions.", §7.1 "A `THRU_CURVE` payload begins with the exact construction-reference envelope", §7.1 "The envelope is followed by one counted branch group.", and §7.1 "`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope." define the loft family, both exact construction envelopes, counted branch groups, ordered references, and the fourteen-block logical payload. A complete `THRU_CURVE` allocation places its nine envelope-reference blocks before its branch member and terminal blocks. A complete `SKIN` or `Studio Surface` allocation places its first eleven envelope-reference blocks before the branch allocation and its final three envelope references after it; an internal storage gap may occur. Branch declared counts include their terminal references, while the `THRU_CURVE` group count includes an implicit owner slot. These positional rules establish storage ownership and order only.
 
 **Need.** We must know the roles to construct the neutral loft surface or body.
+
+**Conflict.** The `SKIN` envelope preserves fourteen references in order, the
+`THRU_CURVE` envelope preserves nine references in order, and both operations'
+branch groups preserve modes, state lanes, members, and terminal references.
+The positional allocation and branch ordinal provide storage order but no
+relation assigning sections, guides, continuity, or terminal controls. The
+envelope-reference slots are not all one consecutive reference-only run.
+Scalar pairs and strings are payload-owned and do not add those roles. The
+operation-owned data blocks may still contain selections of existing curve
+objects, so allocation ownership does not establish neutral curve identity.
 
 ### OM-27. `Studio Surface` construction roles
 
@@ -594,13 +741,10 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles to construct the neutral freeform surface.
 
-### OM-28. Plain cached-body ownership
-
-**Question.** Which feature owns each plain cached-body stream?
-
-**Known.** `siemens_nx.md` §2 "A partition or plain cached-body wrapper word begins" and `siemens_nx.md` §7.2 "Across the ordered feature-history sections, the last non-`DELETE` operation carrying a primary-body field is that body object's latest writer." define segment tuples for partition and plain cached-body streams, body writers, operands, aliases, and terminal lineage.
-
-**Need.** We must know the ownership relation to use a cached body as the correct feature result or tool.
+**Conflict.** `Studio Surface` shares the fourteen-reference envelope and
+counted branch grammar with `SKIN`; the operation label selects the family but
+does not label individual references or branch members. No serialized field
+assigns control geometry, continuity, or terminal semantics.
 
 ### OM-29. `RMFastLoad` class records
 
@@ -610,78 +754,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the class grammars to transfer the remaining fast-load state as typed data.
 
-### OM-30. Hole-package feature hierarchy
-
-**Question.** Does a `HOLE PACKAGE` operation own its related `SIMPLE HOLE` operations as child features, replace them as the authored neutral feature, or coexist with them as an independent operation?
-
-**Known.** `siemens_nx.md` §7.1 "A `HOLE PACKAGE` payload contains at most one construction-group lane framed as" and `siemens_nx.md` §7.1 "One package lane relates to one simple-hole construction group when their four resolved block identities are equal in serialized order" define the four-block package lane and its unambiguous equality relation to a simple-hole construction group. The equality does not encode hierarchy, dependency direction, or neutral feature identity.
-
-**Need.** We must identify the serialized hierarchy or operation-role field before collapsing, parenting, or suppressing either neutral feature family.
-
-**Conflict.** This item, the specification, and the decoder disagree, and the specification disagrees with itself. `siemens_nx.md` §7.1 "A `HOLE PACKAGE` operation related to one simple-hole construction group owns" states the ownership as fact and adds that the internal operations do not also project as neutral history features. `siemens_nx.md` §7.1 "One package lane relates to one simple-hole construction group when their four resolved block identities are equal in serialized order" asserts the same ownership in its fourth sentence and then states that the equality does not assign hole parameters, placement, output, suppression, or dependency direction. The decoder applies the ownership: `hole_package_projection` in `crates/cadmpeg-codec-nx/src/native/attach.rs` collects the group's `SIMPLE HOLE` labels as internal operations, and `attach_feature_operations` removes them from the emitted features and transfers their output, diameter, treatments, and axis placements to the package. This item says that field is not yet identified, so one of the three must change. Resolve the specification against the serialized evidence before the decoder keeps deleting history features.
-
-**Note.** The closure commit matched four resolved blocks and used synthetic feature records to exercise the projection. `native/attach.rs:5753-5869` still infers ownership from block equality and suppresses the child operations. A parent, child, or operation-role field has not yet been identified in corpus NX records. The equality was promoted to a hierarchy witness, so this item is reopened.
-
-### OM-31. Feature-history construction-order evidence
-
-**Question.** Which serialized field establishes the construction order of feature-history operations, inside one record area and between record areas?
-
-**Known.** `siemens_nx.md` §7.1 "Within one feature-history record area, operation records are stored in reverse" and `siemens_nx.md` §7.1 "Neutral feature ordinals and dependency precedence order labels by descending" define the reversed order inside one area and the serialized order between areas. Neutral feature ordinals, dependency precedence, body lineage, and terminal-body selection all derive their order from that reversal. An operation label carries a name, four object-index lanes, and a source offset. It carries no sequence number, no timestamp, and no predecessor reference.
-
-**Need.** We must know the field to order operations when one record area holds records of more than one construction generation, or when the serialized area order is not the construction order. Record order is the only current witness, so a file that stores areas or records in another order gives a reversed history with no diagnostic.
-
-**Note.** The closure sorts feature sections by `min_source_offset` in `crates/cadmpeg-codec-nx/src/native/features.rs:39-58` and derives chronology from that order. The tests construct source offsets; they do not compare them with an independent serialized sequence or dependency field. Source-offset order was promoted to construction chronology, so this item is reopened.
-
-### OM-32. All-terminal body-lineage mappings
-
-**Question.** Which serialized state separates a complete body mapping in which every emitted body is terminal from a mapping whose terminal status is unresolved?
-
-**Known.** `siemens_nx.md` §7.1 "Bodies named by validated segment binding tuples exist at the start of retained feature history." and `siemens_nx.md` §7.1 "A complete mapping may retain every emitted body; this is a resolved all-terminal result, not an unresolved selection." define writer and consumption ordering and admit the all-terminal case as resolved. Both a file whose operations supersede no body and a file whose lineage evidence is absent produce the same all-terminal set.
-
-**Need.** We must know the state to separate the two cases. Without it, a part whose lineage evidence is missing transfers every emitted body as a current body instead of reporting the selection as unresolved.
-
-**Note.** `crates/cadmpeg-codec-nx/src/decode.rs:1948-2001` treats `mapped == emitted` as the resolved all-terminal case. A synthetic empty-lineage case produces the same set as a valid all-terminal file, and a serialized discriminator has not yet been found in corpus records. This is a promotion of output compatibility to lineage evidence, so the item is reopened.
-
-### OM-33. Decisive active-body membership
-
-**Question.** What makes an `RMFastLoad` membership assignment decisive for one body image against another?
-
-**Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the membership table, the shared FACE, EDGE, and VERTEX identity space, independent per-image assignment, and the rule that an image without active membership is retained unless another image has a decisive membership assignment. It does not define decisive.
-
-**Need.** We must know the condition to select the active bodies. The current decoder retains every image whose complete nonempty FACE, EDGE, and VERTEX node-ID set is a subset of the active set, but the format does not establish whether that subset relation is decisive, whether active IDs may be stale or unioned, or how multiple matching images should be handled. The selection deletes other bodies and their complete topology and geometry from the model, so an unsupported membership rule removes a current body permanently. The exact feature-history rule runs only when this condition declines, so membership semantics take precedence over it.
-
-**Note.** `crates/cadmpeg-codec-nx/src/decode.rs:1905-1945` selects every body whose complete nonempty topology-ID set is a subset of the active set. The subset rule, active-set authority, and union/stale behavior are not independently evidenced by a real NX file; the regression fixtures construct the sets consumed by the rule. The item is reopened.
-
-### OM-34. OM registry schema-role precedence
-
-**Question.** Which schema role does a linked OM registry take when it declares more than one role marker?
-
-**Known.** `siemens_nx.md` §2 "Linked OM registries define their schema role by exact declarations:" names `UGS::Solid::Topol` for the model store, `UGS::FEATURE_RECORD` for feature history, `UGS::EXP_expression` for expressions, and `UGS::OM::SaveAuditTrail` for audit data when no preceding specialized marker applies. It orders the audit-data marker against the others. It does not order the first three against each other.
-
-**Need.** We must know the precedence, or the rule that makes the first three markers mutually exclusive. The decoder tests them in a fixed order and takes the first present marker without testing the others. The role selects which sections the feature-history extractors walk, so a registry that carries two markers can supply operation labels, body references, and lineage from a store that is not feature history.
-
-**Note.** `crates/cadmpeg-codec-nx/src/native/segments.rs:498-512` now rejects multiple role markers as ambiguous, but that is a conservative policy, not evidence that multiple markers are invalid or that one role has precedence. The closure test uses synthetic marker combinations. No serialized role discriminator was found, so this item is reopened.
-
-### OM-35. Tagged-reference admission in a bounded record
-
-**Question.** Which field separates a tagged-reference stream from per-class field data inside one bounded OM record?
-
-**Known.** `siemens_nx.md` §7.1 "**Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cr" defines the persistent-handle and tagged-reference token forms and states that they occur as pairs inside one externally bounded record. It defines an unconditional retention rule for offset-store control blocks only. It states no admission rule for an OM entity record.
-
-**Need.** We must know the field to admit the correct references. A marker-shaped word can also be ordinary field data, so a token scan alone cannot separate the two. The decoder resolves this with two invented numbers: it accepts the longest suffix that holds at least eight persistent handles and whose tokens cover at least nine tenths of the remaining bytes. A shorter reference run is dropped complete and reports no loss. Field bytes before a long run are admitted as references and reach the model with decoded values.
-
-**Note.** `crates/cadmpeg-codec-nx/src/om.rs:5379-5402` admits a tagged `28` token only when it immediately follows a persistent `e0` token. That adjacency rule is still a parser heuristic; the closure removed the prior density threshold but did not establish that an intervening field is impossible or that every adjacent pair is a reference. Synthetic paired-token tests are not independent serialized evidence. The item is reopened.
-
-### OM-36. Named payload interval terminator
-
-**Question.** What ends a named payload interval in an offset store?
-
-**Known.** `siemens_nx.md` §7.1 "A named payload interval whose name is exactly `Point` followed by a positive decimal ordinal is a sketch point" defines the interval as ending exclusively at the next complete name field or at the reconstructed payload boundary, and rejects the typed point when an additional scalar occurs. `siemens_nx.md` §7.1 "A sketch payload name field is `66, compact_type, 03, declared_len:u8, text[declared_len-2], 00`" defines the name field. Block boundaries do not delimit values or named-record boundaries.
-
-**Need.** We must know the terminator to apply the scalar-cardinality rule. The decoder adds one data block at a time and stops at the first accumulated span that holds exactly two scalars, so it never observes a third scalar in a later block. An interval that the format rejects then transfers as a typed point carrying the first two of its values.
-
-**Note.** `crates/cadmpeg-codec-nx/src/om.rs:836-873` adds the current scalar-count and next-name checks, but the closure relied on synthetic named blocks and does not establish that the next name field is the serialized interval terminator in all offset-store records. The point interpretation remains a promoted framing rule, so this item is reopened.
-
 ### OM-37. Final field declaration in a pointerless OM section
 
 **Question.** What terminates the final member-field declaration in a section without a unique valid record-area pointer?
@@ -690,7 +762,227 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the terminal marker or alternate boundary for the final field declaration when no valid record-area pointer exists. A pointerless section cannot establish a complete field registry from the settled byte structure alone.
 
-### OM-38. `RMFastLoad` membership table location
+### OM-38. `SWP104` leading construction roles
+
+**Question.** Which sweep parameters and selections do the four scalars, mode, counted member references, state lane, and terminal reference encode?
+
+**Known.** `siemens_nx.md` §7.1 "The `SWP104` operation label identifies a sweep-family construction." and §7.1 "A bounded `SWP104` payload begins with one construction branch" define the exact leading branch, independent declared and witnessed counts, ordered references, state-lane bounds, and terminal marker.
+
+**Need.** We must identify the profile, path, result mode, orientation, transition, transformation, twist, and scale fields required for a neutral sweep feature.
+
+**Conflict.** Serialized order, count relations, and offset-store identities do not assign semantic roles to the retained values or references.
+
+### OM-39. `SHELL` construction roles
+
+**Question.** Which serialized bodies, opening faces, thickness, side, offset mode, corner join, and intersection policies define a `SHELL` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `SHELL` operation label identifies a thin-wall shell construction." defines the feature family and retains the neutral shell definition with unresolved construction fields. The operation record, body-history relations, and topology graph remain independently available.
+
+**Need.** We must identify the complete construction-role relation to populate the shell input bodies, removed faces, wall thickness, outward side, offset mode, corner join, and intersection policies.
+
+**Conflict.** The operation label identifies the shell family but does not assign roles to its object-index fields, body-write output, or result topology. Output body ownership does not identify the pre-operation bodies or opening faces, and the current scalar and reference lanes do not provide a unique thickness, side, mode, join, or intersection-policy witness.
+
+### OM-40. `ENLARGE` construction roles
+
+**Question.** Which serialized input faces, extension law, extent, and copy or associativity controls define an `ENLARGE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `ENLARGE` operation label identifies a surface-enlarge construction." defines the feature family and retains the unresolved surface-extension definition. The operation has a body-write relation in the admitted feature-history grammar.
+
+**Need.** We must identify the complete construction-role relation to populate the selected faces, extension law, extent, and copy or associativity controls.
+
+**Conflict.** The operation label and body-write output identify the surface-enlarge family and result body, but the current object-index and payload lanes do not assign the pre-operation face set or the extension and copy controls. Result topology does not identify those authored roles.
+
+### OM-41. `EXTRACT_FACE` construction roles
+
+**Question.** Which serialized faces and associativity, copy, and sew controls define an `EXTRACT_FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `EXTRACT_FACE` operation label identifies a face-extraction construction." defines the family and retains its dedicated unresolved neutral definition. A resolved body-write relation retains a sheet result body.
+
+**Need.** We must identify the complete source-face and result-control relation to construct an extract-face operation.
+
+**Conflict.** The operation label and resolved sheet result identify the family, but the operation object-index lanes and body-write relation do not assign source faces or associativity, copy, or sew controls. Result sheet ownership does not identify the authored source selection.
+
+### OM-42. `SYMBOLIC_THREAD` construction roles
+
+**Question.** Which serialized face, diameter, and axial extent fields define a `SYMBOLIC_THREAD` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `SYMBOLIC_THREAD` operation label identifies" defines the family. Complete type-`03` profile, designation, and mode text frames remain in the native feature arena; the operation has no body output relation.
+
+**Need.** We must identify the cylindrical-face relation and dimensional fields to populate the neutral cosmetic-thread definition.
+
+**Conflict.** The label and text frames identify the cosmetic-thread family, but the current object-index lanes and text values do not assign a unique cylindrical face, nominal diameter, or axial extent.
+
+### OM-43. `DATUM_AXIS` construction roles
+
+**Question.** Which serialized source and reference fields define the model-space origin and direction of a `DATUM_AXIS` or `EXTRACT_DATUM_AXIS` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `DATUM_AXIS` and `EXTRACT_DATUM_AXIS` operation labels identify" defines the datum-axis family. The operations have no body output, and their complete neutral axis lines are not present in the admitted operation record fields.
+
+**Need.** We must identify the source geometry, model-space origin, direction, and any orientation controls that define each datum axis.
+
+**Conflict.** The operation labels identify a datum-axis family, but the four operation-header object-index slots, input-block identity, and bounded payload do not assign a unique source/reference relation or finite origin and direction.
+
+### OM-44. `BRIDGE_CURVE` construction roles
+
+**Question.** Which serialized source curves, end conditions, and continuity fields define a `BRIDGE_CURVE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `BRIDGE_CURVE` operation label identifies" defines the bridge-curve family. The operation has no body output, and its complete curve construction is not present in the admitted operation record fields.
+
+**Need.** We must identify the ordered source curves, end-condition modes, continuity constraints, and any fit or tolerance controls.
+
+**Conflict.** The label identifies a bridge-curve family, but the operation-header slots are null and the bounded payload does not assign a unique source-curve or continuity relation.
+
+### OM-45. `FILL_HOLE` construction roles
+
+**Question.** Which serialized input references, fill geometry, continuity, and healing controls define a `FILL_HOLE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `FILL_HOLE` operation label identifies" defines the body-affecting hole-fill family. A decoded operation retains two input-block references and a body-write relation, while its neutral output and construction-role assignment remain unresolved.
+
+**Need.** We must identify the source-hole boundary, fill geometry, continuity law, and healing controls to construct a complete neutral operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family and a body-affecting result, but the two input-block references and bounded payload do not assign the source-hole, fill, continuity, or healing roles.
+
+### OM-46. `MOVE_FACE` construction roles
+
+**Question.** Which serialized face selection and motion fields define a `MOVE_FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `MOVE_FACE` operation label identifies" defines the body-affecting direct face-motion family. A resolved body-write frame identifies a body-affecting result. The four operation-header object-index slots can be null, and the neutral face selection and motion law remain unresolved.
+
+**Need.** We must identify the selected faces, offset or translation law, rotation axis, and motion magnitude to construct a complete neutral operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the object-index slots and bounded payload do not assign a unique face selection or motion law.
+
+### OM-47. `CYLINDER` construction roles
+
+**Question.** Which serialized fields define the radius, height, placement, angular bounds, and Boolean mode of a `CYLINDER` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `CYLINDER` operation label identifies" defines the body-affecting cylinder primitive. A resolved body-write frame identifies a body-affecting result. The operation can retain object-index values, but the neutral dimensions, placement, angular bounds, and Boolean mode remain unresolved.
+
+**Need.** We must identify the primitive dimensions, local frame, angular interval, and material-combination mode to construct a complete neutral cylinder and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the primitive family, but the object-index slots and bounded payload do not assign a unique dimension, placement, angular-bound, or Boolean-mode role.
+
+### OM-48. `MOVE_OBJECT` construction roles
+
+**Question.** Which serialized fields define the selected objects, translation, rotation, and copy count of a `MOVE_OBJECT` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `MOVE_OBJECT` operation label identifies" defines the body-affecting object-motion construction. A body-write frame identifies a body-affecting result. All observed records retain null operation object-index slots, and no admitted field assigns a motion role.
+
+**Need.** We must identify the selected object set, translation vector, rotation axis and angle, and copy count to construct a complete neutral object-motion operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the null object-index slots and bounded payload do not assign a unique object selection or motion law.
+
+### OM-49. `COPY_FACE` construction roles
+
+**Question.** Which serialized fields define the source faces, target body, associativity, and sew controls of a `COPY_FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `COPY_FACE` operation label identifies" defines the body-affecting face-copy construction. Every record carries two input blocks and a body-write frame, but no neutral output or admitted field assigns the source-face or target-body roles.
+
+**Need.** We must identify the source face selection, target body, associativity mode, and sew policy to construct a complete neutral face-copy operation and bind its result body.
+
+**Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique source-face, target-body, associativity, or sew roles.
+
+### OM-50. `LINKED_FACE` construction roles
+
+**Question.** Which serialized fields define the source face, target body, associativity, and link-update controls of a `LINKED_FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `LINKED_FACE` operation label identifies" defines the body-affecting linked-face construction. Every record carries a body-write frame, but no neutral output or admitted field assigns the source-face, target-body, or associativity roles.
+
+**Need.** We must identify the source face, target body, link-update mode, and associativity policy to construct a complete neutral linked-face operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique source-face, target-body, associativity, or link-update roles.
+
+### OM-51. `THRU_CURVE_MESH` construction roles
+
+**Question.** Which serialized fields define the curve networks, mesh directions, continuity, and result mode of a `THRU_CURVE_MESH` operation?
+
+**Known.** `siemens_nx.md` §7.1 "The `THRU_CURVE_MESH` operation label identifies" defines the through-curve mesh surface construction. Every record carries two input blocks and a body-write frame, but no neutral output or admitted field assigns the curve-network or surface-construction roles.
+
+**Need.** We must identify the ordered curve networks, mesh directions, continuity conditions, and result mode to construct a complete neutral through-curve mesh surface and bind its result body.
+
+**Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique curve-network, mesh-direction, continuity, or result-mode roles.
+
+### OM-52. `CONE` construction roles
+
+**Question.** Which serialized fields define the dimensions, placement, angular extent, and Boolean result mode of a `CONE` operation?
+
+**Known.** `siemens_nx.md` §7.1 "A body-writing `CONE` operation identifies" defines the body-affecting conical primitive. The record carries a body-write frame and object-index values, but no neutral output or admitted field assigns the primitive construction roles. A record without the body-write frame remains native because its label does not assign a body result.
+
+**Need.** We must identify the conical dimensions, placement frame, angular extent, and result mode to construct a complete neutral cone primitive and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the bounded payload and object-index lanes do not assign unique dimensions, placement, angular-extent, or result-mode roles.
+
+### OM-53. Body-writing thread construction roles
+
+**Question.** Which serialized fields define the selected faces, thread standard, pitch, handedness, axial extent, and physical or cosmetic result mode of `THREADS` and `DETAILED_THREAD` operations?
+
+**Known.** `siemens_nx.md` §7.1 defines a `THREADS` or `DETAILED_THREAD` record with a body-write frame as a body-affecting thread construction. The operation carries input blocks and a body-write frame, but no neutral output or admitted field assigns the thread construction roles. A record without the body-write frame remains native because its label does not assign a body result.
+
+**Need.** We must identify the selected cylindrical faces, thread designation, pitch, handedness, axial extent, and physical or cosmetic result mode to construct a complete neutral thread operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify a body-affecting thread family, but the bounded payload and object-index lanes do not assign unique face-selection, thread-law, or result-mode roles.
+
+### OM-54. Body-writing `SPHERE` construction roles
+
+**Question.** Which serialized fields define the center, radius, placement, angular extent, and Boolean result mode of a body-writing `SPHERE` operation?
+
+**Known.** `siemens_nx.md` §7.1 defines a body-writing `SPHERE` record as a body-affecting spherical primitive. The record carries a body-write frame and object-index values, but no neutral output or admitted field assigns the primitive construction roles. A record without the body-write frame remains native because its label does not assign a body result.
+
+**Need.** We must identify the spherical dimensions, placement frame, angular extent, and result mode to construct a complete neutral sphere primitive and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify a body-affecting sphere family, but the bounded payload and object-index lanes do not assign unique center, radius, placement, angular-extent, or result-mode roles.
+
+### OM-55. `DELETE FACE` construction roles
+
+**Question.** Which serialized fields define the selected faces and healing policy of a body-writing `DELETE FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 defines a `DELETE FACE` record with a body-write frame as a body-affecting face-deletion construction. The label and body-write frame establish the family, but the operation's face selection and healing policy remain unresolved.
+
+**Need.** We must identify the selected faces and healing policy to construct a complete neutral delete-face operation.
+
+**Conflict.** The label and body-write relation identify the family, but the admitted object-index and payload lanes do not assign a unique face selection or healing-policy value. Encoding a default healing value would invent operation state.
+
+### OM-56. Body-writing `BREP` result-body relation
+
+**Question.** Which serialized relation binds a body-writing `BREP` result topology to the model body output required by `StoredGeometry`?
+
+**Known.** `siemens_nx.md` §7.1 defines `BREP` as direct stored boundary-representation geometry. A body-write frame and feature-result topology establish the body-affecting family and retain the result topology, but the result topology's body identity does not uniquely resolve to a model-body output in the admitted segment-body namespace.
+
+**Need.** We must bind the BREP result to its model body before projecting `StoredGeometry`.
+
+**Conflict.** The body-write body identity and result-topology identity are present, but no unique model-body relation is admitted. Treating the identity as a current body would assign an output without a body record.
+
+### OM-57. `MIRROR_FACE` construction roles
+
+**Question.** Which serialized fields define the source faces, mirror plane, and copy or replace mode of a body-writing `MIRROR_FACE` operation?
+
+**Known.** `siemens_nx.md` §7.1 defines a body-writing `MIRROR_FACE` record as a body-affecting face-mirror construction. The label and body-write frame establish the family, and the result topology retains the body identity, but the bounded object-index slots do not assign source-face, mirror-plane, or result-mode roles.
+
+**Need.** We must identify the source faces, mirror plane, and result mode to construct a complete neutral face-mirror operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the admitted object-index and payload lanes do not assign unique source-face, mirror-plane, or copy-or-replace roles.
+
+### OM-58. `SUBDIVISION_BODY` construction roles
+
+**Question.** Which serialized fields define the source body and subdivision roles of a body-writing `SUBDIVISION_BODY` operation?
+
+**Known.** `siemens_nx.md` §7.1 defines a body-writing `SUBDIVISION_BODY` record as a body-affecting subdivision-body construction. The label and body-write frame establish the family, but the record has no admitted object-index or payload relation assigning the source body or subdivision controls. Its body-identity segment use points to a plain stream without a unique model-body record.
+
+**Need.** We must identify the source body and subdivision controls to construct a complete neutral subdivision-body operation and bind its result body.
+
+**Conflict.** The operation label and body-write relation identify the family, but the bounded record and unresolved segment-body relation do not assign unique source-body or subdivision roles.
+
+### OM-59. `TOPOLOGY_OPTIMIZATION` construction roles
+
+**Question.** Which serialized fields define the input bodies, optimization objective, and result mode of a body-writing `TOPOLOGY_OPTIMIZATION` operation?
+
+**Known.** `siemens_nx.md` §7.1 defines a body-writing `TOPOLOGY_OPTIMIZATION` record as a body-affecting topology-optimization construction. The record carries two input blocks and a body-write frame, but the admitted block references and payload lanes do not assign their roles.
+
+**Need.** We must identify the input bodies, optimization objective, and result mode to construct a complete neutral topology-optimization operation and bind its result body.
+
+**Conflict.** The operation label, input blocks, and body-write relation identify the family, but the bounded block and payload lanes do not assign unique input, objective, or result-mode roles.
+
+### OM-60. `RMFastLoad` membership table location
 
 **Question.** Which field gives the position of the `RMFastLoad` active object-id table?
 
@@ -700,13 +992,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `crates/cadmpeg-codec-nx/src/container.rs:400-435` takes the first count after the `UGS::Solid::Topol` marker whose candidate span reaches the product record. A plausible earlier count inside the bounded range can win before the real membership table, and the closure tests only synthetic placement. The first-candidate rule is not yet verified by a corpus field or invalidation witness, so this item is reopened.
 
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
 
 **Question.** What is the field grammar and semantics of `/Root/FastLoad/Structure`?
 
-**Known.** `siemens_nx.md` §2.3 "`/Root/FastLoad/Structure` begins with the twelve-byte envelope" and `siemens_nx.md` §7.1 "UG_PART begins with a 12-byte row table" define the big-endian bounded OM envelope and typed class and member declarations. The typed component roster defines ordered named prototypes and a one-based prototype index for each distinct occurrence. A second counted table stores UUID identities, and a parallel one-based index associates every occurrence with one UUID. Other payload fields remain uninterpreted.
+**Known.** `siemens_nx.md` §2.3 "`/Root/FastLoad/Structure` begins with the twelve-byte envelope" and `siemens_nx.md` §7.1 "UG_PART begins with a 12-byte row table" define the big-endian bounded OM envelope and typed class and member declarations. The typed component roster defines two exact candidate anchors, ordered named prototypes and a one-based prototype index for each distinct occurrence. A second counted table stores UUID identities, and a parallel one-based index associates every occurrence with one UUID. Other payload fields remain uninterpreted.
 
 **Need.** We must know the remaining payload grammar, including hierarchy,
 placement, UUID, and state fields.
@@ -725,7 +1018,7 @@ placement, UUID, and state fields.
 does an `On` or `Off` member control feature suppression, visibility, or another
 state domain?
 
-**Known.** `siemens_nx.md` §2.2 "`/Root/UG_PART/LastSavedToggleInfoStream` is one atomic payload:" defines the complete counted stream envelope and retains each 32-hex-digit identity and `On`/`Off` state exactly. The member count is independent of the feature-operation-label count. The toggle identities have no proven join to feature-operation records.
+**Known.** `siemens_nx.md` §2.2 "`/Root/UG_PART/LastSavedToggleInfoStream` is one atomic payload:" defines the complete counted stream envelope and retains each 32-hex-digit identity and `On`/`Off` state exactly. A toggle identity that occurs once in the stream has an order-independent identity witness; duplicate identities have no such witness. The member count is independent of the feature-operation-label count. The toggle identities have no proven join to feature-operation records.
 
 **Need.** We must identify the addressed object namespace before projecting any
 member as a neutral suppression or visibility state.
@@ -762,6 +1055,13 @@ member as a neutral suppression or visibility state.
 
 **Need.** We must know the mapping to preserve multiple occurrences of the same child part.
 
+**Conflict.** A complete external-reference record now provides a child name,
+child directory, ordered handle lane, and record identity. The FastLoad roster
+provides prototype and UUID indices for its occurrence lane. No serialized
+field joins an external-reference record or handle to one FastLoad occurrence
+ordinal. Equal child names, repeated handles, and equal UUID groups do not
+establish that instance-level relation.
+
 ### AM-08. Residual `EXTREFSTREAM` tail fields
 
 **Question.** What are the field boundaries and roles of the residual bytes in an indexed `EXTREFSTREAM` record tail?
@@ -778,8 +1078,6 @@ member as a neutral suppression or visibility state.
 
 **Need.** We must know the assignment to transfer class-specific material and topology attributes with semantic field names.
 
-**Note.** This item was closed by an assignment for one class. The question covers every class, and `SDL/TYSA_BLEND_ID` is named in the item itself and remains unassigned. A per-class table with one entry does not answer a per-class question, so the item is open again.
-
 The closure test only exercises already-populated `ParasolidAttributeFieldUse` values; it does not show the raw SDL/TYSA records assigning those values. The ordinal/code fallback in the production mapper remains unsupported by an independent serialized witness, so this item stays open.
 
 ### AM-10. Physical material bindings
@@ -789,7 +1087,6 @@ The closure test only exercises already-populated `ParasolidAttributeFieldUse` v
 **Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes. `siemens_nx.md` §7.1 "An explicit display-color assignment addresses a face when" defines the complete face appearance relation; a palette color is not a physical-material assignment.
 
 **Need.** We must know the relation to assign physical-material state to neutral faces without treating a display color, texture asset, or topology attribute as a material identity.
-
 ### AM-11. JT 9 high-degree lane count
 
 **Question.** What field gives the number of high-degree face-attribute-mask lanes in a JT 9 topologically compressed representation?

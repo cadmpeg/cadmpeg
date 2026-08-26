@@ -6,7 +6,7 @@ use cadmpeg_ir::math::Vector3;
 use super::*;
 
 #[test]
-fn nx_boolean_does_not_mix_segment_and_offset_store_identity_namespaces() {
+fn nx_boolean_keeps_body_namespace_proofs_atomic() {
     use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
     use cadmpeg_ir::ids::BodyId;
     use std::collections::BTreeMap;
@@ -67,8 +67,14 @@ fn nx_boolean_does_not_mix_segment_and_offset_store_identity_namespaces() {
             &BTreeMap::from([(94, vec![BodyId("nx:s18:body#3".to_string())])]),
         ),
         FeatureDefinition::Combine {
-            target: BodySelection::Native("nx:om-object-index#94".to_string()),
-            tools: BodySelection::Native("nx:om-object-indices#122".to_string()),
+            target: BodySelection::Local {
+                bodies: vec!["nx:om-data-blocks-3:block#94".to_string()],
+                native: "nx:om-object-index#94".to_string(),
+            },
+            tools: BodySelection::Local {
+                bodies: vec!["nx:om-data-blocks-3:block#122".to_string()],
+                native: "nx:om-object-indices#122".to_string(),
+            },
             op: BooleanOp::Cut,
             keep_tools: false,
         }
@@ -270,7 +276,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
 
     let roots = BTreeMap::from([(20, 20)]);
     assert_eq!(
-        super::delete_body_feature_definition(Some(20), &[], &roots, &BTreeMap::new()),
+        super::delete_body_feature_definition(Some(20), None, &roots, &BTreeMap::new()),
         Some(FeatureDefinition::DeleteBody {
             bodies: BodySelection::Local {
                 bodies: vec!["nx:om-body-object#20".to_string()],
@@ -280,7 +286,7 @@ fn nx_delete_body_requires_a_primary_body_field() {
         })
     );
     assert_eq!(
-        super::delete_body_feature_definition(Some(72), &[], &roots, &BTreeMap::new()),
+        super::delete_body_feature_definition(Some(72), None, &roots, &BTreeMap::new()),
         Some(FeatureDefinition::DeleteBody {
             bodies: BodySelection::Local {
                 bodies: vec!["nx:om-body-object#72".to_string()],
@@ -290,52 +296,24 @@ fn nx_delete_body_requires_a_primary_body_field() {
         })
     );
     assert_eq!(
-        super::delete_body_feature_definition(None, &[], &roots, &BTreeMap::new()),
+        super::delete_body_feature_definition(None, None, &roots, &BTreeMap::new()),
         None
     );
     assert_eq!(
         super::delete_body_feature_definition(
             None,
-            &[(72, "nx:om-data-blocks-4:block#72".to_string())],
+            Some((72, "nx:om-data-blocks-2:block#72")),
             &roots,
             &BTreeMap::new(),
         ),
         Some(FeatureDefinition::DeleteBody {
             bodies: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-4:block#72".to_string()],
+                bodies: vec!["nx:om-data-blocks-2:block#72".to_string()],
                 native: "nx:om-object-index#72".to_string(),
             },
             mode: BodyRetentionMode::DeleteSelected,
         })
     );
-    assert!(super::delete_body_feature_definition(
-        None,
-        &[
-            (72, "nx:om-data-blocks-4:block#72".to_string()),
-            (73, "nx:om-data-blocks-4:block#73".to_string()),
-        ],
-        &roots,
-        &BTreeMap::new(),
-    )
-    .is_none());
-}
-
-#[test]
-fn nx_extract_body_requires_one_exact_input_store_body() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
-
-    let body = (736, "nx:om-data-blocks-2:block#736".to_string());
-    assert_eq!(
-        super::extract_body_feature_definition(std::slice::from_ref(&body)),
-        Some(FeatureDefinition::ExtractBody {
-            source: BodySelection::Local {
-                bodies: vec!["nx:om-data-blocks-2:block#736".to_string()],
-                native: "nx:om-object-index#736".to_string(),
-            },
-        })
-    );
-    assert!(super::extract_body_feature_definition(&[]).is_none());
-    assert!(super::extract_body_feature_definition(&[body.clone(), body]).is_none());
 }
 
 #[test]
@@ -413,7 +391,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
 
     assert_eq!(
         super::trim_body_feature_definition(10, &references, &roots, &BTreeMap::new()),
-        Some(FeatureDefinition::TrimBodies {
+        FeatureDefinition::TrimBodies {
             targets: BodySelection::Local {
                 bodies: vec!["nx:om-body-object#10".to_string()],
                 native: "nx:om-object-index#10".to_string(),
@@ -423,7 +401,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
                 native: "nx:om-object-indices#20".to_string(),
             },
             keep: BodyTrimSide::Unresolved,
-        })
+        }
     );
     let resolved = BTreeMap::from([
         (10, vec![BodyId("target".to_string())]),
@@ -431,7 +409,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
     ]);
     assert_eq!(
         super::trim_body_feature_definition(10, &references, &roots, &resolved),
-        Some(FeatureDefinition::TrimBodies {
+        FeatureDefinition::TrimBodies {
             targets: BodySelection::Resolved {
                 bodies: vec![BodyId("target".to_string())],
                 native: "nx:om-object-index#10".to_string(),
@@ -441,11 +419,18 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
                 native: "nx:om-object-indices#20".to_string(),
             },
             keep: BodyTrimSide::Unresolved,
-        })
+        }
     );
     assert_eq!(
         super::trim_body_feature_definition(10, &[], &roots, &BTreeMap::new()),
-        None
+        FeatureDefinition::TrimBodies {
+            targets: BodySelection::Local {
+                bodies: vec!["nx:om-body-object#10".to_string()],
+                native: "nx:om-object-index#10".to_string(),
+            },
+            tools: BodySelection::Unresolved,
+            keep: BodyTrimSide::Unresolved,
+        }
     );
 
     let same_body = BTreeMap::from([(10, 10), (20, 10)]);
@@ -456,11 +441,11 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
             &same_body,
             &BTreeMap::new(),
         ),
-        Some(FeatureDefinition::TrimBodies {
+        FeatureDefinition::TrimBodies {
             targets: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
             ..
-        }) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+        } if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
     ));
 
     let mut mixed_operand = operands[0].clone();
@@ -474,11 +459,11 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
             &roots,
             &BTreeMap::new(),
         ),
-        Some(FeatureDefinition::TrimBodies {
+        FeatureDefinition::TrimBodies {
             targets: BodySelection::Native(target),
             tools: BodySelection::Native(tools),
             ..
-        }) if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
+        } if target == "nx:om-object-index#10" && tools == "nx:om-object-indices#20"
     ));
 }
 
@@ -559,6 +544,27 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             kind: cadmpeg_ir::features::HoleKind::Simple,
             exit_kind: None,
             extent: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        super::non_boolean_feature_definition(
+            "CSUNK_HOLE",
+            &["Hole_GeneralHole_Countersunk_Through"],
+            None,
+            None,
+            None,
+        ),
+        cadmpeg_ir::features::FeatureDefinition::Hole {
+            kind: cadmpeg_ir::features::HoleKind::Unresolved {
+                form: Some(cadmpeg_ir::features::HoleForm::Countersink),
+                counterbore_diameter: None,
+                counterbore_depth: None,
+                countersink_diameter: None,
+                countersink_angle: None,
+            },
+            exit_kind: None,
+            extent: Some(cadmpeg_ir::features::Termination::ThroughAll),
             ..
         }
     ));
@@ -756,10 +762,57 @@ fn nx_text_payload_projects_semantic_text_and_font_family() {
 }
 
 #[test]
+fn nx_extract_body_projects_its_primary_source_namespace() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+    use cadmpeg_ir::ids::BodyId;
+    use std::collections::BTreeMap;
+
+    let roots = BTreeMap::from([(20, 20)]);
+    let bodies = BTreeMap::from([(20, vec![BodyId("body".to_string())])]);
+    assert_eq!(
+        super::extract_body_feature_definition(Some(20), &[], &roots, &bodies),
+        FeatureDefinition::ExtractBody {
+            source: BodySelection::Resolved {
+                bodies: vec![BodyId("body".to_string())],
+                native: "nx:om-object-index#20".to_string(),
+            },
+        }
+    );
+    assert_eq!(
+        super::extract_body_feature_definition(
+            None,
+            &[(72, "nx:om-data-blocks-2:block#72".to_string())],
+            &roots,
+            &BTreeMap::new(),
+        ),
+        FeatureDefinition::ExtractBody {
+            source: BodySelection::Local {
+                bodies: vec!["nx:om-data-blocks-2:block#72".to_string()],
+                native: "nx:om-object-index#72".to_string(),
+            },
+        }
+    );
+    assert_eq!(
+        super::extract_body_feature_definition(
+            None,
+            &[
+                (72, "nx:om-data-blocks-2:block#72".to_string()),
+                (73, "nx:om-data-blocks-2:block#73".to_string()),
+            ],
+            &roots,
+            &BTreeMap::new(),
+        ),
+        FeatureDefinition::ExtractBody {
+            source: BodySelection::Unresolved,
+        }
+    );
+}
+
+#[test]
 fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     use cadmpeg_ir::features::{
         BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, EdgeSelection, FaceSelection,
-        FeatureDefinition, HoleKind, PatternKind, RadiusSpec, RibDraft,
+        FeatureDefinition, HoleKind, PatternKind, RibDraft,
     };
 
     for (kind, op) in [
@@ -834,20 +887,18 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     ));
     assert_eq!(
         super::non_boolean_feature_definition("BLEND", &[], None, None, None),
-        FeatureDefinition::Fillet {
-            groups: vec![cadmpeg_ir::features::FilletGroup {
-                edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Unresolved { form: None },
-                tangency_weight: None,
-            }],
+        FeatureDefinition::Native {
+            kind: "BLEND".into(),
+            parameters: BTreeMap::new(),
+            properties: BTreeMap::new(),
         }
     );
     assert_eq!(
         super::non_boolean_feature_definition("FACE_BLEND", &[], None, None, None),
-        FeatureDefinition::FaceBlend {
-            first_faces: FaceSelection::Unresolved,
-            second_faces: FaceSelection::Unresolved,
-            radius: RadiusSpec::Unresolved { form: None },
+        FeatureDefinition::Native {
+            kind: "FACE_BLEND".into(),
+            parameters: BTreeMap::new(),
+            properties: BTreeMap::new(),
         }
     );
     for kind in ["CPROJ", "CPROJ_CMB"] {
@@ -1159,16 +1210,16 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
         center: Point3::new(1.0, 2.0, 3.0),
         axis: Vector3::new(0.0, 0.0, 1.0),
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 12.0,
+        radius: f64::EPSILON,
     };
 
     assert_eq!(
         super::sphere_body_projection(&ir, &[]),
-        Some((body.clone(), Point3::new(1.0, 2.0, 3.0), Length(12.0)))
+        Some((body.clone(), Point3::new(1., 2., 3.), Length(f64::EPSILON)))
     );
     assert_eq!(
         super::sphere_body_projection(&ir, std::slice::from_ref(&body)),
-        Some((body.clone(), Point3::new(1.0, 2.0, 3.0), Length(12.0)))
+        Some((body.clone(), Point3::new(1., 2., 3.), Length(f64::EPSILON)))
     );
 
     let mut second_body = ir.model.bodies[0].clone();
@@ -1218,6 +1269,24 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
             history: &history,
         }),
         BooleanOp::NewBody
+    );
+
+    let fallback_prior = FeatureId("fallback-prior-feature".into());
+    let mut fallback_history = BodyWriterHistory::default();
+    fallback_history.record_writer(None, None, std::slice::from_ref(&body), &fallback_prior);
+    assert_eq!(
+        super::new_body_boolean_op(&super::NewBodyEvidence {
+            has_complete_projection: true,
+            has_complete_primitive_construction: false,
+            outputs: std::slice::from_ref(&body),
+            outputs_are_proven: true,
+            body_reference_count: 0,
+            provisional_feature: Some(&provisional),
+            native_primary_body: None,
+            offset_store_primary_body: None,
+            history: &fallback_history,
+        }),
+        BooleanOp::Unresolved
     );
 
     let prior = FeatureId("prior-feature".into());
@@ -1627,6 +1696,14 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         &different_radii,
         &operations,
         &std::collections::BTreeMap::new(),
+    )
+    .is_none());
+    let unresolved_primary =
+        std::collections::BTreeMap::from([(operations[0].clone(), Vec::<BodyId>::new())]);
+    assert!(super::hole_body_projection(
+        &ir,
+        std::slice::from_ref(&operations[0]),
+        &unresolved_primary,
     )
     .is_none());
     assert_eq!(

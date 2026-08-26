@@ -254,10 +254,12 @@ fn rederived_body_census(
             | FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumOffsetPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
+            | FeatureDefinition::DatumAxisUnresolved
             | FeatureDefinition::DatumPoint { .. }
             | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystem { .. }
             | FeatureDefinition::DatumCoordinateSystemUnresolved
+            | FeatureDefinition::BridgeCurveUnresolved
             | FeatureDefinition::Sketch { .. }
             | FeatureDefinition::ProjectedCurve { .. }
             | FeatureDefinition::SectionShape { .. } => {
@@ -316,8 +318,45 @@ fn rederived_body_census(
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
+            FeatureDefinition::Sphere { op, .. } => {
+                apply_complete_boolean_outputs(
+                    feature,
+                    &mut bodies,
+                    *op,
+                    crate::decode::sphere_definition_is_incomplete(feature),
+                )?;
+            }
             FeatureDefinition::LoftUnresolved | FeatureDefinition::FreeformSurfaceUnresolved
                 if feature.outputs.is_empty() => {}
+            FeatureDefinition::BrepUnresolved if feature.outputs.is_empty() => {}
+            FeatureDefinition::BrepUnresolved => {
+                return Err((
+                    feature.id.clone(),
+                    UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                ));
+            }
+            FeatureDefinition::DeleteFaceUnresolved if feature.outputs.is_empty() => {}
+            FeatureDefinition::DeleteFaceUnresolved => {
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
+            }
+            FeatureDefinition::MirrorFaceUnresolved if feature.outputs.is_empty() => {}
+            FeatureDefinition::MirrorFaceUnresolved => {
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
+            }
+            FeatureDefinition::SubdivisionBodyUnresolved if feature.outputs.is_empty() => {}
+            FeatureDefinition::SubdivisionBodyUnresolved => {
+                return Err((
+                    feature.id.clone(),
+                    UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                ));
+            }
+            FeatureDefinition::TopologyOptimizationUnresolved if feature.outputs.is_empty() => {}
+            FeatureDefinition::TopologyOptimizationUnresolved => {
+                return Err((
+                    feature.id.clone(),
+                    UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
+                ));
+            }
             FeatureDefinition::Loft { op, .. } => {
                 apply_complete_boolean_outputs(
                     feature,
@@ -544,10 +583,12 @@ fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
                 | FeatureDefinition::DatumPlaneUnresolved
                 | FeatureDefinition::DatumOffsetPlane { .. }
                 | FeatureDefinition::DatumAxis { .. }
+                | FeatureDefinition::DatumAxisUnresolved
                 | FeatureDefinition::DatumPoint { .. }
                 | FeatureDefinition::DatumPointUnresolved
                 | FeatureDefinition::DatumCoordinateSystem { .. }
                 | FeatureDefinition::DatumCoordinateSystemUnresolved
+                | FeatureDefinition::BridgeCurveUnresolved
                 | FeatureDefinition::Sketch { .. }
                 | FeatureDefinition::ProjectedCurve { .. }
                 | FeatureDefinition::SectionShape { .. }
@@ -622,6 +663,8 @@ fn suppression_is_body_census_invariant(
     let output_free_local_in_place = output_free_local_body_construction(feature)
         && matches!(&feature.definition, FeatureDefinition::DraftUnresolved);
     let output_free_snapshot = output_free_native_snapshot(feature);
+    let output_free_brep = feature.outputs.is_empty()
+        && matches!(feature.definition, FeatureDefinition::BrepUnresolved);
     deletes_only_local_bodies
         || extracts_only_local_bodies
         || sews_only_local_bodies
@@ -633,6 +676,7 @@ fn suppression_is_body_census_invariant(
         || in_place_unresolved_extrude
         || output_free_local_in_place
         || output_free_snapshot
+        || output_free_brep
         || ((feature.outputs.is_empty()
             || (feature.outputs.len() == 1 && bodies.contains(&feature.outputs[0])))
             && matches!(
@@ -648,6 +692,10 @@ fn suppression_is_body_census_invariant(
                     | FeatureDefinition::OffsetSurface { .. }
                     | FeatureDefinition::Thicken { .. }
                     | FeatureDefinition::Draft { .. }
+                    | FeatureDefinition::DeleteFaceUnresolved
+                    | FeatureDefinition::MirrorFaceUnresolved
+                    | FeatureDefinition::SubdivisionBodyUnresolved
+                    | FeatureDefinition::TopologyOptimizationUnresolved
                     | FeatureDefinition::ReplaceFace { .. }
             ))
 }
@@ -1243,6 +1291,37 @@ mod tests {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         ir.model.features.push(complete_hole(body.clone()));
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
+        );
+    }
+
+    #[test]
+    fn complete_sphere_rederives_a_new_body() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let body = BodyId("sphere".to_string());
+        ir.model.bodies.push(model_body(&body.0));
+        ir.model.features.push(Feature {
+            id: FeatureId("sphere-feature".to_string()),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![body.clone()],
+            definition: FeatureDefinition::Sphere {
+                center: Point3::new(1.0, 2.0, 3.0),
+                radius: Length(4.0),
+                op: BooleanOp::NewBody,
+            },
+            native_ref: None,
+        });
 
         assert_eq!(
             evaluate_saved_body_census(&ir),

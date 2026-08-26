@@ -3166,6 +3166,7 @@
                   0
                 ],
                 "source_offset": 3200,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#1000",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1000
               },
@@ -3179,6 +3180,7 @@
                   0
                 ],
                 "source_offset": 3204,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#1001",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1001
               },
@@ -3192,6 +3194,7 @@
                   0
                 ],
                 "source_offset": 3208,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#1002",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1002
               },
@@ -3205,6 +3208,7 @@
                   0
                 ],
                 "source_offset": 3212,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#1003",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1003
               },
@@ -3218,6 +3222,7 @@
                   0
                 ],
                 "source_offset": 3216,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#1004",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 1004
               },
@@ -3231,6 +3236,7 @@
                   0
                 ],
                 "source_offset": 3220,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10005",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10005
               },
@@ -3244,6 +3250,7 @@
                   0
                 ],
                 "source_offset": 3224,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10006",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10006
               },
@@ -3257,6 +3264,7 @@
                   0
                 ],
                 "source_offset": 3228,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10007",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10007
               },
@@ -3270,6 +3278,7 @@
                   0
                 ],
                 "source_offset": 3232,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10008",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10008
               },
@@ -3283,6 +3292,7 @@
                   0
                 ],
                 "source_offset": 3236,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10009",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10009
               },
@@ -3296,6 +3306,7 @@
                   0
                 ],
                 "source_offset": 3240,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10010",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10010
               },
@@ -3309,6 +3320,7 @@
                   0
                 ],
                 "source_offset": 3244,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10011",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10011
               },
@@ -3322,6 +3334,7 @@
                   0
                 ],
                 "source_offset": 3248,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10012",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10012
               },
@@ -3335,6 +3348,7 @@
                   0
                 ],
                 "source_offset": 3252,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10013",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10013
               },
@@ -3348,6 +3362,7 @@
                   0
                 ],
                 "source_offset": 3256,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10014",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10014
               },
@@ -3361,6 +3376,7 @@
                   0
                 ],
                 "source_offset": 3260,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10015",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10015
               },
@@ -3374,6 +3390,7 @@
                   0
                 ],
                 "source_offset": 3264,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10016",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10016
               },
@@ -3387,6 +3404,7 @@
                   0
                 ],
                 "source_offset": 3268,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10017",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10017
               },
@@ -3400,6 +3418,7 @@
                   0
                 ],
                 "source_offset": 3272,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10018",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10018
               },
@@ -3413,6 +3432,7 @@
                   0
                 ],
                 "source_offset": 3276,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10019",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10019
               },
@@ -3426,6 +3446,7 @@
                   0
                 ],
                 "source_offset": 3280,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10020",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10020
               },
@@ -3439,6 +3460,7 @@
                   0
                 ],
                 "source_offset": 3284,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10021",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10021
               },
@@ -3452,6 +3474,7 @@
                   0
                 ],
                 "source_offset": 3288,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10022",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10022
               },
@@ -3465,6 +3488,7 @@
                   0
                 ],
                 "source_offset": 3292,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10023",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10023
               },
@@ -3478,6 +3502,7 @@
                   0
                 ],
                 "source_offset": 3296,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10024",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10024
               },
@@ -3491,6 +3516,7 @@
                   0
                 ],
                 "source_offset": 3300,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10025",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10025
               },
@@ -3504,6 +3530,7 @@
                   0
                 ],
                 "source_offset": 3304,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10026",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10026
               },
@@ -3517,6 +3544,7 @@
                   0
                 ],
                 "source_offset": 3308,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10027",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10027
               },
@@ -3530,6 +3558,7 @@
                   0
                 ],
                 "source_offset": 3312,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10028",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10028
               },
@@ -3543,6 +3572,7 @@
                   0
                 ],
                 "source_offset": 3316,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10029",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10029
               },
@@ -3556,6 +3586,7 @@
                   0
                 ],
                 "source_offset": 3320,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10030",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10030
               },
@@ -3569,6 +3600,7 @@
                   0
                 ],
                 "source_offset": 3324,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10031",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10031
               },
@@ -3582,6 +3614,7 @@
                   0
                 ],
                 "source_offset": 3328,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10032",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10032
               },
@@ -3595,6 +3628,7 @@
                   0
                 ],
                 "source_offset": 3332,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10033",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10033
               },
@@ -3608,6 +3642,7 @@
                   0
                 ],
                 "source_offset": 3336,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10034",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10034
               },
@@ -3621,6 +3656,7 @@
                   0
                 ],
                 "source_offset": 3340,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10035",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10035
               },
@@ -3634,6 +3670,7 @@
                   0
                 ],
                 "source_offset": 3344,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10036",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10036
               },
@@ -3647,6 +3684,7 @@
                   0
                 ],
                 "source_offset": 3348,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10037",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10037
               },
@@ -3660,6 +3698,7 @@
                   0
                 ],
                 "source_offset": 3352,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10038",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10038
               },
@@ -3673,6 +3712,7 @@
                   0
                 ],
                 "source_offset": 3356,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10039",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10039
               },
@@ -3686,6 +3726,7 @@
                   0
                 ],
                 "source_offset": 3360,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10040",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10040
               },
@@ -3699,6 +3740,7 @@
                   0
                 ],
                 "source_offset": 3364,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10041",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10041
               },
@@ -3712,6 +3754,7 @@
                   0
                 ],
                 "source_offset": 3368,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10042",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10042
               },
@@ -3725,6 +3768,7 @@
                   0
                 ],
                 "source_offset": 3372,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10043",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10043
               },
@@ -3738,6 +3782,7 @@
                   0
                 ],
                 "source_offset": 3376,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10044",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10044
               },
@@ -3751,6 +3796,7 @@
                   0
                 ],
                 "source_offset": 3380,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10045",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10045
               },
@@ -3764,6 +3810,7 @@
                   0
                 ],
                 "source_offset": 3384,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10046",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10046
               },
@@ -3777,6 +3824,7 @@
                   0
                 ],
                 "source_offset": 3388,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10047",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10047
               },
@@ -3790,6 +3838,7 @@
                   0
                 ],
                 "source_offset": 3392,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10048",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10048
               },
@@ -3803,6 +3852,7 @@
                   0
                 ],
                 "source_offset": 3396,
+                "stable_identity": "nx:rmfastload:object-id-table#0:value#10049",
                 "table": "nx:rmfastload:object-id-table#0",
                 "value": 10049
               }

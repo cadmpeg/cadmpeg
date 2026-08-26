@@ -134,17 +134,27 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_operation_body_operands",
     "feature_operation_body_reference_lanes",
     "feature_operation_body_scalar_triples",
+    "feature_operation_data_block_references",
     "feature_operation_labels",
-    "feature_operation_object_relations",
+    "feature_operation_body_writes",
+    "feature_operation_body_image_segment_uses",
+    "feature_operation_body_identity_segment_uses",
+    "feature_operation_body_partition_uses",
+    "feature_body_write_group_partition_uses",
+    "feature_operation_tagged_references",
     "feature_operation_records",
     "feature_operation_common_frames",
     "feature_operation_terminal_discriminators",
     "feature_operation_terminal_frames",
+    "feature_operation_state_journal_uses",
+    "feature_unlabeled_operation_records",
+    "feature_unlabeled_operation_body_writes",
     "feature_parameter_bindings",
     "feature_parameter_uses",
     "feature_pattern_construction_fixed_lanes",
     "feature_pattern_construction_payloads",
     "feature_pattern_construction_strings",
+    "feature_pattern_counted_reference_lanes",
     "feature_pattern_references",
     "feature_pattern_transform_lanes",
     "feature_payload_strings",
@@ -157,6 +167,8 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_simple_hole_repeated_scalar_lane_block_references",
     "feature_simple_hole_repeated_scalar_lanes",
     "feature_simple_hole_templates",
+    "feature_symbolic_threads",
+    "feature_threaded_hole_templates",
     "feature_sketch_construction_inputs",
     "feature_sketch_construction_payloads",
     "feature_sketch_datum_csys_dependencies",
@@ -167,6 +179,7 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_sketch_payload_mixed_pairs",
     "feature_sketch_payload_named_records",
     "feature_sketch_payload_names",
+    "feature_sketch_payload_scalar_lanes",
     "feature_sketch_payload_scalars",
     "feature_sketch_point_groups",
     "feature_sketch_point_uses",
@@ -179,6 +192,9 @@ const KNOWN_ARENAS: &[&str] = &[
     "feature_surface_construction_references",
     "feature_surface_construction_scalar_pairs",
     "feature_surface_construction_strings",
+    "feature_swp104_leading_branches",
+    "feature_thru_curve_construction_branch_groups",
+    "feature_thru_curve_construction_envelopes",
     "field_definitions",
     "material_texture_assets",
     "material_texture_catalog_entries",
@@ -187,6 +203,13 @@ const KNOWN_ARENAS: &[&str] = &[
     "object_references",
     "object_uuid_values",
     "offset_store_named_points",
+    "om_operation_state_counters",
+    "om_operation_state_journal_groups",
+    "om_operation_state_messages",
+    "om_operation_state_slot_lanes",
+    "om_operation_state_statuses",
+    "om_roll_forward_state_groups",
+    "om_audit_trail_rows",
     "om_record_areas",
     "parasolid_attribute_class_uses",
     "parasolid_attribute_field_uses",
@@ -222,6 +245,8 @@ const KNOWN_ARENAS: &[&str] = &[
     "parasolid_entity_62_unicode_records",
     "parasolid_entity_vector_records",
     "parasolid_field_names_records",
+    "parasolid_group_records",
+    "parasolid_group_members",
     "parasolid_intersection_records",
     "parasolid_offset_surface_records",
     "parasolid_support_uv_records",
@@ -309,6 +334,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
     f.push((
         "parasolid_entity_records",
         prt_with_partition(&parasolid_entity_records_stream()),
+    ));
+    f.push((
+        "parasolid_group_record",
+        prt_with_partition(&parasolid_group_partition_stream()),
     ));
 
     // Embedded DisplayJT stream: outer index, one JT document, one segment.
@@ -857,13 +886,13 @@ fn catalogue_arenas_match_known_arenas() {
 
     use crate::native::catalogue::CATALOGUE;
 
-    assert_eq!(CATALOGUE.len(), 230, "one catalogue row per model field");
+    assert_eq!(CATALOGUE.len(), 255, "one catalogue row per model field");
     assert_eq!(
         CATALOGUE
             .iter()
             .filter(|row| row.phase == Phase::GroupA)
             .count(),
-        108,
+        122,
         "group A family count"
     );
     assert_eq!(

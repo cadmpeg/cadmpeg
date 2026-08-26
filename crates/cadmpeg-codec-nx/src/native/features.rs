@@ -5,10 +5,11 @@
 use super::*;
 use crate::native::om::{
     data_blocks, DataBlockColumnIndexTable, DataBlockIndexRow, DataBlockLinkedIndexRow,
-    DataBlockReference, DataBlockTargetIndexRow, Expression, ExpressionDeclaration, ExpressionUnit,
-    OmSchemaRole,
+    DataBlockReference, DataBlockRole, DataBlockTargetIndexRow, Expression, ExpressionDeclaration,
+    OmOperationStateJournalGroup, OmSchemaRole,
 };
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
+use std::borrow::Cow;
 
 /// Ordered feature operation label from a feature-history record area.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,6 +26,11 @@ pub struct FeatureOperationLabel {
     pub object_indices: [Option<u32>; 4],
     /// Exact serialized object-index tokens in header order.
     pub raw_object_indices: [Vec<u8>; 4],
+    /// Record-order-independent header identity when every non-null slot
+    /// resolves to a unique content-backed offset-store block and the tuple
+    /// is unique across the feature-history sections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_identity: Option<String>,
     /// Absolute file offset of the `03` label tag.
     pub source_offset: u64,
 }
@@ -81,41 +87,237 @@ pub struct FeatureOperationRecord {
     pub payload_byte_len: u64,
     /// SHA-256 of the post-label serialized operation payload.
     pub payload_sha256: String,
+    /// Record-order-independent header identity when the owning label has one
+    /// after content-backed offset-store resolution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stable_identity: Option<String>,
     /// Absolute file offset of the first post-label payload byte.
     pub payload_source_offset: u64,
     /// Absolute file offset of the fixed operation-header marker.
     pub source_offset: u64,
 }
 
-/// Exact nested object-relation frame retained from one feature operation.
-///
-/// The endpoint order and link tag are native evidence. They do not assign a
-/// body, operand, input, or output role.
+/// Exactly bounded feature-history operation record without a label frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationObjectRelation {
+pub struct FeatureUnlabeledOperationRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based order among all operation headers in the section.
+    pub ordinal: u32,
+    /// Four object-index slots in header order.
+    pub object_indices: [Option<u32>; 4],
+    /// Absolute source offsets of the four object-index tokens.
+    pub object_index_source_offsets: [u64; 4],
+    /// Exact record byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the complete operation record.
+    pub sha256: String,
+    /// Exact serialized post-header payload length.
+    pub payload_byte_len: u64,
+    /// SHA-256 of the post-header serialized operation payload.
+    pub payload_sha256: String,
+    /// Absolute file offset of the first post-header payload byte.
+    pub payload_source_offset: u64,
+    /// Absolute file offset of the fixed operation-header marker.
+    pub source_offset: u64,
+}
+
+/// Exact body-write frame retained from one unlabeled operation record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureUnlabeledOperationBodyWrite {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Owning bounded unlabeled operation-record identity.
+    pub operation_record: String,
+    /// Zero-based body-write order within the operation payload.
+    pub ordinal: u32,
+    /// Persistent identity of the body written by this operation.
+    pub body_identity: u8,
+    /// Partition-local Parasolid GROUP node owned by this operation.
+    pub group_node: u32,
+    /// Exact serialized GROUP-node token.
+    pub raw_group_node: Vec<u8>,
+    /// Absolute offset of the GROUP-node token.
+    pub group_node_source_offset: u64,
+    /// Tagged body-image field discriminator.
+    pub endpoint_tag: u8,
+    /// Offset-store object containing the body's serialized image.
+    pub body_image_object_index: u32,
+    /// Unambiguous offset-store block selected by the body-image object index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_image_data_block: Option<String>,
+    /// Exact serialized body-image object token.
+    pub raw_body_image_object_index: Vec<u8>,
+    /// Absolute offset of the body-image object token.
+    pub body_image_object_index_source_offset: u64,
+    /// Exact serialized frame byte length.
+    pub byte_len: u64,
+    /// Absolute offset of the opening `01 02` marker.
+    pub source_offset: u64,
+}
+
+/// Exact body-write frame retained from one feature operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationBodyWrite {
     /// Globally unique relation identity.
     pub id: String,
     /// Owning operation-label identity.
     pub operation_label: String,
     /// Owning bounded operation-record identity.
     pub operation_record: String,
-    /// Zero-based relation order within the operation payload.
+    /// Zero-based body-write order within the operation payload.
     pub ordinal: u32,
-    /// Byte between the opening `01 02` marker and the first object index.
-    pub link_tag: u8,
-    /// First object index in serialized order.
-    pub first_object_index: u32,
-    /// Exact serialized first object-index token.
-    pub raw_first_object_index: Vec<u8>,
-    /// Absolute offset of the first object-index token.
-    pub first_object_index_source_offset: u64,
-    /// Second object index in serialized order.
-    pub second_object_index: u32,
-    /// Exact serialized second object-index token.
-    pub raw_second_object_index: Vec<u8>,
-    /// Absolute offset of the second object-index token.
-    pub second_object_index_source_offset: u64,
+    /// Persistent identity of the body written by this operation.
+    pub body_identity: u8,
+    /// Partition-local Parasolid GROUP node owned by this feature.
+    pub group_node: u32,
+    /// Exact serialized GROUP-node token.
+    pub raw_group_node: Vec<u8>,
+    /// Absolute offset of the GROUP-node token.
+    pub group_node_source_offset: u64,
+    /// Tagged body-image field discriminator.
+    pub endpoint_tag: u8,
+    /// Offset-store object containing the body's serialized image.
+    pub body_image_object_index: u32,
+    /// Unambiguous offset-store block selected by the body-image object index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_image_data_block: Option<String>,
+    /// Exact serialized body-image object token.
+    pub raw_body_image_object_index: Vec<u8>,
+    /// Absolute offset of the body-image object token.
+    pub body_image_object_index_source_offset: u64,
     /// Exact serialized frame byte length.
+    pub byte_len: u64,
+    /// Absolute offset of the opening `01 02` marker.
+    pub source_offset: u64,
+}
+
+/// Exact bridge from a body-write image block to one plain cached-body stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationBodyImageSegmentUse {
+    /// Globally unique bridge identity.
+    pub id: String,
+    /// Body-write frame owning both the body identity and image block.
+    pub operation_body_write: String,
+    /// Unambiguous offset-store block containing the serialized body image.
+    pub body_image_data_block: String,
+    /// Plain cached-body tuple whose alias equals the body identity.
+    pub segment_body_binding: String,
+}
+
+/// Exact persistent body-identity match to one plain cached-body stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationBodyIdentitySegmentUse {
+    /// Globally unique bridge identity.
+    pub id: String,
+    /// Body-write frame carrying the persistent body identity.
+    pub operation_body_write: String,
+    /// Persistent body identity shared by the frame and plain-stream alias.
+    pub body_identity: u8,
+    /// Unique plain cached-body tuple with the equal alias.
+    pub segment_body_binding: String,
+}
+
+/// Exact owning-partition scope for one body-write image and its GROUP node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationBodyPartitionUse {
+    /// Globally unique partition-use identity.
+    pub id: String,
+    /// Body-write frame carrying the partition-local GROUP node.
+    pub operation_body_write: String,
+    /// Exact body-image relation that selects the cached-body stream.
+    pub body_image_segment_use: String,
+    /// Plain cached-body binding inside the partition's body-history run.
+    pub segment_body_binding: String,
+    /// Partition stream that terminates the complete cached-body run.
+    pub partition_stream_ordinal: u32,
+    /// Partition-local GROUP node carried by the body-write frame.
+    pub group_node: u32,
+    /// Ordered GROUP record updates retained inside the owning partition scope.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parasolid_group_records: Vec<String>,
+    /// Current ordered GROUP members resolved inside the owning partition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parasolid_group_members: Vec<String>,
+}
+
+/// Exact partition ownership of one labeled or unlabeled body-write GROUP.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBodyWriteGroupPartitionUse {
+    /// Globally unique partition-use identity.
+    pub id: String,
+    /// Labeled or unlabeled body-write frame carrying the GROUP node.
+    pub body_write: String,
+    /// Persistent body identity carried by the frame.
+    pub body_identity: u8,
+    /// Partition-local GROUP node carried by the frame.
+    pub group_node: u32,
+    /// Unique partition namespace containing every matched GROUP record.
+    pub partition_stream_ordinal: u32,
+    /// Ordered GROUP record updates retained inside the partition scope.
+    pub parasolid_group_records: Vec<String>,
+    /// Current ordered GROUP members resolved inside the partition scope.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parasolid_group_members: Vec<String>,
+}
+
+/// Exact direct tagged-reference field retained from one feature operation.
+///
+/// The tag and object identity are native evidence. They do not assign a
+/// body, operand, input, or output role.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationTaggedReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Owning bounded operation-record identity.
+    pub operation_record: String,
+    /// Zero-based reference order within the operation payload.
+    pub ordinal: u32,
+    /// Byte between the opening `01 02` marker and the object index.
+    pub tag: u8,
+    /// Referenced feature object index.
+    pub object_index: u32,
+    /// Exact serialized object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// Unique target in the native offset-store data-block arena, when found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Absolute offset of the object-index token.
+    pub object_index_source_offset: u64,
+    /// Exact serialized field byte length.
+    pub byte_len: u64,
+    /// Absolute offset of the opening `01 02` marker.
+    pub source_offset: u64,
+}
+
+/// Exact direct operation data-block reference retained from one feature
+/// operation.
+///
+/// The object identity and fixed suffix are native evidence. They do not
+/// assign a body, operand, input, output, seed, transform, or construction
+/// role.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationDataBlockReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Owning bounded operation-record identity.
+    pub operation_record: String,
+    /// Zero-based reference order within the operation payload.
+    pub ordinal: u32,
+    /// Referenced feature object index.
+    pub object_index: u32,
+    /// Exact serialized object-index token.
+    pub raw_object_index: Vec<u8>,
+    /// Unique target in the native offset-store data-block arena, when found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Absolute offset of the object-index token.
+    pub object_index_source_offset: u64,
+    /// Exact serialized field byte length.
     pub byte_len: u64,
     /// Absolute offset of the opening `01 02` marker.
     pub source_offset: u64,
@@ -137,6 +339,11 @@ pub struct FeatureOperationCommonFrame {
     /// Fixed marker selecting the index layout.
     pub marker: [u8; 3],
     /// Exact eight-byte state lane following the fixed state marker.
+    ///
+    /// The first three bytes remain an untyped operation-state prefix. The
+    /// admitted field mappings begin at byte three; callers must not treat the
+    /// prefix, or any other state byte, as feature suppression without the
+    /// separate serialized owner and typed-value joins.
     pub state: [u8; 8],
     /// Whether legacy operation modules are inactive, when the stored field is boolean.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -158,6 +365,9 @@ pub struct FeatureOperationCommonFrame {
     pub object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
     pub raw_object_index: Vec<u8>,
+    /// Unique target in the native offset-store data-block arena, when found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
     /// Exact serialized frame byte length.
     pub byte_len: u64,
     /// Absolute offset of the first compact index token.
@@ -190,10 +400,40 @@ pub struct FeatureOperationTerminalFrame {
     pub object_index: Option<u32>,
     /// Exact canonical nullable object-reference token.
     pub raw_object_index: Vec<u8>,
+    /// Unique target in the native offset-store data-block arena, when found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
     /// Absolute offset of the first local-ordinal token.
     pub source_offset: u64,
     /// Absolute offset of the object-reference token.
     pub object_index_source_offset: u64,
+}
+
+/// Exact join from an operation terminal ordinal to its state-journal row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationStateJournalUse {
+    /// Globally unique operation-to-journal relation identity.
+    pub id: String,
+    /// Owning feature-history section.
+    pub section_link: String,
+    /// Owning operation label.
+    pub operation_label: String,
+    /// Owning bounded operation record.
+    pub operation_record: String,
+    /// Terminal frame carrying the duplicated local ordinal.
+    pub operation_terminal_frame: String,
+    /// State-journal group containing the matching row.
+    pub journal_group: String,
+    /// Zero-based row order within the journal group.
+    pub journal_row_ordinal: u32,
+    /// Duplicated operation terminal ordinal.
+    pub operation_local_ordinal: u32,
+    /// Matching journal state ordinal.
+    pub journal_state_ordinal: u32,
+    /// Absolute source offset of the operation terminal frame.
+    pub operation_source_offset: u64,
+    /// Absolute source offset of the matching journal row.
+    pub journal_source_offset: u64,
 }
 
 /// Ordered length-framed string from one bounded feature-operation payload.
@@ -211,12 +451,44 @@ pub struct FeaturePayloadString {
     pub source_offset: u64,
 }
 
+/// Exact text frame retained from a `SYMBOLIC_THREAD` operation payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSymbolicThreadTextFrame {
+    /// Globally unique text-frame identity.
+    pub id: String,
+    /// Owning typed `SYMBOLIC_THREAD` record.
+    pub symbolic_thread: String,
+    /// Zero-based order among the operation's type-`03` text frames.
+    pub ordinal: u32,
+    /// Exact serialized text-frame marker.
+    pub marker: u8,
+    /// Exact UTF-8 text value.
+    pub value: String,
+    /// Absolute file offset of the text-frame marker.
+    pub source_offset: u64,
+}
+
+/// Typed text-frame payload retained from one `SYMBOLIC_THREAD` operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSymbolicThread {
+    /// Globally unique symbolic-thread identity.
+    pub id: String,
+    /// Owning `SYMBOLIC_THREAD` operation label.
+    pub operation_label: String,
+    /// Owning exact feature-operation record.
+    pub operation_record: String,
+    /// Ordered complete type-`03` text frames in the payload.
+    pub text_frames: Vec<FeatureSymbolicThreadTextFrame>,
+    /// Absolute file offset of the operation record's fixed header marker.
+    pub source_offset: u64,
+}
+
 /// Typed operation template carried by a hole payload string.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSimpleHoleTemplate {
     /// Globally unique template identity.
     pub id: String,
-    /// Owning `SIMPLE HOLE` or `CBORE_HOLE` operation label.
+    /// Owning `SIMPLE HOLE`, `CBORE_HOLE`, or `CSUNK_HOLE` operation label.
     pub operation_label: String,
     /// Source string in the native payload-string arena.
     pub payload_string: String,
@@ -230,6 +502,23 @@ pub struct FeatureSimpleHoleTemplate {
     pub start_treatment: SimpleHoleEndTreatment,
     /// Exit treatment token.
     pub end_treatment: SimpleHoleEndTreatment,
+}
+
+/// Exact threaded-hole template retained from a `SIMPLE HOLE` operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureThreadedHoleTemplate {
+    /// Globally unique template identity.
+    pub id: String,
+    /// Owning `SIMPLE HOLE` operation label.
+    pub operation_label: String,
+    /// Source string in the native payload-string arena.
+    pub payload_string: String,
+    /// Thread-standard family token.
+    pub family: ThreadedHoleFamily,
+    /// Axial extent token.
+    pub extent: SimpleHoleExtent,
+    /// Absolute file offset of the template string marker.
+    pub source_offset: u64,
 }
 
 /// Exact nonempty redundantly witnessed scalar lane in a simple-hole payload.
@@ -337,6 +626,16 @@ pub enum SimpleHoleFamily {
     GeneralHole,
 }
 
+/// Thread-standard family named by a threaded-hole template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThreadedHoleFamily {
+    /// Metric profile family named by the `M Profile` token.
+    MProfile,
+    /// Unified National Coarse family named by the `UNC` token.
+    Unc,
+}
+
 /// Cross-section named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -345,6 +644,8 @@ pub enum SimpleHoleForm {
     Simple,
     /// Counterbored cross-section.
     Counterbored,
+    /// Countersunk cross-section.
+    Countersunk,
 }
 
 /// Axial termination named by a simple-hole template.
@@ -367,7 +668,7 @@ pub enum SimpleHoleEndTreatment {
     Chamfer,
 }
 
-/// Primary body reference read or written by one feature-history operation.
+/// Direct primary-body selection in one feature-history operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureBodyReference {
     /// Globally unique reference identity.
@@ -1052,7 +1353,7 @@ pub struct FeatureSketchPayloadCoordinatePair {
     pub discriminator: Vec<u8>,
 }
 
-/// One exactly framed signed fixed-point pair in a reconstructed sketch payload.
+/// One exactly framed scaled shifted-binary64 pair in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureSketchPayloadFixedPair {
     /// Globally unique fixed-pair identity.
@@ -1063,9 +1364,9 @@ pub struct FeatureSketchPayloadFixedPair {
     pub construction_payload: String,
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
-    /// Ordered dimensionless signed Q1.55 values.
+    /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
     pub values: [f64; 2],
-    /// Exact ordered seven-byte two's-complement payloads.
+    /// Exact ordered seven-byte suffixes following the `30` atom markers.
     pub raw_values: [[u8; 7]; 2],
     /// Exact discriminator and branch prefix selecting the pair layout.
     pub discriminator: Vec<u8>,
@@ -1079,7 +1380,7 @@ pub struct FeatureSketchPayloadFixedPair {
     pub value_source_offsets: [u64; 2],
 }
 
-/// One exactly framed mixed Q1.55/binary32 pair in a reconstructed sketch payload.
+/// One exactly framed mixed scaled shifted-binary64/binary32 pair in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureSketchPayloadMixedPair {
     /// Globally unique mixed-pair identity.
@@ -1090,11 +1391,11 @@ pub struct FeatureSketchPayloadMixedPair {
     pub construction_payload: String,
     /// Zero-based frame order within the payload.
     pub ordinal: u32,
-    /// Dimensionless signed Q1.55 value.
+    /// Value reconstructed from the `30` shifted-binary64 atom and scaled by `1/4`.
     pub fixed_value: f64,
     /// Finite shifted-IEEE binary32 value widened exactly to binary64.
     pub binary32_value: f64,
-    /// Exact seven-byte two's-complement Q1.55 payload.
+    /// Exact seven-byte suffix following the `30` shifted-binary64 atom marker.
     pub fixed_raw_value: [u8; 7],
     /// Exact four-byte shifted-binary32 encoding.
     pub binary32_raw_value: [u8; 4],
@@ -1131,6 +1432,35 @@ pub struct FeatureSketchPayloadScalar {
     pub payload_offset: u64,
     /// Absolute file offset of the field marker.
     pub source_offset: u64,
+}
+
+/// Exact scalar-vector frame retained from one reconstructed sketch payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSketchPayloadScalarLane {
+    /// Globally unique scalar-lane identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Reconstructed sketch payload carrying this lane.
+    pub construction_payload: String,
+    /// Zero-based lane order within the reconstructed payload.
+    pub ordinal: u32,
+    /// Exact discriminator selecting the lane form.
+    pub discriminator: Vec<u8>,
+    /// Ordered finite scalar values after the discriminator.
+    pub values: Vec<f64>,
+    /// Exact nonzero scalar atoms in serialized order.
+    pub raw_values: Vec<Vec<u8>>,
+    /// Payload-relative offsets of the scalar atoms.
+    pub value_payload_offsets: Vec<u64>,
+    /// Payload-relative offset of the terminating zero atom.
+    pub terminator_payload_offset: u64,
+    /// Absolute source offset of the discriminator.
+    pub source_offset: u64,
+    /// Absolute source offsets of the scalar atoms.
+    pub value_source_offsets: Vec<u64>,
+    /// Absolute source offset of the terminating zero atom.
+    pub terminator_source_offset: u64,
 }
 
 /// Exact framed name retained from one reconstructed sketch payload.
@@ -1181,7 +1511,7 @@ pub struct FeatureSketchPayloadNamedRecord {
     pub scalar_fields: Vec<String>,
     /// Ordered fixed-pair fields before the next complete name field.
     pub fixed_pairs: Vec<String>,
-    /// Mixed Q1.55/binary32 pairs contained by this interval in payload order.
+    /// Mixed scaled shifted-binary64/binary32 pairs contained by this interval in payload order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mixed_pairs: Vec<String>,
     /// Payload-relative offset of the opening name marker.
@@ -1207,7 +1537,7 @@ pub struct FeatureSketchPoint {
     pub coordinates: [f64; 2],
 }
 
-/// Complete named dimensionless fixed-point record in a reconstructed sketch payload.
+/// Complete named scaled shifted-binary64 record in a reconstructed sketch payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureSketchFixedPoint {
     /// Globally unique fixed-point identity.
@@ -1220,7 +1550,7 @@ pub struct FeatureSketchFixedPoint {
     pub name: String,
     /// Exact fixed-pair field carrying the two values.
     pub fixed_pair: String,
-    /// Ordered dimensionless signed Q1.55 values.
+    /// Ordered values reconstructed from the `30` shifted-binary64 atoms and scaled by `1/4`.
     pub values: [f64; 2],
     /// Absolute source offset of the fixed-pair discriminator.
     pub source_offset: u64,
@@ -1572,6 +1902,8 @@ pub struct FeaturePatternReference {
     pub id: String,
     /// Owning pattern operation label.
     pub operation_label: String,
+    /// Exact byte layout that framed the reference field.
+    pub layout: FeaturePatternReferenceLayout,
     /// Zero-based non-null slot order in the exact reference field.
     pub ordinal: u32,
     /// Serialized object index.
@@ -1585,6 +1917,27 @@ pub struct FeaturePatternReference {
     pub source_offset: u64,
 }
 
+/// Exact counted reference lane carried by a bounded `Pattern Feature` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeaturePatternCountedReferenceLane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Owning `Pattern Feature` operation label.
+    pub operation_label: String,
+    /// Serialized count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered serialized object indices.
+    pub object_indices: Vec<u32>,
+    /// Exact variable-width object-index tokens in lane order.
+    pub raw_object_indices: Vec<Vec<u8>>,
+    /// Independently resolved offset-store blocks; unresolved entries are `None`.
+    pub data_blocks: Vec<Option<String>>,
+    /// Absolute source offset of the opening `01, count` field.
+    pub source_offset: u64,
+    /// Absolute source offsets of the object-index tokens.
+    pub object_index_source_offsets: Vec<u64>,
+}
+
 /// Exact logical payload reconstructed from an ordered pattern-reference graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeaturePatternConstructionPayload {
@@ -1594,6 +1947,8 @@ pub struct FeaturePatternConstructionPayload {
     pub operation_label: String,
     /// Exact operation family selecting the graph grammar.
     pub operation_kind: String,
+    /// Exact byte layout shared by the construction-reference graph.
+    pub reference_layout: FeaturePatternReferenceLayout,
     /// Ordered non-null construction-reference records.
     pub construction_references: Vec<String>,
     /// Ordered source blocks.
@@ -1608,6 +1963,18 @@ pub struct FeaturePatternConstructionPayload {
     pub block_byte_lengths: Vec<u64>,
     /// Absolute source-block offsets.
     pub block_source_offsets: Vec<u64>,
+}
+
+/// Byte layout selected by a pattern construction-reference field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeaturePatternReferenceLayout {
+    /// The `61`/`ff 00 ff 01`/`ff 62` graph framing.
+    CanonicalGraph,
+    /// The `3b`/`ff 00 01`/`ff 3c` graph framing.
+    CompactGraph,
+    /// The one-reference `Geometry Instance` framing.
+    GeometryInstance,
 }
 
 /// Canonical printable string in a reconstructed pattern payload.
@@ -2038,7 +2405,7 @@ pub struct FeatureDraftConstructionTerminalLane {
 pub struct FeatureSurfaceConstructionReference {
     /// Globally unique surface-construction-reference identity.
     pub id: String,
-    /// Owning `SKIN` or `Studio Surface` operation label.
+    /// Owning `SKIN`, `Studio Surface`, or `THRU_CURVE` operation label.
     pub operation_label: String,
     /// Zero-based slot order in the exact common envelope.
     pub ordinal: u32,
@@ -2050,6 +2417,97 @@ pub struct FeatureSurfaceConstructionReference {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
     /// Absolute file offset of the width marker.
+    pub source_offset: u64,
+}
+
+/// Exact leading construction envelope in a `THRU_CURVE` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureThruCurveConstructionEnvelope {
+    /// Globally unique envelope identity.
+    pub id: String,
+    /// Owning `THRU_CURVE` operation label.
+    pub operation_label: String,
+    /// Nonzero construction discriminator.
+    pub discriminator: u8,
+    /// Exact opaque controls between the reference groups.
+    pub controls: [u8; 9],
+    /// Nonzero control following the second reference group.
+    pub trailing_control: u8,
+    /// Exact two-byte value selected by the `a0` marker.
+    pub trailing_value: [u8; 2],
+    /// Absolute source offset of the discriminator.
+    pub source_offset: u64,
+}
+
+/// One exact counted branch in a `THRU_CURVE` construction group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureThruCurveConstructionBranch {
+    /// Zero-based branch order.
+    pub ordinal: u32,
+    /// Serialized nonzero branch mode.
+    pub mode: u8,
+    /// Count including the terminal reference.
+    pub declared_count: u8,
+    /// Exact state lane after the repeated count.
+    pub state_lane: Vec<u8>,
+    /// Ordered nonterminal references.
+    pub members: Vec<FeatureSurfaceBranchReference>,
+    /// Terminal reference.
+    pub terminal: FeatureSurfaceBranchReference,
+    /// Exact two-byte branch suffix.
+    pub suffix: [u8; 2],
+    /// Absolute source offset of the mode byte.
+    pub source_offset: u64,
+}
+
+/// Exact counted branch group after a `THRU_CURVE` construction envelope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureThruCurveConstructionBranchGroup {
+    /// Globally unique branch-group identity.
+    pub id: String,
+    /// Owning `THRU_CURVE` operation label.
+    pub operation_label: String,
+    /// Serialized group count including the implicit owner slot.
+    pub declared_count: u8,
+    /// Ordered explicit branches.
+    pub branches: Vec<FeatureThruCurveConstructionBranch>,
+    /// Exact group terminator selected by the schema generation.
+    pub terminator: Vec<u8>,
+    /// Absolute source offset of the group count.
+    pub source_offset: u64,
+}
+
+/// Exact leading construction branch in a `SWP104` payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSwp104LeadingBranch {
+    /// Globally unique leading-branch identity.
+    pub id: String,
+    /// Owning `SWP104` operation label.
+    pub operation_label: String,
+    /// Nonzero construction discriminator.
+    pub discriminator: u8,
+    /// Four finite shifted-binary64 values in serialized order.
+    pub scalars: [f64; 4],
+    /// Exact shifted-binary64 encodings.
+    pub raw_scalars: [[u8; 8]; 4],
+    /// Whether one zero byte precedes the branch mode.
+    pub leading_zero: bool,
+    /// Serialized nonzero branch mode.
+    pub mode: u8,
+    /// Count including the terminal reference.
+    pub declared_count: u8,
+    /// Optional independent count that bounds the state lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub witnessed_count: Option<u8>,
+    /// Exact state lane preceding the terminal marker.
+    pub state_lane: Vec<u8>,
+    /// Ordered nonterminal references.
+    pub members: Vec<FeatureSurfaceBranchReference>,
+    /// Terminal reference.
+    pub terminal: FeatureSurfaceBranchReference,
+    /// Exact byte length through the terminal zero.
+    pub byte_len: u64,
+    /// Absolute source offset of the discriminator.
     pub source_offset: u64,
 }
 
@@ -2176,8 +2634,11 @@ pub struct FeatureExtrudeProfileReference {
     pub operation_label: String,
     /// Zero-based profile-reference order.
     pub ordinal: u32,
-    /// Whether the payload repeats the complete encoded profile list exactly once.
-    pub witnessed: bool,
+    /// Field tag serialized before the counted reference list.
+    pub field_tag: u8,
+    /// Absolute source offset of the matching duplicate-list index marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub witness_source_offset: Option<u64>,
     /// Serialized object index.
     pub object_index: u32,
     /// Exact serialized payload object-index token.
@@ -2388,16 +2849,14 @@ pub struct FeatureExtrudeConstructionProfile {
     pub id: String,
     /// Owning `EXTRUDE` operation label.
     pub operation_label: String,
-    /// Body object anchoring the branch-`11` construction clause.
-    pub body_object_index: u32,
     /// Ordered serialized profile object indices.
     pub object_indices: Vec<u32>,
     /// Ordered uniquely resolved profile data blocks.
     pub data_blocks: Vec<String>,
     /// Source offsets from the independently encoded profile field.
     pub profile_source_offsets: Vec<u64>,
-    /// Source offsets from the body-clause reference lane.
-    pub body_lane_source_offsets: Vec<u64>,
+    /// Source offsets from the independently encoded duplicate list.
+    pub witness_source_offsets: Vec<u64>,
 }
 
 /// Structured `32` branch following an extrusion body-reference field.
@@ -2752,6 +3211,42 @@ fn visit_feature_history_operation_records(
     }
 }
 
+fn visit_feature_history_unlabeled_operation_records(
+    container: &Container,
+    mut visit: impl FnMut(
+        &crate::om::Section<'_>,
+        &str,
+        u64,
+        usize,
+        crate::om::UnlabeledOperationRecord<'_>,
+    ),
+) {
+    let sections = container.om_sections();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.unlabeled_operation_records_with_ordinals() {
+            visit(
+                section,
+                &section_key,
+                entry_offset,
+                operation_ordinal,
+                record,
+            );
+        }
+    }
+}
+
 pub(crate) fn canonical_feature_history_links(
     links: impl IntoIterator<Item = SegmentOmLink>,
 ) -> Vec<SegmentOmLink> {
@@ -2770,9 +3265,82 @@ pub(crate) fn canonical_feature_history_links(
     links
 }
 
+/// Return unique content-backed identities for the offset-store ordinals used
+/// by operation-header slots.
+///
+/// A slot ordinal is local to one offset store and can drift when a record is
+/// inserted. The map is usable only when the ordinal resolves to exactly one
+/// column block across all offset stores and that block has a unique
+/// content-backed identity. An ambiguous or duplicate block remains absent.
+fn operation_header_block_identities(container: &Container) -> BTreeMap<u32, Option<String>> {
+    let mut candidates = BTreeMap::<u32, Vec<Option<String>>>::new();
+    for block in data_blocks(container) {
+        if block.role == DataBlockRole::Column {
+            candidates
+                .entry(block.block_ordinal)
+                .or_default()
+                .push(block.stable_identity);
+        }
+    }
+    candidates
+        .into_iter()
+        .map(|(ordinal, identities)| {
+            let identity = match identities.as_slice() {
+                [Some(identity)] => Some(identity.clone()),
+                _ => None,
+            };
+            (ordinal, identity)
+        })
+        .collect()
+}
+
+/// Return the record-order-independent identity encoded by one operation
+/// header.
+///
+/// Every non-null slot must resolve through the complete offset-store map.
+/// An all-null tuple, an unresolved slot, or a duplicated content identity has
+/// no operation identity witness.
+fn operation_header_identity_key(
+    object_indices: [Option<u32>; 4],
+    block_identities: &BTreeMap<u32, Option<String>>,
+) -> Option<String> {
+    if !object_indices.iter().any(Option::is_some) {
+        return None;
+    }
+    let slots = object_indices
+        .iter()
+        .map(|index| match index {
+            None => Some("null".to_string()),
+            Some(index) => block_identities.get(index)?.clone(),
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(format!(
+        "nx:feature-history:operation-header-identity#content:{}",
+        slots.join("-")
+    ))
+}
+
+fn assign_operation_header_identities(
+    labels: &mut [FeatureOperationLabel],
+    block_identities: &BTreeMap<u32, Option<String>>,
+) {
+    let keys = labels
+        .iter()
+        .map(|label| operation_header_identity_key(label.object_indices, block_identities))
+        .collect::<Vec<_>>();
+    let mut counts = BTreeMap::<String, usize>::new();
+    for key in keys.iter().flatten() {
+        *counts.entry(key.clone()).or_default() += 1;
+    }
+    for (label, key) in labels.iter_mut().zip(keys) {
+        label.stable_identity = key.filter(|key| counts.get(key) == Some(&1));
+    }
+}
+
 /// Decode ordered operation labels from feature-history record areas.
 pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLabel> {
     let sections = container.om_sections();
+    let block_identities = operation_header_block_identities(container);
     let mut labels = Vec::new();
     for (section_ordinal, link) in feature_history_sections(container) {
         let Some((entry, section)) = sections.iter().find(|(entry, section)| {
@@ -2795,10 +3363,10 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
         };
         labels.extend(
             section
-                .operation_labels()
+                .operation_records_with_label_ordinals()
                 .into_iter()
-                .enumerate()
-                .filter_map(|(ordinal, label)| {
+                .filter_map(|(ordinal, record)| {
+                    let label = record.label;
                     let raw_object_indices: [Option<Vec<u8>>; 4] = std::array::from_fn(|slot| {
                         let start = label.object_index_offsets[slot] - record_area_offset;
                         let end = if slot + 1 < label.object_index_offsets.len() {
@@ -2822,11 +3390,13 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
                         value: label.value.to_string(),
                         object_indices: label.object_indices,
                         raw_object_indices,
+                        stable_identity: None,
                         source_offset: entry_offset + label.offset as u64,
                     })
                 }),
         );
     }
+    assign_operation_header_identities(&mut labels, &block_identities);
     labels
 }
 
@@ -2873,18 +3443,65 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
 
 /// Decode exact feature-operation record boundaries and byte identities.
 pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationRecord> {
+    let block_identities = operation_header_block_identities(container);
+    let mut identity_counts = BTreeMap::<String, usize>::new();
     let mut records = Vec::new();
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            records.push(FeatureOperationRecord {
+            let stable_identity =
+                operation_header_identity_key(record.label.object_indices, &block_identities);
+            if let Some(key) = &stable_identity {
+                *identity_counts.entry(key.clone()).or_default() += 1;
+            }
+            records.push((
+                FeatureOperationRecord {
+                    id: format!(
+                        "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    ordinal: operation_ordinal as u32,
+                    byte_len: record.bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
+                    payload_byte_len: record.payload.len() as u64,
+                    payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
+                    stable_identity: None,
+                    payload_source_offset: entry_offset + record.payload_offset as u64,
+                    source_offset: entry_offset + record.offset as u64,
+                },
+                stable_identity,
+            ));
+        },
+    );
+    records
+        .into_iter()
+        .map(|(mut record, stable_identity)| {
+            record.stable_identity =
+                stable_identity.filter(|key| identity_counts.get(key) == Some(&1));
+            record
+        })
+        .collect()
+}
+
+/// Retain operation records whose validated headers have no complete label.
+pub fn feature_unlabeled_operation_records(
+    container: &Container,
+) -> Vec<FeatureUnlabeledOperationRecord> {
+    let mut records = Vec::new();
+    visit_feature_history_unlabeled_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            records.push(FeatureUnlabeledOperationRecord {
                 id: format!(
-                    "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+                    "nx:feature-history:unlabeled-operation-record#{section_key}-{operation_ordinal:010}"
                 ),
-                operation_label,
                 ordinal: operation_ordinal as u32,
+                object_indices: record.object_indices,
+                object_index_source_offsets: record
+                    .object_index_offsets
+                    .map(|offset| entry_offset + offset as u64),
                 byte_len: record.bytes.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
                 payload_byte_len: record.payload.len() as u64,
@@ -2897,11 +3514,54 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
     records
 }
 
-/// Decode exact nested object-relation frames from bounded feature operations.
-pub fn feature_operation_object_relations(
+/// Decode body-write frames owned by independently bounded unlabeled records.
+pub fn feature_unlabeled_operation_body_writes(
     container: &Container,
-) -> Vec<FeatureOperationObjectRelation> {
-    let mut relations = Vec::new();
+) -> Vec<FeatureUnlabeledOperationBodyWrite> {
+    let indexed = container.indexed_om_sections();
+    let mut writes = Vec::new();
+    visit_feature_history_unlabeled_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let operation_record = format!(
+                "nx:feature-history:unlabeled-operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            for (ordinal, write) in crate::om::unlabeled_operation_body_write_frames(record)
+                .into_iter()
+                .enumerate()
+            {
+                writes.push(FeatureUnlabeledOperationBodyWrite {
+                    id: format!(
+                        "nx:feature-history:unlabeled-operation-body-write#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_record: operation_record.clone(),
+                    ordinal: ordinal as u32,
+                    body_identity: write.body_identity,
+                    group_node: write.group_node,
+                    raw_group_node: write.raw_group_node,
+                    group_node_source_offset: entry_offset + write.group_node_offset as u64,
+                    endpoint_tag: write.endpoint_tag,
+                    body_image_object_index: write.body_image_object_index,
+                    body_image_data_block: unique_offset_data_block(
+                        &indexed,
+                        write.body_image_object_index,
+                    ),
+                    raw_body_image_object_index: write.raw_body_image_object_index,
+                    body_image_object_index_source_offset: entry_offset
+                        + write.body_image_object_index_offset as u64,
+                    byte_len: (write.end_offset - write.offset) as u64,
+                    source_offset: entry_offset + write.offset as u64,
+                });
+            }
+        },
+    );
+    writes
+}
+
+/// Decode exact body-write frames from bounded feature operations.
+pub fn feature_operation_body_writes(container: &Container) -> Vec<FeatureOperationBodyWrite> {
+    let indexed = container.indexed_om_sections();
+    let mut writes = Vec::new();
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
@@ -2910,37 +3570,356 @@ pub fn feature_operation_object_relations(
             let operation_record = format!(
                 "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
             );
-            for (ordinal, relation) in crate::om::operation_object_relations(record)
+            for (ordinal, write) in crate::om::operation_body_write_frames(record)
                 .into_iter()
                 .enumerate()
             {
-                relations.push(FeatureOperationObjectRelation {
+                writes.push(FeatureOperationBodyWrite {
                     id: format!(
-                        "nx:feature-history:operation-object-relation#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                        "nx:feature-history:operation-body-write#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
                     operation_label: operation_label.clone(),
                     operation_record: operation_record.clone(),
                     ordinal: ordinal as u32,
-                    link_tag: relation.link_tag,
-                    first_object_index: relation.first_object_index,
-                    raw_first_object_index: relation.raw_first_object_index,
-                    first_object_index_source_offset: entry_offset
-                        + relation.first_object_index_offset as u64,
-                    second_object_index: relation.second_object_index,
-                    raw_second_object_index: relation.raw_second_object_index,
-                    second_object_index_source_offset: entry_offset
-                        + relation.second_object_index_offset as u64,
-                    byte_len: (relation.end_offset - relation.offset) as u64,
-                    source_offset: entry_offset + relation.offset as u64,
+                    body_identity: write.body_identity,
+                    group_node: write.group_node,
+                    raw_group_node: write.raw_group_node,
+                    group_node_source_offset: entry_offset
+                        + write.group_node_offset as u64,
+                    endpoint_tag: write.endpoint_tag,
+                    body_image_object_index: write.body_image_object_index,
+                    body_image_data_block: unique_offset_data_block(
+                        &indexed,
+                        write.body_image_object_index,
+                    ),
+                    raw_body_image_object_index: write.raw_body_image_object_index,
+                    body_image_object_index_source_offset: entry_offset
+                        + write.body_image_object_index_offset as u64,
+                    byte_len: (write.end_offset - write.offset) as u64,
+                    source_offset: entry_offset + write.offset as u64,
                 });
             }
         },
     );
-    relations
+    writes
+}
+
+/// Join body-write identities to unique plain cached-body aliases.
+///
+/// Partition aliases use a separate identity namespace and do not participate.
+/// A missing image block, no plain alias, or duplicate plain alias leaves the
+/// write unresolved.
+pub fn feature_operation_body_image_segment_uses(
+    writes: &[FeatureOperationBodyWrite],
+    bindings: &[SegmentBodyBinding],
+) -> Vec<FeatureOperationBodyImageSegmentUse> {
+    writes
+        .iter()
+        .filter_map(|write| {
+            let body_image_data_block = write.body_image_data_block.as_ref()?;
+            let mut matches = bindings.iter().filter(|binding| {
+                binding.stream_kind == "plain"
+                    && binding.body_alias_object_index == u32::from(write.body_identity)
+            });
+            let binding = matches.next()?;
+            if matches.next().is_some() {
+                return None;
+            }
+            Some(FeatureOperationBodyImageSegmentUse {
+                id: write.id.replacen(
+                    "operation-body-write",
+                    "operation-body-image-segment-use",
+                    1,
+                ),
+                operation_body_write: write.id.clone(),
+                body_image_data_block: body_image_data_block.clone(),
+                segment_body_binding: binding.id.clone(),
+            })
+        })
+        .collect()
+}
+
+/// Join persistent body identities to unique plain cached-body aliases.
+///
+/// This cross-store relation is independent of body-image block resolution.
+/// Partition-stream aliases use another identity namespace and do not match.
+pub fn feature_operation_body_identity_segment_uses(
+    writes: &[FeatureOperationBodyWrite],
+    bindings: &[SegmentBodyBinding],
+) -> Vec<FeatureOperationBodyIdentitySegmentUse> {
+    writes
+        .iter()
+        .filter_map(|write| {
+            let mut matches = bindings.iter().filter(|binding| {
+                binding.stream_kind == "plain"
+                    && binding.body_alias_object_index == u32::from(write.body_identity)
+            });
+            let binding = matches.next()?;
+            matches.next().is_none().then_some(())?;
+            Some(FeatureOperationBodyIdentitySegmentUse {
+                id: write.id.replacen(
+                    "operation-body-write",
+                    "operation-body-identity-segment-use",
+                    1,
+                ),
+                operation_body_write: write.id.clone(),
+                body_identity: write.body_identity,
+                segment_body_binding: binding.id.clone(),
+            })
+        })
+        .collect()
+}
+
+const BODY_HISTORY_TERMINAL_STREAM_ROLE: u32 = 16;
+
+fn body_history_partition_stream(
+    binding: &SegmentBodyBinding,
+    bindings: &[SegmentBodyBinding],
+    streams: &[crate::parasolid::Stream],
+) -> Option<u32> {
+    (binding.stream_kind == "plain").then_some(())?;
+    let stream_ordinal = usize::try_from(binding.stream_ordinal).ok()?;
+    (streams.get(stream_ordinal)?.kind == crate::parasolid::StreamKind::Plain).then_some(())?;
+    let partition_ordinal = streams
+        .iter()
+        .enumerate()
+        .skip(stream_ordinal + 1)
+        .find_map(|(ordinal, stream)| {
+            (stream.kind == crate::parasolid::StreamKind::Partition).then_some(ordinal)
+        })?;
+    let run_start = streams[..stream_ordinal]
+        .iter()
+        .rposition(|stream| stream.kind != crate::parasolid::StreamKind::Plain)
+        .map_or(0, |ordinal| ordinal + 1);
+    let run_streams = streams.get(run_start..partition_ordinal)?;
+    run_streams
+        .iter()
+        .all(|stream| stream.kind == crate::parasolid::StreamKind::Plain)
+        .then_some(())?;
+    let mut run_bindings = Vec::with_capacity(run_streams.len());
+    for ordinal in run_start..partition_ordinal {
+        let mut matches = bindings.iter().filter(|candidate| {
+            candidate.stream_kind == "plain"
+                && usize::try_from(candidate.stream_ordinal).ok() == Some(ordinal)
+        });
+        let candidate = matches.next()?;
+        matches.next().is_none().then_some(())?;
+        run_bindings.push(candidate);
+    }
+    let (terminal, preceding) = run_bindings.split_last()?;
+    (terminal.stream_role == BODY_HISTORY_TERMINAL_STREAM_ROLE
+        && preceding
+            .iter()
+            .all(|candidate| candidate.stream_role != BODY_HISTORY_TERMINAL_STREAM_ROLE))
+    .then_some(())?;
+    u32::try_from(partition_ordinal).ok()
+}
+
+/// Resolve body-write GROUP nodes only inside their complete body-history unit.
+///
+/// A plain cached-body binding belongs to the next partition only when every
+/// intervening compressed stream is another completely bound plain image and
+/// the run has one terminal role-16 binding. GROUP records from other
+/// partition-local namespaces never participate, even when their node IDs are
+/// equal.
+pub fn feature_operation_body_partition_uses(
+    writes: &[FeatureOperationBodyWrite],
+    image_uses: &[FeatureOperationBodyImageSegmentUse],
+    bindings: &[SegmentBodyBinding],
+    streams: &[crate::parasolid::Stream],
+    groups: &[crate::native::parasolid::ParasolidGroupRecord],
+    group_members: &[crate::native::parasolid::ParasolidGroupMember],
+) -> Vec<FeatureOperationBodyPartitionUse> {
+    image_uses
+        .iter()
+        .filter_map(|image_use| {
+            let mut matching_writes = writes
+                .iter()
+                .filter(|write| write.id == image_use.operation_body_write);
+            let write = matching_writes.next()?;
+            matching_writes.next().is_none().then_some(())?;
+            let mut matching_bindings = bindings
+                .iter()
+                .filter(|binding| binding.id == image_use.segment_body_binding);
+            let binding = matching_bindings.next()?;
+            matching_bindings.next().is_none().then_some(())?;
+            let partition_stream_ordinal =
+                body_history_partition_stream(binding, bindings, streams)?;
+            let parasolid_group_records = groups
+                .iter()
+                .filter(|group| {
+                    group.partition_stream_ordinal == Some(partition_stream_ordinal)
+                        && group.node_id == write.group_node
+                })
+                .map(|group| group.id.clone())
+                .collect();
+            let parasolid_group_members = group_members
+                .iter()
+                .filter(|member| {
+                    member.partition_stream_ordinal == partition_stream_ordinal
+                        && member.group_node_id == write.group_node
+                })
+                .map(|member| member.id.clone())
+                .collect();
+            Some(FeatureOperationBodyPartitionUse {
+                id: write
+                    .id
+                    .replacen("operation-body-write", "operation-body-partition-use", 1),
+                operation_body_write: write.id.clone(),
+                body_image_segment_use: image_use.id.clone(),
+                segment_body_binding: binding.id.clone(),
+                partition_stream_ordinal,
+                group_node: write.group_node,
+                parasolid_group_records,
+                parasolid_group_members,
+            })
+        })
+        .collect()
+}
+
+/// Resolve body-write GROUP nodes directly through their partition ownership.
+///
+/// The relation requires at least one retained GROUP record and exactly one
+/// partition namespace for that node. Labeled and independently bounded
+/// unlabeled writes participate in the same persistent body-identity domain.
+pub fn feature_body_write_group_partition_uses(
+    writes: &[FeatureOperationBodyWrite],
+    unlabeled_writes: &[FeatureUnlabeledOperationBodyWrite],
+    groups: &[crate::native::parasolid::ParasolidGroupRecord],
+    group_members: &[crate::native::parasolid::ParasolidGroupMember],
+) -> Vec<FeatureBodyWriteGroupPartitionUse> {
+    let candidates = writes
+        .iter()
+        .map(|write| (write.id.as_str(), write.body_identity, write.group_node))
+        .chain(
+            unlabeled_writes
+                .iter()
+                .map(|write| (write.id.as_str(), write.body_identity, write.group_node)),
+        );
+    candidates
+        .filter_map(|(id, body_identity, group_node)| {
+            let matching_groups = groups
+                .iter()
+                .filter(|group| group.node_id == group_node)
+                .collect::<Vec<_>>();
+            (!matching_groups.is_empty()).then_some(())?;
+            let partitions = matching_groups
+                .iter()
+                .filter_map(|group| group.partition_stream_ordinal)
+                .collect::<BTreeSet<_>>();
+            let mut partitions = partitions.into_iter();
+            let partition_stream_ordinal = partitions.next()?;
+            partitions.next().is_none().then_some(())?;
+            matching_groups
+                .iter()
+                .all(|group| group.partition_stream_ordinal == Some(partition_stream_ordinal))
+                .then_some(())?;
+            Some(FeatureBodyWriteGroupPartitionUse {
+                id: id.replacen("body-write", "body-write-group-partition-use", 1),
+                body_write: id.to_string(),
+                body_identity,
+                group_node,
+                partition_stream_ordinal,
+                parasolid_group_records: matching_groups
+                    .into_iter()
+                    .map(|group| group.id.clone())
+                    .collect(),
+                parasolid_group_members: group_members
+                    .iter()
+                    .filter(|member| {
+                        member.partition_stream_ordinal == partition_stream_ordinal
+                            && member.group_node_id == group_node
+                    })
+                    .map(|member| member.id.clone())
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+/// Decode exact direct tagged-reference fields from bounded feature operations.
+pub fn feature_operation_tagged_references(
+    container: &Container,
+) -> Vec<FeatureOperationTaggedReference> {
+    let indexed = container.indexed_om_sections();
+    let mut references = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            for (ordinal, reference) in crate::om::operation_tagged_references(record)
+                .into_iter()
+                .enumerate()
+            {
+                references.push(FeatureOperationTaggedReference {
+                    id: format!(
+                        "nx:feature-history:operation-tagged-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    operation_record: operation_record.clone(),
+                    ordinal: ordinal as u32,
+                    tag: reference.tag,
+                    object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object_index_source_offset: entry_offset
+                        + reference.object_index_offset as u64,
+                    byte_len: (reference.end_offset - reference.offset) as u64,
+                    source_offset: entry_offset + reference.offset as u64,
+                });
+            }
+        },
+    );
+    references
+}
+
+/// Decode exact direct operation data-block reference fields from bounded
+/// feature operations.
+pub fn feature_operation_data_block_references(
+    container: &Container,
+) -> Vec<FeatureOperationDataBlockReference> {
+    let indexed = container.indexed_om_sections();
+    let mut references = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            for (ordinal, reference) in crate::om::operation_data_block_references(record)
+                .into_iter()
+                .enumerate()
+            {
+                references.push(FeatureOperationDataBlockReference {
+                    id: format!(
+                        "nx:feature-history:operation-data-block-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    operation_record: operation_record.clone(),
+                    ordinal: ordinal as u32,
+                    object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    object_index_source_offset: entry_offset
+                        + reference.object_index_offset as u64,
+                    byte_len: (reference.end_offset - reference.offset) as u64,
+                    source_offset: entry_offset + reference.offset as u64,
+                });
+            }
+        },
+    );
+    references
 }
 
 /// Decode every exact common frame from bounded feature operations.
 pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOperationCommonFrame> {
+    let indexed = container.indexed_om_sections();
     let mut frames = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -2970,6 +3949,9 @@ pub fn feature_operation_common_frames(container: &Container) -> Vec<FeatureOper
                     raw_local_ordinal: frame.raw_local_ordinal,
                     object_index: frame.object_index,
                     raw_object_index: frame.raw_object_index,
+                    data_block: frame
+                        .object_index
+                        .and_then(|object_index| unique_offset_data_block(&indexed, object_index)),
                     byte_len: (frame.end_offset - frame.offset) as u64,
                     source_offset: entry_offset + frame.offset as u64,
                     index_source_offsets: frame
@@ -3011,6 +3993,7 @@ pub fn feature_operation_terminal_frames(
     container: &Container,
     common_frames: &[FeatureOperationCommonFrame],
 ) -> Vec<FeatureOperationTerminalFrame> {
+    let indexed = container.indexed_om_sections();
     let mut frames = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -3044,12 +4027,87 @@ pub fn feature_operation_terminal_frames(
                 raw_local_ordinal: frame.raw_local_ordinal,
                 object_index: frame.object_index,
                 raw_object_index: frame.raw_object_index,
+                data_block: frame
+                    .object_index
+                    .and_then(|object_index| unique_offset_data_block(&indexed, object_index)),
                 source_offset: entry_offset + frame.offset as u64,
                 object_index_source_offset: entry_offset + frame.object_index_offset as u64,
             });
         },
     );
     frames
+}
+
+/// Join operation terminal ordinals to exact rows in the owning state journal.
+pub fn feature_operation_state_journal_uses(
+    labels: &[FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    terminal_frames: &[FeatureOperationTerminalFrame],
+    journal_groups: &[OmOperationStateJournalGroup],
+) -> Vec<FeatureOperationStateJournalUse> {
+    let labels_by_id = labels
+        .iter()
+        .map(|label| (label.id.as_str(), label))
+        .collect::<BTreeMap<_, _>>();
+    let record_labels = records
+        .iter()
+        .filter_map(|record| {
+            let label = labels_by_id.get(record.operation_label.as_str())?;
+            Some((record.id.as_str(), *label))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut journal_rows = BTreeMap::new();
+    for group in journal_groups {
+        for (row_ordinal, row) in group.rows.iter().enumerate() {
+            let Some(row_ordinal) = u32::try_from(row_ordinal).ok() else {
+                continue;
+            };
+            let key = (group.section_link.as_str(), row.state_ordinal);
+            match journal_rows.entry(key) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some((group, row_ordinal, row)));
+                }
+                std::collections::btree_map::Entry::Occupied(entry) => {
+                    *entry.into_mut() = None;
+                }
+            }
+        }
+    }
+    let mut uses = Vec::new();
+    for frame in terminal_frames {
+        let Some(label) = record_labels.get(frame.operation_record.as_str()) else {
+            continue;
+        };
+        let Some(Some((group, journal_row_ordinal, row))) =
+            journal_rows.get(&(label.section_link.as_str(), frame.local_ordinal))
+        else {
+            continue;
+        };
+        let operation_key = frame
+            .operation_record
+            .strip_prefix("nx:feature-history:operation-record#")
+            .unwrap_or(frame.operation_record.as_str());
+        let journal_key = group
+            .id
+            .strip_prefix("nx:feature-history:operation-state-journal-group#")
+            .unwrap_or(group.id.as_str());
+        uses.push(FeatureOperationStateJournalUse {
+            id: format!(
+                "nx:feature-history:operation-state-journal-use#{operation_key}-{journal_key}-{journal_row_ordinal:010}"
+            ),
+            section_link: label.section_link.clone(),
+            operation_label: label.id.clone(),
+            operation_record: frame.operation_record.clone(),
+            operation_terminal_frame: frame.id.clone(),
+            journal_group: group.id.clone(),
+            journal_row_ordinal: *journal_row_ordinal,
+            operation_local_ordinal: frame.local_ordinal,
+            journal_state_ordinal: row.state_ordinal,
+            operation_source_offset: frame.source_offset,
+            journal_source_offset: row.source_offset,
+        });
+    }
+    uses
 }
 
 /// Decode ordered self-framed strings from feature-operation payloads.
@@ -3080,6 +4138,61 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
     strings
 }
 
+fn symbolic_thread_text_frames(
+    record: crate::om::OperationRecord<'_>,
+) -> Option<Vec<crate::om::OperationPayloadTextFrame<'_>>> {
+    if record.label.value != "SYMBOLIC_THREAD" {
+        return None;
+    }
+    let frames = crate::om::operation_payload_text_frames(record)
+        .into_iter()
+        .filter(|frame| frame.marker == 0x03)
+        .collect::<Vec<_>>();
+    (frames.len() >= 2).then_some(frames)
+}
+
+/// Decode complete typed text frames from symbolic-thread operations.
+pub fn feature_symbolic_threads(container: &Container) -> Vec<FeatureSymbolicThread> {
+    let mut threads = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(frames) = symbolic_thread_text_frames(record) else {
+                return;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            let operation_record = format!(
+                "nx:feature-history:operation-record#{section_key}-{operation_ordinal:010}"
+            );
+            let id =
+                format!("nx:feature-history:symbolic-thread#{section_key}-{operation_ordinal:010}");
+            let text_frames = frames
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, frame)| FeatureSymbolicThreadTextFrame {
+                    id: format!(
+                        "nx:feature-history:symbolic-thread-text-frame#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    symbolic_thread: id.clone(),
+                    ordinal: ordinal as u32,
+                    marker: frame.marker,
+                    value: frame.value.to_string(),
+                    source_offset: entry_offset + frame.offset as u64,
+                })
+                .collect();
+            threads.push(FeatureSymbolicThread {
+                id,
+                operation_label,
+                operation_record,
+                text_frames,
+                source_offset: entry_offset + record.offset as u64,
+            });
+        },
+    );
+    threads
+}
+
 /// Join exact hole payload templates to their operation identities.
 pub fn feature_simple_hole_templates(
     labels: &[FeatureOperationLabel],
@@ -3102,8 +4215,10 @@ pub fn feature_simple_hole_templates(
         let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
             continue;
         };
-        if !matches!(label.value.as_str(), "SIMPLE HOLE" | "CBORE_HOLE")
-            || !string.value.starts_with("Hole_")
+        if !matches!(
+            label.value.as_str(),
+            "SIMPLE HOLE" | "CBORE_HOLE" | "CSUNK_HOLE"
+        ) || !string.value.starts_with("Hole_")
         {
             continue;
         }
@@ -3131,6 +4246,57 @@ pub fn feature_simple_hole_templates(
                 extent,
                 start_treatment,
                 end_treatment,
+            })
+        })
+        .collect()
+}
+
+/// Join exact threaded-hole payload templates to their operation identities.
+pub fn feature_threaded_hole_templates(
+    labels: &[FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    strings: &[FeaturePayloadString],
+) -> Vec<FeatureThreadedHoleTemplate> {
+    let labels_by_id = labels
+        .iter()
+        .map(|label| (label.id.as_str(), label))
+        .collect::<BTreeMap<_, _>>();
+    let records_by_id = records
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let mut templates_by_operation = BTreeMap::<String, Vec<_>>::new();
+    for string in strings {
+        let Some(record) = records_by_id.get(string.operation_record.as_str()) else {
+            continue;
+        };
+        let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
+            continue;
+        };
+        if label.value != "SIMPLE HOLE" || !string.value.starts_with("Hole_") {
+            continue;
+        }
+        templates_by_operation
+            .entry(label.id.clone())
+            .or_default()
+            .push((string, *label));
+    }
+    templates_by_operation
+        .into_values()
+        .filter_map(|candidates| {
+            let [(string, label)] = candidates.as_slice() else {
+                return None;
+            };
+            let (family, extent) = parse_threaded_hole_template(&string.value)?;
+            Some(FeatureThreadedHoleTemplate {
+                id: string
+                    .id
+                    .replacen("payload-string", "threaded-hole-template", 1),
+                operation_label: label.id.clone(),
+                payload_string: string.id.clone(),
+                family,
+                extent,
+                source_offset: string.source_offset,
             })
         })
         .collect()
@@ -3444,6 +4610,7 @@ pub(crate) fn parse_simple_hole_template(
     let form = match tokens[2] {
         "Simple" => SimpleHoleForm::Simple,
         "Counterbored" => SimpleHoleForm::Counterbored,
+        "Countersunk" => SimpleHoleForm::Countersunk,
         _ => return None,
     };
     let extent = match tokens[3] {
@@ -3456,8 +4623,12 @@ pub(crate) fn parse_simple_hole_template(
             SimpleHoleEndTreatment::Chamfer,
             SimpleHoleEndTreatment::Chamfer,
         ),
-        (SimpleHoleForm::Counterbored, SimpleHoleExtent::Through, [])
-        | (SimpleHoleForm::Simple, SimpleHoleExtent::Blind, []) => {
+        (
+            SimpleHoleForm::Counterbored | SimpleHoleForm::Countersunk,
+            SimpleHoleExtent::Through,
+            [],
+        )
+        | (SimpleHoleForm::Simple | SimpleHoleForm::Countersunk, SimpleHoleExtent::Blind, []) => {
             (SimpleHoleEndTreatment::None, SimpleHoleEndTreatment::None)
         }
         _ => return None,
@@ -3469,6 +4640,18 @@ pub(crate) fn parse_simple_hole_template(
         start_treatment,
         end_treatment,
     ))
+}
+
+pub(crate) fn parse_threaded_hole_template(
+    value: &str,
+) -> Option<(ThreadedHoleFamily, SimpleHoleExtent)> {
+    match value {
+        "Hole_ThreadedHole_M Profile_Blind" => {
+            Some((ThreadedHoleFamily::MProfile, SimpleHoleExtent::Blind))
+        }
+        "Hole_ThreadedHole_UNC_Blind" => Some((ThreadedHoleFamily::Unc, SimpleHoleExtent::Blind)),
+        _ => None,
+    }
 }
 
 /// Decode complete body-reference fields from feature-history operations.
@@ -3549,19 +4732,34 @@ pub fn feature_body_reference_occurrences(
     references
 }
 
-/// Join object-index primary body fields to exactly one segment body alias pair.
+/// Join primary body fields to exactly one segment body alias pair.
 ///
 /// A field resolved in an offset store enters the segment namespace only when
 /// its operation has one resolved offset store, the field has one retained
-/// data-block use, and that field's identity matches one unique segment alias.
-/// A primary-index match, a missing or duplicate data-block use, a missing or
-/// ambiguous store, or a duplicate segment alias remains unresolved.
+/// data-block use, and that block contains one object frame carrying the
+/// field's persistent identity. A primary-index match, a missing or duplicate
+/// data-block use, a missing or ambiguous store, a missing or duplicate object
+/// frame, or a duplicate segment alias remains unresolved.
+fn unique_offset_store_body_frame<'a>(
+    reference: &FeatureBodyReference,
+    data_block_use: &FeatureBodyDataBlockUse,
+    object_frames: &'a [DataBlockObjectFrame],
+) -> Option<&'a DataBlockObjectFrame> {
+    let mut matches = object_frames.iter().filter(|frame| {
+        frame.data_block == data_block_use.data_block
+            && frame.object_id == reference.body_object_index
+    });
+    let frame = matches.next()?;
+    matches.next().is_none().then_some(frame)
+}
+
 pub fn feature_body_segment_uses(
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
     bindings: &[SegmentBodyBinding],
+    object_frames: &[DataBlockObjectFrame],
 ) -> Vec<FeatureBodySegmentUse> {
     let unique_references = unique_feature_body_references(references);
     let offset_store_reference_counts =
@@ -3602,6 +4800,10 @@ pub fn feature_body_segment_uses(
                 return None;
             }
             let binding = if has_offset_store_reference {
+                let data_block_use = data_block_uses
+                    .iter()
+                    .find(|use_| use_.feature_body_reference == reference.id)?;
+                unique_offset_store_body_frame(reference, data_block_use, object_frames)?;
                 crate::native::segments::unique_segment_body_alias_binding(
                     reference.body_object_index,
                     bindings,
@@ -4836,7 +6038,7 @@ pub fn feature_sketch_payload_coordinate_pairs(
         container,
         payloads,
         |payload| &payload.data_blocks,
-        crate::om::object_payload_scalar_pairs,
+        crate::om::sketch_payload_scalar_pairs,
         |payload, ordinal, pair, source_offset| {
             Some(FeatureSketchPayloadCoordinatePair {
                 id: format!("{}-coordinate-pair-{ordinal:010}", payload.id),
@@ -4858,7 +6060,7 @@ pub fn feature_sketch_payload_coordinate_pairs(
     )
 }
 
-/// Decode exact signed fixed-point pair frames from reconstructed sketch payloads.
+/// Decode exact scaled shifted-binary64 pair frames from reconstructed sketch payloads.
 pub fn feature_sketch_payload_fixed_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
@@ -4889,7 +6091,7 @@ pub fn feature_sketch_payload_fixed_pairs(
     )
 }
 
-/// Decode exact mixed Q1.55/binary32 pair frames from reconstructed sketch payloads.
+/// Decode exact mixed scaled shifted-binary64/binary32 pair frames from reconstructed sketch payloads.
 pub fn feature_sketch_payload_mixed_pairs(
     container: &Container,
     payloads: &[FeatureSketchConstructionPayload],
@@ -4948,11 +6150,18 @@ pub(crate) fn offset_data_block_bytes_for_section<'a>(
     blocks
 }
 
-fn offset_data_block_bytes<'a>(container: &'a Container<'_>) -> BTreeMap<String, (&'a [u8], u64)> {
+fn offset_data_block_bytes<'a>(
+    container: &'a Container<'_>,
+) -> Cow<'a, BTreeMap<String, (&'a [u8], u64)>> {
+    if let Some(blocks) = container.cached_offset_data_block_bytes() {
+        return Cow::Borrowed(blocks);
+    }
+    let indexed = container.indexed_om_sections();
+    if let Some(blocks) = container.cached_offset_data_block_bytes() {
+        return Cow::Borrowed(blocks);
+    }
     let mut blocks = BTreeMap::new();
-    for (section_ordinal, (entry, section)) in
-        container.indexed_om_sections().into_iter().enumerate()
-    {
+    for (section_ordinal, (entry, section)) in indexed.into_iter().enumerate() {
         if section
             .records
             .first()
@@ -4968,7 +6177,7 @@ fn offset_data_block_bytes<'a>(container: &'a Container<'_>) -> BTreeMap<String,
             &section.records,
         ));
     }
-    blocks
+    Cow::Owned(blocks)
 }
 
 /// Decode exact framed scalar fields across reconstructed sketch payloads.
@@ -5027,6 +6236,45 @@ pub fn feature_sketch_payload_scalars(
         })
         .flatten()
         .collect()
+}
+
+/// Decode exact scalar-vector frames across reconstructed sketch payloads.
+pub fn feature_sketch_payload_scalar_lanes(
+    container: &Container,
+    payloads: &[FeatureSketchConstructionPayload],
+) -> Vec<FeatureSketchPayloadScalarLane> {
+    construction_payload_frames(
+        container,
+        payloads,
+        |payload| &payload.data_blocks,
+        crate::om::sketch_payload_scalar_lanes,
+        |payload, ordinal, lane, source_offset| {
+            let value_payload_offsets = lane
+                .value_offsets
+                .iter()
+                .map(|offset| *offset as u64)
+                .collect::<Vec<_>>();
+            let value_source_offsets = lane
+                .value_offsets
+                .iter()
+                .map(|offset| source_offset(*offset))
+                .collect::<Option<Vec<_>>>()?;
+            Some(FeatureSketchPayloadScalarLane {
+                id: format!("{}-scalar-lane-{ordinal:010}", payload.id),
+                operation_label: payload.operation_label.clone(),
+                construction_payload: payload.id.clone(),
+                ordinal: ordinal as u32,
+                discriminator: lane.discriminator,
+                values: lane.values,
+                raw_values: lane.raw_values,
+                value_payload_offsets,
+                terminator_payload_offset: lane.terminator_offset as u64,
+                source_offset: source_offset(lane.offset)?,
+                value_source_offsets,
+                terminator_source_offset: source_offset(lane.terminator_offset)?,
+            })
+        },
+    )
 }
 
 /// Decode exact compact-code name fields across reconstructed sketch payloads.
@@ -5194,12 +6442,24 @@ pub fn feature_sketch_points(
         .iter()
         .filter_map(|record| {
             let name = names.get(record.name_field.as_str())?;
+            if name.operation_label != record.operation_label
+                || name.construction_payload != record.construction_payload
+            {
+                return None;
+            }
             parse_sketch_point_name(&name.value)?;
             let [first_id, second_id] = record.scalar_fields.as_slice() else {
                 return None;
             };
             let first = scalars.get(first_id.as_str())?;
             let second = scalars.get(second_id.as_str())?;
+            if [first, second].into_iter().any(|scalar| {
+                scalar.operation_label != record.operation_label
+                    || scalar.construction_payload != record.construction_payload
+                    || !scalar.value.is_finite()
+            }) {
+                return None;
+            }
             Some(FeatureSketchPoint {
                 id: format!(
                     "nx:feature-history:sketch-point#{}",
@@ -5248,8 +6508,19 @@ pub fn feature_sketch_fixed_points(
                 return None;
             };
             let name = names.get(record.name_field.as_str())?;
+            if name.operation_label != record.operation_label
+                || name.construction_payload != record.construction_payload
+            {
+                return None;
+            }
             parse_sketch_point_name(&name.value)?;
             let pair = fixed_pairs.get(fixed_pair_id.as_str())?;
+            if pair.operation_label != record.operation_label
+                || pair.construction_payload != record.construction_payload
+                || pair.values.iter().any(|value| !value.is_finite())
+            {
+                return None;
+            }
             Some(FeatureSketchFixedPoint {
                 id: record
                     .id
@@ -5322,11 +6593,9 @@ pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedP
         let section_key = format!("nx:om-data-blocks-{section_ordinal}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for ordinal in 0..section.records.len() {
-            let remaining = section.records[ordinal..]
-                .iter()
-                .map(|record| record.bytes)
-                .collect::<Vec<_>>();
-            let Some(point) = crate::om::offset_store_named_point(&remaining) else {
+            let Some(point) = crate::om::offset_store_named_point(
+                section.records[ordinal..].iter().map(|record| record.bytes),
+            ) else {
                 continue;
             };
             let records = &section.records[ordinal..ordinal + point.block_count];
@@ -5592,8 +6861,9 @@ pub fn feature_sketch_datum_csys_dependencies(
         let Some(consumer_position) = positions.get(construction.operation_label.as_str()) else {
             continue;
         };
-        let mut candidates = Vec::new();
-        for point_use in point_uses {
+        let mut candidate: Option<(usize, FeatureSketchDatumCsysBlockRelation)> = None;
+        let mut ambiguous = false;
+        'point_uses: for (point_use_index, point_use) in point_uses.iter().enumerate() {
             let Some(producer_position) = positions.get(point_use.operation_label.as_str()) else {
                 continue;
             };
@@ -5608,12 +6878,21 @@ pub fn feature_sketch_datum_csys_dependencies(
                 .iter()
                 .filter(|block| point.data_blocks.contains(block))
             {
-                candidates.push((
-                    point_use,
-                    FeatureSketchDatumCsysBlockRelation::Shared {
-                        data_block: shared_block.clone(),
-                    },
-                ));
+                let relation = FeatureSketchDatumCsysBlockRelation::Shared {
+                    data_block: shared_block.clone(),
+                };
+                let is_new_ambiguity =
+                    candidate
+                        .as_ref()
+                        .is_some_and(|(existing_index, existing_relation)| {
+                            point_uses[*existing_index].id != point_use.id
+                                || *existing_relation != relation
+                        });
+                if is_new_ambiguity {
+                    ambiguous = true;
+                    break 'point_uses;
+                }
+                candidate.get_or_insert((point_use_index, relation));
             }
             let Some(point_last_block) = point.data_blocks.last() else {
                 continue;
@@ -5631,25 +6910,35 @@ pub fn feature_sketch_datum_csys_dependencies(
                 if point_store == construction_store
                     && point_ordinal.checked_add(1) == Some(construction_ordinal)
                 {
-                    candidates.push((
-                        point_use,
-                        FeatureSketchDatumCsysBlockRelation::Consecutive {
-                            point_data_block: point_last_block.clone(),
-                            construction_data_block: construction_first_block.clone(),
-                        },
-                    ));
+                    let relation = FeatureSketchDatumCsysBlockRelation::Consecutive {
+                        point_data_block: point_last_block.clone(),
+                        construction_data_block: construction_first_block.clone(),
+                    };
+                    let is_new_ambiguity =
+                        candidate
+                            .as_ref()
+                            .is_some_and(|(existing_index, existing_relation)| {
+                                point_uses[*existing_index].id != point_use.id
+                                    || *existing_relation != relation
+                            });
+                    if is_new_ambiguity {
+                        ambiguous = true;
+                    } else {
+                        candidate.get_or_insert((point_use_index, relation));
+                    }
                 }
             }
+            if ambiguous {
+                break;
+            }
         }
-        candidates.sort_by(|(left_use, left_relation), (right_use, right_relation)| {
-            (left_use.id.as_str(), left_relation).cmp(&(right_use.id.as_str(), right_relation))
-        });
-        candidates.dedup_by(|(left_use, left_relation), (right_use, right_relation)| {
-            left_use.id == right_use.id && left_relation == right_relation
-        });
-        let [(point_use, block_relation)] = candidates.as_slice() else {
+        if ambiguous {
+            continue;
+        }
+        let Some((point_use_index, block_relation)) = candidate else {
             continue;
         };
+        let point_use = &point_uses[point_use_index];
         let point = points[point_use.named_point.as_str()];
         let scalar_aliases = point
             .value_source_offsets
@@ -5703,19 +6992,20 @@ pub(crate) fn join_data_block_bytes(
     ids: &[String],
     blocks: &BTreeMap<String, (&[u8], u64)>,
 ) -> Option<JoinedDataBlockBytes> {
-    let source_blocks = ids
-        .iter()
-        .map(|id| blocks.get(id).copied())
-        .collect::<Option<Vec<_>>>()?;
-    let byte_len = source_blocks
-        .iter()
-        .map(|(bytes, _)| bytes.len())
-        .sum::<usize>();
-    let mut payload = Vec::with_capacity(byte_len);
-    let mut block_payload_offsets = Vec::with_capacity(source_blocks.len());
-    let mut block_byte_lengths = Vec::with_capacity(source_blocks.len());
-    let mut block_source_offsets = Vec::with_capacity(source_blocks.len());
-    for (bytes, source_offset) in source_blocks {
+    let byte_len = ids.iter().try_fold(0usize, |total, id| {
+        let (bytes, _) = blocks.get(id).copied()?;
+        total.checked_add(bytes.len())
+    })?;
+    let mut payload = Vec::new();
+    payload.try_reserve_exact(byte_len).ok()?;
+    let mut block_payload_offsets = Vec::new();
+    block_payload_offsets.try_reserve_exact(ids.len()).ok()?;
+    let mut block_byte_lengths = Vec::new();
+    block_byte_lengths.try_reserve_exact(ids.len()).ok()?;
+    let mut block_source_offsets = Vec::new();
+    block_source_offsets.try_reserve_exact(ids.len()).ok()?;
+    for id in ids {
+        let (bytes, source_offset) = blocks.get(id).copied()?;
         block_payload_offsets.push(payload.len() as u64);
         block_byte_lengths.push(bytes.len() as u64);
         block_source_offsets.push(source_offset);
@@ -6148,29 +7438,92 @@ pub fn feature_projected_curve_construction_strings(
 /// Decode and resolve exact ordered construction references in pattern
 /// payloads without assigning seed or transform semantics to their slots.
 pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternReference> {
-    resolved_feature_payload_references(container, |record| {
-        crate::om::pattern_payload_references(record).map(|field| field.references)
-    })
-    .into_iter()
-    .map(|reference| {
-        let operation_label = format!(
-            "nx:feature-history:operation-label#{}-{:010}",
-            reference.section_key, reference.operation_ordinal
-        );
-        FeaturePatternReference {
-            id: format!(
-                "nx:feature-history:pattern-reference#{}-{:010}-{:010}",
-                reference.section_key, reference.operation_ordinal, reference.ordinal
-            ),
-            operation_label,
-            ordinal: reference.ordinal as u32,
-            object_index: reference.object_index,
-            raw_object_index: reference.raw_object_index,
-            data_block: reference.data_block,
-            source_offset: reference.source_offset,
-        }
-    })
-    .collect()
+    let indexed = container.indexed_om_sections();
+    let mut references = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(decoded) = crate::om::pattern_payload_references(record) else {
+                return;
+            };
+            let layout = match decoded.layout {
+                crate::om::PatternPayloadReferenceLayout::CanonicalGraph => {
+                    FeaturePatternReferenceLayout::CanonicalGraph
+                }
+                crate::om::PatternPayloadReferenceLayout::CompactGraph => {
+                    FeaturePatternReferenceLayout::CompactGraph
+                }
+                crate::om::PatternPayloadReferenceLayout::GeometryInstance => {
+                    FeaturePatternReferenceLayout::GeometryInstance
+                }
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
+                FeaturePatternReference {
+                    id: format!(
+                        "nx:feature-history:pattern-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    layout,
+                    ordinal: ordinal as u32,
+                    object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    source_offset: entry_offset + reference.offset as u64,
+                }
+            }));
+        },
+    );
+    references
+}
+
+/// Decode and resolve the exact counted reference lane in `Pattern Feature`
+/// payloads without assigning roles to its references.
+pub fn feature_pattern_counted_reference_lanes(
+    container: &Container,
+) -> Vec<FeaturePatternCountedReferenceLane> {
+    let indexed = container.indexed_om_sections();
+    let mut lanes = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(lane) = crate::om::pattern_payload_counted_reference_lane(record) else {
+                return;
+            };
+            lanes.push(FeaturePatternCountedReferenceLane {
+                id: format!(
+                    "nx:feature-history:pattern-counted-reference-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                declared_count: lane.declared_count,
+                object_indices: lane
+                    .references
+                    .iter()
+                    .map(|reference| reference.object_index)
+                    .collect(),
+                raw_object_indices: lane
+                    .references
+                    .iter()
+                    .map(|reference| reference.raw_object_index.clone())
+                    .collect(),
+                data_blocks: lane
+                    .references
+                    .iter()
+                    .map(|reference| unique_offset_data_block(&indexed, reference.object_index))
+                    .collect(),
+                source_offset: entry_offset + lane.offset as u64,
+                object_index_source_offsets: lane
+                    .references
+                    .iter()
+                    .map(|reference| entry_offset + reference.offset as u64)
+                    .collect(),
+            });
+        },
+    );
+    lanes
 }
 
 /// Reconstruct ordered logical payloads from complete pattern-reference graphs.
@@ -6204,6 +7557,9 @@ pub fn feature_pattern_construction_payloads(
                     .iter()
                     .enumerate()
                     .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+                || graph
+                    .iter()
+                    .any(|reference| reference.layout != graph[0].layout)
             {
                 return None;
             }
@@ -6225,6 +7581,7 @@ pub fn feature_pattern_construction_payloads(
                 id: format!("nx:feature-history:pattern-construction-payload#{operation_key}"),
                 operation_label: operation_label.to_string(),
                 operation_kind: operation_kind.to_string(),
+                reference_layout: graph[0].layout,
                 construction_references: graph
                     .iter()
                     .map(|reference| reference.id.clone())
@@ -7002,6 +8359,10 @@ pub fn feature_surface_construction_references(
     resolved_feature_payload_references(container, |record| {
         crate::om::surface_feature_payload_references(record)
             .map(|field| field.references.into_iter().collect())
+            .or_else(|| {
+                crate::om::thru_curve_payload_references(record)
+                    .map(|field| field.references.into_iter().collect())
+            })
     })
     .into_iter()
     .map(|reference| {
@@ -7023,6 +8384,141 @@ pub fn feature_surface_construction_references(
         }
     })
     .collect()
+}
+
+/// Decode the exact leading construction envelope in each `THRU_CURVE` payload.
+pub fn feature_thru_curve_construction_envelopes(
+    container: &Container,
+) -> Vec<FeatureThruCurveConstructionEnvelope> {
+    let mut envelopes = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(field) = crate::om::thru_curve_payload_references(record) else {
+                return;
+            };
+            let operation_key = format!("{section_key}-{operation_ordinal:010}");
+            envelopes.push(FeatureThruCurveConstructionEnvelope {
+                id: format!("nx:feature-history:thru-curve-construction-envelope#{operation_key}"),
+                operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
+                discriminator: field.discriminator,
+                controls: field.controls,
+                trailing_control: field.trailing_control,
+                trailing_value: field.trailing_value,
+                source_offset: entry_offset + record.payload_offset as u64,
+            });
+        },
+    );
+    envelopes
+}
+
+/// Decode and resolve exact counted `THRU_CURVE` construction branches.
+pub fn feature_thru_curve_construction_branch_groups(
+    container: &Container,
+) -> Vec<FeatureThruCurveConstructionBranchGroup> {
+    let indexed = container.indexed_om_sections();
+    let mut groups = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(group) = crate::om::thru_curve_payload_branch_group(record) else {
+                return;
+            };
+            let operation_key = format!("{section_key}-{operation_ordinal:010}");
+            let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
+                FeatureSurfaceBranchReference {
+                    ordinal: ordinal as u32,
+                    object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    source_offset: entry_offset + reference.offset as u64,
+                }
+            };
+            let branches = group
+                .branches
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, branch)| {
+                    let members = branch
+                        .members
+                        .into_iter()
+                        .enumerate()
+                        .map(|(ordinal, reference)| resolve(ordinal, reference))
+                        .collect::<Vec<_>>();
+                    let terminal = resolve(members.len(), branch.terminal);
+                    FeatureThruCurveConstructionBranch {
+                        ordinal: ordinal as u32,
+                        mode: branch.mode,
+                        declared_count: branch.declared_count,
+                        state_lane: branch.state_lane,
+                        members,
+                        terminal,
+                        suffix: branch.suffix,
+                        source_offset: entry_offset + branch.offset as u64,
+                    }
+                })
+                .collect();
+            groups.push(FeatureThruCurveConstructionBranchGroup {
+                id: format!(
+                    "nx:feature-history:thru-curve-construction-branch-group#{operation_key}"
+                ),
+                operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
+                declared_count: group.declared_count,
+                branches,
+                terminator: group.terminator,
+                source_offset: entry_offset + group.offset as u64,
+            });
+        },
+    );
+    groups
+}
+
+/// Decode and resolve each exact leading `SWP104` construction branch.
+pub fn feature_swp104_leading_branches(container: &Container) -> Vec<FeatureSwp104LeadingBranch> {
+    let indexed = container.indexed_om_sections();
+    let mut branches = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |_section, section_key, entry_offset, operation_ordinal, record| {
+            let Some(branch) = crate::om::swp104_payload_leading_branch(record) else {
+                return;
+            };
+            let operation_key = format!("{section_key}-{operation_ordinal:010}");
+            let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
+                FeatureSurfaceBranchReference {
+                    ordinal: ordinal as u32,
+                    object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    source_offset: entry_offset + reference.offset as u64,
+                }
+            };
+            let members = branch
+                .members
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, reference)| resolve(ordinal, reference))
+                .collect::<Vec<_>>();
+            let terminal = resolve(members.len(), branch.terminal);
+            branches.push(FeatureSwp104LeadingBranch {
+                id: format!("nx:feature-history:swp104-leading-branch#{operation_key}"),
+                operation_label: format!("nx:feature-history:operation-label#{operation_key}"),
+                discriminator: branch.discriminator,
+                scalars: branch.scalars,
+                raw_scalars: branch.raw_scalars,
+                leading_zero: branch.leading_zero,
+                mode: branch.mode,
+                declared_count: branch.declared_count,
+                witnessed_count: branch.witnessed_count,
+                state_lane: branch.state_lane,
+                members,
+                terminal,
+                byte_len: (branch.end_offset - record.payload_offset) as u64,
+                source_offset: entry_offset + record.payload_offset as u64,
+            });
+        },
+    );
+    branches
 }
 
 /// Reconstruct ordered logical payloads from complete surface-construction graphs.
@@ -7242,7 +8738,12 @@ pub fn feature_extrude_profile_references(
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let witnessed = decoded.witnessed;
+            let witness_offsets = decoded.witness_references.as_ref().map(|witnesses| {
+                witnesses
+                    .iter()
+                    .map(|witness| entry_offset + witness.offset as u64)
+                    .collect::<Vec<_>>()
+            });
             references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
                 FeatureExtrudeProfileReference {
                     id: format!(
@@ -7250,7 +8751,10 @@ pub fn feature_extrude_profile_references(
                     ),
                     operation_label: operation_label.clone(),
                     ordinal: ordinal as u32,
-                    witnessed,
+                    field_tag: decoded.field_tag,
+                    witness_source_offset: witness_offsets
+                        .as_ref()
+                        .and_then(|offsets| offsets.get(ordinal).copied()),
                     object_index: reference.object_index,
                     raw_object_index: reference.raw_object_index,
                     data_block: unique_offset_data_block(&indexed, reference.object_index),
@@ -7456,19 +8960,14 @@ pub fn feature_operation_body_operands(
                 let id = format!("{store}:block#{}", member.member_index);
                 block_ids.contains(id.as_str()).then_some(id)
             });
-            let same_namespace_reference = references.iter().any(|reference| {
-                if reference.body_object_index != member.member_index {
-                    return false;
+            let same_namespace_reference = references.iter().any(|reference| match member_store {
+                Some(store) => {
+                    unique_stores
+                        .get(reference.operation_label.as_str())
+                        .copied()
+                        == Some(store)
                 }
-                match member_store {
-                    Some(store) => {
-                        unique_stores
-                            .get(reference.operation_label.as_str())
-                            .copied()
-                            == Some(store)
-                    }
-                    None => !input_operations.contains(reference.operation_label.as_str()),
-                }
+                None => !input_operations.contains(reference.operation_label.as_str()),
             });
             let segment_body_bindings = if member_store.is_none() {
                 bindings
@@ -7602,7 +9101,6 @@ pub fn feature_operation_body_reference_lanes(
 /// Join the two exact encodings of an extrusion construction profile.
 pub fn feature_extrude_construction_profiles(
     references: &[FeatureExtrudeProfileReference],
-    lanes: &[FeatureOperationBodyReferenceLane],
 ) -> Vec<FeatureExtrudeConstructionProfile> {
     let mut references_by_operation = BTreeMap::<&str, Vec<&FeatureExtrudeProfileReference>>::new();
     for reference in references {
@@ -7619,7 +9117,7 @@ pub fn feature_extrude_construction_profiles(
                 .iter()
                 .enumerate()
                 .any(|(ordinal, reference)| {
-                    reference.ordinal != ordinal as u32 || !reference.witnessed
+                    reference.ordinal != ordinal as u32 || reference.witness_source_offset.is_none()
                 })
         {
             continue;
@@ -7628,19 +9126,6 @@ pub fn feature_extrude_construction_profiles(
             .iter()
             .map(|reference| reference.object_index)
             .collect::<Vec<_>>();
-        let matching_lanes = lanes
-            .iter()
-            .filter(|lane| {
-                lane.operation_label == operation_label
-                    && lane.branch == 0x11
-                    && lane.encoding
-                        == FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex
-                    && lane.object_indices == object_indices
-            })
-            .collect::<Vec<_>>();
-        let [lane] = matching_lanes.as_slice() else {
-            continue;
-        };
         let Some(data_blocks) = operation_references
             .iter()
             .map(|reference| reference.data_block.clone())
@@ -7648,24 +9133,23 @@ pub fn feature_extrude_construction_profiles(
         else {
             continue;
         };
-        let Some(lane_data_blocks) = lane.data_blocks.iter().cloned().collect::<Option<Vec<_>>>()
+        let Some(witness_source_offsets) = operation_references
+            .iter()
+            .map(|reference| reference.witness_source_offset)
+            .collect::<Option<Vec<_>>>()
         else {
             continue;
         };
-        if lane_data_blocks != data_blocks {
-            continue;
-        }
         profiles.push(FeatureExtrudeConstructionProfile {
             id: operation_label.replacen("operation-label", "extrude-construction-profile", 1),
             operation_label: operation_label.to_string(),
-            body_object_index: lane.body_object_index,
             object_indices,
             data_blocks,
             profile_source_offsets: operation_references
                 .iter()
                 .map(|reference| reference.source_offset)
                 .collect(),
-            body_lane_source_offsets: lane.source_offsets.clone(),
+            witness_source_offsets,
         });
     }
     profiles
@@ -8193,12 +9677,15 @@ pub fn feature_block_dimensions(
                         expression.declaration.as_deref() == Some(&declaration.id)
                     });
                     let expression = matches.next()?;
-                    if matches.next().is_some() || expression.unit != ExpressionUnit::Millimeter {
+                    if matches.next().is_some() {
                         return None;
                     }
                     Some((
                         expression,
-                        expression.value.filter(|value| value.is_finite())?,
+                        crate::native::expression_length_in_millimeters(
+                            &expression.unit,
+                            expression.value.filter(|value| value.is_finite())?,
+                        )?,
                     ))
                 })
                 .collect::<Option<Vec<_>>>()?
@@ -8239,13 +9726,13 @@ pub fn feature_block_dimensions(
 pub fn data_block_object_frames(container: &Container) -> Vec<DataBlockObjectFrame> {
     let blocks = offset_data_block_bytes(container);
     blocks
-        .into_iter()
+        .iter()
         .flat_map(|(data_block, (bytes, source_offset))| {
             crate::om::data_block_object_frames(bytes)
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, frame)| DataBlockObjectFrame {
-                    id: data_block_object_frame_id(&data_block, ordinal),
+                    id: data_block_object_frame_id(data_block, ordinal),
                     data_block: data_block.clone(),
                     ordinal: ordinal as u32,
                     object_id: frame.object_id,
@@ -8283,26 +9770,25 @@ fn unique_offset_data_store(
     if object_indices.is_empty() || object_indices.contains(&0) {
         return None;
     }
-    let candidates = indexed
-        .iter()
-        .enumerate()
-        .filter(|(_, (_, candidate))| {
-            candidate
-                .records
-                .first()
-                .is_some_and(|record| record.object_id.is_none())
-                && object_indices.iter().all(|object_index| {
-                    usize::try_from(*object_index)
-                        .ok()
-                        .is_some_and(|ordinal| ordinal <= candidate.records.len())
-                })
-        })
-        .map(|(section_ordinal, _)| section_ordinal)
-        .collect::<Vec<_>>();
-    let [section_ordinal] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*section_ordinal)
+    let mut unique = None;
+    for (section_ordinal, (_, candidate)) in indexed.iter().enumerate() {
+        let matches = candidate
+            .records
+            .first()
+            .is_some_and(|record| record.object_id.is_none())
+            && object_indices.iter().all(|object_index| {
+                usize::try_from(*object_index)
+                    .ok()
+                    .is_some_and(|ordinal| ordinal <= candidate.records.len())
+            });
+        if !matches {
+            continue;
+        }
+        if unique.replace(section_ordinal).is_some() {
+            return None;
+        }
+    }
+    unique
 }
 
 /// Join operation input lanes to uniquely resolved parameter declarations.

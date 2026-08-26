@@ -2,6 +2,7 @@
 //! Typed records from the bounded fast-load assembly structure stream.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::View;
 
@@ -10,6 +11,8 @@ use crate::layout::fastload_structure_envelope as envelope;
 use crate::native::om::ObjectUuidValue;
 
 const ENTRY_NAME: &str = "/Root/FastLoad/Structure";
+const ROSTER_ANCHOR: &[u8] = &[1, 2, 0x42, 0, 1, 2, 4];
+const MODEL_FRAME: &[u8] = &[4, 7, b'M', b'O', b'D', b'E', b'L', 0];
 
 /// One reusable component prototype named by the fast-load structure roster.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +51,12 @@ pub struct FastLoadComponentOccurrence {
     pub id: String,
     /// Zero-based position in the serialized occurrence table.
     pub ordinal: u32,
+    /// Byte discriminator for the serialized occurrence lane form.
+    pub occurrence_lane_form: u8,
+    /// Exact marker byte in the serialized occurrence marker lane.
+    pub marker: u8,
+    /// Absolute file offset of the occurrence marker.
+    pub marker_source_offset: u64,
     /// Referenced [`FastLoadComponentPrototype::id`].
     pub prototype: String,
     /// One-based serialized prototype-table index.
@@ -116,12 +125,46 @@ pub fn fast_load_component_object_groups(
 }
 
 struct Candidate {
+    start: usize,
+    end: usize,
     prototypes: Vec<(usize, String)>,
+    occurrence_lane_form: u8,
+    occurrence_markers_offset: usize,
+    occurrence_markers: Vec<u8>,
     occurrences_offset: usize,
     prototype_indices: Vec<u8>,
     uuids: Vec<(usize, String)>,
     uuid_indices_offset: usize,
     uuid_indices: Vec<u8>,
+}
+
+/// Resolve candidate parses by physical span before applying the one-roster
+/// rule. A valid parse nested inside a larger parse is an interpretation of
+/// bytes already owned by that larger candidate, not a second roster. Two
+/// disjoint candidates or partially overlapping candidates remain ambiguous.
+fn select_roster_candidate(mut candidates: Vec<Candidate>) -> Option<Candidate> {
+    candidates.sort_by(|left, right| {
+        left.start
+            .cmp(&right.start)
+            .then_with(|| right.end.cmp(&left.end))
+    });
+    let mut selected = Vec::new();
+    for candidate in candidates {
+        let Some(previous) = selected.last_mut() else {
+            selected.push(candidate);
+            continue;
+        };
+        if candidate.start >= previous.end {
+            selected.push(candidate);
+            continue;
+        }
+        if candidate.end <= previous.end {
+            continue;
+        }
+        return None;
+    }
+    let [candidate] = selected.try_into().ok()?;
+    Some(candidate)
 }
 
 /// Extract the component roster only when its entry and internal frame are
@@ -161,13 +204,33 @@ pub fn fast_load_component_roster(
         return (Vec::new(), Vec::new(), Vec::new());
     };
 
-    let mut candidates = (0..payload.len()).filter_map(|start| parse_candidate(payload, start));
-    let Some(candidate) = candidates.next() else {
+    // Every admitted roster has one of two structural anchors before the
+    // complete counted lanes. Search for both before invoking the parser;
+    // trying the parser at every byte makes a large opaque structure stream
+    // quadratic in its candidate count. A MODEL roster matches both anchors,
+    // so deduplicate candidate starts before enforcing uniqueness.
+    let mut starts = BTreeSet::new();
+    for (anchor_offset, window) in payload.windows(ROSTER_ANCHOR.len()).enumerate() {
+        if window == ROSTER_ANCHOR {
+            if let Some(start) = anchor_offset.checked_add(4) {
+                starts.insert(start);
+            }
+        }
+    }
+    for (model_offset, window) in payload.windows(MODEL_FRAME.len()).enumerate() {
+        if window == MODEL_FRAME {
+            if let Some(start) = model_offset.checked_sub(2) {
+                starts.insert(start);
+            }
+        }
+    }
+    let candidates = starts
+        .into_iter()
+        .filter_map(|start| parse_candidate(payload, start))
+        .collect::<Vec<_>>();
+    let Some(candidate) = select_roster_candidate(candidates) else {
         return (Vec::new(), Vec::new(), Vec::new());
     };
-    if candidates.next().is_some() {
-        return (Vec::new(), Vec::new(), Vec::new());
-    }
 
     let prototypes: Vec<_> = candidate
         .prototypes
@@ -200,6 +263,12 @@ pub fn fast_load_component_roster(
         .map(|(ordinal, prototype_index)| FastLoadComponentOccurrence {
             id: format!("nx:fast-load:occurrence#{ordinal}"),
             ordinal: ordinal as u32,
+            occurrence_lane_form: candidate.occurrence_lane_form,
+            marker: candidate.occurrence_markers[ordinal],
+            marker_source_offset: entry_offset
+                + envelope::LEN as u64
+                + candidate.occurrence_markers_offset as u64
+                + ordinal as u64,
             prototype: prototypes[usize::from(prototype_index - 1)].id.clone(),
             prototype_index,
             component_uuid: uuids[usize::from(candidate.uuid_indices[ordinal] - 1)]
@@ -238,13 +307,23 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
     for _ in 0..metadata_count {
         metadata.push(parse_string(bytes, &mut at)?.1);
     }
-    (metadata.first().map(String::as_str) == Some("MODEL")).then_some(())?;
-    take(bytes, &mut at, 4)?.eq(&[1, 3, 0, 0]).then_some(())?;
+    metadata
+        .first()
+        .is_some_and(|value| !value.is_empty())
+        .then_some(())?;
+    take(bytes, &mut at, 2)?.eq(&[1, 3]).then_some(())?;
+    let occurrence_lane_form = *take(bytes, &mut at, 1)?.first()?;
+    (occurrence_lane_form <= 1).then_some(())?;
+    take(bytes, &mut at, 1)?.eq(&[0]).then_some(())?;
 
     take(bytes, &mut at, 1)?.eq(&[1]).then_some(())?;
     let occurrence_count = decoded_count(*take(bytes, &mut at, 1)?.first()?)?;
-    let markers = take(bytes, &mut at, occurrence_count)?;
-    markers.iter().all(|byte| *byte == b'9').then_some(())?;
+    let occurrence_markers_offset = at;
+    let occurrence_markers = take(bytes, &mut at, occurrence_count)?.to_vec();
+    occurrence_markers
+        .iter()
+        .all(|byte| matches!(*byte, b'1' | b'9'))
+        .then_some(())?;
     take(bytes, &mut at, 6)?
         .eq(&[1, 2, 0xff, 0xff, 0xff, 0xff])
         .then_some(())?;
@@ -285,7 +364,12 @@ fn parse_candidate(bytes: &[u8], start: usize) -> Option<Candidate> {
         .then_some(())?;
 
     Some(Candidate {
+        start,
+        end: at,
         prototypes,
+        occurrence_lane_form,
+        occurrence_markers_offset,
+        occurrence_markers,
         occurrences_offset,
         prototype_indices,
         uuids,
@@ -335,17 +419,62 @@ mod tests {
     }
 
     fn payload(names: &[&str], indices: &[u8]) -> Vec<u8> {
-        let mut bytes = vec![1, 2];
-        string(&mut bytes, "MODEL");
+        let markers = vec![b'9'; indices.len()];
+        payload_with_occurrence_lane(names, indices, 0, &markers)
+    }
+
+    fn payload_with_occurrence_lane(
+        names: &[&str],
+        indices: &[u8],
+        occurrence_lane_form: u8,
+        markers: &[u8],
+    ) -> Vec<u8> {
+        payload_with_metadata("MODEL", names, indices, occurrence_lane_form, markers)
+    }
+
+    fn payload_with_metadata(
+        metadata: &str,
+        names: &[&str],
+        indices: &[u8],
+        occurrence_lane_form: u8,
+        markers: &[u8],
+    ) -> Vec<u8> {
+        payload_with_metadata_values(
+            &[1, 2, 0x42, 0],
+            &[metadata],
+            names,
+            indices,
+            occurrence_lane_form,
+            markers,
+        )
+    }
+
+    fn payload_with_metadata_values(
+        preamble: &[u8],
+        metadata: &[&str],
+        names: &[&str],
+        indices: &[u8],
+        occurrence_lane_form: u8,
+        markers: &[u8],
+    ) -> Vec<u8> {
+        assert_eq!(indices.len(), markers.len());
+        let mut bytes = preamble.to_vec();
+        bytes.extend([
+            1,
+            u8::try_from(metadata.len() + 1).expect("short test metadata list"),
+        ]);
+        for value in metadata {
+            string(&mut bytes, value);
+        }
         bytes.extend([
             1,
             3,
-            0,
+            occurrence_lane_form,
             0,
             1,
             u8::try_from(indices.len() + 1).expect("short test occurrence list"),
         ]);
-        bytes.extend(std::iter::repeat_n(b'9', indices.len()));
+        bytes.extend(markers);
         bytes.extend([
             1,
             2,
@@ -393,11 +522,32 @@ mod tests {
             header_entry_count: 1,
             footer_entry_count: 0,
             footer_fingerprint: [0; 4],
+            physical_size: len,
+            legacy_cfb: false,
             entries: vec![DirEntry {
                 name: ENTRY_NAME.into(),
                 region: Region::Header,
                 file_span: Some((0, len)),
             }],
+            indexed_section_layouts: std::sync::OnceLock::new(),
+            om_operation_label_layouts: std::sync::OnceLock::new(),
+            om_section_cache: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn candidate_span(start: usize, end: usize) -> Candidate {
+        Candidate {
+            start,
+            end,
+            prototypes: Vec::new(),
+            occurrence_lane_form: 0,
+            occurrence_markers_offset: 0,
+            occurrence_markers: Vec::new(),
+            occurrences_offset: 0,
+            prototype_indices: Vec::new(),
+            uuids: Vec::new(),
+            uuid_indices_offset: 0,
+            uuid_indices: Vec::new(),
         }
     }
 
@@ -406,6 +556,8 @@ mod tests {
         let container = container(payload(&["plate", "bolt", "nut"], &[1, 2, 2, 3]));
         let (prototypes, uuids, occurrences) = fast_load_component_roster(&container);
         assert_eq!(uuids.len(), 1);
+        assert_eq!(occurrences[0].occurrence_lane_form, 0);
+        assert_eq!(occurrences[0].marker, b'9');
         assert_eq!(
             prototypes
                 .iter()
@@ -421,6 +573,94 @@ mod tests {
             [1, 2, 2, 3]
         );
         assert_eq!(occurrences[1].prototype, occurrences[2].prototype);
+    }
+
+    #[test]
+    fn extracts_roster_with_none_metadata() {
+        let (prototypes, uuids, occurrences) = fast_load_component_roster(&container(
+            payload_with_metadata("None", &["pin", "head"], &[1, 2], 0, b"99"),
+        ));
+        assert_eq!(
+            prototypes
+                .iter()
+                .map(|prototype| prototype.name.as_str())
+                .collect::<Vec<_>>(),
+            ["pin", "head"]
+        );
+        assert_eq!(uuids.len(), 1);
+        assert_eq!(occurrences.len(), 2);
+        assert_eq!(occurrences[0].prototype_index, 1);
+        assert_eq!(occurrences[1].prototype_index, 2);
+    }
+
+    #[test]
+    fn extracts_roster_with_extended_model_metadata_header() {
+        let (prototypes, uuids, occurrences) =
+            fast_load_component_roster(&container(payload_with_metadata_values(
+                &[1, 1, 2, 0x42, 0],
+                &["MODEL", "None"],
+                &["gear", "rod"],
+                &[1, 2],
+                0,
+                b"99",
+            )));
+        assert_eq!(
+            prototypes
+                .iter()
+                .map(|prototype| prototype.name.as_str())
+                .collect::<Vec<_>>(),
+            ["gear", "rod"]
+        );
+        assert_eq!(uuids.len(), 1);
+        assert_eq!(occurrences.len(), 2);
+        assert_eq!(occurrences[1].prototype_index, 2);
+    }
+
+    #[test]
+    fn extracts_extended_occurrence_form_and_markers() {
+        let container = container(payload_with_occurrence_lane(
+            &["plate", "bolt"],
+            &[1, 2, 2],
+            1,
+            b"919",
+        ));
+        let (_, _, occurrences) = fast_load_component_roster(&container);
+        assert_eq!(
+            occurrences
+                .iter()
+                .map(|occurrence| occurrence.occurrence_lane_form)
+                .collect::<Vec<_>>(),
+            [1, 1, 1]
+        );
+        assert_eq!(
+            occurrences
+                .iter()
+                .map(|occurrence| occurrence.marker)
+                .collect::<Vec<_>>(),
+            [b'9', b'1', b'9']
+        );
+        assert_eq!(
+            occurrences[1].marker_source_offset,
+            occurrences[0].marker_source_offset + 1
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_occurrence_lane_form_atomically() {
+        let bytes = payload_with_occurrence_lane(&["plate"], &[1], 2, b"9");
+        assert_eq!(
+            fast_load_component_roster(&container(bytes)),
+            (Vec::new(), Vec::new(), Vec::new())
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_occurrence_marker_atomically() {
+        let bytes = payload_with_occurrence_lane(&["plate"], &[1], 0, b"7");
+        assert_eq!(
+            fast_load_component_roster(&container(bytes)),
+            (Vec::new(), Vec::new(), Vec::new())
+        );
     }
 
     #[test]
@@ -503,6 +743,29 @@ mod tests {
         assert_eq!(
             fast_load_component_roster(&container),
             (Vec::new(), Vec::new(), Vec::new())
+        );
+    }
+
+    #[test]
+    fn nested_roster_candidate_is_resolved_before_uniqueness() {
+        let candidate =
+            select_roster_candidate(vec![candidate_span(10, 100), candidate_span(25, 40)])
+                .expect("nested candidate is owned by the outer span");
+        assert_eq!((candidate.start, candidate.end), (10, 100));
+    }
+
+    #[test]
+    fn same_start_nested_roster_candidate_is_resolved_before_uniqueness() {
+        let candidate =
+            select_roster_candidate(vec![candidate_span(10, 40), candidate_span(10, 100)])
+                .expect("same-start nested candidate is owned by the outer span");
+        assert_eq!((candidate.start, candidate.end), (10, 100));
+    }
+
+    #[test]
+    fn partially_overlapping_roster_candidates_remain_ambiguous() {
+        assert!(
+            select_roster_candidate(vec![candidate_span(10, 50), candidate_span(30, 70)]).is_none()
         );
     }
 }

@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -28,18 +30,35 @@ mod substrate;
 mod toggle;
 pub(crate) mod vector;
 
-pub(crate) use model::NativeModel;
-pub(crate) use om::{evaluate_parameterized_expression, expression_parameter_names};
-pub(crate) use substrate::{paired_delta_streams, topology_streams, ParsedStreams};
+pub(crate) use model::{extract_segment_lineage, terminal_feature_body_ids, NativeModel};
+pub(crate) use om::{
+    canonical_expression_value, evaluate_parameterized_expression,
+    expression_length_in_millimeters, expression_parameter_names,
+};
+pub(crate) use substrate::{topology_streams, ParsedStreams};
+pub(crate) use toggle::has_complete_saved_toggle_stream;
 
 /// Attach a pre-extracted [`NativeModel`] to `ir`: annotations, namespace arenas,
 /// and semantic islands. Build the model with [`NativeModel::extract`].
 pub(crate) fn attach_annotations(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    attach::attach(ir, model, scan, annotations, unknowns)
+) -> Result<(), CodecError> {
+    attach::attach(ctx, ir, model, scan, annotations, unknowns)
+}
+
+/// Preserve container-layer records without extracting typed native entities.
+pub(crate) fn attach_container_layer(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    scan: &Scan,
+    annotations: &mut AnnotationBuilder,
+    unknowns: &mut Vec<UnknownRecord>,
+    typed_native_available: bool,
+) -> Result<(), CodecError> {
+    attach::attach_container_layer(ctx, ir, scan, annotations, unknowns, typed_native_available)
 }

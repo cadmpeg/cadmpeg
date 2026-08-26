@@ -35,6 +35,11 @@ pub enum NxLossCode {
     TopologyGraphNotReconstructed,
     /// Surface-intersection records lack a validated chart and term-endpoint witness.
     IntersectionRecordsOpaque,
+    /// Geometric completion reached a declared work bound before all
+    /// intersection pcurve lanes were complete.
+    IntersectionPcurveCompletionBounded,
+    /// Adaptive geometry certification reached its model-wide work bound.
+    GeometryAdaptiveWorkBounded,
     /// Parasolid deltas applied; every terminal tombstone resolved to a key.
     DeltasApplied,
     /// Parasolid deltas applied; one or more terminal tombstones remain unmatched.
@@ -82,6 +87,8 @@ impl NxLossCode {
         Self::CarrierTessellationCensus,
         Self::TopologyGraphNotReconstructed,
         Self::IntersectionRecordsOpaque,
+        Self::IntersectionPcurveCompletionBounded,
+        Self::GeometryAdaptiveWorkBounded,
         Self::DeltasApplied,
         Self::DeltasUnmatchedTombstones,
         Self::SubBodyCompositionUnresolved,
@@ -111,6 +118,8 @@ impl NxLossCode {
             Self::CarrierTessellationCensus => "carrier.tessellation-census",
             Self::TopologyGraphNotReconstructed => "topology.graph-not-reconstructed",
             Self::IntersectionRecordsOpaque => "intersection.records-opaque",
+            Self::IntersectionPcurveCompletionBounded => "intersection.pcurve-completion-bounded",
+            Self::GeometryAdaptiveWorkBounded => "geometry.adaptive-work-bounded",
             Self::DeltasApplied => "deltas.applied",
             Self::DeltasUnmatchedTombstones => "deltas.unmatched-tombstones",
             Self::SubBodyCompositionUnresolved => "history.sub-body-composition-unresolved",
@@ -147,6 +156,8 @@ impl NxLossCode {
             | Self::AssemblyComponentsExternal
             | Self::GeometryNotTransferred => Severity::Blocking,
             Self::IntersectionRecordsOpaque
+            | Self::IntersectionPcurveCompletionBounded
+            | Self::GeometryAdaptiveWorkBounded
             | Self::DeltasUnmatchedTombstones
             | Self::SubBodyCompositionUnresolved
             | Self::AttributeValueUnresolved
@@ -170,7 +181,9 @@ impl NxLossCode {
                 LossTaxonomy::CarrierSummary
             }
             Self::TopologyGraphNotReconstructed => LossTaxonomy::TopologyNotTransferred,
-            Self::IntersectionRecordsOpaque => LossTaxonomy::ObjectRecordsUntransferred,
+            Self::IntersectionRecordsOpaque
+            | Self::IntersectionPcurveCompletionBounded
+            | Self::GeometryAdaptiveWorkBounded => LossTaxonomy::ObjectRecordsUntransferred,
             Self::DeltasApplied | Self::DeltasUnmatchedTombstones => LossTaxonomy::DecodeDiagnostic,
             Self::SubBodyCompositionUnresolved
             | Self::FeatureSuppressionUnresolved
@@ -225,6 +238,8 @@ mod tests {
                 "carrier.tessellation-census",
                 "topology.graph-not-reconstructed",
                 "intersection.records-opaque",
+                "intersection.pcurve-completion-bounded",
+                "geometry.adaptive-work-bounded",
                 "deltas.applied",
                 "deltas.unmatched-tombstones",
                 "history.sub-body-composition-unresolved",

@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Extract and classify compressed streams in an NX part payload.
+//! Extract and classify Parasolid streams in an NX part payload.
 //!
 //! [`extract_streams`] scans the canonical `/Root/UG_PART/UG_PART` file span for
 //! valid zlib headers. An inflated `PS 00 00` prologue identifies Parasolid
 //! neutral-binary data and supplies its subtype and optional `SCH_` schema token.
-//! Other inflated payloads are classified as [`StreamKind::Preview`].
+//! Legacy CFB parts use [`extract_legacy_streams`] to split the same prologue
+//! from clear `UG_PART/UG_PART` bytes. Other inflated payloads are classified
+//! as [`StreamKind::Preview`].
 #![deny(clippy::disallowed_methods)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compression::inflate_zlib_member;
 use cadmpeg_core::bytes::{contains, find};
@@ -62,11 +64,16 @@ impl StreamKind {
 /// A located and inflated stream from the canonical part payload.
 #[derive(Debug, Clone)]
 pub struct Stream {
-    /// Byte offset of the `78 01` zlib header in the source file.
-    pub file_offset: usize,
-    /// Compressed input bytes the decoder consumed at `file_offset`.
+    /// Byte offset of the stream start in the source file.
     ///
-    /// The physical extent `[file_offset, file_offset + consumed)` in the source.
+    /// Modern streams start at a zlib header. Legacy streams start at a clear
+    /// Parasolid transmit header.
+    pub file_offset: usize,
+    /// Source bytes consumed by the stream at `file_offset`.
+    ///
+    /// For modern streams this is the compressed member length. For legacy
+    /// streams it is the clear section length. The physical extent
+    /// `[file_offset, file_offset + consumed)` is source-owned.
     pub consumed: u64,
     /// Inflated bytes.
     pub inflated: Vec<u8>,
@@ -99,6 +106,8 @@ pub struct AttributeDefinition<'a> {
     pub field_names_xmt: u32,
     /// Ordered legal-owner flags.
     pub legal_owner_flags: [u8; 16],
+    /// Number of legal-owner flags serialized by the definition.
+    pub legal_owner_flag_count: u8,
     /// Declared number of fields in the `00 50` record.
     pub field_count: u32,
     /// One serialized field code for every declared field.
@@ -245,6 +254,34 @@ pub struct Entity62UnicodeRecord {
     pub value: String,
 }
 
+/// All attribute-value records admitted from one byte view.
+///
+/// These families share the same byte-level discovery rule: each complete
+/// record starts with a two-byte tag. A single pass can dispatch only the
+/// matching record parser without changing any family-specific framing or
+/// value validation.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct EntityValueRecords<'a> {
+    /// Counted type-82 unsigned-integer records.
+    pub(crate) integers: Vec<Entity52IntegerRecord>,
+    /// Counted type-83 finite binary64 records.
+    pub(crate) doubles: Vec<Entity53DoubleRecord>,
+    /// Self-framed printable type-84 string records.
+    pub(crate) strings: Vec<Entity54StringRecord<'a>>,
+    /// Counted type-85 point records.
+    pub(crate) points: Vec<Entity55PointRecord>,
+    /// Counted type-86 vector records.
+    pub(crate) vectors: Vec<Entity56VectorRecord>,
+    /// Counted type-87 axis records.
+    pub(crate) axes: Vec<Entity57AxisRecord>,
+    /// Counted type-88 tag records.
+    pub(crate) tags: Vec<Entity58TagRecord>,
+    /// Counted type-89 direction records.
+    pub(crate) directions: Vec<Entity59DirectionRecord>,
+    /// Counted type-98 Unicode records.
+    pub(crate) unicode: Vec<Entity62UnicodeRecord>,
+}
+
 /// One counted type-99 attribute field-name record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldNamesRecord {
@@ -258,70 +295,408 @@ pub struct FieldNamesRecord {
     pub name_xmts: Vec<u32>,
 }
 
-/// Decode counted type-82 unsigned-integer records.
-pub fn entity_52_integer_records(bytes: &[u8]) -> Vec<Entity52IntegerRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_52_integer_record_at(bytes, offset))
+/// Decode every attribute-value family in one bounded byte pass.
+#[cfg(test)]
+pub(crate) fn entity_value_records(bytes: &[u8]) -> EntityValueRecords<'_> {
+    let mut records = EntityValueRecords::default();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let Some(frame) = value_record_frame_at(bytes, offset) else {
+            offset += 1;
+            continue;
+        };
+        if append_value_record(frame, &mut records).is_some() {
+            offset = frame.next_offset();
+        } else {
+            // The frame has already passed its family-specific validation. If
+            // materialization ever disagrees, preserve the old recovery rule
+            // and keep looking for a later record instead of owning a partial
+            // candidate.
+            offset += 1;
+        }
+    }
+    records
+}
+
+/// Decode value records at offsets owned by an enclosing record ledger.
+pub(crate) fn entity_value_records_at(
+    bytes: &[u8],
+    offsets: impl IntoIterator<Item = usize>,
+) -> EntityValueRecords<'_> {
+    let mut records = EntityValueRecords::default();
+    for offset in offsets {
+        if let Some(frame) = value_record_frame_at(bytes, offset) {
+            let _ = append_value_record(frame, &mut records);
+        }
+    }
+    records
+}
+
+/// Locate unique snapshot values owned by typed attribute relations.
+pub(crate) fn referenced_value_record_offsets(bytes: &[u8]) -> Vec<usize> {
+    let referenced_xmts = referenced_value_xmts(bytes, ValueMultiplicity::UniqueSnapshot);
+    value_record_candidates(bytes)
+        .into_iter()
+        .filter_map(|(xmt, offsets)| {
+            let [offset] = offsets.as_slice() else {
+                return None;
+            };
+            referenced_xmts.contains(&xmt).then_some(*offset)
+        })
         .collect()
 }
 
-/// Decode counted type-83 finite binary64 records.
-pub fn entity_53_double_records(bytes: &[u8]) -> Vec<Entity53DoubleRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_53_double_record_at(bytes, offset))
+/// Locate historical value events owned by typed attribute relations.
+pub(crate) fn referenced_value_event_offsets(bytes: &[u8]) -> Vec<usize> {
+    let referenced_xmts = referenced_value_xmts(bytes, ValueMultiplicity::HistoricalEvents);
+    value_record_candidates(bytes)
+        .into_iter()
+        .filter(|(xmt, _)| referenced_xmts.contains(xmt))
+        .flat_map(|(_, offsets)| offsets)
         .collect()
 }
 
-/// Decode counted type-85 point-value records.
-pub fn entity_55_point_records(bytes: &[u8]) -> Vec<Entity55PointRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_55_point_record_at(bytes, offset))
-        .collect()
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ValueMultiplicity {
+    UniqueSnapshot,
+    HistoricalEvents,
 }
 
-/// Decode counted type-86 vector-value records.
-pub fn entity_56_vector_records(bytes: &[u8]) -> Vec<Entity56VectorRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_56_vector_record_at(bytes, offset))
-        .collect()
+fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTreeSet<u32> {
+    let mut referenced = BTreeSet::new();
+    let mut entities = BTreeMap::<u32, Vec<Entity51Record>>::new();
+    for record in entity_51_records(bytes) {
+        entities.entry(record.xmt).or_default().push(record);
+    }
+    for records in entities.into_values() {
+        if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
+            continue;
+        }
+        for record in records {
+            referenced.extend(record.leading_references);
+            referenced.extend(record.trailing_references);
+        }
+    }
+
+    let mut field_name_lists = BTreeMap::<u32, Vec<FieldNamesRecord>>::new();
+    for record in field_names_records(bytes) {
+        field_name_lists.entry(record.xmt).or_default().push(record);
+    }
+    let mut definitions = BTreeMap::<u32, Vec<AttributeDefinition<'_>>>::new();
+    for definition in attribute_definitions(bytes) {
+        definitions
+            .entry(definition.xmt)
+            .or_default()
+            .push(definition);
+    }
+    let mut referenced_lists = BTreeSet::new();
+    for records in definitions.into_values() {
+        if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
+            continue;
+        }
+        referenced_lists.extend(
+            records.into_iter().filter_map(|record| {
+                (record.field_names_xmt > 1).then_some(record.field_names_xmt)
+            }),
+        );
+    }
+    for (xmt, records) in field_name_lists {
+        if !referenced_lists.contains(&xmt)
+            || (multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1)
+        {
+            continue;
+        }
+        for record in records {
+            referenced.extend(record.name_xmts);
+        }
+    }
+    referenced
 }
 
-/// Decode counted type-87 axis-value records.
-pub fn entity_57_axis_records(bytes: &[u8]) -> Vec<Entity57AxisRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_57_axis_record_at(bytes, offset))
-        .collect()
+fn value_record_candidates(bytes: &[u8]) -> BTreeMap<u32, Vec<usize>> {
+    let mut candidates = BTreeMap::<u32, Vec<usize>>::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let Some(frame) = value_record_frame_at(bytes, offset) else {
+            offset += 1;
+            continue;
+        };
+        candidates.entry(frame.xmt()).or_default().push(offset);
+        offset = frame.next_offset();
+    }
+    candidates
 }
 
-/// Decode counted type-88 tag-value records.
-pub fn entity_58_tag_records(bytes: &[u8]) -> Vec<Entity58TagRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_58_tag_record_at(bytes, offset))
-        .collect()
+/// Return `(kind, xmt, byte_len)` for one complete value record.
+pub(crate) fn entity_value_record_identity_at(
+    bytes: &[u8],
+    offset: usize,
+) -> Option<(u16, u32, usize)> {
+    let frame = value_record_frame_at(bytes, offset)?;
+    Some((
+        u16::from(frame.tag()),
+        frame.xmt(),
+        frame.end().checked_sub(offset)?,
+    ))
 }
 
-/// Decode counted type-89 direction-value records.
-pub fn entity_59_direction_records(bytes: &[u8]) -> Vec<Entity59DirectionRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_59_direction_record_at(bytes, offset))
-        .collect()
+#[derive(Clone, Copy)]
+enum ValueRecordFrame<'a> {
+    Counted {
+        tag: u8,
+        offset: usize,
+        end: usize,
+        xmt: u32,
+        value_width: usize,
+        raw: &'a [u8],
+    },
+    String {
+        offset: usize,
+        end: usize,
+        xmt: u32,
+        value: &'a str,
+    },
 }
 
-/// Decode counted type-98 Unicode-value records.
-pub fn entity_62_unicode_records(bytes: &[u8]) -> Vec<Entity62UnicodeRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_62_unicode_record_at(bytes, offset))
-        .collect()
+impl ValueRecordFrame<'_> {
+    fn tag(self) -> u8 {
+        match self {
+            Self::Counted { tag, .. } => tag,
+            Self::String { .. } => 0x54,
+        }
+    }
+
+    fn xmt(self) -> u32 {
+        match self {
+            Self::Counted { xmt, .. } | Self::String { xmt, .. } => xmt,
+        }
+    }
+
+    fn end(self) -> usize {
+        match self {
+            Self::Counted { end, .. } | Self::String { end, .. } => end,
+        }
+    }
+
+    fn next_offset(self) -> usize {
+        match self {
+            Self::Counted { end, .. } => end,
+            // Type-84's terminator can be the leading zero of the following
+            // two-byte record tag. Keep that shared byte available to the
+            // sequential scanner.
+            Self::String { end, .. } => end.saturating_sub(1),
+        }
+    }
+}
+
+fn value_record_frame_at(bytes: &[u8], offset: usize) -> Option<ValueRecordFrame<'_>> {
+    let tag = *bytes.get(offset.checked_add(1)?)?;
+    match tag {
+        0x52 | 0x58 => {
+            let frame = counted_value_frame_at(bytes, offset, tag, 4)?;
+            Some(ValueRecordFrame::Counted {
+                tag,
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value_width: frame.value_width,
+                raw: frame.raw,
+            })
+        }
+        0x53 => {
+            let frame = counted_value_frame_at(bytes, offset, tag, 8)?;
+            finite_scalar_lane(frame.raw)?;
+            Some(ValueRecordFrame::Counted {
+                tag,
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value_width: frame.value_width,
+                raw: frame.raw,
+            })
+        }
+        0x54 => {
+            let frame = string_value_frame_at(bytes, offset)?;
+            Some(ValueRecordFrame::String {
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value: frame.value,
+            })
+        }
+        0x55 | 0x56 | 0x59 => {
+            let frame = counted_value_frame_at(bytes, offset, tag, 24)?;
+            finite_vector_lane(frame.raw)?;
+            Some(ValueRecordFrame::Counted {
+                tag,
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value_width: frame.value_width,
+                raw: frame.raw,
+            })
+        }
+        0x57 => {
+            let frame = counted_value_frame_at(bytes, offset, tag, 24)?;
+            frame.count.is_multiple_of(2).then_some(())?;
+            finite_vector_lane(frame.raw)?;
+            Some(ValueRecordFrame::Counted {
+                tag,
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value_width: frame.value_width,
+                raw: frame.raw,
+            })
+        }
+        0x62 => {
+            let frame = counted_value_frame_at(bytes, offset, tag, 2)?;
+            valid_utf16_lane(frame.raw)?;
+            Some(ValueRecordFrame::Counted {
+                tag,
+                offset: frame.offset,
+                end: frame.end,
+                xmt: frame.xmt,
+                value_width: frame.value_width,
+                raw: frame.raw,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn append_value_record<'a>(
+    frame: ValueRecordFrame<'a>,
+    records: &mut EntityValueRecords<'a>,
+) -> Option<()> {
+    match frame {
+        ValueRecordFrame::String {
+            offset,
+            end,
+            xmt,
+            value,
+        } => records.strings.push(Entity54StringRecord {
+            offset,
+            byte_len: end.checked_sub(offset)?,
+            xmt,
+            value,
+        }),
+        ValueRecordFrame::Counted {
+            tag,
+            offset,
+            end,
+            xmt,
+            value_width,
+            raw,
+        } => match tag {
+            0x52 => records.integers.push(Entity52IntegerRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, |value| View::u32_be_at(value, 0))?,
+            }),
+            0x53 => records.doubles.push(Entity53DoubleRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, |value| View::f64_be_at(value, 0))?,
+            }),
+            0x55 => records.points.push(Entity55PointRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, finite_vector)?,
+            }),
+            0x56 => records.vectors.push(Entity56VectorRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, finite_vector)?,
+            }),
+            0x57 => {
+                let vectors = materialize_values(raw, value_width, finite_vector)?;
+                records.axes.push(Entity57AxisRecord {
+                    offset,
+                    byte_len: end.checked_sub(offset)?,
+                    xmt,
+                    values: vectors
+                        .chunks_exact(2)
+                        .map(|axis| [axis[0], axis[1]])
+                        .collect(),
+                });
+            }
+            0x58 => records.tags.push(Entity58TagRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, |value| View::u32_be_at(value, 0))?,
+            }),
+            0x59 => records.directions.push(Entity59DirectionRecord {
+                offset,
+                byte_len: end.checked_sub(offset)?,
+                xmt,
+                values: materialize_values(raw, value_width, finite_vector)?,
+            }),
+            0x62 => {
+                let code_units =
+                    materialize_values(raw, value_width, |value| View::u16_be_at(value, 0))?;
+                records.unicode.push(Entity62UnicodeRecord {
+                    offset,
+                    byte_len: end.checked_sub(offset)?,
+                    xmt,
+                    value: String::from_utf16(&code_units).ok()?,
+                    code_units,
+                });
+            }
+            _ => return None,
+        },
+    }
+    Some(())
+}
+
+fn materialize_values<T>(
+    raw: &[u8],
+    value_width: usize,
+    decode: impl Fn(&[u8]) -> Option<T>,
+) -> Option<Vec<T>> {
+    raw.chunks_exact(value_width).map(decode).collect()
 }
 
 /// Decode counted type-99 attribute field-name records.
 pub fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
-    (0..bytes.len())
-        .filter_map(|offset| field_names_record_at(bytes, offset))
-        .collect()
+    let mut records = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let Some(frame) = field_names_frame_at(bytes, offset) else {
+            offset += 1;
+            continue;
+        };
+        if let Some(record) = field_names_record_from_frame(bytes, frame) {
+            records.push(record);
+            offset = frame.end;
+        } else {
+            offset += 1;
+        }
+    }
+    records
 }
 
+#[cfg(test)]
 pub(crate) fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<FieldNamesRecord> {
+    let frame = field_names_frame_at(bytes, offset)?;
+    field_names_record_from_frame(bytes, frame)
+}
+
+#[derive(Clone, Copy)]
+struct FieldNamesFrame {
+    offset: usize,
+    end: usize,
+    xmt: u32,
+    count: usize,
+    names_at: usize,
+}
+
+fn field_names_frame_at(bytes: &[u8], offset: usize) -> Option<FieldNamesFrame> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0, 0x63])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -331,19 +706,34 @@ pub(crate) fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<Field
     (count > 0).then_some(())?;
     at += 4;
     let xmt = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
-    (count <= bytes.len().checked_sub(at)? / 2).then_some(())?;
-    let name_xmts = (0..count)
+    let names_at = at;
+    for _ in 0..count {
+        read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1)?;
+    }
+    Some(FieldNamesFrame {
+        offset,
+        end: at,
+        xmt,
+        count,
+        names_at,
+    })
+}
+
+fn field_names_record_from_frame(bytes: &[u8], frame: FieldNamesFrame) -> Option<FieldNamesRecord> {
+    let mut at = frame.names_at;
+    let name_xmts = (0..frame.count)
         .map(|_| read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1))
         .collect::<Option<Vec<_>>>()?;
     Some(FieldNamesRecord {
-        offset,
-        byte_len: at - offset,
-        xmt,
+        offset: frame.offset,
+        byte_len: frame.end - frame.offset,
+        xmt: frame.xmt,
         name_xmts,
     })
 }
 
 /// Decode one complete type-82 unsigned-integer record at `offset`.
+#[cfg(test)]
 pub(crate) fn entity_52_integer_record_at(
     bytes: &[u8],
     offset: usize,
@@ -359,6 +749,7 @@ pub(crate) fn entity_52_integer_record_at(
 }
 
 /// Decode one complete type-83 finite binary64 record at `offset`.
+#[cfg(test)]
 pub(crate) fn entity_53_double_record_at(
     bytes: &[u8],
     offset: usize,
@@ -383,94 +774,37 @@ fn finite_vector(value: &[u8]) -> Option<[f64; 3]> {
         .then_some(values)
 }
 
-/// Decode one complete type-85 point-value record at `offset`.
-pub(crate) fn entity_55_point_record_at(
-    bytes: &[u8],
-    offset: usize,
-) -> Option<Entity55PointRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x55, 24, finite_vector)?;
-    Some(Entity55PointRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        values: record.values,
-    })
+fn finite_scalar_lane(raw: &[u8]) -> Option<()> {
+    for value in raw.chunks_exact(8) {
+        View::f64_be_at(value, 0)?.is_finite().then_some(())?;
+    }
+    Some(())
 }
 
-/// Decode one complete type-86 vector-value record at `offset`.
-pub(crate) fn entity_56_vector_record_at(
-    bytes: &[u8],
-    offset: usize,
-) -> Option<Entity56VectorRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x56, 24, finite_vector)?;
-    Some(Entity56VectorRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        values: record.values,
-    })
+fn finite_vector_lane(raw: &[u8]) -> Option<()> {
+    for value in raw.chunks_exact(24) {
+        finite_vector(value)?;
+    }
+    Some(())
 }
 
-/// Decode one complete type-87 axis-value record at `offset`.
-pub(crate) fn entity_57_axis_record_at(bytes: &[u8], offset: usize) -> Option<Entity57AxisRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x57, 24, finite_vector)?;
-    (record.values.len() % 2 == 0).then_some(())?;
-    let values = record
-        .values
-        .chunks_exact(2)
-        .map(|axis| axis.try_into().expect("two vectors per axis"))
-        .collect();
-    Some(Entity57AxisRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        values,
-    })
+fn valid_utf16_lane(raw: &[u8]) -> Option<()> {
+    let mut high_surrogate = false;
+    for value in raw.chunks_exact(2) {
+        let unit = View::u16_be_at(value, 0)?;
+        if high_surrogate {
+            (0xdc00..=0xdfff).contains(&unit).then_some(())?;
+            high_surrogate = false;
+        } else if (0xd800..=0xdbff).contains(&unit) {
+            high_surrogate = true;
+        } else {
+            (!(0xdc00..=0xdfff).contains(&unit)).then_some(())?;
+        }
+    }
+    (!high_surrogate).then_some(())
 }
 
-/// Decode one complete type-88 tag-value record at `offset`.
-pub(crate) fn entity_58_tag_record_at(bytes: &[u8], offset: usize) -> Option<Entity58TagRecord> {
-    let record =
-        counted_value_record_at(bytes, offset, 0x58, 4, |value| View::u32_be_at(value, 0))?;
-    Some(Entity58TagRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        values: record.values,
-    })
-}
-
-/// Decode one complete type-89 direction-value record at `offset`.
-pub(crate) fn entity_59_direction_record_at(
-    bytes: &[u8],
-    offset: usize,
-) -> Option<Entity59DirectionRecord> {
-    let record = counted_value_record_at(bytes, offset, 0x59, 24, finite_vector)?;
-    Some(Entity59DirectionRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        values: record.values,
-    })
-}
-
-/// Decode one complete type-98 Unicode-value record at `offset`.
-pub(crate) fn entity_62_unicode_record_at(
-    bytes: &[u8],
-    offset: usize,
-) -> Option<Entity62UnicodeRecord> {
-    let record =
-        counted_value_record_at(bytes, offset, 0x62, 2, |value| View::u16_be_at(value, 0))?;
-    let value = String::from_utf16(&record.values).ok()?;
-    Some(Entity62UnicodeRecord {
-        offset: record.offset,
-        byte_len: record.byte_len,
-        xmt: record.xmt,
-        code_units: record.values,
-        value,
-    })
-}
-
+#[cfg(test)]
 struct CountedValueRecord<T> {
     offset: usize,
     byte_len: usize,
@@ -478,13 +812,22 @@ struct CountedValueRecord<T> {
     values: Vec<T>,
 }
 
-fn counted_value_record_at<T>(
+#[derive(Clone, Copy)]
+struct CountedValueFrame<'a> {
+    offset: usize,
+    end: usize,
+    xmt: u32,
+    count: usize,
+    value_width: usize,
+    raw: &'a [u8],
+}
+
+fn counted_value_frame_at(
     bytes: &[u8],
     offset: usize,
     tag: u8,
     value_width: usize,
-    decode: impl Fn(&[u8]) -> Option<T>,
-) -> Option<CountedValueRecord<T>> {
+) -> Option<CountedValueFrame<'_>> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0, tag])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -498,31 +841,63 @@ fn counted_value_record_at<T>(
     let values_end = count
         .checked_mul(value_width)
         .and_then(|length| at.checked_add(length))?;
-    let values = bytes
-        .get(at..values_end)?
+    let raw = bytes.get(at..values_end)?;
+    Some(CountedValueFrame {
+        offset,
+        end: values_end,
+        xmt,
+        count,
+        value_width,
+        raw,
+    })
+}
+
+#[cfg(test)]
+fn counted_value_record_at<T>(
+    bytes: &[u8],
+    offset: usize,
+    tag: u8,
+    value_width: usize,
+    decode: impl Fn(&[u8]) -> Option<T>,
+) -> Option<CountedValueRecord<T>> {
+    let frame = counted_value_frame_at(bytes, offset, tag, value_width)?;
+    let values = frame
+        .raw
         .chunks_exact(value_width)
         .map(decode)
         .collect::<Option<Vec<_>>>()?;
     Some(CountedValueRecord {
-        offset,
-        byte_len: values_end - offset,
-        xmt,
+        offset: frame.offset,
+        byte_len: frame.end - frame.offset,
+        xmt: frame.xmt,
         values,
     })
 }
 
-/// Decode self-framed printable type-84 string records.
-pub fn entity_54_string_records(bytes: &[u8]) -> Vec<Entity54StringRecord<'_>> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_54_string_record_at(bytes, offset))
-        .collect()
-}
-
 /// Decode one complete type-84 printable string record at `offset`.
+#[cfg(test)]
 pub(crate) fn entity_54_string_record_at(
     bytes: &[u8],
     offset: usize,
 ) -> Option<Entity54StringRecord<'_>> {
+    let frame = string_value_frame_at(bytes, offset)?;
+    Some(Entity54StringRecord {
+        offset: frame.offset,
+        byte_len: frame.end - frame.offset,
+        xmt: frame.xmt,
+        value: frame.value,
+    })
+}
+
+#[derive(Clone, Copy)]
+struct StringValueFrame<'a> {
+    offset: usize,
+    end: usize,
+    xmt: u32,
+    value: &'a str,
+}
+
+fn string_value_frame_at(bytes: &[u8], offset: usize) -> Option<StringValueFrame<'_>> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0x00, 0x54])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -541,9 +916,9 @@ pub(crate) fn entity_54_string_record_at(
     })?;
     (bytes.get(end) == Some(&0)).then_some(())?;
     let value = std::str::from_utf8(value).ok()?;
-    Some(Entity54StringRecord {
+    Some(StringValueFrame {
         offset,
-        byte_len: end.checked_add(1)?.checked_sub(offset)?,
+        end: end.checked_add(1)?,
         xmt,
         value,
     })
@@ -551,13 +926,53 @@ pub(crate) fn entity_54_string_record_at(
 
 /// Decode framed type-81 entity/attribute-list records.
 pub fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
-    (0..bytes.len())
-        .filter_map(|offset| entity_51_record_at(bytes, offset))
-        .collect()
+    let mut records = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let Some(frame) = entity_51_frame_at(bytes, offset) else {
+            offset += 1;
+            continue;
+        };
+        if let Some(record) = entity_51_record_from_frame(bytes, frame) {
+            records.push(record);
+            offset = frame.next_offset();
+        } else {
+            offset += 1;
+        }
+    }
+    records
 }
 
 /// Decode one complete type-81 entity/attribute-list record at `offset`.
 pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity51Record> {
+    let frame = entity_51_frame_at(bytes, offset)?;
+    entity_51_record_from_frame(bytes, frame)
+}
+
+#[derive(Clone, Copy)]
+struct Entity51Frame {
+    offset: usize,
+    end: usize,
+    flags: u32,
+    xmt: u32,
+    sequence: u32,
+    definition_xmt: u32,
+    references_at: usize,
+    reference_count: usize,
+    shared_terminal: bool,
+}
+
+impl Entity51Frame {
+    fn next_offset(self) -> usize {
+        if self.shared_terminal {
+            self.end.saturating_sub(1)
+        } else {
+            self.end
+        }
+    }
+}
+
+fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0x00, 0x51])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -571,19 +986,54 @@ pub(crate) fn entity_51_record_at(bytes: &[u8], offset: usize) -> Option<Entity5
     let definition_xmt = read_xmt(bytes, &mut at)?;
     (xmt > 1 && sequence != 0 && (1..=0x20).contains(&flags)).then_some(())?;
     let reference_count = usize::try_from(flags).ok()?.checked_add(5)?;
-    let references = entity_51_references(bytes, &mut at, reference_count)?;
-    let leading_references = references.get(..5)?.try_into().ok()?;
-    let trailing_references = references.get(5..)?.to_vec();
-    Some(Entity51Record {
+    let references_at = at;
+    let (end, shared_terminal) = entity_51_reference_end(bytes, &mut at, reference_count)?;
+    Some(Entity51Frame {
         offset,
-        byte_len: at - offset,
+        end,
         flags,
         xmt,
         sequence,
         definition_xmt,
+        references_at,
+        reference_count,
+        shared_terminal,
+    })
+}
+
+fn entity_51_record_from_frame(bytes: &[u8], frame: Entity51Frame) -> Option<Entity51Record> {
+    let mut at = frame.references_at;
+    let references = entity_51_references(bytes, &mut at, frame.reference_count)?;
+    let leading_references = references.get(..5)?.try_into().ok()?;
+    let trailing_references = references.get(5..)?.to_vec();
+    Some(Entity51Record {
+        offset: frame.offset,
+        byte_len: frame.end - frame.offset,
+        flags: frame.flags,
+        xmt: frame.xmt,
+        sequence: frame.sequence,
+        definition_xmt: frame.definition_xmt,
         leading_references,
         trailing_references,
     })
+}
+
+fn entity_51_reference_end(bytes: &[u8], at: &mut usize, count: usize) -> Option<(usize, bool)> {
+    if bytes.get(*at) == Some(&1) {
+        let mut prefixed_at = *at;
+        for _ in 0..count {
+            matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
+            prefixed_at += 1;
+            read_xmt(bytes, &mut prefixed_at)?;
+        }
+        matches!(bytes.get(prefixed_at), Some(0 | 1)).then_some(())?;
+        *at = prefixed_at + 1;
+        return Some((*at, true));
+    }
+    for _ in 0..count {
+        read_xmt(bytes, at)?;
+    }
+    Some((*at, false))
 }
 
 fn entity_51_references(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {
@@ -661,15 +1111,29 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             .then_some(())?;
             at += 8;
             let field_names_xmt = read_xmt(bytes, &mut at)?;
-            let legal_owner_flags: [u8; 16] = bytes.get(at..at + 16)?.try_into().ok()?;
-            legal_owner_flags
-                .iter()
-                .all(|flag| matches!(flag, 0 | 1))
-                .then_some(())?;
-            at += 16;
-            let field_codes_end = at.checked_add(usize::try_from(field_count).ok()?)?;
-            let field_codes = bytes.get(at..field_codes_end)?;
-            field_codes.iter().all(|code| *code <= 10).then_some(())?;
+            let field_count_usize = usize::try_from(field_count).ok()?;
+            let (legal_owner_flags, legal_owner_flag_count, field_codes) =
+                [16_usize, 14].into_iter().find_map(|flag_count| {
+                    let flags = bytes.get(at..at.checked_add(flag_count)?)?;
+                    flags
+                        .iter()
+                        .all(|flag| matches!(flag, 0 | 1))
+                        .then_some(())?;
+                    let field_codes_start = at.checked_add(flag_count)?;
+                    let field_codes_end = field_codes_start.checked_add(field_count_usize)?;
+                    let field_codes = bytes.get(field_codes_start..field_codes_end)?;
+                    field_codes.iter().all(|code| *code <= 10).then_some(())?;
+                    if flag_count == 14 && !attribute_definition_boundary(bytes, field_codes_end) {
+                        return None;
+                    }
+                    let mut legal_owner_flags = [0; 16];
+                    legal_owner_flags[..flag_count].copy_from_slice(flags);
+                    Some((
+                        legal_owner_flags,
+                        u8::try_from(flag_count).ok()?,
+                        field_codes,
+                    ))
+                })?;
             let mut matches = identifiers
                 .iter()
                 .filter(|identifier| identifier.xmt == identifier_xmt);
@@ -686,6 +1150,7 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
                 action_codes,
                 field_names_xmt,
                 legal_owner_flags,
+                legal_owner_flag_count,
                 field_count,
                 field_codes,
             })
@@ -693,9 +1158,11 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
         .collect()
 }
 
-/// The minimum inflated length for an unindexed scan candidate to count as a
-/// real stream; indexed wrappers admit any complete member length.
-const MIN_INFLATED: usize = 64;
+fn attribute_definition_boundary(bytes: &[u8], offset: usize) -> bool {
+    bytes
+        .get(offset..offset.saturating_add(2))
+        .is_some_and(|tag| tag[0] == 0 && (0x4f..=0x63).contains(&tag[1]))
+}
 
 /// Locates, inflates, and classifies zlib streams in `/Root/UG_PART/UG_PART`.
 pub fn extract_streams<'a>(
@@ -740,7 +1207,7 @@ pub fn extract_streams<'a>(
             {
                 continue;
             }
-            let Some((inflated, consumed)) = inflate_stream(ctx, part_view, offset, 0)? else {
+            let Some((inflated, consumed)) = inflate_stream(ctx, part_view, offset)? else {
                 return Err(CodecError::malformed(format_args!(
                     "invalid indexed zlib member at file offset {}",
                     start + offset
@@ -755,21 +1222,46 @@ pub fn extract_streams<'a>(
                 schema,
             });
         }
+        if streams.iter().any(|stream| stream.kind.is_parasolid()) {
+            return Ok(streams);
+        }
+        append_unindexed_structural_streams(ctx, part_view, start, &mut streams)?;
         return Ok(streams);
     }
 
+    append_all_zlib_streams(ctx, part_view, start, &mut streams, false)?;
+    Ok(streams)
+}
+
+fn append_all_zlib_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    part_view: View<'a>,
+    file_start: usize,
+    streams: &mut Vec<Stream>,
+    structural_only: bool,
+) -> Result<(), CodecError> {
+    let part = part_view.window();
+    let mut seen = streams
+        .iter()
+        .map(|stream| stream.file_offset)
+        .collect::<BTreeSet<_>>();
     let mut i = 0usize;
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
-            if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i, MIN_INFLATED)? {
+            if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i)? {
                 let (kind, schema) = classify(&inflated);
-                streams.push(Stream {
-                    file_offset: start + i,
-                    consumed,
-                    inflated,
-                    kind,
-                    schema,
-                });
+                let file_offset = file_start + i;
+                if seen.insert(file_offset)
+                    && (!structural_only || structural_stream_candidate(kind, &inflated))
+                {
+                    streams.push(Stream {
+                        file_offset,
+                        consumed,
+                        inflated,
+                        kind,
+                        schema,
+                    });
+                }
                 // Resume past the bytes this member consumed, not at the next
                 // byte: a spurious `78 xx` zlib header inside the compressed
                 // body would otherwise inflate into a second stream whose source
@@ -783,15 +1275,119 @@ pub fn extract_streams<'a>(
         }
         i += 1;
     }
+    Ok(())
+}
+
+fn append_unindexed_structural_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    part_view: View<'a>,
+    file_start: usize,
+    streams: &mut Vec<Stream>,
+) -> Result<(), CodecError> {
+    append_all_zlib_streams(ctx, part_view, file_start, streams, true)
+}
+
+fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> bool {
+    if !kind.is_parasolid() {
+        return false;
+    }
+    let census = crate::deltas::walk(inflated);
+    if !census.records.is_empty() || !census.tombstones.is_empty() {
+        return true;
+    }
+    if kind == StreamKind::Deltas {
+        return false;
+    }
+    let graph = crate::topology::Graph::parse(inflated);
+    (12..=19).any(|topology_kind| graph.of_kind(topology_kind).next().is_some())
+}
+
+/// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`
+/// stream.
+///
+/// Legacy NX stores multiple self-describing Parasolid sections consecutively.
+/// A section begins with `PS`, its big-endian description length, and a
+/// printable `TRANSMIT FILE` description. Only those complete transmit headers
+/// are admitted as boundaries; arbitrary `PS\0\0` bytes in the payload do not
+/// split a stream.
+pub fn extract_legacy_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    part: View<'a>,
+) -> Result<Vec<Stream>, CodecError> {
+    let bytes = part.window();
+    let mut streams = Vec::new();
+    let mut search = 0;
+    while let Some(start) = legacy_stream_start(bytes, search) {
+        let next = legacy_stream_start(bytes, start.saturating_add(4));
+        let end = next.unwrap_or(bytes.len());
+        let payload = bytes.get(start..end).ok_or_else(|| {
+            CodecError::Malformed("legacy Parasolid stream range escapes payload".into())
+        })?;
+        let inflated = ctx.copy_retained(
+            payload,
+            "retain legacy NX Parasolid stream",
+            Some(part.location()),
+        )?;
+        let (kind, schema) = classify(&inflated);
+        let consumed = u64::try_from(payload.len()).map_err(|_| {
+            CodecError::Malformed("legacy Parasolid stream length exceeds u64".into())
+        })?;
+        let file_offset = part.start().checked_add(start).ok_or_else(|| {
+            CodecError::Malformed("legacy Parasolid stream offset overflow".into())
+        })?;
+        streams.push(Stream {
+            file_offset,
+            consumed,
+            inflated,
+            kind,
+            schema,
+        });
+        let Some(next) = next else {
+            break;
+        };
+        search = next;
+    }
     Ok(streams)
 }
 
-/// Inflates one zlib member that meets [`MIN_INFLATED`].
+fn legacy_stream_start(bytes: &[u8], mut search: usize) -> Option<usize> {
+    while let Some(relative) = find(bytes.get(search..).unwrap_or_default(), b"PS\x00\x00") {
+        let start = search.checked_add(relative)?;
+        if legacy_transmit_header(bytes, start) {
+            return Some(start);
+        }
+        search = start.saturating_add(4);
+    }
+    None
+}
+
+fn legacy_transmit_header(bytes: &[u8], start: usize) -> bool {
+    let Some(description_len) = View::u32_be_at(bytes, start.saturating_add(2)) else {
+        return false;
+    };
+    let Ok(description_len) = usize::try_from(description_len) else {
+        return false;
+    };
+    let Some(description_start) = start.checked_add(6) else {
+        return false;
+    };
+    let Some(description_end) = description_start.checked_add(description_len) else {
+        return false;
+    };
+    let Some(description) = bytes.get(description_start..description_end) else {
+        return false;
+    };
+    description
+        .iter()
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+        && contains(description, b"TRANSMIT FILE")
+}
+
+/// Inflate one complete zlib member.
 fn inflate_stream<'a>(
     ctx: &DecodeContext<'a>,
     part_view: View<'a>,
     offset: usize,
-    minimum_inflated: usize,
 ) -> Result<Option<(Vec<u8>, u64)>, CodecError> {
     let Some(source) = part_view.child(offset, part_view.end()) else {
         return Ok(None);
@@ -801,13 +1397,15 @@ fn inflate_stream<'a>(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => return Ok(None),
     };
-    if view.window().len() < minimum_inflated {
-        return Ok(None);
-    }
     let Ok(consumed) = u64::try_from(consumed) else {
         return Ok(None);
     };
-    Ok(Some((view.window().to_vec(), consumed)))
+    let inflated = ctx.copy_retained(
+        view.window(),
+        "retain NX inflated stream",
+        Some(source.location()),
+    )?;
+    Ok(Some((inflated, consumed)))
 }
 
 /// A zlib header has compression method 8 and a 16-bit header divisible by

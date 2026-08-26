@@ -50,6 +50,8 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
         xmt: 99,
         node_id: Some(42),
         references: Vec::new(),
+        group_selector: None,
+        group_linked_reference_status: None,
         position: None,
         byte_len: 1,
         inflated_offset: 0,
@@ -319,11 +321,51 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     );
     assert_eq!(
         projection.internal_operations,
-        operations.into_iter().collect()
+        operations.iter().cloned().collect()
+    );
+    assert_eq!(projection.outputs["package"], std::slice::from_ref(&body));
+    assert_eq!(projection.diameters["package"], Length(5.1));
+    assert_eq!(projection.chamfers["package"], chamfer);
+
+    let untreated_templates = templates
+        .iter()
+        .cloned()
+        .map(|mut template| {
+            template.start_treatment = SimpleHoleEndTreatment::None;
+            template.end_treatment = SimpleHoleEndTreatment::None;
+            template
+        })
+        .collect::<Vec<_>>();
+    let projection = super::hole_package_projection(
+        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &untreated_templates,
+        std::slice::from_ref(&group),
+        std::slice::from_ref(&use_),
+        &outputs,
+        &diameters,
+        &BTreeMap::new(),
+    );
+    assert_eq!(
+        projection.internal_operations,
+        operations.iter().cloned().collect()
     );
     assert_eq!(projection.outputs["package"], [body]);
     assert_eq!(projection.diameters["package"], Length(5.1));
-    assert_eq!(projection.chamfers["package"], chamfer);
+    assert!(!projection.chamfers.contains_key("package"));
+
+    let mut mixed_templates = untreated_templates.clone();
+    mixed_templates[0].start_treatment = SimpleHoleEndTreatment::Chamfer;
+    let projection = super::hole_package_projection(
+        &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+        &mixed_templates,
+        std::slice::from_ref(&group),
+        std::slice::from_ref(&use_),
+        &outputs,
+        &diameters,
+        &BTreeMap::new(),
+    );
+    assert!(projection.internal_operations.is_empty());
+    assert!(projection.outputs.is_empty());
 
     let mut mismatched_outputs = outputs;
     mismatched_outputs.insert("simple-b".into(), vec![BodyId("other-body".into())]);
@@ -589,13 +631,13 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     assert_eq!(ir.model.features[2].suppressed, None);
 
     ir.model.features[0].ordinal = 2;
-    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_none());
+    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_err());
     ir.model.features[0].ordinal = 1;
     ir.model.features[2].id = FeatureId("writer".into());
-    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_none());
+    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_err());
     ir.model.features[2].id = FeatureId("unrelated".into());
     ir.model.features[1].suppressed = Some(true);
-    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_none());
+    assert!(super::active_feature_closure(&ir, &[BodyId("body".into())]).is_err());
 }
 
 #[test]
@@ -702,108 +744,6 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
 }
 
 #[test]
-fn operation_source_properties_require_unique_owned_structures() {
-    let record = crate::native::features::FeatureOperationRecord {
-        id: "record".into(),
-        operation_label: "operation".into(),
-        ordinal: 3,
-        byte_len: 20,
-        sha256: "record-hash".into(),
-        payload_byte_len: 10,
-        payload_sha256: "payload-hash".into(),
-        payload_source_offset: 110,
-        source_offset: 100,
-    };
-    let common = crate::native::features::FeatureOperationCommonFrame {
-        id: "common".into(),
-        operation_record: record.id.clone(),
-        ordinal: 0,
-        indices: [0, 351, 171],
-        raw_indices: [vec![0], vec![0x81, 0x5f], vec![0x80, 0xab]],
-        marker: [1, 3, 2],
-        state: [1, 2, 1, 1, 1, 0, 0, 0],
-        legacy_inactive_modules: Some(true),
-        modifies_parasolid_data: Some(true),
-        split_tracking_data: [0, 0],
-        group_count: 0,
-        local_ordinal: 41,
-        raw_local_ordinal: vec![0x29],
-        object_index: Some(65),
-        raw_object_index: vec![0x41],
-        byte_len: 20,
-        source_offset: 101,
-        index_source_offsets: [101, 102, 104],
-        state_source_offset: 109,
-        local_ordinal_source_offset: 117,
-        object_index_source_offset: 119,
-    };
-    let frame = crate::native::features::FeatureOperationTerminalFrame {
-        id: "frame".into(),
-        operation_record: record.id.clone(),
-        immediate_common_frame: Some(common.id.clone()),
-        local_ordinal: 41,
-        raw_local_ordinal: vec![0x29],
-        object_index: Some(65),
-        raw_object_index: vec![0x41],
-        source_offset: 117,
-        object_index_source_offset: 119,
-    };
-    assert_eq!(
-        super::operation_source_properties(
-            &record.operation_label,
-            std::slice::from_ref(&record),
-            std::slice::from_ref(&common),
-            std::slice::from_ref(&frame),
-        ),
-        BTreeMap::from([
-            ("operation_common_frame.0".into(), "common".into()),
-            ("operation_record".into(), "record".into()),
-            ("operation_terminal_frame".into(), "frame".into()),
-        ])
-    );
-    assert!(super::operation_source_properties("missing", &[], &[], &[]).is_empty());
-    assert_eq!(
-        super::operation_source_properties(
-            &record.operation_label,
-            std::slice::from_ref(&record),
-            &[],
-            &[],
-        ),
-        BTreeMap::from([("operation_record".into(), "record".into())])
-    );
-    let mut noncontiguous_common = common.clone();
-    noncontiguous_common.ordinal = 1;
-    assert_eq!(
-        super::operation_source_properties(
-            &record.operation_label,
-            std::slice::from_ref(&record),
-            std::slice::from_ref(&noncontiguous_common),
-            std::slice::from_ref(&frame),
-        ),
-        BTreeMap::from([
-            ("operation_record".into(), "record".into()),
-            ("operation_terminal_frame".into(), "frame".into()),
-        ])
-    );
-    assert!(super::operation_source_properties(
-        &record.operation_label,
-        &[record.clone(), record.clone()],
-        std::slice::from_ref(&common),
-        std::slice::from_ref(&frame),
-    )
-    .is_empty());
-    assert_eq!(
-        super::operation_source_properties(
-            &record.operation_label,
-            std::slice::from_ref(&record),
-            &[],
-            &[frame.clone(), frame],
-        ),
-        BTreeMap::from([("operation_record".into(), "record".into())])
-    );
-}
-
-#[test]
 fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let label = crate::native::features::FeatureOperationLabel {
         id: "nx:feature-history:operation-label#section-7".to_string(),
@@ -812,6 +752,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         value: "SKETCH".to_string(),
         object_indices: [None; 4],
         raw_object_indices: Default::default(),
+        stable_identity: None,
         source_offset: 40,
     };
     let group = crate::native::features::FeatureSketchPointGroup {
@@ -833,14 +774,16 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
-    let sketch = super::attach_sketch_points(
+    let sketch = super::attach_sketch_graph(
         &mut ir,
         &label,
-        &super::SketchPointSources {
+        &super::SketchSources {
             point_uses: &[&point_use],
             point_groups: std::slice::from_ref(&group),
             points: &[],
             payload_scalars: &[],
+            fixed_points: &[],
+            coordinate_pairs: &[],
         },
         &mut annotations,
         stream,
@@ -857,14 +800,16 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut rejected_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut rejected_annotations = AnnotationBuilder::new();
     let rejected_stream = rejected_annotations.stream("nx:container");
-    assert!(super::attach_sketch_points(
+    assert!(super::attach_sketch_graph(
         &mut rejected_ir,
         &label,
-        &super::SketchPointSources {
+        &super::SketchSources {
             point_uses: &[&point_use, &point_use],
             point_groups: &[group],
             points: &[],
             payload_scalars: &[],
+            fixed_points: &[],
+            coordinate_pairs: &[],
         },
         &mut rejected_annotations,
         rejected_stream,
@@ -883,6 +828,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
         value: "SKETCH".to_string(),
         object_indices: [None; 4],
         raw_object_indices: Default::default(),
+        stable_identity: None,
         source_offset: 40,
     };
     let point = crate::native::features::FeatureSketchPoint {
@@ -920,14 +866,16 @@ fn named_sketch_points_project_without_an_external_named_point() {
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = AnnotationBuilder::new();
     let stream = annotations.stream("nx:container");
-    let sketch = super::attach_sketch_points(
+    let sketch = super::attach_sketch_graph(
         &mut ir,
         &label,
-        &super::SketchPointSources {
+        &super::SketchSources {
             point_uses: &[],
             point_groups: std::slice::from_ref(&group),
             points: std::slice::from_ref(&point),
             payload_scalars: &scalars,
+            fixed_points: &[],
+            coordinate_pairs: &[],
         },
         &mut annotations,
         stream,
@@ -1135,6 +1083,35 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
 }
 
 #[test]
+fn boolean_target_output_requires_one_resolved_segment_body() {
+    use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
+    use cadmpeg_ir::ids::BodyId;
+
+    let body = BodyId("nx:s0:body#0".into());
+    let definition = FeatureDefinition::Combine {
+        target: BodySelection::Resolved {
+            bodies: vec![body.clone()],
+            native: "target".into(),
+        },
+        tools: BodySelection::Unresolved,
+        op: BooleanOp::Join,
+        keep_tools: false,
+    };
+    assert_eq!(super::boolean_target_output(Some(&definition)), Some(body));
+
+    let ambiguous = FeatureDefinition::Combine {
+        target: BodySelection::Resolved {
+            bodies: vec![BodyId("nx:s0:body#0".into()), BodyId("nx:s0:body#1".into())],
+            native: "target".into(),
+        },
+        tools: BodySelection::Unresolved,
+        op: BooleanOp::Join,
+        keep_tools: false,
+    };
+    assert!(super::boolean_target_output(Some(&ambiguous)).is_none());
+}
+
+#[test]
 fn topology_inferred_hole_axis_is_not_an_authored_direction() {
     use cadmpeg_ir::features::{FeatureDefinition, HolePlacement};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -1237,31 +1214,58 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
     use cadmpeg_ir::features::BooleanOp;
     use cadmpeg_ir::topology::BodyKind;
 
+    let history = super::BodyWriterHistory::default();
     assert_eq!(
-        super::extrude_boolean_op(false, &[BodyKind::Solid]),
+        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid]),
         BooleanOp::NewBody
     );
     assert_eq!(
-        super::extrude_boolean_op(true, &[BodyKind::Solid]),
+        super::extrude_boolean_op(
+            &super::BodyWriterHistory::default(),
+            None,
+            None,
+            &[BodyKind::Solid],
+        ),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::extrude_boolean_op(false, &[BodyKind::Sheet]),
+        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Sheet]),
         BooleanOp::NewBody
     );
     assert_eq!(
-        super::extrude_boolean_op(false, &[BodyKind::Wire]),
+        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Wire]),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::extrude_boolean_op(false, &[BodyKind::General]),
+        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::General]),
         BooleanOp::Unresolved
     );
     assert_eq!(
-        super::extrude_boolean_op(false, &[BodyKind::Solid, BodyKind::Solid]),
+        super::extrude_boolean_op(&history, Some(7), None, &[BodyKind::Solid, BodyKind::Solid],),
         BooleanOp::Unresolved
     );
-    assert_eq!(super::extrude_boolean_op(false, &[]), BooleanOp::Unresolved);
+    assert_eq!(
+        super::extrude_boolean_op(&history, Some(7), None, &[]),
+        BooleanOp::Unresolved
+    );
+
+    let prior = super::FeatureId("prior-offset-writer".into());
+    let offset_body = "store:block#7";
+    let mut offset_history = super::BodyWriterHistory::default();
+    offset_history.record_writer(None, Some(offset_body), &[], &prior);
+    assert_eq!(
+        super::extrude_boolean_op(&offset_history, None, Some(offset_body), &[BodyKind::Solid]),
+        BooleanOp::Unresolved
+    );
+    assert_eq!(
+        super::extrude_boolean_op(
+            &offset_history,
+            None,
+            Some("store:block#8"),
+            &[BodyKind::Solid],
+        ),
+        BooleanOp::NewBody
+    );
 }
 
 #[test]
@@ -1335,6 +1339,90 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
             "nx:feature-history:feature#1-4"
         );
     }
+}
+
+#[test]
+fn nx_inch_expression_values_are_attached_in_millimeters() {
+    let expression = |key: u32, name: &str, formula: &str, value| crate::native::om::Expression {
+        id: format!("nx:test:expression#{key}"),
+        object_id: Some(key),
+        record: None,
+        declaration: None,
+        name: name.into(),
+        parameter_index: Some(key),
+        qualifier: None,
+        unit: crate::native::om::ExpressionUnit::Inch,
+        expression: formula.into(),
+        value,
+        source_entry: "/Root/UG_PART/UG_PART".into(),
+        source_table: "table".into(),
+        source_offset: u64::from(key),
+    };
+    let expressions = [
+        expression(1, "p1", "2", Some(2.0)),
+        expression(2, "p2", "p1 * 3", Some(6.0)),
+    ];
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+
+    super::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+
+    assert_eq!(
+        ir.model.parameters[0].value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(2.0 * 25.4)
+        ))
+    );
+    assert_eq!(
+        ir.model.parameters[1].value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(6.0 * 25.4)
+        ))
+    );
+    assert_eq!(
+        ir.model.parameters[0]
+            .properties
+            .get("unit")
+            .map(String::as_str),
+        Some("inch")
+    );
+    assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+}
+
+#[test]
+fn nx_native_expression_units_remain_outside_neutral_values() {
+    let expression = crate::native::om::Expression {
+        id: "nx:test:expression#native".into(),
+        object_id: Some(1),
+        record: None,
+        declaration: None,
+        name: "p1".into(),
+        parameter_index: Some(1),
+        qualifier: None,
+        unit: crate::native::om::ExpressionUnit::Native("custom/unit".into()),
+        expression: "4".into(),
+        value: Some(4.0),
+        source_entry: "part".into(),
+        source_table: "table".into(),
+        source_offset: 1,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+
+    super::attach_expression_parameters(&mut ir, &[expression], &[], &[], &mut annotations);
+
+    assert_eq!(ir.model.parameters[0].value, None);
+    assert_eq!(
+        ir.model.parameters[0]
+            .properties
+            .get("unit")
+            .map(String::as_str),
+        Some("custom/unit")
+    );
+    assert_eq!(
+        crate::decode::incomplete_expression_parameters(&ir),
+        [ir.model.parameters[0].id.clone()].into()
+    );
 }
 
 #[test]
@@ -1435,6 +1523,26 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
 }
 
 #[test]
+fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index() {
+    use cadmpeg_ir::features::BodySelection;
+    use std::collections::BTreeMap;
+
+    let selection = super::feature_body_selection_with_offset_blocks(
+        &[94],
+        &BTreeMap::from([(94, 94)]),
+        &BTreeMap::from([(94, "nx:om-data-blocks-3:block#94".to_string())]),
+        &BTreeMap::new(),
+        "nx:om-object-index#94".to_string(),
+    );
+    assert_eq!(
+        selection.selection,
+        BodySelection::Local {
+            bodies: vec!["nx:om-data-blocks-3:block#94".to_string()],
+            native: "nx:om-object-index#94".to_string(),
+        }
+    );
+}
+#[test]
 fn native_primary_body_references_retain_only_proven_body_namespaces() {
     use crate::native::features::{
         FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBodySegmentUse, FeatureInputBlock,
@@ -1474,6 +1582,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         },
@@ -1485,6 +1594,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         },
@@ -1496,6 +1606,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         },
@@ -1507,6 +1618,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
             section_offset: 0,
             byte_len: 0,
             sha256: String::new(),
+            stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
         },
@@ -1621,6 +1733,30 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
             saved: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
         }
     );
+}
+
+#[test]
+fn body_write_does_not_materialize_missing_neutral_geometry() {
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let binding = crate::native::segments::SegmentBodyBinding {
+        id: "nx:segment-body-bindings:binding#0".to_string(),
+        stream_link: "nx:segment-stream-links:link#0".to_string(),
+        stream_ordinal: 2,
+        stream_kind: "plain".to_string(),
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 5,
+        source_offset: 100,
+    };
+    let mut annotations = AnnotationBuilder::new();
+    let stream = annotations.stream("nx:container");
+
+    assert!(
+        super::attach_initial_segment_bodies(&mut ir, &[binding], &mut annotations, stream,)
+            .is_none()
+    );
+    assert!(ir.model.bodies.is_empty());
+    assert!(ir.model.features.is_empty());
 }
 
 #[test]
@@ -1819,6 +1955,7 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
         section_offset: 0,
         byte_len: 0,
         sha256: String::new(),
+        stable_identity: None,
         source_entry: String::new(),
         source_offset: 0,
     };

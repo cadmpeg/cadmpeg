@@ -104,6 +104,32 @@ fn jt_int32_cdp2_decodes_arithmetic_context_with_zero_frequency_entry() {
 }
 
 #[test]
+fn jt_arithmetic_context_rejects_count_without_serialized_entry_span() {
+    let mut context_bits = Vec::<bool>::new();
+    let mut push = |value: u32, width: u8| {
+        for shift in (0..width).rev() {
+            context_bits.push((value >> shift) & 1 != 0);
+        }
+    };
+    push(0, 6);
+    push(1, 6);
+    push(0, 6);
+    push(0, 32);
+
+    let mut context = vec![0xff, 0xff];
+    for chunk in context_bits.chunks(8) {
+        let mut byte = 0u8;
+        for bit in chunk {
+            byte = (byte << 1) | u8::from(*bit);
+        }
+        byte <<= 8 - chunk.len();
+        context.push(byte);
+    }
+
+    assert!(super::parse_probability_context(&context).is_none());
+}
+
+#[test]
 fn jt_int32_cdp2_decodes_unsplit_and_split_chopper_packets() {
     let nested = [2, 0, 0, 0, 1, 21, 0, 0, 0, 0x00, 0xc0, 0x16, 0x04];
     let low_bits = [2, 0, 0, 0, 1, 17, 0, 0, 0, 0x00, 0x80, 0x12, 0x04];
@@ -137,6 +163,51 @@ fn jt_int32_cdp2_frames_zero_chop_nested_packet() {
 
     packet[6] = 3;
     assert!(super::frame_int32_cdp2(&packet, 0).is_none());
+}
+
+#[test]
+fn jt_int32_cdp2_rejects_an_oversized_declared_count_before_allocation() {
+    let mut packet = u32::MAX.to_le_bytes().to_vec();
+    packet.extend_from_slice(&[1, 0, 0, 0, 0]);
+    assert!(super::decode_int32_cdp2(&packet, 0).is_none());
+    assert!(super::frame_int32_cdp2(&packet, 0).is_none());
+}
+
+#[test]
+fn jt_arithmetic_decode_bounds_table_lookup_work() {
+    let entries = vec![
+        super::ProbabilityEntry {
+            symbol: 0,
+            occurrence_count: 1,
+            value: 0,
+        };
+        65
+    ];
+    assert!(super::decode_arithmetic(&[], 0, super::MAX_ARITHMETIC_VALUES, &entries,).is_none());
+}
+
+#[test]
+fn jt_arithmetic_decode_rejects_normalization_past_declared_bits() {
+    let entries = vec![
+        super::ProbabilityEntry {
+            symbol: 0,
+            occurrence_count: 1,
+            value: 0,
+        },
+        super::ProbabilityEntry {
+            symbol: 1,
+            occurrence_count: 1,
+            value: 1,
+        },
+        super::ProbabilityEntry {
+            symbol: 2,
+            occurrence_count: 1,
+            value: 2,
+        },
+    ];
+    let code_word = 0x5555_0000_u32.to_le_bytes();
+
+    assert!(super::decode_arithmetic(&code_word, 16, 1, &entries).is_none());
 }
 
 #[test]

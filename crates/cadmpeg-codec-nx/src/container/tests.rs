@@ -9,6 +9,7 @@ use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 use cadmpeg_core::decode::InspectOptions;
 
 use crate::container;
+use crate::container::{Container, DirEntry, Region};
 use crate::test_support::*;
 use crate::NxCodec;
 
@@ -40,6 +41,160 @@ fn container_parses_header_and_directory() {
         .entries
         .iter()
         .any(|e| e.name == "/Root/UG_PART/UG_PART" && e.file_span.is_some()));
+}
+
+#[test]
+fn container_bounded_entry_tail_stops_at_the_next_stream() {
+    let payload = [1, 2, 3, 4, 5, 6];
+    let container = Container {
+        data: payload.as_slice().into(),
+        version: 0,
+        file_tag: 0,
+        footer_offset: 0,
+        header_entry_count: 2,
+        footer_entry_count: 0,
+        footer_fingerprint: [0; 4],
+        physical_size: payload.len() as u64,
+        legacy_cfb: true,
+        entries: vec![
+            DirEntry {
+                name: "/Root/first".into(),
+                region: Region::Header,
+                file_span: Some((0, 3)),
+            },
+            DirEntry {
+                name: "/Root/second".into(),
+                region: Region::Header,
+                file_span: Some((3, 3)),
+            },
+        ],
+        indexed_section_layouts: std::sync::OnceLock::new(),
+        om_operation_label_layouts: std::sync::OnceLock::new(),
+        om_section_cache: std::sync::OnceLock::new(),
+    };
+    assert_eq!(container.bounded_entry_bytes(1, 2), Some(&payload[1..3]));
+    assert_eq!(container.bounded_entry_bytes(1, 3), None);
+    assert_eq!(container.bounded_entry_bytes(3, 3), Some(&payload[3..6]));
+    assert_eq!(container.bounded_entry_tail(1), Some(&payload[1..3]));
+    assert_eq!(container.bounded_entry_tail(4), Some(&payload[4..6]));
+    assert_eq!(container.bounded_entry_tail(6), None);
+}
+
+#[test]
+fn container_cached_operation_labels_preserve_section_materialization() {
+    let payload = size_framed_om_section_with_repeated_operations(2);
+    let container = Container {
+        data: payload.as_slice().into(),
+        version: 0,
+        file_tag: 0,
+        footer_offset: 0,
+        header_entry_count: 1,
+        footer_entry_count: 0,
+        footer_fingerprint: [0; 4],
+        physical_size: payload.len() as u64,
+        legacy_cfb: false,
+        entries: vec![DirEntry {
+            name: "/Root/om".into(),
+            region: Region::Header,
+            file_span: Some((0, payload.len() as u64)),
+        }],
+        indexed_section_layouts: std::sync::OnceLock::new(),
+        om_operation_label_layouts: std::sync::OnceLock::new(),
+        om_section_cache: std::sync::OnceLock::new(),
+    };
+    let direct = crate::om::sections(&payload);
+    let cached = container.om_sections();
+    assert_eq!(cached.len(), direct.len());
+    assert!(container.om_operation_label_layouts.get().is_some());
+    assert!(container.om_section_cache.get().is_some());
+    for ((entry, section), expected) in cached.iter().zip(direct.iter()) {
+        assert_eq!(entry.name, "/Root/om");
+        assert_eq!(section, expected);
+        assert_eq!(section.operation_labels(), expected.operation_labels());
+        assert_eq!(
+            section.operation_records_with_label_ordinals(),
+            expected.operation_records_with_label_ordinals()
+        );
+    }
+    let repeated = container.om_sections();
+    assert_eq!(repeated, cached);
+    assert!(std::sync::Arc::ptr_eq(
+        &cached[0].1.types,
+        &repeated[0].1.types
+    ));
+}
+
+#[test]
+fn container_caches_owned_section_layouts() {
+    let payload = size_framed_om_section_with_repeated_operations(2);
+    let payload_len = payload.len() as u64;
+    let mut file = vec![0xaa; 17];
+    file.extend_from_slice(&payload);
+    let physical_size = file.len() as u64;
+    let container = Container {
+        data: file.into(),
+        version: 0,
+        file_tag: 0,
+        footer_offset: 0,
+        header_entry_count: 1,
+        footer_entry_count: 0,
+        footer_fingerprint: [0; 4],
+        physical_size,
+        legacy_cfb: false,
+        entries: vec![DirEntry {
+            name: "/Root/om".into(),
+            region: Region::Header,
+            file_span: Some((17, payload_len)),
+        }],
+        indexed_section_layouts: std::sync::OnceLock::new(),
+        om_operation_label_layouts: std::sync::OnceLock::new(),
+        om_section_cache: std::sync::OnceLock::new(),
+    };
+    let first = container.om_sections();
+    let second = container.om_sections();
+    assert_eq!(first.len(), 1);
+    assert_eq!(second, first);
+    assert_eq!(first[0].1, crate::om::sections(&container.data[17..])[0]);
+    assert!(container
+        .om_section_cache
+        .get()
+        .is_some_and(|cache| cache.sections.is_none() && cache.layouts.len() == 1));
+}
+
+#[test]
+fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
+    let file = prt_with_indexed_om_section();
+    let container = container::scan_bytes(file.as_slice()).unwrap();
+    let first = container.indexed_om_sections();
+    let second = container.indexed_om_sections();
+    assert!(!first.is_empty());
+    assert_eq!(first, second);
+    assert!(std::sync::Arc::ptr_eq(
+        &first[0].1.types,
+        &second[0].1.types
+    ));
+    assert!(std::sync::Arc::ptr_eq(
+        &first[0].1.records,
+        &second[0].1.records
+    ));
+}
+
+#[test]
+fn container_reuses_borrowed_offset_store_block_index() {
+    let section = offset_only_indexed_om_section_with_index_values();
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)]);
+    let container = container::scan_bytes(file.as_slice()).unwrap();
+    let _ = container.indexed_om_sections();
+    let first = container
+        .cached_offset_data_block_bytes()
+        .expect("borrowed indexed sections cache their offset-store blocks");
+    let second = container
+        .cached_offset_data_block_bytes()
+        .expect("cached offset-store blocks remain available");
+
+    assert!(!first.is_empty());
+    assert!(first.contains_key("nx:om-data-blocks-0:block#0"));
+    assert!(std::ptr::eq(first, second));
 }
 
 #[test]

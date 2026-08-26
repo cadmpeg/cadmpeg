@@ -67,6 +67,11 @@ pub fn nurbs_curves(data: &[u8]) {
     let _ = crate::nurbs::curves(data);
 }
 
+/// Exercise NX NURBS parameter-space curve extraction.
+pub fn nurbs_pcurves(data: &[u8]) {
+    let _ = crate::nurbs::pcurves(data);
+}
+
 /// Exercise NX NURBS surface extraction.
 pub fn nurbs_surfaces(data: &[u8]) {
     let _ = crate::nurbs::surfaces(data);

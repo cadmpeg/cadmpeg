@@ -3,7 +3,42 @@
 
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::decode::View;
+
 use crate::test_support::*;
+
+fn fixed_indexed_section_with_embedded_section(adjust_outer_bounds: bool) -> Vec<u8> {
+    let outer = indexed_om_section();
+    let inner = indexed_om_section();
+    let table = outer
+        .windows(16)
+        .enumerate()
+        .find_map(|(offset, window)| {
+            (View::u32_le_at(window, 0) == Some(3)
+                && View::u32_le_at(window, 4) == Some(0x100)
+                && View::u32_le_at(window, 8) == Some(0x101)
+                && View::u32_le_at(window, 12) == Some(0x102))
+            .then_some(offset)
+        })
+        .expect("outer object-id table");
+    let index_start = table - 16;
+    let table_end = table + 16;
+    let first_offset = usize::try_from(View::u32_le_at(&outer, index_start + 4).unwrap()).unwrap();
+    let second_offset = usize::try_from(View::u32_le_at(&outer, index_start + 8).unwrap()).unwrap();
+    let base = table_end - first_offset;
+    let insertion_at = base + second_offset;
+    let mut bytes = outer[..insertion_at].to_vec();
+    bytes.extend_from_slice(&inner);
+    bytes.extend_from_slice(&outer[insertion_at..]);
+    if adjust_outer_bounds {
+        for ordinal in 2..=3 {
+            let offset = index_start + ordinal * 4;
+            let value = View::u32_le_at(&outer, offset).unwrap() as usize + inner.len();
+            bytes[offset..offset + 4].copy_from_slice(&(value as u32).to_le_bytes());
+        }
+    }
+    bytes
+}
 
 #[test]
 fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
@@ -422,6 +457,121 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
 }
 
 #[test]
+fn om_thru_curve_references_require_the_complete_leading_envelope() {
+    let label = super::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "THRU_CURVE",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x13\x00\x00\x01\x00\xf1\x01\x21\xf1\x01\x22\xf1\x01\x23\x01\x08\x02\x03\x03\x04\x01\x01\x01\x01\x07\xf1\x01\x24\xf1\x01\x25\xf1\x01\x26\xf1\x01\x27\xf1\x01\x28\xf1\x01\x29\x04\x01\xa0\x5e\x38\x13\x01\x03";
+    let record = super::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let field = super::thru_curve_payload_references(record).expect("complete envelope");
+    assert_eq!(field.discriminator, 0x13);
+    assert_eq!(field.controls, [2, 3, 3, 4, 1, 1, 1, 1, 7]);
+    assert_eq!(
+        field
+            .references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [289, 290, 291, 292, 293, 294, 295, 296, 297]
+    );
+    assert_eq!(field.references[0].offset, 205);
+    assert_eq!(field.references[8].raw_object_index, [0xf1, 0x01, 0x29]);
+    assert_eq!(field.trailing_control, 1);
+    assert_eq!(field.trailing_value, [0x5e, 0x38]);
+
+    let mut alternate = payload.to_vec();
+    alternate[0] = 0x17;
+    alternate[16..24].copy_from_slice(&[7, 3, 3, 4, 1, 2, 4, 1]);
+    alternate[44] = 6;
+    alternate[46..48].copy_from_slice(&[0x5d, 0xfc]);
+    let alternate = super::thru_curve_payload_references(super::OperationRecord {
+        bytes: &alternate,
+        payload: &alternate,
+        ..record
+    })
+    .expect("alternate controls");
+    assert_eq!(alternate.discriminator, 0x17);
+    assert_eq!(alternate.controls, [7, 3, 3, 4, 1, 2, 4, 1, 7]);
+    assert_eq!(alternate.trailing_control, 6);
+    assert_eq!(alternate.trailing_value, [0x5d, 0xfc]);
+
+    let mut malformed = payload.to_vec();
+    malformed[24] = 0x09;
+    assert!(
+        super::thru_curve_payload_references(super::OperationRecord {
+            bytes: &malformed,
+            payload: &malformed,
+            ..record
+        })
+        .is_none()
+    );
+
+    assert!(
+        super::thru_curve_payload_references(super::OperationRecord {
+            bytes: &payload[..payload.len() - 2],
+            payload: &payload[..payload.len() - 2],
+            ..record
+        })
+        .is_none()
+    );
+
+    let mut branched = payload[..payload.len() - 1].to_vec();
+    branched.push(3);
+    let append_standard_branch = |bytes: &mut Vec<u8>, mode, first, terminal| {
+        bytes.extend([mode, 1, 2, 0xf0, first, 1, 2]);
+        bytes.extend([0; 5]);
+        bytes.extend([0xff, 1, 2, 0xf0, terminal, 0, 0x81, 0x58]);
+    };
+    append_standard_branch(&mut branched, 0x15, 0x31, 0x32);
+    append_standard_branch(&mut branched, 0x15, 0x33, 0x34);
+    branched.extend([0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
+    branched.extend([0xaa, 0xbb]);
+    let group = super::thru_curve_payload_branch_group(super::OperationRecord {
+        bytes: &branched,
+        payload: &branched,
+        ..record
+    })
+    .expect("complete branch group");
+    assert_eq!(group.declared_count, 3);
+    assert_eq!(group.branches.len(), 2);
+    assert_eq!(group.branches[0].mode, 0x15);
+    assert_eq!(group.branches[0].declared_count, 2);
+    assert_eq!(group.branches[0].state_lane, [0; 5]);
+    assert_eq!(group.branches[0].members[0].object_index, 0x31);
+    assert_eq!(group.branches[0].terminal.object_index, 0x32);
+    assert_eq!(group.branches[0].suffix, [0x81, 0x58]);
+    assert_eq!(group.terminator, [0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
+
+    let mut extended = payload[..payload.len() - 1].to_vec();
+    extended.extend([2, 0x2f, 1, 5]);
+    for object_index in 0x41..0x45 {
+        extended.extend([0xf0, object_index]);
+    }
+    extended.extend([1, 5, 0, 0, 0, 0, 1, 5, 2, 3, 3, 2, 1, 5, 0, 1, 1, 1, 0, 0]);
+    extended.extend([0xff, 1, 2, 0xf0, 0x45, 0, 0x81, 0x48]);
+    extended.extend([0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]);
+    let group = super::thru_curve_payload_branch_group(super::OperationRecord {
+        bytes: &extended,
+        payload: &extended,
+        ..record
+    })
+    .expect("extended branch state");
+    assert_eq!(group.branches[0].state_lane.len(), 18);
+    assert_eq!(group.branches[0].members.len(), 4);
+    assert_eq!(group.terminator, [0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]);
+}
+
+#[test]
 fn om_surface_feature_branches_require_one_complete_counted_group() {
     let label = super::OperationLabel {
         header_offset: 100,
@@ -598,7 +748,10 @@ fn om_extrude_profile_references_require_matching_witness_field() {
         label,
     };
     let field = super::extrude_profile_references(record).unwrap();
-    assert!(field.witnessed);
+    assert_eq!(field.field_tag, 0x16);
+    let witnesses = field.witness_references.as_ref().unwrap();
+    assert_eq!(witnesses[0].offset, 216);
+    assert_eq!(witnesses[1].offset, 218);
     let references = field.references;
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].object_index, 255);
@@ -615,8 +768,25 @@ fn om_extrude_profile_references_require_matching_witness_field() {
         ..record
     })
     .unwrap();
-    assert!(!field.witnessed);
+    assert!(field.witness_references.is_none());
     assert_eq!(field.references.len(), 2);
+    let mut alternate_tag = payload.to_vec();
+    alternate_tag[2] = 0x5d;
+    let field = super::extrude_profile_references(super::OperationRecord {
+        payload: &alternate_tag,
+        bytes: &alternate_tag,
+        ..record
+    })
+    .unwrap();
+    assert_eq!(field.field_tag, 0x5d);
+    let mut ambiguous = payload.to_vec();
+    ambiguous.extend_from_slice(&alternate_tag);
+    assert!(super::extrude_profile_references(super::OperationRecord {
+        payload: &ambiguous,
+        bytes: &ambiguous,
+        ..record
+    })
+    .is_none());
     assert!(super::extrude_profile_references(super::OperationRecord {
         label: super::OperationLabel {
             value: "SKETCH",
@@ -658,6 +828,89 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
         ..record
     })
     .is_none());
+}
+
+#[test]
+fn om_swp104_leading_branch_preserves_counts_state_and_references() {
+    let label = super::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SWP104",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let raw_scalar = [0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b];
+    let mut payload = vec![0x21, 0, 0, 1, 0];
+    for _ in 0..4 {
+        payload.extend(raw_scalar);
+    }
+    payload.extend([0x23, 1, 3, 0xf0, 0x31, 0xf0, 0x32, 1, 4]);
+    payload.extend([0, 1, 1, 0, 0, 0, 0]);
+    payload.extend([0xff, 1, 2, 0xf0, 0x33, 0, 0xaa]);
+    let record = super::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label,
+    };
+    let branch = super::swp104_payload_leading_branch(record).expect("leading branch");
+    assert_eq!(branch.discriminator, 0x21);
+    assert_eq!(branch.scalars, [0.04; 4]);
+    assert_eq!(branch.raw_scalars, [raw_scalar; 4]);
+    assert!(!branch.leading_zero);
+    assert_eq!(branch.mode, 0x23);
+    assert_eq!(branch.declared_count, 3);
+    assert_eq!(branch.witnessed_count, Some(4));
+    assert_eq!(branch.state_lane, [0, 1, 1, 0, 0, 0, 0]);
+    assert_eq!(
+        branch
+            .members
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [0x31, 0x32]
+    );
+    assert_eq!(branch.terminal.object_index, 0x33);
+    assert_eq!(branch.end_offset, 259);
+
+    let mut malformed_witness = payload.clone();
+    malformed_witness[45] = 1;
+    assert!(
+        super::swp104_payload_leading_branch(super::OperationRecord {
+            bytes: &malformed_witness,
+            payload: &malformed_witness,
+            ..record
+        })
+        .is_none()
+    );
+
+    let mut unwitnessed = vec![0x21, 0, 0, 1, 0];
+    for _ in 0..4 {
+        unwitnessed.extend(raw_scalar);
+    }
+    unwitnessed.extend([0, 0x23, 1, 2, 0xf0, 0x41]);
+    unwitnessed.extend([0; 5]);
+    unwitnessed.extend([0xff, 1, 2, 0xf0, 0x42, 0]);
+    let branch = super::swp104_payload_leading_branch(super::OperationRecord {
+        bytes: &unwitnessed,
+        payload: &unwitnessed,
+        ..record
+    })
+    .expect("unwitnessed leading branch");
+    assert!(branch.leading_zero);
+    assert_eq!(branch.witnessed_count, None);
+    assert_eq!(branch.state_lane, [0; 5]);
+
+    unwitnessed[43] = 1;
+    assert!(
+        super::swp104_payload_leading_branch(super::OperationRecord {
+            bytes: &unwitnessed,
+            payload: &unwitnessed,
+            ..record
+        })
+        .is_none()
+    );
 }
 
 #[test]
@@ -1149,6 +1402,38 @@ fn om_index_accepts_length_framed_root_version_text() {
 }
 
 #[test]
+fn om_index_discards_nested_indexed_interpretation() {
+    let bytes = fixed_indexed_section_with_embedded_section(true);
+    let sections = super::indexed_sections(&bytes);
+
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].records.len(), 2);
+}
+
+#[test]
+fn om_index_retains_disjoint_indexed_sections() {
+    let mut bytes = indexed_om_section();
+    bytes.extend_from_slice(&indexed_om_section());
+
+    let sections = super::indexed_sections(&bytes);
+
+    assert_eq!(sections.len(), 2);
+    assert!(sections[0].entity_index_offset < sections[1].entity_index_offset);
+}
+
+#[test]
+fn om_index_retains_partially_overlapping_indexed_interpretations() {
+    let bytes = fixed_indexed_section_with_embedded_section(false);
+    let sections = super::indexed_sections(&bytes);
+
+    assert_eq!(sections.len(), 2);
+    assert_ne!(
+        sections[0].entity_index_offset,
+        sections[1].entity_index_offset
+    );
+}
+
+#[test]
 fn om_store_version_can_follow_control_prefix() {
     let bytes = b"\xff\x00prefix\x04\x01\x0eNX 2027.3102\0tail";
     let version = super::store_version(bytes, 100).expect("store version");
@@ -1182,6 +1467,18 @@ fn om_offset_only_index_bounds_storage_blocks() {
 }
 
 #[test]
+fn om_indexed_layout_materializes_both_store_forms_without_semantic_drift() {
+    for bytes in [indexed_om_section(), offset_only_indexed_om_section()] {
+        let section = super::indexed_sections(&bytes)
+            .into_iter()
+            .next()
+            .expect("indexed fixture has one section");
+        let layout = super::IndexedSectionLayout::from_section(&section);
+        assert_eq!(layout.materialize(&bytes), section);
+    }
+}
+
+#[test]
 fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
     let bytes = control_root_offset_only_indexed_om_section();
     let sections = super::indexed_sections(&bytes);
@@ -1197,6 +1494,56 @@ fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
     assert_eq!(sections[0].records.len(), 2);
     assert_eq!(sections[0].records[0].bytes, &[0; 32]);
     assert_eq!(sections[0].numeric_expressions()[0].name, "length");
+}
+
+#[test]
+fn om_offset_only_index_ignores_product_marker_crossing_record_boundary() {
+    use cadmpeg_core::decode::View;
+
+    let mut bytes = control_root_offset_only_indexed_om_section();
+    let class_name = b"UGS::ModlFeature";
+    let class_start = bytes
+        .windows(class_name.len())
+        .position(|window| window == class_name)
+        .expect("class declaration");
+    let index_start = class_start + class_name.len() + 1;
+    let first = usize::try_from(View::u32_le_at(&bytes, index_start + 4).unwrap()).unwrap();
+    let product = b"\x04\x01\x0eNX 2027.3102\0";
+    let split = 3;
+    bytes[first - split..first].copy_from_slice(&product[..split]);
+    bytes[first..first + product.len() - split].copy_from_slice(&product[split..]);
+
+    assert_eq!(super::indexed_sections(&bytes).len(), 1);
+}
+
+#[test]
+fn om_product_record_count_respects_containment_boundaries() {
+    let ranges = [
+        super::ProductRecordRange { start: 10, end: 20 },
+        super::ProductRecordRange { start: 30, end: 40 },
+        super::ProductRecordRange { start: 50, end: 60 },
+    ];
+
+    assert_eq!(super::product_record_count_within(&ranges, 10, 20), 1);
+    assert_eq!(super::product_record_count_within(&ranges, 11, 20), 0);
+    assert_eq!(super::product_record_count_within(&ranges, 10, 19), 0);
+    assert_eq!(super::product_record_count_within(&ranges, 20, 60), 2);
+    assert_eq!(super::product_record_count_within(&ranges, 20, 50), 1);
+}
+
+#[test]
+fn om_index_monotone_cache_rejects_a_decrease_inside_a_candidate() {
+    let words = [10_u32, 20, 30, 25, 40];
+    let bytes = words
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect::<Vec<_>>();
+    let edges = super::DescendingU32Edges::new(&bytes);
+
+    assert!(edges.is_nondecreasing(0, 12));
+    assert!(!edges.is_nondecreasing(0, 16));
+    assert!(edges.is_nondecreasing(4, 12));
+    assert!(edges.is_nondecreasing(12, 20));
 }
 
 #[test]
@@ -1234,7 +1581,7 @@ fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
 #[test]
 fn om_offset_store_control_form_requires_one_complete_grammar() {
     assert_eq!(
-        super::offset_store_control_form(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]),
+        super::offset_store_control_form(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff], None),
         Some(super::OffsetStoreControlForm::ZeroPrefixed {
             values: vec![0x1234, 0x00ff_ffff],
         })
@@ -1245,7 +1592,7 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     product.extend_from_slice(&0x1020u32.to_le_bytes());
     product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
     assert_eq!(
-        super::offset_store_control_form(&product),
+        super::offset_store_control_form(&product, None),
         Some(super::OffsetStoreControlForm::ProductAnchored {
             leading_value: Some((2, 0)),
             values: vec![7, 0x1020],
@@ -1253,8 +1600,8 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     );
 
     product.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
-    assert!(super::offset_store_control_form(&product).is_none());
-    assert!(super::offset_store_control_form(&[1, 2, 3, 4]).is_none());
+    assert!(super::offset_store_control_form(&product, None).is_none());
+    assert!(super::offset_store_control_form(&[1, 2, 3, 4], None).is_none());
 }
 
 #[test]
@@ -1530,6 +1877,35 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
 }
 
 #[test]
+fn om_numeric_expression_accepts_inches_and_terminal_comments() {
+    let texts = [
+        b"(Number [in]) p1: 0.5; ".as_slice(),
+        b"(Number [in]) p2: p1 * 2; // Used By ...\n".as_slice(),
+        b"(Number [custom/unit]) p3: 4; ".as_slice(),
+    ];
+    let mut bytes = b"hostglobalvariables".to_vec();
+    for text in texts {
+        bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+        bytes.extend_from_slice(text);
+        bytes.push(0);
+    }
+
+    let expressions = super::numeric_expressions(&bytes);
+
+    assert_eq!(expressions.len(), 3);
+    assert_eq!(expressions[0].unit, super::ExpressionUnit::Inch);
+    assert_eq!(expressions[0].expression, "0.5");
+    assert_eq!(expressions[0].value, Some(0.5));
+    assert_eq!(expressions[1].expression, "p1 * 2");
+    assert_eq!(expressions[1].value, None);
+    assert_eq!(
+        expressions[2].unit,
+        super::ExpressionUnit::Native("custom/unit".into())
+    );
+    assert_eq!(expressions[2].value, Some(4.0));
+}
+
+#[test]
 fn om_numeric_expression_applies_power_before_unary_sign() {
     for (formula, expected) in [
         ("-2^2", -4.0),
@@ -1543,6 +1919,20 @@ fn om_numeric_expression_applies_power_before_unary_sign() {
             "{formula}"
         );
     }
+}
+
+#[test]
+fn om_numeric_expression_parser_handles_deep_nesting_without_recursion() {
+    const DEPTH: usize = 16 * 1024;
+
+    let nested = format!("{}1{}", "(".repeat(DEPTH), ")".repeat(DEPTH));
+    assert_eq!(super::evaluate_constant_expression(&nested), Some(1.0));
+
+    let unary = format!("{}1", "+".repeat(DEPTH));
+    assert_eq!(super::evaluate_constant_expression(&unary), Some(1.0));
+
+    let malformed = format!("{}1", "(".repeat(DEPTH));
+    assert_eq!(super::evaluate_constant_expression(&malformed), None);
 }
 
 #[test]

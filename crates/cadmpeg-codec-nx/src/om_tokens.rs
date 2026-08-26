@@ -15,11 +15,15 @@ pub const NUMBER_PREFIX: &[u8] = b"(Number [";
 /// Resolve a numeric-expression unit token.
 #[must_use]
 pub fn unit_for(token: &str) -> Option<ExpressionUnit> {
-    match token {
-        "mm" => Some(ExpressionUnit::Millimeter),
-        "degrees" => Some(ExpressionUnit::Degree),
-        _ => None,
+    if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_graphic()) {
+        return None;
     }
+    Some(match token {
+        "mm" => ExpressionUnit::Millimeter,
+        "in" => ExpressionUnit::Inch,
+        "degrees" => ExpressionUnit::Degree,
+        token => ExpressionUnit::Native(token.to_string()),
+    })
 }
 
 #[cfg(test)]
@@ -27,9 +31,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolves_supported_units() {
+    fn resolves_known_and_native_units() {
         assert_eq!(unit_for("mm"), Some(ExpressionUnit::Millimeter));
+        assert_eq!(unit_for("in"), Some(ExpressionUnit::Inch));
         assert_eq!(unit_for("degrees"), Some(ExpressionUnit::Degree));
-        assert_eq!(unit_for("furlongs"), None);
+        assert_eq!(
+            unit_for("custom/unit"),
+            Some(ExpressionUnit::Native("custom/unit".into()))
+        );
+        assert_eq!(unit_for(""), None);
+        assert_eq!(unit_for("custom unit"), None);
     }
 }

@@ -246,7 +246,8 @@
                 "section_ordinal": 0,
                 "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 150
+                "source_offset": 150,
+                "stable_identity": "nx:om:object-record:76b73652054a9d2bfdda420a73903c63a98b8f9bee0069783aaa9e3f7c3c0b5d"
               },
               {
                 "byte_len": 172,
@@ -261,7 +262,8 @@
                 "section_ordinal": 0,
                 "sha256": "3d06157eb8568c2ace87089241063f2f7465af1a0e79f1f492e3a9dacd224819",
                 "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 185
+                "source_offset": 185,
+                "stable_identity": "nx:om:object-record:68cac55f2732f3fe5a4033d3319801c98d906b2754009d261426040c792d98a0"
               }
             ],
             "object_references": [

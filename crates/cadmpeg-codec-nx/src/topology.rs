@@ -14,20 +14,18 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::{
     fixed_len, fixed_record_boundary, fixed_record_candidates as framed_record_candidates,
-    read_and_advance, read_sequence_at, read_xmt,
+    read_and_advance, read_sequence_at, read_xmt, skip_sequence_at,
 };
 use crate::vec3_at::vec3_be_at;
 
 /// Exact inline schema header for the `intersection_data` one-byte record
-/// family. The terminal `5a` is the record tag; callers use the prefix before
-/// that byte as the stream-level schema anchor.
+/// family. Its terminal `5a` is also the standalone record tag when the
+/// following fields form a complete shared record.
 pub(crate) const TYPE_38_SCHEMA_HEADER: &[u8] = &[
     0x00, 0x26, 0x0c, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x41, 0x11,
     0x69, 0x6e, 0x74, 0x65, 0x72, 0x73, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x64, 0x61, 0x74,
     0x61, 0x00, 0xcc, 0x00, 0x01, 0x5a,
 ];
-
-const TYPE_38_SCHEMA_PREFIX_LEN: usize = TYPE_38_SCHEMA_HEADER.len() - 1;
 
 /// A supported fixed-record node with its XMT identifier and source offset.
 #[derive(Debug, Clone)]
@@ -51,8 +49,6 @@ pub struct FaceFields {
     pub tolerance: f64,
     /// Next face in the owning shell, or the null reference.
     pub next_face: u32,
-    /// Previous face in the owning shell, or the null reference.
-    pub previous_face: u32,
     /// First loop reference.
     pub loop_xmt: u32,
     /// Owning shell reference.
@@ -154,6 +150,13 @@ pub struct VertexFields {
 }
 
 impl Node {
+    /// Kernel node identity serialized by fixed topology families.
+    pub fn node_id(&self) -> Option<u32> {
+        matches!(self.kind, 12..=16 | 18..=19)
+            .then(|| self.u32_at(4))
+            .flatten()
+    }
+
     /// Inflated-stream offset of this topology record's attribute-list field.
     pub fn attribute_field_offset(&self) -> Option<usize> {
         match self.kind {
@@ -171,7 +174,7 @@ impl Node {
     /// Locate the payload following the five-reference compact geometry header.
     pub fn compact_tail_offset(&self) -> Option<usize> {
         let mut at = 8 + self.shift;
-        read_sequence_at(&self.bytes, &mut at, 5)?;
+        skip_sequence_at(&self.bytes, &mut at, 5)?;
         matches!(self.bytes.get(at), Some(b'+' | b'-')).then_some(at + 1)
     }
 
@@ -210,7 +213,6 @@ impl Node {
             attributes,
             tolerance,
             next_face: refs[0],
-            previous_face: refs[1],
             loop_xmt: refs[2],
             shell: refs[3],
             surface: refs[4],
@@ -301,7 +303,7 @@ impl Node {
     pub fn point_position(&self) -> Option<Point3> {
         (self.kind == 29).then_some(())?;
         let mut at = 8 + self.shift;
-        read_sequence_at(&self.bytes, &mut at, 4)?;
+        skip_sequence_at(&self.bytes, &mut at, 4)?;
         let xyz = vec3_be_at(&self.bytes, at)?;
         xyz.iter()
             .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
@@ -321,6 +323,80 @@ impl Node {
         let payload_shift = self.compact_tail_offset()?.checked_sub(19)?;
         crate::geometry::decode_curve_record(&self.bytes, self.kind, payload_shift)
     }
+
+    fn reference_targets(&self) -> Vec<(ReferenceRole, u32)> {
+        match self.kind {
+            13 => self.shell_fields().map_or_else(Vec::new, |fields| {
+                vec![
+                    (ReferenceRole::Body, fields.body),
+                    (ReferenceRole::Region, fields.region),
+                ]
+            }),
+            14 => self.face_fields().map_or_else(Vec::new, |fields| {
+                vec![(ReferenceRole::Surface, fields.surface)]
+            }),
+            16 => self.edge_fields().map_or_else(Vec::new, |fields| {
+                vec![(ReferenceRole::Curve, fields.curve)]
+            }),
+            17 => self.fin_fields().map_or_else(Vec::new, |fields| {
+                vec![(ReferenceRole::Curve, fields.curve_xmt)]
+            }),
+            18 => self.vertex_fields().map_or_else(Vec::new, |fields| {
+                vec![(ReferenceRole::Point, fields.point)]
+            }),
+            56 => {
+                let Some(mut at) = self.compact_tail_offset() else {
+                    return Vec::new();
+                };
+                if self.bytes.get(at) != Some(&b'R') {
+                    return Vec::new();
+                }
+                at += 1;
+                read_sequence_at(&self.bytes, &mut at, 3).map_or_else(Vec::new, |references| {
+                    vec![
+                        (ReferenceRole::Surface, references[0]),
+                        (ReferenceRole::Surface, references[1]),
+                        (ReferenceRole::Curve, references[2]),
+                    ]
+                })
+            }
+            60 => {
+                let Some(mut at) = self.compact_tail_offset() else {
+                    return Vec::new();
+                };
+                if !matches!(self.bytes.get(at), Some(b'V' | b'I' | b'U'))
+                    || !matches!(self.bytes.get(at + 1), Some(0 | 1))
+                {
+                    return Vec::new();
+                }
+                at += 2;
+                read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
+                    vec![(ReferenceRole::Surface, reference)]
+                })
+            }
+            133 => {
+                let Some(mut at) = self.compact_tail_offset() else {
+                    return Vec::new();
+                };
+                read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
+                    vec![(ReferenceRole::Curve, reference)]
+                })
+            }
+            137 => {
+                let Some(mut at) = self.compact_tail_offset() else {
+                    return Vec::new();
+                };
+                read_sequence_at(&self.bytes, &mut at, 3).map_or_else(Vec::new, |references| {
+                    vec![
+                        (ReferenceRole::Surface, references[0]),
+                        (ReferenceRole::Curve, references[1]),
+                        (ReferenceRole::Curve, references[2]),
+                    ]
+                })
+            }
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// An index of supported records keyed by `(node type, XMT identifier)`.
@@ -328,6 +404,17 @@ impl Node {
 pub struct Graph {
     nodes: BTreeMap<(u8, u32), Node>,
     by_pos: BTreeMap<usize, (u8, u32)>,
+    /// Record keys grouped by kind in their physical stream order.
+    by_kind: BTreeMap<u8, Vec<(u8, u32)>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ReferenceRole {
+    Body,
+    Point,
+    Curve,
+    Region,
+    Surface,
 }
 
 /// A type-133 parameter restriction over a basis curve.
@@ -457,7 +544,7 @@ pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
     let mut seen = BTreeSet::new();
     let mut schema_anchor_seen = false;
     for (pos, byte) in stream.iter().enumerate() {
-        schema_anchor_seen |= intersection_data_schema_prefix_at(stream, pos);
+        schema_anchor_seen |= intersection_data_schema_header_at(stream, pos);
         if *byte != 0x5a || !schema_anchor_seen {
             continue;
         }
@@ -472,10 +559,10 @@ pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
     out
 }
 
-/// Return whether the exact type-38 schema prefix starts at `offset`.
-pub(crate) fn intersection_data_schema_prefix_at(stream: &[u8], offset: usize) -> bool {
-    stream.get(offset..offset.saturating_add(TYPE_38_SCHEMA_PREFIX_LEN))
-        == Some(&TYPE_38_SCHEMA_HEADER[..TYPE_38_SCHEMA_PREFIX_LEN])
+/// Return whether the complete type-38 schema header starts at `offset`.
+pub(crate) fn intersection_data_schema_header_at(stream: &[u8], offset: usize) -> bool {
+    stream.get(offset..offset.saturating_add(TYPE_38_SCHEMA_HEADER.len()))
+        == Some(TYPE_38_SCHEMA_HEADER)
 }
 
 pub(crate) fn intersection_data_curve_at(
@@ -675,7 +762,76 @@ impl Graph {
 impl Graph {
     /// Parse supported fixed-record nodes from a neutral-binary stream.
     pub fn parse(stream: &[u8]) -> Self {
+        let mut baseline = Self::parse_fixed_records(stream, false);
+        let full_domain = Self::parse_fixed_records(stream, true);
+        let preserves_baseline = baseline.nodes.iter().all(|(key, node)| {
+            full_domain
+                .nodes
+                .get(key)
+                .is_some_and(|candidate| candidate.pos == node.pos && candidate.bytes == node.bytes)
+        });
+        if !preserves_baseline {
+            return baseline;
+        }
+        if !baseline.has_complete_body_topology()
+            && full_domain.has_complete_body_topology()
+            && full_domain.body_shape_face_count() != 0
+        {
+            full_domain
+        } else {
+            baseline.admit_referenced_full_domain_nodes(&full_domain);
+            baseline
+        }
+    }
+
+    /// Admit full-domain nodes through unique typed XMT references.
+    fn admit_referenced_full_domain_nodes(&mut self, full_domain: &Self) {
+        let mut candidates = BTreeMap::<(ReferenceRole, u32), Option<&Node>>::new();
+        for node in full_domain.nodes.values() {
+            let Some(role) = ReferenceRole::for_kind(node.kind) else {
+                continue;
+            };
+            candidates
+                .entry((role, node.xmt))
+                .and_modify(|candidate| *candidate = None)
+                .or_insert(Some(node));
+        }
+        let mut required = self
+            .nodes
+            .values()
+            .flat_map(Node::reference_targets)
+            .filter(|(_, xmt)| *xmt > 1)
+            .collect::<BTreeSet<_>>();
+        let mut changed = false;
+        while let Some(target) = required.pop_first() {
+            let Some(Some(candidate)) = candidates.get(&target) else {
+                continue;
+            };
+            let key = (candidate.kind, candidate.xmt);
+            if self.nodes.contains_key(&key) {
+                continue;
+            }
+            required.extend(
+                candidate
+                    .reference_targets()
+                    .into_iter()
+                    .filter(|(_, xmt)| *xmt > 1),
+            );
+            self.by_pos.insert(candidate.pos, key);
+            self.nodes.insert(key, (*candidate).clone());
+            changed = true;
+        }
+        if changed {
+            self.by_kind.clear();
+            for &key in self.by_pos.values() {
+                self.by_kind.entry(key.0).or_default().push(key);
+            }
+        }
+    }
+
+    fn parse_fixed_records(stream: &[u8], full_node_id_domain: bool) -> Self {
         let mut candidates = Vec::new();
+        let mut ownership_candidates = Vec::new();
         for pos in 0..stream.len().saturating_sub(3) {
             if stream[pos] != 0 {
                 continue;
@@ -684,368 +840,186 @@ impl Graph {
             let Some(len) = fixed_len(kind) else {
                 continue;
             };
-            candidates.extend(Self::fixed_record_candidates(stream, pos, kind, len));
+            let target = if matches!(kind, 12 | 19) {
+                &mut ownership_candidates
+            } else {
+                &mut candidates
+            };
+            target.extend(
+                Self::fixed_record_candidates(stream, pos, kind, len, full_node_id_domain)
+                    .into_iter()
+                    .flatten(),
+            );
         }
 
-        let selected = Self::select_reference_consistent_candidates(stream, candidates);
+        // Resolve physical overlap before identity uniqueness. A candidate
+        // that is wholly contained in a selected record is payload data, not
+        // a second serialized node. Counting it first can invalidate the real
+        // node and make otherwise stable identities depend on unrelated bytes.
+        let selected = Self::select_unique_candidates(Self::select_non_overlapping_candidates(
+            stream, candidates,
+        ));
+        // BODY and REGION carry ownership identity only. Their opaque fixed
+        // payloads can contain complete-looking typed tags, so they are
+        // admitted after typed topology/carrier selection and never veto a
+        // typed candidate. An ownership node that shares bytes with a typed
+        // node is ambiguous and is omitted; shells retain the identity even
+        // when the optional BODY or REGION record is absent.
+        let ownership = Self::select_unique_candidates(Self::select_non_overlapping_candidates(
+            stream,
+            ownership_candidates,
+        ))
+        .into_iter()
+        .filter(|ownership| {
+            selected
+                .iter()
+                .all(|candidate| !candidate.overlaps(*ownership))
+        })
+        .collect::<Vec<_>>();
         let mut graph = Self::default();
-        for node in Self::select_non_overlapping_candidates(stream, selected) {
+        for candidate in selected.into_iter().chain(ownership) {
+            let Some(node) = candidate.materialize(stream) else {
+                continue;
+            };
             let key = (node.kind, node.xmt);
             graph.by_pos.insert(node.pos, key);
             graph.nodes.insert(key, node);
         }
+        for &key in graph.by_pos.values() {
+            graph.by_kind.entry(key.0).or_default().push(key);
+        }
         graph
     }
 
-    fn fixed_record_candidates(stream: &[u8], pos: usize, kind: u8, len: usize) -> Vec<Node> {
-        framed_record_candidates(stream, pos, kind, len)
+    fn fixed_record_candidates(
+        stream: &[u8],
+        pos: usize,
+        kind: u8,
+        len: usize,
+        full_node_id_domain: bool,
+    ) -> [Option<NodeCandidate>; 2] {
+        let mut candidates = [None; 2];
+        let mut count = 0;
+        for frame in framed_record_candidates(stream, pos, kind, len)
             .into_iter()
-            .filter_map(|frame| {
-                let bytes = stream.get(pos..frame.end)?;
-                let node = Node {
-                    kind,
-                    xmt: frame.xmt,
-                    pos,
-                    shift: frame.shift,
-                    bytes: bytes.to_vec(),
-                };
-                node.has_valid_family_framing().then_some(node)
-            })
-            .collect()
+            .flatten()
+        {
+            let Some(()) = candidate_has_valid_family_framing(
+                stream,
+                pos,
+                kind,
+                frame.shift,
+                frame.end,
+                full_node_id_domain,
+            ) else {
+                continue;
+            };
+            candidates[count] = Some(NodeCandidate {
+                kind,
+                xmt: frame.xmt,
+                pos,
+                shift: frame.shift,
+                end: frame.end,
+            });
+            count += 1;
+        }
+        if count < 2 {
+            return candidates;
+        }
+
+        let mut boundary_candidates = candidates
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|candidate| fixed_record_boundary(stream, candidate.end()));
+        let Some(candidate) = boundary_candidates.next() else {
+            return [None; 2];
+        };
+        if boundary_candidates.next().is_none() {
+            [Some(candidate), None]
+        } else {
+            [None; 2]
+        }
     }
 
-    fn select_reference_consistent_candidates(stream: &[u8], candidates: Vec<Node>) -> Vec<Node> {
-        let mut by_key = BTreeMap::<(u8, u32), Vec<Node>>::new();
+    /// Keep one complete physical record for each serialized identity.
+    ///
+    /// A second record with the same `(kind, xmt)` is not a recoverable choice:
+    /// the fixed-record grammar provides no discriminator that can make one
+    /// authoritative. Invalidate the identity instead of ranking candidates
+    /// by topology shape, reference counts, or scan position.
+    fn select_unique_candidates(candidates: Vec<NodeCandidate>) -> Vec<NodeCandidate> {
+        let mut by_key = BTreeMap::<(u8, u32), Option<NodeCandidate>>::new();
         for node in candidates {
-            by_key.entry((node.kind, node.xmt)).or_default().push(node);
-        }
-        let mut selected = by_key
-            .iter()
-            .filter_map(|(key, nodes)| {
-                nodes
-                    .iter()
-                    .max_by(|left, right| Self::compare_candidates(stream, left, right))
-                    .cloned()
-                    .map(|node| (*key, node))
-            })
-            .collect::<BTreeMap<_, _>>();
-
-        for _ in 0..2 {
-            let reference_types = Self::reference_types(&selected);
-            let (face_like_refs, loop_like_refs) = Self::topology_reference_hints(&selected);
-            for (key, nodes) in &by_key {
-                if let Some(node) = nodes
-                    .iter()
-                    .filter(|node| {
-                        Self::topology_references_resolve(
-                            node,
-                            &reference_types,
-                            &face_like_refs,
-                            &loop_like_refs,
-                        )
-                    })
-                    .max_by(|left, right| Self::compare_candidates(stream, left, right))
-                {
-                    selected.insert(*key, node.clone());
+            match by_key.entry((node.kind, node.xmt)) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(node));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    // A duplicate identity is invalid. Retain only the fact
+                    // that it is ambiguous; do not retain every overlapping
+                    // physical interpretation of the same identity.
+                    entry.insert(None);
                 }
             }
         }
-
-        let reference_types = Self::reference_types(&selected);
-        let (face_like_refs, loop_like_refs) = Self::topology_reference_hints(&selected);
-        let mut resolved = BTreeMap::<(u8, u32), Node>::new();
-        for (key, nodes) in &by_key {
-            let passing = nodes
-                .iter()
-                .filter(|node| {
-                    Self::topology_references_resolve(
-                        node,
-                        &reference_types,
-                        &face_like_refs,
-                        &loop_like_refs,
-                    )
-                })
-                .collect::<Vec<_>>();
-            let pool = if passing.is_empty() {
-                nodes.iter().collect::<Vec<_>>()
-            } else {
-                passing
-            };
-            let mut ranked = pool;
-            ranked.sort_by(|left, right| Self::compare_candidates(stream, right, left));
-            let Some(best) = ranked.first() else {
-                continue;
-            };
-            if ranked
-                .get(1)
-                .is_some_and(|second| Self::compare_candidates(stream, best, second).is_eq())
-            {
-                continue;
-            }
-            resolved.insert(*key, (*best).clone());
-        }
-
-        let mut by_position = BTreeMap::<usize, Vec<((u8, u32), &Node)>>::new();
-        for (key, node) in &resolved {
-            by_position.entry(node.pos).or_default().push((*key, node));
-        }
-        let position_winners = by_position
-            .into_iter()
-            .map(|(position, nodes)| {
-                let winner = match nodes.as_slice() {
-                    [(key, _)] => Some(*key),
-                    [first, second, ..] => {
-                        let comparison = Self::compare_candidates(stream, first.1, second.1);
-                        (comparison != std::cmp::Ordering::Equal).then(|| {
-                            if comparison.is_gt() {
-                                first.0
-                            } else {
-                                second.0
-                            }
-                        })
-                    }
-                    [] => None,
-                };
-                (position, winner)
-            })
-            .collect::<BTreeMap<_, _>>();
-
-        resolved
-            .into_iter()
-            .filter_map(|(key, node)| {
-                position_winners
-                    .get(&node.pos)
-                    .is_some_and(|winner| winner.is_some_and(|winner| winner == key))
-                    .then_some(node)
-            })
-            .collect()
+        by_key.into_values().flatten().collect()
     }
 
-    fn select_non_overlapping_candidates(stream: &[u8], mut nodes: Vec<Node>) -> Vec<Node> {
+    /// Discard overlapping candidates when no serialized ownership boundary
+    /// identifies which record owns the bytes.
+    fn select_non_overlapping_candidates(
+        stream: &[u8],
+        mut nodes: Vec<NodeCandidate>,
+    ) -> Vec<NodeCandidate> {
         nodes.sort_by(|left, right| {
             left.pos
                 .cmp(&right.pos)
-                .then_with(|| Self::compare_candidates(stream, right, left))
+                .then_with(|| left.end().cmp(&right.end()))
         });
         let mut selected = Vec::new();
-        for node in nodes {
-            let Some(previous) = selected.last_mut() else {
-                selected.push(node);
+        let mut start = 0;
+        while let Some(first) = nodes.get(start).copied() {
+            if fixed_record_boundary(stream, first.end()) {
+                let end = first.end();
+                selected.push(first);
+                start += 1;
+                while nodes
+                    .get(start)
+                    .is_some_and(|candidate| candidate.pos < end)
+                {
+                    start += 1;
+                }
                 continue;
-            };
-            if node.pos >= previous.end() {
-                selected.push(node);
-            } else if Self::compare_candidates(stream, &node, previous).is_gt() {
-                *previous = node;
             }
-        }
-        selected
-    }
-
-    fn compare_candidates(stream: &[u8], left: &Node, right: &Node) -> std::cmp::Ordering {
-        usize::from(left.kind == 13 && Self::has_body_shape_signature(left))
-            .cmp(&usize::from(
-                right.kind == 13 && Self::has_body_shape_signature(right),
-            ))
-            .then_with(|| {
-                fixed_record_boundary(stream, left.end())
-                    .cmp(&fixed_record_boundary(stream, right.end()))
-            })
-            .then_with(|| Self::node_quality(left).cmp(&Self::node_quality(right)))
-    }
-
-    fn reference_types(selected: &BTreeMap<(u8, u32), Node>) -> BTreeMap<u32, BTreeSet<u8>> {
-        let mut types = BTreeMap::<u32, BTreeSet<u8>>::new();
-        for &(kind, xmt) in selected.keys() {
-            types.entry(xmt).or_default().insert(kind);
-        }
-        types
-    }
-
-    fn topology_reference_hints(
-        selected: &BTreeMap<(u8, u32), Node>,
-    ) -> (BTreeSet<u32>, BTreeSet<u32>) {
-        let mut face_like_refs = BTreeSet::new();
-        let mut loop_like_refs = BTreeSet::new();
-        for node in selected.values().filter(|node| node.kind == 14) {
-            let Some(fields) = node.face_fields() else {
-                continue;
-            };
-            for reference in [fields.next_face, fields.previous_face] {
-                if reference > 1 {
-                    face_like_refs.insert(reference);
+            let mut end = start + 1;
+            let mut cluster_end = first.end();
+            while nodes
+                .get(end)
+                .is_some_and(|candidate| candidate.pos < cluster_end)
+            {
+                cluster_end = cluster_end.max(nodes[end].end());
+                end += 1;
+            }
+            let cluster = &nodes[start..end];
+            if let [node] = cluster {
+                selected.push(*node);
+            } else {
+                let mut boundary_candidates = cluster
+                    .iter()
+                    .copied()
+                    .filter(|candidate| fixed_record_boundary(stream, candidate.end()));
+                let Some(node) = boundary_candidates.next() else {
+                    start = end;
+                    continue;
+                };
+                if boundary_candidates.next().is_none() {
+                    selected.push(node);
                 }
             }
-            if fields.loop_xmt > 1 {
-                loop_like_refs.insert(fields.loop_xmt);
-            }
+            start = end;
         }
-        (face_like_refs, loop_like_refs)
-    }
-
-    fn topology_references_resolve(
-        node: &Node,
-        reference_types: &BTreeMap<u32, BTreeSet<u8>>,
-        face_like_refs: &BTreeSet<u32>,
-        loop_like_refs: &BTreeSet<u32>,
-    ) -> bool {
-        let resolves = |reference: u32, expected: fn(u8) -> bool| {
-            reference == 1
-                || reference_types
-                    .get(&reference)
-                    .is_some_and(|types| types.iter().copied().any(expected))
-        };
-        match node.kind {
-            14 => {
-                let Some(fields) = node.face_fields() else {
-                    return false;
-                };
-                let loop_resolves = resolves(fields.loop_xmt, |kind| kind == 15);
-                let surface_resolves = resolves(fields.surface, Self::is_surface_kind);
-                (loop_resolves || surface_resolves)
-                    && !(fields.loop_xmt == 1 && fields.surface == 1)
-            }
-            15 => {
-                let Some(fields) = node.loop_fields() else {
-                    return false;
-                };
-                fields.fin != 1
-                    && resolves(fields.fin, |kind| kind == 17)
-                    && (resolves(fields.face, |kind| kind == 14)
-                        || face_like_refs.contains(&fields.face))
-            }
-            16 => {
-                let Some(fields) = node.edge_fields() else {
-                    return false;
-                };
-                let fin_resolves = resolves(fields.fin, |kind| kind == 17);
-                let curve_resolves = resolves(fields.curve, Self::is_curve_kind);
-                fin_resolves && (fields.fin != 1 || curve_resolves)
-            }
-            17 => {
-                let Some(fields) = node.fin_fields() else {
-                    return false;
-                };
-                (resolves(fields.loop_xmt, |kind| kind == 15)
-                    || loop_like_refs.contains(&fields.loop_xmt))
-                    && resolves(fields.vertex, |kind| kind == 18)
-                    && resolves(fields.edge, |kind| kind == 16)
-            }
-            18 => node
-                .vertex_fields()
-                .is_some_and(|fields| resolves(fields.point, |kind| kind == 29)),
-            _ => true,
-        }
-    }
-
-    fn is_curve_kind(kind: u8) -> bool {
-        matches!(kind, 30..=32 | 38 | 90 | 133 | 134 | 137)
-    }
-
-    fn is_surface_kind(kind: u8) -> bool {
-        matches!(kind, 50..=54 | 56 | 60 | 124)
-    }
-
-    fn node_quality(node: &Node) -> usize {
-        let mut score = 10 + Self::non_null_reference_count(node);
-        if matches!(node.kind, 30..=32 | 38 | 50..=54 | 56 | 60 | 124 | 133 | 134 | 137) {
-            score += 8;
-        }
-        if matches!(node.kind, 14..=18) {
-            score += 12;
-        }
-        if Self::has_node_id(node) {
-            score += 2;
-        }
-        if node.kind == 13 && Self::has_body_shape_signature(node) {
-            score += 20;
-        }
-        score
-    }
-
-    fn non_null_reference_count(node: &Node) -> usize {
-        let references = match node.kind {
-            13 => node
-                .shell_fields()
-                .map(|fields| {
-                    [
-                        fields.attributes,
-                        fields.body,
-                        fields.next_shell,
-                        fields.first_face,
-                        fields.sentinel_0,
-                        fields.sentinel_1,
-                        fields.region,
-                        fields.last_face,
-                    ]
-                })
-                .map(|references| references.to_vec()),
-            14 => node.face_fields().map(|fields| {
-                vec![
-                    fields.attributes,
-                    fields.next_face,
-                    fields.previous_face,
-                    fields.loop_xmt,
-                    fields.shell,
-                    fields.surface,
-                ]
-            }),
-            15 => node
-                .loop_fields()
-                .map(|fields| vec![fields.attributes, fields.fin, fields.face, fields.next_loop]),
-            16 => node
-                .edge_fields()
-                .map(|fields| vec![fields.attributes, fields.fin, fields.curve]),
-            17 => node.fin_fields().map(|fields| {
-                vec![
-                    fields.attributes,
-                    fields.loop_xmt,
-                    fields.forward,
-                    fields.backward,
-                    fields.vertex,
-                    fields.other,
-                    fields.edge,
-                    fields.curve_xmt,
-                ]
-            }),
-            18 => node
-                .vertex_fields()
-                .map(|fields| vec![fields.attributes, fields.point]),
-            _ => None,
-        };
-        references
-            .into_iter()
-            .flatten()
-            .filter(|reference| *reference > 1)
-            .count()
-    }
-
-    fn has_node_id(node: &Node) -> bool {
-        matches!(
-            node.kind,
-            13..=16
-                | 18..=19
-                | 29..=32
-                | 38
-                | 50..=54
-                | 56
-                | 60
-                | 124
-                | 133..=134
-                | 137
-        ) && node.u32_at(4).is_some_and(|node_id| node_id <= 1_000_000)
-    }
-
-    fn has_body_shape_signature(node: &Node) -> bool {
-        node.shell_fields().is_some_and(|fields| {
-            fields.attributes == 1
-                && fields.next_shell == 1
-                && fields.sentinel_0 == 1
-                && fields.sentinel_1 == 1
-                && fields.body > 1
-                && fields.first_face > 1
-                && fields.region > 1
-        })
+        selected
     }
 
     /// Look up a node by record type and XMT identifier.
@@ -1061,10 +1035,21 @@ impl Graph {
 
     /// Iterate nodes of one record type in physical record order.
     pub fn of_kind(&self, kind: u8) -> impl Iterator<Item = &Node> {
-        self.by_pos.values().filter_map(move |key| {
-            let node = self.nodes.get(key)?;
-            (node.kind == kind).then_some(node)
-        })
+        self.by_kind
+            .get(&kind)
+            .into_iter()
+            .flat_map(|keys| keys.iter())
+            .filter_map(|key| self.nodes.get(key))
+    }
+
+    /// Resolve one current XMT identity from a unique kernel node identity.
+    pub(crate) fn unique_xmt_by_node_id(&self, kind: u8, node_id: u32) -> Option<u32> {
+        let mut matches = self
+            .of_kind(kind)
+            .filter(|node| node.node_id() == Some(node_id))
+            .map(|node| node.xmt);
+        let xmt = matches.next()?;
+        matches.next().is_none().then_some(xmt)
     }
 
     /// Curve identities occupying typed curve-reference slots in the fixed
@@ -1320,41 +1305,123 @@ impl Graph {
     }
 }
 
-impl Node {
-    fn has_valid_family_framing(&self) -> bool {
-        if matches!(
-            self.kind,
-            13..=16
-                | 18..=19
-                | 29..=32
-                | 38
-                | 50..=54
-                | 56
-                | 60
-                | 124
-                | 133..=134
-                | 137
-        ) && !Graph::has_node_id(self)
-        {
-            return false;
-        }
-        match self.kind {
-            13 => self.shell_fields().is_some(),
-            14 => self
-                .face_fields()
-                .is_some_and(|fields| fields.tolerance.is_finite()),
-            15 => self.loop_fields().is_some(),
-            16 => self
-                .edge_fields()
-                .is_some_and(|fields| fields.tolerance.is_finite()),
-            17 => self.fin_fields().is_some(),
-            18 => self
-                .vertex_fields()
-                .is_some_and(|fields| fields.tolerance.is_finite()),
-            29 => self.point_position().is_some(),
-            _ => true,
+impl ReferenceRole {
+    fn for_kind(kind: u8) -> Option<Self> {
+        match kind {
+            12 => Some(Self::Body),
+            19 => Some(Self::Region),
+            29 => Some(Self::Point),
+            30..=32 | 38 | 133..=134 | 137 => Some(Self::Curve),
+            50..=54 | 56 | 60 | 124 => Some(Self::Surface),
+            _ => None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NodeCandidate {
+    kind: u8,
+    xmt: u32,
+    pos: usize,
+    shift: usize,
+    end: usize,
+}
+
+impl NodeCandidate {
+    fn end(self) -> usize {
+        self.end
+    }
+
+    fn overlaps(self, other: Self) -> bool {
+        self.pos < other.end() && other.pos < self.end()
+    }
+
+    fn materialize(self, stream: &[u8]) -> Option<Node> {
+        Some(Node {
+            kind: self.kind,
+            xmt: self.xmt,
+            pos: self.pos,
+            shift: self.shift,
+            bytes: stream.get(self.pos..self.end)?.to_vec(),
+        })
+    }
+}
+
+fn candidate_has_valid_family_framing(
+    stream: &[u8],
+    pos: usize,
+    kind: u8,
+    shift: usize,
+    end: usize,
+    full_node_id_domain: bool,
+) -> Option<()> {
+    let bytes = stream.get(pos..end)?;
+    // A complete topology graph is the positive witness for the full u32
+    // identity domain. The baseline excludes high-entropy payload matches so
+    // they cannot displace framed records before that graph proof exists.
+    if matches!(
+        kind,
+        13..=16
+            | 18..=19
+            | 29..=32
+            | 38
+            | 50..=54
+            | 56
+            | 60
+            | 124
+            | 133..=134
+            | 137
+    ) && !full_node_id_domain
+        && View::u32_be_at(bytes, 4 + shift).is_none_or(|node_id| node_id > 1_000_000)
+    {
+        return None;
+    }
+    match kind {
+        13 => {
+            let mut at = 8 + shift;
+            skip_sequence_at(bytes, &mut at, 8)?;
+        }
+        14 => {
+            let mut at = 8 + shift;
+            read_and_advance(bytes, &mut at)?;
+            View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
+            at += 8;
+            skip_sequence_at(bytes, &mut at, 5)?;
+            matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
+        }
+        15 => {
+            let mut at = 8 + shift;
+            skip_sequence_at(bytes, &mut at, 4)?;
+        }
+        16 => {
+            let mut at = 8 + shift;
+            read_and_advance(bytes, &mut at)?;
+            View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
+            at += 8;
+            skip_sequence_at(bytes, &mut at, 7)?;
+        }
+        17 => {
+            let mut at = 4 + shift;
+            skip_sequence_at(bytes, &mut at, 9)?;
+            matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
+        }
+        18 => {
+            let mut at = 8 + shift;
+            skip_sequence_at(bytes, &mut at, 5)?;
+            View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
+        }
+        29 => {
+            let mut at = 8 + shift;
+            skip_sequence_at(bytes, &mut at, 4)?;
+            let point = vec3_be_at(bytes, at)?;
+            point
+                .iter()
+                .all(|value| value.is_finite() && (*value * 1000.0).is_finite())
+                .then_some(())?;
+        }
+        _ => {}
+    }
+    Some(())
 }
 
 #[cfg(test)]

@@ -378,6 +378,7 @@ pub(in super::super) fn revolved_nurbs_surface(
         v_count: 9,
         control_points,
         weights: Some(weights),
+        normal_reversed: false,
         u_periodic: false,
         v_periodic: false,
     })

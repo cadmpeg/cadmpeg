@@ -521,6 +521,7 @@ fn emit_offset_surface(
             distance: offset.distance,
             u_sense: None,
             v_sense: None,
+            support_extension: None,
             extension_flags: Vec::new(),
             revision_form: None,
         },
@@ -5593,6 +5594,7 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -5646,6 +5648,7 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 1.0),
             ],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -6027,6 +6030,7 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(2.0, 1.0, 0.0),
             ],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -6067,6 +6071,7 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(2.0, 0.0, 3.0),
             ],
             weights: Some(vec![1.0, 1.0, 2.0, 2.0, 1.0, 1.0]),
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -6111,6 +6116,7 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -6165,6 +6171,7 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -6216,6 +6223,7 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
             weights: Some(vec![1.0, 1.2, 1.0, 1.2]),
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -6268,6 +6276,7 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -6321,6 +6330,7 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -6358,6 +6368,7 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
             ],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };
@@ -6398,6 +6409,7 @@ mod tests {
                 cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
             ],
             weights: None,
+            normal_reversed: false,
             u_periodic: false,
             v_periodic: false,
         };

@@ -4,7 +4,7 @@ schema = 1
 format = "nx"
 spec = "docs/formats/siemens_nx.md"
 note = """
-Covers the SPLMSSTR container (§2), the Parasolid XT fixed record families
+Covers the SPLMSSTR and legacy CFB containers (§2 and §2.4), the Parasolid XT fixed record families
 (§4.1), the topology node field maps (§5.1), the analytic payload offsets
 (§6.1), the B-spline descriptor prefixes (§6.2), the trimmed and SP curve
 carriers (§6.4), the rolling-ball blend (§6.5), and the CHART_s preamble
@@ -138,6 +138,43 @@ offset = 8
 type = "u64"
 source = "spec"
 anchor = "`file_offset:u64 LE, size:u64 LE`, with nonzero size"
+
+[[record]]
+name = "legacy_ugii_payload_prefix"
+parsed_by = "crates/cadmpeg-codec-nx/src/container.rs"
+kind = "byte"
+section = "2.4"
+anchor = "The opened `UG_PART/UG_PART` payload begins with"
+size = 9
+note = "The CFB directory path identifies the NX wrapper; the CFB signature alone is not sufficient."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "0x00..0x01 bytes `0d 01`"
+
+[[record.field]]
+name = "product"
+offset = 2
+type = "bytes[4]"
+source = "spec"
+anchor = "0x02..0x05 ASCII `UGII`"
+
+[[record.field]]
+name = "padding"
+offset = 6
+type = "bytes[2]"
+source = "spec"
+anchor = "0x06..0x07 ASCII two spaces"
+
+[[record.field]]
+name = "version"
+offset = 8
+type = "u8"
+source = "spec"
+anchor = "0x08 UGII version byte"
 
 [[record]]
 name = "ug_part_segment_index_row"
