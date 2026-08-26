@@ -74,8 +74,8 @@ const WRITER_AUTHOR_NAME: &str = "author";
 const WRITER_AUTHOR_ORGANIZATION: &str = "cadmpeg";
 const WRITER_DRAFTING_STANDARD_FLAG: i64 = 0;
 const WRITER_ENTITY_TYPES: &[u32] = &[
-    100, 102, 104, 110, 116, 120, 122, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192, 194,
-    196, 198, 502, 504, 508, 510, 514,
+    100, 102, 104, 108, 110, 116, 120, 122, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192,
+    194, 196, 198, 502, 504, 508, 510, 514,
 ];
 
 /// Plan an IGES export, selecting replay only after checking the document
@@ -230,9 +230,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     losses.extend(reject_unsupported_native(ir)?);
 
     let mut entities = if has_brep_topology(ir) {
-        brep_entities(ir)?
+        brep_entities(ir, version)?
     } else if has_trimmed_sheet_topology(ir) {
-        topology_entities(ir)?
+        topology_entities(ir, version)?
     } else {
         let mut entities = Vec::new();
         let mut consumed_points = std::collections::BTreeSet::new();
@@ -240,7 +240,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
         surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for surface in surfaces {
-            append_surface_entities(&mut entities, ir, &surface.geometry)?;
+            append_surface_entities(&mut entities, ir, &surface.geometry, version)?;
         }
         for directrix in ir.model.surfaces.iter().filter_map(|surface| {
             let SurfaceGeometry::Procedural { construction } = &surface.geometry else {
@@ -381,14 +381,26 @@ impl TargetProfile {
             crate::IgesVersion::V4_0 => matches!(
                 (entity.type_code, entity.form),
                 (
-                    100 | 102 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 142 | 144,
+                    100 | 102 | 108 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 142 | 144,
                     0
                 ) | (104, 0 | 2 | 3)
             ),
             crate::IgesVersion::V5_0 => matches!(
                 (entity.type_code, entity.form),
                 (
-                    100 | 102 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 141 | 142 | 143 | 144,
+                    100 | 102
+                        | 108
+                        | 110
+                        | 116
+                        | 120
+                        | 122
+                        | 124
+                        | 126
+                        | 128
+                        | 141
+                        | 142
+                        | 143
+                        | 144,
                     0
                 ) | (104, 2 | 3)
             ),
@@ -644,7 +656,7 @@ fn is_native_surface_construction(
     )
 }
 
-fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
+fn validate_brep_topology(ir: &CadIr, version: crate::IgesVersion) -> Result<(), CodecError> {
     let bodies = ir
         .model
         .bodies
@@ -803,7 +815,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             face.id, face.surface
                         ))
                     })?;
-                surface_entities_for_ir(ir, &surface.geometry, 0)?;
+                surface_entities_for_ir(ir, &surface.geometry, 0, version)?;
                 if matches!(surface.geometry, SurfaceGeometry::Cylinder { .. })
                     && face.loops.iter().any(|loop_id| {
                         let Some(loop_) = ir.model.loops.iter().find(|loop_| loop_.id == *loop_id)
@@ -1137,8 +1149,8 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
-    validate_brep_topology(ir)?;
+fn brep_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>, CodecError> {
+    validate_brep_topology(ir, version)?;
     let ignored_carriers = ignored_carrier_geometry(ir);
     let mut topology_point_ids = std::collections::BTreeSet::new();
     for coedge in &ir.model.coedges {
@@ -1179,7 +1191,7 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
-        let index = append_surface_entities(&mut entities, ir, &surface.geometry)?;
+        let index = append_surface_entities(&mut entities, ir, &surface.geometry, version)?;
         surface_indices.insert(surface.id.as_str().to_owned(), index);
     }
 
@@ -1954,8 +1966,8 @@ fn same_float(left: f64, right: f64) -> bool {
     (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10
 }
 
-fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
-    validate_trimmed_sheet_topology(ir)?;
+fn topology_entities(ir: &CadIr, version: crate::IgesVersion) -> Result<Vec<Entity>, CodecError> {
+    validate_trimmed_sheet_topology(ir, version)?;
     let ignored_carriers = ignored_carrier_geometry(ir);
     let topology_edge_ids = ir
         .model
@@ -1968,7 +1980,7 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
-        let index = append_surface_entities(&mut entities, ir, &surface.geometry)?;
+        let index = append_surface_entities(&mut entities, ir, &surface.geometry, version)?;
         surface_indices.insert(surface.id.as_str().to_owned(), index);
     }
 
@@ -2203,7 +2215,10 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
     Ok(entities)
 }
 
-fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
+fn validate_trimmed_sheet_topology(
+    ir: &CadIr,
+    version: crate::IgesVersion,
+) -> Result<(), CodecError> {
     if ir.model.faces.is_empty() {
         return Err(CodecError::NotImplemented(
             "IGES semantic writer requires at least one face for topology output".into(),
@@ -2350,7 +2365,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     face.id, face.surface
                 ))
             })?;
-        surface_entities_for_ir(ir, &surface.geometry, 0)?;
+        surface_entities_for_ir(ir, &surface.geometry, 0, version)?;
         let loops = face_loop_order(ir, face)?;
         if loops.is_empty() {
             return Err(CodecError::NotImplemented(format!(
@@ -4379,9 +4394,10 @@ fn append_surface_entities(
     entities: &mut Vec<Entity>,
     ir: &CadIr,
     geometry: &SurfaceGeometry,
+    version: crate::IgesVersion,
 ) -> Result<usize, CodecError> {
     let base_index = entities.len();
-    let additions = surface_entities_for_ir(ir, geometry, base_index)?;
+    let additions = surface_entities_for_ir(ir, geometry, base_index, version)?;
     let surface_offset = additions
         .len()
         .checked_sub(1)
@@ -4397,6 +4413,7 @@ fn surface_entities_for_ir(
     ir: &CadIr,
     geometry: &SurfaceGeometry,
     base_index: usize,
+    version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     match geometry {
         SurfaceGeometry::Procedural { construction } => {
@@ -4422,7 +4439,7 @@ fn surface_entities_for_ir(
                 )),
             }
         }
-        _ => surface_entities(geometry, base_index),
+        _ => surface_entities(geometry, base_index, version),
     }
 }
 
@@ -4707,6 +4724,7 @@ fn revolution_surface_entities(
 fn surface_entities(
     geometry: &SurfaceGeometry,
     base_index: usize,
+    version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let analytic_type_code =
         analytic_surface_family(geometry).map(AnalyticSurfaceFamily::type_code);
@@ -4716,6 +4734,22 @@ fn surface_entities(
             normal,
             u_axis,
         } => {
+            if matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0) {
+                let (normal, u_axis) = orthonormal_pair(*normal, *u_axis, "legacy plane basis")?;
+                let v_axis = normal.cross(u_axis);
+                return Ok(vec![Entity {
+                    // Type 108 Form 0 is the unbounded plane carrier in the
+                    // V4.0 and V5.0 profiles.  Keep the neutral plane frame
+                    // in its exact local Z=0 form and apply the frame through
+                    // the standard rigid Directory transformation.
+                    type_code: 108,
+                    form: 0,
+                    label: "PLANE",
+                    status: "00000000",
+                    parameters: b"108,0,0,1,0,0,0,0,0,0;".to_vec(),
+                    transform: Some(placement(*origin, u_axis, v_axis, normal)?),
+                }]);
+            }
             let (mut entities, location, axis, reference) =
                 pointer_surface_support(base_index, *origin, *normal, *u_axis)?;
             entities.push(Entity {

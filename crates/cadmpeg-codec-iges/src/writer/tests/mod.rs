@@ -464,9 +464,10 @@ fn target_profiles_cover_every_emitted_entity_form() {
             Err(CodecError::NotImplemented(_))
         ));
     }
-    for supported in [(120, 0), (122, 0), (141, 0), (143, 0)] {
+    for supported in [(108, 0), (120, 0), (122, 0), (141, 0), (143, 0)] {
         assert!(ensure_version_support(&[entity(supported)], IgesVersion::V5_0).is_ok());
     }
+    assert!(ensure_version_support(&[entity((108, 0))], IgesVersion::V4_0).is_ok());
     assert!(ensure_version_support(&[entity((120, 0))], IgesVersion::V4_0).is_ok());
     assert!(ensure_version_support(&[entity((122, 0))], IgesVersion::V4_0).is_ok());
     for unsupported in [(104, 0), (123, 0), (186, 0), (190, 1)] {
@@ -594,7 +595,8 @@ fn analytic_surface_family_uses_pointer_defined_iges_carriers() {
         ),
     ];
     for (geometry, expected_type) in cases {
-        let entities = surface_entities(&geometry, 0).expect("analytic surface has a carrier");
+        let entities = surface_entities(&geometry, 0, IgesVersion::V5_3)
+            .expect("analytic surface has a carrier");
         let surface = entities
             .last()
             .expect("analytic surface emits a surface entity");

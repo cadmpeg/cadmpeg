@@ -96,7 +96,7 @@ fn encode_type_186_uses_ordered_region_shell_roles() {
     assert_eq!(exterior, &source_void);
     assert_eq!(voids, std::slice::from_ref(&source_outer));
 
-    let entities = crate::writer::brep_entities(&ir).unwrap();
+    let entities = crate::writer::brep_entities(&ir, crate::IgesVersion::V5_3).unwrap();
     let shell_indices = entities
         .iter()
         .enumerate()

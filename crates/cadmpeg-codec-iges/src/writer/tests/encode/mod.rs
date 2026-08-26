@@ -281,6 +281,72 @@ fn encode_emits_the_versioned_point_targets_for_4_0_and_5_0() {
 }
 
 #[test]
+fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
+    for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId(format!("surface#{version:?}")),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(4.0, 5.0, 6.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+                u_axis: Vector3::new(0.0, 1.0, 0.0),
+            },
+            source_object: None,
+        });
+        let plan = IgesEncoder::new(IgesWriteOptions { version })
+            .plan(EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .unwrap_or_else(|error| panic!("{version:?}: {error}"));
+        let mut written = Vec::new();
+        let report = plan
+            .write_to(&mut written)
+            .unwrap_or_else(|error| panic!("{version:?}: {error}"));
+        assert!(
+            report.losses.is_empty(),
+            "{version:?}: {:#?}",
+            report.losses
+        );
+
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{version:?}: {error}"));
+        assert_eq!(decoded.ir().model.surfaces.len(), 1, "{version:?}");
+        let SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } = &decoded.ir().model.surfaces[0].geometry
+        else {
+            panic!("{version:?}: expected a decoded plane");
+        };
+        assert!(same_float(origin.x, 4.0), "{version:?}");
+        assert!(same_float(origin.y, 5.0), "{version:?}");
+        assert!(same_float(origin.z, 6.0), "{version:?}");
+        assert_eq!(*normal, Vector3::new(1.0, 0.0, 0.0), "{version:?}");
+        assert_eq!(*u_axis, Vector3::new(0.0, 1.0, 0.0), "{version:?}");
+        assert!(
+            decoded.report().losses.is_empty(),
+            "{version:?}: {:#?}",
+            decoded.report().losses
+        );
+        assert!(
+            cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok(),
+            "{version:?}"
+        );
+
+        let entities = &decoded.ir().native.namespace("iges").unwrap().arenas["entities"];
+        assert!(entities.iter().any(|record| {
+            record.field("entity_type").and_then(|value| value.as_i64()) == Some(108)
+        }));
+        assert!(!entities.iter().any(|record| {
+            record.field("entity_type").and_then(|value| value.as_i64()) == Some(190)
+        }));
+    }
+}
+
+#[test]
 fn encode_rejects_open_shells_before_iges_5_3() {
     let decoded = IgesCodec
         .decode(
