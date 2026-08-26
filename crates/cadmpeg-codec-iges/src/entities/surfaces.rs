@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic and free-form surface projection.
 
-use super::composite::{bounded_parameter_range_for_curve, CompositeIndex};
+use super::composite::{bounded_parameter_range_for_curve, curve_carrier_id, CompositeIndex};
 use super::geometry::{
     declared_unit_vector, entity_loss, resolve_transform, source_object, ProjectionOutcome,
 };
@@ -71,12 +71,11 @@ fn similarity_orientation(transform: super::geometry::Affine) -> Option<f64> {
 
 fn bounded_nurbs(
     ir: &CadIr,
-    sequence: u32,
+    curve_id: &CurveId,
     ctx: Option<&DecodeContext<'_>>,
     index: &CompositeIndex,
 ) -> Option<(NurbsCurve, [f64; 2])> {
-    let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    super::composite::bounded_nurbs_for_curve(ir, &curve_id, ctx, Some(index))
+    super::composite::bounded_nurbs_for_curve(ir, curve_id, ctx, Some(index))
 }
 
 fn constant_speed_curve(geometry: &CurveGeometry) -> bool {
@@ -275,12 +274,11 @@ fn equal_arc_length_parameterization(
 
 fn bounded_evaluable_curve(
     ir: &CadIr,
-    sequence: u32,
+    curve_id: &CurveId,
     tolerance: f64,
     index: &CompositeIndex,
 ) -> Option<(CurveGeometry, [f64; 2])> {
-    let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    let curve = index.curve_by_id(ir, &curve_id)?;
+    let curve = index.curve_by_id(ir, curve_id)?;
     if matches!(
         &curve.geometry,
         CurveGeometry::Composite { .. }
@@ -290,7 +288,7 @@ fn bounded_evaluable_curve(
         return None;
     }
     let parameter_interval =
-        super::composite::bounded_parameter_range_for_curve(ir, &curve_id, tolerance, Some(index))?;
+        super::composite::bounded_parameter_range_for_curve(ir, curve_id, tolerance, Some(index))?;
     if !parameter_interval[0].is_finite()
         || !parameter_interval[1].is_finite()
         || parameter_interval[0] >= parameter_interval[1]
@@ -1261,9 +1259,11 @@ pub(super) fn project(
             ));
             continue;
         }
+        let first_id = CurveId(format!("iges:model:curve#D{first_sequence}"));
+        let second_id = CurveId(format!("iges:model:curve#D{second_sequence}"));
         let (Some((first, first_interval)), Some((mut second, second_interval))) = (
-            bounded_nurbs(ir, first_sequence, ctx, &composite_index),
-            bounded_nurbs(ir, second_sequence, ctx, &composite_index),
+            bounded_nurbs(ir, &first_id, ctx, &composite_index),
+            bounded_nurbs(ir, &second_id, ctx, &composite_index),
         ) else {
             losses.push(entity_loss(
                 entry,
@@ -1386,13 +1386,19 @@ pub(super) fn project(
                 continue;
             }
         };
-        let directrix_id = CurveId(format!("iges:model:curve#D{directrix_sequence}"));
+        let Some(directrix_id) = curve_carrier_id(directrix_sequence, &entries, &records) else {
+            losses.push(entity_loss(
+                entry,
+                "directrix model-space carrier pointer is invalid",
+            ));
+            continue;
+        };
         let Some((directrix, cached_interval)) =
-            bounded_nurbs(ir, directrix_sequence, ctx, &composite_index)
+            bounded_nurbs(ir, &directrix_id, ctx, &composite_index)
         else {
             let Some((directrix_geometry, carrier_interval)) = bounded_evaluable_curve(
                 ir,
-                directrix_sequence,
+                &directrix_id,
                 global.minimum_resolution_mm(),
                 &composite_index,
             ) else {
@@ -1642,12 +1648,19 @@ pub(super) fn project(
             ));
             continue;
         };
+        let Some(generatrix_id) = curve_carrier_id(generatrix_sequence, &entries, &records) else {
+            losses.push(entity_loss(
+                entry,
+                "revolution model-space carrier pointer is invalid",
+            ));
+            continue;
+        };
         let Some((generatrix, cached_interval)) =
-            bounded_nurbs(ir, generatrix_sequence, ctx, &composite_index)
+            bounded_nurbs(ir, &generatrix_id, ctx, &composite_index)
         else {
             let Some((directrix_geometry, carrier_interval)) = bounded_evaluable_curve(
                 ir,
-                generatrix_sequence,
+                &generatrix_id,
                 global.minimum_resolution_mm(),
                 &composite_index,
             ) else {
@@ -1658,8 +1671,7 @@ pub(super) fn project(
                 continue;
             };
             let source_interval = source_parameter_interval(&directrix_geometry, carrier_interval);
-            let mut procedural_directrix =
-                CurveId(format!("iges:model:curve#D{generatrix_sequence}"));
+            let mut procedural_directrix = generatrix_id.clone();
             let mut procedural_axis_origin = axis_origin;
             let mut procedural_axis_direction = axis_direction;
             if entry.transform != 0 {
@@ -1726,7 +1738,6 @@ pub(super) fn project(
             decoded.insert(entry.sequence);
             continue;
         };
-        let generatrix_id = CurveId(format!("iges:model:curve#D{generatrix_sequence}"));
         let carrier_interval = bounded_parameter_range_for_curve(
             ir,
             &generatrix_id,

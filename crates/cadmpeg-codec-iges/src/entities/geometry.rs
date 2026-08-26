@@ -2033,6 +2033,17 @@ pub(crate) fn project_geometry(
         &mut wire_edges,
     );
     admit_projected_entities(ctx, ir, &mut admitted_entities, "iges_geometry_offsets")?;
+    // A valid V5 Type 130 constituent is deferred until its exact offset
+    // carrier has been projected above. The second composite pass consumes
+    // that carrier while retaining each entity's ordered child list.
+    super::composite::project_type_130_children(ir, directory, parameters, global, ctx)?
+        .merge_into(&mut decoded, &mut losses, &mut wire_edges);
+    admit_projected_entities(
+        ctx,
+        ir,
+        &mut admitted_entities,
+        "iges_geometry_composites_offsets",
+    )?;
     super::analytic_surfaces::project(ir, directory, parameters, global, ctx)
         .merge_into(&mut decoded, &mut losses);
     admit_projected_entities(

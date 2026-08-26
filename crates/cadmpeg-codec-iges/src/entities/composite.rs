@@ -119,6 +119,7 @@ fn composite_point_adjacency_valid(
     ir: &CadIr,
     index: &CompositeIndex,
     child_sequences: &[u32],
+    curve_carriers: &BTreeMap<u32, CurveId>,
     context: &CompositePointContext<'_, '_, '_, '_>,
 ) -> bool {
     let all_points = child_sequences
@@ -140,15 +141,10 @@ fn composite_point_adjacency_valid(
             return false;
         };
         if position > 0 && !context.is_point(child_sequences[position - 1]) {
-            let Some((_, end)) = curve_endpoints(
-                ir,
-                &CurveId(format!(
-                    "iges:model:curve#D{}",
-                    child_sequences[position - 1]
-                )),
-                index,
-                context.tolerance,
-            ) else {
+            let Some(curve_id) = curve_carriers.get(&child_sequences[position - 1]) else {
+                return false;
+            };
+            let Some((_, end)) = curve_endpoints(ir, curve_id, index, context.tolerance) else {
                 return false;
             };
             if !close_with_tolerance(end, point, Some(context.tolerance)) {
@@ -157,15 +153,10 @@ fn composite_point_adjacency_valid(
         }
         if position + 1 < child_sequences.len() && !context.is_point(child_sequences[position + 1])
         {
-            let Some((start, _)) = curve_endpoints(
-                ir,
-                &CurveId(format!(
-                    "iges:model:curve#D{}",
-                    child_sequences[position + 1]
-                )),
-                index,
-                context.tolerance,
-            ) else {
+            let Some(curve_id) = curve_carriers.get(&child_sequences[position + 1]) else {
+                return false;
+            };
+            let Some((start, _)) = curve_endpoints(ir, curve_id, index, context.tolerance) else {
                 return false;
             };
             if !close_with_tolerance(point, start, Some(context.tolerance)) {
@@ -174,6 +165,30 @@ fn composite_point_adjacency_valid(
         }
     }
     true
+}
+
+pub(super) fn curve_carrier_id(
+    sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Option<CurveId> {
+    let entry = entries.get(&sequence).copied()?;
+    let carrier_sequence = if entry.entity_type == 142 && entry.form == 0 {
+        // Type 142 is a relationship entity. In a Type 102 constituent its
+        // curve geometry is the model-space C pointer; the UV B pointer is
+        // not a three-dimensional composite segment. This is the same
+        // choice made by OCCT's Curve3D transfer path.
+        records
+            .get(&sequence)
+            .and_then(|record| record.integer(4))
+            .and_then(|value| {
+                let sequence = u32::try_from(value).ok()?;
+                (sequence % 2 == 1).then_some(sequence)
+            })?
+    } else {
+        sequence
+    };
+    Some(CurveId(format!("iges:model:curve#D{carrier_sequence}")))
 }
 
 fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
@@ -846,12 +861,11 @@ fn bounded_nurbs_for_id(
 fn bounded_nurbs(
     ir: &CadIr,
     index: &CompositeIndex,
-    sequence: u32,
+    curve_id: &CurveId,
     join_tolerance: f64,
     ctx: Option<&DecodeContext<'_>>,
 ) -> Option<(NurbsCurve, [f64; 2])> {
-    let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    bounded_nurbs_for_id(ir, &curve_id, 0, Some(join_tolerance), ctx, Some(index))
+    bounded_nurbs_for_id(ir, curve_id, 0, Some(join_tolerance), ctx, Some(index))
 }
 
 pub(super) fn bounded_nurbs_for_curve(
@@ -939,13 +953,9 @@ fn project_native_composite(
     ir: &mut CadIr,
     index: &mut CompositeIndex,
     entry: &DirectoryEntry,
-    child_sequences: &[u32],
+    child_curves: &[CurveId],
     join_tolerance: f64,
 ) -> Option<EdgeId> {
-    let child_curves = child_sequences
-        .iter()
-        .map(|sequence| CurveId(format!("iges:model:curve#D{sequence}")))
-        .collect::<Vec<_>>();
     if child_curves
         .iter()
         .any(|curve_id| !index.curve_positions.contains_key(curve_id))
@@ -1040,12 +1050,12 @@ fn project_degraded_composite(
     ir: &mut CadIr,
     index: &mut CompositeIndex,
     entry: &DirectoryEntry,
-    child_sequences: &[u32],
+    child_curves: &[CurveId],
     join_tolerance: f64,
     reason: &str,
     losses: &mut Vec<LossNote>,
 ) -> Option<EdgeId> {
-    let edge = project_native_composite(ir, index, entry, child_sequences, join_tolerance);
+    let edge = project_native_composite(ir, index, entry, child_curves, join_tolerance);
     if edge.is_some() {
         losses.push(degraded_carrier_loss(entry, reason));
     } else {
@@ -1063,6 +1073,56 @@ pub(super) fn project(
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
+) -> Result<WireProjectionOutcome, CodecError> {
+    project_with_type_130_policy(ir, directory, parameters, global, ctx, false)
+}
+
+pub(super) fn project_type_130_children(
+    ir: &mut CadIr,
+    directory: &[DirectoryEntry],
+    parameters: &[ParameterRecord],
+    global: &ProjectedGlobal,
+    ctx: Option<&DecodeContext<'_>>,
+) -> Result<WireProjectionOutcome, CodecError> {
+    project_with_type_130_policy(ir, directory, parameters, global, ctx, true)
+}
+
+fn has_type_130_child(
+    sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    dialect: Dialect,
+) -> bool {
+    let Some(record) = records.get(&sequence).copied() else {
+        return false;
+    };
+    let Some(child_count) = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count <= MAX_COMPOSITE_CHILDREN)
+    else {
+        return false;
+    };
+    (0..child_count).any(|index| {
+        record
+            .integer(index + 2)
+            .and_then(|value| u32::try_from(value).ok())
+            .and_then(|child_sequence| entries.get(&child_sequence).copied())
+            .is_some_and(|child| {
+                child.entity_type == 130
+                    && child.form == 0
+                    && composite_child_type_allowed(child.entity_type, child.form, dialect)
+            })
+    })
+}
+
+fn project_with_type_130_policy(
+    ir: &mut CadIr,
+    directory: &[DirectoryEntry],
+    parameters: &[ParameterRecord],
+    global: &ProjectedGlobal,
+    ctx: Option<&DecodeContext<'_>>,
+    only_type_130_children: bool,
 ) -> Result<WireProjectionOutcome, CodecError> {
     let records = parameters
         .iter()
@@ -1082,6 +1142,11 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 102 && entry.form == 0)
     {
+        if has_type_130_child(entry.sequence, &entries, &records, global.dialect())
+            != only_type_130_children
+        {
+            continue;
+        }
         if !composite_use_flag_valid(entry.status.use_flag, global.dialect()) {
             losses.push(entity_loss(
                 entry,
@@ -1177,7 +1242,25 @@ pub(super) fn project(
             ctx,
             tolerance: join_tolerance,
         };
-        if !composite_point_adjacency_valid(ir, &index, &child_sequences, &point_context) {
+        let curve_carriers = child_sequences
+            .iter()
+            .copied()
+            .filter(|sequence| {
+                entries
+                    .get(sequence)
+                    .is_none_or(|entry| !composite_point_member(entry))
+            })
+            .filter_map(|sequence| {
+                curve_carrier_id(sequence, &entries, &records).map(|curve_id| (sequence, curve_id))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !composite_point_adjacency_valid(
+            ir,
+            &index,
+            &child_sequences,
+            &curve_carriers,
+            &point_context,
+        ) {
             losses.push(entity_loss(
                 entry,
                 "point or connect-point adjacency is invalid",
@@ -1200,16 +1283,27 @@ pub(super) fn project(
             ));
             continue;
         }
-        let Some(children) = curve_sequences
+        let Some(curve_ids) = curve_sequences
             .iter()
-            .map(|sequence| bounded_nurbs(ir, &index, *sequence, join_tolerance, ctx))
+            .map(|sequence| curve_carriers.get(sequence).cloned())
+            .collect::<Option<Vec<_>>>()
+        else {
+            losses.push(entity_loss(
+                entry,
+                "a Type 142 constituent has no valid model-space curve pointer",
+            ));
+            continue;
+        };
+        let Some(children) = curve_ids
+            .iter()
+            .map(|curve_id| bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx))
             .collect::<Option<Vec<_>>>()
         else {
             if let Some(edge) = project_degraded_composite(
                 ir,
                 &mut index,
                 entry,
-                &curve_sequences,
+                &curve_ids,
                 join_tolerance,
                 "a child has no bounded line or NURBS carrier",
                 &mut losses,
@@ -1230,7 +1324,7 @@ pub(super) fn project(
                 ir,
                 &mut index,
                 entry,
-                &curve_sequences,
+                &curve_ids,
                 join_tolerance,
                 "child endpoints do not join within the Global minimum resolution",
                 &mut losses,
@@ -1247,7 +1341,7 @@ pub(super) fn project(
                 ir,
                 &mut index,
                 entry,
-                &curve_sequences,
+                &curve_ids,
                 join_tolerance,
                 "its parameter range is empty",
                 &mut losses,
@@ -1269,7 +1363,7 @@ pub(super) fn project(
                 ir,
                 &mut index,
                 entry,
-                &curve_sequences,
+                &curve_ids,
                 join_tolerance,
                 "its start cannot be evaluated",
                 &mut losses,
@@ -1291,7 +1385,7 @@ pub(super) fn project(
                 ir,
                 &mut index,
                 entry,
-                &curve_sequences,
+                &curve_ids,
                 join_tolerance,
                 "its end cannot be evaluated",
                 &mut losses,
@@ -1362,10 +1456,7 @@ pub(super) fn project(
             definition: ProceduralCurveDefinition::Compound {
                 parameters: boundaries,
                 component_parameters: child_starts,
-                components: curve_sequences
-                    .iter()
-                    .map(|sequence| CurveId(format!("iges:model:curve#D{sequence}")))
-                    .collect(),
+                components: curve_ids,
             },
             cache_fit_tolerance: None,
         });

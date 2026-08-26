@@ -8,7 +8,7 @@ use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, ProceduralCurveDefinition};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
@@ -297,6 +297,122 @@ fn decode_projects_a_single_v5_composite_constituent() {
         .losses
         .iter()
         .any(|loss| { loss.code == IgesLossCode::EntityNotProjected.kind() }));
+}
+
+#[test]
+fn decode_projects_a_v5_type_142_constituent_through_its_model_curve() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 108,
+                    form: 0,
+                    label: "PLANE".into(),
+                    status: "00010000",
+                    parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 106,
+                    form: 63,
+                    label: "MODEL".into(),
+                    status: "00010000",
+                    parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 106,
+                    form: 63,
+                    label: "PCURVE".into(),
+                    status: "00010500",
+                    parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 142,
+                    form: 0,
+                    label: "CURVSRF".into(),
+                    status: "00010000",
+                    parameters: "142,0,1,5,3,3;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 102,
+                    form: 0,
+                    label: "COMPOSIT".into(),
+                    status: "00000000",
+                    parameters: "102,1,7;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let composite = result
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .find(|curve| curve.curve == CurveId("iges:model:curve#D9".into()))
+        .expect("Type 102 neutral carrier");
+    let ProceduralCurveDefinition::Compound { components, .. } = &composite.definition else {
+        panic!("expected a compound neutral carrier");
+    };
+    assert_eq!(components, &[CurveId("iges:model:curve#D3".into())]);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_projects_a_v5_type_130_constituent_after_its_offset_carrier() {
+    const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_global(
+                &[
+                    OwnedTestEntity {
+                        entity_type: 110,
+                        form: 0,
+                        label: "BASE".into(),
+                        status: "00010000",
+                        parameters: "110,0,0,0,1,0,0;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 130,
+                        form: 0,
+                        label: "OFFSET".into(),
+                        status: "00010000",
+                        parameters: "130,1,1,0,,,0.5,,,,0,0,1,0,1;".into(),
+                    },
+                    OwnedTestEntity {
+                        entity_type: 102,
+                        form: 0,
+                        label: "COMPOSIT".into(),
+                        status: "00000000",
+                        parameters: "102,1,3;".into(),
+                    },
+                ],
+                GLOBAL_V5_0,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let composite = result
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .find(|curve| curve.curve == CurveId("iges:model:curve#D5".into()))
+        .expect("Type 102 neutral carrier");
+    let ProceduralCurveDefinition::Compound { components, .. } = &composite.definition else {
+        panic!("expected a compound neutral carrier");
+    };
+    assert_eq!(components, &[CurveId("iges:model:curve#D3".into())]);
+    assert!(
+        result.report().losses.is_empty(),
+        "{:?}",
+        result.report().losses
+    );
 }
 
 #[test]

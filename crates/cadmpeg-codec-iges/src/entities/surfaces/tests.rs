@@ -789,6 +789,71 @@ fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
 }
 
 #[test]
+fn decode_solves_a_tabulated_surface_from_a_type_142_model_carrier() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 110,
+                    form: 0,
+                    label: "MODEL".into(),
+                    status: "00010000",
+                    parameters: "110,0,0,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 108,
+                    form: 0,
+                    label: "PLANE".into(),
+                    status: "00010000",
+                    parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 106,
+                    form: 63,
+                    label: "PCURVE".into(),
+                    status: "00010500",
+                    parameters: "106,1,5,0,0,0,1,0,1,1,0,1,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 142,
+                    form: 0,
+                    label: "CURVSRF".into(),
+                    status: "00010000",
+                    parameters: "142,0,3,5,1,3;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 122,
+                    form: 0,
+                    label: "TABULATE".into(),
+                    status: "00000000",
+                    parameters: "122,7,0,1,0;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let procedural = result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|surface| surface.surface.0 == "iges:model:surface#D9")
+        .expect("Type 122 neutral carrier");
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { directrix, .. } =
+        &procedural.definition
+    else {
+        panic!("expected an extrusion definition");
+    };
+    assert_eq!(directrix.0, "iges:model:curve#D1");
+    assert!(
+        result.report().losses.is_empty(),
+        "{:?}",
+        result.report().losses
+    );
+}
+
+#[test]
 fn decode_solves_a_tabulated_surface_from_an_exact_hyperbola_directrix() {
     const EPS_TABULATED_POINT: f64 = 1.0e-12;
 
