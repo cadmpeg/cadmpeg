@@ -9,7 +9,7 @@
 )]
 use super::prelude::*;
 
-const EPS_BEND_RADIUS: f64 = 1e-12;
+const EPS_BEND_RADIUS: f64 = 1.0e-12;
 
 /// Field values written into a synthetic single-edge `EdgeFlange` frame.
 struct EdgeFlangeFixture {

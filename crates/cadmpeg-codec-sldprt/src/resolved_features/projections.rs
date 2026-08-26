@@ -32,9 +32,9 @@ use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry};
 use cadmpeg_ir::topology::Face;
 use std::collections::{HashMap, HashSet};
 
-const EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9: f64 = 1e-9;
-const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E8: f64 = 1e-8;
-const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E9: f64 = 1e-9;
+const EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9: f64 = 1.0e-9;
+const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E8: f64 = 1.0e-8;
+const EPS_PROJECTIONS_UNIQUE_PLANAR_FACE_E9: f64 = 1.0e-9;
 
 pub(super) fn bind_circular_profile_by_dimension(
     features: &mut [cadmpeg_ir::features::Feature],

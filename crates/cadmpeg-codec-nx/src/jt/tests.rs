@@ -249,8 +249,8 @@ fn jt_quantized_coordinate_array_decodes_three_lag1_code_vectors() {
 fn jt_deering_normal_applies_sextant_octant_and_code_bounds() {
     let normal = super::deering_normal(1, 7, 8191, 0, 13).unwrap();
     assert!(normal[0].abs() < 1e-3);
-    assert!(normal[1].abs() < 1e-6);
-    assert!((normal[2] - 1.0).abs() < 1e-6);
+    assert!(normal[1].abs() < 1.0e-6);
+    assert!((normal[2] - 1.0).abs() < 1.0e-6);
     assert!(super::deering_normal(6, 7, 0, 0, 13).is_none());
     assert!(super::deering_normal(0, 8, 0, 0, 13).is_none());
     assert!(super::deering_normal(0, 7, 8192, 0, 13).is_none());
@@ -350,10 +350,10 @@ fn jt_quantized_colors_decode_rgb_and_hsv_quantizers() {
         .iter()
         .flatten()
         .all(|component| component.is_finite()));
-    assert!((colors[1][0] - 1.0 / 6.0).abs() < 1e-6);
-    assert!((colors[1][1] - 1.0 / 6.0).abs() < 1e-6);
-    assert!((colors[1][2] - 5.0 / 36.0).abs() < 1e-6);
-    assert!((colors[1][3] - 1.0 / 6.0).abs() < 1e-6);
+    assert!((colors[1][0] - 1.0 / 6.0).abs() < 1.0e-6);
+    assert!((colors[1][1] - 1.0 / 6.0).abs() < 1.0e-6);
+    assert!((colors[1][2] - 5.0 / 36.0).abs() < 1.0e-6);
+    assert!((colors[1][3] - 1.0 / 6.0).abs() < 1.0e-6);
 }
 
 #[test]

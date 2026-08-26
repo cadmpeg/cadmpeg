@@ -24,17 +24,17 @@ use crate::wire::records::{
     ConsolidatedPcurve, ConsolidatedRecord,
 };
 
-const EPS_PLANE_DIRECTION_UNIT: f64 = 1e-9;
-const EPS_PARAMETER_RANGE: f64 = 1e-6;
-const EPS_SPATIAL_CIRCLE_UNIT: f64 = 1e-12;
-const EPS_SPATIAL_CIRCLE_ORTHO: f64 = 1e-12;
-const EPS_CONE_RANGE_START: f64 = 1e-12;
-const EPS_CONE_DIRECTION_UNIT: f64 = 1e-9;
-const EPS_CONE_FRAME_ORTHO: f64 = 1e-9;
-const EPS_ANALYTIC_FRAME_UNIT: f64 = 1e-12;
-const EPS_ANALYTIC_FRAME_ORTHO: f64 = 1e-12;
-const EPS_ANALYTIC_AXIS_UNIT: f64 = 1e-9;
-const EPS_ANALYTIC_AXIS_RANGE: f64 = 1e-9;
+const EPS_PLANE_DIRECTION_UNIT: f64 = 1.0e-9;
+const EPS_PARAMETER_RANGE: f64 = 1.0e-6;
+const EPS_SPATIAL_CIRCLE_UNIT: f64 = 1.0e-12;
+const EPS_SPATIAL_CIRCLE_ORTHO: f64 = 1.0e-12;
+const EPS_CONE_RANGE_START: f64 = 1.0e-12;
+const EPS_CONE_DIRECTION_UNIT: f64 = 1.0e-9;
+const EPS_CONE_FRAME_ORTHO: f64 = 1.0e-9;
+const EPS_ANALYTIC_FRAME_UNIT: f64 = 1.0e-12;
+const EPS_ANALYTIC_FRAME_ORTHO: f64 = 1.0e-12;
+const EPS_ANALYTIC_AXIS_UNIT: f64 = 1.0e-9;
+const EPS_ANALYTIC_AXIS_RANGE: f64 = 1.0e-9;
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
 /// kind-`0x01` `b2 03 30` construction-use record.

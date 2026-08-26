@@ -18,6 +18,7 @@ use super::pcurves::{
 use super::profiles::{extrusion_profile_signed_area, resolved_sketch_profiles};
 use super::surfaces::revolved_section_circle;
 use crate::container::ContainerScan;
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
 use cadmpeg_ir::ids::{
@@ -139,7 +140,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
         let region_id = RegionId(format!("{prefix}:region"));
         let shell_id = ShellId(format!("{prefix}:shell"));
         let count = profile.len();
-        let mut edges = std::iter::repeat_n(None, count).collect::<Vec<_>>();
+        let Ok(mut edges) = alloc_filled(count, None, "creo revolution profile edges") else {
+            continue;
+        };
         for (index, ((_, _, point, _), curve_geometry)) in
             profile.iter().zip(vertex_curves).enumerate()
         {

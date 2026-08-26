@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Split-face, body-modifier, and operation-identity projection tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use super::super::*;
 use super::*;
@@ -369,7 +368,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
             angle: Some(Angle(value)),
             outward: None,
             ..
-        } if (value - std::f64::consts::PI / 60.0).abs() < 1e-12
+        } if (value - std::f64::consts::PI / 60.0).abs() < 1.0e-12
     ));
 }
 

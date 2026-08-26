@@ -14,6 +14,7 @@ pub(crate) const ROOT_NAME: &str = "ISO-10303.p21";
 pub(crate) enum ReferenceTarget {
     Internal {
         member: String,
+        query: Option<String>,
         fragment: Option<String>,
     },
     External,
@@ -26,10 +27,13 @@ pub(crate) fn has_zip_magic(bytes: &[u8]) -> bool {
 
 /// Returns whether a detection prefix names the required STEP root member.
 pub(crate) fn has_root_marker(prefix: &[u8]) -> bool {
+    // CE-07: the root name is evidence only when it is an entry in a
+    // structurally parsed ZIP central directory. Payloads, comments, and
+    // unrelated entry names are not root evidence.
     has_zip_magic(prefix)
-        && prefix
-            .windows(ROOT_NAME.len())
-            .any(|window| window == ROOT_NAME.as_bytes())
+        && ArchiveSnapshot::new(View::over_retained(prefix))
+            .ok()
+            .is_some_and(|archive| archive.entry(ROOT_NAME).is_some())
 }
 
 /// Opens and validates the required root member of one STEP ZIP container.
@@ -40,6 +44,11 @@ pub(crate) fn open_root<'a>(
     let archive = ArchiveSnapshot::new(root)?;
     for entry in archive.entries() {
         validate_entry_name(&entry.name)?;
+        if entry.uses_utf8_name_encoding() {
+            return Err(CodecError::Malformed(
+                "STEP ZIP uses prohibited Unicode filename support".into(),
+            ));
+        }
         if entry.compression == EntryCompression::Zstd {
             return Err(CodecError::NotImplemented(
                 "STEP ZIP requires PKZIP 2.04g stored or Deflate entries".into(),
@@ -53,13 +62,13 @@ pub(crate) fn open_root<'a>(
     Ok((archive, root_view))
 }
 
-/// Resolves one root-file URI against the archive directory.
+/// Resolves one archive URI against the directory of its referencing member.
 pub(crate) fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarget, CodecError> {
     if has_uri_scheme(uri) || uri.starts_with("//") {
         return Ok(ReferenceTarget::External);
     }
-    let (path, fragment) = uri.split_once('#').map_or((uri, None), |(path, fragment)| {
-        (path, Some(fragment.to_owned()))
+    let (uri, fragment) = uri.split_once('#').map_or((uri, None), |(uri, fragment)| {
+        (uri, Some(fragment.to_owned()))
     });
     if fragment
         .as_deref()
@@ -69,6 +78,9 @@ pub(crate) fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarge
             "invalid STEP ZIP URI fragment {uri:?}"
         )));
     }
+    let (path, query) = uri
+        .split_once('?')
+        .map_or((uri, None), |(path, query)| (path, Some(query.to_owned())));
     if path.starts_with('/') {
         return Err(CodecError::malformed(format_args!(
             "STEP ZIP URI escapes the archive root: {uri:?}"
@@ -82,6 +94,7 @@ pub(crate) fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarge
     if path.is_empty() {
         return Ok(ReferenceTarget::Internal {
             member: base_member.to_owned(),
+            query,
             fragment,
         });
     }
@@ -110,6 +123,7 @@ pub(crate) fn resolve_uri(base_member: &str, uri: &str) -> Result<ReferenceTarge
     }
     Ok(ReferenceTarget::Internal {
         member: components.join("/"),
+        query,
         fragment,
     })
 }
@@ -119,6 +133,8 @@ pub(crate) fn root_reference_notes(
     archive: &ArchiveSnapshot<'_>,
     root_bytes: &[u8],
 ) -> Result<Vec<String>, CodecError> {
+    // CE-02: Annex A.4 makes subsidiary access a root reference operation;
+    // this pass records the binding and does not import a subsidiary graph.
     let (exchange, _) = crate::parse::parse(root_bytes)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     let uris = exchange
@@ -128,15 +144,23 @@ pub(crate) fn root_reference_notes(
         .collect::<Vec<_>>();
     let mut notes = Vec::new();
     for (name, uri) in uris {
+        let uri = forwarded_reference_uri(&exchange, uri);
         match resolve_uri(ROOT_NAME, uri)? {
-            ReferenceTarget::Internal { member, fragment } => {
+            ReferenceTarget::Internal {
+                member,
+                query,
+                fragment,
+            } => {
                 if archive.entry(&member).is_none() {
                     return Err(CodecError::malformed(format_args!(
                         "STEP ZIP resource {uri:?} for {name} has no archive member {member:?}"
                     )));
                 }
+                let query = query.map_or_else(String::new, |query| format!("?{query}"));
                 let fragment = fragment.map_or_else(String::new, |fragment| format!("#{fragment}"));
-                notes.push(format!("internal resource {name} -> {member}{fragment}"));
+                notes.push(format!(
+                    "internal resource {name} -> {member}{query}{fragment}"
+                ));
             }
             ReferenceTarget::External => {
                 notes.push(format!("external resource {name} -> {uri}"));
@@ -144,6 +168,21 @@ pub(crate) fn root_reference_notes(
         }
     }
     Ok(notes)
+}
+
+fn forwarded_reference_uri<'a>(exchange: &'a crate::parse::Exchange, uri: &'a str) -> &'a str {
+    let Some(fragment) = uri.strip_prefix('#') else {
+        return uri;
+    };
+    exchange
+        .anchors
+        .iter()
+        .find(|anchor| anchor.name == fragment)
+        .and_then(|anchor| match &anchor.value {
+            crate::parse::Value::Resource(uri) => Some(uri.as_str()),
+            _ => None,
+        })
+        .unwrap_or(uri)
 }
 
 fn has_uri_scheme(uri: &str) -> bool {

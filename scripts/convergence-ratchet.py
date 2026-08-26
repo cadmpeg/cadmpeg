@@ -8,10 +8,9 @@ Patterns (production filter — see ``docs/convergence-ledger.toml``):
   exceptions remain, so the honest end state is not zero)
 * ``CodecError::Malformed(format!`` (multiline-aware)
 * ``LossNote {`` struct literals (not ``-> LossNote {`` or the struct definition)
-* bare scientific-notation tolerance values from ``1e-6`` through ``1e-12``
-  at use sites in ``crates/**/src``; the numeric initializer of a named
-  ``const`` or ``static`` is the declaration that gives the threshold its
-  required intent
+* bare ``1e-6`` / ``1e-7`` / ``1e-8`` / ``1e-9`` / ``1e-10`` / ``1e-11`` /
+  ``1e-12`` in ``crates/**/src`` (counts occurrences only; does not see naming
+  or collapse of distinct values)
 * non-literal ``vec![value; count]`` repeats (parsed-count allocations)
 
 Modes:
@@ -71,17 +70,12 @@ MALFORMED_FORMAT = re.compile(r"CodecError::Malformed\s*\(\s*format!", re.MULTIL
 LOSS_NOTE_LIT = re.compile(r"LossNote\s*\{")
 LOSS_NOTE_RETURN = re.compile(r"->\s*LossNote\s*\{")
 LOSS_NOTE_STRUCT = re.compile(r"\b(?:pub(?:\([^)]*\))?\s+)?struct\s+LossNote\s*\{")
-LOSS_NOTE_IMPL = re.compile(r"\bimpl(?:\s*<[^>]*>)?\s+LossNote\s*\{")
-BARE_TOLERANCE = re.compile(
-    r"(?<![0-9A-Za-z_.])1(?:\.0+)?[eE]-(?:6|7|8|9|10|11|12)\b"
-)
-NAMED_TOLERANCE_DECL = re.compile(
-    r"^\s*(?:(?:pub(?:\([^)]*\))?|unsafe)\s+)*"
-    r"(?:const|static)(?:\s+mut)?\s+[A-Za-z_][A-Za-z0-9_]*"
-    r"\s*(?::[^=;]+)?=\s*"
-)
-# `vec![value; count]` where count is not a decimal/hex literal.
-VEC_REPEAT = re.compile(r"vec!\s*\[(?:[^\];]|;)*;\s*([^\]]+)\]", re.MULTILINE)
+LOSS_NOTE_IMPL = re.compile(r"\bimpl(?:<[^>]*>)?\s+LossNote\s*\{")
+BARE_TOLERANCE = re.compile(r"(?<![0-9A-Za-z_.])1[eE]-(?:6|7|8|9|10|11|12)\b")
+# The scanner below identifies `vec![value; count]` repeats structurally. A
+# regular expression cannot distinguish the repeat separator from semicolons
+# inside nested arrays, strings, comments, or format arguments.
+VEC_MACRO = re.compile(r"\bvec!\s*\[")
 VEC_REPEAT_LITERAL = re.compile(r"^(?:0x[0-9a-fA-F]+|\d+)$")
 CFG_TEST_ATTR = re.compile(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]")
 CFG_ATTR = re.compile(r"#\s*\[\s*cfg\s*\((.*)\)\s*\]\s*$", re.DOTALL)
@@ -93,10 +87,7 @@ MOD_DECL = re.compile(
 FILTER_DESCRIPTION = (
     "legacy metrics: production .rs under crates/**/src via is_production_rs; "
     "exclude tests/ and benches/ path segments; exclude files named tests.rs or "
-    "*test*.rs; lexically mask Rust comments and literals, then strip "
-    "cfg(test)-attributed items with blank-preserving elision. "
-    "bare tolerance literals count at use sites; named const/static numeric "
-    "initializers are declarations and are excluded. "
+    "*test*.rs; strip cfg(test)-attributed items with blank-preserving elision. "
     "from_endian_bytes uses that same crates/**/src glob (not codec crates only). "
     "Placement metrics: scan crates/**/*.rs by ownership, structural entry "
     "points, standard mod resolution, and test-only #[path] ancestry; "
@@ -120,19 +111,14 @@ def is_production_rs(path: Path) -> bool:
     return "src" in parts
 
 
-def strip_cfg_test_items(text: str, masked_text: str | None = None) -> str:
+def strip_cfg_test_items(text: str) -> str:
     """Remove ``#[cfg(test)]``-attributed items and their bodies when practical."""
     lines = text.splitlines(keepends=True)
-    masked = (
-        masked_text.splitlines(keepends=True)
-        if masked_text is not None
-        else masked_lines(lines)
-    )
     out: list[str] = []
     i = 0
     while i < len(lines):
         line = lines[i]
-        if CFG_TEST_ATTR.search(masked[i]):
+        if CFG_TEST_ATTR.search(line.split("//", 1)[0]):
             out.append("\n" if line.endswith("\n") else "")
             i += 1
             while i < len(lines):
@@ -149,13 +135,13 @@ def strip_cfg_test_items(text: str, masked_text: str | None = None) -> str:
             if i >= len(lines):
                 break
             item = lines[i]
-            if "{" not in masked[i]:
+            if "{" not in item:
                 out.append("\n" if item.endswith("\n") else "")
                 i += 1
                 continue
             depth = 0
             while i < len(lines):
-                for ch in masked[i]:
+                for ch in lines[i]:
                     if ch == "{":
                         depth += 1
                     elif ch == "}":
@@ -173,7 +159,6 @@ def strip_cfg_test_items(text: str, masked_text: str | None = None) -> str:
 def elide_cfg_test_items(text: str) -> str:
     """Remove cfg(test) items and their bodies without leaving blank lines."""
     lines = text.splitlines(keepends=True)
-    masked = masked_lines(lines)
     out: list[str] = []
     i = 0
     while i < len(lines):
@@ -187,7 +172,7 @@ def elide_cfg_test_items(text: str) -> str:
         while i < len(lines):
             stripped = lines[i].lstrip()
             if stripped.startswith("#["):
-                attr, i = collect_attribute(lines, i, masked)
+                attr, i = collect_attribute(lines, i)
                 attrs.append(attr)
                 continue
             if is_trivia_line(stripped):
@@ -199,7 +184,7 @@ def elide_cfg_test_items(text: str) -> str:
             continue
         if i >= len(lines):
             break
-        i = skip_item(lines, i, masked)
+        i = skip_item(lines, i)
     return "".join(out)
 
 
@@ -207,46 +192,10 @@ def iter_src_files(glob: str) -> list[Path]:
     return sorted(p for p in ROOT.glob(glob) if is_production_rs(p))
 
 
-def metric_source_text(path: Path) -> str:
-    """Return production Rust code with test-only items and non-code masked."""
-
-    masked = mask_rust_non_code(path.read_text(encoding="utf-8", errors="replace"))
-    return strip_cfg_test_items(masked, masked)
-
-
-def count_legacy_metrics() -> dict[str, int]:
-    counts = {
-        "from_endian_bytes": 0,
-        "codec_error_malformed_format": 0,
-        "loss_note_struct_literals": 0,
-        "bare_tolerance_literals": 0,
-        "nonliteral_vec_repeat": 0,
-    }
-    for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = metric_source_text(path)
-        counts["from_endian_bytes"] += len(FROM_ENDIAN.findall(text))
-        counts["codec_error_malformed_format"] += len(MALFORMED_FORMAT.findall(text))
-        for line in text.splitlines():
-            if not LOSS_NOTE_LIT.search(line):
-                continue
-            if (
-                LOSS_NOTE_RETURN.search(line)
-                or LOSS_NOTE_STRUCT.search(line)
-                or LOSS_NOTE_IMPL.search(line)
-            ):
-                continue
-            counts["loss_note_struct_literals"] += 1
-        counts["bare_tolerance_literals"] += count_bare_tolerance_literals(text)
-        for match in VEC_REPEAT.finditer(text):
-            if not VEC_REPEAT_LITERAL.fullmatch(match.group(1).strip()):
-                counts["nonliteral_vec_repeat"] += 1
-    return counts
-
-
 def count_from_endian_bytes() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = metric_source_text(path)
+        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
         total += len(FROM_ENDIAN.findall(text))
     return total
 
@@ -254,7 +203,7 @@ def count_from_endian_bytes() -> int:
 def count_malformed_format() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = metric_source_text(path)
+        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
         total += len(MALFORMED_FORMAT.findall(text))
     return total
 
@@ -262,14 +211,15 @@ def count_malformed_format() -> int:
 def count_loss_note_literals() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = metric_source_text(path)
+        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
         for line in text.splitlines():
-            if not LOSS_NOTE_LIT.search(line):
+            code = line.split("//", 1)[0]
+            if not LOSS_NOTE_LIT.search(code):
                 continue
             if (
-                LOSS_NOTE_RETURN.search(line)
-                or LOSS_NOTE_STRUCT.search(line)
-                or LOSS_NOTE_IMPL.search(line)
+                LOSS_NOTE_RETURN.search(code)
+                or LOSS_NOTE_STRUCT.search(code)
+                or LOSS_NOTE_IMPL.search(code)
             ):
                 continue
             total += 1
@@ -279,28 +229,118 @@ def count_loss_note_literals() -> int:
 def count_bare_tolerances() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = metric_source_text(path)
-        total += count_bare_tolerance_literals(text)
+        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        total += len(BARE_TOLERANCE.findall(text))
     return total
 
 
-def count_bare_tolerance_literals(text: str) -> int:
-    """Count tolerance literals that are not named threshold definitions."""
-    total = 0
-    for line in text.splitlines():
-        for match in BARE_TOLERANCE.finditer(line):
-            if NAMED_TOLERANCE_DECL.match(line[: match.start()]):
-                continue
-            total += 1
-    return total
+def _skip_rust_quoted(text: str, start: int) -> int | None:
+    """Return the end of a Rust string/character literal at ``start``."""
+    quote = text[start]
+    raw_start = start
+    if quote in {"b", "c"} and text.startswith("r", start + 1):
+        raw_start += 1
+    if text.startswith("r", raw_start):
+        hash_start = raw_start + 1
+        hash_end = hash_start
+        while hash_end < len(text) and text[hash_end] == "#":
+            hash_end += 1
+        if hash_end < len(text) and text[hash_end] == '"':
+            hashes = text[hash_start:hash_end]
+            terminator = '"' + hashes
+            end = text.find(terminator, hash_end + 1)
+            return len(text) if end < 0 else end + len(terminator)
+    if quote not in {'"', "'"}:
+        return None
+    if quote == "'":
+        # Do not mistake a lifetime such as `'static` for a character literal.
+        if start + 2 >= len(text) or (
+            text[start + 1] != "\\" and text[start + 2] != "'"
+        ):
+            return None
+    index = start + 1
+    while index < len(text):
+        if text[index] == "\\":
+            index += 2
+            continue
+        if text[index] == quote:
+            return index + 1
+        index += 1
+    return len(text)
+
+
+def _vec_repeat_count(text: str, macro: re.Match[str]) -> str | None:
+    stack = ["["]
+    separator = None
+    index = macro.end()
+    while index < len(text) and stack:
+        if text.startswith("//", index):
+            newline = text.find("\n", index + 2)
+            index = len(text) if newline < 0 else newline + 1
+            continue
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            index = len(text) if end < 0 else end + 2
+            continue
+        quoted_end = (
+            _skip_rust_quoted(text, index)
+            if text[index] in {'"', "'", "b", "c", "r"}
+            else None
+        )
+        if quoted_end is not None:
+            index = quoted_end
+            continue
+        character = text[index]
+        if character in "([{":
+            stack.append(character)
+        elif character in ")]}":
+            expected = {")": "(", "]": "[", "}": "{"
+            }[character]
+            if stack[-1] == expected:
+                stack.pop()
+                if not stack:
+                    return None if separator is None else text[separator + 1 : index].strip()
+        elif character == ";" and len(stack) == 1 and separator is None:
+            separator = index
+        index += 1
+    return None
+
+
+def iter_vec_repeat_counts(text: str):
+    """Yield count expressions from syntactic ``vec![value; count]`` repeats."""
+    index = 0
+    while index < len(text):
+        if text.startswith("//", index):
+            newline = text.find("\n", index + 2)
+            index = len(text) if newline < 0 else newline + 1
+            continue
+        if text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            index = len(text) if end < 0 else end + 2
+            continue
+        quoted_end = (
+            _skip_rust_quoted(text, index)
+            if text[index] in {'"', "'", "b", "c", "r"}
+            else None
+        )
+        if quoted_end is not None:
+            index = quoted_end
+            continue
+        macro = VEC_MACRO.match(text, index)
+        if macro:
+            count = _vec_repeat_count(text, macro)
+            if count is not None:
+                yield count
+            index = macro.end()
+            continue
+        index += 1
 
 
 def count_nonliteral_vec_repeat() -> int:
     total = 0
     for path in iter_src_files("crates/**/src/**/*.rs"):
-        text = metric_source_text(path)
-        for match in VEC_REPEAT.finditer(text):
-            count_expr = match.group(1).strip()
+        text = strip_cfg_test_items(path.read_text(encoding="utf-8", errors="replace"))
+        for count_expr in iter_vec_repeat_counts(text):
             if VEC_REPEAT_LITERAL.fullmatch(count_expr):
                 continue
             total += 1
@@ -362,52 +402,14 @@ def is_trivia_line(stripped: str) -> bool:
     )
 
 
-RUST_NON_CODE = re.compile(
-    r"//[^\r\n]*"
-    r"|/\*(?:[^*]|\*(?!/))*\*/"
-    r'|(?:br|r)(?P<raw_hashes>#+)"(?:(?!"(?P=raw_hashes)).)*"(?P=raw_hashes)'
-    r'|(?:br|r)"(?:\\.|[^"\\])*"'
-    r'|"(?:\\.|[^"\\])*"'
-    r"|'(?:\\.|[^'\\\r\n])*'",
-    re.DOTALL,
-)
-
-
-def mask_rust_non_code(text: str) -> str:
-    """Blank comments and literals while preserving source positions.
-
-    The legacy counters inspect Rust source text with regular expressions. A
-    lexical mask keeps those expressions from treating a tolerance in a
-    comment, string, or raw string as a Rust expression. Newlines are retained
-    so line-oriented diagnostics remain useful.
-    """
-
-    def blank(match: re.Match[str]) -> str:
-        return "".join(
-            character if character in "\r\n" else " " for character in match.group(0)
-        )
-
-    return RUST_NON_CODE.sub(blank, text)
-
-
-def masked_lines(lines: list[str]) -> list[str]:
-    """Return a lexical mask with the same line boundaries as ``lines``."""
-
-    return mask_rust_non_code("".join(lines)).splitlines(keepends=True)
-
-
-def collect_attribute(
-    lines: list[str], start: int, masked: list[str] | None = None
-) -> tuple[str, int]:
+def collect_attribute(lines: list[str], start: int) -> tuple[str, int]:
     depth = 0
     pieces: list[str] = []
-    masked = masked or [mask_rust_non_code(lines[start])]
     i = start
     while i < len(lines):
         line = lines[i]
         pieces.append(line)
-        masked_line = masked[i] if i < len(masked) else mask_rust_non_code(line)
-        for ch in masked_line:
+        for ch in line:
             if ch == "[":
                 depth += 1
             elif ch == "]":
@@ -431,15 +433,12 @@ def path_attr_target(attr: str) -> str | None:
     return match.group(1) if match is not None else None
 
 
-def skip_item(
-    lines: list[str], start: int, masked: list[str] | None = None
-) -> int:
+def skip_item(lines: list[str], start: int) -> int:
     saw_brace = False
     depth = 0
-    masked = masked or masked_lines(lines)
     i = start
     while i < len(lines):
-        for ch in masked[i]:
+        for ch in lines[i]:
             if ch == "{":
                 depth += 1
                 saw_brace = True
@@ -454,14 +453,11 @@ def skip_item(
     return i
 
 
-def find_matching_brace_end(
-    lines: list[str], start: int, masked: list[str] | None = None
-) -> int:
+def find_matching_brace_end(lines: list[str], start: int) -> int:
     saw_brace = False
     depth = 0
-    masked = masked or masked_lines(lines)
     for i in range(start, len(lines)):
-        for ch in masked[i]:
+        for ch in lines[i]:
             if ch == "{":
                 depth += 1
                 saw_brace = True
@@ -505,14 +501,8 @@ def scan_block(
     scanned_prod_files: set[Path],
     known_test_files: set[Path],
     counted_test_files: set[Path],
-    masked_text: str | None = None,
 ) -> None:
     lines = text.splitlines(keepends=True)
-    masked = (
-        masked_text.splitlines(keepends=True)
-        if masked_text is not None
-        else masked_lines(lines)
-    )
     i = 0
     pending_attrs: list[str] = []
     pending_start = 0
@@ -521,7 +511,7 @@ def scan_block(
         if stripped.startswith("#["):
             if not pending_attrs:
                 pending_start = i
-            attr, i = collect_attribute(lines, i, masked)
+            attr, i = collect_attribute(lines, i)
             pending_attrs.append(attr)
             continue
         if is_trivia_line(stripped):
@@ -567,11 +557,10 @@ def scan_block(
                     )
             i += 1
             continue
-        end = find_matching_brace_end(lines, i, masked)
+        end = find_matching_brace_end(lines, i)
         block_text = "".join(lines[i : end + 1])
-        masked_block_text = "".join(masked[i : end + 1])
-        open_index = masked_block_text.find("{")
-        close_index = masked_block_text.rfind("}")
+        open_index = block_text.find("{")
+        close_index = block_text.rfind("}")
         body = (
             block_text[open_index + 1 : close_index]
             if open_index >= 0 and close_index > open_index
@@ -604,9 +593,6 @@ def scan_block(
             scanned_prod_files,
             known_test_files,
             counted_test_files,
-            masked_block_text[open_index + 1 : close_index]
-            if open_index >= 0 and close_index > open_index
-            else "",
         )
         i = end + 1
 
@@ -714,7 +700,13 @@ def collect_placement_contributors() -> dict[str, list[dict[str, object]]]:
 
 
 def measure_all() -> tuple[dict[str, int], dict[str, list[dict[str, object]]]]:
-    counts = count_legacy_metrics()
+    counts = {
+        "from_endian_bytes": count_from_endian_bytes(),
+        "codec_error_malformed_format": count_malformed_format(),
+        "loss_note_struct_literals": count_loss_note_literals(),
+        "bare_tolerance_literals": count_bare_tolerances(),
+        "nonliteral_vec_repeat": count_nonliteral_vec_repeat(),
+    }
     contributors = collect_placement_contributors()
     counts.update(
         {

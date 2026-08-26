@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
@@ -11,15 +10,13 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::{Cursor, Write};
 
 use cadmpeg_asm::asm_header;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
 use zip::CompressionMethod;
 
-use crate::bytes::lp_utf16_bytes;
 use crate::container::{self, role};
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
@@ -44,8 +41,8 @@ fn asm_header_parses_documented_fields() {
     assert_eq!(h.product_version.as_deref(), Some("ASM 231.6.3.65535 OSX"));
     assert_eq!(h.save_date.as_deref(), Some("Tue Mar 31 16:16:19 2026"));
     assert_eq!(h.scale, Some(60.0));
-    assert_eq!(h.linear, Some(1e-6));
-    assert_eq!(h.angular, Some(1e-10));
+    assert_eq!(h.linear, Some(1.0e-6));
+    assert_eq!(h.angular, Some(1.0e-10));
 }
 
 /// Flag bits 1 to 7 hold the save format's revision number
@@ -101,8 +98,8 @@ fn asm_header_parses_binaryfile4_fields() {
     assert_eq!(h.product_version.as_deref(), Some("ASM 227.5.0.65535 NT"));
     assert_eq!(h.save_date.as_deref(), Some("Mon Aug  8 02:39:24 2022"));
     assert_eq!(h.scale, Some(50.0));
-    assert_eq!(h.linear, Some(1e-6));
-    assert_eq!(h.angular, Some(1e-10));
+    assert_eq!(h.linear, Some(1.0e-6));
+    assert_eq!(h.angular, Some(1.0e-10));
     // The record stream begins directly after the tolerance doubles.
     assert_eq!(asm_header::record_stream_start(&bytes), Some(bytes.len()));
 }
@@ -133,8 +130,8 @@ fn decodes_binaryfile4_geometry_with_lump_topology() {
         .find(|edge| edge.curve.is_some())
         .expect("edge on the ellipse carrier");
     let [start, end] = arc.param_range.expect("arc range");
-    assert!((start - std::f64::consts::PI).abs() < 1e-9);
-    assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    assert!((start - std::f64::consts::PI).abs() < 1.0e-9);
+    assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-9);
 }
 
 #[test]
@@ -241,8 +238,8 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
         .find(|edge| edge.curve.is_some())
         .expect("edge on the ellipse carrier");
     let [start, end] = arc.param_range.expect("arc range");
-    assert!((start - std::f64::consts::PI).abs() < 1e-9);
-    assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-9);
+    assert!((start - std::f64::consts::PI).abs() < 1.0e-9);
+    assert!((end - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-9);
 
     let curve_id = arc.curve.as_ref().expect("curve link");
     let carrier = result
@@ -255,7 +252,7 @@ fn reversed_edge_sense_reverses_its_conic_carrier() {
     let cadmpeg_ir::geometry::CurveGeometry::Circle { axis, .. } = &carrier.geometry else {
         panic!("expected the ratio-1 ellipse to decode as a circle");
     };
-    assert!((axis.z - -1.0).abs() < 1e-12, "axis must be negated");
+    assert!((axis.z - -1.0).abs() < 1.0e-12, "axis must be negated");
 }
 
 #[test]
@@ -547,7 +544,7 @@ fn decode_yields_metadata_and_honest_report() {
         Some("Autodesk Neutron")
     );
     // resabs/resnor were carried into tolerances.
-    assert_eq!(result.ir().tolerances.linear, 1e-6);
+    assert_eq!(result.ir().tolerances.linear, 1.0e-6);
     assert_f3d_native_parity(result.ir());
     assert!(result
         .source_fidelity()
@@ -679,7 +676,7 @@ fn smbh_header_string_region_starts_at_byte_47() {
     let h = asm_header::parse(&prefix).expect("magic present");
     assert_eq!(h.product_family.as_deref(), Some("Autodesk Neutron"));
     assert_eq!(h.flags, Some(3));
-    assert_eq!(h.angular, Some(1e-10));
+    assert_eq!(h.angular, Some(1.0e-10));
     assert_eq!(
         asm_header::record_stream_start(&prefix),
         Some(prefix.len()),

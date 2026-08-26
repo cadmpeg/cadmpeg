@@ -242,7 +242,7 @@ pub(super) fn nested_profile_contains_declared_circular_carriers(
     declared: &[([f64; 2], f64)],
 ) -> bool {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1e-8;
+    const QUANTUM: f64 = 1.0e-8;
 
     let Some(transform) = sketch_frame_marker_transform(sketch, QUANTUM) else {
         return true;
@@ -282,7 +282,7 @@ pub(crate) fn project_compact_sketch_profiles(
     lanes: &[FeatureInputLane],
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1e-8;
+    const QUANTUM: f64 = 1.0e-8;
 
     let native_features = histories
         .iter()
@@ -694,7 +694,7 @@ pub(crate) fn project_marker_backed_sketches(
     lanes: &[FeatureInputLane],
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1e-8;
+    const QUANTUM: f64 = 1.0e-8;
 
     let native_features = histories
         .iter()
@@ -1963,7 +1963,7 @@ fn id_key(id: &str) -> &str {
 fn sketch_block_assembly_frame(
     placements: &[Transform],
 ) -> Option<(SketchBlockAssemblyFrame, Vec<f64>)> {
-    const TOLERANCE: f64 = 1e-8;
+    const TOLERANCE: f64 = 1.0e-8;
     let first = *placements.first()?;
     if !first.is_proper_rigid() {
         return None;
@@ -2142,7 +2142,7 @@ fn transform_sketch_block_point(
     transform: Transform,
     frame: SketchBlockAssemblyFrame,
 ) -> Option<Point2> {
-    const TOLERANCE: f64 = 1e-8;
+    const TOLERANCE: f64 = 1.0e-8;
     let transformed = transform.apply_point(Point3::new(point.u, point.v, 0.0));
     let delta = transformed.vector_from(frame.origin);
     (delta.dot(frame.normal).abs()
@@ -2178,7 +2178,7 @@ fn project_detached_legacy_config_sketches(
     feature_frames: &HashMap<String, (Point3, Vector3, Vector3)>,
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1e-8;
+    const QUANTUM: f64 = 1.0e-8;
 
     for lane in lanes
         .iter()

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
@@ -1259,7 +1258,7 @@ fn semantic_writer_round_trips_flex_operations() {
         assert!(matches!(
             mode,
             FlexMode::Bending { angle }
-                if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12
+                if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
         ));
         *mode = FlexMode::Twisting { angle: Angle(0.75) };
     }
@@ -1281,7 +1280,7 @@ fn semantic_writer_round_trips_flex_operations() {
             axis,
             mode: FlexMode::Twisting { angle },
         } if *axis == Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
-            && (angle.0 - 0.75).abs() < 1e-12
+            && (angle.0 - 0.75).abs() < 1.0e-12
     ));
 }
 
@@ -1334,16 +1333,16 @@ fn semantic_writer_round_trips_all_flex_modes() {
         .map(|feature| &feature.definition)
         .collect::<Vec<_>>();
     assert!(
-        matches!(modes[0], FeatureDefinition::Flex { mode: FlexMode::Bending { angle }, .. } if (angle.0 - 0.1).abs() < 1e-12)
+        matches!(modes[0], FeatureDefinition::Flex { mode: FlexMode::Bending { angle }, .. } if (angle.0 - 0.1).abs() < 1.0e-12)
     );
     assert!(
-        matches!(modes[1], FeatureDefinition::Flex { mode: FlexMode::Twisting { angle }, .. } if (angle.0 - 0.2).abs() < 1e-12)
+        matches!(modes[1], FeatureDefinition::Flex { mode: FlexMode::Twisting { angle }, .. } if (angle.0 - 0.2).abs() < 1.0e-12)
     );
     assert!(
-        matches!(modes[2], FeatureDefinition::Flex { mode: FlexMode::Tapering { factor }, .. } if (*factor - 2.0).abs() < 1e-12)
+        matches!(modes[2], FeatureDefinition::Flex { mode: FlexMode::Tapering { factor }, .. } if (*factor - 2.0).abs() < 1.0e-12)
     );
     assert!(
-        matches!(modes[3], FeatureDefinition::Flex { mode: FlexMode::Stretching { distance }, .. } if (distance.0 - 12.0).abs() < 1e-12)
+        matches!(modes[3], FeatureDefinition::Flex { mode: FlexMode::Stretching { distance }, .. } if (distance.0 - 12.0).abs() < 1.0e-12)
     );
 }
 

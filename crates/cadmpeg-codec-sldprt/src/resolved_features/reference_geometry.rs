@@ -34,19 +34,19 @@ use crate::layout::coordinate_system_xy_tail as xy_tail;
 use crate::layout::reference_point_long_solved_cache as pt_long;
 use crate::layout::reference_point_short_solved_cache as pt_short;
 
-const EPS_REFERENCE_GEOMETRY_RECONCILE_REFERENCE_PLANE_FRAME_WITH_SOURCE_E9: f64 = 1e-9;
-const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_TWO_POINT_FRAME_E9: f64 = 1e-9;
-const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12: f64 = 1e-12;
-const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E9: f64 = 1e-9;
-const EPS_REFERENCE_GEOMETRY_OFFSET_PLANE_REFERENCE_FRAME_MATCHES_E9: f64 = 1e-9;
-const EPS_REFERENCE_GEOMETRY_OFFSET_PLANE_REFERENCE_FRAME_MATCHES_E8: f64 = 1e-8;
-const EPS_REFERENCE_GEOMETRY_COMPLETE_REFERENCE_AXIS_TRIAD_E12: f64 = 1e-12;
-const EPS_REFERENCE_GEOMETRY_EXPLICIT_REFERENCE_AXIS_FRAME_E12: f64 = 1e-12;
-const EPS_REFERENCE_GEOMETRY_FIXED_REFERENCE_PLANE_FRAME_E9: f64 = 1e-9;
-const EPS_REFERENCE_GEOMETRY_CONSTRAINT_MIDPLANE_FRAME_E9: f64 = 1e-9;
-const EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9: f64 = 1e-9;
-const EPS_REFERENCE_GEOMETRY_MATRIX_REFERENCE_PLANE_FRAME_CANDIDATES_E9: f64 = 1e-9;
-const EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9: f64 = 1e-9;
+const EPS_REFERENCE_GEOMETRY_RECONCILE_REFERENCE_PLANE_FRAME_WITH_SOURCE_E9: f64 = 1.0e-9;
+const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_TWO_POINT_FRAME_E9: f64 = 1.0e-9;
+const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E12: f64 = 1.0e-12;
+const EPS_REFERENCE_GEOMETRY_COORDINATE_SYSTEM_LINE_AXES_E9: f64 = 1.0e-9;
+const EPS_REFERENCE_GEOMETRY_OFFSET_PLANE_REFERENCE_FRAME_MATCHES_E9: f64 = 1.0e-9;
+const EPS_REFERENCE_GEOMETRY_OFFSET_PLANE_REFERENCE_FRAME_MATCHES_E8: f64 = 1.0e-8;
+const EPS_REFERENCE_GEOMETRY_COMPLETE_REFERENCE_AXIS_TRIAD_E12: f64 = 1.0e-12;
+const EPS_REFERENCE_GEOMETRY_EXPLICIT_REFERENCE_AXIS_FRAME_E12: f64 = 1.0e-12;
+const EPS_REFERENCE_GEOMETRY_FIXED_REFERENCE_PLANE_FRAME_E9: f64 = 1.0e-9;
+const EPS_REFERENCE_GEOMETRY_CONSTRAINT_MIDPLANE_FRAME_E9: f64 = 1.0e-9;
+const EPS_REFERENCE_GEOMETRY_ANGLED_REFERENCE_PLANE_FRAME_E9: f64 = 1.0e-9;
+const EPS_REFERENCE_GEOMETRY_MATRIX_REFERENCE_PLANE_FRAME_CANDIDATES_E9: f64 = 1.0e-9;
+const EPS_REFERENCE_GEOMETRY_COMPACT_REFERENCE_PLANE_FRAME_E9: f64 = 1.0e-9;
 
 pub(super) fn reconcile_reference_plane_frame_with_source(
     explicit: Option<(Point3, Vector3, Vector3)>,
@@ -1753,8 +1753,8 @@ pub(crate) fn enrich_history_reference_axes(
 pub(super) fn complete_reference_axis_triad(
     frames: [Option<(Point3, Vector3)>; 3],
 ) -> Option<(usize, (Point3, Vector3))> {
-    const ANGULAR_TOLERANCE: f64 = 1e-9;
-    const POSITION_TOLERANCE_MM: f64 = 1e-8;
+    const ANGULAR_TOLERANCE: f64 = 1.0e-9;
+    const POSITION_TOLERANCE_MM: f64 = 1.0e-8;
 
     let missing = frames.iter().position(Option::is_none)?;
     if frames.iter().filter(|frame| frame.is_none()).count() != 1 {
@@ -1837,9 +1837,9 @@ pub(super) fn complete_reference_axis_triad(
 
 pub(super) fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const UNIT_TOLERANCE: f64 = 1e-9;
-    const ORIGIN_ZERO_TOLERANCE_MM: f64 = 1e-9;
-    const DIRECTION_ZERO_TOLERANCE: f64 = 1e-12;
+    const UNIT_TOLERANCE: f64 = 1.0e-9;
+    const ORIGIN_ZERO_TOLERANCE_MM: f64 = 1.0e-9;
+    const DIRECTION_ZERO_TOLERANCE: f64 = 1.0e-12;
 
     let scalar = |bytes: &[u8], offset: usize| {
         let value = View::f64_le_at(bytes, offset)?;

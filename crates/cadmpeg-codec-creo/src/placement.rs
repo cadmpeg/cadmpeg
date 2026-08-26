@@ -13,17 +13,15 @@ use crate::surface::{
 };
 use crate::vecmath::{add, cross, dot, normalize, scale};
 
-const EPS_PLACEMENT_GENERATED_CYLINDER_SECTION_TRANSFORM_E9: f64 = 1e-9;
-const EPS_PLACEMENT_GENERATED_PLANAR_SECTION_TRANSFORM_E12: f64 = 1e-12;
-const EPS_PLACEMENT_GENERATED_PLANAR_SECTION_TRANSFORM_E9: f64 = 1e-9;
-const EPS_PLACEMENT_DEFINITION_LOCAL_FRAME_TRANSFORM_E12: f64 = 1e-12;
-const EPS_PLACEMENT_GENERATED_DATUM_PLANE_EQUATION_E12: f64 = 1e-12;
-const EPS_PLACEMENT_FEATURE_GENERATED_PLANE_EQUATION_E12: f64 = 1e-12;
-const EPS_PLACEMENT_GENERATED_CAP_PAIR_PLANE_EQUATION_E12: f64 = 1e-12;
-const EPS_PLACEMENT_ZERO_OFFSET_STANDARD_SECTION_PLANE_EQUATION_E12: f64 = 1e-12;
-const EPS_PLACEMENT_CIRCULAR_PROFILE_ALIGNED_ORIGIN_E12: f64 = 1e-12;
-const EPS_PLACEMENT_CIRCULAR_PROFILE_ALIGNED_ORIGIN_E9: f64 = 1e-9;
-const EPS_PLACEMENT_RESOLVE_E12: f64 = 1e-12;
+const EPS_FRAME_AGREEMENT: f64 = 1.0e-9;
+const EPS_VECTOR_NONZERO: f64 = 1.0e-12;
+const EPS_FRAME_DETERMINANT: f64 = 1.0e-9;
+const EPS_FRAME_ORTHO: f64 = 1.0e-12;
+const EPS_PLANE_SEPARATION: f64 = 1.0e-12;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_SPAN_AGREEMENT: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-12;
+const EPS_FRAME_DENOMINATOR: f64 = 1.0e-12;
 
 /// A feature's right-handed section-to-model rigid frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -123,9 +121,7 @@ fn generated_cylinder_section_transform(
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     let close = |left: f64, right: f64| {
-        (left - right).abs()
-            <= EPS_PLACEMENT_GENERATED_CYLINDER_SECTION_TRANSFORM_E9
-                * left.abs().max(right.abs()).max(1.0)
+        (left - right).abs() <= EPS_FRAME_AGREEMENT * left.abs().max(right.abs()).max(1.0)
     };
     correspondences
         .iter()
@@ -255,14 +251,12 @@ fn generated_planar_section_transform(
         let end = point(segment.point_ids[1])?;
         let direction = [end[0] - start[0], end[1] - start[1]];
         let length = direction[0].hypot(direction[1]);
-        (length.is_finite() && length > EPS_PLACEMENT_GENERATED_PLANAR_SECTION_TRANSFORM_E12)
-            .then_some(())?;
+        (length.is_finite() && length > EPS_VECTOR_NONZERO).then_some(())?;
         let local_normal = [direction[1] / length, -direction[0] / length];
         let local_offset = local_normal[0].mul_add(start[0], local_normal[1] * start[1]);
         let (model_normal, model_offset) = generated_plane_equation(entry)?;
         let magnitude = dot(model_normal, model_normal).sqrt();
-        (magnitude.is_finite() && magnitude > EPS_PLACEMENT_GENERATED_PLANAR_SECTION_TRANSFORM_E12)
-            .then_some(())?;
+        (magnitude.is_finite() && magnitude > EPS_VECTOR_NONZERO).then_some(())?;
         sides.push((
             local_normal,
             local_offset,
@@ -272,9 +266,7 @@ fn generated_planar_section_transform(
     }
 
     let close = |left: f64, right: f64| {
-        (left - right).abs()
-            <= EPS_PLACEMENT_GENERATED_PLANAR_SECTION_TRANSFORM_E9
-                * left.abs().max(right.abs()).max(1.0)
+        (left - right).abs() <= EPS_FRAME_AGREEMENT * left.abs().max(right.abs()).max(1.0)
     };
     let vectors_close = |left: [f64; 3], right: [f64; 3]| {
         left.into_iter()
@@ -287,7 +279,7 @@ fn generated_planar_section_transform(
             let first = sides[first_index];
             let second = sides[second_index];
             let determinant = first.0[0].mul_add(second.0[1], -(first.0[1] * second.0[0]));
-            if determinant.abs() <= EPS_PLACEMENT_GENERATED_PLANAR_SECTION_TRANSFORM_E9 {
+            if determinant.abs() <= EPS_FRAME_DETERMINANT {
                 continue;
             }
             for first_sign in [-1.0, 1.0] {
@@ -485,8 +477,7 @@ fn definition_local_frame_transform(
     let values = unique_complete_local_system(definition)?;
     let mut reference_axis = normalize(values[0..3].try_into().ok()?)?;
     let mut normal = normalize(values[6..9].try_into().ok()?)?;
-    (dot(reference_axis, normal).abs() <= EPS_PLACEMENT_DEFINITION_LOCAL_FRAME_TRANSFORM_E12)
-        .then_some(())?;
+    (dot(reference_axis, normal).abs() <= EPS_FRAME_ORTHO).then_some(())?;
     let origin: [f64; 3] = values[9..12].try_into().ok()?;
     if section.sketch_plane_flip == Some(BinaryFlag::Set) {
         normal = scale(normal, -1.0);
@@ -498,16 +489,15 @@ fn definition_local_frame_transform(
         reference_axis = scale(reference_axis, -1.0);
     }
     let u_axis = cross(reference_axis, normal);
-    ((dot(u_axis, u_axis) - 1.0).abs() <= EPS_PLACEMENT_DEFINITION_LOCAL_FRAME_TRANSFORM_E12)
-        .then_some(FeatureSectionTransform {
-            definition_id: definition.id,
-            feature_id: Some(feature_id),
-            origin,
-            u_axis,
-            v_axis: reference_axis,
-            normal,
-            offset: section.offset,
-        })
+    ((dot(u_axis, u_axis) - 1.0).abs() <= EPS_FRAME_ORTHO).then_some(FeatureSectionTransform {
+        definition_id: definition.id,
+        feature_id: Some(feature_id),
+        origin,
+        u_axis,
+        v_axis: reference_axis,
+        normal,
+        offset: section.offset,
+    })
 }
 
 fn generated_datum_plane_equation(
@@ -598,10 +588,7 @@ fn generated_datum_plane_equation(
                             })
                         }),
                 )
-                .filter(|(normal, _)| {
-                    dot(*normal, reference_normal).abs()
-                        <= EPS_PLACEMENT_GENERATED_DATUM_PLANE_EQUATION_E12
-                })
+                .filter(|(normal, _)| dot(*normal, reference_normal).abs() <= EPS_FRAME_ORTHO)
                 .fold(Vec::<([f64; 3], f64)>::new(), |mut unique, equation| {
                     if !unique.contains(&equation) {
                         unique.push(equation);
@@ -671,11 +658,11 @@ fn feature_generated_plane_equation(
     let end = place(end);
     let direction = std::array::from_fn(|axis| end[axis] - start[axis]);
     let magnitude = dot(direction, direction).sqrt();
-    (magnitude > EPS_PLACEMENT_FEATURE_GENERATED_PLANE_EQUATION_E12).then_some(())?;
+    (magnitude > EPS_VECTOR_NONZERO).then_some(())?;
     let direction = scale(direction, magnitude.recip());
     let normal = cross(direction, transform.normal);
     let magnitude = dot(normal, normal).sqrt();
-    (magnitude > EPS_PLACEMENT_FEATURE_GENERATED_PLANE_EQUATION_E12).then_some(())?;
+    (magnitude > EPS_VECTOR_NONZERO).then_some(())?;
     let normal = scale(normal, magnitude.recip());
     Some((normal, dot(normal, start)))
 }
@@ -710,9 +697,8 @@ fn generated_cap_pair_plane_equation(
         second.1
     };
     let scale = first.1.abs().max(second.1.abs()).max(1.0);
-    ((cosine - 1.0).abs() <= EPS_PLACEMENT_GENERATED_CAP_PAIR_PLANE_EQUATION_E12
-        && (first.1 - second_offset).abs()
-            > EPS_PLACEMENT_GENERATED_CAP_PAIR_PLANE_EQUATION_E12 * scale)
+    ((cosine - 1.0).abs() <= EPS_AXIS_ALIGNMENT
+        && (first.1 - second_offset).abs() > EPS_PLANE_SEPARATION * scale)
         .then_some(first)
 }
 
@@ -817,10 +803,8 @@ fn zero_offset_standard_section_plane_equation(
             let equation = (datum.normal, datum.offset);
             let cap_alignment = dot(equation.0, cap.0).abs();
             let reference_alignment = dot(equation.0, reference.0).abs();
-            ((cap_alignment - 1.0).abs()
-                <= EPS_PLACEMENT_ZERO_OFFSET_STANDARD_SECTION_PLANE_EQUATION_E12
-                && reference_alignment
-                    <= EPS_PLACEMENT_ZERO_OFFSET_STANDARD_SECTION_PLANE_EQUATION_E12)
+            ((cap_alignment - 1.0).abs() <= EPS_AXIS_ALIGNMENT
+                && reference_alignment <= EPS_AXIS_ALIGNMENT)
                 .then_some(equation)
         })
         .collect::<Vec<_>>();
@@ -834,8 +818,7 @@ fn zero_offset_standard_section_plane_equation(
     };
     let separation = (candidate.1 - aligned_cap_offset).abs();
     let scale = candidate.1.abs().max(cap.1.abs()).max(1.0);
-    (separation > EPS_PLACEMENT_ZERO_OFFSET_STANDARD_SECTION_PLANE_EQUATION_E12 * scale)
-        .then_some(*candidate)
+    (separation > EPS_PLANE_SEPARATION * scale).then_some(*candidate)
 }
 
 fn circular_profile_aligned_origin(
@@ -887,7 +870,7 @@ fn circular_profile_aligned_origin(
     };
     let radius = circle
         .radius
-        .filter(|radius| *radius > EPS_PLACEMENT_CIRCULAR_PROFILE_ALIGNED_ORIGIN_E12)?;
+        .filter(|radius| *radius > EPS_RADIUS_NONZERO)?;
     let cap_id = table.entries[1].entity_id;
     let envelopes = sources
         .plane_envelopes
@@ -921,11 +904,9 @@ fn circular_profile_aligned_origin(
         .copied()
         .fold(1.0, f64::max);
     (spans.len() == 2
-        && spans[0] > EPS_PLACEMENT_CIRCULAR_PROFILE_ALIGNED_ORIGIN_E12
-        && (spans[0] - spans[1]).abs()
-            <= EPS_PLACEMENT_CIRCULAR_PROFILE_ALIGNED_ORIGIN_E9 * tolerance_scale
-        && (0.5 * spans[0] - radius).abs()
-            <= EPS_PLACEMENT_CIRCULAR_PROFILE_ALIGNED_ORIGIN_E9 * tolerance_scale)
+        && spans[0] > EPS_VECTOR_NONZERO
+        && (spans[0] - spans[1]).abs() <= EPS_SPAN_AGREEMENT * tolerance_scale
+        && (0.5 * spans[0] - radius).abs() <= EPS_SPAN_AGREEMENT * tolerance_scale)
         .then_some(())?;
     let cap_center: [f64; 3] = std::array::from_fn(|index| 0.5 * (first[index] + second[index]));
     let signed_distance = dot(sketch_plane.0, cap_center) - sketch_plane.1;
@@ -993,7 +974,7 @@ pub(crate) fn resolve(
                         )
                     });
                 if let Some(reference) = reference {
-                    if dot(sketch.0, reference.0).abs() < 1.0 - EPS_PLACEMENT_RESOLVE_E12
+                    if dot(sketch.0, reference.0).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                         && !candidates.iter().any(|candidate| {
                             candidate.sketch == sketch && candidate.reference == reference
                         })
@@ -1019,7 +1000,7 @@ pub(crate) fn resolve(
                             )
                         })
                 {
-                    if dot(sketch.0, reference.0).abs() < 1.0 - EPS_PLACEMENT_RESOLVE_E12
+                    if dot(sketch.0, reference.0).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                         && !candidates.iter().any(|candidate| {
                             candidate.sketch == sketch && candidate.reference == reference
                         })
@@ -1061,7 +1042,7 @@ pub(crate) fn resolve(
         let normal = sketch_normal;
         let cosine = dot(normal, reference_normal);
         let denominator = 1.0 - cosine * cosine;
-        if denominator <= EPS_PLACEMENT_RESOLVE_E12 {
+        if denominator <= EPS_FRAME_DENOMINATOR {
             continue;
         }
         let reference_axis = scale(
@@ -1069,7 +1050,7 @@ pub(crate) fn resolve(
             denominator.sqrt().recip(),
         );
         let u_axis = cross(reference_axis, normal);
-        if (dot(u_axis, u_axis) - 1.0).abs() > EPS_PLACEMENT_RESOLVE_E12 {
+        if (dot(u_axis, u_axis) - 1.0).abs() > EPS_FRAME_ORTHO {
             continue;
         }
         let sketch_factor = (sketch_offset - cosine * reference_offset) / denominator;

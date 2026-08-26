@@ -140,6 +140,29 @@ Parsed by:
 | 4 | 4 | `crc32` | `u32` | little | spec | u32 CRC32 of uncompressed bytes |
 | 8 | 1 | `method` | `u8` | little | spec | u8 method |
 
+## `windows_bitmap_header`
+
+Spec §20.4 · layout: byte offsets · size: 40 B
+
+The class payload may prepend a packed version and UTF-16 path for ON_WindowsBitmapEx; this record is the common header that follows that optional prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-rhino/src/presentation.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `header_size` | `i32` | little | spec | i32 header size |
+| 4 | 4 | `width` | `i32` | little | spec | i32 width in pixels |
+| 8 | 4 | `height` | `i32` | little | spec | i32 height in pixels |
+| 12 | 2 | `planes` | `u16` | little | spec | u16 planes |
+| 14 | 2 | `bits_per_pixel` | `u16` | little | spec | u16 bits per pixel |
+| 16 | 4 | `compression` | `i32` | little | spec | i32 compression |
+| 20 | 4 | `image_byte_count` | `i32` | little | spec | i32 image byte count |
+| 24 | 4 | `horizontal_pixels_per_meter` | `i32` | little | spec | i32 horizontal pixels per meter |
+| 28 | 4 | `vertical_pixels_per_meter` | `i32` | little | spec | i32 vertical pixels per meter |
+| 32 | 4 | `colors_used` | `i32` | little | spec | i32 colors used |
+| 36 | 4 | `important_colors` | `i32` | little | spec | i32 important colors |
+
 ## `on_plane`
 
 Spec §3.2 · layout: ordered slots (no stated byte offsets) · size: 128 B

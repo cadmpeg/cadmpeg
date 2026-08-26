@@ -16,7 +16,7 @@ use super::super::native::annotate;
 use super::super::sketch::normalized;
 use super::super::sweep::interpolation_spline_surface;
 
-const EPS_PROTOTYPE_AGREEMENT: f64 = 1e-10;
+const EPS_PROTOTYPE_AGREEMENT: f64 = 1.0e-10;
 
 pub(in super::super) fn prototype_scalar(
     record: &crate::surface::SurfacePrototypeRecord,

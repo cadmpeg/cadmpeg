@@ -17,8 +17,8 @@ use crate::records::{
 use cadmpeg_ir::math::Point2;
 use std::collections::{HashMap, HashSet};
 
-const EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9: f64 = 1e-9;
-const EPS_CONSTRAINTS_SCALAR_CLOSE_E9: f64 = 1e-9;
+const EPS_CONSTRAINTS_EXACT_RECTANGULAR_PATTERN_E9: f64 = 1.0e-9;
+const EPS_CONSTRAINTS_SCALAR_CLOSE_E9: f64 = 1.0e-9;
 
 /// Project each native relation as an exact atomic constraint or an explicitly
 /// native aggregate when its semantic members do not prove neutral loci.

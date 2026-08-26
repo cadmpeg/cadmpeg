@@ -24,9 +24,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::layout::compact_analytic_header as analytic;
 
-const EPS_BREP_UNIT_LENGTH_E9: f64 = 1e-9;
-const EPS_BREP_ORTHONORMAL_E9: f64 = 1e-9;
-const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1e-9;
+const EPS_BREP_UNIT_LENGTH_E9: f64 = 1.0e-9;
+const EPS_BREP_ORTHONORMAL_E9: f64 = 1.0e-9;
+const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1.0e-9;
 
 mod attrib;
 mod blend;
@@ -41,7 +41,7 @@ pub(crate) mod topology;
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
 pub(crate) const LEN_TO_MM: f64 = 1000.0;
 
-pub use self::graph::{decode, decode_bodies, Brep, Stats};
+pub use self::graph::{decode, decode_bodies, Brep};
 pub(crate) use self::spline::{patch_nurbs_curve, patch_nurbs_surface};
 pub(crate) use self::topology::patch_point;
 
@@ -648,9 +648,9 @@ mod tests {
         assert_eq!(origin, Point3::new(0.0, 0.0, 6.7));
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
-        assert!((radius - 1.5).abs() < 1e-12);
+        assert!((radius - 1.5).abs() < 1.0e-12);
         assert_eq!(ratio, 1.0);
-        assert!((half_angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
+        assert!((half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12);
     }
 
     #[test]
@@ -676,8 +676,8 @@ mod tests {
         assert_eq!(center, Point3::new(0.0, 0.0, 0.2));
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
-        assert!((major_radius - 2.2).abs() < 1e-12);
-        assert!((minor_radius - 0.2).abs() < 1e-12);
+        assert!((major_radius - 2.2).abs() < 1.0e-12);
+        assert!((minor_radius - 0.2).abs() < 1.0e-12);
         assert!(!carrier.orientation_reversed);
     }
 
@@ -727,8 +727,8 @@ mod tests {
         else {
             panic!("expected torus");
         };
-        assert!((major_radius - 2.2).abs() < 1e-12);
-        assert!((minor_radius - 4.4).abs() < 1e-12);
+        assert!((major_radius - 2.2).abs() < 1.0e-12);
+        assert!((minor_radius - 4.4).abs() < 1.0e-12);
     }
 
     #[test]
@@ -749,8 +749,8 @@ mod tests {
         else {
             panic!("expected torus");
         };
-        assert!((major_radius - 2.2).abs() < 1e-12);
-        assert!((minor_radius - 4.4).abs() < 1e-12);
+        assert!((major_radius - 2.2).abs() < 1.0e-12);
+        assert!((minor_radius - 4.4).abs() < 1.0e-12);
         assert!(carrier.orientation_reversed);
     }
 

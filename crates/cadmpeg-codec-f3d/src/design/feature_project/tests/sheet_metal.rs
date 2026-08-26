@@ -173,16 +173,16 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let cadmpeg_ir::features::SheetMetalFlangeHeight::Distance(height) = height else {
         panic!("expected a distance flange height");
     };
-    assert!((height.0 - 25.0).abs() < 1e-12);
-    assert!((angle.0 - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    assert!((height.0 - 25.0).abs() < 1.0e-12);
+    assert!((angle.0 - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert_eq!(height_datum, SheetMetalHeightDatum::InnerFaces);
     assert_eq!(bend_position, SheetMetalBendPosition::Adjacent);
-    assert!((bend_radius.0 - 2.5).abs() < 1e-12);
+    assert!((bend_radius.0 - 2.5).abs() < 1.0e-12);
     let SheetMetalFlangeWidth::TwoSides { first, second } = width else {
         panic!("expected a two-sided flange width");
     };
-    assert!((first.0 - 30.0).abs() < 1e-12);
-    assert!((second.0 - 15.0).abs() < 1e-12);
+    assert!((first.0 - 30.0).abs() < 1.0e-12);
+    assert!((second.0 - 15.0).abs() < 1.0e-12);
 
     let mut offset_scope = scope.clone();
     let mut offset_operation = offset_scope

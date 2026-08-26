@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole construction and placement semantic-writer round-trips.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
@@ -277,7 +275,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             },
             extent: Some(Termination::ThroughAll),
             ..
-        } if (*value - 82f64.to_radians()).abs() < 1e-12
+        } if (*value - 82f64.to_radians()).abs() < 1.0e-12
     ));
 
     {

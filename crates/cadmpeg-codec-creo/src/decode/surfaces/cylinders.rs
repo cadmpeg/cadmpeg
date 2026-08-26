@@ -24,11 +24,9 @@ use super::super::native::annotate;
 use super::super::sketch::normalized;
 use super::super::sketch_transfer::{feature_recipe, feature_section_sweep_semantics_conflict};
 
-const EPS_CYLINDERS_REFERENCE_CAP_BOUND_ROUND_FRAME_E9: f64 = 1e-9;
-
-const EPS_RADIUS_AGREEMENT: f64 = 1e-9;
-const EPS_AXIS_ALIGNMENT: f64 = 1e-9;
-const EPS_LENGTH_NONZERO: f64 = 1e-9;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_LENGTH_NONZERO: f64 = 1.0e-9;
 
 pub(in super::super) fn rowless_round_cylinder_pairs(
     round_feature_ids: &BTreeSet<u32>,
@@ -563,7 +561,7 @@ pub(in super::super) fn reference_cap_bound_round_frame(
         .copied()
         .map(f64::abs)
         .fold(envelope.diameter.max(1.0), f64::max);
-    let tolerance = EPS_CYLINDERS_REFERENCE_CAP_BOUND_ROUND_FRAME_E9 * scale;
+    let tolerance = 1.0e-9 * scale;
     let point_matches = |actual: [f64; 3], expected: [f64; 3]| {
         actual
             .iter()
@@ -593,10 +591,9 @@ pub(in super::super) fn reference_cap_bound_round_frame(
             circles.iter().any(|circle| {
                 circle.axis.iter().enumerate().all(|(index, component)| {
                     if index == axis_index {
-                        (component.abs() - 1.0).abs()
-                            <= EPS_CYLINDERS_REFERENCE_CAP_BOUND_ROUND_FRAME_E9
+                        (component.abs() - 1.0).abs() <= 1.0e-9
                     } else {
-                        component.abs() <= EPS_CYLINDERS_REFERENCE_CAP_BOUND_ROUND_FRAME_E9
+                        component.abs() <= 1.0e-9
                     }
                 }) && ((point_matches(circle.start, first_corner)
                     && point_matches(circle.end, second_corner))

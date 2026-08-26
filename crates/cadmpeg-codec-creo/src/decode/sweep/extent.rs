@@ -13,11 +13,11 @@ use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 
-const EPS_COORDINATE_AGREEMENT: f64 = 1e-9;
-const EPS_VECTOR_AGREEMENT: f64 = 1e-9;
-const EPS_AXIS_ALIGNMENT: f64 = 1e-10;
-const EPS_WEIGHT_AGREEMENT: f64 = 1e-10;
-const EPS_STATION_AGREEMENT: f64 = 1e-9;
+const EPS_COORDINATE_AGREEMENT: f64 = 1.0e-9;
+const EPS_VECTOR_AGREEMENT: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
+const EPS_WEIGHT_AGREEMENT: f64 = 1.0e-10;
+const EPS_STATION_AGREEMENT: f64 = 1.0e-9;
 
 pub(in super::super) struct ExtrusionCarrierSpan {
     pub(in super::super) starts: Vec<[f64; 3]>,

@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
@@ -31,7 +29,7 @@ fn semantic_writer_round_trips_typed_shell() {
             thickness: Some(Length(value)),
             outward: Some(false),
             ..
-        } if selection == "face:4" && (*value - 2.032).abs() < 1e-12
+        } if selection == "face:4" && (*value - 2.032).abs() < 1.0e-12
     ));
 
     {
@@ -90,7 +88,7 @@ fn semantic_writer_round_trips_typed_thicken() {
             faces: FaceSelection::Native(selection),
             thickness: Some(Length(value)),
             side: Some(ThickenSide::Reverse),
-        } if selection == "face:4" && (*value - 2.032).abs() < 1e-12
+        } if selection == "face:4" && (*value - 2.032).abs() < 1.0e-12
     ));
 
     {
@@ -552,7 +550,7 @@ fn semantic_writer_round_trips_typed_draft() {
             outward: Some(false),
         } if faces == "face:1,face:2"
             && neutral_plane == "face:3"
-            && (*value - 3f64.to_radians()).abs() < 1e-12
+            && (*value - 3f64.to_radians()).abs() < 1.0e-12
     ));
 
     {
@@ -1115,7 +1113,7 @@ fn semantic_writer_round_trips_all_move_face_forms() {
                 angle: Angle(value),
             },
             ..
-        } if (value - 15f64.to_radians()).abs() < 1e-12
+        } if (value - 15f64.to_radians()).abs() < 1.0e-12
     ));
 
     {
@@ -1189,7 +1187,7 @@ fn semantic_writer_round_trips_typed_dome() {
             height: Some(Length(value)),
             elliptical: Some(false),
             reverse: Some(false),
-        } if faces == "face:9" && (*value - 6.35).abs() < 1e-12
+        } if faces == "face:9" && (*value - 6.35).abs() < 1.0e-12
     ));
 
     {

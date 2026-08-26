@@ -23,7 +23,7 @@ use crate::pmdc::{
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 
-const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1e-10;
+const EPS_FEATURE_PROJECT_HOLE_E10: f64 = 1.0e-10;
 
 const FEATURE_TYPE: [u8; 16] = [
     0x91, 0x4d, 0x87, 0x90, 0xd0, 0x11, 0xf8, 0xd1, 0x00, 0x08, 0xca, 0xbc, 0x06, 0x63, 0xdc, 0x09,

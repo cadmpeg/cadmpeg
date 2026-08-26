@@ -1,24 +1,18 @@
 //! Indexed-curve trailer and arc-center tests.
-#![allow(unused_imports)]
 
 use super::super::super::bindings::normalize_indexed_curve_entities;
 use super::super::super::curves::compact_bounded_curve_tangent;
-use super::super::super::markers::{marker_coordinates, sketch_input_entities};
-use super::super::super::relation_loci::same_dimension_length;
+use super::super::super::markers::sketch_input_entities;
 use super::super::super::selections::marker_local_links;
 use super::super::super::typed_relations::{
-    current_undetailed_bounded_curve_is_line, extended_direct_object_line_endpoints,
-    legacy_marker104_arc_endpoints, marker_curve_endpoint_markers,
+    current_undetailed_bounded_curve_is_line, legacy_marker104_arc_endpoints,
 };
 use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
 use super::super::*;
-use crate::records::{
-    FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
-};
+use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchRelationKind};
 use cadmpeg_ir::math::Point2;
-use std::collections::HashMap;
 
 #[test]
 fn legacy_long_profile_line_uses_point_object_ids() {

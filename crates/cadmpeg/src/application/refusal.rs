@@ -13,8 +13,10 @@ use serde_json::{json, Value};
 /// Stable refusal code written into v6 command reports and used by tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefusalCode {
-    /// Neutral or native validation failed.
-    ValidationFailed,
+    /// Native input decoding failed with a classified codec error.
+    DecodeFailed,
+    /// The check found errors and `--allow-errors` was not set.
+    CheckFailed,
     /// Decode reported losses under `--reject-lossy`.
     DecodeLossRejected,
     /// Export planning reported losses under `--reject-lossy`.
@@ -32,7 +34,8 @@ impl RefusalCode {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::ValidationFailed => "validation_failed",
+            Self::DecodeFailed => "decode_failed",
+            Self::CheckFailed => "check_failed",
             Self::DecodeLossRejected => "decode_loss_rejected",
             Self::ExportLossRejected => "export_loss_rejected",
             Self::EmptyGeometry => "empty_geometry",
@@ -55,8 +58,8 @@ pub enum RefusalStage {
     Plan,
     /// Decode completed with losses that the policy rejects.
     Decode,
-    /// Neutral or native validation failed.
-    Validate,
+    /// The check found errors and `--allow-errors` was not set.
+    Check,
     /// Export planning refused (loss policy or empty geometry).
     Export,
 }
@@ -68,7 +71,7 @@ impl RefusalStage {
         match self {
             Self::Plan => "plan",
             Self::Decode => "decode",
-            Self::Validate => "validate",
+            Self::Check => "check",
             Self::Export => "export",
         }
     }
@@ -86,8 +89,13 @@ impl fmt::Display for RefusalStage {
 /// report envelope through [`ConversionRefusal::report_fields`].
 #[derive(Debug)]
 pub enum ConversionRefusal {
-    /// Validation found errors and `--allow-invalid` was not set.
-    ValidationFailed {
+    /// Native input decoding failed before a document could be produced.
+    DecodeFailed {
+        /// Human-readable message.
+        message: String,
+    },
+    /// The check found errors and `--allow-errors` was not set.
+    CheckFailed {
         /// Human-readable message.
         message: String,
         /// Decode report available for an optional `--report`.
@@ -137,7 +145,8 @@ impl ConversionRefusal {
     #[must_use]
     pub const fn code(&self) -> RefusalCode {
         match self {
-            Self::ValidationFailed { .. } => RefusalCode::ValidationFailed,
+            Self::DecodeFailed { .. } => RefusalCode::DecodeFailed,
+            Self::CheckFailed { .. } => RefusalCode::CheckFailed,
             Self::DecodeLossRejected { .. } => RefusalCode::DecodeLossRejected,
             Self::ExportLossRejected { .. } => RefusalCode::ExportLossRejected,
             Self::EmptyGeometry { .. } => RefusalCode::EmptyGeometry,
@@ -150,11 +159,12 @@ impl ConversionRefusal {
     #[must_use]
     pub const fn stage(&self) -> RefusalStage {
         match self {
+            Self::DecodeFailed { .. } => RefusalStage::Decode,
             Self::UnsupportedTarget { .. } | Self::BinaryStdoutRejected { .. } => {
                 RefusalStage::Plan
             }
             Self::DecodeLossRejected { .. } => RefusalStage::Decode,
-            Self::ValidationFailed { .. } => RefusalStage::Validate,
+            Self::CheckFailed { .. } => RefusalStage::Check,
             Self::ExportLossRejected { .. } | Self::EmptyGeometry { .. } => RefusalStage::Export,
         }
     }
@@ -163,7 +173,8 @@ impl ConversionRefusal {
     #[must_use]
     pub fn message(&self) -> &str {
         match self {
-            Self::ValidationFailed { message, .. }
+            Self::DecodeFailed { message }
+            | Self::CheckFailed { message, .. }
             | Self::DecodeLossRejected { message, .. }
             | Self::ExportLossRejected { message, .. }
             | Self::EmptyGeometry { message, .. }
@@ -187,13 +198,14 @@ impl ConversionRefusal {
 
     /// Whether an explicitly requested `--report` may still be written.
     ///
-    /// Loss, validation, and empty-geometry refusals may write the report.
-    /// Binary-stdout and unsupported-target refusals happen before the input
-    /// is read and do not write a report.
+    /// Decode, loss, validation, and empty-geometry refusals may write the
+    /// report. Binary-stdout and unsupported-target refusals happen before
+    /// the input is read and do not write a report.
     #[must_use]
     pub const fn may_write_report(&self) -> bool {
         match self {
-            Self::ValidationFailed { .. }
+            Self::DecodeFailed { .. }
+            | Self::CheckFailed { .. }
             | Self::DecodeLossRejected { .. }
             | Self::ExportLossRejected { .. }
             | Self::EmptyGeometry { .. } => true,
@@ -205,7 +217,8 @@ impl ConversionRefusal {
     #[must_use]
     pub fn decode_report(&self) -> Option<&DecodeReport> {
         match self {
-            Self::ValidationFailed { decode_report, .. } => decode_report.as_ref(),
+            Self::DecodeFailed { .. } => None,
+            Self::CheckFailed { decode_report, .. } => decode_report.as_ref(),
             Self::DecodeLossRejected { decode_report, .. } => Some(decode_report),
             Self::ExportLossRejected { decode_report, .. }
             | Self::EmptyGeometry { decode_report, .. } => decode_report.as_ref(),
@@ -213,11 +226,12 @@ impl ConversionRefusal {
         }
     }
 
-    /// Validation report to include in an optional command report.
+    /// Check report to include in an optional command report.
     #[must_use]
-    pub fn validation_report(&self) -> Option<&ValidationReport> {
+    pub fn check_report(&self) -> Option<&ValidationReport> {
         match self {
-            Self::ValidationFailed { validation, .. } => Some(validation),
+            Self::DecodeFailed { .. } => None,
+            Self::CheckFailed { validation, .. } => Some(validation),
             Self::ExportLossRejected { validation, .. }
             | Self::EmptyGeometry { validation, .. } => validation.as_ref(),
             Self::DecodeLossRejected { .. }
@@ -281,9 +295,25 @@ mod tests {
     }
 
     #[test]
-    fn validation_refusal_maps_to_validate_stage() {
-        let refusal = ConversionRefusal::ValidationFailed {
-            message: "validation found 1 error(s)".into(),
+    fn decode_failure_is_a_structured_decode_refusal() {
+        let refusal = ConversionRefusal::DecodeFailed {
+            message: "decode failed: malformed container: test".into(),
+        };
+        assert_eq!(refusal.code(), RefusalCode::DecodeFailed);
+        assert_eq!(refusal.stage(), RefusalStage::Decode);
+        assert_eq!(refusal.exit_code(), 1);
+        assert!(refusal.may_write_report());
+        assert!(refusal.decode_report().is_none());
+        assert!(refusal.check_report().is_none());
+        let fields = refusal.report_fields();
+        assert_eq!(fields["refusal"]["code"], "decode_failed");
+        assert_eq!(fields["refusal"]["stage"], "decode");
+    }
+
+    #[test]
+    fn check_refusal_maps_to_check_stage() {
+        let refusal = ConversionRefusal::CheckFailed {
+            message: "check found 1 error(s)".into(),
             decode_report: None,
             validation: ValidationReport {
                 entity_counts: BTreeMap::new(),
@@ -291,7 +321,7 @@ mod tests {
                 losses: Vec::new(),
             },
         };
-        assert_eq!(refusal.stage(), RefusalStage::Validate);
-        assert_eq!(refusal.code().as_str(), "validation_failed");
+        assert_eq!(refusal.stage(), RefusalStage::Check);
+        assert_eq!(refusal.code().as_str(), "check_failed");
     }
 }

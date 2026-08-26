@@ -30,7 +30,7 @@ use crate::records::{
     DesignComponentInsertConstruction, DesignParameterScope, XrefDesign, XrefReference,
 };
 
-const EPS_XREF_DECODE_RIGID_MATRIX_E8: f64 = 1e-8;
+const EPS_XREF_DECODE_RIGID_MATRIX_E8: f64 = 1.0e-8;
 
 /// Top-level container entry holding the external-reference table.
 pub const REDIRECTIONS_ENTRY: &str = "RedirectionsStream.dat";

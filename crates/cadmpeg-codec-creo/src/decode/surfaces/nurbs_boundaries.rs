@@ -9,11 +9,11 @@ use cadmpeg_ir::math::Point3;
 use super::super::analytic::{cross, dot, quadratic_real_roots, PlaneEquation};
 use super::super::sketch::normalized;
 
-const EPS_CUBIC_PARAM: f64 = 1e-11;
-const EPS_BOUNDARY_EXTENT: f64 = 1e-9;
-const EPS_WEIGHT_SYMMETRY: f64 = 1e-12;
-const EPS_PARAMETER_AGREEMENT: f64 = 1e-12;
-const EPS_ENDPOINT_AGREEMENT: f64 = 1e-12;
+const EPS_CUBIC_PARAM: f64 = 1.0e-11;
+const EPS_BOUNDARY_EXTENT: f64 = 1.0e-9;
+const EPS_WEIGHT_SYMMETRY: f64 = 1.0e-12;
+const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
+const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-12;
 
 #[derive(Clone)]
 pub(in super::super) struct NurbsSurfaceBoundary {

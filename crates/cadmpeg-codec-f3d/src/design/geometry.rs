@@ -8,10 +8,10 @@ use cadmpeg_ir::geometry::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3};
 use std::collections::{HashMap, HashSet};
 
-const EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6: f64 = 1e-6;
-const EPS_GEOMETRY_CERTIFIED_CIRCLE_E6: f64 = 1e-6;
-const EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12: f64 = 1e-12;
-const EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10: f64 = 1e-10;
+const EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6: f64 = 1.0e-6;
+const EPS_GEOMETRY_CERTIFIED_CIRCLE_E6: f64 = 1.0e-6;
+const EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12: f64 = 1.0e-12;
+const EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10: f64 = 1.0e-10;
 
 /// Format-side work cap for arrangement edge retention walks.
 ///
@@ -317,7 +317,7 @@ pub(crate) fn sketch_arrangement_faces(
     for uses in &mut outgoing {
         uses.sort_by(|left, right| left.2.total_cmp(&right.2));
     }
-    let mut visited = vec![[false; 2]; edges.len()];
+    let mut visited = alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits").ok()?;
     let mut faces = Vec::new();
     for edge_index in 0..edges.len() {
         for reversed in [false, true] {

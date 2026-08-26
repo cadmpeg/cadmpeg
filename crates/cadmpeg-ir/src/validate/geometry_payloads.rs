@@ -4,15 +4,14 @@
 
 use super::*;
 use crate::geometry::{knots_nondecreasing, knots_strictly_increasing};
+const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
+const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
+const EPS_HELIX_RADIUS: f64 = 1.0e-9;
 
-const EPS_GEOMETRY_PAYLOADS_UNIT_VECTOR_E9: f64 = 1e-9;
-const EPS_GEOMETRY_PAYLOADS_ORTHONORMAL_E9: f64 = 1e-9;
-const EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E9: f64 = 1e-9;
-const EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E10: f64 = 1e-10;
-
-const EPS_ROLLING_BALL_RADIUS: f64 = 1e-9;
-const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1e-9;
-const EPS_HELIX_RADIUS: f64 = 1e-9;
+const EPS_GEOMETRY_PAYLOADS_UNIT_VECTOR_E9: f64 = 1.0e-9;
+const EPS_GEOMETRY_PAYLOADS_ORTHONORMAL_E9: f64 = 1.0e-9;
+const EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E9: f64 = 1.0e-9;
+const EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E10: f64 = 1.0e-10;
 
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {

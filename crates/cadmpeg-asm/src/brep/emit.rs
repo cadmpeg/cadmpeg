@@ -61,7 +61,7 @@ use super::{
     embedded_pcurve_geometry, id, inherited_attribute_target, AnnotationRecord, AsmBrep, Carriers,
     Reachable, WireShellTopology,
 };
-const EPS_EMIT_EMIT_EDGES_E9: f64 = 1e-9;
+const EPS_EMIT_EMIT_EDGES_E9: f64 = 1.0e-9;
 
 /// Emit a kept surface carrier and, when present, its procedural-surface
 /// construction and nested support carriers.

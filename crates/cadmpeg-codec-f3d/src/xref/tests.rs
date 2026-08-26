@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! XREF and BREP-less document tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
@@ -13,22 +12,16 @@
 )]
 
 use std::collections::HashSet;
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::{Cursor, Write};
 
-use cadmpeg_asm::asm_header;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::report::{LossKind as LossCode, LossTaxonomy, Severity};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use zip::CompressionMethod;
 
-use crate::bytes::lp_utf16_bytes;
-use crate::container::{self, role};
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
 
-use super::*;
+use super::OccurrencePlacement;
 
 #[test]
 fn redirections_keep_neutron_role_and_data_independent() {
@@ -609,7 +602,7 @@ fn paired_design_metastream_selects_the_tagged_placement_form() {
     let transform = native.xref_references[0]
         .transform
         .expect("tagged placement transform");
-    assert!((transform[0][3] - 7.0).abs() < 1e-12);
+    assert!((transform[0][3] - 7.0).abs() < 1.0e-12);
     assert!(decoded
         .report()
         .losses
@@ -670,7 +663,7 @@ fn paired_design_metastream_selects_the_legacy_typed_placement_form() {
     let transform = native.xref_references[0]
         .transform
         .expect("legacy placement transform");
-    assert!((transform[0][3] - 7.0).abs() < 1e-12);
+    assert!((transform[0][3] - 7.0).abs() < 1.0e-12);
     assert!(decoded
         .report()
         .losses

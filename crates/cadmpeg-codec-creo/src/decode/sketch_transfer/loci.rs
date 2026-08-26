@@ -17,9 +17,9 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::BTreeMap;
 
-const EPS_LOCUS_COORDINATE: f64 = 1e-9;
-const EPS_LOCUS_RADIUS_NONZERO: f64 = 1e-12;
-const EPS_LOCUS_RADIUS_AGREEMENT: f64 = 1e-9;
+const EPS_LOCUS_COORDINATE: f64 = 1.0e-9;
+const EPS_LOCUS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_LOCUS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
 pub(in super::super) fn section_point_locus(
     definition: &crate::feature::FeatureDefinition,

@@ -4,8 +4,9 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, SurfaceGeometry};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader};
 use crate::curves::{decode_embedded_curve, error, exact_nurbs, DecodedCurve, GeometryError};
@@ -13,10 +14,6 @@ use crate::settings::{
     bbox, interval, plane, point, vector as native_vector, Plane, Point3 as NativePoint3,
 };
 use crate::wire::Uuid;
-
-const EPS_SURFACES_READ_REVOLUTION_E10: f64 = 1e-10;
-const EPS_SURFACES_VALIDATE_PLANE_E10: f64 = 1e-10;
-const EPS_SURFACES_CLOSE_E10: f64 = 1e-10;
 
 pub(crate) const NURBS_CURVE: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xdd, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
@@ -59,6 +56,8 @@ pub(crate) enum DecodedSurface {
         geometry: SurfaceGeometry,
         /// Whether native coordinates were scaled or reconstructed.
         derived: bool,
+        /// Source parameter mapping for a plane surface.
+        plane_parameterization: Option<PlaneParameterization>,
     },
     /// A solved native procedural surface and its ordered child trees.
     Procedural {
@@ -69,6 +68,25 @@ pub(crate) enum DecodedSurface {
         /// Ordered embedded child curves.
         children: Vec<DecodedCurve>,
     },
+}
+
+/// Affine map from a plane surface's source parameter domain to its physical
+/// plane extents.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PlaneParameterization {
+    pub(crate) u_domain: [f64; 2],
+    pub(crate) v_domain: [f64; 2],
+    pub(crate) u_extents: [f64; 2],
+    pub(crate) v_extents: [f64; 2],
+}
+
+impl PlaneParameterization {
+    pub(crate) fn map_point(self, point: Point2) -> Point2 {
+        Point2::new(
+            map_parameter(point.u, self.u_domain, self.u_extents),
+            map_parameter(point.v, self.v_domain, self.v_extents),
+        )
+    }
 }
 
 /// Native procedural fields before deterministic child IDs are assigned.
@@ -110,12 +128,15 @@ pub(crate) fn decode(
         DecodedSurface::Typed {
             geometry: SurfaceGeometry::Nurbs(read_nurbs_surface(&mut reader, scale)?),
             derived: true,
+            plane_parameterization: None,
         }
     } else if class == PLANE_SURFACE {
-        let geometry = read_plane_surface(&mut reader, scale)?;
+        let (geometry, plane_parameterization) =
+            read_plane_surface_with_parameterization(&mut reader, scale)?;
         DecodedSurface::Typed {
             geometry,
             derived: scale != 1.0,
+            plane_parameterization: Some(plane_parameterization),
         }
     } else if class == CLIPPING_PLANE_SURFACE {
         read_clipping_plane_surface(data, &mut reader, scale, archive)?
@@ -129,12 +150,7 @@ pub(crate) fn decode(
             "unsupported Rhino surface class",
         ));
     };
-    if reader.remaining() != 0 {
-        return Err(error(
-            reader.position(),
-            "surface payload has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(result)
 }
 
@@ -146,14 +162,15 @@ fn read_clipping_plane_surface(
 ) -> Result<DecodedSurface, GeometryError> {
     const ANONYMOUS: u32 = 0x4000_8000;
     let outer = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    if outer.typecode != ANONYMOUS || outer.short || outer.next_offset != reader.end() {
+    if outer.typecode != ANONYMOUS || outer.short {
         return Err(error(
             reader.position(),
             "invalid clipping-plane outer chunk",
         ));
     }
     let mut payload = BoundedReader::new(data, outer.body.start, outer.body.end)?;
-    if payload.i32()? != 1 || payload.i32()? != 0 {
+    let version = (payload.i32()?, payload.i32()?);
+    if version.0 != 1 || version.1 < 0 {
         return Err(GeometryError::unsupported(
             outer.body.start,
             "unsupported clipping-plane surface version",
@@ -167,25 +184,17 @@ fn read_clipping_plane_surface(
         ));
     }
     let mut plane_reader = BoundedReader::new(data, plane_chunk.body.start, plane_chunk.body.end)?;
-    let geometry = read_plane_surface(&mut plane_reader, scale)?;
-    if plane_reader.remaining() != 0 {
-        return Err(error(
-            plane_reader.position(),
-            "clipping-plane carrier has trailing bytes",
-        ));
-    }
+    let (geometry, plane_parameterization) =
+        read_plane_surface_with_parameterization(&mut plane_reader, scale)?;
+    plane_reader.skip_remaining()?;
     payload.skip(plane_chunk.next_offset - payload.position())?;
     read_clipping_plane(data, &mut payload, archive)?;
-    if payload.remaining() != 0 {
-        return Err(error(
-            payload.position(),
-            "clipping-plane surface has trailing bytes",
-        ));
-    }
+    payload.skip_remaining()?;
     reader.skip(outer.next_offset - reader.position())?;
     Ok(DecodedSurface::Typed {
         geometry,
         derived: scale != 1.0,
+        plane_parameterization: Some(plane_parameterization),
     })
 }
 
@@ -207,7 +216,7 @@ fn read_clipping_plane(
         ));
     }
     let minor = payload.i32()?;
-    if !(0..=5).contains(&minor) {
+    if minor < 0 {
         return Err(GeometryError::unsupported(
             chunk.body.start,
             "unsupported clipping-plane minor version",
@@ -235,12 +244,7 @@ fn read_clipping_plane(
     if minor >= 5 {
         read_clipping_participation(&mut payload)?;
     }
-    if payload.remaining() != 0 {
-        return Err(error(
-            payload.position(),
-            "clipping plane has trailing bytes",
-        ));
-    }
+    payload.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(())
 }
@@ -256,7 +260,8 @@ fn read_uuid_list(
         return Err(error(chunk.header_start, "invalid clipping viewport list"));
     }
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-    if payload.i32()? != 1 || payload.i32()? != 0 {
+    let version = (payload.i32()?, payload.i32()?);
+    if version.0 != 1 || version.1 < 0 {
         return Err(GeometryError::unsupported(
             chunk.body.start,
             "unsupported clipping viewport-list version",
@@ -264,12 +269,7 @@ fn read_uuid_list(
     }
     let count = checked_count(&mut payload, 16)?;
     payload.skip(count * 16)?;
-    if payload.remaining() != 0 {
-        return Err(error(
-            payload.position(),
-            "clipping viewport list has trailing bytes",
-        ));
-    }
+    payload.skip_remaining()?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(())
 }
@@ -294,6 +294,9 @@ fn read_clipping_participation(reader: &mut BoundedReader<'_>) -> Result<(), Geo
         reader.bool()?;
         item = reader.u8()?;
     }
+    if item >= 14 {
+        return Ok(());
+    }
     if item != 0 {
         return Err(error(
             reader.position() - 1,
@@ -313,7 +316,7 @@ fn read_revolution(
     let version_offset = reader.position();
     let version = reader.u8()?;
     let major = version >> 4;
-    if !(major == 1 || major == 2) || version & 0x0f != 0 {
+    if !(major == 1 || major == 2) {
         return Err(GeometryError::unsupported(
             version_offset,
             "unsupported revolution-surface version",
@@ -325,7 +328,7 @@ fn read_revolution(
         .ok_or_else(|| error(reader.position(), "scaled revolution axis is invalid"))?;
     let angular_interval =
         finite_increasing(interval(reader)?.0, reader.position(), "revolution angle")?;
-    if angular_interval[1] - angular_interval[0] > TAU + EPS_SURFACES_READ_REVOLUTION_E10 {
+    if angular_interval[1] - angular_interval[0] > TAU + 1.0e-10 {
         return Err(error(
             reader.position(),
             "revolution angle span exceeds one turn",
@@ -378,6 +381,7 @@ fn read_revolution(
         transposed,
         version_offset,
     )?;
+    reader.skip_remaining()?;
     Ok(DecodedSurface::Procedural {
         geometry,
         definition: DecodedProceduralSurface::Revolution {
@@ -399,7 +403,7 @@ fn read_sum(
     depth: usize,
 ) -> Result<DecodedSurface, GeometryError> {
     let version_offset = reader.position();
-    if reader.u8()? != 0x10 {
+    if reader.u8()? >> 4 != 1 {
         return Err(GeometryError::unsupported(
             version_offset,
             "unsupported sum-surface version",
@@ -420,6 +424,7 @@ fn read_sum(
     let first_nurbs = exact_nurbs(&first, version_offset)?;
     let second_nurbs = exact_nurbs(&second, version_offset)?;
     let geometry = sum_nurbs(&first_nurbs, &second_nurbs, basepoint, version_offset)?;
+    reader.skip_remaining()?;
     Ok(DecodedSurface::Procedural {
         geometry,
         definition: DecodedProceduralSurface::Sum { basepoint },
@@ -475,10 +480,17 @@ fn revolution_nurbs(
             knots.extend([t1, t1, t1]);
         }
     }
-    let profile_weights = profile
-        .weights
-        .clone()
-        .unwrap_or_else(|| std::iter::repeat_n(1.0, profile_count).collect());
+    let profile_weights = match profile.weights.clone() {
+        Some(weights) => weights,
+        None => alloc_filled(profile_count, 1.0, "Rhino revolution profile weights").map_err(
+            |error| {
+                GeometryError::malformed(
+                    offset,
+                    format!("revolution profile weight allocation refused: {error}"),
+                )
+            },
+        )?,
+    };
     let mut control_points = Vec::with_capacity(angular_count * profile_count);
     let mut weights = Vec::with_capacity(control_points.capacity());
     for ((theta, radial_scale), angular_weight) in angular.into_iter().zip(angular_weights) {
@@ -539,14 +551,26 @@ fn sum_nurbs(
     u_count
         .checked_mul(v_count)
         .ok_or_else(|| error(offset, "sum surface control count overflow"))?;
-    let first_weights = first
-        .weights
-        .clone()
-        .unwrap_or_else(|| std::iter::repeat_n(1.0, u_count).collect());
-    let second_weights = second
-        .weights
-        .clone()
-        .unwrap_or_else(|| std::iter::repeat_n(1.0, v_count).collect());
+    let first_weights = match first.weights.clone() {
+        Some(weights) => weights,
+        None => alloc_filled(u_count, 1.0, "Rhino sum-surface first weights").map_err(|error| {
+            GeometryError::malformed(
+                offset,
+                format!("sum-surface first-weight allocation refused: {error}"),
+            )
+        })?,
+    };
+    let second_weights = match second.weights.clone() {
+        Some(weights) => weights,
+        None => {
+            alloc_filled(v_count, 1.0, "Rhino sum-surface second weights").map_err(|error| {
+                GeometryError::malformed(
+                    offset,
+                    format!("sum-surface second-weight allocation refused: {error}"),
+                )
+            })?
+        }
+    };
     let rational = first.weights.is_some() || second.weights.is_some();
     let mut control_points = Vec::with_capacity(u_count * v_count);
     let mut weights = rational.then(|| Vec::with_capacity(control_points.capacity()));
@@ -705,7 +729,7 @@ pub(crate) fn read_nurbs_curve(
     reader: &mut BoundedReader<'_>,
     scale: f64,
 ) -> Result<NurbsCurve, GeometryError> {
-    read_nurbs_curve_inner(reader, scale, Some(3))
+    read_nurbs_curve_inner(reader, scale, None)
 }
 
 /// Reads a Rhino NURBS curve whose poles are two-dimensional UV values.
@@ -728,12 +752,6 @@ fn read_nurbs_curve_inner(
         return Err(GeometryError::unsupported(
             version_offset,
             "unsupported NURBS curve version",
-        ));
-    }
-    if minor > 1 {
-        return Err(GeometryError::unsupported(
-            version_offset,
-            "unsupported NURBS curve minor version",
         ));
     }
     let dimension = reader.i32()?;
@@ -771,6 +789,7 @@ fn read_nurbs_curve_inner(
     }
     let periodic = periodic_knots(&knots, order, cv_count);
     let full_knots = reconstruct_knots(&knots, order, cv_count)?;
+    reader.skip_remaining()?;
     Ok(NurbsCurve {
         degree: u32::try_from(order - 1).expect("validated order fits u32"),
         knots: full_knots,
@@ -822,9 +841,19 @@ pub(crate) fn read_nurbs_surface(
     reader: &mut BoundedReader<'_>,
     scale: f64,
 ) -> Result<NurbsSurface, GeometryError> {
+    let surface = read_nurbs_surface_prefix(reader, scale)?;
+    reader.skip_remaining()?;
+    Ok(surface)
+}
+
+/// Reads one NURBS surface without consuming bytes after its final pole.
+pub(crate) fn read_nurbs_surface_prefix(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+) -> Result<NurbsSurface, GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
-    if version >> 4 != 1 || version & 0x0f != 0 {
+    if version >> 4 != 1 {
         return Err(GeometryError::unsupported(
             version_offset,
             "unsupported NURBS surface version",
@@ -839,7 +868,10 @@ pub(crate) fn read_nurbs_surface(
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
-    if dimension != 3 || !(rational == 0 || rational == 1) || u_count < u_order || v_count < v_order
+    if !(2..=3).contains(&dimension)
+        || !(rational == 0 || rational == 1)
+        || u_count < u_order
+        || v_count < v_order
     {
         return Err(error(reader.position(), "invalid NURBS surface header"));
     }
@@ -872,7 +904,8 @@ pub(crate) fn read_nurbs_surface(
     if stored_cv_count != expected_cv_count {
         return Err(error(reader.position(), "NURBS surface CV count mismatch"));
     }
-    let (control_points, weights) = read_poles(reader, stored_cv_count, rational != 0, scale)?;
+    let (control_points, weights) =
+        read_poles(reader, stored_cv_count, rational != 0, dimension, scale)?;
     let u_knots = reconstruct_knots(&u_knots, u_order, u_count)?;
     let v_knots = reconstruct_knots(&v_knots, v_order, v_count)?;
     Ok(NurbsSurface {
@@ -889,13 +922,13 @@ pub(crate) fn read_nurbs_surface(
     })
 }
 
-fn read_plane_surface(
+fn read_plane_surface_with_parameterization(
     reader: &mut BoundedReader<'_>,
     scale: f64,
-) -> Result<SurfaceGeometry, GeometryError> {
+) -> Result<(SurfaceGeometry, PlaneParameterization), GeometryError> {
     let version_offset = reader.position();
     let version = reader.u8()?;
-    if version >> 4 != 1 || version & 0x0f > 1 {
+    if version >> 4 != 1 {
         return Err(GeometryError::unsupported(
             version_offset,
             "unsupported plane-surface version",
@@ -913,14 +946,26 @@ fn read_plane_surface(
     } else {
         (domain, v_domain)
     };
-    let _ = (u_extents, v_extents);
     let plane = SurfaceGeometry::Plane {
         origin: scale_native_point(native_plane.origin, scale)
             .ok_or_else(|| error(reader.position(), "scaled plane origin is invalid"))?,
         normal: vector(native_plane.zaxis),
         u_axis: vector(native_plane.xaxis),
     };
-    Ok(plane)
+    reader.skip_remaining()?;
+    Ok((
+        plane,
+        PlaneParameterization {
+            u_domain: domain,
+            v_domain,
+            u_extents,
+            v_extents,
+        },
+    ))
+}
+
+fn map_parameter(value: f64, domain: [f64; 2], extents: [f64; 2]) -> f64 {
+    extents[0] + (value - domain[0]) * (extents[1] - extents[0]) / (domain[1] - domain[0])
 }
 
 fn read_knots(reader: &mut BoundedReader<'_>, count: usize) -> Result<Vec<f64>, GeometryError> {
@@ -939,6 +984,7 @@ fn read_poles(
     reader: &mut BoundedReader<'_>,
     count: usize,
     rational: bool,
+    dimension: i32,
     scale: f64,
 ) -> Result<(Vec<Point3>, Option<Vec<f64>>), GeometryError> {
     let mut points = Vec::with_capacity(count);
@@ -946,7 +992,7 @@ fn read_poles(
     for _ in 0..count {
         let x = reader.f64()?;
         let y = reader.f64()?;
-        let z = reader.f64()?;
+        let z = if dimension == 3 { reader.f64()? } else { 0.0 };
         let weight = if rational { Some(reader.f64()?) } else { None };
         if !x.is_finite() || !y.is_finite() || !z.is_finite() {
             return Err(error(reader.position(), "NURBS pole is not finite"));
@@ -1078,12 +1124,12 @@ fn validate_plane(value: Plane, offset: usize) -> Result<(), GeometryError> {
         .into_iter()
         .chain(value.equation)
         .all(f64::is_finite)
-        || (x.norm() - 1.0).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
-        || (y.norm() - 1.0).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
-        || (z.norm() - 1.0).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
-        || x.dot(y).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
-        || x.dot(z).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
-        || y.dot(z).abs() > EPS_SURFACES_VALIDATE_PLANE_E10
+        || (x.norm() - 1.0).abs() > 1.0e-10
+        || (y.norm() - 1.0).abs() > 1.0e-10
+        || (z.norm() - 1.0).abs() > 1.0e-10
+        || x.dot(y).abs() > 1.0e-10
+        || x.dot(z).abs() > 1.0e-10
+        || y.dot(z).abs() > 1.0e-10
         || !close(x.cross(y), z)
     {
         return Err(error(
@@ -1107,9 +1153,7 @@ fn vector(value: crate::settings::Vector3) -> Vector3 {
 }
 
 fn close(a: Vector3, b: Vector3) -> bool {
-    (a.x - b.x).abs() <= EPS_SURFACES_CLOSE_E10
-        && (a.y - b.y).abs() <= EPS_SURFACES_CLOSE_E10
-        && (a.z - b.z).abs() <= EPS_SURFACES_CLOSE_E10
+    (a.x - b.x).abs() <= 1.0e-10 && (a.y - b.y).abs() <= 1.0e-10 && (a.z - b.z).abs() <= 1.0e-10
 }
 
 #[cfg(test)]

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
@@ -11,17 +10,11 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::Cursor;
 
-use cadmpeg_asm::asm_header;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::report::{LossKind as LossCode, LossTaxonomy, Severity};
-use zip::CompressionMethod;
+use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::report::Severity;
 
-use crate::bytes::lp_utf16_bytes;
-use crate::container::{self, role};
 use crate::test_support::*;
 use crate::F3dCodec;
 

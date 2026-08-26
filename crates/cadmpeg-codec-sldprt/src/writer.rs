@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write;
 
 use crate::native::SldprtNative;
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::document::CadIr;
@@ -2171,7 +2172,12 @@ pub(super) fn sequential_tessellation(
     }
     let triangle_count = u32::try_from(mesh.triangles.len())
         .map_err(|_| CodecError::Malformed("tessellation triangle count overflow".into()))?;
-    let strip_lengths = std::iter::repeat_n(3_u32, triangle_count as usize).collect::<Vec<_>>();
+    let strip_lengths = alloc_filled(
+        triangle_count as usize,
+        3_u32,
+        "SLDPRT tessellation triangle strips",
+    )?;
+    let triangles = triangles_from_strips(&strip_lengths)?;
     Ok(cadmpeg_ir::tessellation::Tessellation {
         id: mesh.id.clone(),
         body: mesh.body.clone(),
@@ -2179,7 +2185,7 @@ pub(super) fn sequential_tessellation(
         chordal_deflection: mesh.chordal_deflection,
         source_object: mesh.source_object.clone(),
         vertices,
-        triangles: triangles_from_strips(&strip_lengths)?,
+        triangles,
         feature_edges: Vec::new(),
         strip_lengths,
         normals,
@@ -2324,12 +2330,15 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     }
     let mut out = b"moVisualProperties_c".to_vec();
     let component = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
-    out.extend_from_slice(&[
-        component(color.r),
-        component(color.g),
-        component(color.b),
-        0,
-    ]);
+    out.extend_from_slice(
+        &u32::from_le_bytes([
+            component(color.r),
+            component(color.g),
+            component(color.b),
+            0,
+        ])
+        .to_le_bytes(),
+    );
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&0x00c0_c0c0u32.to_le_bytes());
     out.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);
@@ -3444,6 +3453,7 @@ mod nurbs_write_tests {
         ir.model.pmi.push(cadmpeg_ir::PmiAnnotation {
             id: cadmpeg_ir::ids::PmiId("sldprt:model:pmi#A1".into()),
             name: Some("datum A".into()),
+            visible: None,
             targets: vec![cadmpeg_ir::PmiTarget::ShapeAspect {
                 source_id: "F1".into(),
             }],

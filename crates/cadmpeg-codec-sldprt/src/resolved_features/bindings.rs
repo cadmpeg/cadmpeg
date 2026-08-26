@@ -34,8 +34,8 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
 use std::collections::{HashMap, HashSet};
 
-const EPS_BINDINGS_BIND_PATTERN_INPUTS_E12: f64 = 1e-12;
-const EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9: f64 = 1e-9;
+const EPS_BINDINGS_BIND_PATTERN_INPUTS_E12: f64 = 1.0e-12;
+const EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9: f64 = 1.0e-9;
 
 /// Bind pattern operands carried by adjacent feature-input objects.
 pub(crate) fn bind_pattern_inputs(

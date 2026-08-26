@@ -20,7 +20,7 @@ use cadmpeg_ir::features::FeatureDefinition;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-const EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9: f64 = 1e-9;
+const EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9: f64 = 1.0e-9;
 
 /// Add semantic termination forms carried by compact extrusion end-spec children.
 #[derive(Clone)]

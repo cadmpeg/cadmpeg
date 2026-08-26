@@ -24,9 +24,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
-const EPS_PROFILE_SELECT_TRANSITION_PROFILE_SELECTION_E7: f64 = 1e-7;
-const EPS_PROFILE_SELECT_TRANSITION_SPATIAL_PROFILE_SELECTION_E7: f64 = 1e-7;
-const EPS_PROFILE_SELECT_HISTORICAL_SELECTION_REGIONS_E7: f64 = 1e-7;
+const EPS_PROFILE_SELECT_TRANSITION_PROFILE_SELECTION_E7: f64 = 1.0e-7;
+const EPS_PROFILE_SELECT_TRANSITION_SPATIAL_PROFILE_SELECTION_E7: f64 = 1.0e-7;
+const EPS_PROFILE_SELECT_HISTORICAL_SELECTION_REGIONS_E7: f64 = 1.0e-7;
 
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the

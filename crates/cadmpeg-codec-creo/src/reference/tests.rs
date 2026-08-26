@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
-use crate::container::{self, role, Layout};
-use crate::surface::TorusRadius2Encoding;
+use crate::container::{self};
 use crate::test_support::*;
 use crate::CreoCodec;
 
@@ -384,7 +380,7 @@ fn decodes_arc_z_positive_full_width_coordinate_rows() {
     assert_eq!(circle.center[0], -30.0);
     assert_eq!(circle.start[0], -30.0);
     assert_eq!(circle.end[0], -30.0);
-    assert!((circle.axis[0].abs() - 1.0).abs() < 1e-12);
+    assert!((circle.axis[0].abs() - 1.0).abs() < 1.0e-12);
 }
 
 #[test]

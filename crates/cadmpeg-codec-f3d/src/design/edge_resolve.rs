@@ -8,8 +8,8 @@ use crate::records::{
 };
 use std::collections::{HashMap, HashSet};
 
-const EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9: f64 = 1e-9;
-const EPS_EDGE_RESOLVE_RADIUS_EDGE_IDENTITY_GROUP_CANDIDATES_E9: f64 = 1e-9;
+const EPS_EDGE_RESOLVE_RADIUS_EDGE_GROUP_CANDIDATES_E9: f64 = 1.0e-9;
+const EPS_EDGE_RESOLVE_RADIUS_EDGE_IDENTITY_GROUP_CANDIDATES_E9: f64 = 1.0e-9;
 
 pub(crate) fn resolved_edge_group(
     group: &DesignConstructionOperandGroup,

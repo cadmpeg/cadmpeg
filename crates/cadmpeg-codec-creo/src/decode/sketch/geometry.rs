@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry, SketchId};
@@ -14,13 +15,13 @@ use super::super::sketch_transfer::{
 use super::radii::trim_segment_id;
 use super::skamp::section_line_entity_fixed_coordinate;
 
-const EPS_POINT_NONZERO: f64 = 1e-12;
-const EPS_RADIUS_AGREEMENT: f64 = 1e-9;
-const EPS_DENOMINATOR_NONZERO: f64 = 1e-12;
-const EPS_FRAME_ORTHONORMAL: f64 = 1e-9;
-const EPS_PARAMETER_AGREEMENT: f64 = 1e-9;
-const EPS_PARAMETER_FULL_TURN: f64 = 1e-9;
-const EPS_ANGLE_FULL_TURN: f64 = 1e-12;
+const EPS_POINT_NONZERO: f64 = 1.0e-12;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+const EPS_DENOMINATOR_NONZERO: f64 = 1.0e-12;
+const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-9;
+const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
+const EPS_PARAMETER_FULL_TURN: f64 = 1.0e-9;
+const EPS_ANGLE_FULL_TURN: f64 = 1.0e-12;
 
 pub(crate) fn section_line_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
@@ -789,7 +790,10 @@ pub(crate) fn saved_profile_chains(
             Some((*external_id, saved_geometry_endpoints(geometry)?))
         })
         .collect::<Vec<_>>();
-    let mut mates = vec![[None; 2]; rows.len()];
+    let Ok(mut mates) = alloc_filled(rows.len(), [None; 2], "creo saved profile endpoint mates")
+    else {
+        return profiles;
+    };
     for (row_index, (_, endpoints)) in rows.iter().enumerate() {
         for endpoint_index in 0..2 {
             let matches = rows

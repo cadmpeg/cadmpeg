@@ -22,9 +22,9 @@ use crate::framing::{
 };
 use crate::vec3_at::vec3_be_at;
 
-const EPS_GEOMETRY_CONE_E6: f64 = 1e-6;
-const EPS_GEOMETRY_IS_UNIT_E6: f64 = 1e-6;
-const EPS_GEOMETRY_IS_ORTHONORMAL_FRAME_E6: f64 = 1e-6;
+const EPS_GEOMETRY_CONE_E6: f64 = 1.0e-6;
+const EPS_GEOMETRY_IS_UNIT_E6: f64 = 1.0e-6;
+const EPS_GEOMETRY_IS_ORTHONORMAL_FRAME_E6: f64 = 1.0e-6;
 
 /// A decoded analytic surface and its source offset.
 #[derive(Debug, Clone)]

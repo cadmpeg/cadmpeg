@@ -3,6 +3,7 @@
 
 use std::io::{Seek, SeekFrom, Write};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, SurfaceGeometry};
@@ -10,13 +11,6 @@ use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
-
-const EPS_WRITER_PREPARE_WRITE_E10: f64 = 1e-10;
-const EPS_WRITER_PLANAR_SHEET_BREP_PAYLOAD_E10: f64 = 1e-10;
-const EPS_WRITER_MULTI_FACE_BREP_PAYLOAD_E10: f64 = 1e-10;
-const EPS_WRITER_VALIDATE_PLANAR_EDGE_E10: f64 = 1e-10;
-const EPS_WRITER_VALIDATE_NURBS_TRIM_LOOP_E10: f64 = 1e-10;
-const EPS_WRITER_CHECK_FRAME_E10: f64 = 1e-10;
 
 pub(crate) trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
@@ -697,9 +691,9 @@ fn prepare_write(ir: &CadIr, archive_version: u64) -> Result<WritePlan, CodecErr
             || *radius <= 0.0
             || !axis_norm.is_finite()
             || !reference_norm.is_finite()
-            || (axis_norm - 1.0).abs() > EPS_WRITER_PREPARE_WRITE_E10
-            || (reference_norm - 1.0).abs() > EPS_WRITER_PREPARE_WRITE_E10
-            || dot.abs() > EPS_WRITER_PREPARE_WRITE_E10
+            || (axis_norm - 1.0).abs() > 1.0e-10
+            || (reference_norm - 1.0).abs() > 1.0e-10
+            || dot.abs() > 1.0e-10
         {
             return Err(CodecError::malformed(format_args!(
                 "curve {} has an invalid circle frame",
@@ -860,6 +854,7 @@ fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
         && json_bool(&fields, "visible") == Some(true)
         && json_bool(&fields, "locked") == Some(false)
         && json_array_empty(&fields, "rendering_materials")
+        && json_array_empty_or_missing(&fields, "per_viewport_settings")
 }
 
 fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
@@ -875,7 +870,15 @@ fn default_native_presentation(record: &cadmpeg_ir::NativeRecord) -> bool {
         && json_array_empty(&fields, "group_indexes")
         && json_array_empty(&fields, "display_materials")
         && json_array_empty(&fields, "rendering_materials")
+        && json_array_empty_or_missing(&fields, "rendering_mappings")
+        && fields.get("casts_shadows").is_none()
+        && fields.get("receives_shadows").is_none()
+        && fields.get("advanced_texture_preview").is_none()
+        && fields.get("custom_render_mesh").is_none()
+        && fields.get("mesh_modifiers").is_none()
         && json_array_empty(&fields, "clipping_plane_uuids")
+        && json_array_empty_or_missing(&fields, "user_strings")
+        && json_array_empty_or_missing(&fields, "attribute_user_strings")
 }
 
 type NativeFields = serde_json::Map<String, serde_json::Value>;
@@ -897,6 +900,12 @@ fn json_array_empty(fields: &NativeFields, name: &str) -> bool {
         .get(name)
         .and_then(serde_json::Value::as_array)
         .is_some_and(Vec::is_empty)
+}
+
+fn json_array_empty_or_missing(fields: &NativeFields, name: &str) -> bool {
+    fields
+        .get(name)
+        .is_none_or(|value| value.as_array().is_some_and(Vec::is_empty))
 }
 
 fn planar_sheet_brep_payload(
@@ -1120,10 +1129,7 @@ fn planar_sheet_brep_payload(
         validate_planar_edge(model, edge, ir.tolerances.linear)?;
     }
     if let Some((origin, normal, _, _)) = plane_frame {
-        let plane_tolerance = face
-            .tolerance
-            .unwrap_or(ir.tolerances.linear)
-            .max(EPS_WRITER_PLANAR_SHEET_BREP_PAYLOAD_E10);
+        let plane_tolerance = face.tolerance.unwrap_or(ir.tolerances.linear).max(1.0e-10);
         for point in &ordered_points {
             let distance = (point.x - origin.x) * normal.x
                 + (point.y - origin.y) * normal.y
@@ -1342,7 +1348,7 @@ fn planar_sheet_brep_payload(
         payload.extend(bytes);
         direct.extend(bytes);
     }
-    let mesh_presence = std::iter::repeat_n(0, model.faces.len()).collect::<Vec<_>>();
+    let mesh_presence = alloc_filled(model.faces.len(), 0_u8, "Rhino planar mesh presence")?;
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     let solid = 0_i32.to_le_bytes();
@@ -1770,7 +1776,7 @@ fn multi_face_brep_payload(
         let tolerance = model.faces[face_position]
             .tolerance
             .unwrap_or(ir.tolerances.linear)
-            .max(EPS_WRITER_MULTI_FACE_BREP_PAYLOAD_E10);
+            .max(1.0e-10);
         let mut boundary = Vec::with_capacity(loop_.coedges.len());
         for coedge_id in &loop_.coedges {
             let coedge =
@@ -2022,7 +2028,7 @@ fn multi_face_brep_payload(
         payload.extend(bytes);
         direct.extend(bytes);
     }
-    let mesh_presence = std::iter::repeat_n(0, model.faces.len()).collect::<Vec<_>>();
+    let mesh_presence = alloc_filled(model.faces.len(), 0_u8, "Rhino Brep mesh presence")?;
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     let solid = if body.kind == BodyKind::Solid {
@@ -2140,7 +2146,7 @@ fn validate_planar_edge(
     }
     let (expected_start, expected_end) = match &curve.geometry {
         CurveGeometry::Line { origin, direction } => {
-            if (direction.norm() - 1.0).abs() > EPS_WRITER_VALIDATE_PLANAR_EDGE_E10 {
+            if (direction.norm() - 1.0).abs() > 1.0e-10 {
                 return Err(CodecError::malformed(format_args!(
                     "edge {} has an invalid line parameterization",
                     edge.id.0
@@ -2186,10 +2192,7 @@ fn validate_planar_edge(
     })?;
     let end = vertex_point(model, &edge.end)
         .ok_or_else(|| CodecError::malformed(format_args!("edge {} end is missing", edge.id.0)))?;
-    let tolerance = edge
-        .tolerance
-        .unwrap_or(document_tolerance)
-        .max(EPS_WRITER_VALIDATE_PLANAR_EDGE_E10);
+    let tolerance = edge.tolerance.unwrap_or(document_tolerance).max(1.0e-10);
     if !close_point(start, expected_start, tolerance) || !close_point(end, expected_end, tolerance)
     {
         return Err(CodecError::malformed(format_args!(
@@ -2444,6 +2447,13 @@ fn validate_brep_pcurve_ownership(
 ) -> Result<(), CodecError> {
     let mut owned = std::collections::BTreeSet::new();
     for coedge in coedges {
+        if coedge.pcurves.len() > 1 {
+            return Err(CodecError::NotImplemented(format!(
+                "coedge {} has {} pcurve uses; Rhino stores one trim C2 carrier",
+                coedge.id.0,
+                coedge.pcurves.len()
+            )));
+        }
         for pcurve_use in &coedge.pcurves {
             let id = &pcurve_use.pcurve;
             if !owned.insert(id.0.clone()) {
@@ -2514,7 +2524,7 @@ fn validate_nurbs_trim_loop(
             .find(|pcurve| pcurve.id == *pcurve_id)
             .expect("validated NURBS-face pcurve");
         let domain = edge.param_range.expect("validated edge domain");
-        let uv_epsilon = EPS_WRITER_VALIDATE_NURBS_TRIM_LOOP_E10
+        let uv_epsilon = 1.0e-10
             * u_domain
                 .into_iter()
                 .chain(v_domain)
@@ -2588,7 +2598,7 @@ fn validate_nurbs_trim_loop(
         let tolerance = face_tolerance
             .max(edge.tolerance.unwrap_or(0.0))
             .max(pcurve.fit_tolerance.unwrap_or(0.0))
-            .max(EPS_WRITER_VALIDATE_NURBS_TRIM_LOOP_E10);
+            .max(1.0e-10);
         for span in breaks.windows(2) {
             for step in 0..=16 {
                 let fraction = f64::from(step) / 16.0;
@@ -2952,9 +2962,9 @@ fn check_frame(
     if !origin.x.is_finite()
         || !origin.y.is_finite()
         || !origin.z.is_finite()
-        || (normal.norm() - 1.0).abs() > EPS_WRITER_CHECK_FRAME_E10
-        || (x.norm() - 1.0).abs() > EPS_WRITER_CHECK_FRAME_E10
-        || dot.abs() > EPS_WRITER_CHECK_FRAME_E10
+        || (normal.norm() - 1.0).abs() > 1.0e-10
+        || (x.norm() - 1.0).abs() > 1.0e-10
+        || dot.abs() > 1.0e-10
     {
         return Err(CodecError::malformed(format_args!(
             "{family} {id} has an invalid frame"

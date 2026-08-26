@@ -14,10 +14,10 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_FULL_TURN: f64 = 1e-12;
-const EPS_DIRECTION_COMPONENT: f64 = 1e-12;
-const EPS_AXIS_ALIGNMENT: f64 = 1e-10;
-const EPS_AXIS_OFFSET: f64 = 1e-9;
+const EPS_FULL_TURN: f64 = 1.0e-12;
+const EPS_DIRECTION_COMPONENT: f64 = 1.0e-12;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
+const EPS_AXIS_OFFSET: f64 = 1.0e-9;
 
 pub(in super::super) fn resolved_revolution_axis(
     definition: &crate::feature::FeatureDefinition,

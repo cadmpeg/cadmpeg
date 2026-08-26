@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use zip::CompressionMethod;
+use zip::{CompressionMethod, HasZipMetadata};
 
 static NEXT_ARCHIVE_SNAPSHOT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -63,10 +63,16 @@ pub struct EntryRecord {
     pub data_start: u64,
     /// Physical start of the central-directory record.
     pub central_start: u64,
+    utf8_name: bool,
     snapshot_id: u64,
 }
 
 impl EntryRecord {
+    /// Returns whether ZIP metadata uses Unicode filename support for this entry.
+    pub fn uses_utf8_name_encoding(&self) -> bool {
+        self.utf8_name
+    }
+
     /// Returns the exclusive compressed-payload boundary.
     pub fn data_end(&self) -> Result<u64, CodecError> {
         self.data_start
@@ -91,6 +97,13 @@ impl<'a> ArchiveSnapshot<'a> {
     pub fn new(root: View<'a>) -> Result<Self, CodecError> {
         let mut archive = zip::ZipArchive::new(Cursor::new(root.window()))
             .map_err(|error| CodecError::malformed(format_args!("not a readable ZIP: {error}")))?;
+        let central_entry_count =
+            reject_duplicate_central_names(root.window(), archive.central_directory_start())?;
+        if central_entry_count != archive.len() {
+            return Err(CodecError::Malformed(
+                "ZIP central directory contains duplicate entry names".into(),
+            ));
+        }
         let snapshot_id = NEXT_ARCHIVE_SNAPSHOT_ID.fetch_add(1, AtomicOrdering::Relaxed);
         let mut names = BTreeSet::new();
         let mut entries = Vec::with_capacity(archive.len());
@@ -122,6 +135,7 @@ impl<'a> ArchiveSnapshot<'a> {
                 header_start: file.header_start(),
                 data_start,
                 central_start: file.central_header_start(),
+                utf8_name: file.get_metadata().is_utf8,
                 snapshot_id,
             };
             for offset in [
@@ -298,6 +312,44 @@ impl<'a> ArchiveSnapshot<'a> {
     pub fn physical_ledger(&self) -> Result<Vec<PhysicalSpan>, CodecError> {
         physical_ledger(self.root.window(), &self.entries)
     }
+}
+
+fn reject_duplicate_central_names(bytes: &[u8], central_start: u64) -> Result<usize, CodecError> {
+    let mut offset = central_start;
+    let mut names = BTreeSet::new();
+    let mut entry_count = 0;
+    while signature_at(bytes, offset) == Some(*b"PK\x01\x02") {
+        entry_count += 1;
+        let fixed_end = offset
+            .checked_add(46)
+            .ok_or_else(|| CodecError::Malformed("ZIP central-header offset overflow".into()))?;
+        let name_len = u64::from(u16_at(bytes, offset + 28)?);
+        let extra_len = u64::from(u16_at(bytes, offset + 30)?);
+        let comment_len = u64::from(u16_at(bytes, offset + 32)?);
+        let name_end = fixed_end
+            .checked_add(name_len)
+            .ok_or_else(|| CodecError::Malformed("ZIP central-name offset overflow".into()))?;
+        let record_end = name_end
+            .checked_add(extra_len)
+            .and_then(|end| end.checked_add(comment_len))
+            .ok_or_else(|| CodecError::Malformed("ZIP central-record offset overflow".into()))?;
+        let name_start = usize::try_from(fixed_end).map_err(|_| {
+            CodecError::Malformed("ZIP central-name offset does not fit memory".into())
+        })?;
+        let name_end = usize::try_from(name_end).map_err(|_| {
+            CodecError::Malformed("ZIP central-name end does not fit memory".into())
+        })?;
+        let name = bytes
+            .get(name_start..name_end)
+            .ok_or_else(|| CodecError::Malformed("truncated ZIP central name".into()))?;
+        if !names.insert(name.to_vec()) {
+            return Err(CodecError::Malformed(
+                "duplicate ZIP central entry name".into(),
+            ));
+        }
+        offset = record_end;
+    }
+    Ok(entry_count)
 }
 
 /// One exact physical range in a ZIP archive.

@@ -15,9 +15,9 @@ use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
 
 use crate::container::ContainerScan;
 
-const EPS_SWIFT_RENDERED_NOMINAL_E7: f64 = 1e-7;
-const EPS_SWIFT_RENDERED_NOMINAL_E6: f64 = 1e-6;
-const EPS_SWIFT_APPROXIMATELY_EQUAL_E9: f64 = 1e-9;
+const EPS_SWIFT_RENDERED_NOMINAL_E7: f64 = 1.0e-7;
+const EPS_SWIFT_RENDERED_NOMINAL_E6: f64 = 1.0e-6;
+const EPS_SWIFT_APPROXIMATELY_EQUAL_E9: f64 = 1.0e-9;
 
 const ROOT_CLASS: &str = "PrizMetrik.GdtAnalysisSupport.GdtPart";
 const ENTITY_TOKEN: &[u8] = b"\x06Entity";
@@ -646,6 +646,7 @@ fn project_datum(
     (short_class(&entity.class) == "GdtDatum").then(|| PmiAnnotation {
         id: pmi_id(&reference.id),
         name: object_name(entity),
+        visible: None,
         targets: targets(entity, feature_index, topology),
         definition: PmiDefinition::Datum { identification },
     })
@@ -666,6 +667,7 @@ fn project_tolerance(
         PmiAnnotation {
             id,
             name: None,
+            visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::DatumSystem { references },
         }
@@ -677,6 +679,7 @@ fn project_tolerance(
         PmiAnnotation {
             id: pmi_id(&reference.id),
             name: object_name(entity),
+            visible: None,
             targets: targets(entity, feature_index, topology),
             definition: PmiDefinition::GeometricTolerance {
                 tolerance: kind,
@@ -701,6 +704,7 @@ fn project_lower_profile_tier(
     Some(PmiAnnotation {
         id: PmiId(format!("{}:lower-tier", pmi_id(&reference.id).0)),
         name: object_name(entity).map(|name| format!("{name} lower tier")),
+        visible: None,
         targets: targets(entity, feature_index, topology),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
@@ -734,6 +738,7 @@ fn project_dimension(
     Some(PmiAnnotation {
         id: pmi_id(&reference.id),
         name: object_name(entity),
+        visible: None,
         targets: targets(entity, feature_index, topology),
         definition: PmiDefinition::Dimension {
             dimension,

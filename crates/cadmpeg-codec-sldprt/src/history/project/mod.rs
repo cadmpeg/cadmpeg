@@ -1,37 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project native Keywords records into the neutral feature arena.
 
-#![allow(unused_imports)]
-use crate::classification::{
-    classify, classify_type_token, classify_xml_element, native_object_class,
-    principal_plane_with_siblings, FeatureClass, NativeClassKind,
-};
-use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
-use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::annotations::Annotations;
+use crate::classification::{classify, FeatureClass};
+use crate::records::{Feature, FeatureContent, FeatureHistory};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::features::{
-    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    ConfigurationBodies, ConfigurationId, CosmeticThreadExtent, CurveProjectionDirection,
-    CurveProjectionDirectionState, DatumPlaneReference, DesignConfiguration, DesignParameter,
-    DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection,
-    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode,
-    HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
-    PatternKind, PatternSeed, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
-    ScaleCenter, ScaleFactors, SketchSpace, SplitFaceTool, SurfaceExtension, SweepMode,
-    Termination, TrimRegion, VariableRadius, VertexSelection, WrapMode,
+    ConfigurationBodies, ConfigurationId, DatumPlaneReference, DesignConfiguration, FaceSelection,
+    FeatureDefinition, FeatureId, FeatureSourceContent, Length, ParameterId, PathRef, ProfileRef,
+    SketchSpace, SplitFaceTool,
 };
-use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Body, Edge, Face};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::Exactness;
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Write as _;
 
 use crate::history::classify::{
     feature_tree_node_role, is_custom_property, is_history_metadata_record, is_offset_plane,
@@ -202,7 +182,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
             .and_then(|native| native.rsplit_once(':').map(|(history, _)| history))
     }
 
-    const FRAME_TOLERANCE: f64 = 1e-8;
+    const FRAME_TOLERANCE: f64 = 1.0e-8;
 
     let stored_frame = |feature: &cadmpeg_ir::features::Feature| {
         let origin = parse_point3_mm(feature.source_properties.get("Origin")?)?;

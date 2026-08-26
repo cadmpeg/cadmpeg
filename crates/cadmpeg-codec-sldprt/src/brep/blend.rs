@@ -13,8 +13,8 @@ use super::LEN_TO_MM;
 
 use crate::layout::rolling_ball_blend_00_38 as blend_rec;
 
-const EPS_BLEND_PARSE_RAW_E12: f64 = 1e-12;
-const EPS_BLEND_PARSE_BLEND_E12: f64 = 1e-12;
+const EPS_BLEND_PARSE_RAW_E12: f64 = 1.0e-12;
+const EPS_BLEND_PARSE_BLEND_E12: f64 = 1.0e-12;
 
 /// One exact constant-radius blend construction.
 #[derive(Debug, Clone)]

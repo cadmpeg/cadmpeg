@@ -34,8 +34,8 @@ use super::super::sweep::line_pcurve;
 
 use super::fc05_model_frame;
 
-const EPS_CAP_AXIS_ALIGNMENT: f64 = 1e-9;
-const EPS_CAP_TRANSLATION_AGREEMENT: f64 = 1e-9;
+const EPS_CAP_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_CAP_TRANSLATION_AGREEMENT: f64 = 1.0e-9;
 
 pub(in super::super) fn transfer_native_brep(
     scan: &ContainerScan,

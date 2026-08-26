@@ -1,24 +1,11 @@
 //! Circle, radial, and ellipse endpoint tests.
-#![allow(unused_imports)]
 
-use super::super::super::bindings::normalize_indexed_curve_entities;
-use super::super::super::curves::compact_bounded_curve_tangent;
-use super::super::super::markers::{marker_coordinates, sketch_input_entities};
 use super::super::super::relation_loci::same_dimension_length;
-use super::super::super::selections::marker_local_links;
-use super::super::super::typed_relations::{
-    current_undetailed_bounded_curve_is_line, extended_direct_object_line_endpoints,
-    legacy_marker104_arc_endpoints, marker_curve_endpoint_markers,
-};
 use super::super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
 use super::super::*;
-use crate::records::{
-    FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
-};
-use cadmpeg_ir::math::Point2;
-use std::collections::HashMap;
+use crate::records::{SketchInputEntity, SketchInputKind, SketchRelationKind};
 
 #[test]
 fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
@@ -479,7 +466,7 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
         panic!("terminal circle did not resolve");
     };
     assert_eq!(center, [0.03, 0.005]);
-    assert!((radius - 0.0098).abs() < 1e-12);
+    assert!((radius - 0.0098).abs() < 1.0e-12);
 
     payload[circle_offset + 44..circle_offset + 46].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(

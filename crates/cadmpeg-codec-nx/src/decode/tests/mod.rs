@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
-#![allow(unused_imports)]
-
 pub(crate) use super::*;
 
 use cadmpeg_core::decode::DecodeMode;

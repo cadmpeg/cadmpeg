@@ -11,9 +11,9 @@ use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use std::collections::BTreeSet;
 
-const EPS_GEOMETRY_AGREEMENT: f64 = 1e-9;
-const EPS_AXIS_ALIGNMENT: f64 = 1e-10;
-const EPS_SIGNED_LENGTH: f64 = 1e-9;
+const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
+const EPS_SIGNED_LENGTH: f64 = 1.0e-9;
 
 pub(in super::super) fn feature_plane_equations(
     scan: &ContainerScan,

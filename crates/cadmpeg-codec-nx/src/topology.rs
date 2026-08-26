@@ -18,7 +18,7 @@ use crate::framing::{
 };
 use crate::vec3_at::vec3_be_at;
 
-const EPS_TOPOLOGY_BLEND_SURFACES_2_E9: f64 = 1e-9;
+const EPS_TOPOLOGY_BLEND_SURFACES_2_E9: f64 = 1.0e-9;
 
 /// Exact inline schema header for the `intersection_data` one-byte record
 /// family. The terminal `5a` is the record tag; callers use the prefix before

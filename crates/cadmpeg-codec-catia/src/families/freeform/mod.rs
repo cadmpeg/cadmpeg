@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Freeform decode route composing a5a8 and consolidated NURBS record carriers.
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -29,8 +30,8 @@ use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
 use crate::loss::CatiaLossCode;
 
-const EPS_TORUS_FRAME: f64 = 1e-12;
-const EPS_APEX_ALIGNMENT: f64 = 1e-12;
+const EPS_TORUS_FRAME: f64 = 1.0e-12;
+const EPS_APEX_ALIGNMENT: f64 = 1.0e-12;
 
 #[derive(Clone)]
 struct FreeformSurfaceCarrier {
@@ -1217,6 +1218,13 @@ pub(crate) fn append_freeform_surface_pools(
         if sites.len() != jet.knots.len() {
             continue;
         }
+        let Ok(multiplicities) = alloc_filled(
+            jet.knots.len(),
+            jet.degree + 1,
+            "catia rolling-ball multiplicities",
+        ) else {
+            continue;
+        };
         let surface_index = ir.model.surfaces.len();
         let surface_id = SurfaceId(format!("catia:rolling-ball:surf#{surface_index}"));
         annotate(
@@ -1250,7 +1258,7 @@ pub(crate) fn append_freeform_surface_pools(
             surface: surface_id,
             definition: ProceduralSurfaceDefinition::RollingBallJet {
                 degree: jet.degree,
-                multiplicities: std::iter::repeat_n(jet.degree + 1, jet.knots.len()).collect(),
+                multiplicities,
                 knots: jet.knots,
                 sites,
             },
@@ -2694,9 +2702,9 @@ mod tests {
             (ir.model.points[1].position, expected_start),
             (ir.model.points[0].position, expected_end),
         ] {
-            assert!((actual.x - expected.x).abs() < 1e-12);
-            assert!((actual.y - expected.y).abs() < 1e-12);
-            assert!((actual.z - expected.z).abs() < 1e-12);
+            assert!((actual.x - expected.x).abs() < 1.0e-12);
+            assert!((actual.y - expected.y).abs() < 1.0e-12);
+            assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
         ir.finalize();
         let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
@@ -3159,7 +3167,7 @@ mod tests {
                 (lifted.x - locus.x)
                     .hypot(lifted.y - locus.y)
                     .hypot(lifted.z - locus.z)
-                    < 1e-9,
+                    < 1.0e-9,
                 "recharted site must lift onto its definition locus"
             );
         }
@@ -3178,7 +3186,7 @@ mod tests {
         // The linear part carries derivatives without the translation.
         let derivative = chart.derivative([1.0, 0.0]);
         assert!(
-            (derivative[0].hypot(derivative[1]) - 1.0).abs() < 1e-12,
+            (derivative[0].hypot(derivative[1]) - 1.0).abs() < 1.0e-12,
             "an isometry preserves derivative magnitude"
         );
     }

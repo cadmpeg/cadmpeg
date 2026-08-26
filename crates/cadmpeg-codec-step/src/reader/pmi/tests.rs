@@ -3,35 +3,15 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 
 use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
-use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
-use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
-use crate::test_support::{decode_inline, export};
-use crate::{
-    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
-};
+use crate::test_support::decode_inline;
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 pub(crate) fn decode_transfers_ap242_semantic_pmi() {
@@ -118,6 +98,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     result.ir_mut().model.pmi.push(cadmpeg_ir::PmiAnnotation {
         id: cadmpeg_ir::ids::PmiId("test:pmi:presentation".into()),
         name: Some("width note".into()),
+        visible: Some(false),
         targets: Vec::new(),
         definition: PmiDefinition::Presentation {
             text: Some("12 mm".into()),
@@ -150,6 +131,17 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
         &annotation.definition,
         PmiDefinition::Presentation { semantics, .. } if semantics.len() == 1
     )));
+    assert_eq!(
+        roundtrip
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some("width note"))
+            .expect("roundtripped presentation annotation")
+            .visible,
+        Some(false)
+    );
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
         PmiDefinition::Dimension {
@@ -192,6 +184,76 @@ fn complex_datum_feature_remains_a_dimension_target() {
             source_id: "#6".into()
         }]
     );
+}
+
+#[test]
+fn simple_shape_aspect_subtypes_remain_dimension_targets() {
+    use cadmpeg_ir::pmi::PmiTarget;
+
+    let result = decode_inline(
+        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=COMPOSITE_SHAPE_ASPECT('composite feature','',#5,.T.);
+#7=DATUM_TARGET('datum target','',#5,.T.,'A');
+#10=DIMENSIONAL_SIZE(#6,'composite width');
+#11=DIMENSIONAL_SIZE(#7,'target width');
+#99=UNRESOLVED_PRODUCT();",
+    );
+    for (name, source_id) in [("composite width", "#6"), ("target width", "#7")] {
+        let dimension = result
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing dimension {name}"));
+        assert_eq!(
+            dimension.targets,
+            vec![PmiTarget::ShapeAspect {
+                source_id: source_id.into()
+            }]
+        );
+    }
+}
+
+#[test]
+fn datum_target_transfers_form_and_identification() {
+    use cadmpeg_ir::pmi::{DatumTargetForm, PmiDefinition, PmiTarget};
+
+    let result = decode_inline(
+        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=DATUM_TARGET('point target','point',#5,.F.,'A');
+#7=PLACED_DATUM_TARGET_FEATURE('circle target','circle',#5,.F.,'B');
+#8=(PLACED_DATUM_TARGET_FEATURE() DATUM_TARGET('C') SHAPE_ASPECT('rectangle target','rectangle',#5,.F.));
+#99=UNRESOLVED_PRODUCT();",
+    );
+
+    for (name, form, identification, source_id) in [
+        ("point target", DatumTargetForm::Point, "A", "#6"),
+        ("circle target", DatumTargetForm::Circle, "B", "#7"),
+        ("rectangle target", DatumTargetForm::Rectangle, "C", "#8"),
+    ] {
+        let target = result
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing datum target {name}"));
+        assert_eq!(
+            target.targets,
+            [PmiTarget::ShapeAspect {
+                source_id: source_id.into()
+            }]
+        );
+        assert!(matches!(
+            &target.definition,
+            PmiDefinition::DatumTarget {
+                form: actual_form,
+                identification: actual_id,
+                ..
+            } if actual_form == &form && actual_id == identification
+        ));
+    }
 }
 
 #[test]
@@ -268,6 +330,69 @@ fn dimensional_characteristic_selects_the_named_nominal_measure() {
         loss.message
             .contains("unnamed measure values; the nominal is ambiguous")
     }));
+}
+
+#[test]
+fn dimensional_nominal_selection_ignores_set_order_and_rejects_ambiguity() {
+    use cadmpeg_ir::pmi::{PmiDefinition, PmiValue};
+
+    let decode = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode AP-02 nominal-selection witness")
+    };
+    let nominal = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result.ir().model.pmi.iter().find_map(|annotation| {
+            let PmiDefinition::Dimension {
+                nominal: Some(PmiValue { value, .. }),
+                ..
+            } = &annotation.definition
+            else {
+                return None;
+            };
+            Some(*value)
+        })
+    };
+
+    let named_first = decode(include_bytes!("tests/data/ap02_named_nominal_first.p21"));
+    let named_reordered = decode(include_bytes!(
+        "tests/data/ap02_named_nominal_reordered.p21"
+    ));
+    assert_eq!(nominal(&named_first), Some(12.0));
+    assert_eq!(nominal(&named_reordered), Some(12.0));
+    assert!(!named_first
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("nominal is ambiguous")));
+    assert!(!named_reordered
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("nominal is ambiguous")));
+
+    let unnamed_single = decode(include_bytes!("tests/data/ap02_unnamed_single.p21"));
+    assert_eq!(nominal(&unnamed_single), Some(7.5));
+    assert!(!unnamed_single
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("nominal is ambiguous")));
+
+    let unnamed_first = decode(include_bytes!(
+        "tests/data/ap02_unnamed_ambiguous_first.p21"
+    ));
+    let unnamed_reordered = decode(include_bytes!(
+        "tests/data/ap02_unnamed_ambiguous_reordered.p21"
+    ));
+    assert_eq!(nominal(&unnamed_first), None);
+    assert_eq!(nominal(&unnamed_reordered), None);
+    for result in [&unnamed_first, &unnamed_reordered] {
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.message
+                .contains("unnamed measure values; the nominal is ambiguous")
+        }));
+    }
 }
 
 #[test]
@@ -369,6 +494,324 @@ fn complex_geometric_tolerance_uses_the_leaf_not_a_tolerance_mixin() {
             ..
         }
     ));
+}
+
+#[test]
+fn geometric_tolerance_kind_uses_exact_leaf_and_retains_abstract_base_opaque() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
+
+    let decode = |bytes| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode geometric tolerance witness")
+    };
+    let canonical = decode(include_bytes!(
+        "tests/data/ap03_geometric_tolerance_canonical.p21"
+    ));
+    let reordered = decode(include_bytes!(
+        "tests/data/ap03_geometric_tolerance_reordered.p21"
+    ));
+
+    for result in [&canonical, &reordered] {
+        let tolerance = result
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+            .expect("complex flatness tolerance");
+        let PmiDefinition::GeometricTolerance {
+            tolerance: kind,
+            magnitude,
+            modifiers,
+            ..
+        } = &tolerance.definition
+        else {
+            panic!("complex flatness tolerance has the wrong definition")
+        };
+        assert_eq!(kind, &GeometricToleranceKind::Flatness);
+        assert_eq!(magnitude.quantity, PmiQuantity::Length);
+        assert_eq!(magnitude.value, 0.05);
+        assert_eq!(modifiers, &["free_state"]);
+        assert_eq!(
+            result
+                .ir()
+                .model
+                .pmi
+                .iter()
+                .filter(|annotation| {
+                    matches!(
+                        annotation.definition,
+                        PmiDefinition::GeometricTolerance { .. }
+                    )
+                })
+                .count(),
+            1
+        );
+        assert!(result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown records")
+            .iter()
+            .any(|record| record.id.0 == "step:data:geometric_tolerance#13"));
+    }
+    assert!(!canonical
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ParseNoncanonicalSyntax.kind()));
+    assert!(reordered
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ParseNoncanonicalSyntax.kind()));
+}
+
+#[test]
+fn supported_geometric_tolerance_kinds_emit_matching_leaf_entities() {
+    use cadmpeg_ir::ids::PmiId;
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
+
+    let base = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/fixtures/ap242_semantic_pmi.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode geometric tolerance template")
+        .into_parts()
+        .0;
+    let template = base
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| {
+            matches!(
+                annotation.definition,
+                PmiDefinition::GeometricTolerance { .. }
+            )
+        })
+        .cloned()
+        .expect("geometric tolerance template");
+    let kinds = [
+        (
+            GeometricToleranceKind::Straightness,
+            "STRAIGHTNESS_TOLERANCE",
+        ),
+        (GeometricToleranceKind::Flatness, "FLATNESS_TOLERANCE"),
+        (GeometricToleranceKind::Roundness, "ROUNDNESS_TOLERANCE"),
+        (
+            GeometricToleranceKind::Cylindricity,
+            "CYLINDRICITY_TOLERANCE",
+        ),
+        (GeometricToleranceKind::Coaxiality, "COAXIALITY_TOLERANCE"),
+        (
+            GeometricToleranceKind::LineProfile,
+            "LINE_PROFILE_TOLERANCE",
+        ),
+        (
+            GeometricToleranceKind::SurfaceProfile,
+            "SURFACE_PROFILE_TOLERANCE",
+        ),
+        (GeometricToleranceKind::Angularity, "ANGULARITY_TOLERANCE"),
+        (
+            GeometricToleranceKind::Perpendicularity,
+            "PERPENDICULARITY_TOLERANCE",
+        ),
+        (GeometricToleranceKind::Parallelism, "PARALLELISM_TOLERANCE"),
+        (GeometricToleranceKind::Position, "POSITION_TOLERANCE"),
+        (
+            GeometricToleranceKind::Concentricity,
+            "CONCENTRICITY_TOLERANCE",
+        ),
+        (GeometricToleranceKind::Symmetry, "SYMMETRY_TOLERANCE"),
+        (
+            GeometricToleranceKind::CircularRunout,
+            "CIRCULAR_RUNOUT_TOLERANCE",
+        ),
+        (
+            GeometricToleranceKind::TotalRunout,
+            "TOTAL_RUNOUT_TOLERANCE",
+        ),
+    ];
+
+    for (ordinal, (kind, entity)) in kinds.into_iter().enumerate() {
+        let mut ir = base.clone();
+        ir.model.pmi.clear();
+        let mut annotation = template.clone();
+        annotation.id = PmiId(format!("test:pmi:tolerance#{ordinal}"));
+        let PmiDefinition::GeometricTolerance {
+            tolerance,
+            datum_system,
+            defined_unit,
+            defined_area_unit,
+            defined_area_second_unit,
+            modifiers,
+            ..
+        } = &mut annotation.definition
+        else {
+            panic!("geometric tolerance template has the wrong definition")
+        };
+        *tolerance = kind;
+        *datum_system = None;
+        *defined_unit = None;
+        *defined_area_unit = None;
+        *defined_area_second_unit = None;
+        modifiers.clear();
+        ir.model.pmi.push(annotation);
+
+        let mut output = Vec::new();
+        write_step(
+            &ir,
+            &mut output,
+            &StepWriteOptions {
+                schema: StepSchema::Ap242Edition3,
+                ..StepWriteOptions::default()
+            },
+        )
+        .expect("write geometric tolerance leaf");
+        let output = String::from_utf8(output).expect("STEP output is UTF-8");
+        assert!(output.contains(entity), "kind {ordinal} emitted:\n{output}");
+    }
+}
+
+#[test]
+fn annotation_text_requires_one_reachable_carrier() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let decode = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode annotation text witness")
+    };
+    let single = decode(include_bytes!("tests/data/ap04_single_text.p21"));
+    let PmiDefinition::Presentation { ref text, .. } = single.ir().model.pmi[0].definition else {
+        panic!("single text annotation has the wrong definition")
+    };
+    assert_eq!(text.as_deref(), Some("single text"));
+    assert!(!single
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PresentationAnnotationTextUnordered.kind()));
+    assert!(!single
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown records")
+        .iter()
+        .any(|record| record.id.0.ends_with("#1")));
+
+    let first = decode(include_bytes!("tests/data/ap04_composite_text_first.p21"));
+    let reordered = decode(include_bytes!(
+        "tests/data/ap04_composite_text_reordered.p21"
+    ));
+    for result in [&first, &reordered] {
+        let PmiDefinition::Presentation { ref text, .. } = result.ir().model.pmi[0].definition
+        else {
+            panic!("composite text annotation has the wrong definition")
+        };
+        assert!(text.is_none());
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::PresentationAnnotationTextUnordered.kind()
+                && loss.message.contains("2 reachable text carriers")
+        }));
+        let unknowns = result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown records");
+        for id in [1, 2, 3] {
+            assert!(
+                unknowns
+                    .iter()
+                    .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                "ambiguous text carrier #{id} was not retained"
+            );
+        }
+    }
+}
+
+#[test]
+fn composite_presentation_placement_does_not_depend_on_set_order() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let decode = |bytes: &[u8]| {
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode composite placement witness")
+    };
+    let first = decode(include_bytes!(
+        "tests/data/ap12_composite_placement_first.p21"
+    ));
+    let reordered = decode(include_bytes!(
+        "tests/data/ap12_composite_placement_reordered.p21"
+    ));
+    for result in [&first, &reordered] {
+        let PmiDefinition::Presentation {
+            ref text,
+            ref placement,
+            ..
+        } = result.ir().model.pmi[0].definition
+        else {
+            panic!("composite annotation has the wrong definition")
+        };
+        assert!(text.is_none());
+        assert!(placement.is_none());
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code == StepLossCode::PresentationAnnotationPlacementAmbiguous.kind()
+                && loss.message.contains("2 reachable placement carriers")
+        }));
+        let unknowns = result
+            .ir()
+            .native_unknowns("step")
+            .expect("STEP unknown records");
+        for id in [11, 12, 13] {
+            assert!(
+                unknowns
+                    .iter()
+                    .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+                "ambiguous presentation carrier #{id} was not retained"
+            );
+        }
+    }
+}
+
+#[test]
+fn associated_curve_placement_does_not_create_presentation_ambiguity() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    const EPS_PLACEMENT_COORDINATE: f64 = 1.0e-12;
+
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "tests/data/ap12_associated_curve_placement.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode associated-curve placement witness");
+    let PmiDefinition::Presentation {
+        ref text,
+        ref placement,
+        ..
+    } = result.ir().model.pmi[0].definition
+    else {
+        panic!("associated-curve annotation has the wrong definition")
+    };
+    assert_eq!(text.as_deref(), Some("note"));
+    let transform = placement.as_ref().expect("text placement");
+    assert!((transform.rows[0][3] - 10.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!((transform.rows[1][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!((transform.rows[2][3] - 0.0).abs() < EPS_PLACEMENT_COORDINATE);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PresentationAnnotationPlacementAmbiguous.kind()
+    }));
+    assert!(result
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id.as_str() == "step:data:curve#9"));
 }
 
 #[test]
@@ -551,6 +994,34 @@ pub(crate) fn decode_transfers_ap242_presentation_pmi() {
             && transform.rows[1][3] == 20.0
             && transform.rows[2][3] == 30.0
     ));
+}
+
+#[test]
+fn annotation_occurrence_with_leader_line_visibility_is_transferred() {
+    let result = decode_inline(
+        "#1=ANNOTATION_PLACEHOLDER_OCCURRENCE_WITH_LEADER_LINE('hidden placeholder',(),$,$);\n\
+#2=INVISIBILITY((#1));",
+    );
+    let annotation = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("hidden placeholder"))
+        .expect("placeholder occurrence is presentation PMI");
+    assert_eq!(annotation.visible, Some(false));
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::DecodeWarning.kind()
+            && loss
+                .message
+                .contains("INVISIBILITY #2 targets unsupported item #1")
+    }));
+    assert!(!result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown records")
+        .iter()
+        .any(|record| record.id.0 == "step:data:invisibility#2"));
 }
 
 #[test]
@@ -826,7 +1297,7 @@ fn complex_datum_names_use_the_inherited_shape_aspect_name() {
 
     let result = decode_inline(
         "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
-#7=(DATUM('A') SHAPE_ASPECT('datum name','',#5,.F.));
+#7=(DATUM('A') SHAPE_ASPECT('','',#5,.F.));
 #8=(DATUM_SYSTEM((#20)) SHAPE_ASPECT('system name','',#5,.F.));
 #20=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,#7,());
 #99=UNRESOLVED_PRODUCT();",
@@ -844,26 +1315,38 @@ fn complex_datum_names_use_the_inherited_shape_aspect_name() {
         })
         .map(|annotation| annotation.name.as_deref())
         .collect::<Vec<_>>();
-    assert_eq!(names, [Some("datum name"), Some("system name")]);
+    assert_eq!(names, [None, Some("system name")]);
 }
 
 #[test]
 fn complex_datum_reads_identification_from_its_named_partial() {
     use cadmpeg_ir::pmi::{PmiDefinition, PmiTarget};
 
-    let result = decode_inline(
-        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
-#7=(COMMON_DATUM() DATUM('A') DATUM_FEATURE() SHAPE_ASPECT('datum name','',#5,.F.));
-#99=UNRESOLVED_PRODUCT();",
-    );
-    let datum = result
+    let canonical = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "tests/data/ap01_complex_datum_canonical.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode canonical complex datum");
+    let reordered = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "tests/data/ap01_complex_datum_reordered.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode reordered complex datum");
+
+    let datum = canonical
         .ir()
         .model
         .pmi
         .iter()
         .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#7")
         .expect("complex datum");
-    assert_eq!(datum.name.as_deref(), Some("datum name"));
+    assert_eq!(datum.name, None);
     assert!(matches!(
         &datum.definition,
         PmiDefinition::Datum { identification } if identification == "A"
@@ -874,4 +1357,305 @@ fn complex_datum_reads_identification_from_its_named_partial() {
             source_id: "#7".into()
         }]
     );
+
+    let reordered_datum = reordered
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#7")
+        .expect("reordered complex datum");
+    assert_eq!(reordered_datum.name, datum.name);
+    assert_eq!(reordered_datum.targets, datum.targets);
+    assert_eq!(reordered_datum.definition, datum.definition);
+    assert!(reordered.report().losses.iter().any(|loss| loss.code
+        == StepLossCode::ParseNoncanonicalSyntax.kind()
+        && loss
+            .message
+            .contains("complex partial records are not alphabetical")));
+}
+
+#[test]
+fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
+    use cadmpeg_ir::pmi::{DatumTargetForm, DimensionKind, PmiDefinition, PmiTarget};
+
+    const EPS_POINT_COORDINATE: f64 = 1.0e-12;
+
+    let source =
+        String::from_utf8(include_bytes!("../../../tests/fixtures/ap203_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "ENDSEC;\nEND-ISO-10303-21;",
+                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\n#45=DATUM_TARGET('datum target','circle',#38,.F.,'A');\n#46=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#45,#32,#29);\n#47=SHAPE_ASPECT('datum basis','DATUM TARGET',#38,.T.);\n#48=FEATURE_FOR_DATUM_TARGET_RELATIONSHIP('','',#47,#45);\n#49=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#47,#32,#29);\n#50=CARTESIAN_POINT('isolated PMI point',(1.,2.,3.));\n#51=SHAPE_ASPECT('point feature','',#38,.T.);\n#52=DIMENSIONAL_SIZE(#51,'point dimension');\n#53=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#51,#32,#50);\n#54=SHAPE_ASPECT('curve feature','',#38,.T.);\n#55=DIMENSIONAL_SIZE(#54,'curve dimension');\n#56=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#54,#32,#16);\nENDSEC;\nEND-ISO-10303-21;",
+            );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode geometric item usage");
+    let dimension = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#41")
+        .expect("dimension annotation");
+    assert!(matches!(
+        dimension.definition,
+        PmiDefinition::Dimension {
+            dimension: DimensionKind::Diameter,
+            ..
+        }
+    ));
+    assert!(dimension.targets.contains(&PmiTarget::ShapeAspect {
+        source_id: "#39".into()
+    }));
+    assert!(dimension.targets.contains(&PmiTarget::Face {
+        face: cadmpeg_ir::ids::FaceId("step:data:face#29".into())
+    }));
+    assert!(dimension.targets.contains(&PmiTarget::Vertex {
+        vertex: cadmpeg_ir::ids::VertexId("step:data:vertex#6".into())
+    }));
+    assert!(!result
+        .ir()
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| {
+            matches!(
+                record.id.0.as_str(),
+                "step:data:geometric_item_specific_usage#43"
+                    | "step:data:geometric_item_specific_usage#44"
+                    | "step:data:geometric_item_specific_usage#46"
+                    | "step:data:geometric_item_specific_usage#49"
+                    | "step:data:geometric_item_specific_usage#53"
+                    | "step:data:geometric_item_specific_usage#56"
+            )
+        }));
+    let datum_target = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("datum target"))
+        .expect("datum target annotation");
+    assert!(matches!(
+        &datum_target.definition,
+        PmiDefinition::DatumTarget {
+            form: DatumTargetForm::Circle,
+            identification,
+            ..
+        } if identification == "A"
+    ));
+    assert!(datum_target.targets.iter().any(|target| matches!(
+        target,
+        PmiTarget::Face { face } if face.as_str() == "step:data:face#29"
+    )));
+    assert!(matches!(
+        &datum_target.definition,
+        PmiDefinition::DatumTarget { basis, .. }
+            if basis.contains(&PmiTarget::ShapeAspect {
+                source_id: "#47".into()
+            })
+    ));
+    let point_dimension = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("point dimension"))
+        .expect("point dimension annotation");
+    assert!(point_dimension.targets.contains(&PmiTarget::Point {
+        point: "step:data:point#50".into()
+    }));
+    let point = result
+        .ir()
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.as_str() == "step:data:point#50")
+        .expect("isolated PMI point");
+    assert!((point.position.x - 1.0).abs() < EPS_POINT_COORDINATE);
+    assert!((point.position.y - 2.0).abs() < EPS_POINT_COORDINATE);
+    assert!((point.position.z - 3.0).abs() < EPS_POINT_COORDINATE);
+    let curve_dimension = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("curve dimension"))
+        .expect("curve dimension annotation");
+    assert!(curve_dimension.targets.contains(&PmiTarget::Curve {
+        curve: "step:data:curve#16".into()
+    }));
+
+    let mut output = Vec::new();
+    let report = write_step(
+        result.ir(),
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write geometric item usage");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
+    let output_text = String::from_utf8_lossy(&output);
+    assert!(output_text.contains("GEOMETRIC_ITEM_SPECIFIC_USAGE"));
+    assert!(output_text.contains("DATUM_TARGET("));
+    assert!(output_text.contains("FEATURE_FOR_DATUM_TARGET_RELATIONSHIP"));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written geometric item usage");
+    let roundtripped_dimension = roundtrip
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("diameter"))
+        .expect("roundtripped dimension");
+    assert!(roundtripped_dimension.targets.iter().any(|target| matches!(
+        target,
+        PmiTarget::Face { face } if face.as_str().starts_with("step:data:face#")
+    )));
+    let roundtripped_datum_target = roundtrip
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("datum target"))
+        .expect("roundtripped datum target");
+    assert!(roundtripped_datum_target
+        .targets
+        .iter()
+        .any(|target| matches!(
+            target,
+            PmiTarget::Face { face } if face.as_str().starts_with("step:data:face#")
+        )));
+    assert!(matches!(
+        &roundtripped_datum_target.definition,
+        PmiDefinition::DatumTarget { basis, .. }
+            if basis
+                .iter()
+                .any(|target| matches!(target, PmiTarget::ShapeAspect { .. }))
+    ));
+    let roundtripped_point_dimension = roundtrip
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("point dimension"))
+        .expect("roundtripped point dimension");
+    assert!(roundtripped_point_dimension
+        .targets
+        .iter()
+        .any(|target| matches!(target, PmiTarget::Point { .. })));
+    let roundtripped_curve_dimension = roundtrip
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("curve dimension"))
+        .expect("roundtripped curve dimension");
+    assert!(roundtripped_curve_dimension
+        .targets
+        .iter()
+        .any(|target| matches!(target, PmiTarget::Curve { .. })));
+}
+
+#[test]
+fn datum_target_writes_and_round_trips() {
+    use cadmpeg_ir::pmi::{DatumTargetForm, PmiDefinition, PmiTarget};
+
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_semantic_pmi.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#30=DATUM_TARGET('datum target','circle',#5,.F.,'A');\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode datum target");
+    let target = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("datum target"))
+        .expect("datum target annotation");
+    assert_eq!(
+        target.targets,
+        [PmiTarget::ShapeAspect {
+            source_id: "#30".into()
+        }]
+    );
+    assert!(matches!(
+        &target.definition,
+        PmiDefinition::DatumTarget {
+            form: DatumTargetForm::Circle,
+            identification,
+            ..
+        } if identification == "A"
+    ));
+
+    let mut output = Vec::new();
+    let report = write_step(
+        result.ir(),
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write datum target");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
+    assert!(String::from_utf8_lossy(&output).contains("DATUM_TARGET("));
+
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written datum target");
+    assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::DatumTarget {
+            form: DatumTargetForm::Circle,
+            identification,
+            ..
+        } if annotation.name.as_deref() == Some("datum target")
+            && annotation
+                .targets
+                .iter()
+                .any(|target| matches!(target, PmiTarget::ShapeAspect { .. }))
+            && identification == "A"
+    )));
+
+    let mut source_less_ir = result.ir().clone();
+    source_less_ir
+        .model
+        .pmi
+        .iter_mut()
+        .find(|annotation| annotation.name.as_deref() == Some("datum target"))
+        .expect("source datum target")
+        .targets
+        .clear();
+    let mut source_less_output = Vec::new();
+    let source_less_report = write_step(
+        &source_less_ir,
+        &mut source_less_output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write source-less datum target");
+    assert!(!source_less_report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::PmiAnnotationNotWritten.kind()));
+    assert!(String::from_utf8_lossy(&source_less_output).contains("DATUM_TARGET("));
 }

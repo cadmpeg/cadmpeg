@@ -37,10 +37,10 @@ use crate::wire::records::{
     ConsolidatedPcurve, ConsolidatedRecord,
 };
 
-const EPS_TRANSVERSE_RESIDUAL: f64 = 1e-6;
-const EPS_SAMPLE_AGREEMENT: f64 = 1e-6;
-const EPS_ENDPOINT_RANGE: f64 = 1e-6;
-const EPS_CIRCLE_ENDPOINT: f64 = 1e-9;
+const EPS_TRANSVERSE_RESIDUAL: f64 = 1.0e-6;
+const EPS_SAMPLE_AGREEMENT: f64 = 1.0e-6;
+const EPS_ENDPOINT_RANGE: f64 = 1.0e-6;
+const EPS_CIRCLE_ENDPOINT: f64 = 1.0e-9;
 
 /// Serialized consolidated edge block formed by two pcurves and one range packet.
 #[derive(Debug, Clone)]

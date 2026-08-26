@@ -26,8 +26,11 @@ path_test_includes = 0
 test_line_debt = 0
 production_line_debt = 0
 
+[reasons]
+from_endian_bytes = "The remaining 47 calls are intentional exceptions retained after merging the mainline codec work. None reads a bounded decode window as a standard-width scalar."
+
 [ceilings]
-from_endian_bytes = 0
+from_endian_bytes = 47
 codec_error_malformed_format = 0
 loss_note_struct_literals = 0
 bare_tolerance_literals = 0

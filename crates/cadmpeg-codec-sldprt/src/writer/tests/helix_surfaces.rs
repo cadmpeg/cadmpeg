@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
@@ -439,7 +437,7 @@ fn semantic_writer_round_trips_native_axis_helix() {
             start_angle: Angle(value),
             clockwise: true,
             ..
-        } if (value - std::f64::consts::FRAC_PI_2).abs() < 1e-12
+        } if (value - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
 }
 
@@ -1471,7 +1469,7 @@ fn semantic_writer_round_trips_typed_revolution() {
                 ..
             },
             op: BooleanOp::Join,
-        } if (*value - std::f64::consts::PI).abs() < 1e-12
+        } if (*value - std::f64::consts::PI).abs() < 1.0e-12
     ));
 
     {
@@ -1614,7 +1612,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
                 ..
             },
             op: BooleanOp::Join,
-        } if profile == &profile_feature && (*value - 90f64.to_radians()).abs() < 1e-12
+        } if profile == &profile_feature && (*value - 90f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         decoded.ir().model.features[2].definition,
@@ -1626,7 +1624,7 @@ fn semantic_writer_round_trips_all_revolution_extents() {
                 ..
             },
             op: BooleanOp::NewBody,
-        } if (value - std::f64::consts::PI).abs() < 1e-12
+        } if (value - std::f64::consts::PI).abs() < 1.0e-12
     ));
     assert!(matches!(
         decoded.ir().model.features[3].definition,
@@ -1639,8 +1637,8 @@ fn semantic_writer_round_trips_all_revolution_extents() {
                 ..
             },
             op: BooleanOp::Cut,
-        } if (first - 30f64.to_radians()).abs() < 1e-12
-            && (second - 60f64.to_radians()).abs() < 1e-12
+        } if (first - 30f64.to_radians()).abs() < 1.0e-12
+            && (second - 60f64.to_radians()).abs() < 1.0e-12
     ));
 
     {

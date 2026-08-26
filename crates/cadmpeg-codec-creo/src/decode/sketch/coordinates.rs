@@ -29,8 +29,8 @@ use super::skamp::{
     section_skamp_selected_point, SectionPointSource, SectionSymmetryAxis,
 };
 
-const EPS_MISSING_COEFFICIENT: f64 = 1e-12;
-const EPS_COORDINATE_AGREEMENT: f64 = 1e-9;
+const EPS_MISSING_COEFFICIENT: f64 = 1.0e-12;
+const EPS_COORDINATE_AGREEMENT: f64 = 1.0e-9;
 
 pub(crate) fn resolved_section_coordinates(
     definition: &crate::feature::FeatureDefinition,

@@ -134,7 +134,7 @@ note = "The parser slices the sequence field from zero-based 73..80, which is 1-
 name = "parameter_data_card"
 kind = "column"
 section = "Physical representation"
-anchor = "Parameter Data cards instead use bytes 65 through 72 for the right-aligned Directory Entry back-pointer, byte 73 for the `P` marker, and bytes 74 through 80 for the Parameter Data sequence."
+anchor = "Parameter Data cards instead use byte 65 for an ASCII space, bytes 66 through 72 for the right-aligned positive seven-column Directory Entry sequence, byte 73 for the `P` marker, and bytes 74 through 80 for the Parameter Data sequence."
 size = 80
 note = "The only card whose columns 1-72 are split."
 
@@ -143,7 +143,7 @@ name = "parameter_fragment"
 columns = "1-64"
 type = "text"
 source = "derived"
-anchor = "Parameter Data cards instead use bytes 65 through 72 for the right-aligned Directory Entry back-pointer"
+anchor = "Parameter Data cards instead use byte 65 for an ASCII space, bytes 66 through 72 for the right-aligned positive seven-column Directory Entry sequence"
 note = "Columns 1-64 are the remainder of the 1-72 data area once the back-pointer claims 65-72. The Parameter Data section states the same span outright: \"Bytes 1 through 64 of Parameter Data cards form parameter fragments.\""
 
 [[record.field]]
@@ -151,7 +151,7 @@ name = "de_back_pointer"
 columns = "65-72"
 type = "text"
 source = "spec"
-anchor = "Parameter Data cards instead use bytes 65 through 72 for the right-aligned Directory Entry back-pointer"
+anchor = "Parameter Data cards instead use byte 65 for an ASCII space, bytes 66 through 72 for the right-aligned positive seven-column Directory Entry sequence"
 
 [[record.field]]
 name = "section_marker"
@@ -365,7 +365,7 @@ anchor = "The remaining data area is blank."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-iges/src/card.rs"
-contains = "terminate[0].payload.get(..32)"
+contains = "terminate.payload.get(..32)"
 note = "The parser takes the first 32 columns of the Terminate card as the four eight-column fields."
 
 # --- Section markers --------------------------------------------------------

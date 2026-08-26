@@ -5,17 +5,19 @@
 //! B-spline conversion, tensor-product NURBS isocurve extraction, circular
 //! interval canonicalization, and exact circular-helix fitting.
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry,
     ProceduralCurveDefinition,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-const EPS_NURBS_CANONICAL_MODEL_CURVE_RANGE_E9: f64 = 1e-9;
-
-const EPS_PERIODIC_RANGE: f64 = 1e-9;
-const EPS_HELIX_FRAME: f64 = 1e-9;
-const SMALL_RELATIVE_HELIX_TOLERANCE: f64 = 1e-6;
+const EPS_PERIODIC_SWEEP: f64 = 1.0e-9;
+const EPS_HELIX_FRAME: f64 = 1.0e-9;
+const EPS_HELIX_RADIUS: f64 = 1.0e-9;
+const EPS_HELIX_ORTHO: f64 = 1.0e-9;
+const EPS_HELIX_PITCH_ALIGNMENT: f64 = 1.0e-9;
+const EPS_RELATIVE_TOLERANCE: f64 = 1.0e-6;
 
 fn finite_point2(point: Point2) -> bool {
     [point.u, point.v].into_iter().all(f64::is_finite)
@@ -278,8 +280,7 @@ pub(crate) fn canonical_model_curve_range(
         }
         CurveGeometry::Nurbs(nurbs) => {
             let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
-            let tolerance =
-                1.0e-9_f64.max((upper - lower).abs() * EPS_NURBS_CANONICAL_MODEL_CURVE_RANGE_E9);
+            let tolerance = 1.0e-9_f64.max((upper - lower).abs() * 1.0e-9);
             if nurbs.periodic {
                 (range[1] - range[0] <= upper - lower + tolerance).then_some(range)
             } else if range[0] >= lower && range[1] <= upper {
@@ -376,11 +377,11 @@ pub(crate) fn reverse_helix_definition(
 /// Normalize an increasing circular interval to the canonical one-turn domain.
 pub(crate) fn canonical_periodic_range(range: [f64; 2]) -> Option<[f64; 2]> {
     let sweep = range[1] - range[0];
-    if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + EPS_PERIODIC_RANGE {
+    if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + EPS_PERIODIC_SWEEP {
         return None;
     }
     let mut start = range[0].rem_euclid(std::f64::consts::TAU);
-    if std::f64::consts::TAU - start <= EPS_PERIODIC_RANGE {
+    if std::f64::consts::TAU - start <= EPS_PERIODIC_SWEEP {
         start = 0.0;
     }
     Some([start, start + sweep])
@@ -439,7 +440,7 @@ pub(crate) fn circular_helix_cache(
         || !axis_norm.is_finite()
         || (axis_norm - 1.0).abs() > EPS_HELIX_FRAME
         || !pitch_norm.is_finite()
-        || (radius - minor_radius).abs() > EPS_HELIX_FRAME * radius.max(minor_radius)
+        || (radius - minor_radius).abs() > EPS_HELIX_RADIUS * radius.max(minor_radius)
         || !angle_range.iter().copied().all(f64::is_finite)
         || angle_range[0] >= angle_range[1]
         || *apex_factor != 0.0
@@ -455,13 +456,13 @@ pub(crate) fn circular_helix_cache(
         normalized_dot(pitch, axis)
     };
     if !normalized_dot_major_minor.is_finite()
-        || normalized_dot_major_minor.abs() > EPS_HELIX_FRAME
+        || normalized_dot_major_minor.abs() > EPS_HELIX_ORTHO
         || !normalized_dot_major_axis.is_finite()
-        || normalized_dot_major_axis.abs() > EPS_HELIX_FRAME
+        || normalized_dot_major_axis.abs() > EPS_HELIX_ORTHO
         || !normalized_dot_minor_axis.is_finite()
-        || normalized_dot_minor_axis.abs() > EPS_HELIX_FRAME
+        || normalized_dot_minor_axis.abs() > EPS_HELIX_ORTHO
         || !normalized_dot_pitch_axis.is_finite()
-        || normalized_dot_pitch_axis.abs() < 1.0 - EPS_HELIX_FRAME
+        || normalized_dot_pitch_axis.abs() < 1.0 - EPS_HELIX_PITCH_ALIGNMENT
     {
         return None;
     }
@@ -470,7 +471,7 @@ pub(crate) fn circular_helix_cache(
         return None;
     }
     let relative_tolerance = requested_tolerance / radius;
-    let max_step = if relative_tolerance < SMALL_RELATIVE_HELIX_TOLERANCE {
+    let max_step = if relative_tolerance < EPS_RELATIVE_TOLERANCE {
         2.0 * (2.0 * relative_tolerance).sqrt()
     } else {
         2.0 * (1.0 - relative_tolerance).clamp(-1.0, 1.0).acos()
@@ -758,8 +759,7 @@ fn nurbs_basis_values(
     {
         return None;
     }
-    let mut basis =
-        cadmpeg_core::decode::alloc_filled(count + degree, 0.0, "catia NURBS basis values").ok()?;
+    let mut basis = alloc_filled(count + degree, 0.0, "catia NURBS basis values").ok()?;
     for (index, value) in basis.iter_mut().enumerate() {
         if (knots.get(index)? <= &parameter && &parameter < knots.get(index + 1)?)
             || (parameter == *knots.last()? && index + 1 == count)
@@ -844,8 +844,8 @@ mod tests {
         for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
             let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
             let expected = pcurve_uv(&geometry, source_parameter).expect("source evaluation");
-            assert!((actual.u - expected.u).abs() < 1e-12);
-            assert!((actual.v - expected.v).abs() < 1e-12);
+            assert!((actual.u - expected.u).abs() < 1.0e-12);
+            assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
     }
 
@@ -869,7 +869,7 @@ mod tests {
             {
                 let actual = curve_point(&reversed, parameter).expect("reversed endpoint");
                 let expected = curve_point(&geometry, source_parameter).expect("source endpoint");
-                assert!(actual.distance(expected) < 1e-12);
+                assert!(actual.distance(expected) < 1.0e-12);
             }
         }
     }
@@ -890,7 +890,7 @@ mod tests {
             let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
             let expected = curve_point(&geometry, range[0] + range[1] - parameter)
                 .expect("source NURBS point");
-            assert!(actual.distance(expected) < 1e-12);
+            assert!(actual.distance(expected) < 1.0e-12);
         }
         assert_eq!(reversed_range, range);
     }
@@ -932,7 +932,7 @@ mod tests {
         for angle in [range[0], 0.75, range[1]] {
             let actual = evaluate(&reversed, angle);
             let expected = evaluate(&definition, range[0] + range[1] - angle);
-            assert!(actual.distance(expected) < 1e-12);
+            assert!(actual.distance(expected) < 1.0e-12);
         }
         assert_eq!(reversed_range, range);
     }

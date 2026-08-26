@@ -70,7 +70,7 @@ pub(crate) fn exact_one_sided_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    const PROFILE_NORMAL_UNIT_EPS: f64 = 1e-12;
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
     let frame_length = paired_at.checked_sub(start)?;
     let reference_count_delta = reference_count_at.checked_sub(start)?;
     let variant = variant(

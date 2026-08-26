@@ -18,19 +18,19 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
 use std::collections::{HashMap, HashSet};
 
-const EPS_AXES_LINE_REFERENCE_DIRECTION_E9: f64 = 1e-9;
-const EPS_AXES_DECLARED_LINE_REFERENCE_DIRECTIONS_E9: f64 = 1e-9;
-const EPS_AXES_CANONICAL_UNIT_DIRECTION_E12: f64 = 1e-12;
-const EPS_AXES_LINEAR_PATTERN_DISPLAY_DIRECTIONS_E9: f64 = 1e-9;
-const EPS_AXES_COMPACT_LINE_REFERENCE_DIRECTIONS_E9: f64 = 1e-9;
-const EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9: f64 = 1e-9;
-const EPS_AXES_REVOLUTION_TEMPORARY_AXIS_E9: f64 = 1e-9;
-const EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9: f64 = 1e-9;
-const EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9: f64 = 1e-9;
-const EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9: f64 = 1e-9;
-const EPS_AXES_COMMON_GENERATED_SURFACE_AXIS_E9: f64 = 1e-9;
-const EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9: f64 = 1e-9;
-const EPS_AXES_PROFILE_ROSTER_PRINCIPAL_AXIS_ENDPOINTS_E9: f64 = 1e-9;
+const EPS_AXES_LINE_REFERENCE_DIRECTION_E9: f64 = 1.0e-9;
+const EPS_AXES_DECLARED_LINE_REFERENCE_DIRECTIONS_E9: f64 = 1.0e-9;
+const EPS_AXES_CANONICAL_UNIT_DIRECTION_E12: f64 = 1.0e-12;
+const EPS_AXES_LINEAR_PATTERN_DISPLAY_DIRECTIONS_E9: f64 = 1.0e-9;
+const EPS_AXES_COMPACT_LINE_REFERENCE_DIRECTIONS_E9: f64 = 1.0e-9;
+const EPS_AXES_REVOLUTION_LINE_REFERENCE_INPUTS_E9: f64 = 1.0e-9;
+const EPS_AXES_REVOLUTION_TEMPORARY_AXIS_E9: f64 = 1.0e-9;
+const EPS_AXES_BIND_PROFILE_REVOLUTION_AXES_E9: f64 = 1.0e-9;
+const EPS_AXES_PROFILE_ROSTER_CONSTRUCTION_AXIS_E9: f64 = 1.0e-9;
+const EPS_AXES_PROFILE_GENERATED_SURFACE_AXIS_E9: f64 = 1.0e-9;
+const EPS_AXES_COMMON_GENERATED_SURFACE_AXIS_E9: f64 = 1.0e-9;
+const EPS_AXES_PROFILE_ROSTER_ORIGIN_AXIS_ENDPOINTS_E9: f64 = 1.0e-9;
+const EPS_AXES_PROFILE_ROSTER_PRINCIPAL_AXIS_ENDPOINTS_E9: f64 = 1.0e-9;
 
 pub(super) fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
     let class_offset = usize::try_from(class_offset).ok()?;
@@ -170,7 +170,7 @@ pub(super) fn linear_pattern_display_directions(
 ) -> Vec<Vector3> {
     const VALUE_OFFSET: usize = 32;
     const DIRECTION_OFFSET: usize = 161;
-    const LENGTH_TOLERANCE_M: f64 = 1e-8;
+    const LENGTH_TOLERANCE_M: f64 = 1.0e-8;
 
     let end = object_end.min(payload.len());
     ["D3", "D4"]
@@ -1147,7 +1147,7 @@ pub(super) fn profile_roster_construction_axis(
     sketch: &Sketch,
     surfaces: &[Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
-    const QUANTUM: f64 = 1e-8;
+    const QUANTUM: f64 = 1.0e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
 
@@ -1233,9 +1233,9 @@ fn profile_generated_surface_axis(
     transform: &MarkerTransform,
     surfaces: &[Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
-    const QUANTUM: f64 = 1e-8;
+    const QUANTUM: f64 = 1.0e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
-    const LINE_TOLERANCE: f64 = 1e-6;
+    const LINE_TOLERANCE: f64 = 1.0e-6;
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
 
     let mut axis = common_generated_surface_axis(surfaces)?;
@@ -1309,8 +1309,8 @@ fn profile_generated_surface_axis(
 pub(super) fn common_generated_surface_axis(
     surfaces: &[Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
-    const DIRECTION_TOLERANCE: f64 = 1e-9;
-    const LINE_TOLERANCE: f64 = 1e-6;
+    const DIRECTION_TOLERANCE: f64 = 1.0e-9;
+    const LINE_TOLERANCE: f64 = 1.0e-6;
 
     let axes = surfaces
         .iter()
@@ -1674,7 +1674,7 @@ fn bounded_profile_axis_coordinates(
     curve_endpoints: &HashSet<&str>,
     endpoints: [[f64; 2]; 2],
 ) -> bool {
-    const TOLERANCE_M: f64 = 1e-9;
+    const TOLERANCE_M: f64 = 1.0e-9;
 
     let [[start_u, start_v], [end_u, end_v]] = endpoints;
     let delta_u = end_u - start_u;

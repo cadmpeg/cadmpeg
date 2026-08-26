@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode/encode equivariance and fixpoint tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
 
-use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
@@ -90,9 +88,9 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
             let expected = apply(*reference_point);
             assert!(
                 decoded.ir().model.points.iter().any(|point| {
-                    (point.position.x - expected.x).abs() < 1e-9
-                        && (point.position.y - expected.y).abs() < 1e-9
-                        && (point.position.z - expected.z).abs() < 1e-9
+                    (point.position.x - expected.x).abs() < 1.0e-9
+                        && (point.position.y - expected.y).abs() < 1.0e-9
+                        && (point.position.z - expected.z).abs() < 1.0e-9
                 }),
                 "rigid motion not preserved for point {reference_point:?}"
             );
@@ -190,7 +188,7 @@ fn decode_is_equivariant_under_rigid_translation() {
     for (b, m) in base_positions.iter().zip(&moved_positions) {
         for axis in 0..3 {
             assert!(
-                (b[axis] + t[axis] - m[axis]).abs() < 1e-6,
+                (b[axis] + t[axis] - m[axis]).abs() < 1.0e-6,
                 "axis {axis}: {b:?} + {t:?} != {m:?}"
             );
         }

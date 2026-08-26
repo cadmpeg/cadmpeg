@@ -883,8 +883,8 @@ fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
         .get(&2)
         .copied()
         .expect("point");
-    assert!(solved_point[0].abs() <= 1e-12);
-    assert!((solved_point[1] - 2.0).abs() <= 1e-12);
+    assert!(solved_point[0].abs() <= 1.0e-12);
+    assert!((solved_point[1] - 2.0).abs() <= 1.0e-12);
     assert_eq!(
         resolved_section_scalar_values(&solved).get(&(3, 9)),
         Some(&2.0)
@@ -1280,7 +1280,7 @@ fn section_line_requires_two_solved_points() {
     assert!(section_line_geometry(&points, &segment).is_none());
     points.insert(9, [2.0 + 1e-13, 3.0]);
     assert!(section_line_geometry(&points, &segment).is_none());
-    points.insert(9, [2.0 + 1e-10, 3.0]);
+    points.insert(9, [2.0 + 1.0e-10, 3.0]);
     assert!(section_line_geometry(&points, &segment).is_some());
 }
 
@@ -1777,8 +1777,8 @@ fn intersects_evaluated_section_carriers() {
     };
     let intersection = intersect_section_line_arc(&endpoint_line, &circle_half)
         .expect("line has one endpoint on the arc");
-    assert!((intersection[0] - 2.0).abs() <= 1e-12);
-    assert!(intersection[1].abs() <= 1e-12);
+    assert!((intersection[0] - 2.0).abs() <= 1.0e-12);
+    assert!(intersection[1].abs() <= 1.0e-12);
     let one_crossing = SketchGeometry::Line {
         start: cadmpeg_ir::math::Point2::new(0.0, 0.0),
         end: cadmpeg_ir::math::Point2::new(3.0, 0.0),

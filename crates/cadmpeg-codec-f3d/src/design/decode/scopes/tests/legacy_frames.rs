@@ -140,7 +140,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
 
 #[test]
 fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
-    const EPS_WORK_PLANE_CLASS_350_TEST_VALUE: f64 = 1e-12;
+    const EPS_WORK_PLANE_CLASS_350_TEST_VALUE: f64 = 1.0e-12;
 
     let transform: [[f64; 4]; 4] = [
         [0.0, -1.0, 0.0, 4.0],

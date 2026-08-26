@@ -23,26 +23,26 @@ use crate::records::{
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-const EPS_HISTORY_HEM_GAP_LENGTH_FORM_E7: f64 = 1e-7;
-const EPS_HISTORY_HEM_DIRECTION_FROM_TRANSITION_E7: f64 = 1e-7;
-const EPS_HISTORY_PARALLEL_DIRECTIONS_E7: f64 = 1e-7;
-const EPS_HISTORY_RESOLVE_THREAD_FACE_BY_TRANSITION_E9: f64 = 1e-9;
-const EPS_HISTORY_CYCLIC_POINT_SUBSEQUENCE_E12: f64 = 1e-12;
-const EPS_HISTORY_SAME_AXIS_LINE_E9: f64 = 1e-9;
-const EPS_HISTORY_SAME_AXIS_LINE_E8: f64 = 1e-8;
-const EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9: f64 = 1e-9;
-const EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9: f64 = 1e-9;
-const EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8: f64 = 1e-8;
-const EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9: f64 = 1e-9;
+const EPS_HISTORY_HEM_GAP_LENGTH_FORM_E7: f64 = 1.0e-7;
+const EPS_HISTORY_HEM_DIRECTION_FROM_TRANSITION_E7: f64 = 1.0e-7;
+const EPS_HISTORY_PARALLEL_DIRECTIONS_E7: f64 = 1.0e-7;
+const EPS_HISTORY_RESOLVE_THREAD_FACE_BY_TRANSITION_E9: f64 = 1.0e-9;
+const EPS_HISTORY_CYCLIC_POINT_SUBSEQUENCE_E12: f64 = 1.0e-12;
+const EPS_HISTORY_SAME_AXIS_LINE_E9: f64 = 1.0e-9;
+const EPS_HISTORY_SAME_AXIS_LINE_E8: f64 = 1.0e-8;
+const EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9: f64 = 1.0e-9;
+const EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9: f64 = 1.0e-9;
+const EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8: f64 = 1.0e-8;
+const EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9: f64 = 1.0e-9;
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
 /// Relative tolerance for matching independently decoded millimetre point carriers.
-const WORK_POINT_POSITION_TOLERANCE: f64 = 1e-9;
+const WORK_POINT_POSITION_TOLERANCE: f64 = 1.0e-9;
 /// Relative tolerance for admitting an oriented planar Hole support face.
-const HOLE_SUPPORT_NORMAL_TOLERANCE: f64 = 1e-9;
+const HOLE_SUPPORT_NORMAL_TOLERANCE: f64 = 1.0e-9;
 /// Relative tolerance for the Hole point lying on its support plane.
-const HOLE_SUPPORT_POINT_TOLERANCE: f64 = 1e-8;
+const HOLE_SUPPORT_POINT_TOLERANCE: f64 = 1.0e-8;
 
 pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
     if history.states.is_empty()

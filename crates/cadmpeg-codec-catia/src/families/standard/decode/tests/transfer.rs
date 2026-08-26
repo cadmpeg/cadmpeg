@@ -128,7 +128,7 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .model
         .points
         .iter()
-        .any(|p| (p.position.x - 10.0).abs() < 1e-6));
+        .any(|p| (p.position.x - 10.0).abs() < 1.0e-6));
 
     // Cylinder and tag-bridged plane carriers are decoded from their stored
     // parameters.
@@ -142,8 +142,8 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .contains(&"catia:standard:circle#0".to_string()));
     match &result.ir().model.surfaces[0].geometry {
         SurfaceGeometry::Cylinder { radius, axis, .. } => {
-            assert!((radius - 5.0).abs() < 1e-6);
-            assert!((axis.z - 1.0).abs() < 1e-6);
+            assert!((radius - 5.0).abs() < 1.0e-6);
+            assert!((axis.z - 1.0).abs() < 1.0e-6);
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
@@ -154,14 +154,14 @@ fn decode_standard_transfers_vertices_and_cylinder() {
             normal,
             u_axis,
         }
-            if (origin.x - 1.0).abs() < 1e-6
-                && (origin.y - 2.0).abs() < 1e-6
-                && (origin.z - 3.0).abs() < 1e-6
-                && normal.x.abs() < 1e-6
-                && normal.y.abs() < 1e-6
-                && (normal.z.abs() - 1.0).abs() < 1e-6
-                && (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z - 1.0).abs() < 1e-6
-                && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs() < 1e-6
+            if (origin.x - 1.0).abs() < 1.0e-6
+                && (origin.y - 2.0).abs() < 1.0e-6
+                && (origin.z - 3.0).abs() < 1.0e-6
+                && normal.x.abs() < 1.0e-6
+                && normal.y.abs() < 1.0e-6
+                && (normal.z.abs() - 1.0).abs() < 1.0e-6
+                && (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z - 1.0).abs() < 1.0e-6
+                && (u_axis.x * normal.x + u_axis.y * normal.y + u_axis.z * normal.z).abs() < 1.0e-6
     )));
 
     // Stored face/carrier rows do not establish a B-rep without a complete
@@ -660,7 +660,7 @@ fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
             else {
                 panic!("resolved normal offset is retained as an offset construction");
             };
-            assert!((*distance - offset).abs() < 1e-12);
+            assert!((*distance - offset).abs() < 1.0e-12);
             assert!(decoded.ir().model.surfaces.iter().any(|surface| {
                 surface.id == *support && matches!(surface.geometry, SurfaceGeometry::Nurbs(_))
             }));
@@ -721,7 +721,7 @@ fn decode_standard_transfers_exact_offset_construction() {
         let Some(actual) = actual else {
             panic!("offset parameter bound");
         };
-        assert!((actual - expected).abs() < 1e-12);
+        assert!((actual - expected).abs() < 1.0e-12);
     }
 }
 
@@ -764,7 +764,7 @@ fn decode_standard_transfers_construction_use_offset() {
         let Some(actual) = actual else {
             panic!("offset parameter bound");
         };
-        assert!((actual - expected).abs() < 1e-12);
+        assert!((actual - expected).abs() < 1.0e-12);
     }
 }
 

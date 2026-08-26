@@ -13,7 +13,7 @@ use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-const EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9: f64 = 1e-9;
+const EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9: f64 = 1.0e-9;
 
 const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 

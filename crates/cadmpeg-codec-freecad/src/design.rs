@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{alloc_filled, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -30,9 +30,13 @@ use cadmpeg_ir::spreadsheets::{
 };
 
 use crate::brep::ShapePayloadRecord;
-use crate::native::{EntryRecord, ObjectRecord, PropertyRecord, ValueRecord};
+use crate::native::{EntryRecord, ObjectRecord, PropertyRecord};
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
+const EXTERNAL_GEO_AXIS_COUNT: usize = 2;
+const EXTERNAL_GEOMETRY_MISSING_FLAG: u64 = 1 << 3;
+const DEFAULT_HELICAL_SWEEP_TOLERANCE: f64 = 0.1;
+const DEFAULT_PART_SPIRAL_SEGMENT_TURNS: f64 = 1.0;
 
 pub(crate) fn transfer(
     ir: &mut CadIr,
@@ -41,7 +45,7 @@ pub(crate) fn transfer(
     payloads: &[ShapePayloadRecord],
     entries: &[EntryRecord],
     program_version: Option<&str>,
-) -> Result<(), CodecError> {
+) -> Result<BTreeSet<String>, CodecError> {
     let properties_by_owner = properties.iter().fold(
         HashMap::<&str, Vec<&PropertyRecord>>::new(),
         |mut map, property| {
@@ -87,7 +91,7 @@ pub(crate) fn transfer(
         .iter()
         .map(|candidate| (feature_id(candidate), candidate.order))
         .collect::<HashMap<_, _>>();
-    let feature_ordinals = feature_ordinals(
+    let (feature_ordinals, mut cycle_affected) = feature_ordinals(
         objects,
         &properties_by_owner,
         &parent_by_member,
@@ -108,7 +112,7 @@ pub(crate) fn transfer(
             .cloned()
             .unwrap_or_default();
         let id = feature_id(object);
-        let definition = if is_spreadsheet(&object.type_name) {
+        let mut definition = if is_spreadsheet(&object.type_name) {
             ir.model.spreadsheets.push(append_spreadsheet(
                 &mut ir.model.parameters,
                 object,
@@ -120,20 +124,11 @@ pub(crate) fn transfer(
                 active_child: None,
             }
         } else if is_body(&object.type_name) {
-            FeatureDefinition::TreeNode {
-                role: FeatureTreeNodeRole::SolidBodies,
-                children: body_membership_property(&owned).map_or_else(Vec::new, |property| {
-                    property
-                        .links
-                        .iter()
-                        .filter_map(|link| link.object.as_deref())
-                        .filter_map(|target| feature_ids.get(target).cloned())
-                        .collect()
-                }),
-                active_child: linked_feature_ids(&owned, "Tip", &feature_ids)
-                    .into_iter()
-                    .next(),
-            }
+            body_definition(&owned, &feature_ids).unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
         } else if is_datum(&object.type_name) {
             datum_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -174,13 +169,12 @@ pub(crate) fn transfer(
                 }
             })
         } else if is_part_construction_geometry(&object.type_name) {
-            part_construction_geometry_definition(&object.type_name, &owned).unwrap_or_else(|| {
-                FeatureDefinition::Native {
+            part_construction_geometry_definition(&object.type_name, &owned, entries)
+                .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
                     properties: BTreeMap::new(),
-                }
-            })
+                })
         } else if is_primitive(&object.type_name) {
             primitive_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -191,7 +185,11 @@ pub(crate) fn transfer(
             })
         } else if is_boolean(&object.type_name) {
             boolean_definition(&object.type_name, &owned)
-                .or_else(|| cached_shape_definition(&owned))
+                .or_else(|| {
+                    (object.type_name != "PartDesign::Boolean")
+                        .then(|| cached_shape_definition(&owned))
+                        .flatten()
+                })
                 .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
@@ -251,6 +249,7 @@ pub(crate) fn transfer(
                 &feature_ids,
                 objects,
                 &properties_by_owner,
+                entries,
             )
             .unwrap_or_else(|| FeatureDefinition::Native {
                 kind: object.type_name.clone(),
@@ -295,8 +294,9 @@ pub(crate) fn transfer(
                         .get(profile_object.id.as_str())
                         .map(Vec::as_slice)
                         .unwrap_or_default();
-                    sketch_frame(profile_properties).1
-                });
+                    sketch_frame(profile_properties).map(|frame| frame.1)
+                })
+                .transpose()?;
             extrusion_definition(
                 &object.type_name,
                 &owned,
@@ -378,7 +378,7 @@ pub(crate) fn transfer(
                     properties: BTreeMap::new(),
                 }
             })
-        } else if object.type_name.contains("Fillet") {
+        } else if is_fillet(&object.type_name) {
             fillet_definition(&object.type_name, &owned, entries)
                 .or_else(|| cached_shape_definition(&owned))
                 .unwrap_or_else(|| FeatureDefinition::Native {
@@ -386,8 +386,8 @@ pub(crate) fn transfer(
                     parameters: native_parameters(&owned),
                     properties: BTreeMap::new(),
                 })
-        } else if object.type_name.contains("Chamfer") {
-            chamfer_definition(&object.type_name, &owned, entries)
+        } else if is_chamfer(&object.type_name) {
+            chamfer_definition(&object.type_name, &owned, entries, program_version)
                 .or_else(|| cached_shape_definition(&owned))
                 .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: object.type_name.clone(),
@@ -401,6 +401,13 @@ pub(crate) fn transfer(
                 properties: BTreeMap::new(),
             }
         };
+        if cycle_affected.contains(object.id.as_str()) {
+            definition = FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            };
+        }
         let semantic_dependencies = match &definition {
             FeatureDefinition::Pattern { seeds, .. } => seeds
                 .iter()
@@ -411,7 +418,7 @@ pub(crate) fn transfer(
                 .collect::<Vec<_>>(),
             _ => Vec::new(),
         };
-        let definition = post_processed_definition(definition, &owned);
+        let definition = post_processed_definition(definition, &object.type_name, &owned);
         append_operation_parameters(&mut ir.model.parameters, object, &owned);
         let outputs = payloads
             .iter()
@@ -426,47 +433,58 @@ pub(crate) fn transfer(
                     .cloned()
             })
             .collect();
-        let mut dependency_objects = object
-            .dependencies
-            .iter()
-            .filter(|_| !is_body(&object.type_name))
-            .map(|dependency| (dependency.as_str(), true))
-            .chain(
-                owned
-                    .iter()
-                    .flat_map(|property| &property.links)
-                    .filter_map(|link| link.object.as_deref())
-                    .map(|dependency| (dependency, false)),
-            )
-            .collect::<Vec<_>>();
-        let mut seen_dependencies = BTreeSet::new();
-        dependency_objects.retain(|(dependency, _)| seen_dependencies.insert(*dependency));
-        let mut dependencies = dependency_objects
-            .into_iter()
-            .filter_map(|(dependency, declared)| {
-                feature_ids
-                    .get(dependency)
-                    .cloned()
-                    .map(|feature| (feature, declared))
-            })
-            .filter(|(dependency, _)| {
-                ordinal_by_feature
-                    .get(dependency)
-                    .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
-            })
-            .map(|(dependency, _)| dependency)
-            .collect::<Vec<_>>();
-        for dependency in semantic_dependencies {
-            if !dependencies.contains(&dependency)
-                && ordinal_by_feature
-                    .get(&dependency)
-                    .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
-            {
-                dependencies.push(dependency);
+        let cycle_affected = cycle_affected.contains(object.id.as_str());
+        let dependencies = if cycle_affected {
+            // The native object and property arenas retain the exact cycle.
+            // A neutral edge would require a decoder-owned cycle break and
+            // would change when persisted declaration order changes.
+            Vec::new()
+        } else {
+            let mut dependency_objects = object
+                .dependencies
+                .iter()
+                .filter(|_| !is_body(&object.type_name))
+                .map(|dependency| (dependency.as_str(), true))
+                .chain(
+                    owned
+                        .iter()
+                        .flat_map(|property| &property.links)
+                        .filter_map(|link| link.object.as_deref())
+                        .map(|dependency| (dependency, false)),
+                )
+                .collect::<Vec<_>>();
+            let mut seen_dependencies = BTreeSet::new();
+            dependency_objects.retain(|(dependency, _)| seen_dependencies.insert(*dependency));
+            let mut dependencies = dependency_objects
+                .into_iter()
+                .filter_map(|(dependency, declared)| {
+                    feature_ids
+                        .get(dependency)
+                        .cloned()
+                        .map(|feature| (feature, declared))
+                })
+                .filter(|(dependency, declared)| {
+                    *declared
+                        || ordinal_by_feature
+                            .get(dependency)
+                            .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
+                })
+                .map(|(dependency, _)| dependency)
+                .collect::<Vec<_>>();
+            for dependency in semantic_dependencies {
+                if !dependencies.contains(&dependency)
+                    && ordinal_by_feature
+                        .get(&dependency)
+                        .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
+                {
+                    dependencies.push(dependency);
+                }
             }
-        }
+            dependencies
+        };
         let parent = parent_by_member
             .get(object.id.as_str())
+            .filter(|_| !cycle_affected)
             .filter(|parent| {
                 ordinal_by_feature
                     .get(*parent)
@@ -489,12 +507,120 @@ pub(crate) fn transfer(
             native_ref: Some(object.id.clone()),
         });
     }
-    bind_parameter_dependencies(&mut ir.model.parameters, objects);
-    Ok(())
+    let initial_cycle_affected_features = objects
+        .iter()
+        .filter(|object| cycle_affected.contains(object.id.as_str()))
+        .map(feature_id)
+        .collect::<BTreeSet<_>>();
+    let parameter_cycle_features = bind_parameter_dependencies(
+        &mut ir.model.parameters,
+        objects,
+        &initial_cycle_affected_features,
+    );
+    for object in objects {
+        if !parameter_cycle_features.contains(&feature_id(object)) {
+            continue;
+        }
+        cycle_affected.insert(object.id.clone());
+        if let Some(feature) = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.native_ref.as_deref() == Some(object.id.as_str()))
+        {
+            feature.definition = FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(
+                    properties_by_owner
+                        .get(object.id.as_str())
+                        .map(Vec::as_slice)
+                        .unwrap_or_default(),
+                ),
+                properties: BTreeMap::new(),
+            };
+            feature.dependencies.clear();
+            feature.parent = None;
+        }
+    }
+    Ok(cycle_affected)
 }
 
 fn body_membership_property<'a>(properties: &'a [&PropertyRecord]) -> Option<&'a PropertyRecord> {
-    property(properties, "Group").or_else(|| property(properties, "Model"))
+    match (property(properties, "Group"), property(properties, "Model")) {
+        (Some(group), None) | (None, Some(group)) if group.type_name == "App::PropertyLinkList" => {
+            Some(group)
+        }
+        _ => None,
+    }
+}
+
+fn body_membership_carrier_is_valid(properties: &[&PropertyRecord]) -> bool {
+    match (property(properties, "Group"), property(properties, "Model")) {
+        (None, None) => true,
+        (Some(group), None) | (None, Some(group)) => group.type_name == "App::PropertyLinkList",
+        (Some(_), Some(_)) => false,
+    }
+}
+
+fn body_definition(
+    properties: &[&PropertyRecord],
+    feature_ids: &HashMap<&str, FeatureId>,
+) -> Option<FeatureDefinition> {
+    if !body_membership_carrier_is_valid(properties) {
+        return None;
+    }
+    let children = body_membership_property(properties).map_or_else(Vec::new, |property| {
+        property
+            .links
+            .iter()
+            .filter_map(|link| link.object.as_deref())
+            .filter_map(|target| feature_ids.get(target).cloned())
+            .collect()
+    });
+    let active_child = match body_tip(properties, feature_ids) {
+        BodyTipResolution::Valid(active_child) => active_child,
+        BodyTipResolution::Invalid => return None,
+    };
+    Some(FeatureDefinition::TreeNode {
+        role: FeatureTreeNodeRole::SolidBodies,
+        children,
+        active_child,
+    })
+}
+
+enum BodyTipResolution {
+    Valid(Option<FeatureId>),
+    Invalid,
+}
+
+fn body_tip(
+    properties: &[&PropertyRecord],
+    feature_ids: &HashMap<&str, FeatureId>,
+) -> BodyTipResolution {
+    let Some(property) = property(properties, "Tip") else {
+        return BodyTipResolution::Valid(None);
+    };
+    if property.type_name != "App::PropertyLink" {
+        return BodyTipResolution::Invalid;
+    }
+    match property.links.as_slice() {
+        [] => BodyTipResolution::Valid(None),
+        [link]
+            if link.subelements.is_empty()
+                && link.document.is_none()
+                && link.document_attribute.is_none() =>
+        {
+            let Some(target) = link.object.as_deref().filter(|target| !target.is_empty()) else {
+                return BodyTipResolution::Valid(None);
+            };
+            feature_ids
+                .get(target)
+                .cloned()
+                .map(Some)
+                .map_or(BodyTipResolution::Invalid, BodyTipResolution::Valid)
+        }
+        _ => BodyTipResolution::Invalid,
+    }
 }
 
 fn feature_ordinals<'a>(
@@ -502,7 +628,7 @@ fn feature_ordinals<'a>(
     properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
     parent_by_member: &HashMap<&'a str, FeatureId>,
     source_order: &HashMap<FeatureId, usize>,
-) -> HashMap<&'a str, u64> {
+) -> (HashMap<&'a str, u64>, BTreeSet<String>) {
     let design_objects = objects
         .iter()
         .filter(|object| is_design_object(&object.type_name))
@@ -526,6 +652,7 @@ fn feature_ordinals<'a>(
     source_ordinals.sort_unstable();
     let mut emitted = BTreeSet::new();
     let mut ordinals = HashMap::new();
+    let mut cycle_affected = BTreeSet::new();
 
     while emitted.len() < design_objects.len() {
         let next = design_objects
@@ -600,69 +727,152 @@ fn feature_ordinals<'a>(
                     .all(|(_, dependency)| emitted.contains(dependency))
             })
             .min_by_key(|object| object.order);
-        let next = next.unwrap_or_else(|| {
-            design_objects
+        let next = if let Some(next) = next {
+            next
+        } else {
+            let remaining = design_objects
                 .iter()
                 .copied()
                 .filter(|object| !emitted.contains(object.id.as_str()))
+                .collect::<Vec<_>>();
+            cycle_affected.extend(remaining.iter().map(|object| object.id.clone()));
+            remaining
+                .into_iter()
                 .min_by_key(|object| object.order)
                 .expect("the loop has at least one un-emitted design object")
-        });
+        };
         let ordinal = source_ordinals[ordinals.len()];
         emitted.insert(next.id.as_str());
         ordinals.insert(next.id.as_str(), ordinal);
     }
 
-    ordinals
+    (ordinals, cycle_affected)
 }
 
-/// Wrap an operation in its shape-refinement and boolean-tolerance controls.
-///
-/// An unresolvable control leaves the operation unwrapped. The controls
-/// qualify an operation rather than define it, so they never cost the
-/// operation its neutral form.
+/// Apply an operation's shape-refinement and boolean-tolerance controls.
 fn post_processed_definition(
     definition: FeatureDefinition,
+    kind: &str,
     properties: &[&PropertyRecord],
 ) -> FeatureDefinition {
-    let Some((refine, fuzzy_tolerance)) = post_process_controls(properties) else {
-        return definition;
-    };
-    FeatureDefinition::PostProcess {
-        operation: Box::new(definition),
-        refine,
-        fuzzy_tolerance,
+    match post_process_controls(properties) {
+        PostProcessControlState::Absent => definition,
+        PostProcessControlState::Valid {
+            refine,
+            fuzzy_tolerance,
+        } => FeatureDefinition::PostProcess {
+            operation: Box::new(definition),
+            refine,
+            fuzzy_tolerance,
+        },
+        PostProcessControlState::Malformed => FeatureDefinition::Native {
+            kind: kind.to_owned(),
+            parameters: native_parameters(properties),
+            properties: BTreeMap::new(),
+        },
     }
 }
 
-/// Resolve the refinement flag and boolean fuzzy tolerance an operation
-/// carries. `None` states that the object carries neither control, or that a
-/// carried control does not resolve to a neutral value.
-fn post_process_controls(properties: &[&PropertyRecord]) -> Option<(bool, FuzzyTolerance)> {
-    if property(properties, "Refine").is_none() && property(properties, "FuzzyTolerance").is_none()
-    {
-        return None;
+enum PostProcessControlState {
+    Absent,
+    Valid {
+        refine: bool,
+        fuzzy_tolerance: FuzzyTolerance,
+    },
+    Malformed,
+}
+
+/// Resolve the exact persisted controls an operation carries.
+fn post_process_controls(properties: &[&PropertyRecord]) -> PostProcessControlState {
+    let refine = match unique_named_property(properties, "Refine") {
+        NamedProperty::Present(property) => match direct_bool_value(property) {
+            Some(value) => Some(value),
+            None => return PostProcessControlState::Malformed,
+        },
+        NamedProperty::Absent => None,
+        NamedProperty::Duplicate => return PostProcessControlState::Malformed,
+    };
+    let fuzzy_tolerance = match unique_named_property(properties, "FuzzyTolerance") {
+        NamedProperty::Present(property) => match direct_fuzzy_tolerance(property) {
+            Some(value) => Some(value),
+            None => return PostProcessControlState::Malformed,
+        },
+        NamedProperty::Absent => None,
+        NamedProperty::Duplicate => return PostProcessControlState::Malformed,
+    };
+    if refine.is_none() && fuzzy_tolerance.is_none() {
+        return PostProcessControlState::Absent;
     }
-    let refine = if property(properties, "Refine").is_some() {
-        bool_property(properties, "Refine")?
-    } else {
-        false
+    PostProcessControlState::Valid {
+        refine: refine.unwrap_or(false),
+        fuzzy_tolerance: fuzzy_tolerance.unwrap_or(FuzzyTolerance::KernelDefault),
+    }
+}
+
+enum NamedProperty<'a> {
+    Absent,
+    Present(&'a PropertyRecord),
+    Duplicate,
+}
+
+fn unique_named_property<'a>(properties: &[&'a PropertyRecord], name: &str) -> NamedProperty<'a> {
+    let mut matches = properties
+        .iter()
+        .copied()
+        .filter(|property| property.name == name);
+    let Some(property) = matches.next() else {
+        return NamedProperty::Absent;
     };
-    let value = if property(properties, "FuzzyTolerance").is_some() {
-        scalar_named(properties, "FuzzyTolerance")?
-    } else {
-        0.0
+    if matches.next().is_some() {
+        return NamedProperty::Duplicate;
+    }
+    NamedProperty::Present(property)
+}
+
+fn unique_matching_property<'a, F>(
+    properties: &[&'a PropertyRecord],
+    predicate: F,
+    label: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError>
+where
+    F: Fn(&PropertyRecord) -> bool,
+{
+    let mut matches = properties
+        .iter()
+        .copied()
+        .filter(|property| predicate(property));
+    let Some(property) = matches.next() else {
+        return Ok(None);
     };
-    let fuzzy_tolerance = if value < 0.0 {
-        FuzzyTolerance::Automatic
-    } else if value == 0.0 {
-        FuzzyTolerance::KernelDefault
-    } else if value.is_finite() {
-        FuzzyTolerance::Explicit(value)
-    } else {
-        return None;
-    };
-    Some((refine, fuzzy_tolerance))
+    if matches.next().is_some() {
+        return Err(malformed(format!(
+            "spreadsheet has multiple {label} properties"
+        )));
+    }
+    Ok(Some(property))
+}
+
+fn direct_spreadsheet_value<'a, 'input: 'a>(
+    xml: &'a roxmltree::Document<'input>,
+    tag: &str,
+    property_id: &str,
+) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
+    let total = xml
+        .descendants()
+        .filter(|node| node.has_tag_name(tag))
+        .count();
+    if total == 0 {
+        return Err(malformed(format!("{property_id} has no {tag} value")));
+    }
+    if total > 1 {
+        return Err(malformed(format!(
+            "{property_id} has multiple {tag} values"
+        )));
+    }
+    xml.root_element()
+        .children()
+        .find(|node| node.has_tag_name(tag))
+        .ok_or_else(|| malformed(format!("{property_id} has no direct {tag} value")))
 }
 
 fn append_spreadsheet(
@@ -670,25 +880,21 @@ fn append_spreadsheet(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
 ) -> Result<Spreadsheet, CodecError> {
-    let property = properties
-        .iter()
-        .copied()
-        .find(|property| property.type_name.contains("PropertySheet") || property.name == "cells")
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "spreadsheet {} has no cells property",
-                object.id
-            ))
-        })?;
+    let property = unique_matching_property(
+        properties,
+        |property| property.name == "cells" && property.type_name == "Spreadsheet::PropertySheet",
+        "cells",
+    )?
+    .ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "spreadsheet {} has no cells property",
+            object.id
+        ))
+    })?;
     let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
         CodecError::malformed(format_args!("invalid spreadsheet {}: {error}", property.id))
     })?;
-    let Some(cells) = xml.descendants().find(|node| node.has_tag_name("Cells")) else {
-        return Err(CodecError::malformed(format_args!(
-            "{} has no Cells value",
-            property.id
-        )));
-    };
+    let cells = direct_spreadsheet_value(&xml, "Cells", &property.id)?;
     let declared = cells
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -770,14 +976,16 @@ fn append_spreadsheet(
         cells: cell_ids,
         column_widths: spreadsheet_dimensions(
             properties,
-            "PropertyColumnWidths",
+            "Spreadsheet::PropertyColumnWidths",
+            "columnWidths",
             "ColumnInfo",
             "Column",
             "width",
         )?,
         row_heights: spreadsheet_dimensions(
             properties,
-            "PropertyRowHeights",
+            "Spreadsheet::PropertyRowHeights",
+            "rowHeights",
             "RowInfo",
             "Row",
             "height",
@@ -790,14 +998,16 @@ fn append_spreadsheet(
 fn spreadsheet_dimensions(
     properties: &[&PropertyRecord],
     type_name: &str,
+    property_name: &str,
     container: &str,
     element: &str,
     value_name: &str,
 ) -> Result<Vec<SpreadsheetDimension>, CodecError> {
-    let Some(property) = properties
-        .iter()
-        .copied()
-        .find(|property| property.type_name.contains(type_name))
+    let Some(property) = unique_matching_property(
+        properties,
+        |property| property.name == property_name && property.type_name == type_name,
+        property_name,
+    )?
     else {
         return Ok(Vec::new());
     };
@@ -807,12 +1017,7 @@ fn spreadsheet_dimensions(
             property.id
         ))
     })?;
-    let root = xml
-        .descendants()
-        .find(|node| node.has_tag_name(container))
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!("{} has no dimension container", property.id))
-        })?;
+    let root = direct_spreadsheet_value(&xml, container, &property.id)?;
     let records = root
         .children()
         .filter(|node| node.has_tag_name(element))
@@ -999,32 +1204,201 @@ struct SketchTransfer {
     parameters: Vec<DesignParameter>,
 }
 
+fn sketch_carrier<'a, 'input>(
+    node: roxmltree::Node<'a, 'input>,
+) -> Option<roxmltree::Node<'a, 'input>> {
+    let mut carriers = node.children().filter(|child| {
+        child.is_element()
+            && !matches!(
+                child.tag_name().name(),
+                "Construction" | "GeoExtensions" | "UID"
+            )
+    });
+    let carrier = carriers.next()?;
+    carriers.next().is_none().then_some(carrier)
+}
+
+fn validate_sketch_carrier(
+    kind: &str,
+    carrier: &roxmltree::Node<'_, '_>,
+    ordinal: usize,
+) -> Result<(), CodecError> {
+    let Some(expected) = (match kind {
+        "Part::GeomLine" => Some("GeomLine"),
+        "Part::GeomLineSegment" => Some("LineSegment"),
+        "Part::GeomCircle" => Some("Circle"),
+        "Part::GeomArcOfCircle" => Some("ArcOfCircle"),
+        "Part::GeomEllipse" => Some("Ellipse"),
+        "Part::GeomArcOfEllipse" => Some("ArcOfEllipse"),
+        "Part::GeomHyperbola" => Some("Hyperbola"),
+        "Part::GeomArcOfHyperbola" => Some("ArcOfHyperbola"),
+        "Part::GeomParabola" => Some("Parabola"),
+        "Part::GeomArcOfParabola" => Some("ArcOfParabola"),
+        "Part::GeomPoint" => Some("GeomPoint"),
+        "Part::GeomBSplineCurve" => Some("BSplineCurve"),
+        _ => None,
+    }) else {
+        return Ok(());
+    };
+    if carrier.tag_name().name() == expected {
+        return Ok(());
+    }
+    Err(CodecError::malformed(format_args!(
+        "sketch Geometry record {ordinal} declares {kind} but carries <{}>, expected <{expected}>",
+        carrier.tag_name().name()
+    )))
+}
+
+fn external_geometry_metadata(
+    node: roxmltree::Node<'_, '_>,
+    ordinal: usize,
+) -> Result<(Option<String>, bool), CodecError> {
+    let extensions = node
+        .children()
+        .filter(|child| child.has_tag_name("GeoExtensions"))
+        .flat_map(|container| container.children())
+        .filter(|child| {
+            child.has_tag_name("GeoExtension")
+                && child.attribute("type") == Some("Sketcher::ExternalGeometryExtension")
+        })
+        .collect::<Vec<_>>();
+    if extensions.len() > 1 {
+        return Err(malformed(format!(
+            "sketch ExternalGeo Geometry record {ordinal} has multiple ExternalGeometryExtension values"
+        )));
+    }
+    let extension = extensions.first().copied();
+    let extension_ref = extension.and_then(|extension| extension.attribute("Ref"));
+    let geometry_ref = node.attribute("ref");
+    if let (Some(extension_ref), Some(geometry_ref)) = (extension_ref, geometry_ref) {
+        if extension_ref != geometry_ref {
+            return Err(malformed(format!(
+                "sketch ExternalGeo Geometry record {ordinal} has conflicting Ref and ref values"
+            )));
+        }
+    }
+    let reference = extension_ref
+        .or(geometry_ref)
+        .and_then(|value| (!value.is_empty()).then(|| value.to_owned()));
+
+    let extension_flags = extension
+        .and_then(|extension| extension.attribute("Flags"))
+        .map(|value| {
+            value.parse::<u64>().map_err(|_| {
+                malformed(format!(
+                    "sketch ExternalGeo Geometry record {ordinal} has invalid Flags"
+                ))
+            })
+        })
+        .transpose()?;
+    let geometry_flags = node
+        .attribute("flags")
+        .map(|value| {
+            value.parse::<u64>().map_err(|_| {
+                malformed(format!(
+                    "sketch ExternalGeo Geometry record {ordinal} has invalid flags"
+                ))
+            })
+        })
+        .transpose()?;
+    if let (Some(extension_flags), Some(geometry_flags)) = (extension_flags, geometry_flags) {
+        if extension_flags != geometry_flags {
+            return Err(malformed(format!(
+                "sketch ExternalGeo Geometry record {ordinal} has conflicting Flags and flags values"
+            )));
+        }
+    }
+    let flags = extension_flags.or(geometry_flags).unwrap_or_default();
+    Ok((reference, flags & EXTERNAL_GEOMETRY_MISSING_FLAG != 0))
+}
+
+fn validate_external_geo_prefix(
+    records: &[roxmltree::Node<'_, '_>],
+    owner: &str,
+) -> Result<(), CodecError> {
+    if records.len() < EXTERNAL_GEO_AXIS_COUNT {
+        return Err(malformed(format!(
+            "{owner} must contain the two reserved ExternalGeo axis records"
+        )));
+    }
+    for (index, (expected_value, expected_label)) in
+        [(-1_i64, "-1"), (-2_i64, "-2")].into_iter().enumerate()
+    {
+        let node = records[index];
+        let id = node.attribute("id").ok_or_else(|| {
+            malformed(format!(
+                "{owner} reserved ExternalGeo record {} has no id",
+                index + 1
+            ))
+        })?;
+        if id.parse::<i64>().ok() != Some(expected_value) {
+            return Err(malformed(format!(
+                "{owner} reserved ExternalGeo record {} has id {id}, expected {expected_label}",
+                index + 1
+            )));
+        }
+        let (reference, _) = external_geometry_metadata(node, index + 1)?;
+        if reference.is_some() {
+            return Err(malformed(format!(
+                "{owner} reserved ExternalGeo record {} has an external reference",
+                index + 1
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn external_link_key(reference: &crate::native::LinkTarget) -> Option<String> {
+    let object = crate::native::id_key(reference.object.as_deref()?);
+    let subelement = reference.subelements.first()?;
+    Some(format!("{object}.{subelement}"))
+}
+
+fn external_link_indices(
+    references: Option<&PropertyRecord>,
+) -> Result<HashMap<String, usize>, CodecError> {
+    let mut indices = HashMap::new();
+    if let Some(references) = references {
+        for (index, reference) in references.links.iter().enumerate() {
+            let Some(key) = external_link_key(reference) else {
+                continue;
+            };
+            if indices.insert(key.clone(), index).is_some() {
+                return Err(malformed(format!(
+                    "sketch ExternalGeometry links contain duplicate key {key}"
+                )));
+            }
+        }
+    }
+    Ok(indices)
+}
+
 fn parse_sketch(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
 ) -> Result<SketchTransfer, CodecError> {
     let id = SketchId(format!("fcstd:design:sketch#{}", object.name));
     let mut entities = Vec::new();
+    let mut matched_references = BTreeSet::new();
     if let Some(geometry) = property(properties, "Geometry") {
+        if geometry.type_name != "Part::PropertyGeometryList" {
+            return Err(CodecError::malformed(format_args!(
+                "{} has runtime type {}, expected Part::PropertyGeometryList",
+                geometry.id, geometry.type_name
+            )));
+        }
         let xml = roxmltree::Document::parse(&geometry.raw_xml).map_err(|error| {
             CodecError::malformed(format_args!(
                 "invalid sketch geometry {}: {error}",
                 geometry.id
             ))
         })?;
-        validate_declared_count(&xml, "GeometryList", "Geometry", &geometry.id)?;
-        for (index, node) in xml
-            .descendants()
-            .filter(|node| node.has_tag_name("Geometry"))
-            .enumerate()
-        {
-            let carrier = node.children().find(|child| {
-                child.is_element()
-                    && !matches!(
-                        child.tag_name().name(),
-                        "Construction" | "GeoExtensions" | "UID"
-                    )
-            });
+        let records = direct_counted_records(&xml, "GeometryList", "Geometry", &geometry.id)?;
+        for (index, node) in records.into_iter().enumerate() {
+            let carrier = sketch_carrier(node);
+            if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
+                validate_sketch_carrier(kind, carrier, index + 1)?;
+            }
             let native_kind = node
                 .attribute("type")
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
@@ -1058,27 +1432,55 @@ fn parse_sketch(
         }
     }
     if let Some(external_geometry) = property(properties, "ExternalGeo") {
+        if external_geometry.type_name != "Part::PropertyGeometryList" {
+            return Err(CodecError::malformed(format_args!(
+                "{} has runtime type {}, expected Part::PropertyGeometryList",
+                external_geometry.id, external_geometry.type_name
+            )));
+        }
         let xml = roxmltree::Document::parse(&external_geometry.raw_xml).map_err(|error| {
             CodecError::malformed(format_args!(
                 "invalid external sketch geometry {}: {error}",
                 external_geometry.id
             ))
         })?;
-        validate_declared_count(&xml, "GeometryList", "Geometry", &external_geometry.id)?;
+        let records =
+            direct_counted_records(&xml, "GeometryList", "Geometry", &external_geometry.id)?;
+        validate_external_geo_prefix(&records, &external_geometry.id)?;
         let references = property(properties, "ExternalGeometry");
-        for (external_index, node) in xml
-            .descendants()
-            .filter(|node| node.has_tag_name("Geometry"))
-            .skip(2)
+        if let Some(references) = references {
+            if references.type_name != "App::PropertyLinkSubList" {
+                return Err(malformed(format!(
+                    "{} has runtime type {}, expected App::PropertyLinkSubList",
+                    references.id, references.type_name
+                )));
+            }
+        }
+        let link_indices = external_link_indices(references)?;
+        for (external_index, node) in records
+            .into_iter()
+            .skip(EXTERNAL_GEO_AXIS_COUNT)
             .enumerate()
         {
-            let carrier = node.children().find(|child| {
-                child.is_element()
-                    && !matches!(
-                        child.tag_name().name(),
-                        "Construction" | "GeoExtensions" | "UID"
-                    )
-            });
+            let (cache_reference, missing) = external_geometry_metadata(node, external_index + 3)?;
+            let reference_index = cache_reference
+                .as_deref()
+                .and_then(|cache_reference| link_indices.get(cache_reference).copied());
+            if let (Some(cache_reference), None) = (cache_reference.as_deref(), reference_index) {
+                if !missing {
+                    return Err(malformed(format!(
+                        "sketch ExternalGeo Geometry record {} reference {cache_reference} has no matching ExternalGeometry link",
+                        external_index + 3
+                    )));
+                }
+            }
+            if let Some(reference_index) = reference_index {
+                matched_references.insert(reference_index);
+            }
+            let carrier = sketch_carrier(node);
+            if let (Some(kind), Some(carrier)) = (node.attribute("type"), carrier.as_ref()) {
+                validate_sketch_carrier(kind, carrier, external_index + 3)?;
+            }
             let native_kind = node
                 .attribute("type")
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
@@ -1093,7 +1495,6 @@ fn parse_sketch(
             let geometry = carrier
                 .and_then(|carrier| sketch_nurbs(&native_kind, carrier))
                 .unwrap_or_else(|| sketch_geometry(&native_kind, &attributes));
-            let reference = references.and_then(|property| property.links.get(external_index));
             entities.push(SketchEntity {
                 id: SketchEntityId(format!(
                     "fcstd:design:sketch-entity#{}:external:{external_index}",
@@ -1103,7 +1504,8 @@ fn parse_sketch(
                 construction: true,
                 native_ref: Some(external_geometry.id.clone()),
                 geometry_ref: references.map(|property| property.id.clone()),
-                endpoint_refs: reference
+                endpoint_refs: reference_index
+                    .and_then(|index| references.and_then(|property| property.links.get(index)))
                     .map(|reference| reference.subelements.clone())
                     .unwrap_or_default(),
                 geometry,
@@ -1112,17 +1514,25 @@ fn parse_sketch(
     }
     if let Some(references) = property(properties, "ExternalGeometry") {
         for (external_index, reference) in references.links.iter().enumerate() {
-            let suffix = format!(":external:{external_index}");
-            if entities.iter().any(|entity| entity.id.0.ends_with(&suffix)) {
+            if matched_references.contains(&external_index) {
                 continue;
             }
             let Some(target_object) = reference.object.clone() else {
                 continue;
             };
+            let numeric_suffix = format!(":external:{external_index}");
+            let entity_suffix = if entities
+                .iter()
+                .any(|entity| entity.id.0.ends_with(&numeric_suffix))
+            {
+                format!(":external-link:{external_index}")
+            } else {
+                numeric_suffix
+            };
             entities.push(SketchEntity {
                 id: SketchEntityId(format!(
-                    "fcstd:design:sketch-entity#{}:external:{external_index}",
-                    object.name
+                    "fcstd:design:sketch-entity#{}{}",
+                    object.name, entity_suffix
                 )),
                 sketch: id.clone(),
                 construction: true,
@@ -1190,7 +1600,7 @@ fn parse_sketch(
     }
     let (constraints, parameters) = parse_constraints(object, properties, &id, &entities)?;
     let profiles = build_profiles(&entities, &constraints);
-    let (origin, normal, u_axis) = sketch_frame(properties);
+    let (origin, normal, u_axis) = sketch_frame(properties)?;
     Ok(SketchTransfer {
         sketch: Sketch {
             id,
@@ -1247,7 +1657,9 @@ fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool)
 }
 
 fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeometry> {
-    if !kind.contains("BSpline") && !node.has_tag_name("BSplineCurve") {
+    if !matches!(kind, "Part::GeomBSplineCurve" | "BSplineCurve")
+        && !node.has_tag_name("BSplineCurve")
+    {
         return None;
     }
     let degree = node.attribute("Degree")?.parse::<u32>().ok()?;
@@ -1341,8 +1753,9 @@ fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeome
     })
 }
 
-fn sketch_frame(properties: &[&PropertyRecord]) -> (Point3, Vector3, Vector3) {
-    placement_frame(properties).map_or_else(
+fn sketch_frame(properties: &[&PropertyRecord]) -> Result<(Point3, Vector3, Vector3), CodecError> {
+    validate_sketch_placement(properties)?;
+    Ok(placement_frame(properties).map_or_else(
         || {
             (
                 Point3::new(0.0, 0.0, 0.0),
@@ -1351,7 +1764,7 @@ fn sketch_frame(properties: &[&PropertyRecord]) -> (Point3, Vector3, Vector3) {
             )
         },
         |(origin, normal, x_axis, _)| (origin, normal, x_axis),
-    )
+    ))
 }
 
 fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
@@ -1363,35 +1776,98 @@ fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, V
                 .iter()
                 .find(|value| value.tag == "PropertyPlacement")
         })?;
-    let component = |name: &str, default: f64| {
+    let component = |name: &str| {
         value
             .attributes
             .get(name)
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(default)
+            .and_then(|value| value.parse::<f64>().ok())
+            .filter(|value| value.is_finite())
     };
-    let quaternion = [
-        component("Q0", 0.0),
-        component("Q1", 0.0),
-        component("Q2", 0.0),
-        component("Q3", 1.0),
-    ];
+    let quaternion = if value.attributes.contains_key("A") {
+        let axis = [component("Ox")?, component("Oy")?, component("Oz")?];
+        let angle = component("A")?;
+        let axis_norm = axis
+            .iter()
+            .map(|component| component * component)
+            .sum::<f64>()
+            .sqrt();
+        let (axis_x, axis_y, axis_z) = if axis_norm.is_finite() && axis_norm > 0.0 {
+            (
+                axis[0] / axis_norm,
+                axis[1] / axis_norm,
+                axis[2] / axis_norm,
+            )
+        } else if axis_norm == 0.0 {
+            (0.0, 0.0, 1.0)
+        } else {
+            return None;
+        };
+        let half_angle = angle / 2.0;
+        let scale = half_angle.sin();
+        [
+            axis_x * scale,
+            axis_y * scale,
+            axis_z * scale,
+            half_angle.cos(),
+        ]
+    } else {
+        [
+            component("Q0")?,
+            component("Q1")?,
+            component("Q2")?,
+            component("Q3")?,
+        ]
+    };
+    let norm = quaternion
+        .iter()
+        .map(|component| component * component)
+        .sum::<f64>()
+        .sqrt();
+    if !norm.is_finite() || norm == 0.0 {
+        return None;
+    }
     Some((
-        Point3::new(
-            component("Px", 0.0),
-            component("Py", 0.0),
-            component("Pz", 0.0),
-        ),
+        Point3::new(component("Px")?, component("Py")?, component("Pz")?),
         rotate_vector(quaternion, [0.0, 0.0, 1.0]),
         rotate_vector(quaternion, [1.0, 0.0, 0.0]),
         rotate_vector(quaternion, [0.0, 1.0, 0.0]),
     ))
 }
 
+fn validate_sketch_placement(properties: &[&PropertyRecord]) -> Result<(), CodecError> {
+    let Some(property) =
+        property(properties, "Placement").or_else(|| property(properties, "AttachmentOffset"))
+    else {
+        return Ok(());
+    };
+    let error = if property.type_name != "App::PropertyPlacement" {
+        Some(format!(
+            "sketch {} placement carrier has runtime type {}",
+            property.name, property.type_name
+        ))
+    } else if property.values.len() != 1 || property.values[0].tag != "PropertyPlacement" {
+        Some(format!(
+            "sketch {} placement carrier requires one PropertyPlacement value",
+            property.name
+        ))
+    } else if placement_frame(properties).is_none() {
+        Some(format!(
+            "sketch {} placement carrier has incomplete or invalid components",
+            property.name
+        ))
+    } else {
+        None
+    };
+    if let Some(message) = error {
+        return Err(CodecError::Malformed(message));
+    }
+    Ok(())
+}
+
 fn rotate_vector(quaternion: [f64; 4], vector: [f64; 3]) -> Vector3 {
     let [x, y, z, w] = quaternion;
     let norm = (x * x + y * y + z * z + w * w).sqrt();
-    if norm <= f64::EPSILON {
+    if !norm.is_finite() || norm == 0.0 {
         return Vector3::new(vector[0], vector[1], vector[2]);
     }
     let (x, y, z, w) = (x / norm, y / norm, z / norm, w / norm);
@@ -1445,6 +1921,117 @@ fn bool_property(properties: &[&PropertyRecord], name: &str) -> Option<bool> {
     }
 }
 
+/// Read an operation enumeration while keeping absence distinct from malformed persistence.
+/// `FreeCAD` constructors provide the legacy default for an absent property; a present property
+/// must use the exact enumeration carrier before its value can select neutral semantics.
+fn enumeration_selector(
+    properties: &[&PropertyRecord],
+    name: &str,
+    absent_default: u64,
+) -> Option<u64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyEnumeration" {
+        return None;
+    }
+    let attributes = direct_root_attributes(property, "Integer")?;
+    let value = attributes.get("value")?.parse::<i64>().ok()?;
+    u64::try_from(value).ok()
+}
+
+/// Read a persisted boolean while keeping absence distinct from malformed persistence.
+/// `FreeCAD` constructors provide the legacy default for an absent property; a present property
+/// must use the exact boolean carrier before its value can select neutral semantics.
+fn bool_selector(properties: &[&PropertyRecord], name: &str, absent_default: bool) -> Option<bool> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    direct_bool_value(property)
+}
+
+fn float_selector(properties: &[&PropertyRecord], name: &str, absent_default: f64) -> Option<f64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyFloat" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Float")?
+        .get("value")?
+        .parse::<f64>()
+        .ok()?;
+    value.is_finite().then_some(value)
+}
+
+fn float_constraint_selector(
+    properties: &[&PropertyRecord],
+    name: &str,
+    absent_default: f64,
+) -> Option<f64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyFloatConstraint" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Float")?
+        .get("value")?
+        .parse::<f64>()
+        .ok()?;
+    value.is_finite().then_some(value)
+}
+
+fn quantity_constraint_selector(
+    properties: &[&PropertyRecord],
+    name: &str,
+    absent_default: f64,
+) -> Option<f64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyQuantityConstraint" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Float")?
+        .get("value")?
+        .parse::<f64>()
+        .ok()?;
+    value.is_finite().then_some(value)
+}
+
+fn direct_bool_value(property: &PropertyRecord) -> Option<bool> {
+    if property.type_name != "App::PropertyBool" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Bool")?.remove("value")?;
+    match value.as_str() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
+fn direct_fuzzy_tolerance(property: &PropertyRecord) -> Option<FuzzyTolerance> {
+    if property.type_name != "App::PropertyFloatConstraint" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Float")?
+        .remove("value")?
+        .parse::<f64>()
+        .ok()?;
+    if !value.is_finite() {
+        return None;
+    }
+    Some(if value < 0.0 {
+        FuzzyTolerance::Automatic
+    } else if value == 0.0 {
+        FuzzyTolerance::KernelDefault
+    } else {
+        FuzzyTolerance::Explicit(value)
+    })
+}
+
 fn parse_constraints(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
@@ -1454,21 +2041,29 @@ fn parse_constraints(
     let Some(property) = property(properties, "Constraints") else {
         return Ok((Vec::new(), Vec::new()));
     };
+    if property.type_name != "Sketcher::PropertyConstraintList" {
+        return Err(CodecError::malformed(format_args!(
+            "{} has runtime type {}, expected Sketcher::PropertyConstraintList",
+            property.id, property.type_name
+        )));
+    }
     let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
         CodecError::malformed(format_args!(
             "invalid sketch constraints {}: {error}",
             property.id
         ))
     })?;
-    validate_declared_count(&xml, "ConstraintList", "Constrain", &property.id)?;
+    let records = direct_counted_records(&xml, "ConstraintList", "Constrain", &property.id)?;
     let mut constraints = Vec::new();
     let mut parameters = Vec::new();
-    for (index, node) in xml
-        .descendants()
-        .filter(|node| node.has_tag_name("Constrain"))
-        .enumerate()
-    {
-        let type_code = int_attr(node, "Type").unwrap_or(0);
+    for (index, node) in records.into_iter().enumerate() {
+        let (type_code, native_kind) = match node.attribute("Type") {
+            None => (None, "missing_type".to_owned()),
+            Some(value) => match value.parse::<i64>() {
+                Ok(type_code) => (Some(type_code), constraint_kind(type_code).to_owned()),
+                Err(_) => (None, "malformed_type".to_owned()),
+            },
+        };
         let operands = constraint_operands(node).map_err(|message| {
             CodecError::malformed(format_args!(
                 "{} constraint {}: {message}",
@@ -1477,7 +2072,7 @@ fn parse_constraints(
             ))
         })?;
         let resolve = |entity, position| {
-            if type_code == 9 {
+            if type_code == Some(9) {
                 match entity {
                     -1 => return resolve_operand(-1, 0, entities),
                     -2 => return resolve_operand(-2, 0, entities),
@@ -1491,7 +2086,7 @@ fn parse_constraints(
             .filter_map(|(entity, position)| resolve(*entity, *position))
             .collect::<Vec<_>>();
         let all_resolved = resolved.len() == operands.len();
-        if matches!(type_code, 7 | 8) && operands.len() == 1 && resolved.len() == 1 {
+        if matches!(type_code, Some(7 | 8)) && operands.len() == 1 && resolved.len() == 1 {
             if let Some(root) = entities
                 .iter()
                 .find(|entity| entity.id.0.ends_with(":reference-root-point"))
@@ -1499,7 +2094,7 @@ fn parse_constraints(
                 resolved.insert(0, SketchLocus::Entity(root.id.clone()));
             }
         }
-        let parameter = if matches!(type_code, 6..=9 | 11 | 16 | 18 | 19) {
+        let parameter = if matches!(type_code, Some(6..=9 | 11 | 16 | 18 | 19)) {
             node.attribute("Value")
                 .and_then(|value| value.parse::<f64>().ok())
                 .map(|value| {
@@ -1509,8 +2104,8 @@ fn parse_constraints(
                         index + 1
                     ));
                     let value = match type_code {
-                        9 => ParameterValue::Angle(cadmpeg_ir::features::Angle(value)),
-                        16 | 19 => ParameterValue::Real(value),
+                        Some(9) => ParameterValue::Angle(cadmpeg_ir::features::Angle(value)),
+                        Some(16 | 19) => ParameterValue::Real(value),
                         _ => ParameterValue::Length(Length(value)),
                     };
                     let path = format!("Constraints[{index}]");
@@ -1579,10 +2174,10 @@ fn parse_constraints(
                 return None;
             }
             match type_code {
-                20 => Some(SketchConstraintDefinition::Group {
+                Some(20) => Some(SketchConstraintDefinition::Group {
                     elements: resolved.clone(),
                 }),
-                21 => {
+                Some(21) => {
                     let metadata = node.attribute("MetaData")?;
                     let metadata: serde_json::Value = serde_json::from_str(metadata).ok()?;
                     Some(SketchConstraintDefinition::Text {
@@ -1601,15 +2196,20 @@ fn parse_constraints(
                 _ => None,
             }
         };
-        let midpoint = || midpoint_constraint(type_code, &operands, entities);
-        let definition = (type_code == 15 && all_resolved)
+        let midpoint =
+            || type_code.and_then(|type_code| midpoint_constraint(type_code, &operands, entities));
+        let definition = (type_code == Some(15) && all_resolved)
             .then(internal_alignment)
             .flatten()
             .or_else(grouped_geometry)
             .or_else(midpoint)
-            .or_else(|| neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved))
+            .or_else(|| {
+                type_code.and_then(|type_code| {
+                    neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved)
+                })
+            })
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
-                native_kind: constraint_kind(type_code).into(),
+                native_kind,
                 native_state: None,
                 native_flags: None,
                 native_properties: std::collections::BTreeMap::new(),
@@ -1733,7 +2333,11 @@ fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(Str
         })
 }
 
-fn bind_parameter_dependencies(parameters: &mut Vec<DesignParameter>, objects: &[ObjectRecord]) {
+fn bind_parameter_dependencies(
+    parameters: &mut Vec<DesignParameter>,
+    objects: &[ObjectRecord],
+    cycle_affected_features: &BTreeSet<FeatureId>,
+) -> BTreeSet<FeatureId> {
     let object_names = objects
         .iter()
         .map(|object| (feature_id(object), object.name.as_str()))
@@ -1788,7 +2392,18 @@ fn bind_parameter_dependencies(parameters: &mut Vec<DesignParameter>, objects: &
                 dependencies.insert(dependency.clone());
             }
         }
-        parameter.dependencies = dependencies.into_iter().collect();
+        parameter.dependencies = if parameter
+            .owner
+            .as_ref()
+            .is_some_and(|owner| cycle_affected_features.contains(owner))
+        {
+            // The native property record retains the expression. A neutral
+            // parameter edge would create an invented evaluation order for
+            // a history that FreeCAD itself could not topologically sort.
+            Vec::new()
+        } else {
+            dependencies.into_iter().collect()
+        };
     }
     let mut owner_ordinals = HashMap::<Option<FeatureId>, Vec<u32>>::new();
     for parameter in parameters.iter() {
@@ -1800,22 +2415,36 @@ fn bind_parameter_dependencies(parameters: &mut Vec<DesignParameter>, objects: &
     for ordinals in owner_ordinals.values_mut() {
         ordinals.sort_unstable();
     }
-    order_parameters_by_dependencies(parameters);
+    let parameter_cycle_features = order_parameters_by_dependencies(parameters);
+    for parameter in parameters.iter_mut() {
+        if parameter
+            .owner
+            .as_ref()
+            .is_some_and(|owner| parameter_cycle_features.contains(owner))
+        {
+            // The native property record retains the expression. A neutral
+            // parameter edge would create an invented evaluation order for
+            // a history that FreeCAD itself could not topologically sort.
+            parameter.dependencies.clear();
+        }
+    }
     let mut next_ordinal = HashMap::<Option<FeatureId>, usize>::new();
     for parameter in parameters {
         let index = next_ordinal.entry(parameter.owner.clone()).or_default();
         parameter.ordinal = owner_ordinals[&parameter.owner][*index];
         *index += 1;
     }
+    parameter_cycle_features
 }
 
-fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) {
+fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) -> BTreeSet<FeatureId> {
     let known = parameters
         .iter()
         .map(|parameter| parameter.id.clone())
         .collect::<BTreeSet<_>>();
     let mut remaining = std::mem::take(parameters);
     let mut emitted = BTreeSet::new();
+    let mut cycle_features = BTreeSet::new();
     while !remaining.is_empty() {
         let Some(index) = remaining.iter().position(|parameter| {
             parameter
@@ -1823,13 +2452,19 @@ fn order_parameters_by_dependencies(parameters: &mut Vec<DesignParameter>) {
                 .iter()
                 .all(|dependency| !known.contains(dependency) || emitted.contains(dependency))
         }) else {
+            cycle_features.extend(
+                remaining
+                    .iter()
+                    .filter_map(|parameter| parameter.owner.clone()),
+            );
             parameters.append(&mut remaining);
-            return;
+            break;
         };
         let parameter = remaining.remove(index);
         emitted.insert(parameter.id.clone());
         parameters.push(parameter);
     }
+    cycle_features
 }
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = &str> {
@@ -1961,46 +2596,75 @@ fn sketch_axis(locus: &SketchLocus) -> Option<SketchAxis> {
 }
 
 fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>, &'static str> {
-    let ids = node
-        .attribute("ElementIds")
-        .map(split_ints)
-        .unwrap_or_default();
-    let positions = node
-        .attribute("ElementPositions")
-        .map(split_ints)
-        .unwrap_or_default();
-    if node.attribute("ElementIds").is_some() || node.attribute("ElementPositions").is_some() {
-        if ids.len() != positions.len() {
-            return Err("ElementIds and ElementPositions counts differ");
+    match (
+        node.attribute("ElementIds"),
+        node.attribute("ElementPositions"),
+    ) {
+        (Some(ids), Some(positions)) => {
+            let ids = split_ints(ids)?;
+            let positions = split_ints(positions)?;
+            if ids.len() != positions.len() {
+                return Err("ElementIds and ElementPositions counts differ");
+            }
+            return Ok(ids
+                .into_iter()
+                .zip(positions)
+                .filter(|(entity, _)| *entity != -2000)
+                .collect());
         }
-        return Ok(ids
-            .into_iter()
-            .zip(positions)
-            .filter(|(entity, _)| *entity != -2000)
-            .collect());
+        (Some(_), None) | (None, Some(_)) => {
+            return Err("ElementIds and ElementPositions must both be present");
+        }
+        (None, None) => {}
     }
-    Ok(["First", "Second", "Third"]
-        .into_iter()
-        .zip(["FirstPos", "SecondPos", "ThirdPos"])
-        .filter_map(|(entity, position)| Some((int_attr(node, entity)?, int_attr(node, position)?)))
-        .filter(|(entity, _)| *entity != -2000)
-        .collect())
+    let mut operands = Vec::new();
+    for (entity_name, position_name) in [
+        ("First", "FirstPos"),
+        ("Second", "SecondPos"),
+        ("Third", "ThirdPos"),
+    ] {
+        match (node.attribute(entity_name), node.attribute(position_name)) {
+            (None, None) => {}
+            (Some(entity), Some(position)) => {
+                let entity = entity
+                    .parse::<i64>()
+                    .map_err(|_| "constraint entity is not an integer")?;
+                let position = position
+                    .parse::<i64>()
+                    .map_err(|_| "constraint position is not an integer")?;
+                if entity != -2000 {
+                    operands.push((entity, position));
+                }
+            }
+            _ => return Err("constraint entity and position must both be present"),
+        }
+    }
+    Ok(operands)
 }
 
-fn validate_declared_count(
-    xml: &roxmltree::Document<'_>,
+fn direct_counted_records<'a, 'input>(
+    xml: &'a roxmltree::Document<'input>,
     container_tag: &str,
     record_tag: &str,
     owner: &str,
-) -> Result<(), CodecError> {
-    let Some(container) = xml
-        .descendants()
-        .find(|node| node.has_tag_name(container_tag))
-    else {
+) -> Result<Vec<roxmltree::Node<'a, 'input>>, CodecError> {
+    let containers = xml
+        .root_element()
+        .children()
+        .filter(|node| node.is_element() && node.has_tag_name(container_tag))
+        .collect::<Vec<_>>();
+    if containers.len() != 1
+        || xml
+            .descendants()
+            .filter(|node| node.has_tag_name(container_tag))
+            .count()
+            != 1
+    {
         return Err(CodecError::malformed(format_args!(
-            "{owner} has no {container_tag} value"
+            "{owner} must contain exactly one direct {container_tag} value"
         )));
-    };
+    }
+    let container = containers[0];
     let declared = container
         .attribute("count")
         .and_then(|value| value.parse::<usize>().ok())
@@ -2012,23 +2676,51 @@ fn validate_declared_count(
             "{owner} record count exceeds {MAX_SKETCH_RECORDS}"
         )));
     }
-    let actual = container
+    let records = container
         .children()
-        .filter(|node| node.has_tag_name(record_tag))
-        .count();
-    if declared != actual {
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if records.iter().any(|node| !node.has_tag_name(record_tag)) {
         return Err(CodecError::malformed(format_args!(
-            "{owner} declares {declared} records but contains {actual}"
+            "{owner} has a non-{record_tag} direct child"
         )));
     }
-    Ok(())
+    if xml
+        .descendants()
+        .filter(|node| node.has_tag_name(record_tag))
+        .count()
+        != records.len()
+    {
+        return Err(CodecError::malformed(format_args!(
+            "{owner} has nested {record_tag} records"
+        )));
+    }
+    if declared != records.len() {
+        return Err(CodecError::malformed(format_args!(
+            "{owner} declares {declared} records but contains {}",
+            records.len()
+        )));
+    }
+    Ok(records)
 }
 
-fn split_ints(value: &str) -> Vec<i64> {
-    value
-        .split(|character: char| character == ',' || character.is_ascii_whitespace())
-        .filter_map(|part| part.parse().ok())
-        .collect()
+fn split_ints(value: &str) -> Result<Vec<i64>, &'static str> {
+    if value.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut values = Vec::new();
+    for group in value.split(',') {
+        if group.trim().is_empty() {
+            return Err("constraint integer list has an empty item");
+        }
+        for part in group.split_ascii_whitespace() {
+            values.push(
+                part.parse::<i64>()
+                    .map_err(|_| "constraint integer list has an invalid integer")?,
+            );
+        }
+    }
+    Ok(values)
 }
 
 fn int_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<i64> {
@@ -2116,7 +2808,10 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
     let native = || SketchGeometry::Native {
         native_kind: kind.to_owned(),
     };
-    if kind.contains("Line") {
+    if matches!(
+        kind,
+        "Part::GeomLine" | "Part::GeomLineSegment" | "Line" | "LineSegment"
+    ) {
         match (
             number("StartX"),
             number("StartY"),
@@ -2129,11 +2824,14 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             },
             _ => native(),
         }
-    } else if kind.contains("Ellipse") {
+    } else if matches!(
+        kind,
+        "Part::GeomEllipse" | "Part::GeomArcOfEllipse" | "Ellipse" | "ArcOfEllipse"
+    ) {
         let major_angle = number("MajorAngle")
             .or_else(|| number("AngleXU"))
             .or_else(|| Some(number("MajorAxisY")?.atan2(number("MajorAxisX")?)));
-        let bounds = if kind.contains("Arc") {
+        let bounds = if matches!(kind, "Part::GeomArcOfEllipse" | "ArcOfEllipse") {
             number("StartAngle")
                 .or_else(|| number("FirstParameter"))
                 .zip(number("EndAngle").or_else(|| number("LastParameter")))
@@ -2163,8 +2861,11 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             }
             _ => native(),
         }
-    } else if kind.contains("Hyperbola") {
-        let bounds = if kind.contains("Arc") {
+    } else if matches!(
+        kind,
+        "Part::GeomHyperbola" | "Part::GeomArcOfHyperbola" | "Hyperbola" | "ArcOfHyperbola"
+    ) {
+        let bounds = if matches!(kind, "Part::GeomArcOfHyperbola" | "ArcOfHyperbola") {
             number("StartAngle")
                 .or_else(|| number("FirstParameter"))
                 .zip(number("EndAngle").or_else(|| number("LastParameter")))
@@ -2194,8 +2895,11 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             }
             _ => native(),
         }
-    } else if kind.contains("Parabola") {
-        let bounds = if kind.contains("Arc") {
+    } else if matches!(
+        kind,
+        "Part::GeomParabola" | "Part::GeomArcOfParabola" | "Parabola" | "ArcOfParabola"
+    ) {
+        let bounds = if matches!(kind, "Part::GeomArcOfParabola" | "ArcOfParabola") {
             number("StartAngle")
                 .or_else(|| number("FirstParameter"))
                 .zip(number("EndAngle").or_else(|| number("LastParameter")))
@@ -2221,7 +2925,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             }
             _ => native(),
         }
-    } else if kind.contains("Arc") {
+    } else if matches!(kind, "Part::GeomArcOfCircle" | "ArcOfCircle") {
         let frame_angle = number("AngleXU").unwrap_or(0.0);
         match (
             number("CenterX"),
@@ -2245,7 +2949,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             }
             _ => native(),
         }
-    } else if kind.contains("Circle") {
+    } else if matches!(kind, "Part::GeomCircle" | "Circle") {
         match (number("CenterX"), number("CenterY"), number("Radius")) {
             (Some(x), Some(y), Some(radius)) if radius > 0.0 => SketchGeometry::Circle {
                 center: Point2::new(x, y),
@@ -2256,7 +2960,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             },
             _ => native(),
         }
-    } else if kind.contains("Point") {
+    } else if kind == "Part::GeomPoint" {
         match (number("X"), number("Y")) {
             (Some(x), Some(y)) => SketchGeometry::Point {
                 position: Point2::new(x, y),
@@ -2272,42 +2976,22 @@ fn build_profiles(
     entities: &[SketchEntity],
     constraints: &[SketchConstraint],
 ) -> Vec<Vec<SketchEntityUse>> {
-    let mut unused = entities
+    // Internal entities arrive in GeometryList order; appended external and built-in reference
+    // entities are construction entries. Indices therefore preserve the persisted ordinal for
+    // every eligible profile entity.
+    let profile_entities = entities
         .iter()
         .enumerate()
         .filter(|(_, entity)| !entity.construction)
         .map(|(index, _)| index)
         .collect::<BTreeSet<_>>();
-    let endpoint = |index: usize, start: bool| {
-        endpoints(&entities[index]).map(|points| if start { points.0 } else { points.1 })
-    };
-    let equivalent = |first: (usize, bool), second: (usize, bool)| {
-        constraints.iter().any(|constraint| {
-            if constraint.active == Some(false) {
-                return false;
-            }
-            let SketchConstraintDefinition::CoincidentLoci { loci } = &constraint.definition else {
-                return false;
-            };
-            loci.iter()
-                .any(|locus| endpoint_matches(locus, &entities[first.0].id, first.1))
-                && loci
-                    .iter()
-                    .any(|locus| endpoint_matches(locus, &entities[second.0].id, second.1))
-        }) || endpoint(first.0, first.1)
-            .zip(endpoint(second.0, second.1))
-            .is_some_and(|(first, second)| near(first, second))
-    };
+    let mut unused = profile_entities.clone();
+    let explicit_relations = explicit_endpoint_relations(&profile_entities, entities, constraints);
     let mut ambiguous = BTreeSet::new();
     for &entity in &unused {
         for start in [true, false] {
-            let matches = unused
-                .iter()
-                .copied()
-                .filter(|candidate| *candidate != entity)
-                .flat_map(|candidate| [(candidate, true), (candidate, false)])
-                .filter(|candidate| equivalent((entity, start), *candidate))
-                .collect::<Vec<_>>();
+            let matches =
+                endpoint_candidates((entity, start), &unused, &explicit_relations, entities);
             if matches.len() > 1 {
                 ambiguous.insert(entity);
                 ambiguous.extend(matches.into_iter().map(|(candidate, _)| candidate));
@@ -2315,6 +2999,7 @@ fn build_profiles(
         }
     }
     let mut profiles = Vec::new();
+    // FreeCAD persists no profile seed. CADIR selects the first remaining persisted ordinal.
     while let Some(first) = unused.pop_first() {
         let mut chain = vec![SketchEntityUse {
             entity: entities[first].id.clone(),
@@ -2331,21 +3016,18 @@ fn build_profiles(
         let mut head = (first, true);
         let mut tail = (first, false);
         loop {
-            let next = unused.iter().find_map(|index| {
-                if ambiguous.contains(index) {
-                    return None;
-                }
-                endpoints(&entities[*index])?;
-                if equivalent(tail, (*index, true)) {
-                    Some((*index, false, (*index, false)))
-                } else if equivalent(tail, (*index, false)) {
-                    Some((*index, true, (*index, true)))
-                } else {
-                    None
-                }
-            });
-            let Some((index, reversed, next_tail)) = next else {
+            let candidates = endpoint_candidates(tail, &unused, &explicit_relations, entities)
+                .into_iter()
+                .filter(|(index, _)| !ambiguous.contains(index))
+                .collect::<Vec<_>>();
+            let Some((index, candidate_start)) = (candidates.len() == 1).then(|| candidates[0])
+            else {
                 break;
+            };
+            let (reversed, next_tail) = if candidate_start {
+                (false, (index, false))
+            } else {
+                (true, (index, true))
             };
             unused.remove(&index);
             chain.push(SketchEntityUse {
@@ -2355,21 +3037,18 @@ fn build_profiles(
             tail = next_tail;
         }
         loop {
-            let previous = unused.iter().find_map(|index| {
-                if ambiguous.contains(index) {
-                    return None;
-                }
-                endpoints(&entities[*index])?;
-                if equivalent((*index, false), head) {
-                    Some((*index, false, (*index, true)))
-                } else if equivalent((*index, true), head) {
-                    Some((*index, true, (*index, false)))
-                } else {
-                    None
-                }
-            });
-            let Some((index, reversed, next_head)) = previous else {
+            let candidates = endpoint_candidates(head, &unused, &explicit_relations, entities)
+                .into_iter()
+                .filter(|(index, _)| !ambiguous.contains(index))
+                .collect::<Vec<_>>();
+            let Some((index, candidate_start)) = (candidates.len() == 1).then(|| candidates[0])
+            else {
                 break;
+            };
+            let (reversed, next_head) = if candidate_start {
+                (true, (index, false))
+            } else {
+                (false, (index, true))
             };
             unused.remove(&index);
             chain.insert(
@@ -2386,12 +3065,80 @@ fn build_profiles(
     profiles
 }
 
-fn endpoint_matches(locus: &SketchLocus, entity: &SketchEntityId, start: bool) -> bool {
-    matches!(
-        (locus, start),
-        (SketchLocus::Start(candidate), true) | (SketchLocus::End(candidate), false)
-            if candidate == entity
-    )
+fn endpoint_candidates(
+    endpoint: (usize, bool),
+    available: &BTreeSet<usize>,
+    explicit_relations: &BTreeMap<(usize, bool), BTreeSet<(usize, bool)>>,
+    entities: &[SketchEntity],
+) -> Vec<(usize, bool)> {
+    // Active explicit coincident loci override coordinates. Coordinate matching below is the
+    // decoder-owned CADIR boundary, not a producer tolerance.
+    if let Some(explicit) = explicit_relations.get(&endpoint) {
+        return explicit
+            .iter()
+            .copied()
+            .filter(|(candidate, _)| available.contains(candidate))
+            .collect();
+    }
+    available
+        .iter()
+        .copied()
+        .filter(|candidate| *candidate != endpoint.0)
+        .flat_map(|candidate| [(candidate, true), (candidate, false)])
+        .filter(|candidate| !explicit_relations.contains_key(candidate))
+        .filter(|candidate| {
+            endpoint_point(endpoint, entities)
+                .zip(endpoint_point(*candidate, entities))
+                .is_some_and(|(first, second)| endpoints_match_by_roundoff(first, second))
+        })
+        .collect()
+}
+
+fn explicit_endpoint_relations(
+    profile_entities: &BTreeSet<usize>,
+    entities: &[SketchEntity],
+    constraints: &[SketchConstraint],
+) -> BTreeMap<(usize, bool), BTreeSet<(usize, bool)>> {
+    let entity_indices = entities
+        .iter()
+        .enumerate()
+        .map(|(index, entity)| (entity.id.0.as_str(), index))
+        .collect::<HashMap<_, _>>();
+    let mut relations = BTreeMap::new();
+    for constraint in constraints {
+        if constraint.active == Some(false) {
+            continue;
+        }
+        let SketchConstraintDefinition::CoincidentLoci { loci } = &constraint.definition else {
+            continue;
+        };
+        let endpoints = loci
+            .iter()
+            .filter_map(|locus| match locus {
+                SketchLocus::Start(entity) => {
+                    Some((entity_indices.get(entity.0.as_str()).copied()?, true))
+                }
+                SketchLocus::End(entity) => {
+                    Some((entity_indices.get(entity.0.as_str()).copied()?, false))
+                }
+                _ => None,
+            })
+            .filter(|(entity, _)| profile_entities.contains(entity))
+            .collect::<BTreeSet<_>>();
+        for first in endpoints.iter().copied() {
+            relations.entry(first).or_insert_with(BTreeSet::new).extend(
+                endpoints
+                    .iter()
+                    .copied()
+                    .filter(|candidate| *candidate != first),
+            );
+        }
+    }
+    relations
+}
+
+fn endpoint_point(endpoint: (usize, bool), entities: &[SketchEntity]) -> Option<Point2> {
+    endpoints(&entities[endpoint.0]).map(|points| if endpoint.1 { points.0 } else { points.1 })
 }
 
 fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
@@ -2439,14 +3186,16 @@ fn endpoints(entity: &SketchEntity) -> Option<(Point2, Point2)> {
     }
 }
 
-fn near(a: Point2, b: Point2) -> bool {
+const SKETCH_ENDPOINT_ROUNDING_ULPS: f64 = 64.0;
+
+fn endpoints_match_by_roundoff(a: Point2, b: Point2) -> bool {
     let scale =
         a.u.abs()
             .max(a.v.abs())
             .max(b.u.abs())
             .max(b.v.abs())
             .max(1.0);
-    (a.u - b.u).hypot(a.v - b.v) <= 64.0 * f64::EPSILON * scale
+    (a.u - b.u).hypot(a.v - b.v) <= SKETCH_ENDPOINT_ROUNDING_ULPS * f64::EPSILON * scale
 }
 
 fn profile_ref(
@@ -2464,16 +3213,24 @@ fn profile_ref(
 }
 
 fn profile_target<'a>(properties: &'a [&PropertyRecord]) -> Option<(&'a PropertyRecord, &'a str)> {
-    ["Profile", "Sketch", "Base", "Source"]
-        .iter()
-        .find_map(|name| {
-            let property = property(properties, name)?;
-            let target = property
-                .links
-                .iter()
-                .find_map(|link| link.object.as_deref())?;
-            (!target.is_empty()).then_some((property, target))
-        })
+    let mut selected = None;
+    for name in ["Profile", "Sketch", "Base", "Source"] {
+        let Some(property) = property(properties, name) else {
+            continue;
+        };
+        let Some(link) = scalar_link(property) else {
+            if name == "Base" && !is_link_property_type(property.type_name.as_str()) {
+                continue;
+            }
+            return None;
+        };
+        let target = link.object.as_deref()?;
+        if target.is_empty() || selected.is_some() {
+            return None;
+        }
+        selected = Some((property, target));
+    }
+    selected
 }
 
 fn revolution_axis(properties: &[&PropertyRecord]) -> Option<RevolutionAxis> {
@@ -2503,10 +3260,10 @@ fn revolution_definition(
             .filter(|angle| angle.is_finite() && *angle > 0.0)
             .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()))
     };
-    let mode = integer_property(properties, "Type").unwrap_or(0);
+    let mode = enumeration_selector(properties, "Type", 0)?;
     let extent = if kind == "Part::Revolution" {
         let angle = angle()?;
-        if bool_property(properties, "Symmetric").unwrap_or(false) {
+        if bool_selector(properties, "Symmetric", false)? {
             RevolveExtent::Symmetric {
                 termination: Termination::Angle { angle },
             }
@@ -2519,7 +3276,7 @@ fn revolution_definition(
         match mode {
             0 => {
                 let angle = angle()?;
-                if bool_property(properties, "Midplane").unwrap_or(false) {
+                if bool_selector(properties, "Midplane", false)? {
                     RevolveExtent::Symmetric {
                         termination: Termination::Angle { angle },
                     }
@@ -2538,7 +3295,7 @@ fn revolution_definition(
             3 => RevolveExtent::OneSided {
                 termination: Termination::ToFace {
                     face: cadmpeg_ir::features::FaceSelection::Native(
-                        property(properties, "UpToFace")?.id.clone(),
+                        singular_operand(properties, "UpToFace")?.id.clone(),
                     ),
                     offset: None,
                 },
@@ -2556,21 +3313,36 @@ fn revolution_definition(
             _ => return None,
         }
     };
-    if bool_property(properties, "Reversed").unwrap_or(false) {
+    let reversed = if kind.starts_with("PartDesign::") {
+        bool_selector(properties, "Reversed", false)?
+    } else {
+        false
+    };
+    if reversed {
         axis.direction = Vector3::new(-axis.direction.x, -axis.direction.y, -axis.direction.z);
     }
-    let axis_reference_property = ["AxisLink", "ReferenceAxis"]
+    let axis_reference_properties = ["AxisLink", "ReferenceAxis"]
         .iter()
-        .find_map(|name| property(properties, name))
-        .filter(|property| property.links.iter().any(nonempty_link));
-    if axis_reference_property.is_some_and(|property| property.links.len() != 1) {
-        return None;
-    }
-    let axis_reference =
-        axis_reference_property.map(|property| PathRef::Native(property.id.clone()));
+        .filter_map(|name| property(properties, name))
+        .collect::<Vec<_>>();
+    let axis_reference = match axis_reference_properties.as_slice() {
+        [] => None,
+        [property] => {
+            if property.links.iter().any(nonempty_link) {
+                singular_reference_link(property)?;
+                Some(PathRef::Native(property.id.clone()))
+            } else {
+                None
+            }
+        }
+        _ => return None,
+    };
     let face_maker_class =
         if kind == "Part::Revolution" && property(properties, "FaceMakerClass").is_some() {
-            Some(string_property_value(property(properties, "FaceMakerClass")?)?.to_owned())
+            Some(string_property_value(property(
+                properties,
+                "FaceMakerClass",
+            )?)?)
         } else {
             None
         };
@@ -2591,18 +3363,14 @@ fn revolution_definition(
             extent: Some(extent),
             axis_reference,
             solid: Some(if kind == "Part::Revolution" {
-                if property(properties, "Solid").is_some() {
-                    bool_property(properties, "Solid")?
-                } else {
-                    false
-                }
+                bool_selector(properties, "Solid", false)?
             } else {
                 true
             }),
             face_maker_class,
             fuse_order,
-            allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
-                Some(bool_property(properties, "AllowMultiFace")?)
+            allow_multi_profile_faces: if kind.starts_with("PartDesign::") {
+                Some(bool_selector(properties, "AllowMultiFace", false)?)
             } else {
                 None
             },
@@ -2618,55 +3386,69 @@ fn revolution_definition(
 }
 
 fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<Vector3> {
-    let value = property(properties, name)?.values.iter().find(|value| {
-        value.attributes.contains_key("x")
-            || value.attributes.contains_key("X")
-            || value.attributes.contains_key("valueX")
-    })?;
-    let component = |lower: &str, upper: &str, property_name: &str| {
-        value
-            .attributes
-            .get(lower)
-            .or_else(|| value.attributes.get(upper))
-            .or_else(|| value.attributes.get(property_name))?
-            .parse::<f64>()
-            .ok()
+    let property = property(properties, name)?;
+    if !is_vector_property_type(&property.type_name) {
+        return None;
+    }
+    let attributes = direct_root_attributes(property, "PropertyVector")?;
+    let component = |name: &str| {
+        attributes
+            .get(name)
+            .and_then(|value| value.parse::<f64>().ok())
+            .filter(|value| value.is_finite())
     };
     Some(Vector3::new(
-        component("x", "X", "valueX")?,
-        component("y", "Y", "valueY")?,
-        component("z", "Z", "valueZ")?,
+        component("valueX")?,
+        component("valueY")?,
+        component("valueZ")?,
     ))
 }
 
-fn vector_list_property(properties: &[&PropertyRecord], name: &str) -> Option<Vec<Point3>> {
+fn vector_list_property(
+    properties: &[&PropertyRecord],
+    name: &str,
+    entries: &[EntryRecord],
+) -> Option<Vec<Point3>> {
     let property = property(properties, name)?;
-    property
-        .values
+    if property.type_name != "App::PropertyVectorList" {
+        return None;
+    }
+    let file = direct_root_attributes(property, "VectorList")?
+        .get("file")
+        .cloned()?;
+    if file.is_empty() {
+        return property.side_entries.is_empty().then(Vec::new);
+    }
+    if property.side_entries.as_slice() != [file.as_str()] {
+        return None;
+    }
+    let data = entries
         .iter()
-        .filter(|value| value.attributes.contains_key("x") || value.attributes.contains_key("X"))
-        .map(|value| {
-            let component = |lower: &str, upper: &str| {
-                value
-                    .attributes
-                    .get(lower)
-                    .or_else(|| value.attributes.get(upper))?
-                    .parse::<f64>()
-                    .ok()
-                    .filter(|component| component.is_finite())
-            };
-            Some(Point3::new(
-                component("x", "X")?,
-                component("y", "Y")?,
-                component("z", "Z")?,
-            ))
-        })
-        .collect()
+        .find(|entry| entry.name == file)?
+        .data
+        .as_slice();
+    let mut view = View::over_retained(data);
+    let count = view.u32_le()? as usize;
+    if count > MAX_SKETCH_RECORDS {
+        return None;
+    }
+    let values = view.read_counted(count as u64, 24, |view| {
+        Some(Point3::new(view.f64_le()?, view.f64_le()?, view.f64_le()?))
+    })?;
+    if !view.is_empty()
+        || values
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+    {
+        return None;
+    }
+    Some(values)
 }
 
 fn part_construction_geometry_definition(
     kind: &str,
     properties: &[&PropertyRecord],
+    entries: &[EntryRecord],
 ) -> Option<FeatureDefinition> {
     let point = |x: &str, y: &str, z: &str| {
         Some(Point3::new(
@@ -2713,7 +3495,7 @@ fn part_construction_geometry_definition(
             })
         }
         "Part::Polygon" => {
-            let points = vector_list_property(properties, "Nodes")?;
+            let points = vector_list_property(properties, "Nodes", entries)?;
             let closed = bool_property(properties, "Close").unwrap_or(false);
             if points.len() < 2 || (closed && points.len() < 3) {
                 return None;
@@ -2739,8 +3521,7 @@ fn part_construction_geometry_definition(
             }
             Some(FeatureDefinition::FaceFromShapes {
                 sources: BodySelection::Native(sources.id.clone()),
-                face_maker_class: string_property_value(property(properties, "FaceMakerClass")?)?
-                    .to_owned(),
+                face_maker_class: string_property_value(property(properties, "FaceMakerClass")?)?,
             })
         }
         _ => None,
@@ -2752,12 +3533,16 @@ fn parametric_helix_definition(
     properties: &[&PropertyRecord],
 ) -> Option<FeatureDefinition> {
     let radius = scalar_named(properties, "Radius").filter(|value| *value > 0.0)?;
-    let segment_turns = if property(properties, "SegmentLength").is_some() {
-        let value = scalar_named(properties, "SegmentLength").filter(|value| *value >= 0.0)?;
-        (value > 0.0).then_some(value)
+    let segment_default = if kind == "Part::Spiral" {
+        DEFAULT_PART_SPIRAL_SEGMENT_TURNS
     } else {
-        None
+        0.0
     };
+    let segment_value = quantity_constraint_selector(properties, "SegmentLength", segment_default)?;
+    if segment_value < 0.0 {
+        return None;
+    }
+    let segment_turns = (segment_value > 0.0).then_some(segment_value);
     let (pitch, revolutions, clockwise, radial_growth, cone_angle, construction_style) =
         if kind == "Part::Helix" {
             let pitch = scalar_named(properties, "Pitch").filter(|value| *value > 0.0)?;
@@ -2766,16 +3551,15 @@ fn parametric_helix_definition(
             if !angle.is_finite() || angle.abs() >= 90.0 {
                 return None;
             }
-            let clockwise = match integer_property(properties, "LocalCoord").unwrap_or(0) {
+            let clockwise = match enumeration_selector(properties, "LocalCoord", 0)? {
                 0 => false,
                 1 => true,
                 _ => return None,
             };
-            let construction_style = match integer_property(properties, "Style") {
-                None => None,
-                Some(0) => Some(HelixConstructionStyle::Legacy),
-                Some(1) => Some(HelixConstructionStyle::Corrected),
-                Some(_) => return None,
+            let construction_style = match enumeration_selector(properties, "Style", 0)? {
+                0 => Some(HelixConstructionStyle::Legacy),
+                1 => Some(HelixConstructionStyle::Corrected),
+                _ => return None,
             };
             (
                 pitch,
@@ -2818,7 +3602,7 @@ fn extrusion_definition(
             (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
                 .sqrt()
         });
-        let direction_mode = integer_property(properties, "DirMode").unwrap_or(0);
+        let direction_mode = enumeration_selector(properties, "DirMode", 0)?;
         let (mut direction, direction_source) = match direction_mode {
             0 => (raw_direction?.unit()?, ExtrusionDirectionSource::Custom),
             1 => {
@@ -2857,7 +3641,7 @@ fn extrusion_definition(
         if forward == 0.0 && reverse == 0.0 {
             forward = direction_magnitude.filter(|value| value.is_finite() && *value > 0.0)?;
         }
-        let symmetric = bool_property(properties, "Symmetric").unwrap_or(false);
+        let symmetric = bool_selector(properties, "Symmetric", false)?;
         let forward_draft = scalar_named(properties, "TaperAngle").unwrap_or(0.0);
         let reverse_draft = scalar_named(properties, "TaperAngleRev").unwrap_or(0.0);
         if !forward_draft.is_finite() || !reverse_draft.is_finite() {
@@ -2946,7 +3730,7 @@ fn extrusion_definition(
                 (None, None) => return None,
             }
         };
-        if reverse_direction ^ bool_property(properties, "Reversed").unwrap_or(false) {
+        if reverse_direction ^ bool_selector(properties, "Reversed", false)? {
             direction = Vector3::new(-direction.x, -direction.y, -direction.z);
         }
         let face_maker = if let Some(class_property) = property(properties, "FaceMakerClass") {
@@ -2956,7 +3740,7 @@ fn extrusion_definition(
                 None
             };
             Some(ExtrusionFaceMaker {
-                class: string_property_value(class_property)?.to_owned(),
+                class: string_property_value(class_property)?,
                 mode,
             })
         } else {
@@ -2978,7 +3762,7 @@ fn extrusion_definition(
             extent,
             op: BooleanOp::NewBody,
             direction_source: Some(direction_source),
-            solid: Some(bool_property(properties, "Solid").unwrap_or(false)),
+            solid: Some(bool_selector(properties, "Solid", false)?),
             face_maker,
             inner_wire_taper,
             length_along_profile_normal: None,
@@ -2986,7 +3770,7 @@ fn extrusion_definition(
         });
     }
     let legacy_two_lengths = property(properties, "SideType").is_none()
-        && integer_property(properties, "Type") == Some(4);
+        && enumeration_selector(properties, "Type", 0) == Some(4);
     let termination = |side: u8| {
         let suffix = if side == 1 { "" } else { "2" };
         let type_name = format!("Type{suffix}");
@@ -2996,7 +3780,7 @@ fn extrusion_definition(
         let termination_type = if legacy_two_lengths {
             0
         } else {
-            integer_property(properties, &type_name).unwrap_or(0)
+            enumeration_selector(properties, &type_name, 0)?
         };
         match termination_type {
             0 => Some(Termination::Blind {
@@ -3009,25 +3793,27 @@ fn extrusion_definition(
             2 => Some(Termination::ToFirst),
             3 => Some(Termination::ToFace {
                 face: cadmpeg_ir::features::FaceSelection::Native(
-                    property(properties, &face_name)?.id.clone(),
+                    singular_operand(properties, &face_name)?.id.clone(),
                 ),
                 offset: None,
             }),
             5 => Some(Termination::ToShape {
                 target: cadmpeg_ir::features::FaceSelection::Native(
-                    property(properties, &shape_name)?.id.clone(),
+                    singular_operand(properties, &shape_name)?.id.clone(),
                 ),
             }),
             _ => None,
         }
     };
-    let side_type = integer_property(properties, "SideType").unwrap_or_else(|| {
-        if bool_property(properties, "Midplane").unwrap_or(false) {
-            2
-        } else {
-            u64::from(integer_property(properties, "Type") == Some(4))
-        }
-    });
+    let side_type = if legacy_two_lengths {
+        1
+    } else if bool_selector(properties, "Midplane", false)? {
+        2
+    } else if property(properties, "SideType").is_some() {
+        enumeration_selector(properties, "SideType", 0)?
+    } else {
+        0
+    };
     // First-side draft and offset apply to every extent shape. `TaperAngle2`
     // and `Offset2` describe a second, independent side and are read only when
     // the extent actually carries one (`SideType` 1 / two-sided). A symmetric
@@ -3076,7 +3862,7 @@ fn extrusion_definition(
         },
         _ => return None,
     };
-    let use_custom = bool_property(properties, "UseCustomVector").unwrap_or(false);
+    let use_custom = bool_selector(properties, "UseCustomVector", false)?;
     let is_nonempty_link = |link: &crate::native::LinkTarget| {
         link.document.is_some()
             || link
@@ -3134,7 +3920,7 @@ fn extrusion_definition(
         };
         (direction, ExtrusionDirectionSource::ProfileNormal)
     };
-    if bool_property(properties, "Reversed").unwrap_or(false) {
+    if bool_selector(properties, "Reversed", false)? {
         let cadmpeg_ir::features::ExtrudeDirection::Explicit(vector) = direction else {
             return None;
         };
@@ -3142,16 +3928,8 @@ fn extrusion_definition(
             -vector.x, -vector.y, -vector.z,
         ));
     }
-    let length_along_profile_normal = if property(properties, "AlongSketchNormal").is_some() {
-        Some(bool_property(properties, "AlongSketchNormal")?)
-    } else {
-        None
-    };
-    let allow_multi_profile_faces = if property(properties, "AllowMultiFace").is_some() {
-        Some(bool_property(properties, "AllowMultiFace")?)
-    } else {
-        None
-    };
+    let length_along_profile_normal = Some(bool_selector(properties, "AlongSketchNormal", true)?);
+    let allow_multi_profile_faces = Some(bool_selector(properties, "AllowMultiFace", false)?);
     Some(FeatureDefinition::Extrude {
         profile,
         direction,
@@ -3171,23 +3949,26 @@ fn extrusion_definition(
     })
 }
 
-fn dress_up_edge_selection(properties: &[&PropertyRecord]) -> EdgeSelection {
-    if bool_property(properties, "UseAllEdges").unwrap_or(false) {
-        return EdgeSelection::All;
-    }
-    property(properties, "Base").map_or(EdgeSelection::Unresolved, |property| {
-        EdgeSelection::Native(property.id.clone())
+fn dress_up_edge_selection(kind: &str, properties: &[&PropertyRecord]) -> Option<EdgeSelection> {
+    let use_all_edges = if matches!(kind, "PartDesign::Fillet" | "PartDesign::Chamfer") {
+        bool_selector(properties, "UseAllEdges", false)?
+    } else {
+        false
+    };
+    Some(if use_all_edges {
+        EdgeSelection::All
+    } else {
+        property(properties, "Base").map_or(EdgeSelection::Unresolved, |property| {
+            EdgeSelection::Native(property.id.clone())
+        })
     })
 }
 
 fn scale_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
-    let base = property(properties, "Base")?;
-    if base.links.is_empty() {
-        return None;
-    }
+    let base = singular_operand(properties, "Base")?;
     let factor =
         |name| scalar_named(properties, name).filter(|factor| factor.is_finite() && *factor != 0.0);
-    let factors = if bool_property(properties, "Uniform").unwrap_or(true) {
+    let factors = if bool_selector(properties, "Uniform", true)? {
         ScaleFactors {
             uniform: Some(factor("UniformScale")?),
             x: None,
@@ -3214,7 +3995,7 @@ fn fillet_definition(
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
 ) -> Option<FeatureDefinition> {
-    let edges = dress_up_edge_selection(properties);
+    let edges = dress_up_edge_selection(kind, properties)?;
     if matches!(edges, EdgeSelection::Unresolved) {
         return None;
     }
@@ -3245,8 +4026,9 @@ fn chamfer_definition(
     kind: &str,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
+    program_version: Option<&str>,
 ) -> Option<FeatureDefinition> {
-    let edges = dress_up_edge_selection(properties);
+    let edges = dress_up_edge_selection(kind, properties)?;
     if matches!(edges, EdgeSelection::Unresolved) {
         return None;
     }
@@ -3274,9 +4056,23 @@ fn chamfer_definition(
     } else {
         chamfer_spec(properties)?
     };
+    let flip_direction = if kind == "PartDesign::Chamfer" {
+        bool_selector(properties, "FlipDirection", false)?
+    } else {
+        false
+    };
+    let legacy_flip = kind == "PartDesign::Chamfer"
+        && program_version.is_some_and(|version| version.starts_with('0'))
+        && property(properties, "ChamferType")
+            .and_then(scalar_value)
+            .is_some_and(|value| value == 1.0 || value == 2.0);
     Some(FeatureDefinition::Chamfer {
         groups: vec![cadmpeg_ir::features::ChamferGroup { edges, spec }],
-        flip_direction: bool_property(properties, "FlipDirection").unwrap_or(false),
+        flip_direction: if legacy_flip {
+            !flip_direction
+        } else {
+            flip_direction
+        },
     })
 }
 
@@ -3298,18 +4094,20 @@ fn part_fillet_edge_values(
     view.is_empty().then_some(values)
 }
 
-fn shell_mode(properties: &[&PropertyRecord]) -> Option<ShellMode> {
-    match integer_property(properties, "Mode").unwrap_or(0) {
+fn shell_mode(kind: &str, properties: &[&PropertyRecord]) -> Option<ShellMode> {
+    let absent_default = u64::from(kind == "Part::Offset2D");
+    match enumeration_selector(properties, "Mode", absent_default)? {
         0 => Some(ShellMode::Skin),
         1 => Some(ShellMode::Pipe),
-        2 => Some(ShellMode::BothSides),
+        2 if kind != "Part::Offset2D" => Some(ShellMode::BothSides),
         _ => None,
     }
 }
 
-fn shell_join(properties: &[&PropertyRecord]) -> Option<ShellJoin> {
-    match integer_property(properties, "Join").unwrap_or(0) {
+fn shell_join(kind: &str, properties: &[&PropertyRecord]) -> Option<ShellJoin> {
+    match enumeration_selector(properties, "Join", 0)? {
         0 => Some(ShellJoin::Arc),
+        1 if kind == "PartDesign::Thickness" => Some(ShellJoin::Intersection),
         1 => Some(ShellJoin::Tangent),
         2 => Some(ShellJoin::Intersection),
         _ => None,
@@ -3339,8 +4137,8 @@ fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
         } else {
             !bool_property(properties, "Reversed").unwrap_or(false)
         }),
-        mode: Some(shell_mode(properties)?),
-        join: Some(shell_join(properties)?),
+        mode: Some(shell_mode(kind, properties)?),
+        join: Some(shell_join(kind, properties)?),
         resolve_intersections: Some(bool_property(properties, "Intersection").unwrap_or(false)),
         allow_self_intersections: Some(
             bool_property(properties, "SelfIntersection").unwrap_or(false),
@@ -3352,13 +4150,10 @@ fn offset_shape_definition(
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Option<FeatureDefinition> {
-    let source = property(properties, "Source")?;
-    if source.links.is_empty() {
-        return None;
-    }
+    let source = singular_operand(properties, "Source")?;
     let distance = scalar_named(properties, "Value")
         .filter(|distance| distance.is_finite() && *distance != 0.0)?;
-    let mode = shell_mode(properties)?;
+    let mode = shell_mode(kind, properties)?;
     if kind == "Part::Offset2D" && mode == ShellMode::BothSides {
         return None;
     }
@@ -3366,7 +4161,7 @@ fn offset_shape_definition(
         source: BodySelection::Native(source.id.clone()),
         distance: Length(distance),
         mode,
-        join: shell_join(properties)?,
+        join: shell_join(kind, properties)?,
         resolve_intersections: bool_property(properties, "Intersection").unwrap_or(false),
         allow_self_intersections: bool_property(properties, "SelfIntersection").unwrap_or(false),
         fill: bool_property(properties, "Fill").unwrap_or(false),
@@ -3384,9 +4179,7 @@ fn derived_shape_definition(
                 return property(properties, "Shape").map(|_| FeatureDefinition::StoredGeometry);
             };
             if links.links.is_empty() {
-                return Some(FeatureDefinition::Compound {
-                    members: BodySelection::Native(links.id.clone()),
-                });
+                return None;
             }
             Some(FeatureDefinition::Compound {
                 members: BodySelection::Native(links.id.clone()),
@@ -3470,7 +4263,7 @@ fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<Featu
     if support.links.len() != 1 {
         return None;
     }
-    let mode = match integer_property(properties, "Mode").unwrap_or(0) {
+    let mode = match enumeration_selector(properties, "Mode", 0)? {
         0 => SurfaceProjectionMode::All,
         1 => SurfaceProjectionMode::Faces,
         2 => SurfaceProjectionMode::Edges,
@@ -3567,6 +4360,10 @@ fn property<'a>(properties: &'a [&PropertyRecord], name: &str) -> Option<&'a Pro
         .find(|property| property.name == name)
 }
 
+fn malformed(message: impl Into<String>) -> CodecError {
+    CodecError::Malformed(message.into())
+}
+
 fn nonempty_link(link: &crate::native::LinkTarget) -> bool {
     link.document.is_some()
         || link
@@ -3575,27 +4372,159 @@ fn nonempty_link(link: &crate::native::LinkTarget) -> bool {
             .is_some_and(|object| !object.is_empty())
 }
 
+fn singular_operand<'a>(
+    properties: &'a [&PropertyRecord],
+    name: &str,
+) -> Option<&'a PropertyRecord> {
+    let property = property(properties, name)?;
+    let [link] = property.links.as_slice() else {
+        return None;
+    };
+    link.object
+        .as_deref()
+        .filter(|object| !object.is_empty())
+        .map(|_| property)
+}
+
+fn direct_root_attributes(
+    property: &PropertyRecord,
+    expected_tag: &str,
+) -> Option<BTreeMap<String, String>> {
+    let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
+    let roots = document
+        .root_element()
+        .children()
+        .filter(|node| node.is_element() && node.has_tag_name(expected_tag))
+        .collect::<Vec<_>>();
+    if roots.len() != 1
+        || document
+            .descendants()
+            .filter(|node| node.has_tag_name(expected_tag))
+            .count()
+            != 1
+    {
+        return None;
+    }
+    Some(
+        roots[0]
+            .attributes()
+            .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+            .collect(),
+    )
+}
+
+fn is_vector_property_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyVector"
+            | "App::PropertyVectorDistance"
+            | "App::PropertyPosition"
+            | "App::PropertyDirection"
+    )
+}
+
+fn scalar_value_tag(type_name: &str) -> Option<&'static str> {
+    match type_name {
+        "App::PropertyBool" => Some("Bool"),
+        "App::PropertyEnumeration"
+        | "App::PropertyInteger"
+        | "App::PropertyIntegerConstraint"
+        | "App::PropertyPercent" => Some("Integer"),
+        "App::PropertyFloat"
+        | "App::PropertyFloatConstraint"
+        | "App::PropertyPrecision"
+        | "App::PropertyAcceleration"
+        | "App::PropertyAmountOfSubstance"
+        | "App::PropertyAngle"
+        | "App::PropertyArea"
+        | "App::PropertyCompressiveStrength"
+        | "App::PropertyCurrentDensity"
+        | "App::PropertyDensity"
+        | "App::PropertyDissipationRate"
+        | "App::PropertyDistance"
+        | "App::PropertyDynamicViscosity"
+        | "App::PropertyElectricalCapacitance"
+        | "App::PropertyElectricalConductance"
+        | "App::PropertyElectricalConductivity"
+        | "App::PropertyElectricalInductance"
+        | "App::PropertyElectricalResistance"
+        | "App::PropertyElectricCharge"
+        | "App::PropertySurfaceChargeDensity"
+        | "App::PropertyVolumeChargeDensity"
+        | "App::PropertyElectricCurrent"
+        | "App::PropertyElectricPotential"
+        | "App::PropertyElectromagneticPotential"
+        | "App::PropertyFrequency"
+        | "App::PropertyForce"
+        | "App::PropertyHeatFlux"
+        | "App::PropertyInverseArea"
+        | "App::PropertyInverseLength"
+        | "App::PropertyInverseVolume"
+        | "App::PropertyKinematicViscosity"
+        | "App::PropertyLength"
+        | "App::PropertyLuminousIntensity"
+        | "App::PropertyMagneticFieldStrength"
+        | "App::PropertyMagneticFlux"
+        | "App::PropertyMagneticFluxDensity"
+        | "App::PropertyMagnetization"
+        | "App::PropertyMass"
+        | "App::PropertyMoment"
+        | "App::PropertyPressure"
+        | "App::PropertyPower"
+        | "App::PropertyQuantity"
+        | "App::PropertyQuantityConstraint"
+        | "App::PropertyShearModulus"
+        | "App::PropertySpecificEnergy"
+        | "App::PropertySpecificHeat"
+        | "App::PropertySpeed"
+        | "App::PropertyStiffness"
+        | "App::PropertyStiffnessDensity"
+        | "App::PropertyStress"
+        | "App::PropertyTemperature"
+        | "App::PropertyThermalConductivity"
+        | "App::PropertyThermalExpansionCoefficient"
+        | "App::PropertyThermalTransferCoefficient"
+        | "App::PropertyTime"
+        | "App::PropertyUltimateTensileStrength"
+        | "App::PropertyVacuumPermittivity"
+        | "App::PropertyVelocity"
+        | "App::PropertyVolume"
+        | "App::PropertyVolumeFlowRate"
+        | "App::PropertyVolumetricThermalExpansionCoefficient"
+        | "App::PropertyWork"
+        | "App::PropertyYieldStrength"
+        | "App::PropertyYoungsModulus" => Some("Float"),
+        _ => None,
+    }
+}
+
+fn text_value_tag(type_name: &str) -> Option<&'static str> {
+    scalar_value_tag(type_name).or(match type_name {
+        "App::PropertyBoolList" => Some("BoolList"),
+        "App::PropertyFile"
+        | "App::PropertyFont"
+        | "App::PropertyPersistentObject"
+        | "App::PropertyString" => Some("String"),
+        "App::PropertyFileIncluded" => Some("FileIncluded"),
+        "App::PropertyPath" => Some("Path"),
+        "App::PropertyUUID" => Some("Uuid"),
+        _ => None,
+    })
+}
+
 fn scalar_value(property: &PropertyRecord) -> Option<f64> {
-    property
-        .values
-        .iter()
-        .find_map(|value| value_attribute(value).and_then(|value| value.parse().ok()))
+    let tag = scalar_value_tag(&property.type_name)?;
+    if tag == "Bool" {
+        return None;
+    }
+    let attributes = direct_root_attributes(property, tag)?;
+    let value = attributes.get("value")?.parse::<f64>().ok()?;
+    value.is_finite().then_some(value)
 }
 
 fn scalar_text(property: &PropertyRecord) -> Option<String> {
-    property
-        .values
-        .iter()
-        .find_map(value_attribute)
-        .map(str::to_owned)
-}
-
-fn value_attribute(value: &ValueRecord) -> Option<&str> {
-    value
-        .attributes
-        .get("value")
-        .or_else(|| value.attributes.get("Value"))
-        .map(String::as_str)
+    let tag = text_value_tag(&property.type_name)?;
+    direct_root_attributes(property, tag)?.remove("value")
 }
 
 fn native_parameters(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
@@ -3738,7 +4667,7 @@ fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Featur
 
 fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let op = if kind == "PartDesign::Boolean" {
-        match integer_property(properties, "Type").unwrap_or(0) {
+        match enumeration_selector(properties, "Type", 0)? {
             0 => BooleanOp::Join,
             1 => BooleanOp::Cut,
             2 => BooleanOp::Intersect,
@@ -3758,9 +4687,10 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
         if group.links.is_empty() {
             return None;
         }
-        if let Some(base) =
-            property(properties, "BaseFeature").filter(|base| !base.links.is_empty())
+        if property(properties, "BaseFeature")
+            .is_some_and(|property| property.links.iter().any(nonempty_link))
         {
+            let base = singular_operand(properties, "BaseFeature")?;
             (
                 BodySelection::Native(base.id.clone()),
                 BodySelection::Native(group.id.clone()),
@@ -3772,12 +4702,9 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
                 BodySelection::Native(format!("{}:links:0..{last}", group.id)),
             )
         }
-    } else if let (Some(base), Some(tool)) =
-        (property(properties, "Base"), property(properties, "Tool"))
-    {
-        if base.links.is_empty() || tool.links.is_empty() {
-            return None;
-        }
+    } else if property(properties, "Base").is_some() || property(properties, "Tool").is_some() {
+        let base = singular_operand(properties, "Base")?;
+        let tool = singular_operand(properties, "Tool")?;
         (
             BodySelection::Native(base.id.clone()),
             BodySelection::Native(tool.id.clone()),
@@ -3826,6 +4753,7 @@ fn loft_definition(
     } else {
         None
     };
+    let part_design = kind.starts_with("PartDesign::");
     Some(FeatureDefinition::Loft {
         sections: profiles
             .into_iter()
@@ -3834,18 +4762,21 @@ fn loft_definition(
         guides: Vec::new(),
         centerline: None,
         op: operation_boolean(kind),
-        closed: bool_property(properties, "Closed").unwrap_or(false),
-        solid: kind.starts_with("PartDesign::")
-            || bool_property(properties, "Solid").unwrap_or(true),
-        ruled: bool_property(properties, "Ruled").unwrap_or(false),
-        max_degree,
-        check_compatibility: if property(properties, "CheckCompatibility").is_some() {
-            Some(bool_property(properties, "CheckCompatibility")?)
+        closed: bool_selector(properties, "Closed", false)?,
+        solid: if part_design {
+            true
         } else {
-            None
+            bool_selector(properties, "Solid", true)?
         },
-        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
-            Some(bool_property(properties, "AllowMultiFace")?)
+        ruled: bool_selector(properties, "Ruled", false)?,
+        linearize: if part_design {
+            false
+        } else {
+            bool_selector(properties, "Linearize", false)?
+        },
+        max_degree,
+        allow_multi_profile_faces: if part_design {
+            Some(bool_selector(properties, "AllowMultiFace", false)?)
         } else {
             None
         },
@@ -3875,12 +4806,30 @@ fn sweep_definition(
         return None;
     }
     let profile = profiles.remove(0);
-    let path_property = property(properties, "Spine").or_else(|| property(properties, "Path"))?;
-    if path_property.links.is_empty() {
-        return None;
-    }
-    let solid =
-        kind.starts_with("PartDesign::") || bool_property(properties, "Solid").unwrap_or(false);
+    let path_property = property(properties, "Spine")
+        .or_else(|| property(properties, "Path"))
+        .filter(|property| singular_operand(properties, &property.name).is_some())?;
+    let part_design = kind.starts_with("PartDesign::");
+    let solid = if part_design {
+        true
+    } else {
+        bool_selector(properties, "Solid", true)?
+    };
+    let path_tangent = if part_design {
+        bool_selector(properties, "SpineTangent", false)?
+    } else {
+        false
+    };
+    let auxiliary_spine_tangent = if part_design {
+        bool_selector(properties, "AuxiliarySpineTangent", false)?
+    } else {
+        false
+    };
+    let auxiliary_curvilinear = if part_design {
+        bool_selector(properties, "AuxiliaryCurvilinear", true)?
+    } else {
+        true
+    };
     let transition = match integer_property(properties, "Transition")
         .unwrap_or(u64::from(kind == "Part::Sweep"))
     {
@@ -3890,7 +4839,7 @@ fn sweep_definition(
         _ => return None,
     };
     let orientation = if kind == "Part::Sweep" {
-        if bool_property(properties, "Frenet").unwrap_or(true) {
+        if bool_selector(properties, "Frenet", true)? {
             SweepOrientation::Frenet
         } else {
             SweepOrientation::CorrectedFrenet
@@ -3902,13 +4851,11 @@ fn sweep_definition(
             2 => SweepOrientation::Frenet,
             3 => {
                 let auxiliary = property(properties, "AuxiliarySpine")?;
-                if auxiliary.links.is_empty() {
-                    return None;
-                }
+                singular_operand(properties, "AuxiliarySpine")?;
                 SweepOrientation::Auxiliary {
                     path: PathRef::Native(auxiliary.id.clone()),
-                    tangent: bool_property(properties, "AuxiliarySpineTangent").unwrap_or(false),
-                    curvilinear: bool_property(properties, "AuxiliaryCurvilinear").unwrap_or(true),
+                    tangent: auxiliary_spine_tangent,
+                    curvilinear: auxiliary_curvilinear,
                 }
             }
             4 => SweepOrientation::Binormal {
@@ -3946,15 +4893,19 @@ fn sweep_definition(
         orientation: Some(orientation),
         transition: Some(transition),
         transformation: Some(transformation),
-        path_tangent: bool_property(properties, "SpineTangent").unwrap_or(false),
-        linearize: bool_property(properties, "Linearize").unwrap_or(false),
+        path_tangent,
+        linearize: if kind == "Part::Sweep" {
+            bool_selector(properties, "Linearize", false)?
+        } else {
+            false
+        },
         twist: None,
         path_extent: None,
         guide_rail: None,
         taper: None,
         scale: None,
-        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
-            Some(bool_property(properties, "AllowMultiFace")?)
+        allow_multi_profile_faces: if part_design {
+            Some(bool_selector(properties, "AllowMultiFace", false)?)
         } else {
             None
         },
@@ -3973,7 +4924,7 @@ fn hole_definition(
     if matches!(profile, ProfileRef::Unresolved(_)) {
         return None;
     }
-    let filter_bits = integer_property(properties, "BaseProfileType").unwrap_or(6);
+    let filter_bits = integer_selector(properties, "BaseProfileType", 6)?;
     let profile_filter = HoleProfileFilter {
         points: filter_bits & 1 != 0,
         circles: filter_bits & 2 != 0,
@@ -3992,7 +4943,7 @@ fn hole_definition(
     let legacy_cut_types = program_version
         .and_then(freecad_program_version)
         .is_some_and(|version| version < (0, 21));
-    let kind = match integer_property(properties, "HoleCutType").unwrap_or(0) {
+    let kind = match enumeration_selector(properties, "HoleCutType", 0)? {
         0 => HoleKind::Simple,
         1 => HoleKind::Counterbore {
             diameter: Length(positive("HoleCutDiameter")?),
@@ -4018,22 +4969,22 @@ fn hole_definition(
         },
         _ => return None,
     };
-    let extent = match integer_property(properties, "DepthType").unwrap_or(0) {
+    let extent = match enumeration_selector(properties, "DepthType", 0)? {
         0 => Termination::Blind {
             length: Length(positive("Depth")?),
         },
         1 => Termination::ThroughAll,
         _ => return None,
     };
-    let bottom = match integer_property(properties, "DrillPoint").unwrap_or(1) {
+    let bottom = match enumeration_selector(properties, "DrillPoint", 1)? {
         0 => HoleBottom::Flat,
         1 => HoleBottom::Angled {
             included_angle: cadmpeg_ir::features::Angle(positive("DrillPointAngle")?.to_radians()),
-            depth_to_tip: bool_property(properties, "DrillForDepth").unwrap_or(false),
+            depth_to_tip: bool_selector(properties, "DrillForDepth", false)?,
         },
         _ => return None,
     };
-    let tapered = bool_property(properties, "Tapered").unwrap_or(false);
+    let tapered = bool_selector(properties, "Tapered", false)?;
     let taper_angle = tapered
         .then(|| {
             positive("TaperedAngle")
@@ -4044,11 +4995,11 @@ fn hole_definition(
     if tapered && taper_angle.is_none() {
         return None;
     }
-    let thread_type = integer_property(properties, "ThreadType").unwrap_or(0);
+    let thread_type = enumeration_selector(properties, "ThreadType", 0)?;
     let specification = if thread_type == 0 {
         None
     } else {
-        let threaded = bool_property(properties, "Threaded").unwrap_or(false);
+        let threaded = bool_selector(properties, "Threaded", false)?;
         Some(Box::new(HoleSpecification {
             standard: thread_standard(thread_type)?.into(),
             designation: enumeration_label(properties, "ThreadSize"),
@@ -4063,18 +5014,20 @@ fn hole_definition(
                 enumeration_label(properties, "ThreadFit")
             },
             threaded,
-            modeled: bool_property(properties, "ModelThread")
-                .or_else(|| bool_property(properties, "ModelActualThread"))
-                .unwrap_or(false),
-            cosmetic: bool_property(properties, "CosmeticThread").unwrap_or(false),
+            modeled: if property(properties, "ModelThread").is_some() {
+                bool_selector(properties, "ModelThread", false)?
+            } else {
+                bool_selector(properties, "ModelActualThread", false)?
+            },
+            cosmetic: bool_selector(properties, "CosmeticThread", false)?,
             pitch: positive("ThreadPitch").map(Length),
             major_diameter: positive("ThreadDiameter").map(Length),
-            hand: match integer_property(properties, "ThreadDirection").unwrap_or(0) {
+            hand: match enumeration_selector(properties, "ThreadDirection", 0)? {
                 0 => ThreadHand::Right,
                 1 => ThreadHand::Left,
                 _ => return None,
             },
-            depth: match integer_property(properties, "ThreadDepthType").unwrap_or(0) {
+            depth: match enumeration_selector(properties, "ThreadDepthType", 0)? {
                 0 => HoleThreadDepth::HoleDepth,
                 1 => HoleThreadDepth::Blind {
                     depth: Length(positive("ThreadDepth")?),
@@ -4082,7 +5035,7 @@ fn hole_definition(
                 2 => HoleThreadDepth::TappedStandard,
                 _ => return None,
             },
-            clearance: if bool_property(properties, "UseCustomThreadClearance").unwrap_or(false) {
+            clearance: if bool_selector(properties, "UseCustomThreadClearance", false)? {
                 Some(Length(scalar_named(properties, "CustomThreadClearance")?))
             } else {
                 None
@@ -4105,11 +5058,7 @@ fn hole_definition(
         bottom: Some(bottom),
         taper_angle,
         specification,
-        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
-            Some(bool_property(properties, "AllowMultiFace")?)
-        } else {
-            None
-        },
+        allow_multi_profile_faces: Some(bool_selector(properties, "AllowMultiFace", false)?),
     })
 }
 
@@ -4152,7 +5101,7 @@ fn helical_sweep_definition(
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<FeatureDefinition> {
-    let law = match integer_property(properties, "Mode")? {
+    let law = match enumeration_selector(properties, "Mode", 0)? {
         0 => HelicalSweepLaw::PitchHeightAngle,
         1 => HelicalSweepLaw::PitchTurnsAngle,
         2 => HelicalSweepLaw::HeightTurnsAngle,
@@ -4163,8 +5112,12 @@ fn helical_sweep_definition(
         .zip(vector_property(properties, "Axis"))
         .map(|(origin, direction)| (Point3::new(origin.x, origin.y, origin.z), direction))
         .or_else(|| axis_reference(properties, "ReferenceAxis", objects, properties_by_owner))?;
+    let profile = profile_ref(owner, properties, sketches);
+    if matches!(profile, ProfileRef::Unresolved(_)) {
+        return None;
+    }
     let construction = HelicalSweepConstruction {
-        profile: profile_ref(owner, properties, sketches),
+        profile,
         axis_origin,
         axis_direction: axis_direction.unit()?,
         law,
@@ -4173,17 +5126,17 @@ fn helical_sweep_definition(
         turns: scalar_named(properties, "Turns")?,
         radial_growth: Length(scalar_named(properties, "Growth")?),
         cone_angle: cadmpeg_ir::features::Angle(scalar_named(properties, "Angle")?.to_radians()),
-        left_handed: bool_property(properties, "LeftHanded")?,
-        reversed: bool_property(properties, "Reversed")?,
-        tolerance: scalar_named(properties, "Tolerance"),
-        allow_multi_profile_faces: if property(properties, "AllowMultiFace").is_some() {
-            Some(bool_property(properties, "AllowMultiFace")?)
-        } else {
-            None
-        },
+        left_handed: bool_selector(properties, "LeftHanded", false)?,
+        reversed: bool_selector(properties, "Reversed", false)?,
+        tolerance: Some(float_constraint_selector(
+            properties,
+            "Tolerance",
+            DEFAULT_HELICAL_SWEEP_TOLERANCE,
+        )?),
+        allow_multi_profile_faces: Some(bool_selector(properties, "AllowMultiFace", false)?),
     };
     let op = if kind.ends_with("SubtractiveHelix") {
-        if bool_property(properties, "Outside").unwrap_or(false) {
+        if bool_selector(properties, "Outside", false)? {
             BooleanOp::Intersect
         } else {
             BooleanOp::Cut
@@ -4216,60 +5169,77 @@ fn binder_definition(
         .collect::<Option<Vec<_>>>()?;
     let construction = if kind == "PartDesign::ShapeBinder" {
         BinderConstruction::Shape {
-            trace_support: bool_property(properties, "TraceSupport").unwrap_or(false),
+            trace_support: bool_selector(properties, "TraceSupport", false)?,
         }
     } else {
-        let distance = scalar_named(properties, "Offset").unwrap_or(0.0);
-        if !distance.is_finite() {
-            return None;
-        }
+        let distance = float_selector(properties, "Offset", 0.0)?;
+        let offset_join = enumeration_selector(properties, "OffsetJoinType", 0)?;
+        let offset_fill = bool_selector(properties, "OffsetFill", false)?;
+        let offset_open_result = bool_selector(properties, "OffsetOpenResult", false)?;
+        let offset_intersection = bool_selector(properties, "OffsetIntersection", false)?;
         let offset = if distance == 0.0 {
             None
         } else {
             Some(BinderOffset {
                 distance: Length(distance),
-                join: match integer_property(properties, "OffsetJoinType").unwrap_or(0) {
+                join: match offset_join {
                     0 => BinderOffsetJoin::Arcs,
                     1 => BinderOffsetJoin::Tangent,
                     2 => BinderOffsetJoin::Intersection,
                     _ => return None,
                 },
-                fill: bool_property(properties, "OffsetFill").unwrap_or(false),
-                open_result: bool_property(properties, "OffsetOpenResult").unwrap_or(false),
-                intersection: bool_property(properties, "OffsetIntersection").unwrap_or(false),
+                fill: offset_fill,
+                open_result: offset_open_result,
+                intersection: offset_intersection,
             })
         };
-        let context = property(properties, "Context")
-            .and_then(|property| property.links.first())
-            .filter(|link| {
-                link.object
-                    .as_deref()
-                    .is_some_and(|object| !object.is_empty())
-            })
-            .and_then(|link| binder_target(link, features));
+        let context_properties = properties
+            .iter()
+            .filter(|property| property.name == "Context")
+            .copied()
+            .collect::<Vec<_>>();
+        let context = match context_properties.as_slice() {
+            [] => None,
+            [property]
+                if property.type_name == "App::PropertyXLink"
+                    && property.links.len() == 1
+                    && property.links[0].subelements.is_empty() =>
+            {
+                property
+                    .links
+                    .first()
+                    .filter(|link| {
+                        link.object
+                            .as_deref()
+                            .is_some_and(|object| !object.is_empty())
+                    })
+                    .and_then(|link| binder_target(link, features))
+            }
+            _ => return None,
+        };
         BinderConstruction::SubShape {
-            lifecycle: match integer_property(properties, "BindMode").unwrap_or(0) {
+            lifecycle: match enumeration_selector(properties, "BindMode", 0)? {
                 0 => BinderLifecycle::Synchronized,
                 1 => BinderLifecycle::Frozen,
                 2 => BinderLifecycle::Detached,
                 _ => return None,
             },
-            placement: if bool_property(properties, "Relative").unwrap_or(true) {
+            placement: if bool_selector(properties, "Relative", true)? {
                 BinderPlacement::Relative
             } else {
                 BinderPlacement::Global
             },
-            copy_on_change: match integer_property(properties, "BindCopyOnChange").unwrap_or(0) {
+            copy_on_change: match enumeration_selector(properties, "BindCopyOnChange", 0)? {
                 0 => BinderCopyOnChange::Disabled,
                 1 => BinderCopyOnChange::Enabled,
                 2 => BinderCopyOnChange::Mutated,
                 _ => return None,
             },
-            claim_children: bool_property(properties, "ClaimChildren").unwrap_or(false),
-            fuse: bool_property(properties, "Fuse").unwrap_or(false),
-            make_face: bool_property(properties, "MakeFace").unwrap_or(true),
-            partial_load: bool_property(properties, "PartialLoad").unwrap_or(false),
-            refine: bool_property(properties, "Refine").unwrap_or(true),
+            claim_children: bool_selector(properties, "ClaimChildren", false)?,
+            fuse: bool_selector(properties, "Fuse", false)?,
+            make_face: bool_selector(properties, "MakeFace", true)?,
+            partial_load: bool_selector(properties, "PartialLoad", false)?,
+            refine: bool_selector(properties, "Refine", true)?,
             offset,
             context,
         }
@@ -4301,14 +5271,59 @@ fn binder_target(
 
 fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<String> {
     let property = property(properties, name)?;
-    let index = usize::try_from(integer_property(properties, name)?).ok()?;
+    if property.type_name != "App::PropertyEnumeration" {
+        return None;
+    }
     let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
-    document
-        .descendants()
-        .filter(|node| node.has_tag_name("Enum"))
-        .filter_map(|node| node.attribute("value").or_else(|| node.attribute("Value")))
-        .nth(index)
-        .map(str::to_owned)
+    let root = document.root_element();
+    if !root.has_tag_name("Property") {
+        return None;
+    }
+    let values = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let (integer, custom_list) = match values.as_slice() {
+        [integer] if integer.has_tag_name("Integer") => (*integer, None),
+        [integer, custom_list]
+            if integer.has_tag_name("Integer") && custom_list.has_tag_name("CustomEnumList") =>
+        {
+            (*integer, Some(*custom_list))
+        }
+        _ => return None,
+    };
+    if integer.children().any(|child| child.is_element()) {
+        return None;
+    }
+    let custom = match integer.attribute("CustomEnum") {
+        None => false,
+        Some("true") => true,
+        Some(_) => return None,
+    };
+    if custom != custom_list.is_some() {
+        return None;
+    }
+    let index = integer.attribute("value")?.parse::<usize>().ok()?;
+    let custom_list = custom_list?;
+    let count = custom_list.attribute("count")?.parse::<usize>().ok()?;
+    let enum_values = custom_list
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if enum_values.len() != count {
+        return None;
+    }
+    enum_values
+        .into_iter()
+        .map(|value| {
+            if !value.has_tag_name("Enum") || value.children().any(|child| child.is_element()) {
+                return None;
+            }
+            value.attribute("value").map(str::to_owned)
+        })
+        .collect::<Option<Vec<_>>>()?
+        .get(index)
+        .cloned()
 }
 
 fn pattern_definition(
@@ -4318,6 +5333,7 @@ fn pattern_definition(
     features: &HashMap<&str, FeatureId>,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    entries: &[EntryRecord],
 ) -> Option<FeatureDefinition> {
     let originals = property(properties, "Originals")
         .filter(|property| !property.links.is_empty())
@@ -4383,7 +5399,13 @@ fn pattern_definition(
                 let target = link.object.as_deref()?;
                 let object = objects.iter().find(|object| object.id == target)?;
                 let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
-                let pattern = pattern_kind(&object.type_name, owned, objects, properties_by_owner)?;
+                let pattern = pattern_kind(
+                    &object.type_name,
+                    owned,
+                    objects,
+                    properties_by_owner,
+                    entries,
+                )?;
                 let combination = if index == 0 {
                     PatternStageCombination::Initialize
                 } else if matches!(pattern, PatternKind::Scale { .. }) {
@@ -4399,7 +5421,7 @@ fn pattern_definition(
             .collect::<Option<Vec<_>>>()?;
         PatternKind::Composite { stages }
     } else {
-        pattern_kind(kind, properties, objects, properties_by_owner)?
+        pattern_kind(kind, properties, objects, properties_by_owner, entries)?
     };
     Some(FeatureDefinition::Pattern {
         seeds: seeds.into_iter().map(PatternSeed::Feature).collect(),
@@ -4460,6 +5482,7 @@ fn pattern_kind(
     properties: &[&PropertyRecord],
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    entries: &[EntryRecord],
 ) -> Option<PatternKind> {
     if kind.ends_with("Mirrored") {
         return Some(
@@ -4480,12 +5503,17 @@ fn pattern_kind(
         );
     }
 
-    let count = integer_property(properties, "Occurrences")?;
+    let count = if kind.ends_with("Scaled") {
+        integer_selector(properties, "Occurrences", 2)?
+    } else {
+        let absent_default = if kind.ends_with("PolarPattern") { 3 } else { 2 };
+        integer_constraint_selector(properties, "Occurrences", absent_default, true)?
+    };
     if count == 0 || count > MAX_SKETCH_RECORDS as u64 {
         return None;
     }
     let count = count as u32;
-    let mode = integer_property(properties, "Mode").unwrap_or(0);
+    let mode = enumeration_selector(properties, "Mode", 0)?;
 
     if kind.ends_with("Scaled") {
         let final_factor = scalar_named(properties, "Factor")?;
@@ -4499,13 +5527,21 @@ fn pattern_kind(
     }
 
     let pattern = if kind.ends_with("LinearPattern") {
-        let first = linear_pattern_axis(properties, "", count, mode, objects, properties_by_owner)?;
-        let count2 = integer_property(properties, "Occurrences2").unwrap_or(1);
-        if count2 > MAX_SKETCH_RECORDS as u64 {
+        let first = linear_pattern_axis(
+            properties,
+            "",
+            count,
+            mode,
+            objects,
+            properties_by_owner,
+            entries,
+        )?;
+        let count2 = integer_constraint_selector(properties, "Occurrences2", 1, false)?;
+        if count2 == 0 || count2 > MAX_SKETCH_RECORDS as u64 {
             return None;
         }
         if count2 > 1 {
-            let mode2 = integer_property(properties, "Mode2").unwrap_or(0);
+            let mode2 = enumeration_selector(properties, "Mode2", 0)?;
             let second = linear_pattern_axis(
                 properties,
                 "2",
@@ -4513,6 +5549,7 @@ fn pattern_kind(
                 mode2,
                 objects,
                 properties_by_owner,
+                entries,
             )?;
             PatternKind::Composite {
                 stages: vec![
@@ -4532,10 +5569,10 @@ fn pattern_kind(
     } else if kind.ends_with("PolarPattern") {
         let (axis_origin, mut axis_dir) =
             axis_reference(properties, "Axis", objects, properties_by_owner)?;
-        if bool_property(properties, "Reversed").unwrap_or(false) {
+        if bool_selector(properties, "Reversed", false)? {
             axis_dir = Vector3::new(-axis_dir.x, -axis_dir.y, -axis_dir.z);
         }
-        let angles = pattern_locations(properties, "", count, mode, "Angle", "Offset")?;
+        let angles = pattern_locations(properties, "", count, mode, "Angle", "Offset", entries)?;
         if let Some(step) = uniform_step(&angles) {
             PatternKind::Circular {
                 axis_origin,
@@ -4566,16 +5603,17 @@ fn linear_pattern_axis(
     mode: u64,
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+    entries: &[EntryRecord],
 ) -> Option<PatternKind> {
     let name = |base: &str| format!("{base}{suffix}");
     let mut direction =
         axis_reference(properties, &name("Direction"), objects, properties_by_owner)
             .map(|(_, direction)| direction);
-    if bool_property(properties, &name("Reversed")).unwrap_or(false) {
+    if bool_selector(properties, &name("Reversed"), false)? {
         direction =
             direction.map(|direction| Vector3::new(-direction.x, -direction.y, -direction.z));
     }
-    let offsets = pattern_locations(properties, suffix, count, mode, "Length", "Offset")?;
+    let offsets = pattern_locations(properties, suffix, count, mode, "Length", "Offset", entries)?;
     if let Some(spacing) = uniform_step(&offsets) {
         Some(PatternKind::Linear {
             direction,
@@ -4598,6 +5636,7 @@ fn pattern_locations(
     mode: u64,
     extent_base: &str,
     offset_base: &str,
+    entries: &[EntryRecord],
 ) -> Option<Vec<f64>> {
     if count == 0 {
         return None;
@@ -4609,19 +5648,18 @@ fn pattern_locations(
     let intervals = match mode {
         0 => {
             let interval = scalar_named(properties, &name(extent_base))? / f64::from(count - 1);
-            cadmpeg_core::decode::alloc_filled(
-                count as usize - 1,
-                interval,
-                "freecad pattern intervals",
-            )
-            .ok()?
+            alloc_filled(count as usize - 1, interval, "freecad pattern intervals").ok()?
         }
         1 => {
             let fallback = scalar_named(properties, &name(offset_base))?;
-            let spacings = property(properties, &name("Spacings"))
-                .map_or_else(|| Some(Vec::new()), numeric_list)?;
-            let pattern = property(properties, &name("SpacingPattern"))
-                .map_or_else(|| Some(Vec::new()), numeric_list)?;
+            let spacings = property(properties, &name("Spacings")).map_or_else(
+                || Some(Vec::new()),
+                |property| numeric_list(property, entries),
+            )?;
+            let pattern = property(properties, &name("SpacingPattern")).map_or_else(
+                || Some(Vec::new()),
+                |property| numeric_list(property, entries),
+            )?;
             if !spacings.is_empty() && spacings.len() != count as usize - 1 {
                 return None;
             }
@@ -4673,12 +5711,11 @@ fn axis_reference(
     if let Some(direction) = vector_property(properties, name) {
         return Some((Point3::new(0.0, 0.0, 0.0), direction.unit()?));
     }
-    let link = property(properties, name)?.links.first()?;
+    let (link, selector) = singular_reference_link(property(properties, name)?)?;
     let target = link.object.as_deref()?;
     let object = objects.iter().find(|object| object.id == target)?;
     let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
     let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
-    let selector = link_selectors(link).next();
     let direction = match object.type_name.as_str() {
         "PartDesign::Line" | "App::Line" => z_axis,
         "PartDesign::Plane" | "App::Plane" => z_axis,
@@ -4705,12 +5742,11 @@ fn plane_reference(
     objects: &[ObjectRecord],
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<(Point3, Vector3)> {
-    let link = property(properties, name)?.links.first()?;
+    let (link, selector) = singular_reference_link(property(properties, name)?)?;
     let target = link.object.as_deref()?;
     let object = objects.iter().find(|object| object.id == target)?;
     let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
     let (origin, z_axis, x_axis, y_axis) = placement_frame(owned)?;
-    let selector = link_selectors(link).next();
     let normal = match object.type_name.as_str() {
         "PartDesign::Plane" | "App::Plane" => z_axis,
         "PartDesign::CoordinateSystem" => match selector {
@@ -4737,17 +5773,77 @@ fn link_selectors(link: &crate::native::LinkTarget) -> impl Iterator<Item = &str
         .filter(|selector| !selector.is_empty())
 }
 
+fn singular_reference_link(
+    property: &PropertyRecord,
+) -> Option<(&crate::native::LinkTarget, Option<&str>)> {
+    let link = scalar_link(property)?;
+    let object = link.object.as_deref()?;
+    if object.is_empty() {
+        return None;
+    }
+    let selectors = link_selectors(link).collect::<Vec<_>>();
+    let selector = match selectors.as_slice() {
+        [] => None,
+        [selector] => Some(*selector),
+        _ => return None,
+    };
+    Some((link, selector))
+}
+
+fn scalar_link(property: &PropertyRecord) -> Option<&crate::native::LinkTarget> {
+    if !matches!(
+        property.type_name.as_str(),
+        "App::PropertyLink"
+            | "App::PropertyLinkChild"
+            | "App::PropertyLinkGlobal"
+            | "App::PropertyLinkHidden"
+            | "App::PropertyLinkSub"
+            | "App::PropertyLinkSubChild"
+            | "App::PropertyLinkSubGlobal"
+            | "App::PropertyLinkSubHidden"
+    ) {
+        return None;
+    }
+    let [link] = property.links.as_slice() else {
+        return None;
+    };
+    Some(link)
+}
+
+fn is_link_property_type(type_name: &str) -> bool {
+    matches!(
+        type_name,
+        "App::PropertyLink"
+            | "App::PropertyLinkChild"
+            | "App::PropertyLinkGlobal"
+            | "App::PropertyLinkHidden"
+            | "App::PropertyLinkList"
+            | "App::PropertyLinkListChild"
+            | "App::PropertyLinkListGlobal"
+            | "App::PropertyLinkListHidden"
+            | "App::PropertyLinkSub"
+            | "App::PropertyLinkSubChild"
+            | "App::PropertyLinkSubGlobal"
+            | "App::PropertyLinkSubHidden"
+            | "App::PropertyLinkSubList"
+            | "App::PropertyLinkSubListChild"
+            | "App::PropertyLinkSubListGlobal"
+            | "App::PropertyLinkSubListHidden"
+            | "App::PropertyXLink"
+            | "App::PropertyXLinkList"
+            | "App::PropertyXLinkSub"
+            | "App::PropertyXLinkSubHidden"
+            | "App::PropertyXLinkSubList"
+    )
+}
+
 fn scalar_named(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
     property(properties, name).and_then(scalar_value)
 }
 
-fn string_property_value(property: &PropertyRecord) -> Option<&str> {
-    let value = property.values.first()?;
-    value
-        .attributes
-        .get("value")
-        .map(String::as_str)
-        .or(value.text.as_deref())
+fn string_property_value(property: &PropertyRecord) -> Option<String> {
+    (property.type_name == "App::PropertyString").then_some(())?;
+    direct_root_attributes(property, "String")?.remove("value")
 }
 
 fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {
@@ -4755,14 +5851,73 @@ fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {
     (value.is_finite() && value >= 0.0 && value.fract() == 0.0).then_some(value as u64)
 }
 
-fn numeric_list(property: &PropertyRecord) -> Option<Vec<f64>> {
-    let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
-    document
-        .descendants()
-        .filter_map(|node| node.attribute("value").or_else(|| node.attribute("Value")))
-        .map(str::parse::<f64>)
-        .collect::<Result<Vec<_>, _>>()
-        .ok()
+fn integer_selector(
+    properties: &[&PropertyRecord],
+    name: &str,
+    absent_default: u64,
+) -> Option<u64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyInteger" {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Integer")?
+        .get("value")?
+        .parse::<i64>()
+        .ok()?;
+    u64::try_from(value).ok()
+}
+
+fn integer_constraint_selector(
+    properties: &[&PropertyRecord],
+    name: &str,
+    absent_default: u64,
+    accept_legacy_integer: bool,
+) -> Option<u64> {
+    let Some(property) = property(properties, name) else {
+        return Some(absent_default);
+    };
+    if property.type_name != "App::PropertyIntegerConstraint"
+        && !(accept_legacy_integer && property.type_name == "App::PropertyInteger")
+    {
+        return None;
+    }
+    let value = direct_root_attributes(property, "Integer")?
+        .get("value")?
+        .parse::<i64>()
+        .ok()?;
+    u64::try_from(value).ok()
+}
+
+fn numeric_list(property: &PropertyRecord, entries: &[EntryRecord]) -> Option<Vec<f64>> {
+    if property.type_name != "App::PropertyFloatList" {
+        return None;
+    }
+    let file = direct_root_attributes(property, "FloatList")?
+        .get("file")
+        .cloned()?;
+    if file.is_empty() {
+        return property.side_entries.is_empty().then(Vec::new);
+    }
+    if property.side_entries.len() != 1 || property.side_entries[0] != file {
+        return None;
+    }
+    let data = entries
+        .iter()
+        .find(|entry| entry.name == file)?
+        .data
+        .as_slice();
+    let mut view = View::over_retained(data);
+    let count = view.u32_le()? as usize;
+    if count > MAX_SKETCH_RECORDS {
+        return None;
+    }
+    let values = view.read_counted(count as u64, 8, View::f64_le)?;
+    if !view.is_empty() || values.iter().any(|value| !value.is_finite()) {
+        return None;
+    }
+    Some(values)
 }
 
 fn operation_boolean(kind: &str) -> BooleanOp {
@@ -4783,36 +5938,28 @@ fn feature_base_definition(
     properties: &[&PropertyRecord],
     feature_ids: &HashMap<&str, FeatureId>,
 ) -> Option<FeatureDefinition> {
-    let source = property(properties, "BaseFeature")?
-        .links
-        .first()?
-        .object
-        .as_deref()?;
+    let base_properties = properties
+        .iter()
+        .filter(|property| property.name == "BaseFeature")
+        .copied()
+        .collect::<Vec<_>>();
+    let [property] = base_properties.as_slice() else {
+        return None;
+    };
+    if property.type_name != "App::PropertyLink" || property.links.len() != 1 {
+        return None;
+    }
+    let source = property.links[0].object.as_deref()?;
     Some(FeatureDefinition::DerivedGeometry {
         source: feature_ids.get(source)?.clone(),
     })
-}
-
-fn linked_feature_ids(
-    properties: &[&PropertyRecord],
-    name: &str,
-    feature_ids: &HashMap<&str, FeatureId>,
-) -> Vec<FeatureId> {
-    property(properties, name)
-        .into_iter()
-        .flat_map(|property| &property.links)
-        .filter_map(|link| link.object.as_deref())
-        .filter_map(|object| feature_ids.get(object).cloned())
-        .collect()
 }
 
 fn imported_geometry_definition(
     kind: &str,
     properties: &[&PropertyRecord],
 ) -> Option<FeatureDefinition> {
-    let path = property(properties, "FileName")
-        .and_then(|property| string_property_value(property))?
-        .to_owned();
+    let path = property(properties, "FileName").and_then(string_property_value)?;
     if path.is_empty() {
         return None;
     }
@@ -4826,7 +5973,7 @@ fn imported_geometry_definition(
 }
 
 fn is_sketch(kind: &str) -> bool {
-    kind.contains("Sketcher::SketchObject")
+    kind == "Sketcher::SketchObject"
 }
 fn is_datum(kind: &str) -> bool {
     matches!(
@@ -4838,32 +5985,56 @@ fn is_datum(kind: &str) -> bool {
     )
 }
 fn is_extrusion(kind: &str) -> bool {
-    kind.contains("PartDesign::Pad")
-        || kind.contains("PartDesign::Pocket")
-        || kind.contains("Part::Extrusion")
+    matches!(
+        kind,
+        "PartDesign::Pad" | "PartDesign::Pocket" | "Part::Extrusion"
+    )
 }
 fn is_hole(kind: &str) -> bool {
     kind == "PartDesign::Hole"
 }
 fn is_revolution(kind: &str) -> bool {
-    kind.contains("PartDesign::Revolution")
-        || kind.contains("PartDesign::Groove")
-        || kind.contains("Part::Revolution")
+    matches!(
+        kind,
+        "PartDesign::Revolution" | "PartDesign::Groove" | "Part::Revolution"
+    )
 }
 fn is_primitive(kind: &str) -> bool {
-    [
-        "Box",
-        "Cylinder",
-        "Cone",
-        "Sphere",
-        "Ellipsoid",
-        "Torus",
-        "Prism",
-        "Wedge",
-    ]
-    .iter()
-    .any(|primitive| kind.ends_with(primitive))
-        && (kind.starts_with("Part::") || kind.starts_with("PartDesign::"))
+    matches!(
+        kind,
+        "Part::Box"
+            | "Part::Cylinder"
+            | "Part::Cone"
+            | "Part::Sphere"
+            | "Part::Ellipsoid"
+            | "Part::Torus"
+            | "Part::Prism"
+            | "Part::Wedge"
+            | "PartDesign::Box"
+            | "PartDesign::AdditiveBox"
+            | "PartDesign::SubtractiveBox"
+            | "PartDesign::Cylinder"
+            | "PartDesign::AdditiveCylinder"
+            | "PartDesign::SubtractiveCylinder"
+            | "PartDesign::Cone"
+            | "PartDesign::AdditiveCone"
+            | "PartDesign::SubtractiveCone"
+            | "PartDesign::Sphere"
+            | "PartDesign::AdditiveSphere"
+            | "PartDesign::SubtractiveSphere"
+            | "PartDesign::Ellipsoid"
+            | "PartDesign::AdditiveEllipsoid"
+            | "PartDesign::SubtractiveEllipsoid"
+            | "PartDesign::Torus"
+            | "PartDesign::AdditiveTorus"
+            | "PartDesign::SubtractiveTorus"
+            | "PartDesign::Prism"
+            | "PartDesign::AdditivePrism"
+            | "PartDesign::SubtractivePrism"
+            | "PartDesign::Wedge"
+            | "PartDesign::AdditiveWedge"
+            | "PartDesign::SubtractiveWedge"
+    )
 }
 fn is_part_construction_geometry(kind: &str) -> bool {
     matches!(
@@ -4943,18 +6114,24 @@ fn is_pattern(kind: &str) -> bool {
     )
 }
 fn is_dress_up(kind: &str) -> bool {
-    kind.contains("Fillet")
-        || kind.contains("Chamfer")
+    is_fillet(kind)
+        || is_chamfer(kind)
         || matches!(
             kind,
             "PartDesign::Thickness" | "PartDesign::Draft" | "Part::Thickness"
         )
 }
+fn is_fillet(kind: &str) -> bool {
+    matches!(kind, "Part::Fillet" | "PartDesign::Fillet")
+}
+fn is_chamfer(kind: &str) -> bool {
+    matches!(kind, "Part::Chamfer" | "PartDesign::Chamfer")
+}
 fn is_body(kind: &str) -> bool {
-    kind.contains("PartDesign::Body")
+    kind == "PartDesign::Body"
 }
 fn is_spreadsheet(kind: &str) -> bool {
-    kind.contains("Spreadsheet::Sheet")
+    kind == "Spreadsheet::Sheet"
 }
 fn is_design_object(kind: &str) -> bool {
     is_spreadsheet(kind)
@@ -5093,8 +6270,8 @@ mod profile_tests {
             entity(
                 "test:entity#line",
                 SketchGeometry::Line {
-                    start: Point2::new(0.0, 1.0),
-                    end: Point2::new(0.0, 0.0),
+                    start: Point2::new(-1.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
                 },
             ),
             entity(
@@ -5106,10 +6283,17 @@ mod profile_tests {
                     end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
                 },
             ),
+            entity(
+                "test:entity#line-after-arc",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, 1.0),
+                    end: Point2::new(1.0, 1.0),
+                },
+            ),
         ];
         let profiles = build_profiles(&entities, &[]);
         assert_eq!(profiles.len(), 1);
-        assert_eq!(profiles[0].len(), 2);
+        assert_eq!(profiles[0].len(), 3);
     }
 
     #[test]
@@ -5133,6 +6317,45 @@ mod profile_tests {
             .iter()
             .zip(&entities)
             .all(|(profile, entity)| profile[0].entity == entity.id));
+    }
+
+    #[test]
+    fn disconnected_profile_seeds_skip_construction_in_persisted_order() {
+        let mut construction = entity(
+            "test:entity#1",
+            SketchGeometry::Line {
+                start: Point2::new(-1.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            },
+        );
+        construction.construction = true;
+        let entities = vec![
+            construction,
+            entity(
+                "test:entity#2",
+                SketchGeometry::Circle {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length(2.0),
+                },
+            ),
+            entity(
+                "test:entity#3",
+                SketchGeometry::Circle {
+                    center: Point2::new(10.0, 0.0),
+                    radius: Length(2.0),
+                },
+            ),
+        ];
+
+        let profiles = build_profiles(&entities, &[]);
+
+        assert_eq!(
+            profiles
+                .iter()
+                .map(|profile| profile[0].entity.clone())
+                .collect::<Vec<_>>(),
+            vec![entities[1].id.clone(), entities[2].id.clone()]
+        );
     }
 
     #[test]
@@ -5178,6 +6401,162 @@ mod profile_tests {
 
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].len(), 2);
+    }
+
+    #[test]
+    fn explicit_endpoint_relations_precede_nearby_geometry() {
+        let entities = [
+            entity(
+                "test:entity#anchor",
+                SketchGeometry::Line {
+                    start: Point2::new(-1.0, 0.0),
+                    end: Point2::new(0.0, 0.0),
+                },
+            ),
+            entity(
+                "test:entity#nearby",
+                SketchGeometry::Line {
+                    start: Point2::new(32.0 * f64::EPSILON, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            ),
+            entity(
+                "test:entity#constrained",
+                SketchGeometry::Line {
+                    start: Point2::new(2.0, 0.0),
+                    end: Point2::new(3.0, 0.0),
+                },
+            ),
+        ];
+        let constraint = SketchConstraint {
+            id: SketchConstraintId("test:constraint#explicit-precedence".into()),
+            sketch: entities[0].sketch.clone(),
+            definition: SketchConstraintDefinition::CoincidentLoci {
+                loci: vec![
+                    SketchLocus::End(entities[0].id.clone()),
+                    SketchLocus::Start(entities[2].id.clone()),
+                ],
+            },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        };
+
+        let profiles = build_profiles(&entities, &[constraint]);
+
+        assert_eq!(profiles.len(), 2);
+        assert_eq!(profiles[0].len(), 2);
+        assert_eq!(profiles[0][0].entity, entities[0].id);
+        assert_eq!(profiles[0][1].entity, entities[2].id);
+        assert_eq!(
+            profiles[1],
+            vec![SketchEntityUse {
+                entity: entities[1].id.clone(),
+                reversed: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn profile_junction_uses_the_cadir_roundoff_boundary() {
+        let entities = |gap| {
+            [
+                entity(
+                    "test:entity#anchor",
+                    SketchGeometry::Line {
+                        start: Point2::new(0.0, 0.0),
+                        end: Point2::new(1.0, 0.0),
+                    },
+                ),
+                entity(
+                    "test:entity#continuation",
+                    SketchGeometry::Line {
+                        start: Point2::new(1.0 + gap, 0.0),
+                        end: Point2::new(2.0, 0.0),
+                    },
+                ),
+            ]
+        };
+
+        let inside = entities(32.0 * f64::EPSILON);
+        let inside_profiles = build_profiles(&inside, &[]);
+        assert_eq!(inside_profiles.len(), 1);
+        assert_eq!(inside_profiles[0].len(), 2);
+
+        let outside = entities(128.0 * f64::EPSILON);
+        let outside_profiles = build_profiles(&outside, &[]);
+        assert_eq!(outside_profiles.len(), 2);
+        assert!(outside_profiles.iter().all(|profile| profile.len() == 1));
+    }
+
+    #[test]
+    fn multiple_explicit_coincident_continuations_remain_separate_seeds() {
+        let entities = [
+            entity(
+                "test:entity#anchor",
+                SketchGeometry::Line {
+                    start: Point2::new(-1.0, 0.0),
+                    end: Point2::new(0.0, 0.0),
+                },
+            ),
+            entity(
+                "test:entity#first-continuation",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            ),
+            entity(
+                "test:entity#second-continuation",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(0.0, 1.0),
+                },
+            ),
+        ];
+        let constraint = SketchConstraint {
+            id: SketchConstraintId("test:constraint#ambiguous-explicit".into()),
+            sketch: entities[0].sketch.clone(),
+            definition: SketchConstraintDefinition::CoincidentLoci {
+                loci: vec![
+                    SketchLocus::End(entities[0].id.clone()),
+                    SketchLocus::Start(entities[1].id.clone()),
+                    SketchLocus::Start(entities[2].id.clone()),
+                ],
+            },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
+            native_ref: None,
+        };
+
+        let profiles = build_profiles(&entities, &[constraint]);
+
+        assert_eq!(profiles.len(), 3);
+        assert!(profiles.iter().all(|profile| profile.len() == 1));
+    }
+
+    #[test]
+    fn endpoint_roundoff_uses_a_bounded_scale() {
+        let exact = Point2::new(1.0, 0.0);
+        let inside = Point2::new(1.0 + 32.0 * f64::EPSILON, 0.0);
+        let outside = Point2::new(1.0 + 128.0 * f64::EPSILON, 0.0);
+
+        assert!(endpoints_match_by_roundoff(exact, inside));
+        assert!(!endpoints_match_by_roundoff(exact, outside));
     }
 
     #[test]

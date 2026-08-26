@@ -4,6 +4,7 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::ops::Range;
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -12,13 +13,10 @@ use crate::objects::parse_class_wrapper;
 use crate::settings::{bbox, interval, plane, Point3 as NativePoint3};
 use crate::wire::Uuid;
 
-const EPS_CURVES_READ_ARC_E10: f64 = 1e-10;
-const EPS_CURVES_CLOSE_NATIVE_POINT_E8: f64 = 1e-8;
-
 /// Maximum embedded curve nesting depth.
 pub(crate) const MAX_CURVE_DEPTH: usize = 32;
 /// Maximum points or polycurve segments in one payload.
-const CIRCLE_TOLERANCE: f64 = 1e-10;
+const CIRCLE_TOLERANCE: f64 = 1.0e-10;
 
 const POINT: Uuid = Uuid::from_canonical([
     0xc3, 0x10, 0x1a, 0x1d, 0xf1, 0x57, 0x11, 0xd3, 0xbf, 0xe7, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
@@ -41,7 +39,7 @@ const ARC: Uuid = Uuid::from_canonical([
 const POLYLINE: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xe6, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
-const POLYCURVE: Uuid = Uuid::from_canonical([
+pub(crate) const POLYCURVE: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xe0, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
 const POLYCURVE_LEGACY: Uuid = Uuid::from_canonical([
@@ -73,7 +71,8 @@ pub(crate) enum DecodedGeometry {
         /// Whether a unit conversion was applied.
         scaled: bool,
     },
-    /// One point cloud and its optional native channels.
+    /// One point cloud; optional native channels are consumed by the bounded
+    /// reader and retained by the source record rather than mapped to points.
     PointCloud(PointCloud),
     /// A curve and ordered embedded children.
     Curve {
@@ -87,13 +86,15 @@ pub(crate) enum DecodedGeometry {
     },
 }
 
-/// Point-cloud channels retained by the native namespace boundary.
+/// Point-cloud geometry transferred to the neutral model.
 #[derive(Debug, Clone)]
 pub(crate) struct PointCloud {
     /// Ordered points.
     pub(crate) points: Vec<Point3>,
     /// Whether a unit conversion was applied.
     pub(crate) scaled: bool,
+    /// Repairs applied to optional channels that do not match the point count.
+    pub(crate) warnings: Vec<String>,
 }
 
 /// A validated polycurve construction.
@@ -251,6 +252,63 @@ mod alias_tests {
             assert!(surface_class(class));
         }
     }
+
+    #[test]
+    fn point_cloud_keeps_points_when_an_optional_channel_count_is_redundant() {
+        let mut bytes = vec![0x11];
+        bytes.extend_from_slice(&2_i32.to_le_bytes());
+        for point in [[0.0_f64, 0.0, 0.0], [1.0, 0.0, 0.0]] {
+            for coordinate in point {
+                bytes.extend_from_slice(&coordinate.to_le_bytes());
+            }
+        }
+        bytes.extend(std::iter::repeat_n(0_u8, 16 * 8 + 6 * 8));
+        bytes.extend_from_slice(&0_i32.to_le_bytes());
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        bytes.extend(std::iter::repeat_n(0_u8, 3 * 8));
+        bytes.extend_from_slice(&0_i32.to_le_bytes());
+
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("point-cloud reader");
+        let cloud = read_cloud(&mut reader, 1.0).expect("optional channel is recoverable");
+        assert_eq!(cloud.points.len(), 2);
+        assert_eq!(cloud.warnings.len(), 1);
+        assert_eq!(reader.remaining(), 0);
+    }
+
+    #[test]
+    fn point_cloud_consumes_matching_native_channels_before_neutral_transfer() {
+        let mut bytes = vec![0x12];
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        for coordinate in [1.0_f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&coordinate.to_le_bytes());
+        }
+        for value in [
+            0.0_f64, 0.0, 0.0, // plane origin
+            1.0, 0.0, 0.0, // plane X
+            0.0, 1.0, 0.0, // plane Y
+            0.0, 0.0, 1.0, // plane Z
+            0.0, 0.0, 1.0, 0.0, // plane equation
+            0.0, 0.0, 0.0, // bounding-box minimum
+            1.0, 1.0, 1.0, // bounding-box maximum
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&3_i32.to_le_bytes());
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        for value in [0.0_f64, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        bytes.extend_from_slice(&[11, 22, 33, 44]);
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        bytes.extend_from_slice(&12.5_f64.to_le_bytes());
+
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("point-cloud reader");
+        let cloud = read_cloud(&mut reader, 1.0).expect("matching channels are recoverable");
+        assert_eq!(cloud.points, vec![Point3::new(1.0, 2.0, 3.0)]);
+        assert!(cloud.warnings.is_empty());
+        assert_eq!(reader.remaining(), 0);
+    }
 }
 
 /// Decode one top-level class-data payload.
@@ -326,7 +384,7 @@ pub(crate) fn decode_inner(
         POINT_CLOUD => DecodedGeometry::PointCloud(read_cloud(&mut reader, scale)?),
         LINE => DecodedGeometry::Curve {
             curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(read_line(&mut reader, scale, Some(3))?),
+                geometry: CurveGeometry::Nurbs(read_line(&mut reader, scale, None)?),
                 compound: None,
                 warnings: Vec::new(),
             },
@@ -343,7 +401,7 @@ pub(crate) fn decode_inner(
         }
         POLYLINE => DecodedGeometry::Curve {
             curve: DecodedCurve {
-                geometry: CurveGeometry::Nurbs(read_polyline(&mut reader, scale, Some(3))?),
+                geometry: CurveGeometry::Nurbs(read_polyline(&mut reader, scale, None)?),
                 compound: None,
                 warnings: Vec::new(),
             },
@@ -369,12 +427,7 @@ pub(crate) fn decode_inner(
             ))
         }
     };
-    if reader.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "geometry payload has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(result)
 }
 
@@ -670,7 +723,12 @@ fn insert_knot_once(
     if multiplicity > degree {
         return Err(());
     }
-    let mut output = vec![points[0]; points.len() + 1];
+    let mut output = alloc_filled(
+        points.len().checked_add(1).ok_or(())?,
+        points[0],
+        "Rhino polycurve knot insertion points",
+    )
+    .map_err(|_| ())?;
     output[..=k - degree].copy_from_slice(&points[..=k - degree]);
     output[k - multiplicity + 1..=n + 1].copy_from_slice(&points[k - multiplicity..=n]);
     for index in k - degree + 1..=k - multiplicity {
@@ -699,9 +757,20 @@ fn elevate_to_degree(
     {
         return Err(error(offset, "polycurve segment knot vector is invalid"));
     }
-    let weights = curve
-        .weights
-        .unwrap_or_else(|| std::iter::repeat_n(1.0, curve.control_points.len()).collect());
+    let weights = match curve.weights {
+        Some(weights) => weights,
+        None => alloc_filled(
+            curve.control_points.len(),
+            1.0,
+            "Rhino polycurve segment weights",
+        )
+        .map_err(|error| {
+            GeometryError::malformed(
+                offset,
+                format!("polycurve weight allocation refused: {error}"),
+            )
+        })?,
+    };
     if weights.len() != curve.control_points.len() {
         return Err(error(offset, "polycurve segment weight count mismatch"));
     }
@@ -748,7 +817,19 @@ fn elevate_to_degree(
         }
         let _ = boundary;
     }
-    let mut elevated_knots = vec![boundaries[0][0]; target + 1];
+    let mut elevated_knots = alloc_filled(
+        target
+            .checked_add(1)
+            .ok_or_else(|| error(offset, "polycurve elevated knot count overflow"))?,
+        boundaries[0][0],
+        "Rhino polycurve elevated knots",
+    )
+    .map_err(|error| {
+        GeometryError::malformed(
+            offset,
+            format!("polycurve knot allocation refused: {error}"),
+        )
+    })?;
     for boundary in boundaries.iter().take(boundaries.len() - 1) {
         elevated_knots.extend(std::iter::repeat_n(boundary[1], target));
     }
@@ -975,12 +1056,7 @@ pub(crate) fn decode_inner_2d(
             ))
         }
     };
-    if reader.remaining() != 0 {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "C2 curve payload has trailing bytes",
-        ));
-    }
+    reader.skip_remaining()?;
     Ok(result)
 }
 
@@ -1057,6 +1133,17 @@ fn read_polycurve_2d(
     })
 }
 
+/// Consumes one legacy Brep C2 polycurve payload and returns its byte range.
+pub(crate) fn consume_legacy_polycurve_2d(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<Range<usize>, GeometryError> {
+    let start = reader.position();
+    let _ = read_polycurve_2d(data, reader, archive, 0)?;
+    Ok(start..reader.position())
+}
+
 fn read_point(reader: &mut BoundedReader<'_>, scale: f64) -> Result<Point3, GeometryError> {
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
@@ -1069,12 +1156,6 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
     let version = reader.u8()?;
     require_major(version, reader.position() - 1)?;
     let minor = version & 0x0f;
-    if minor > 2 {
-        return Err(error(
-            reader.position() - 1,
-            "unsupported point-cloud payload minor version",
-        ));
-    }
     let point_count = count(reader, 24)?;
     let mut points = Vec::with_capacity(point_count);
     for _ in 0..point_count {
@@ -1087,8 +1168,9 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
     let native_plane = plane(reader)?;
     let _bounds = bbox(reader)?;
     let flags = reader.i32()?;
+    let mut warnings = Vec::new();
     let normals = if minor >= 1 {
-        read_vectors(reader, point_count)?
+        read_vectors(reader, point_count, &mut warnings)?
     } else {
         Vec::new()
     };
@@ -1097,6 +1179,10 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
         let mut values: Vec<[u8; 4]> = Vec::with_capacity(color_count);
         for _ in 0..color_count {
             values.push(reader.take(4)?.try_into().expect("color width checked"));
+        }
+        if color_count != 0 && color_count != point_count {
+            warnings
+                .push("redundant point-cloud color count mismatch; channel dropped".to_string());
         }
         values
     } else {
@@ -1112,24 +1198,26 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
             }
             values.push(value);
         }
+        if value_count != 0 && value_count != point_count {
+            warnings
+                .push("redundant point-cloud scalar count mismatch; channel dropped".to_string());
+        }
         values
     } else {
         Vec::new()
     };
-    if point_count == 0
-        || (!normals.is_empty() && normals.len() != point_count)
-        || (!colors.is_empty() && colors.len() != point_count)
-        || (!values.is_empty() && values.len() != point_count)
-    {
+    if point_count == 0 {
         return Err(error(
             reader.position(),
-            "point-cloud channel count is invalid",
+            "point-cloud point count is invalid",
         ));
     }
     let _ = (normals, colors, values, flags, native_plane);
+    reader.skip_remaining()?;
     Ok(PointCloud {
         points,
         scaled: scale != 1.0,
+        warnings,
     })
 }
 
@@ -1246,7 +1334,7 @@ fn read_arc(
         return Err(error(reader.position(), "arc interval is not increasing"));
     }
     let delta = angle[1] - angle[0];
-    if delta <= 0.0 || delta > TAU + EPS_CURVES_READ_ARC_E10 {
+    if delta <= 0.0 || delta > TAU + 1.0e-10 {
         return Err(error(reader.position(), "arc angle span is invalid"));
     }
     if !force_nurbs && canonical_circle(&circle, angle, domain, delta) {
@@ -1405,6 +1493,18 @@ fn read_polycurve(
     })
 }
 
+/// Consumes one legacy Brep C3 polycurve payload and returns its byte range.
+pub(crate) fn consume_legacy_polycurve(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    archive: ArchiveVersion,
+) -> Result<Range<usize>, GeometryError> {
+    let start = reader.position();
+    let _ = read_polycurve(data, reader, scale, archive, 0)?;
+    Ok(start..reader.position())
+}
+
 fn push_polycurve_parameter(
     parameters: &mut Vec<f64>,
     value: f64,
@@ -1491,13 +1591,11 @@ fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3
 fn read_vectors(
     reader: &mut BoundedReader<'_>,
     expected: usize,
+    warnings: &mut Vec<String>,
 ) -> Result<Vec<Vector3>, GeometryError> {
     let count = count(reader, 24)?;
     if count != 0 && count != expected {
-        return Err(error(
-            reader.position(),
-            "point-cloud normal count mismatch",
-        ));
+        warnings.push("redundant point-cloud normal count mismatch; channel dropped".to_string());
     }
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
@@ -1581,7 +1679,7 @@ fn close_native_point(
         .0
         .iter()
         .zip(expected)
-        .all(|(actual, expected)| (*actual - expected).abs() <= EPS_CURVES_CLOSE_NATIVE_POINT_E8)
+        .all(|(actual, expected)| (*actual - expected).abs() <= 1.0e-8)
 }
 
 pub(crate) fn error(offset: usize, message: &str) -> GeometryError {
@@ -1691,10 +1789,40 @@ mod tests {
     }
 
     #[test]
-    fn future_polycurve_version_is_structured_as_unsupported() {
+    fn bounded_polyline_accepts_both_serialized_dimensions() {
+        for dimension in [2_i32, 3] {
+            let mut bytes = vec![0x10];
+            bytes.extend(2_i32.to_le_bytes());
+            for value in [0.0_f64, 0.0, 0.0, 1.0, 2.0, 0.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            bytes.extend(2_i32.to_le_bytes());
+            bytes.extend(10.0_f64.to_le_bytes());
+            bytes.extend(12.0_f64.to_le_bytes());
+            bytes.extend(dimension.to_le_bytes());
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
+            let curve = read_polyline(&mut reader, 1.0, None).expect("valid polyline");
+            assert_eq!(curve.control_points.len(), 2);
+            assert_eq!(curve.knots, vec![10.0, 10.0, 12.0, 12.0]);
+        }
+    }
+
+    #[test]
+    fn cadir_rejects_future_polycurve_major_for_typed_admission() {
         let bytes = [0x20];
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
         let result = read_polycurve(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0);
+        assert!(matches!(
+            result,
+            Err(GeometryError::UnsupportedVersion { .. })
+        ));
+    }
+
+    #[test]
+    fn cadir_rejects_future_c2_polycurve_major_for_typed_admission() {
+        let bytes = [0x20];
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded");
+        let result = read_polycurve_2d(&bytes, &mut reader, ArchiveVersion::V5, 0);
         assert!(matches!(
             result,
             Err(GeometryError::UnsupportedVersion { .. })

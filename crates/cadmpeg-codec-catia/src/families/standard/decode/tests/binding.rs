@@ -177,7 +177,8 @@ fn completed_adjacent_branches_fix_same_incidence_allocation_rank() {
     let mut partial = crossed;
     partial[0] = None;
     partial[1] = None;
-    let groups = standard_curve_branch_groups(&supports, &candidates);
+    let groups =
+        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
 
     assert!(standard_curve_branch_assignment_is_ranked(
         &supports,
@@ -226,7 +227,8 @@ fn standard_spline_branch_rank_uses_complete_relation_after_mesh_frontier_prunin
         vec![[0, 2], [1, 2], [2, 4]],
         vec![[0, 3], [1, 3], [3, 4]],
     ];
-    let groups = standard_curve_branch_groups(&supports, &candidates);
+    let groups =
+        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
     let ranked = [Some([0, 1]), Some([2, 3]), Some([0, 2]), Some([1, 3])];
     let crossed = [Some([0, 1]), Some([2, 3]), Some([1, 2]), Some([0, 3])];
 
@@ -271,7 +273,8 @@ fn standard_spline_branch_candidates_narrow_after_fixed_frontiers() {
         vec![[0, 2], [1, 2], [2, 4]],
         vec![[0, 3], [1, 3], [3, 4]],
     ];
-    let groups = standard_curve_branch_groups(&supports, &candidates);
+    let groups =
+        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
     let assignment = [Some([0, 1]), Some([2, 3]), None, None];
     let narrowed = standard_curve_branch_candidates_after_partial_assignment(
         &supports,
@@ -586,10 +589,10 @@ fn reverse_angular_interval_becomes_an_increasing_nurbs_domain() {
     assert_eq!(range, [-std::f64::consts::PI, 0.0]);
     let start = pcurve_uv(&arc, range[0]).expect("start evaluation");
     let end = pcurve_uv(&arc, range[1]).expect("end evaluation");
-    assert!((start.u + 2.0).abs() < 1e-12);
-    assert!(start.v.abs() < 1e-12);
-    assert!((end.u - 2.0).abs() < 1e-12);
-    assert!(end.v.abs() < 1e-12);
+    assert!((start.u + 2.0).abs() < 1.0e-12);
+    assert!(start.v.abs() < 1.0e-12);
+    assert!((end.u - 2.0).abs() < 1.0e-12);
+    assert!(end.v.abs() < 1.0e-12);
 }
 
 #[test]
@@ -894,8 +897,8 @@ fn standard_plane_circle_pcurve_preserves_contained_carrier() {
         let uv = pcurve_uv(&geometry, parameter).expect("plane circle pcurve endpoint");
         surface_point(&surface, uv.u, uv.v).expect("plane circle surface endpoint")
     });
-    assert!(mapped[0].distance(start) <= 1e-9);
-    assert!(mapped[1].distance(end) <= 1e-9);
+    assert!(mapped[0].distance(start) <= 1.0e-9);
+    assert!(mapped[1].distance(end) <= 1.0e-9);
 }
 
 #[test]
@@ -941,12 +944,12 @@ fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
     for parameter in [range[0], range[1]] {
         let uv = pcurve_uv(&geometry, parameter).expect("closed pcurve endpoint");
         let point = surface_point(&surface, uv.u, uv.v).expect("closed surface endpoint");
-        assert!(point.distance(start) <= 1e-9);
+        assert!(point.distance(start) <= 1.0e-9);
     }
     let midpoint_uv = pcurve_uv(&geometry, std::f64::consts::PI).expect("closed pcurve midpoint");
     let midpoint =
         surface_point(&surface, midpoint_uv.u, midpoint_uv.v).expect("closed surface midpoint");
-    assert!(midpoint.distance(Point3::new(-radius, 0.0, 0.0)) <= 1e-9);
+    assert!(midpoint.distance(Point3::new(-radius, 0.0, 0.0)) <= 1.0e-9);
 }
 
 #[test]
@@ -1322,7 +1325,7 @@ fn standard_torus_witness_selects_complementary_latitude_arc() {
         direction,
     )
     .expect("torus circle range");
-    assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
 
 #[test]
@@ -1364,8 +1367,8 @@ fn standard_sphere_latitude_inverts_to_isoparametric_line() {
     let PcurveGeometry::Line { origin, direction } = geometry else {
         panic!("expected line pcurve");
     };
-    assert!(origin.u.abs() < 1e-12);
-    assert!((origin.v - latitude).abs() < 1e-12);
-    assert!((direction.u - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
-    assert!(direction.v.abs() < 1e-12);
+    assert!(origin.u.abs() < 1.0e-12);
+    assert!((origin.v - latitude).abs() < 1.0e-12);
+    assert!((direction.u - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!(direction.v.abs() < 1.0e-12);
 }

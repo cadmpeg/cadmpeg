@@ -30,7 +30,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_EMIT_CANONICAL_TRIM_RANGE_E6: f64 = 1e-6;
+const EPS_EMIT_CANONICAL_TRIM_RANGE_E6: f64 = 1.0e-6;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_topology(

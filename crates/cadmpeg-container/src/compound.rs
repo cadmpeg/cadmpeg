@@ -732,7 +732,7 @@ impl CompoundState {
                 .ok_or_else(|| CodecError::Malformed("CFB FAT sector is absent".into()))?;
             fat.extend(
                 data.chunks_exact(4)
-                    .map(|word| View::u32_le_at(word, 0).expect("four-byte chunk")),
+                    .map(|word| le_u32(word, 0).expect("four-byte chunk")),
             );
         }
         if fat.len() < sector_count {
@@ -809,7 +809,7 @@ impl CompoundState {
         ctx.charge_retained(mini_fat_byte_count as u64, "retain CFB mini FAT", None)?;
         let mini_fat = join_sectors(bytes, sector_size, sector_count, &mini_fat_chain)?
             .chunks_exact(4)
-            .map(|word| View::u32_le_at(word, 0).expect("four-byte chunk"))
+            .map(|word| le_u32(word, 0).expect("four-byte chunk"))
             .collect::<Vec<_>>();
         drop(mini_fat_scratch);
         let root = &directory[0];
@@ -1200,7 +1200,7 @@ impl CompoundPrefixProbe {
             };
             fat.extend(
                 raw.chunks_exact(4)
-                    .map(|word| View::u32_le_at(word, 0).expect("four-byte chunk")),
+                    .map(|word| le_u32(word, 0).expect("four-byte chunk")),
             );
             loaded_fat_count += 1;
         }

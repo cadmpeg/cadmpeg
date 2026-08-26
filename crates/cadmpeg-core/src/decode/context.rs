@@ -55,9 +55,8 @@ impl<'a> DecodeContext<'a> {
             buffer
                 .try_reserve(reserve)
                 .map_err(|_| root_error(ResourceFailure::AllocationFailed, max, reserve as u64))?;
-            let mut chunk = std::iter::repeat_n(0u8, 256 * 1024)
-                .collect::<Vec<_>>()
-                .into_boxed_slice();
+            let mut chunk =
+                alloc_filled(256 * 1024, 0_u8, "decode root read chunk")?.into_boxed_slice();
             while (buffer.len() as u64) < cap {
                 let remaining = cap.saturating_sub(buffer.len() as u64);
                 let want =
@@ -324,6 +323,31 @@ impl<'a> DecodeContext<'a> {
     /// Charges session-global algorithm work, fusing on refusal.
     pub fn charge_work(&self, units: u64, operation: &'static str) -> Result<(), CodecError> {
         self.budget.charge_work(units, operation)
+    }
+
+    /// Permanently refuses a codec-local resource request.
+    ///
+    /// Codecs use this when a bounded recovery algorithm reaches a fixed
+    /// local ceiling instead of a session-wide dimension. The refusal fuses
+    /// the session so a caller cannot accidentally turn it into a semantic
+    /// fallback or report success after the limit was reached.
+    pub fn refuse_codec_limit(
+        &self,
+        operation: &'static str,
+        limit: u64,
+        requested: u64,
+        location: Option<SourceLocation>,
+    ) -> CodecError {
+        self.budget.refuse(
+            ResourceDimension::Codec(operation),
+            ResourceFailure::BudgetExceeded,
+            LimitScope::Global,
+            limit,
+            requested.min(limit),
+            requested.saturating_sub(limit),
+            operation,
+            location,
+        )
     }
 
     /// Creates a local work slice that also draws from the session allowance.

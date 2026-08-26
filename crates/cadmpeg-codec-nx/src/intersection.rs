@@ -12,7 +12,7 @@ use crate::framing::read_xmt_width as read_xmt;
 use crate::layout::chart_s_preamble as chart_preamble;
 use crate::topology::{self, CompositeCurve};
 
-const EPS_INTERSECTION_CHART_POINTS_E9: f64 = 1e-9;
+const EPS_INTERSECTION_CHART_POINTS_E9: f64 = 1.0e-9;
 
 const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
 const INLINE_TERM_TAIL: &[u8] = b"\x00\x00\x00\x01\x01\x63\x43\x5a";

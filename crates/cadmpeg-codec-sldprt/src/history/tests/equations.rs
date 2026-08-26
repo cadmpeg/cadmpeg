@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter, equation, and configuration-local scalar decode tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
-use cadmpeg_ir::LossTaxonomy;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container;
 use crate::test_support::*;
 use crate::SldprtCodec;
 
@@ -66,12 +63,12 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     assert!(matches!(
         value("Angle"),
         Some(ParameterValue::Angle(Angle(angle)))
-            if (*angle - std::f64::consts::FRAC_PI_2).abs() < 1e-12
+            if (*angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
     assert!(matches!(
         value("DisplayAngle"),
         Some(ParameterValue::Angle(Angle(angle)))
-            if (*angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12
+            if (*angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
     ));
     assert_eq!(value("Count"), Some(&ParameterValue::Integer(4)));
     assert_eq!(
@@ -184,7 +181,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             .find(|parameter| parameter.name == "DisplayAngle")
             .and_then(|parameter| parameter.value.as_ref()),
         Some(ParameterValue::Angle(Angle(angle)))
-            if (*angle - std::f64::consts::FRAC_PI_6).abs() < 1e-12
+            if (*angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
     ));
     assert_eq!(
         regenerated
@@ -318,12 +315,12 @@ fn decode_evaluates_parameter_dependency_expressions() {
     );
     assert_eq!(values["Power"], Some(ParameterValue::Integer(512)));
     assert!(
-        matches!(values["Sine"], Some(ParameterValue::Real(value)) if (value - 0.5).abs() < 1e-12)
+        matches!(values["Sine"], Some(ParameterValue::Real(value)) if (value - 0.5).abs() < 1.0e-12)
     );
     assert!(matches!(
         values["Inverse sine"],
         Some(ParameterValue::Angle(cadmpeg_ir::features::Angle(value)))
-            if (value - std::f64::consts::FRAC_PI_6).abs() < 1e-12
+            if (value - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
     ));
     assert_eq!(
         values["Absolute"],

@@ -795,7 +795,7 @@ fn an_edit_survives_the_patch_writer() {
                     let moved = edited.model.points[0].position.x;
                     let returned = round_trip.ir().model.points[0].position.x;
                     assert!(
-                        (returned - moved).abs() <= 1e-9,
+                        (returned - moved).abs() <= 1.0e-9,
                         "fixture `{name}`: the patch writer produced a container that round-trips, but the \
                          edited coordinate came back as {returned} rather than {moved}; the edit was dropped"
                     );

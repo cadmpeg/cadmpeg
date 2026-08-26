@@ -8,14 +8,6 @@
       "attributes": [],
       "bodies": [
         {
-          "id": "iges:model:body#D27",
-          "kind": "sheet",
-          "regions": [
-            "iges:model:region#D27"
-          ],
-          "visible": true
-        },
-        {
           "id": "iges:model:body#free-geometry",
           "kind": "wire",
           "name": "IGES free geometry",
@@ -24,54 +16,7 @@
           ]
         }
       ],
-      "coedges": [
-        {
-          "edge": "iges:model:edge#D27:D17:1",
-          "id": "iges:model:coedge#D27:D23:0",
-          "next": "iges:model:coedge#D27:D23:2",
-          "owner_loop": "iges:model:loop#D27:D23",
-          "pcurves": [
-            {
-              "isoparametric": true,
-              "pcurve": "iges:model:pcurve#D27:D23:0:0"
-            },
-            {
-              "isoparametric": false,
-              "pcurve": "iges:model:pcurve#D27:D23:0:1"
-            }
-          ],
-          "previous": "iges:model:coedge#D27:D23:4",
-          "radial_next": "iges:model:coedge#D27:D23:0",
-          "sense": "forward"
-        },
-        {
-          "edge": "iges:model:edge#D27:D17:2",
-          "id": "iges:model:coedge#D27:D23:2",
-          "next": "iges:model:coedge#D27:D23:3",
-          "owner_loop": "iges:model:loop#D27:D23",
-          "previous": "iges:model:coedge#D27:D23:0",
-          "radial_next": "iges:model:coedge#D27:D23:2",
-          "sense": "forward"
-        },
-        {
-          "edge": "iges:model:edge#D27:D17:3",
-          "id": "iges:model:coedge#D27:D23:3",
-          "next": "iges:model:coedge#D27:D23:4",
-          "owner_loop": "iges:model:loop#D27:D23",
-          "previous": "iges:model:coedge#D27:D23:2",
-          "radial_next": "iges:model:coedge#D27:D23:3",
-          "sense": "forward"
-        },
-        {
-          "edge": "iges:model:edge#D27:D17:4",
-          "id": "iges:model:coedge#D27:D23:4",
-          "next": "iges:model:coedge#D27:D23:0",
-          "owner_loop": "iges:model:loop#D27:D23",
-          "previous": "iges:model:coedge#D27:D23:3",
-          "radial_next": "iges:model:coedge#D27:D23:4",
-          "sense": "forward"
-        }
-      ],
+      "coedges": [],
       "configurations": [],
       "curves": [
         {
@@ -277,46 +222,6 @@
         },
         {
           "curve": "iges:model:curve#D7",
-          "end": "iges:model:vertex#D27:D15:2",
-          "id": "iges:model:edge#D27:D17:1",
-          "param_range": [
-            0.0,
-            1.0
-          ],
-          "start": "iges:model:vertex#D27:D15:1"
-        },
-        {
-          "curve": "iges:model:curve#D9",
-          "end": "iges:model:vertex#D27:D15:3",
-          "id": "iges:model:edge#D27:D17:2",
-          "param_range": [
-            0.0,
-            1.0
-          ],
-          "start": "iges:model:vertex#D27:D15:2"
-        },
-        {
-          "curve": "iges:model:curve#D11",
-          "end": "iges:model:vertex#D27:D15:4",
-          "id": "iges:model:edge#D27:D17:3",
-          "param_range": [
-            0.0,
-            1.0
-          ],
-          "start": "iges:model:vertex#D27:D15:3"
-        },
-        {
-          "curve": "iges:model:curve#D13",
-          "end": "iges:model:vertex#D27:D15:1",
-          "id": "iges:model:edge#D27:D17:4",
-          "param_range": [
-            0.0,
-            1.0
-          ],
-          "start": "iges:model:vertex#D27:D15:4"
-        },
-        {
-          "curve": "iges:model:curve#D7",
           "end": "iges:model:vertex#D7-end",
           "id": "iges:model:edge#D7",
           "param_range": [
@@ -336,99 +241,12 @@
           "start": "iges:model:vertex#D9-start"
         }
       ],
-      "faces": [
-        {
-          "id": "iges:model:face#D27:D25",
-          "loops": [
-            "iges:model:loop#D27:D23"
-          ],
-          "sense": "forward",
-          "shell": "iges:model:shell#D27",
-          "surface": "iges:model:surface#D5"
-        }
-      ],
+      "faces": [],
       "features": [],
-      "loops": [
-        {
-          "boundary_role": "outer",
-          "coedges": [
-            "iges:model:coedge#D27:D23:0",
-            "iges:model:coedge#D27:D23:2",
-            "iges:model:coedge#D27:D23:3",
-            "iges:model:coedge#D27:D23:4"
-          ],
-          "face": "iges:model:face#D27:D25",
-          "id": "iges:model:loop#D27:D23",
-          "vertex_uses": [
-            {
-              "after": "iges:model:coedge#D27:D23:0",
-              "vertex": "iges:model:vertex#D27:D15:2"
-            }
-          ]
-        }
-      ],
+      "loops": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [
-        {
-          "fit_tolerance": 0.001,
-          "geometry": {
-            "control_points": [
-              {
-                "u": 0.0,
-                "v": 0.0
-              },
-              {
-                "u": 0.5,
-                "v": 0.0
-              }
-            ],
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false
-          },
-          "id": "iges:model:pcurve#D27:D23:0:0",
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
-        },
-        {
-          "fit_tolerance": 0.001,
-          "geometry": {
-            "control_points": [
-              {
-                "u": 0.5,
-                "v": 0.0
-              },
-              {
-                "u": 1.0,
-                "v": 0.0
-              }
-            ],
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false
-          },
-          "id": "iges:model:pcurve#D27:D23:0:1",
-          "parameter_range": [
-            0.0,
-            1.0
-          ]
-        }
-      ],
+      "pcurves": [],
       "pmi": [],
       "points": [
         {
@@ -496,38 +314,6 @@
           }
         },
         {
-          "id": "iges:model:point#D27:D15:1",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D27:D15:2",
-          "position": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D27:D15:3",
-          "position": {
-            "x": 1.0,
-            "y": 1.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D27:D15:4",
-          "position": {
-            "x": 0.0,
-            "y": 1.0,
-            "z": 0.0
-          }
-        },
-        {
           "id": "iges:model:point#D7-end",
           "position": {
             "x": 1.0,
@@ -567,13 +353,6 @@
       "product_definitions": [],
       "regions": [
         {
-          "body": "iges:model:body#D27",
-          "id": "iges:model:region#D27",
-          "shells": [
-            "iges:model:shell#D27"
-          ]
-        },
-        {
           "body": "iges:model:body#free-geometry",
           "id": "iges:model:region#free-geometry",
           "shells": [
@@ -583,13 +362,6 @@
       ],
       "semantic_annotations": [],
       "shells": [
-        {
-          "faces": [
-            "iges:model:face#D27:D25"
-          ],
-          "id": "iges:model:shell#D27",
-          "region": "iges:model:region#D27"
-        },
         {
           "faces": [],
           "id": "iges:model:shell#free-geometry",
@@ -674,22 +446,6 @@
         {
           "id": "iges:model:vertex#D21-start",
           "point": "iges:model:point#D21-start"
-        },
-        {
-          "id": "iges:model:vertex#D27:D15:1",
-          "point": "iges:model:point#D27:D15:1"
-        },
-        {
-          "id": "iges:model:vertex#D27:D15:2",
-          "point": "iges:model:point#D27:D15:2"
-        },
-        {
-          "id": "iges:model:vertex#D27:D15:3",
-          "point": "iges:model:point#D27:D15:3"
-        },
-        {
-          "id": "iges:model:vertex#D27:D15:4",
-          "point": "iges:model:point#D27:D15:4"
         },
         {
           "id": "iges:model:vertex#D7-end",
@@ -7160,65 +6916,7 @@
               "association_links": [],
               "blank_status": 0,
               "color": 0,
-              "comment": [
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32
-              ],
+              "comment": [],
               "directory_sequence": 23,
               "entity_type": 508,
               "form": 1,
@@ -7239,390 +6937,12 @@
               "line_font": 0,
               "line_weight": 0,
               "links": [],
-              "parameter_bytes": [
-                53,
-                48,
-                56,
-                44,
-                53,
-                44,
-                48,
-                44,
-                49,
-                55,
-                44,
-                49,
-                44,
-                49,
-                44,
-                50,
-                44,
-                49,
-                44,
-                49,
-                57,
-                44,
-                48,
-                44,
-                50,
-                49,
-                44,
-                49,
-                44,
-                49,
-                53,
-                44,
-                50,
-                44,
-                48,
-                44,
-                48,
-                44,
-                48,
-                44,
-                49,
-                55,
-                44,
-                50,
-                44,
-                49,
-                44,
-                48,
-                44,
-                48,
-                44,
-                49,
-                55,
-                44,
-                51,
-                44,
-                49,
-                44,
-                48,
-                44,
-                48,
-                44,
-                49,
-                55,
-                44,
-                52,
-                44,
-                49,
-                44,
-                48,
-                59,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32,
-                32
-              ],
+              "parameter_bytes": [],
               "parameter_line_count": 2,
-              "parameter_line_end": 14,
-              "parameter_line_start": 12,
+              "parameter_line_end": null,
+              "parameter_line_start": null,
               "parameter_start": 12,
-              "parameters": [
-                {
-                  "end": 3,
-                  "start": 0,
-                  "value": {
-                    "kind": "integer",
-                    "value": 508
-                  }
-                },
-                {
-                  "end": 5,
-                  "start": 4,
-                  "value": {
-                    "kind": "integer",
-                    "value": 5
-                  }
-                },
-                {
-                  "end": 7,
-                  "start": 6,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 10,
-                  "start": 8,
-                  "value": {
-                    "kind": "integer",
-                    "value": 17
-                  }
-                },
-                {
-                  "end": 12,
-                  "start": 11,
-                  "value": {
-                    "kind": "integer",
-                    "value": 1
-                  }
-                },
-                {
-                  "end": 14,
-                  "start": 13,
-                  "value": {
-                    "kind": "integer",
-                    "value": 1
-                  }
-                },
-                {
-                  "end": 16,
-                  "start": 15,
-                  "value": {
-                    "kind": "integer",
-                    "value": 2
-                  }
-                },
-                {
-                  "end": 18,
-                  "start": 17,
-                  "value": {
-                    "kind": "integer",
-                    "value": 1
-                  }
-                },
-                {
-                  "end": 21,
-                  "start": 19,
-                  "value": {
-                    "kind": "integer",
-                    "value": 19
-                  }
-                },
-                {
-                  "end": 23,
-                  "start": 22,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 26,
-                  "start": 24,
-                  "value": {
-                    "kind": "integer",
-                    "value": 21
-                  }
-                },
-                {
-                  "end": 28,
-                  "start": 27,
-                  "value": {
-                    "kind": "integer",
-                    "value": 1
-                  }
-                },
-                {
-                  "end": 31,
-                  "start": 29,
-                  "value": {
-                    "kind": "integer",
-                    "value": 15
-                  }
-                },
-                {
-                  "end": 33,
-                  "start": 32,
-                  "value": {
-                    "kind": "integer",
-                    "value": 2
-                  }
-                },
-                {
-                  "end": 35,
-                  "start": 34,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 37,
-                  "start": 36,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 39,
-                  "start": 38,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 42,
-                  "start": 40,
-                  "value": {
-                    "kind": "integer",
-                    "value": 17
-                  }
-                },
-                {
-                  "end": 44,
-                  "start": 43,
-                  "value": {
-                    "kind": "integer",
-                    "value": 2
-                  }
-                },
-                {
-                  "end": 46,
-                  "start": 45,
-                  "value": {
-                    "kind": "integer",
-                    "value": 1
-                  }
-                },
-                {
-                  "end": 48,
-                  "start": 47,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 50,
-                  "start": 49,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 53,
-                  "start": 51,
-                  "value": {
-                    "kind": "integer",
-                    "value": 17
-                  }
-                },
-                {
-                  "end": 55,
-                  "start": 54,
-                  "value": {
-                    "kind": "integer",
-                    "value": 3
-                  }
-                },
-                {
-                  "end": 57,
-                  "start": 56,
-                  "value": {
-                    "kind": "integer",
-                    "value": 1
-                  }
-                },
-                {
-                  "end": 59,
-                  "start": 58,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 61,
-                  "start": 60,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                },
-                {
-                  "end": 64,
-                  "start": 62,
-                  "value": {
-                    "kind": "integer",
-                    "value": 17
-                  }
-                },
-                {
-                  "end": 66,
-                  "start": 65,
-                  "value": {
-                    "kind": "integer",
-                    "value": 4
-                  }
-                },
-                {
-                  "end": 68,
-                  "start": 67,
-                  "value": {
-                    "kind": "integer",
-                    "value": 1
-                  }
-                },
-                {
-                  "end": 70,
-                  "start": 69,
-                  "value": {
-                    "kind": "integer",
-                    "value": 0
-                  }
-                }
-              ],
+              "parameters": [],
               "property_links": [],
               "references": [],
               "reserved": [
@@ -8980,8 +8300,11 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [],
           "network_definitions": [],
           "network_instances": [],
           "primitive_solids": [],
@@ -8999,6 +8322,179 @@
           "product_occurrences": [],
           "product_properties": [],
           "properties": [],
+          "quarantined_directory_records": [],
+          "quarantined_parameter_records": [
+            {
+              "bytes": [
+                53,
+                48,
+                56,
+                44,
+                53,
+                44,
+                48,
+                44,
+                49,
+                55,
+                44,
+                49,
+                44,
+                49,
+                44,
+                50,
+                44,
+                49,
+                44,
+                49,
+                57,
+                44,
+                48,
+                44,
+                50,
+                49,
+                44,
+                49,
+                44,
+                49,
+                53,
+                44,
+                50,
+                44,
+                48,
+                44,
+                48,
+                44,
+                48,
+                44,
+                49,
+                55,
+                44,
+                50,
+                44,
+                49,
+                44,
+                48,
+                44,
+                48,
+                44,
+                49,
+                55,
+                44,
+                51,
+                44,
+                49,
+                44,
+                48,
+                44,
+                48,
+                44,
+                49,
+                55,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                50,
+                51,
+                80,
+                32,
+                32,
+                32,
+                32,
+                32,
+                49,
+                50,
+                44,
+                52,
+                44,
+                49,
+                44,
+                48,
+                59,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                32,
+                50,
+                51,
+                80,
+                32,
+                32,
+                32,
+                32,
+                32,
+                49,
+                51
+              ],
+              "cards": 2,
+              "defect": "numeric-crosses-card",
+              "id": "iges:quarantine:parameter#23",
+              "section": "parameter-data",
+              "sequence": 23,
+              "source_offset": 3402
+            }
+          ],
           "rectangular_arrays": [],
           "segmented_visibility": [],
           "selected_components": [],
@@ -9013,7 +8509,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 2
+        "version": 6
       }
     },
     "source": {
@@ -9032,7 +8528,7 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 0.001
     },
     "units": {
       "length": "millimeter"
@@ -9042,7 +8538,83 @@
     "container_only": false,
     "format": "iges",
     "geometry_transferred": true,
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "entity.not-projected",
+          "kind": "record_not_typed",
+          "namespace": "iges"
+        },
+        "message": "IGES entity type 510 form 1 was not projected: face loop is missing",
+        "provenance": {
+          "format": "iges",
+          "offset": 2187,
+          "stream": "iges",
+          "tag": "directory_entry:D25"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "entity.not-projected",
+          "kind": "record_not_typed",
+          "namespace": "iges"
+        },
+        "message": "IGES entity type 514 form 2 was not projected: shell face-use tuple is invalid",
+        "provenance": {
+          "format": "iges",
+          "offset": 2349,
+          "stream": "iges",
+          "tag": "directory_entry:D27"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "parameter.data-quarantined",
+          "kind": "noncanonical_source_syntax",
+          "namespace": "iges"
+        },
+        "message": "IGES Parameter Data of D23 (P12 through P13) is quarantined because a numeric field or its delimiter crosses a card boundary; its 2 raw card(s) are retained and no token was interpreted",
+        "provenance": {
+          "format": "iges",
+          "offset": 3464,
+          "stream": "iges",
+          "tag": "D23:parameter"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "entity.retained-unprojected",
+          "kind": "record_not_typed",
+          "namespace": "iges"
+        },
+        "message": "IGES entity type 502 form 1 retained without neutral projection",
+        "provenance": {
+          "format": "iges",
+          "offset": 1377,
+          "stream": "iges",
+          "tag": "directory_entry:D15"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "entity.retained-unprojected",
+          "kind": "record_not_typed",
+          "namespace": "iges"
+        },
+        "message": "IGES entity type 504 form 1 retained without neutral projection",
+        "provenance": {
+          "format": "iges",
+          "offset": 1539,
+          "stream": "iges",
+          "tag": "directory_entry:D17"
+        },
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "entities=14",
       "entity.110.form.0=4",
@@ -9055,8 +8627,8 @@
       "entity.508.form.1=1",
       "entity.510.form.1=1",
       "entity.514.form.2=1",
-      "parameter_records=14",
-      "parameter_tokens=164",
+      "parameter_records=13",
+      "parameter_tokens=133",
       "external_references=0"
     ],
     "transfer_ledger": {
@@ -9069,7 +8641,7 @@
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
+          "note": "native record retained; record was consumed as construction support",
           "source": "D3",
           "target": "iges:entity:directory#3"
         },
@@ -9105,13 +8677,13 @@
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
+          "note": "native record retained; semantic projection omitted with an attributed loss",
           "source": "D15",
           "target": "iges:entity:directory#15"
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
+          "note": "native record retained; semantic projection omitted with an attributed loss",
           "source": "D17",
           "target": "iges:entity:directory#17"
         },
@@ -9129,21 +8701,27 @@
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
+          "note": "native record retained; semantic projection omitted with an attributed loss",
           "source": "D23",
           "target": "iges:entity:directory#23"
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
+          "note": "native record retained; semantic projection omitted with an attributed loss",
           "source": "D25",
           "target": "iges:entity:directory#25"
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection emitted",
+          "note": "native record retained; semantic projection omitted with an attributed loss",
           "source": "D27",
           "target": "iges:entity:directory#27"
+        },
+        {
+          "disposition": "retained",
+          "note": "quarantined parameter data retained; tokens were not recovered",
+          "source": "D23:parameter",
+          "target": "iges:quarantine:parameter#23"
         }
       ]
     }

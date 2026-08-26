@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
-use cadmpeg_ir::Exactness;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container::{self, role, Layout};
-use crate::surface::TorusRadius2Encoding;
+use crate::container::{self};
 use crate::test_support::*;
 use crate::CreoCodec;
 
@@ -27,9 +22,9 @@ use crate::surface::{PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParame
 fn normalization_rejects_overflowed_feature_frame_vectors() {
     assert_eq!(normalize([f64::MAX, f64::MAX, 0.0]), None);
     let normalized = normalize([0.0, 3.0, 4.0]).expect("finite vector");
-    assert!(normalized[0].abs() < 1e-12);
-    assert!((normalized[1] - 0.6).abs() < 1e-12);
-    assert!((normalized[2] - 0.8).abs() < 1e-12);
+    assert!(normalized[0].abs() < 1.0e-12);
+    assert!((normalized[1] - 0.6).abs() < 1.0e-12);
+    assert!((normalized[2] - 0.8).abs() < 1.0e-12);
 }
 
 fn datum(id: u32, normal: [f64; 3], offset: f64) -> DatumPlane {

@@ -7,8 +7,8 @@ use std::collections::VecDeque;
 
 use crate::geometry::PcurveGeometry;
 
-const EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9: f64 = 1e-9;
-const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1e-12;
+const EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9: f64 = 1.0e-9;
+const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1.0e-12;
 
 pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut surfaces = ir

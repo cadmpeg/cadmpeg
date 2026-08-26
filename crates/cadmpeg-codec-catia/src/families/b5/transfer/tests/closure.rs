@@ -1,28 +1,19 @@
-#![allow(unused_imports)]
-
 use super::super::super::graph::{
-    bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, B5ExtrusionDirectrix,
-    B5ExtrusionSurface, B5Face, B5Graph, B5Loop, B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve,
-    B5ParameterIncidence, B5Pcurve, B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface,
+    bounded_occurrence_range, edge_pcurve_parameters, B5ExtrusionDirectrix, B5ExtrusionSurface,
+    B5Face, B5Graph, B5Loop, B5OffsetSurface, B5ParameterIncidence, B5Pcurve, B5SupportedSurface,
     B5SupportedSurfaceParameters, B5Surface,
 };
 use super::super::edges::{
     b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
-    merge_curve_plan, ordered_subrange, orient_b5_supports_to_edge,
+    ordered_subrange, orient_b5_supports_to_edge,
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
-use super::super::pcurves::{
-    cylinder_helix, cylinder_point, isocurve_endpoint_parameters, lifted_curve_geometry,
-    neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
-    sphere_great_circle_geometry, sphere_great_circle_pcurve,
-};
-use super::super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
+use super::super::surfaces::{rational_arc, revolve_nurbs};
 use super::super::unit;
 use super::super::vertices::transfer_vertex_tolerances;
 use super::super::*;
 use super::*;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::surface_point;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
 };
@@ -165,7 +156,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
                 object_id: 80,
                 supports: [(90, 91, [0.0, 1.0]), (100, 101, [0.0, 1.0])],
                 parameter_range: [0.0, 1.0],
-                cache_fit_tolerance: 1e-6,
+                cache_fit_tolerance: 1.0e-6,
             },
         },
     )]);
@@ -1068,6 +1059,6 @@ fn emitted_carriers_determine_logical_vertex_tolerance() {
     let supports = HashMap::from([(3, vec![(4, 2, [0.25, 0.75])])]);
 
     let tolerances = transfer_vertex_tolerances(&graph, &supports, &surfaces, &pcurves);
-    assert!((tolerances[&0] - (1e-4 + 1e-9)).abs() < 1e-12);
+    assert!((tolerances[&0] - (1e-4 + 1.0e-9)).abs() < 1.0e-12);
     assert!(!tolerances.contains_key(&1));
 }

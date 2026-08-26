@@ -5,18 +5,12 @@
 //! exercising the `#UGC:2` framing, the `#\n#<name>\n` section-boundary rule, the
 //! persistence-layout signals, and the `srf_array`/`crv_array` count headers.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
-use cadmpeg_ir::Exactness;
-
-use crate::container::{self, role, Layout};
-use crate::surface::TorusRadius2Encoding;
+use crate::container::{self};
 use crate::test_support::*;
 use crate::CreoCodec;
 
@@ -1181,7 +1175,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
                 ..
             },
             op: cadmpeg_ir::features::BooleanOp::NewBody,
-        } if (*angle - std::f64::consts::TAU).abs() < 1e-12
+        } if (*angle - std::f64::consts::TAU).abs() < 1.0e-12
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas["feature_revolution_extents"];

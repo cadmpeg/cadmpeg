@@ -101,7 +101,7 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
     assert!(matches!(
         linear_pcurve_carrier(&sphere, [[1.0, 0.25], [2.0, 0.25]]),
         Some(CurveGeometry::Circle { radius, .. })
-            if (radius - 2.0 * 0.25_f64.cos()).abs() <= 1e-12
+            if (radius - 2.0 * 0.25_f64.cos()).abs() <= 1.0e-12
     ));
 
     let torus = SurfaceGeometry::Torus {
@@ -255,9 +255,9 @@ fn assert_pcurve_matches_curve(
         let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, *parameter).expect("pcurve point");
         let mapped = cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v).expect("surface point");
         let expected = cadmpeg_ir::eval::curve_point(curve, *parameter).expect("curve point");
-        assert!((mapped.x - expected.x).abs() <= 1e-10);
-        assert!((mapped.y - expected.y).abs() <= 1e-10);
-        assert!((mapped.z - expected.z).abs() <= 1e-10);
+        assert!((mapped.x - expected.x).abs() <= 1.0e-10);
+        assert!((mapped.y - expected.y).abs() <= 1.0e-10);
+        assert!((mapped.z - expected.z).abs() <= 1.0e-10);
     }
 }
 
@@ -394,8 +394,8 @@ fn projects_a_coaxial_cylinder_circle_with_its_native_angle() {
     let PcurveGeometry::Line { origin, direction } = &pcurve else {
         panic!("cylinder-circle pcurve: {pcurve:#?}");
     };
-    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
-    assert!((origin.v - 5.0).abs() <= 1e-12);
+    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+    assert!((origin.v - 5.0).abs() <= 1.0e-12);
     assert_eq!(*direction, Point2::new(-1.0, 0.0));
     assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-2.0, 0.0, 1.25, 4.0]);
 
@@ -438,9 +438,9 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
         let PcurveGeometry::Line { origin, direction } = &pcurve else {
             panic!("cone-circle pcurve: {pcurve:#?}");
         };
-        assert!((origin.u - expected_phase).sin().abs() <= 1e-12);
-        assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1e-12);
-        assert!((origin.v - height).abs() <= 1e-12);
+        assert!((origin.u - expected_phase).sin().abs() <= 1.0e-12);
+        assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1.0e-12);
+        assert!((origin.v - height).abs() <= 1.0e-12);
         assert_eq!(*direction, Point2::new(1.0, 0.0));
         assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
     }
@@ -475,9 +475,9 @@ fn projects_cone_parallel_conics_on_either_side_of_the_apex() {
         let PcurveGeometry::Line { origin, direction } = &pcurve else {
             panic!("cone-ellipse pcurve: {pcurve:#?}");
         };
-        assert!((origin.u - expected_phase).sin().abs() <= 1e-12);
-        assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1e-12);
-        assert!((origin.v - height).abs() <= 1e-12);
+        assert!((origin.u - expected_phase).sin().abs() <= 1.0e-12);
+        assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1.0e-12);
+        assert!((origin.v - height).abs() <= 1.0e-12);
         assert_eq!(*direction, Point2::new(1.0, 0.0));
         assert_pcurve_matches_curve(&elliptical, &ellipse, &pcurve, &[-1.0, 0.0, 2.0]);
     }
@@ -503,8 +503,8 @@ fn projects_sphere_latitude_circles_to_the_canonical_polar_chart() {
         let PcurveGeometry::Line { origin, direction } = &pcurve else {
             panic!("sphere-circle pcurve: {pcurve:#?}");
         };
-        assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
-        assert!((origin.v - axial.atan2(4.0)).abs() <= 1e-12);
+        assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+        assert!((origin.v - axial.atan2(4.0)).abs() <= 1.0e-12);
         assert_eq!(*direction, Point2::new(1.0, 0.0));
         assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
     }
@@ -542,10 +542,10 @@ fn projects_torus_parallel_circles_with_signed_ring_branches() {
         let PcurveGeometry::Line { origin, direction } = &pcurve else {
             panic!("torus-circle pcurve: {pcurve:#?}");
         };
-        assert!((origin.u - expected_phase).sin().abs() <= 1e-12);
-        assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1e-12);
-        assert!((origin.v - polar).sin().abs() <= 1e-12);
-        assert!(((origin.v - polar).cos() - 1.0).abs() <= 1e-12);
+        assert!((origin.u - expected_phase).sin().abs() <= 1.0e-12);
+        assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1.0e-12);
+        assert!((origin.v - polar).sin().abs() <= 1.0e-12);
+        assert!(((origin.v - polar).cos() - 1.0).abs() <= 1.0e-12);
         assert_eq!(*direction, Point2::new(1.0, 0.0));
         assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
     }
@@ -570,8 +570,8 @@ fn projects_torus_meridian_circles_with_native_angle_phase() {
     let PcurveGeometry::Line { origin, direction } = &pcurve else {
         panic!("torus-meridian pcurve: {pcurve:#?}");
     };
-    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
-    assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
+    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+    assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
     assert_eq!(*direction, Point2::new(0.0, 1.0));
     assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
 
@@ -602,8 +602,8 @@ fn projects_sphere_meridians_through_both_poles() {
     let PcurveGeometry::Line { origin, direction } = &pcurve else {
         panic!("sphere-meridian pcurve: {pcurve:#?}");
     };
-    assert!(origin.u.abs() <= 1e-12);
-    assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
+    assert!(origin.u.abs() <= 1.0e-12);
+    assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
     assert_eq!(*direction, Point2::new(0.0, -1.0));
     assert_pcurve_matches_curve(
         &surface,
@@ -644,8 +644,8 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
     let PcurveGeometry::Line { origin, direction } = &pcurve else {
         panic!("cylinder-generator pcurve: {pcurve:#?}");
     };
-    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
-    assert!((origin.v - 5.0).abs() <= 1e-12);
+    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+    assert!((origin.v - 5.0).abs() <= 1.0e-12);
     assert_eq!(*direction, Point2::new(0.0, -2.0));
     assert_pcurve_matches_curve(&cylinder, &cylinder_line, &pcurve, &[-1.0, 0.0, 2.0]);
     let tiny_skew = CurveGeometry::Line {
@@ -670,10 +670,10 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
     let PcurveGeometry::Line { origin, direction } = &pcurve else {
         panic!("cone-generator pcurve: {pcurve:#?}");
     };
-    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
-    assert!((origin.v - 3.0).abs() <= 1e-12);
-    assert!(direction.u.abs() <= 1e-12);
-    assert!((direction.v - 2.0).abs() <= 1e-12);
+    assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1.0e-12);
+    assert!((origin.v - 3.0).abs() <= 1.0e-12);
+    assert!(direction.u.abs() <= 1.0e-12);
+    assert!((direction.v - 2.0).abs() <= 1.0e-12);
     assert_pcurve_matches_curve(&cone, &cone_line, &pcurve, &[-1.0, 0.0, 2.0]);
 
     let elliptical_cone = SurfaceGeometry::Cone {
@@ -694,10 +694,10 @@ fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
     let PcurveGeometry::Line { origin, direction } = &pcurve else {
         panic!("elliptical-cone generator pcurve: {pcurve:#?}");
     };
-    assert!((origin.u - std::f64::consts::FRAC_PI_4).abs() <= 1e-12);
-    assert!((origin.v - 3.0).abs() <= 1e-12);
-    assert!(direction.u.abs() <= 1e-12);
-    assert!((direction.v - 2.0).abs() <= 1e-12);
+    assert!((origin.u - std::f64::consts::FRAC_PI_4).abs() <= 1.0e-12);
+    assert!((origin.v - 3.0).abs() <= 1.0e-12);
+    assert!(direction.u.abs() <= 1.0e-12);
+    assert!((direction.v - 2.0).abs() <= 1.0e-12);
     assert_pcurve_matches_curve(
         &elliptical_cone,
         &elliptical_generator,

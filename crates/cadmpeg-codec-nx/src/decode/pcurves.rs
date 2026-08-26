@@ -34,8 +34,8 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_PCURVES_EXACT_ANALYTIC_ISOCURVE_PCURVE_E10: f64 = 1e-10;
-const EPS_PCURVES_BLEND_BOUNDARY_SPINE_GEOMETRY_MATCHES_E8: f64 = 1e-8;
+const EPS_PCURVES_EXACT_ANALYTIC_ISOCURVE_PCURVE_E10: f64 = 1.0e-10;
+const EPS_PCURVES_BLEND_BOUNDARY_SPINE_GEOMETRY_MATCHES_E8: f64 = 1.0e-8;
 
 pub(crate) fn pcurve_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     let PcurveGeometry::Nurbs { knots, .. } = geometry else {

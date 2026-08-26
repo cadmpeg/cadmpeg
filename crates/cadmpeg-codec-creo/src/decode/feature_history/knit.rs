@@ -19,8 +19,8 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_NORMAL_ALIGNMENT: f64 = 1e-9;
-const EPS_OFFSET_AGREEMENT: f64 = 1e-9;
+const EPS_NORMAL_ALIGNMENT: f64 = 1.0e-9;
+const EPS_OFFSET_AGREEMENT: f64 = 1.0e-9;
 
 pub(in super::super) fn filled_surface_feature_definition(
     scan: &ContainerScan,

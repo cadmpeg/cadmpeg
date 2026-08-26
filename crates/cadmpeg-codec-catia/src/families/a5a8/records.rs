@@ -17,9 +17,9 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::ops::Range;
 
-const EPS_GUIDE_DIRECTION_UNIT: f64 = 1e-9;
-const EPS_ROLLING_BALL_RADIUS: f64 = 1e-9;
-const EPS_ROLLING_BALL_ANGLE: f64 = 1e-9;
+const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
+const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
+const EPS_ROLLING_BALL_ANGLE: f64 = 1.0e-9;
 
 /// Native identity form of one decoded freeform surface carrier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

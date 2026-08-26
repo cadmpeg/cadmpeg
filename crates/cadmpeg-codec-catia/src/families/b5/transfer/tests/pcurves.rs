@@ -1,24 +1,15 @@
-#![allow(unused_imports)]
-
 use super::super::super::graph::{
-    bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, B5ExtrusionDirectrix,
-    B5ExtrusionSurface, B5Face, B5Graph, B5Loop, B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve,
-    B5ParameterIncidence, B5Pcurve, B5Profile, B5SphereGreatCirclePcurve, B5SupportedSurface,
-    B5SupportedSurfaceParameters, B5Surface,
+    loop_chain_closes, B5Face, B5Graph, B5Loop, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve,
+    B5Profile, B5SphereGreatCirclePcurve, B5Surface,
 };
-use super::super::edges::{
-    b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
-    merge_curve_plan, ordered_subrange, orient_b5_supports_to_edge,
-};
+use super::super::edges::merge_curve_plan;
 use super::super::faces::{orient_loop_members, ownership_plan};
 use super::super::pcurves::{
     cylinder_helix, cylinder_point, isocurve_endpoint_parameters, lifted_curve_geometry,
     neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
     sphere_great_circle_geometry, sphere_great_circle_pcurve,
 };
-use super::super::surfaces::{rational_arc, revolution_surface, revolve_nurbs};
-use super::super::unit;
-use super::super::vertices::transfer_vertex_tolerances;
+use super::super::surfaces::revolution_surface;
 use super::super::*;
 use super::*;
 use cadmpeg_ir::document::CadIr;
@@ -26,9 +17,8 @@ use cadmpeg_ir::eval::surface_point;
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{SurfaceId, UnknownId};
+use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -56,8 +46,8 @@ fn cylinder_pcurve_uses_independent_angular_scale_without_origin_rotation() {
         3.0,
         [3.0 * std::f64::consts::PI, 3.0],
     );
-    assert!((lifted[0] + 6.0).abs() < 1e-12);
-    assert!(lifted[1].abs() < 1e-12);
+    assert!((lifted[0] + 6.0).abs() < 1.0e-12);
+    assert!(lifted[1].abs() < 1.0e-12);
     assert_eq!(lifted[2], 3.0);
 }
 
@@ -84,9 +74,9 @@ fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
     );
     let evaluated = surface_point(&SurfaceGeometry::Nurbs(surface), 0.5, std::f64::consts::PI)
         .expect("surface point");
-    assert!(evaluated.x.abs() < 1e-12);
-    assert!((evaluated.y - 2.0).abs() < 1e-12);
-    assert!((evaluated.z - 0.5).abs() < 1e-12);
+    assert!(evaluated.x.abs() < 1.0e-12);
+    assert!((evaluated.y - 2.0).abs() < 1.0e-12);
+    assert!((evaluated.z - 0.5).abs() < 1.0e-12);
     assert!(revolution_surface(
         Some(&profile),
         [0.0, 0.0, 0.0],
@@ -427,7 +417,7 @@ fn affine_lift_range_orients_and_trims_the_nurbs_carrier() {
         [8.0, 0.0, 2.0],
     )
     .expect("tolerant trimmed range");
-    assert!((tolerant.edge_tolerance.expect("edge tolerance") - (1e-4 + 1e-9)).abs() < 1e-15);
+    assert!((tolerant.edge_tolerance.expect("edge tolerance") - (1e-4 + 1.0e-9)).abs() < 1e-15);
 }
 
 #[test]
@@ -785,7 +775,7 @@ fn cone_chart_normalizes_arc_length_and_slant_coordinates() {
     };
     assert_eq!(center, Point3::new(0.0, 0.0, 4.0 * half_angle.cos()));
     assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
-    assert!((radius - 2.0).abs() < 1e-12);
+    assert!((radius - 2.0).abs() < 1.0e-12);
 }
 
 #[test]
@@ -818,21 +808,21 @@ fn sphere_class_1d_fields_lift_to_the_exact_great_circle_plane() {
         panic!("expected great circle");
     };
     assert_eq!(center, Point3::new(1.0, 2.0, 3.0));
-    assert!((radius - 5.0).abs() < 1e-12);
-    assert!((axis.x * axis.x + axis.y * axis.y + axis.z * axis.z - 1.0).abs() < 1e-12);
+    assert!((radius - 5.0).abs() < 1.0e-12);
+    assert!((axis.x * axis.x + axis.y * axis.y + axis.z * axis.z - 1.0).abs() < 1.0e-12);
     assert!(
         (axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z).abs()
-            < 1e-12
+            < 1.0e-12
     );
-    assert!((axis.y + std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
-    assert!((axis.z - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
+    assert!((axis.y + std::f64::consts::FRAC_1_SQRT_2).abs() < 1.0e-12);
+    assert!((axis.z - std::f64::consts::FRAC_1_SQRT_2).abs() < 1.0e-12);
 
     let (geometry, range) =
         sphere_great_circle_pcurve(&pcurve).expect("exact parameter-space curve");
     assert_eq!(range, [0.0, 8.0]);
     let uv = cadmpeg_ir::eval::pcurve_uv(&geometry, 8.0).expect("chart endpoint");
     assert_eq!(uv.u, 1.0);
-    assert!((uv.v - (-(1.0 + std::f64::consts::FRAC_PI_2).cos()).atan()).abs() < 1e-12);
+    assert!((uv.v - (-(1.0 + std::f64::consts::FRAC_PI_2).cos()).atan()).abs() < 1.0e-12);
 
     let tiny = 1e-200;
     let mut tiny_sphere = sphere;
@@ -1298,7 +1288,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     };
     assert_eq!(*angle_range, [0.0, 2.0]);
     assert_eq!(*center, Point3::new(0.0, 0.0, 3.0));
-    assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1e-12);
+    assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
     assert_eq!(*apex_factor, 0.0);
     assert_eq!(plan.parameter_range, [0.0, 2.0]);
     assert!(plan.fit_tolerance <= 1e-4);
@@ -1327,7 +1317,7 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
     };
     assert_eq!(angle_range, [0.0, 1.0]);
     assert_eq!(center.z, 4.0);
-    assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1e-12);
+    assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
 
     let tiny = 1e-14;
     let tiny_pcurve = B5Pcurve {
@@ -1350,5 +1340,5 @@ fn affine_cylinder_pcurve_preserves_exact_helix_construction() {
         unreachable!();
     };
     assert_eq!(angle_range, [0.0, tiny]);
-    assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1e-12);
+    assert!((pitch.z - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
 }

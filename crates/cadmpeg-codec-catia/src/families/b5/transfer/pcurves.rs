@@ -24,8 +24,8 @@ use super::{
     TransferPlan, POINT_TOLERANCE,
 };
 
-const EPS_PCURVE_RESIDUAL: f64 = 1e-9;
-const EPS_PCURVE_PARAMETER: f64 = 1e-12;
+const EPS_PCURVE_RESIDUAL: f64 = 1.0e-9;
+const EPS_PCURVE_PARAMETER: f64 = 1.0e-12;
 
 pub(super) fn sphere_great_circle_geometry(
     pcurve: &B5SphereGreatCirclePcurve,

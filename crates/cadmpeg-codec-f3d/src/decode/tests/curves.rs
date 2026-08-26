@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
@@ -11,17 +10,10 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::{Cursor, Read};
 
-use cadmpeg_asm::asm_header;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::report::{LossKind as LossCode, LossTaxonomy, Severity};
-use zip::CompressionMethod;
+use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
 
-use crate::bytes::lp_utf16_bytes;
-use crate::container::{self, role};
 use crate::test_support::*;
 use crate::F3dCodec;
 
@@ -513,7 +505,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
             .expect("subset fit tolerance")
             - 0.006)
             .abs()
-            < 1e-12
+            < 1.0e-12
     );
 
     let mut edited = result.ir().clone();
@@ -897,7 +889,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .expect("compound fit tolerance")
             - 0.003)
             .abs()
-            < 1e-12
+            < 1.0e-12
     );
     let component_ids = components.clone();
 

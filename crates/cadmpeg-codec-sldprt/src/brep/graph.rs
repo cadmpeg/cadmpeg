@@ -38,15 +38,15 @@ use super::topology::{self, Record};
 use super::{scan_carriers, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
-const EPS_NORMAL_NONZERO: f64 = 1e-12;
-const EPS_PLANAR_DISTANCE: f64 = 1e-6;
-const EPS_GEOMETRY_RESIDUAL: f64 = 1e-9;
-const EPS_AXIS_ALIGNMENT: f64 = 1e-9;
-const EPS_CIRCLE_RADIUS_MATCH: f64 = 1e-6;
-const EPS_RADIUS_ABSOLUTE: f64 = 1e-6;
-const EPS_RADIUS_RELATIVE: f64 = 1e-9;
-const EPS_NURBS_WEIGHT: f64 = 1e-12;
-const EPS_POINT_DISTANCE: f64 = 1e-12;
+const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
+const EPS_PLANAR_DISTANCE: f64 = 1.0e-6;
+const EPS_GEOMETRY_RESIDUAL: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_CIRCLE_RADIUS_MATCH: f64 = 1.0e-6;
+const EPS_RADIUS_ABSOLUTE: f64 = 1.0e-6;
+const EPS_RADIUS_RELATIVE: f64 = 1.0e-9;
+const EPS_NURBS_WEIGHT: f64 = 1.0e-12;
+const EPS_POINT_DISTANCE: f64 = 1.0e-12;
 
 /// Decoded B-rep arenas, provenance, and transfer statistics.
 #[derive(Default)]
@@ -672,7 +672,7 @@ fn edge_parameter_range(
     carrier: &Carrier,
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
 ) -> Option<([f64; 2], bool)> {
-    const TOLERANCE_MM: f64 = 1e-7;
+    const TOLERANCE_MM: f64 = 1.0e-7;
 
     let range = carrier.parameter_range?;
     let range = match &carrier.geometry {
@@ -2603,8 +2603,8 @@ enum InverseResolution<T> {
 }
 
 const INVERSE_SAMPLE_COUNT: usize = 32;
-const INVERSE_PARAMETER_TOLERANCE: f64 = 1e-10;
-const INVERSE_ABSOLUTE_TOLERANCE_MM: f64 = 1e-6;
+const INVERSE_PARAMETER_TOLERANCE: f64 = 1.0e-10;
+const INVERSE_ABSOLUTE_TOLERANCE_MM: f64 = 1.0e-6;
 const INVERSE_RELATIVE_TOLERANCE: f64 = 8.0 * f64::EPSILON;
 
 fn inverse_coordinate_tolerance(points: impl IntoIterator<Item = cadmpeg_ir::math::Point3>) -> f64 {
@@ -5183,10 +5183,10 @@ mod tests {
         let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = geometry else {
             panic!("expected affine line pcurve");
         };
-        assert!(origin.u.abs() < 1e-12);
-        assert!((origin.v - 0.5).abs() < 1e-12);
-        assert!((direction.u - 2.0 / 3.0).abs() < 1e-12);
-        assert!(direction.v.abs() < 1e-12);
+        assert!(origin.u.abs() < 1.0e-12);
+        assert!((origin.v - 0.5).abs() < 1.0e-12);
+        assert!((direction.u - 2.0 / 3.0).abs() < 1.0e-12);
+        assert!(direction.v.abs() < 1.0e-12);
     }
 
     #[test]
@@ -5229,10 +5229,10 @@ mod tests {
         let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = geometry else {
             panic!("expected isoparametric line pcurve");
         };
-        assert!(origin.u.abs() < 1e-12);
-        assert!((origin.v - 0.15).abs() < 1e-12);
-        assert!((direction.u - 1.0).abs() < 1e-12);
-        assert!(direction.v.abs() < 1e-12);
+        assert!(origin.u.abs() < 1.0e-12);
+        assert!((origin.v - 0.15).abs() < 1.0e-12);
+        assert!((direction.u - 1.0).abs() < 1.0e-12);
+        assert!(direction.v.abs() < 1.0e-12);
     }
 
     #[test]
@@ -5269,10 +5269,10 @@ mod tests {
         let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = geometry else {
             panic!("expected affine line pcurve");
         };
-        assert!((origin.u - 0.5).abs() < 1e-8);
-        assert!(origin.v.abs() < 1e-12);
-        assert!(direction.u.abs() < 1e-12);
-        assert!((direction.v - 1.0).abs() < 1e-12);
+        assert!((origin.u - 0.5).abs() < 1.0e-8);
+        assert!(origin.v.abs() < 1.0e-12);
+        assert!(direction.u.abs() < 1.0e-12);
+        assert!((direction.v - 1.0).abs() < 1.0e-12);
     }
 
     #[test]

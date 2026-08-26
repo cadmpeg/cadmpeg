@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
-use cadmpeg_ir::Exactness;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container::{self, role, Layout};
-use crate::surface::TorusRadius2Encoding;
+use crate::container::{self};
 use crate::test_support::*;
 use crate::CreoCodec;
 
@@ -405,7 +401,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
         assert!(evaluated
             .into_iter()
             .zip([end.x, end.y, end.z])
-            .all(|(evaluated, expected)| (evaluated - expected).abs() < 1e-10));
+            .all(|(evaluated, expected)| (evaluated - expected).abs() < 1.0e-10));
     }
     assert_eq!(model.faces.len(), 4);
     assert_eq!(

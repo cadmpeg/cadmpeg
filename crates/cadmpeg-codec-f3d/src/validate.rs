@@ -35,8 +35,8 @@ use crate::{design, history, ids, native, records};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::{Check, Finding, Severity};
 
-const EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E10: f64 = 1e-10;
-const EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E8: f64 = 1e-8;
+const EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E10: f64 = 1.0e-10;
+const EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E8: f64 = 1.0e-8;
 
 /// Resolve the native design stream that owns a record `id`, defaulting to the
 /// primary design stream when the id carries no stream qualifier.

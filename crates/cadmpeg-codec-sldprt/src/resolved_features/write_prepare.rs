@@ -1122,7 +1122,7 @@ pub(super) fn same_point2(first: Point2, second: Point2) -> bool {
 }
 
 pub(super) fn arc_angle_relation_kind(angle: f64) -> Option<SketchRelationKind> {
-    const TOLERANCE: f64 = 1e-9;
+    const TOLERANCE: f64 = 1.0e-9;
     [
         (std::f64::consts::FRAC_PI_2, SketchRelationKind::ArcAngle90),
         (std::f64::consts::PI, SketchRelationKind::ArcAngle180),
@@ -1136,7 +1136,7 @@ pub(super) fn arc_angle_relation_kind(angle: f64) -> Option<SketchRelationKind> 
 }
 
 pub(super) fn ellipse_angle_relation_kind(angle: f64) -> Option<SketchRelationKind> {
-    const TOLERANCE: f64 = 1e-9;
+    const TOLERANCE: f64 = 1.0e-9;
     [
         (
             std::f64::consts::FRAC_PI_2,

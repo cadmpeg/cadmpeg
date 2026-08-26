@@ -1,7 +1,7 @@
 //! Byte-level parsing for standard nested CATIA V5 B-rep (`FBB`) streams:
 //! edge/vertex tables, trim records, packet triangles, and face parsers.
 
-use cadmpeg_core::decode::{View, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
 
 use crate::families::standard::topology::{
     reconstruct, reconstruct_incidence, reconstruct_incidence_with_edge_classes_and_mesh, Boundary,
@@ -25,7 +25,7 @@ const TRIM_KINDS: [u8; 14] = [
 // direction to binary32 changes its squared norm by less than 2.1e-7; this
 // bound leaves room for binary32 arithmetic used by a writer without
 // admitting a materially non-unit frame.
-const FRAME_VECTOR_NORM2_TOLERANCE: f64 = 1e-6;
+const FRAME_VECTOR_NORM2_TOLERANCE: f64 = 1.0e-6;
 
 /// Number of face rows in the governing standard topology spine. The spine is
 /// the unique largest contiguous stride-eight FBB run; shorter marker runs are
@@ -394,15 +394,6 @@ pub(crate) fn parse_fbb_edge_tables(
         .map(|[solution]| solution)
 }
 
-fn read_fbb_handle(bytes: &[u8], position: usize, width: usize) -> Option<u32> {
-    match width {
-        1 => bytes.get(position).copied().map(u32::from),
-        2 => View::u16_be_at(bytes, position).map(u32::from),
-        3 => View::u24_be_at(bytes, position),
-        _ => None,
-    }
-}
-
 pub(crate) fn parse_fbb_edge_tables_width(
     bytes: &[u8],
     mut position: usize,
@@ -437,7 +428,10 @@ pub(crate) fn parse_fbb_edge_tables_width(
             }
             let mut handles = Vec::with_capacity(arity);
             for _ in 0..arity {
-                handles.push(read_fbb_handle(bytes, position, handle_width)?);
+                let mut encoded = [0u8; 4];
+                encoded[4 - handle_width..]
+                    .copy_from_slice(bytes.get(position..position + handle_width)?);
+                handles.push(u32::from_be_bytes(encoded));
                 position += handle_width;
             }
             rows.push(EdgeRow {
@@ -676,7 +670,10 @@ fn parse_edge_tables_scoped_width(
             }
             let mut handles = Vec::with_capacity(arity);
             for _ in 0..arity {
-                handles.push(read_fbb_handle(bytes, position, handle_width)?);
+                let mut encoded = [0u8; 4];
+                encoded[4 - handle_width..]
+                    .copy_from_slice(bytes.get(position..position + handle_width)?);
+                handles.push(u32::from_be_bytes(encoded));
                 position += handle_width;
             }
             rows.push(EdgeRow {
@@ -936,7 +933,12 @@ pub(crate) fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Opt
         let handle = match width {
             1 => u32::from(*bytes.get(position)?),
             2 => u32::from(View::u16_be_at(bytes, position)?),
-            3 => View::u24_be_at(bytes, position)?,
+            3 => u32::from_be_bytes([
+                0,
+                *bytes.get(position)?,
+                *bytes.get(position + 1)?,
+                *bytes.get(position + 2)?,
+            ]),
             _ => return None,
         };
         handles.push(handle);
@@ -1097,8 +1099,7 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
         return None;
     }
 
-    let mut coverage =
-        cadmpeg_core::decode::alloc_filled(length, 0u8, "catia standard boundary coverage").ok()?;
+    let mut coverage = alloc_filled(length, 0_u8, "catia FBB boundary coverage").ok()?;
     for &(start, edge_count, _, _) in &matches {
         for offset in 0..edge_count {
             coverage[(start + offset) % length] =

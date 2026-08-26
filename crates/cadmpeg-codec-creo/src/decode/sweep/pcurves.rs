@@ -16,10 +16,10 @@ use cadmpeg_ir::sketches::SketchGeometry;
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-const EPS_SENSE_ALIGN: f64 = 1e-8;
-const EPS_RADIUS_NONZERO: f64 = 1e-12;
-const EPS_RESIDUAL_AGREEMENT: f64 = 1e-9;
-const EPS_SURFACE_DIFFERENCE_STEP: f64 = 1e-6;
+const EPS_SENSE_ALIGN: f64 = 1.0e-8;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_RESIDUAL_AGREEMENT: f64 = 1.0e-9;
+const EPS_SURFACE_DIFFERENCE_STEP: f64 = 1.0e-6;
 
 pub(in super::super) fn add_extrusion_pcurve(
     ir: &mut CadIr,

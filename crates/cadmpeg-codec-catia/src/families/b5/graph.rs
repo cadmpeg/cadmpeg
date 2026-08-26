@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
-use cadmpeg_core::decode::{View, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, View, WorkBudget};
 use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
 use cadmpeg_ir::geometry::{
     knots_strictly_increasing, NurbsSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -18,14 +18,14 @@ use crate::wire;
 /// Maximum frame-index, record-materialization, census, and graph-selection
 /// operations admitted for one free-form object population.
 pub(crate) const MAX_OBJECT_STREAM_SELECTION_WORK: usize = 1_000_000;
-const EPS_VERTEX_RESIDUAL_INCREMENT: f64 = 1e-9;
-const EPS_FRAME_UNIT: f64 = 1e-12;
-const EPS_FRAME_ORTHO: f64 = 1e-12;
-const EPS_CHART_RANGE: f64 = 1e-12;
-const EPS_SURFACE_UNIT: f64 = 1e-12;
-const EPS_PARAMETER_AGREEMENT: f64 = 1e-12;
-const EPS_PERIODIC_RANGE: f64 = 1e-12;
-const EPS_U_PARAMETER: f64 = 1e-12;
+const EPS_VERTEX_RESIDUAL_INCREMENT: f64 = 1.0e-9;
+const EPS_FRAME_UNIT: f64 = 1.0e-12;
+const EPS_FRAME_ORTHO: f64 = 1.0e-12;
+const EPS_CHART_RANGE: f64 = 1.0e-12;
+const EPS_SURFACE_UNIT: f64 = 1.0e-12;
+const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
+const EPS_PERIODIC_RANGE: f64 = 1.0e-12;
+const EPS_U_PARAMETER: f64 = 1.0e-12;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
 /// surfaces bound through the in-stream `object_id` map ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)),
@@ -1418,10 +1418,10 @@ fn object_stream_pcurve_candidate(
         surface: jet.support_id,
         degree: jet.degree,
         distinct_knots: jet.knots.clone(),
-        multiplicities: cadmpeg_core::decode::alloc_filled(
+        multiplicities: alloc_filled(
             jet.knots.len(),
             jet.degree + 1,
-            "catia b5 object-stream pcurve multiplicities",
+            "catia b5 pcurve multiplicities",
         )
         .ok()?,
         control_points,
@@ -1536,12 +1536,8 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
         surface,
         degree,
         distinct_knots,
-        multiplicities: cadmpeg_core::decode::alloc_filled(
-            knot_count,
-            degree + 1,
-            "catia b5 class-21 pcurve multiplicities",
-        )
-        .ok()?,
+        multiplicities: alloc_filled(knot_count, degree + 1, "catia b5 pcurve multiplicities")
+            .ok()?,
         control_points,
         weights: None,
         parameter_range: Some(parameter_range),
@@ -2166,7 +2162,7 @@ fn pcurve_parameter_domain(pcurve: &B5Pcurve) -> Option<[f64; 2]> {
 
 /// Clamp a finite occurrence range to a finite, increasing native domain.
 pub(crate) fn bounded_occurrence_range(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
-    const RELATIVE_PARAMETER_TOLERANCE: f64 = 1e-10;
+    const RELATIVE_PARAMETER_TOLERANCE: f64 = 1.0e-10;
 
     let domain_span = domain[1] - domain[0];
     if !domain.into_iter().all(f64::is_finite)
@@ -3078,7 +3074,7 @@ fn analytic_offset_magnitude_agrees(
     source: &B5Surface,
     distance: f64,
 ) -> bool {
-    const RELATIVE_TOLERANCE: f64 = 1e-10;
+    const RELATIVE_TOLERANCE: f64 = 1.0e-10;
     let relative_close = |left: f64, right: f64| {
         (left - right).abs() <= RELATIVE_TOLERANCE * left.abs().max(right.abs())
     };

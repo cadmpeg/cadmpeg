@@ -29,7 +29,7 @@ use crate::writer::primitives::{
 };
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
-const EPS_EDITED_DIRECTION_UNIT: f64 = 1e-9;
+const EPS_EDITED_DIRECTION_UNIT: f64 = 1.0e-9;
 
 #[derive(Clone, Copy)]
 pub(crate) struct PatchNatives<'a> {

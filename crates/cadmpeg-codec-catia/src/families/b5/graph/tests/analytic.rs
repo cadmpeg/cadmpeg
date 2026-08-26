@@ -661,9 +661,9 @@ fn circle_pcurve_preserves_arc_length_parameterization() {
     assert_eq!(pcurve.control_points.len(), 5);
     let weights = pcurve.weights.expect("rational weights");
     assert_eq!(weights.len(), 5);
-    assert!((weights[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
-    assert!((pcurve.control_points[0][0] - 2.0).abs() < 1e-12);
-    assert!((pcurve.control_points[4][0] + 2.0).abs() < 1e-12);
+    assert!((weights[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1.0e-12);
+    assert!((pcurve.control_points[0][0] - 2.0).abs() < 1.0e-12);
+    assert!((pcurve.control_points[4][0] + 2.0).abs() < 1.0e-12);
     let mut wrong_family = record;
     wrong_family.family = 0xa8;
     assert!(parse_circle_pcurve(&wrong_family).is_none());
@@ -704,8 +704,8 @@ fn class_1a_pcurve_uses_diameter_period_parameterization() {
     assert_eq!(pcurve.control_points.len(), 5);
     assert_eq!(evaluate_pcurve(&pcurve, 0.0), Some([4.0, 4.0]));
     let end = evaluate_pcurve(&pcurve, std::f64::consts::PI).expect("end point");
-    assert!((end[0] - 2.0).abs() < 1e-12);
-    assert!((end[1] - 4.0).abs() < 1e-12);
+    assert!((end[0] - 2.0).abs() < 1.0e-12);
+    assert!((end[1] - 4.0).abs() < 1.0e-12);
 
     let diameter = 1e-200_f64;
     let period = std::f64::consts::PI * diameter;

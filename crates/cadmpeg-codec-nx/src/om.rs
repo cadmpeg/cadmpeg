@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{alloc_filled, View};
 
 /// One NX object-model entity with persistent object identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -372,7 +372,7 @@ fn color_component(bytes: &[u8]) -> Option<(f32, Vec<u8>, usize)> {
             let raw: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
             let mut decoded = raw;
             decoded[0] = decoded[0].checked_sub(0x10)?;
-            let value = View::f32_be_at(&decoded, 0)? / 4.0;
+            let value = f32::from_be_bytes(decoded) / 4.0;
             (value.is_finite() && (0.0..=1.0).contains(&value)).then(|| {
                 debug_assert_eq!(raw[0], marker);
                 (value, raw.to_vec(), 4)
@@ -2457,7 +2457,7 @@ fn payload_object_index(bytes: &[u8]) -> Option<(u32, usize)> {
     match *bytes.first()? {
         0xf0 => Some((u32::from(*bytes.get(1)?), 2)),
         0xf1 => {
-            let value = View::u16_be_at(bytes, 1)?;
+            let value = u16::from_be_bytes([*bytes.get(1)?, *bytes.get(2)?]);
             (value >= 0x0100).then_some((u32::from(value), 3))
         }
         _ => None,
@@ -3697,7 +3697,7 @@ fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
     let encoded: [u8; 8] = bytes.try_into().ok()?;
     let mut raw = encoded;
     raw[0] = raw[0].checked_add(0x10)?;
-    let value = View::f64_be_at(&raw, 0)?;
+    let value = f64::from_be_bytes(raw);
     value.is_finite().then_some(value)
 }
 
@@ -4882,7 +4882,7 @@ fn payload_scalar(bytes: &[u8]) -> Option<(f64, PayloadScalarEncoding, usize)> {
             let encoded: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
             let mut raw = encoded;
             raw[0] = raw[0].checked_sub(0x10)?;
-            let value = View::f32_be_at(&raw, 0)?;
+            let value = f32::from_be_bytes(raw);
             value
                 .is_finite()
                 .then_some((f64::from(value), PayloadScalarEncoding::Binary32, 4))
@@ -5883,8 +5883,7 @@ pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
 pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
     let values = offset_store_control_values(bytes)?;
     let mut suffix_minima =
-        cadmpeg_core::decode::alloc_filled(values.len(), u32::MAX, "nx offset-store suffix minima")
-            .ok()?;
+        alloc_filled(values.len(), u32::MAX, "nx offset-store suffix minima").ok()?;
     for index in (0..values.len().saturating_sub(1)).rev() {
         suffix_minima[index] = suffix_minima[index + 1].min(values[index + 1]);
     }

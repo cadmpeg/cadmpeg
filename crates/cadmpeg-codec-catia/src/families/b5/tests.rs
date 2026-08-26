@@ -232,9 +232,9 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     let revolution_endpoints = graph.pcurves[&210]
         .lifted_endpoints
         .expect("revolution lift");
-    assert!((revolution_endpoints[0][0] - 1.0).abs() < 1e-12);
-    assert!((revolution_endpoints[1][0] + 1.0).abs() < 1e-12);
-    assert!((revolution_endpoints[1][2] - 1.0).abs() < 1e-12);
+    assert!((revolution_endpoints[0][0] - 1.0).abs() < 1.0e-12);
+    assert!((revolution_endpoints[1][0] + 1.0).abs() < 1.0e-12);
+    assert!((revolution_endpoints[1][2] - 1.0).abs() < 1.0e-12);
     assert_eq!(
         graph.pcurves[&211].lifted_endpoints,
         Some([[0.0, 0.0, 0.0], [8.0, 2.0, 2.0]])

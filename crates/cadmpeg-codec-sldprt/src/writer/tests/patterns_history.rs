@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container;
 use crate::test_support::*;
@@ -53,7 +52,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
                 count: 4,
             },
             ..
-        } if (*value - std::f64::consts::TAU).abs() < 1e-12
+        } if (*value - std::f64::consts::TAU).abs() < 1.0e-12
     ));
     assert!(matches!(
         &decoded.ir().model.features[3].definition,
@@ -539,7 +538,7 @@ fn semantic_writer_round_trips_typed_sweep() {
             ..
         } if profile == &profile_a
             && path_ref == &path
-            && (*twist - std::f64::consts::FRAC_PI_2).abs() < 1e-12
+            && (*twist - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
     ));
 
     {
@@ -1009,7 +1008,7 @@ fn semantic_writer_round_trips_typed_rib() {
                 draft: RibDraft::Angle(Angle(value)),
             },
             op: BooleanOp::Join,
-        } if profile == &profile_ref && (*value - 5f64.to_radians()).abs() < 1e-12
+        } if profile == &profile_ref && (*value - 5f64.to_radians()).abs() < 1.0e-12
     ));
 
     {

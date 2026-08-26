@@ -18,7 +18,7 @@ use cadmpeg_ir::features::{
     BodySelection, FaceSelection, FeatureDefinition, PatternKind, PatternSeed,
 };
 
-const EPS_SPACING: f64 = 1e-12;
+const EPS_SPACING: f64 = 1.0e-12;
 
 fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup {

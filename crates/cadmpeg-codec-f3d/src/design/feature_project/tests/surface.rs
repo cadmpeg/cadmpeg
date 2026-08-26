@@ -8,7 +8,7 @@
 
 use super::prelude::*;
 
-const EPS_SURFACE_DISTANCE_MM: f64 = 1e-12;
+const EPS_SURFACE_DISTANCE_MM: f64 = 1.0e-12;
 
 #[test]
 fn dispatcher_projects_perpendicular_surface_extend() {

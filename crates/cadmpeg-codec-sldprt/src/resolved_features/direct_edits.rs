@@ -10,9 +10,9 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Vector3;
 use std::collections::BTreeMap;
 
-const EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E9: f64 = 1e-9;
-const EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E12: f64 = 1e-12;
-const EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12: f64 = 1e-12;
+const EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E9: f64 = 1.0e-9;
+const EPS_DIRECT_EDITS_MOVE_BODY_TRANSLATION_RECORD_E12: f64 = 1.0e-12;
+const EPS_DIRECT_EDITS_ENRICH_HISTORY_MOVE_FACE_TRANSLATIONS_E12: f64 = 1.0e-12;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct MoveBodyTranslationRecord {

@@ -9,7 +9,7 @@ use super::super::sketch_transfer::{
     unique_point_segment, unique_reference_line_segment,
 };
 
-const EPS_SKAMP_AGREEMENT: f64 = 1e-9;
+const EPS_SKAMP_AGREEMENT: f64 = 1.0e-9;
 
 pub(crate) fn section_line_fixed_coordinate(
     definition: &crate::feature::FeatureDefinition,

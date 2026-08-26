@@ -19,10 +19,10 @@ use super::placement::{
     hole_placement, plane_envelope_corners, ExtrusionSpan, PartialCapOutline, SimpleHoleGeometry,
 };
 
-const EPS_AXIS_ALIGNMENT: f64 = 1e-9;
-const EPS_CENTER_AGREEMENT: f64 = 1e-9;
-const EPS_OFFSET_NONZERO: f64 = 1e-12;
-const EPS_EXTENT_AGREEMENT: f64 = 1e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
+const EPS_OFFSET_NONZERO: f64 = 1.0e-12;
+const EPS_EXTENT_AGREEMENT: f64 = 1.0e-9;
 
 pub fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleHoleGeometry> {
     let cap_rows = feature_outline_planes(scan, feature_id)?

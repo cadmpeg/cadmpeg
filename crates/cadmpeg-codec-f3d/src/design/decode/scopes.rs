@@ -175,10 +175,10 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
-const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1e-8;
-const EPS_SCOPES_SAME_TRANSFORM_BASIS_E10: f64 = 1e-10;
-const EPS_SCOPES_EXACT_CIRCULAR_PATTERN_AXIS_E12: f64 = 1e-12;
-const EPS_SCOPES_VALID_RIGHT_HANDED_COIL_TRANSFORM_E10: f64 = 1e-10;
+const EPS_SCOPES_EXACT_RECTANGULAR_PATTERN_INSTANCES_E8: f64 = 1.0e-8;
+const EPS_SCOPES_SAME_TRANSFORM_BASIS_E10: f64 = 1.0e-10;
+const EPS_SCOPES_EXACT_CIRCULAR_PATTERN_AXIS_E12: f64 = 1.0e-12;
+const EPS_SCOPES_VALID_RIGHT_HANDED_COIL_TRANSFORM_E10: f64 = 1.0e-10;
 
 mod assembly_carrier_paths;
 pub(crate) mod extrude_sheet_metal;
@@ -6212,7 +6212,7 @@ fn exact_shifted_cylinder_primitive_prologue(
 }
 
 fn cylinder_transform_preserves_projected_geometry(transform: &[[f64; 4]; 4]) -> bool {
-    const EPS_CYLINDER_FRAME: f64 = 1e-10;
+    const EPS_CYLINDER_FRAME: f64 = 1.0e-10;
     transform[0][3].abs() <= EPS_CYLINDER_FRAME
         && transform[1][3].abs() <= EPS_CYLINDER_FRAME
         && transform[2][3].abs() <= EPS_CYLINDER_FRAME
@@ -8121,7 +8121,7 @@ const HOLE_POINT_DATA_TYPE_GUID: &str = "F2A7590D-6654-4674-B393-A2AEF4FEC48A";
 const HOLE_FACE_SELECTION_TYPE_GUID: &str = "5A1BF548-241F-46FD-9FB5-E4B05126EB9D";
 
 /// Accepted norm error for a serialized Hole drilling direction.
-const EPS_HOLE_DIRECTION_NORM: f64 = 1e-12;
+const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
 
 /// Decode the exact point-and-direction carrier owned by a `Hole` scope.
 ///

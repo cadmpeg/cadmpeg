@@ -50,7 +50,7 @@ use cadmpeg_ir::ids::{FaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_FRAME_ORTHONORMAL: f64 = 1e-12;
+const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-12;
 
 pub(in super::super) fn thicken_feature_definition(
     scan: &ContainerScan,

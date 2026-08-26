@@ -20,8 +20,8 @@ use crate::loss::F3dLossCode;
 const ENTRY_MARKER: &str = "/TSplines.BlobParts/";
 const CAGE_COORDINATE_SCALE: f64 = 10.0;
 const FULL_CREASE_SHARPNESS: f64 = 1.0;
-const EDGE_KNOT_MIRROR_RELATIVE_EPS: f64 = 1e-12;
-const SYMMETRY_FRAME_EPS: f64 = 1e-9;
+const EDGE_KNOT_MIRROR_RELATIVE_EPS: f64 = 1.0e-12;
+const SYMMETRY_FRAME_EPS: f64 = 1.0e-9;
 
 #[derive(Clone, Copy)]
 struct HalfEdge {
@@ -1437,7 +1437,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    const EPS_KNOT_INTERVAL: f64 = 1e-12;
+    const EPS_KNOT_INTERVAL: f64 = 1.0e-12;
 
     const QUAD_TOPOLOGY: &str = "degree 3\n\
 cap-type G1CAPS\n\

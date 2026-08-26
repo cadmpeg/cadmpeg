@@ -2099,8 +2099,11 @@
             }
           ],
           "external_references": [],
+          "fem_entities": [],
+          "flashes": [],
           "groups": [],
           "line_fonts": [],
+          "manifold_solids": [],
           "network_definitions": [],
           "network_instances": [],
           "primitive_solids": [],
@@ -2118,6 +2121,8 @@
           "product_occurrences": [],
           "product_properties": [],
           "properties": [],
+          "quarantined_directory_records": [],
+          "quarantined_parameter_records": [],
           "rectangular_arrays": [],
           "segmented_visibility": [],
           "selected_components": [],
@@ -2173,7 +2178,7 @@
           "view_visibility": [],
           "views": []
         },
-        "version": 2
+        "version": 6
       }
     },
     "source": {
@@ -2192,7 +2197,7 @@
     },
     "tolerances": {
       "angular": 1e-10,
-      "linear": 1e-6
+      "linear": 0.02
     },
     "units": {
       "length": "millimeter"
@@ -2217,13 +2222,13 @@
       "entries": [
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
+          "note": "native record retained; record was consumed as construction support",
           "source": "D1",
           "target": "iges:entity:directory#1"
         },
         {
           "disposition": "retained",
-          "note": "native record retained; semantic projection omitted with an attributed loss",
+          "note": "native record retained; record was consumed as construction support",
           "source": "D3",
           "target": "iges:entity:directory#3"
         },

@@ -7,17 +7,17 @@
 //! rational geometry.
 
 use cadmpeg_ir::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
+    knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::{Transform, Transform2};
 
 use crate::writer::{real, refs, Emitter, Ref};
 
-const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12: f64 = 1e-12;
-const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10: f64 = 1e-10;
-const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10: f64 = 1e-10;
-const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12: f64 = 1e-12;
+const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12: f64 = 1.0e-12;
+const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10: f64 = 1.0e-10;
+const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10: f64 = 1.0e-10;
+const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12: f64 = 1.0e-12;
 
 pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
     match surface {
@@ -28,12 +28,52 @@ pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
         | SurfaceGeometry::Cylinder { .. }
         | SurfaceGeometry::Cone { .. }
         | SurfaceGeometry::Sphere { .. }
-        | SurfaceGeometry::Torus { .. }
-        | SurfaceGeometry::Nurbs(_) => true,
+        | SurfaceGeometry::Torus { .. } => true,
+        SurfaceGeometry::Nurbs(n) => valid_nurbs_surface(n),
         SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Unknown { .. } => false,
     }
+}
+
+fn valid_nurbs_surface(n: &NurbsSurface) -> bool {
+    let Some(u_count) = usize::try_from(n.u_count).ok() else {
+        return false;
+    };
+    let Some(v_count) = usize::try_from(n.v_count).ok() else {
+        return false;
+    };
+    let Some(pole_count) = u_count.checked_mul(v_count) else {
+        return false;
+    };
+    let Some(u_knot_count) = u_count
+        .checked_add(n.u_degree as usize)
+        .and_then(|count| count.checked_add(1))
+    else {
+        return false;
+    };
+    let Some(v_knot_count) = v_count
+        .checked_add(n.v_degree as usize)
+        .and_then(|count| count.checked_add(1))
+    else {
+        return false;
+    };
+    n.u_count > n.u_degree
+        && n.v_count > n.v_degree
+        && n.control_points.len() == pole_count
+        && n.control_points
+            .iter()
+            .all(|point| point.x.is_finite() && point.y.is_finite() && point.z.is_finite())
+        && n.weights.as_deref().is_none_or(|weights| {
+            weights.len() == pole_count
+                && weights
+                    .iter()
+                    .all(|weight| weight.is_finite() && *weight > 0.0)
+        })
+        && n.u_knots.len() == u_knot_count
+        && n.v_knots.len() == v_knot_count
+        && knots_nondecreasing(&n.u_knots)
+        && knots_nondecreasing(&n.v_knots)
 }
 
 pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
@@ -411,7 +451,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
                 ),
             )
         }
-        SurfaceGeometry::Nurbs(n) => nurbs_surface(e, n),
+        SurfaceGeometry::Nurbs(n) => nurbs_surface(e, n)?,
         SurfaceGeometry::Transformed { basis, transform } => {
             let parent = surface(e, basis)?;
             let operator = transformation_operator(e, *transform);
@@ -587,7 +627,10 @@ fn nurbs_curve(e: &mut Emitter, n: &NurbsCurve) -> Ref {
     }
 }
 
-fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Ref {
+fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Option<Ref> {
+    if !valid_nurbs_surface(n) {
+        return None;
+    }
     // IR control points are u-major: index i*v_count + j is pole (i, j). STEP's
     // control_points_list is LIST(u) OF LIST(v), so the outer list runs over u.
     let u_count = n.u_count as usize;
@@ -597,11 +640,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Ref {
         let mut row: Vec<Ref> = Vec::with_capacity(v_count);
         for j in 0..v_count {
             let idx = i * v_count + j;
-            let p = n
-                .control_points
-                .get(idx)
-                .copied()
-                .unwrap_or(Point3::new(0.0, 0.0, 0.0));
+            let p = n.control_points[idx];
             row.push(point(e, p));
         }
         rows.push(refs(&row));
@@ -624,7 +663,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Ref {
         real_list(&u_knots),
         real_list(&v_knots)
     );
-    match &n.weights {
+    Some(match &n.weights {
         None => e.emit(
             "B_SPLINE_SURFACE_WITH_KNOTS",
             &format!("'',{base},{with_knots}"),
@@ -633,9 +672,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Ref {
             // Rational surface weights are LIST(u) OF LIST(v), matching the grid.
             let mut wrows: Vec<String> = Vec::with_capacity(u_count);
             for i in 0..u_count {
-                let slice: Vec<f64> = (0..v_count)
-                    .map(|j| w.get(i * v_count + j).copied().unwrap_or(1.0))
-                    .collect();
+                let slice: Vec<f64> = (0..v_count).map(|j| w[i * v_count + j]).collect();
                 wrows.push(real_list(&slice));
             }
             let wgrid = format!("({})", wrows.join(","));
@@ -647,7 +684,7 @@ fn nurbs_surface(e: &mut Emitter, n: &NurbsSurface) -> Ref {
             );
             e.emit_raw("B_SPLINE_SURFACE_WITH_KNOTS", &body)
         }
-    }
+    })
 }
 
 #[cfg(test)]

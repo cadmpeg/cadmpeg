@@ -470,11 +470,11 @@ fn solves_unique_nonlinear_simultaneous_equations() {
     let [CurveExpressionValue::Number(solution)] = evaluation.solve_solutions[&1].as_slice() else {
         panic!("expected one numeric nonlinear solution");
     };
-    assert!((*solution - 2.0).abs() <= 1e-9);
+    assert!((*solution - 2.0).abs() <= 1.0e-9);
     let Some(CurveExpressionValue::Number(after)) = &evaluation.assignments[1].value else {
         panic!("expected evaluated assignment after nonlinear solve");
     };
-    assert!((*after - 3.0).abs() <= 1e-9);
+    assert!((*after - 3.0).abs() <= 1.0e-9);
 }
 
 #[test]
@@ -529,8 +529,8 @@ fn affine_solver_is_invariant_under_independent_equation_scaling() {
 
     let solution =
         solve_unique_affine_system(&mut rows, 2).expect("independently scaled unique system");
-    assert!((solution[0] - 6.0).abs() <= 1e-12);
-    assert!((solution[1] - 4.0).abs() <= 1e-12);
+    assert!((solution[0] - 6.0).abs() <= 1.0e-12);
+    assert!((solution[1] - 4.0).abs() <= 1.0e-12);
 }
 
 #[test]

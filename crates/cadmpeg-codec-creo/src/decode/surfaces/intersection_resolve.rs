@@ -20,9 +20,9 @@ use super::intersection_candidates::{
 };
 use super::intersections::carrier_intersection_curve;
 
-const EPS_ON_CURVE: f64 = 1e-7;
-const EPS_AXIS_COMPONENT: f64 = 1e-10;
-const EPS_CENTER_AGREEMENT: f64 = 1e-9;
+const EPS_ON_CURVE: f64 = 1.0e-7;
+const EPS_AXIS_COMPONENT: f64 = 1.0e-10;
+const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
 
 pub(in super::super) fn multi_component_intersection_candidates(
     first: CarrierEquation,

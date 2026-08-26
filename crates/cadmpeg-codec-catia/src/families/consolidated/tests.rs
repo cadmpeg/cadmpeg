@@ -114,14 +114,14 @@ fn consolidated_edge_definition_decodes_general_scalar_layout() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 
     let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
-    for value in [0.0_f64, 2.0, 1e-6, 0.5, 1.5, 1.0, -0.5, 1e-6] {
+    for value in [0.0_f64, 2.0, 1.0e-6, 0.5, 1.5, 1.0, -0.5, 1.0e-6] {
         payload.extend_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
         crate::families::consolidated::records::consolidated_edge_definition_data(0x24, &payload),
         Some(ConsolidatedEdgeDefinitionData::Scalar {
             operands: [1, 2, 3463],
-            values: vec![0.0, 2.0, 1e-6, 0.5, 1.5, 1.0, -0.5, 1e-6],
+            values: vec![0.0, 2.0, 1.0e-6, 0.5, 1.5, 1.0, -0.5, 1.0e-6],
         })
     );
     let mut class24_nine_scalars = payload.clone();
@@ -304,7 +304,7 @@ fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
     );
     assert!(matches!(
         blocks[0].supports[1],
-        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if (offset.abs() - 1.25).abs() < 1e-6
+        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if (offset.abs() - 1.25).abs() < 1.0e-6
     ));
     assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
     assert!(blocks[0].endpoint_loci.is_some());
@@ -598,7 +598,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
 
     let operands = [0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
     let mut plain = operands.to_vec();
-    for value in [1.0_f64, 2.0, 1e-6, 3.0, 4.0, 1.0, 5.0, 1e-6] {
+    for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0, 1.0, 5.0, 1.0e-6] {
         plain.extend_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
@@ -606,16 +606,16 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         Some(ConsolidatedEdgeDefinitionData::Scalar25 {
             operands: [1, 0xe7, 3463],
             persistent_lead: Some(0x0a),
-            values: vec![1.0, 2.0, 1e-6, 3.0, 4.0, 1.0, 5.0, 1e-6],
+            values: vec![1.0, 2.0, 1.0e-6, 3.0, 4.0, 1.0, 5.0, 1.0e-6],
         })
     );
 
     let mut segmented = operands.to_vec();
-    for value in [1.0_f64, 2.0, 1e-6, 3.0, 4.0] {
+    for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0] {
         segmented.extend_from_slice(&value.to_le_bytes());
     }
     segmented.push(0x82);
-    for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 1e-6] {
+    for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 1.0e-6] {
         segmented.extend_from_slice(&value.to_le_bytes());
     }
     assert!(matches!(
@@ -647,7 +647,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
     ));
 
     let mut long_segment = operands.to_vec();
-    for value in [1.0_f64, 2.0, 1e-6, 3.0, 4.0] {
+    for value in [1.0_f64, 2.0, 1.0e-6, 3.0, 4.0] {
         long_segment.extend_from_slice(&value.to_le_bytes());
     }
     long_segment.push(0x89);
@@ -723,7 +723,7 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     circle.push(0x01);
     circle.extend_from_slice(&0.0_f64.to_le_bytes());
     let mut definition = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
-    for value in [0.0_f64, 10.0, 1e-6, 4.0, 9.0, 1.0, -2.0, 1e-6] {
+    for value in [0.0_f64, 10.0, 1.0e-6, 4.0, 9.0, 1.0, -2.0, 1.0e-6] {
         definition.extend_from_slice(&value.to_le_bytes());
     }
     let mut bytes = record(0x18, 0x15, &parameter);

@@ -3906,26 +3906,10 @@ pub(crate) fn display_jt_tessellations(
 
 #[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
-    use std::io::{Cursor, Write};
+    use std::io::Write;
 
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
-
-    use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-
-    use cadmpeg_ir::geometry::{
-        BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
-        ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
-    };
-    use cadmpeg_ir::math::{Point2, Vector3};
-    use cadmpeg_ir::report::LossCategory;
-    use cadmpeg_ir::Exactness;
-
-    use crate::container;
-    use crate::parasolid::{self, StreamKind};
-    use crate::test_support::*;
-    use crate::NxCodec;
 
     use super::*;
 
@@ -4585,8 +4569,8 @@ mod tests {
         })
         .expect("complete scene binding");
         assert_eq!(tessellations.len(), 2);
-        assert!((tessellations[0].0.vertices[1].x - 12.0).abs() < 1e-6);
-        assert!((tessellations[0].0.vertices[2].y - 26.0).abs() < 1e-6);
+        assert!((tessellations[0].0.vertices[1].x - 12.0).abs() < 1.0e-6);
+        assert!((tessellations[0].0.vertices[2].y - 26.0).abs() < 1.0e-6);
         assert_eq!(tessellations[0].0.triangles, vec![[0, 1, 2]]);
         assert_eq!(
             tessellations[0].0.normals[1],

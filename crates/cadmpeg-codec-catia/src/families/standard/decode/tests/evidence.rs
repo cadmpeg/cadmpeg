@@ -193,7 +193,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
     };
     let cone_point = surface_point(&cone, 0.5, 1.0).expect("cone point");
     let cone_uv = analytic_surface_uv(&cone, cone_point).expect("cone parameters");
-    assert!((cone_uv.u - 0.5).abs() < 1e-12);
+    assert!((cone_uv.u - 0.5).abs() < 1.0e-12);
     assert_eq!(cone_uv.v, 1.0);
 
     let sphere = SurfaceGeometry::Sphere {
@@ -205,7 +205,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
     let sphere_point = surface_point(&sphere, 0.5, 0.25).expect("sphere point");
     let sphere_uv = analytic_surface_uv(&sphere, sphere_point).expect("sphere parameters");
     assert!(sphere_uv.u.is_finite());
-    assert!((sphere_uv.v - 0.25).abs() < 1e-12);
+    assert!((sphere_uv.v - 0.25).abs() < 1.0e-12);
 
     let signed_sphere = SurfaceGeometry::Sphere {
         center: Point3::new(0.0, 0.0, 0.0),
@@ -628,7 +628,8 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         &surface_indices,
         std::slice::from_ref(&support),
         std::slice::from_ref(&limit_curve),
-    );
+    )
+    .expect("limit-curve binding allocation");
     let [limit_candidates] = limit_bindings.as_slice() else {
         panic!("one edge limit-curve domain");
     };
@@ -636,8 +637,8 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         panic!("one limit-curve candidate");
     };
     assert_eq!((binding.curve, binding.points), (0, [0, 1]));
-    assert!((binding.parameter_range[0] - 0.25).abs() <= 1e-6);
-    assert!((binding.parameter_range[1] - 0.75).abs() <= 1e-6);
+    assert!((binding.parameter_range[0] - 0.25).abs() <= 1.0e-6);
+    assert!((binding.parameter_range[1] - 0.75).abs() <= 1.0e-6);
     let (curve, range) = build_standard_edge_curve(
         &mut ir,
         &mut AnnotationBuilder::new(),
@@ -662,7 +663,8 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
         &surface_indices,
         &[support.clone(), support],
         &[limit_curve],
-    );
+    )
+    .expect("limit-curve binding allocation");
     assert_eq!(duplicated, vec![vec![*binding], vec![*binding]]);
     let reversed = resolve_standard_limit_curve_binding(limit_candidates, [1, 0])
         .expect("the solved endpoint pair selects the limit curve");
@@ -955,7 +957,7 @@ fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
         Point3::new(0.0, 2.0, 3.0),
     )
     .expect("witnessed circle range");
-    assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
 
 #[test]
@@ -1302,7 +1304,8 @@ fn standard_line_rows_keep_complete_relation_before_face_frontiers() {
     });
     let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
     let candidates = [domain.clone(), domain];
-    let groups = standard_curve_branch_groups(&supports, &candidates);
+    let groups =
+        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
     let assignment = [None, None];
 
     let constrained = standard_curve_branch_candidates_after_partial_assignment(
@@ -1327,7 +1330,8 @@ fn standard_branch_ranking_stops_when_its_work_budget_is_exhausted() {
     });
     let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
     let candidates = [domain.clone(), domain];
-    let groups = standard_curve_branch_groups(&supports, &candidates);
+    let groups =
+        standard_curve_branch_groups(&supports, &candidates).expect("branch-group allocation");
     let budget = WorkBudget::new(1);
 
     assert!(standard_curve_branch_candidates_after_partial_assignment(

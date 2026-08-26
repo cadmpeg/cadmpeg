@@ -20,7 +20,7 @@ use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_cl
 
 #[test]
 fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
-    const EPS_WORK_PLANE_TEST_VALUE: f64 = 1e-12;
+    const EPS_WORK_PLANE_TEST_VALUE: f64 = 1.0e-12;
 
     type WorkPlaneFrameCase = (
         &'static [u8; 3],

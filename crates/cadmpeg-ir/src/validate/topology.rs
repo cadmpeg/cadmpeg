@@ -12,9 +12,9 @@ use crate::features::{
 };
 use crate::math::Point3;
 
-const EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9: f64 = 1e-9;
+const EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9: f64 = 1.0e-9;
 
-const EPS_TORUS_AXES_ORTHO: f64 = 1e-9;
+const EPS_TORUS_AXES_ORTHO: f64 = 1.0e-9;
 
 fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
     match pattern {

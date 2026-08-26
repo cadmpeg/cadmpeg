@@ -13,24 +13,23 @@ use std::collections::{BTreeMap, BTreeSet};
 mod operands;
 pub(crate) use operands::{
     body_selection_is_incomplete, body_selections_overlap, chamfer_spec_is_incomplete,
-    edge_selection_is_incomplete, explicit_body_ids, extrude_extent_is_incomplete,
-    extrude_start_is_incomplete, face_selection_is_incomplete, face_selections_overlap,
-    hole_auxiliary_semantics_are_incomplete, hole_feature_is_incomplete, hole_kind_is_incomplete,
-    loft_section_is_incomplete, path_ref_is_incomplete, pattern_composition_is_incomplete,
+    edge_selection_is_incomplete, extrude_extent_is_incomplete, extrude_start_is_incomplete,
+    face_selection_is_incomplete, face_selections_overlap, hole_auxiliary_semantics_are_incomplete,
+    hole_feature_is_incomplete, loft_section_is_incomplete, path_ref_is_incomplete,
     pattern_feature_is_incomplete, pattern_is_incomplete, pattern_occurrence_count,
     profile_dependency_is_incomplete, profile_ref_is_incomplete, radius_spec_is_incomplete,
     resolved_body_selection_len, revolve_feature_is_incomplete, rib_feature_is_incomplete,
-    selection_ids_are_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
-    termination_dependency_is_incomplete, termination_is_incomplete, valid_increasing_locations,
+    sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
+    termination_dependency_is_incomplete, termination_is_incomplete,
 };
 
 /// Orthonormal-frame handedness acceptance for datum CS completeness.
-const EPS_ORTHONORMAL_FRAME: f64 = 1e-9;
+const EPS_ORTHONORMAL_FRAME: f64 = 1.0e-9;
 /// Unit-length acceptance for authored feature directions.
-const EPS_UNIT_DIRECTION: f64 = 1e-9;
-const EPS_PERPENDICULAR: f64 = 1e-9;
-
+const EPS_UNIT_DIRECTION: f64 = 1.0e-9;
 /// Perpendicularity acceptance scaled by direction magnitudes.
+const EPS_PERPENDICULAR: f64 = 1.0e-9;
+
 pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Feature) -> bool {
     feature.outputs.is_empty()
         && feature.name.as_deref() == Some("MASTER SNAPSHOT BODY")
@@ -322,10 +321,7 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
 
 pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {
     let FeatureDefinition::TrimSurface {
-        faces,
-        tool,
-        keep,
-        cell_selection,
+        faces, tool, keep, ..
     } = &feature.definition
     else {
         return true;
@@ -333,7 +329,6 @@ pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {
     face_selection_is_incomplete(faces)
         || path_ref_is_incomplete(tool)
         || matches!(keep, TrimRegion::Unresolved)
-        || cell_selection.is_some()
 }
 
 pub(crate) fn extend_surface_definition_is_incomplete(feature: &Feature) -> bool {

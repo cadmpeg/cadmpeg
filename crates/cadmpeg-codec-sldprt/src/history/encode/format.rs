@@ -4,7 +4,7 @@
 use super::super::{format_angle_rad, format_f64_literal, format_length_mm};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-const EPS_DEGREE_ROUND: f64 = 1e-12;
+const EPS_DEGREE_ROUND: f64 = 1.0e-12;
 
 pub(super) fn format_length_like(value: f64, previous: Option<&str>) -> String {
     let previous = previous.map(str::trim).unwrap_or_default();

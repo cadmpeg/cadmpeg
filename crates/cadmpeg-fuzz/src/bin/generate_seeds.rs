@@ -9,8 +9,8 @@ include!("../seed_paths.rs");
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
-const SEED_LINEAR_TOLERANCE: f64 = 1e-6;
-const SEED_ANGULAR_TOLERANCE: f64 = 1e-10;
+const SEED_LINEAR_TOLERANCE: f64 = 1.0e-6;
+const SEED_ANGULAR_TOLERANCE: f64 = 1.0e-10;
 
 fn main() {
     let seeds = [

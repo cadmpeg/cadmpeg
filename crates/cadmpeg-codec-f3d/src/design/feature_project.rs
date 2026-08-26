@@ -52,11 +52,11 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
-const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1e-9;
-const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1e-12;
-const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1e-8;
-const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9: f64 = 1e-9;
-const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12: f64 = 1e-12;
+const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1.0e-9;
+const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
+const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
+const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9: f64 = 1.0e-9;
+const EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E12: f64 = 1.0e-12;
 
 /// Design record slices projected together into the neutral construction
 /// history: the parameter, owner, and scope tables plus the construction
@@ -6189,8 +6189,8 @@ pub(crate) fn project_fixed_loft(
         closed: false,
         solid: true,
         ruled: false,
+        linearize: false,
         max_degree: None,
-        check_compatibility: None,
         allow_multi_profile_faces: None,
     })
 }

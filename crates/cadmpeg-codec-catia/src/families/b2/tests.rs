@@ -1031,7 +1031,7 @@ fn b2_edge_parameter_parser_validates_repeated_range_packet() {
     let packets = crate::families::b2::records::b2_edge_parameters(&b2_edge_parameter_stream());
     assert_eq!(packets.len(), 1);
     assert_eq!(packets[0].range, [2.0, 7.0]);
-    assert_eq!(packets[0].tolerance, 1e-6);
+    assert_eq!(packets[0].tolerance, 1.0e-6);
 }
 
 #[test]
@@ -1473,7 +1473,7 @@ fn b2_spatial_circle_parser_reads_the_model_space_frame_and_range() {
         circle.center,
         cadmpeg_ir::math::Point3::new(17.0, 23.0, 13.0)
     );
-    assert!((circle.axis.z - 1.0).abs() < 1e-12);
+    assert!((circle.axis.z - 1.0).abs() < 1.0e-12);
     assert_eq!(circle.radius, 7.0);
     assert_eq!(circle.range, [0.0, 11.2]);
     assert_eq!(circle.chart_shift, -16.391_148_575_128_55);

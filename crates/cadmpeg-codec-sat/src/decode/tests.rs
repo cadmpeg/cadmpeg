@@ -41,15 +41,15 @@ fn both_encodings_decode_the_same_solid() {
     }
     // 25 stream units at scale 1 (mm) and 2.5 binary centimetres are both
     // 25 mm in the model.
-    assert!((sphere_radius(&text) - 25.0).abs() < 1e-9);
-    assert!((sphere_radius(&asm_binary) - 25.0).abs() < 1e-9);
-    assert!((sphere_radius(&acis_binary) - 25.0).abs() < 1e-9);
+    assert!((sphere_radius(&text) - 25.0).abs() < 1.0e-9);
+    assert!((sphere_radius(&asm_binary) - 25.0).abs() < 1.0e-9);
+    assert!((sphere_radius(&acis_binary) - 25.0).abs() < 1.0e-9);
 }
 
 #[test]
 fn text_scale_selects_the_length_unit() {
     let inch = decode_bytes(&text_sphere_stream(25.4));
-    assert!((sphere_radius(&inch) - 635.0).abs() < 1e-9);
+    assert!((sphere_radius(&inch) - 635.0).abs() < 1.0e-9);
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn a_geometry_less_text_stream_reports_uncovered_coverage() {
     let mut text = String::new();
     text.push_str("700 0 1 0 \n");
     text.push_str("16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic \n");
-    text.push_str("1 1e-06 1e-10 \n");
+    text.push_str("1 1e-06 1.0e-10 \n");
     text.push_str("mystery_record $-1 -1 42 #\n");
     text.push_str("End-of-ACIS-data \n");
     let result = decode_bytes(text.as_bytes());

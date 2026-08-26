@@ -15,13 +15,11 @@ use super::scalars::feature_object_name;
 use super::transforms::quantize;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind};
-use cadmpeg_core::decode::{bounded_len, View};
+use cadmpeg_core::decode::{alloc_filled, bounded_len, View};
 use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry};
 use std::collections::{HashMap, HashSet};
-
-const EPS_CURVES_COMPACT_BOUNDED_CURVE_TANGENT_E9: f64 = 1e-9;
 
 pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
 pub(super) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
@@ -370,10 +368,7 @@ pub(super) fn compact_bounded_curve_tangent(payload: &[u8], offset: usize) -> Op
     }
     let u = View::f64_le_at(payload, detail + 64)?;
     let v = View::f64_le_at(payload, detail + 72)?;
-    (u.is_finite()
-        && v.is_finite()
-        && (u.hypot(v) - 1.0).abs() <= EPS_CURVES_COMPACT_BOUNDED_CURVE_TANGENT_E9)
-        .then_some([u, v])
+    (u.is_finite() && v.is_finite() && (u.hypot(v) - 1.0).abs() <= 1.0e-9).then_some([u, v])
 }
 
 pub(super) fn tangent_bounded_curve(
@@ -1670,7 +1665,7 @@ pub(super) fn unique_dimensioned_rectangle_markers<'a>(
     dimensions_mm: &[f64],
 ) -> Option<[&'a SketchInputEntity; 4]> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1e-8;
+    const QUANTUM: f64 = 1.0e-8;
     if dimensions_mm.len() < 2 {
         return None;
     }
@@ -1752,7 +1747,7 @@ pub(super) fn ordered_compact_line_profile(
     if lines.len() < 3 {
         return None;
     }
-    let mut used = std::iter::repeat_n(false, lines.len()).collect::<Vec<_>>();
+    let mut used = alloc_filled(lines.len(), false, "SLDPRT compact line profile usage").ok()?;
     let mut profile = Vec::with_capacity(lines.len());
     let first = lines.first()?;
     used[0] = true;

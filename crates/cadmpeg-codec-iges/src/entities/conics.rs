@@ -2,28 +2,19 @@
 //! Conic-arc classification and bounded neutral projection.
 
 use super::curve_conversion::angularly_equal;
-use super::geometry::{entity_loss, resolve_transform, source_object};
+use super::geometry::{entity_loss, resolve_transform, source_object, WireProjectionOutcome};
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_CONICS_PROJECT_E12: f64 = 1e-12;
-const EPS_CONICS_PROJECT_E10: f64 = 1e-10;
-
-pub(super) struct ConicProjection {
-    pub(super) handled: BTreeSet<u32>,
-    pub(super) decoded: BTreeSet<u32>,
-    pub(super) losses: Vec<LossNote>,
-    pub(super) wire_edges: Vec<EdgeId>,
-}
+const CONIC_STANDARD_POSITION_RELATIVE_EPSILON: f64 = 1.0e-12;
 
 fn add_bounded_curve(
     ir: &mut CadIr,
@@ -81,13 +72,22 @@ fn add_bounded_curve(
     edge
 }
 
+fn endpoint_agrees_with_coefficient_carrier(
+    endpoint: Point3,
+    evaluated: Point3,
+    resolution: f64,
+) -> bool {
+    let distance = endpoint.distance(evaluated);
+    distance == 0.0 || distance < resolution
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    global: &Global,
+    global: &ProjectedGlobal,
     ctx: Option<&DecodeContext<'_>>,
-) -> ConicProjection {
+) -> WireProjectionOutcome {
     let records = parameters
         .iter()
         .map(|record| (record.directory_sequence, record))
@@ -96,7 +96,6 @@ pub(super) fn project(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
@@ -105,7 +104,6 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 104 && (0..=3).contains(&entry.form))
     {
-        handled.insert(entry.sequence);
         let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -135,7 +133,9 @@ pub(super) fn project(
             .max(coeff_e.abs())
             .max(coeff_f.abs())
             .max(1.0);
-        let zero = |value: f64| value.abs() <= coefficient_scale * EPS_CONICS_PROJECT_E12;
+        let zero = |value: f64| {
+            value.abs() <= coefficient_scale * CONIC_STANDARD_POSITION_RELATIVE_EPSILON
+        };
         if !zero(*coeff_b) || (!zero(*coeff_d) && !zero(*coeff_e)) {
             losses.push(entity_loss(
                 entry,
@@ -174,7 +174,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "conic placement collapses the y axis"));
             continue;
         };
-        if basis_x.dot(basis_y).abs() > EPS_CONICS_PROJECT_E10 {
+        if basis_x.dot(basis_y).abs() > 1.0e-10 {
             losses.push(entity_loss(
                 entry,
                 "conic placement produces non-orthogonal principal axes",
@@ -385,15 +385,17 @@ pub(super) fn project(
             ));
             continue;
         };
+        // CADIR decision: IGES defines the carrier and ordered endpoints but
+        // does not prescribe an endpoint-consistency test or receiver action.
         let resolution = global.minimum_resolution_mm();
-        if start.distance(evaluated_start) > resolution {
+        if !endpoint_agrees_with_coefficient_carrier(start, evaluated_start, resolution) {
             losses.push(entity_loss(
                 entry,
                 "conic start point disagrees with the evaluated carrier beyond the minimum resolution",
             ));
             continue;
         }
-        if end.distance(evaluated_end) > resolution {
+        if !endpoint_agrees_with_coefficient_carrier(end, evaluated_end, resolution) {
             losses.push(entity_loss(
                 entry,
                 "conic terminate point disagrees with the evaluated carrier beyond the minimum resolution",
@@ -406,8 +408,7 @@ pub(super) fn project(
         decoded.insert(entry.sequence);
     }
 
-    ConicProjection {
-        handled,
+    WireProjectionOutcome {
         decoded,
         losses,
         wire_edges,

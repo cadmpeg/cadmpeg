@@ -451,7 +451,7 @@ mod tests {
             let (val, next) = short_form_float(bytes, 0).expect("known short form");
             assert_eq!(next, 3);
             assert!(
-                (val - expected).abs() < 1e-9,
+                (val - expected).abs() < 1.0e-9,
                 "decoding {bytes:02x?}: got {val}, want {expected}"
             );
         }

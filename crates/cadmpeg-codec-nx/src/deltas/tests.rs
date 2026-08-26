@@ -1,30 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports)]
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 // Fixture builders used Vec::with_capacity and iter::repeat_n while this suite
 // lived at crate root; deltas.rs denies those methods for production.
 #![allow(clippy::disallowed_methods)]
 
-use std::io::Cursor;
-
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
-};
-use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
-use cadmpeg_ir::Exactness;
-
-use crate::container;
-use crate::parasolid::{self, StreamKind};
 use crate::test_support::*;
-use crate::NxCodec;
-
-use super::*;
 
 pub(crate) fn deltas_body_revision(node_id: u32) -> Vec<u8> {
     let mut revision = Vec::with_capacity(32);
@@ -1478,16 +1459,16 @@ fn body_revision_scopes_keep_each_monotonic_sequence_current() {
     let points = crate::geometry::points(&merged);
     assert!(points
         .iter()
-        .any(|point| (point.position.x - 2.0).abs() <= 1e-12));
+        .any(|point| (point.position.x - 2.0).abs() <= 1.0e-12));
     assert!(points
         .iter()
-        .any(|point| (point.position.x - 4.0).abs() <= 1e-12));
+        .any(|point| (point.position.x - 4.0).abs() <= 1.0e-12));
     assert!(!points
         .iter()
-        .any(|point| (point.position.x - 1.0).abs() <= 1e-12));
+        .any(|point| (point.position.x - 1.0).abs() <= 1.0e-12));
     assert!(!points
         .iter()
-        .any(|point| (point.position.x - 3.0).abs() <= 1e-12));
+        .any(|point| (point.position.x - 3.0).abs() <= 1.0e-12));
 }
 
 #[test]
@@ -1508,16 +1489,16 @@ fn body_revision_scopes_accept_reverse_serialized_counter_direction() {
     let points = crate::geometry::points(&merged);
     assert!(points
         .iter()
-        .any(|point| (point.position.x - 2.0).abs() <= 1e-12));
+        .any(|point| (point.position.x - 2.0).abs() <= 1.0e-12));
     assert!(points
         .iter()
-        .any(|point| (point.position.x - 4.0).abs() <= 1e-12));
+        .any(|point| (point.position.x - 4.0).abs() <= 1.0e-12));
     assert!(!points
         .iter()
-        .any(|point| (point.position.x - 1.0).abs() <= 1e-12));
+        .any(|point| (point.position.x - 1.0).abs() <= 1.0e-12));
     assert!(!points
         .iter()
-        .any(|point| (point.position.x - 3.0).abs() <= 1e-12));
+        .any(|point| (point.position.x - 3.0).abs() <= 1.0e-12));
 }
 
 #[test]

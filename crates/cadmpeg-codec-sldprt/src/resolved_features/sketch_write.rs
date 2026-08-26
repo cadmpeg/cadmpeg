@@ -15,8 +15,6 @@ use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::io::Write;
 
-const EPS_SKETCH_WRITE_PATCH_LINE_PROFILES_E9: f64 = 1e-9;
-
 pub(super) fn sketch_brep(
     source: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
@@ -530,7 +528,7 @@ pub(super) fn patch_line_profiles(
                     let point = lift_point(*position, origin, u_axis, v_axis);
                     let key = (lane_id.clone(), stream, attr);
                     if let Some(previous) = requested.insert(key, point) {
-                        if distance(previous, point) > EPS_SKETCH_WRITE_PATCH_LINE_PROFILES_E9 {
+                        if distance(previous, point) > 1.0e-9 {
                             return Err(cadmpeg_core::CodecError::malformed(format_args!(
                                 "SLDPRT shared sketch point {reference} has conflicting positions"
                             )));
@@ -543,7 +541,7 @@ pub(super) fn patch_line_profiles(
                         let point = lift_point(*point, origin, u_axis, v_axis);
                         let key = (lane_id.clone(), stream, attr);
                         if let Some(previous) = requested.insert(key, point) {
-                            if distance(previous, point) > EPS_SKETCH_WRITE_PATCH_LINE_PROFILES_E9 {
+                            if distance(previous, point) > 1.0e-9 {
                                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                                     "SLDPRT shared sketch point {reference} has conflicting positions"
                                 )));
@@ -569,9 +567,7 @@ pub(super) fn patch_line_profiles(
                             let point = lift_point(point, origin, u_axis, v_axis);
                             let key = (lane_id.clone(), point_stream, attr);
                             if let Some(previous) = requested.insert(key, point) {
-                                if distance(previous, point)
-                                    > EPS_SKETCH_WRITE_PATCH_LINE_PROFILES_E9
-                                {
+                                if distance(previous, point) > 1.0e-9 {
                                     return Err(cadmpeg_core::CodecError::malformed(format_args!(
                                         "SLDPRT shared sketch point {reference} has conflicting positions"
                                     )));

@@ -3,32 +3,19 @@
 
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
-#![allow(unused_imports)]
 
-use std::fmt::Write as _;
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
-};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
-};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::index::ModelIndex;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::units::{LengthUnit, Units};
+use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipWriter};
 
-use crate::ids::StepIdentity;
 use crate::loss::StepLossCode;
-use crate::test_support::{decode_inline, export};
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
 };
@@ -557,6 +544,7 @@ fn writer_reports_dangling_appearance_binding() {
         appearance: appearance.clone(),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: std::collections::BTreeMap::default(),
     });
 
@@ -596,6 +584,7 @@ fn writer_reports_appearance_without_base_color() {
         appearance: appearance.clone(),
         source_entity_id: None,
         object_type: None,
+        visible: None,
         channels: std::collections::BTreeMap::default(),
     });
 
@@ -606,6 +595,141 @@ fn writer_reports_appearance_without_base_color() {
             && loss.message.contains(binding)
             && loss.message.contains(appearance.as_str())
     }));
+}
+
+fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool) -> CadIr {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let target = if body_target {
+        AppearanceTarget::Body(ir.model.bodies[0].id.clone())
+    } else {
+        AppearanceTarget::Face(ir.model.faces[0].id.clone())
+    };
+    let red = AppearanceId("test:appearance#red".into());
+    let blue = AppearanceId("test:appearance#blue".into());
+    for (id, color) in [
+        (
+            red.clone(),
+            cadmpeg_ir::topology::Color {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+        ),
+        (
+            blue.clone(),
+            cadmpeg_ir::topology::Color {
+                r: if same_color { 1.0 } else { 0.0 },
+                g: 0.0,
+                b: if same_color { 0.0 } else { 1.0 },
+                a: 1.0,
+            },
+        ),
+    ] {
+        ir.model.appearances.push(Appearance {
+            id,
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: Some(color),
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+        });
+    }
+    let mut bindings = vec![
+        AppearanceBinding {
+            id: "test:binding#red".into(),
+            target: target.clone(),
+            appearance: red,
+            source_entity_id: None,
+            object_type: None,
+            visible: None,
+            channels: std::collections::BTreeMap::new(),
+        },
+        AppearanceBinding {
+            id: "test:binding#blue".into(),
+            target,
+            appearance: blue,
+            source_entity_id: None,
+            object_type: None,
+            visible: None,
+            channels: std::collections::BTreeMap::new(),
+        },
+    ];
+    if reverse {
+        bindings.reverse();
+    }
+    ir.model.appearance_bindings = bindings;
+    ir
+}
+
+#[test]
+fn writer_rejects_order_dependent_duplicate_target_styles() {
+    for (body_target, target_kind) in [(true, "body"), (false, "face")] {
+        let mut forward_output = Vec::new();
+        let forward_report = write_step(
+            &duplicate_target_style_ir(body_target, false, false),
+            &mut forward_output,
+            &StepWriteOptions::default(),
+        )
+        .expect("report mode writes geometry while omitting the conflict");
+        let mut reverse_output = Vec::new();
+        let reverse_report = write_step(
+            &duplicate_target_style_ir(body_target, true, false),
+            &mut reverse_output,
+            &StepWriteOptions::default(),
+        )
+        .expect("reordered report mode writes geometry while omitting the conflict");
+        assert_eq!(forward_output, reverse_output);
+        for report in [forward_report, reverse_report] {
+            assert_eq!(report.losses.len(), 1, "unexpected losses: {report:?}");
+            let loss = &report.losses[0];
+            assert_eq!(
+                loss.code,
+                StepLossCode::AppearanceBindingTargetConflict.kind()
+            );
+            assert!(loss.message.contains(target_kind));
+            assert!(loss.message.contains("test:binding#red"));
+            assert!(loss.message.contains("test:binding#blue"));
+        }
+        assert!(!String::from_utf8_lossy(&forward_output).contains("STYLED_ITEM"));
+
+        let mut strict_output = Vec::new();
+        assert!(matches!(
+            write_step(
+                &duplicate_target_style_ir(body_target, false, false),
+                &mut strict_output,
+                &StepWriteOptions {
+                    unsupported: StepUnsupportedPolicy::Reject,
+                    ..StepWriteOptions::default()
+                }
+            ),
+            Err(StepError::Unsupported(_))
+        ));
+        assert!(strict_output.is_empty());
+    }
+
+    let mut equivalent_output = Vec::new();
+    let equivalent_report = write_step(
+        &duplicate_target_style_ir(false, false, true),
+        &mut equivalent_output,
+        &StepWriteOptions::default(),
+    )
+    .expect("equal target styles are coalesced");
+    assert!(equivalent_report.losses.is_empty(), "{equivalent_report:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&equivalent_output)
+            .matches("STYLED_ITEM")
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -879,6 +1003,88 @@ fn ap203e1_does_not_emit_invisibility_entities() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("hidden body visibility")));
+}
+
+#[test]
+fn ap203e1_reports_hidden_appearance_visibility_loss() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let appearance = AppearanceId("test:appearance#hidden".into());
+    ir.model.appearances.push(Appearance {
+        id: appearance.clone(),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.4,
+            g: 0.5,
+            b: 0.6,
+            a: 1.0,
+        }),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:appearance-binding#hidden-face".into(),
+        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+        appearance,
+        source_entity_id: None,
+        object_type: None,
+        visible: Some(false),
+        channels: std::collections::BTreeMap::new(),
+    });
+
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap203Edition1,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("report-mode AP203e1 write");
+    assert!(!String::from_utf8(output).unwrap().contains("INVISIBILITY"));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::HiddenAppearanceVisibilityUnsupported.kind() }));
+}
+
+#[test]
+fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: LayerId("test:layer#hidden".into()),
+        name: "hidden layer".into(),
+        description: None,
+        visible: Some(false),
+        items: vec![PresentationItem::Body { body }],
+    });
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap203Edition1,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("report-mode AP203e1 layer write");
+    assert!(!String::from_utf8(output).unwrap().contains("INVISIBILITY"));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::HiddenPresentationLayerVisibilityUnsupported.kind()
+    }));
 }
 
 #[test]
@@ -1361,6 +1567,47 @@ fn source_native_record_reduction_is_reported() {
     assert!(report.losses.iter().any(|loss| loss
         .message
         .contains("source-native record(s) were not represented in STEP")));
+}
+
+#[test]
+fn incomplete_nurbs_surface_is_omitted_and_reported() {
+    let mut ir = cylinder_surface_doc();
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 2,
+        v_count: 2,
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+        ],
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    });
+
+    let mut bytes = Vec::new();
+    let report = write_step(&ir, &mut bytes, &StepWriteOptions::default())
+        .expect("report mode omits the invalid carrier");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::GeometryCarrierNotWritten.kind()
+            && loss.message.contains("'cyl'")
+    }));
+    assert!(!String::from_utf8(bytes)
+        .expect("STEP output is UTF-8")
+        .contains("B_SPLINE_SURFACE_WITH_KNOTS"));
+
+    let options = StepWriteOptions {
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+    let mut strict_bytes = Vec::new();
+    let error = write_step(&ir, &mut strict_bytes, &options).expect_err("strict rejection");
+    assert!(matches!(error, StepError::Unsupported(_)));
+    assert!(strict_bytes.is_empty());
 }
 
 #[test]

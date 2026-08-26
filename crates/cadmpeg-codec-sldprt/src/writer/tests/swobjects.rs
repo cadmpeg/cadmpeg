@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Semantic writer tests.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use std::io::Cursor;
 
@@ -401,8 +400,8 @@ fn encoder_writes_source_less_line_sketches() {
             closed: false,
             solid: true,
             ruled: false,
+            linearize: false,
             max_degree: None,
-            check_compatibility: None,
             allow_multi_profile_faces: None,
         },
         FeatureDefinition::Rib {

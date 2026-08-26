@@ -23,7 +23,7 @@ use cadmpeg_asm::edit::{
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 use cadmpeg_asm::sab;
 
-const EPS_ORTHONORMAL: f64 = 1e-9;
+const EPS_ORTHONORMAL: f64 = 1.0e-9;
 
 #[cfg(test)]
 use cadmpeg_asm::asm_header::stream_ref_width;

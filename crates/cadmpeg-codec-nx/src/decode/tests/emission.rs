@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports)]
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_core::decode::{DecodeMode, InspectOptions};
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -16,13 +15,9 @@ use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
 use cadmpeg_ir::Exactness;
 
-use crate::container;
 use crate::loss::NxLossCode;
-use crate::parasolid::{self, StreamKind};
 use crate::test_support::*;
 use crate::NxCodec;
-
-use super::*;
 
 #[test]
 fn decode_refuses_when_max_entities_is_below_known_cardinality() {
@@ -102,9 +97,9 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     };
 
     let distance = crate::decode::analytic_surface_offset(&support, &offset).expect("offset");
-    assert!((distance - expected).abs() <= 1e-12);
+    assert!((distance - expected).abs() <= 1.0e-12);
     let reverse = crate::decode::analytic_surface_offset(&offset, &support).expect("reverse");
-    assert!((reverse + expected).abs() <= 1e-12);
+    assert!((reverse + expected).abs() <= 1.0e-12);
 
     let mut lateral = offset.clone();
     let SurfaceGeometry::Cone { origin, .. } = &mut lateral else {
@@ -1462,7 +1457,7 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert_eq!(result.ir().model.vertices.len(), 1);
     // Point coordinate is scaled metres → millimetres, byte-exact.
     let p = &result.ir().model.points[0].position;
-    assert!((p.x - 62.5).abs() < 1e-6 && (p.z - 12.7).abs() < 1e-6);
+    assert!((p.x - 62.5).abs() < 1.0e-6 && (p.z - 12.7).abs() < 1.0e-6);
 
     // One plane, one cylinder decoded.
     let planes = result
@@ -1484,7 +1479,7 @@ fn decode_transfers_point_plane_cylinder_line() {
         .collect();
     assert_eq!(planes, 1);
     assert_eq!(cyls.len(), 1);
-    assert!((cyls[0] - 4.05).abs() < 1e-6);
+    assert!((cyls[0] - 4.05).abs() < 1.0e-6);
     assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Plane {

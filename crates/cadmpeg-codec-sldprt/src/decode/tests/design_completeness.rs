@@ -1,32 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed-feature design-completeness audits.
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
 use super::super::*;
-use crate::container::{Block, CompoundStream, ContainerScan};
-use crate::native::SldprtNative;
-use crate::records::{
-    Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
-    FeatureInputLane, FeatureInputName, FeatureInputRelationBinding, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
-    SketchRelationKind,
-};
 use cadmpeg_ir::features::{
-    Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState, ConfigurationId,
-    DesignConfiguration, DesignParameter, EdgeSelection, FaceSelection, Feature, FeatureDefinition,
-    FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleKind, HolePlacement,
-    Length, ParameterId, ParameterPmi, ParameterValue, PathRef, PatternKind, PatternSeed,
-    PmiDimensionSubtype, RadiusSpec, RuledSurfaceMode, SurfaceContinuity, Termination,
+    Angle, BodyRetentionMode, BodySelection, BooleanOp, DesignParameter, EdgeSelection,
+    FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
+    FeatureTreeNodeRole, Length, ParameterId, PathRef, PatternKind, RadiusSpec, RuledSurfaceMode,
+    SurfaceContinuity,
 };
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::DecodeReport;
-use cadmpeg_ir::sketches::{
-    SketchConstraintDefinition, SketchConstraintId, SketchEntity, SketchEntityId, SketchGeometry,
-    SketchId, SpatialSketchConstraint, SpatialSketchConstraintDefinition, SpatialSketchEntity,
-    SpatialSketchEntityId, SpatialSketchGeometry, SpatialSketchId,
-};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
@@ -624,8 +609,8 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
             closed: false,
             solid: false,
             ruled: false,
+            linearize: false,
             max_degree: None,
-            check_compatibility: None,
             allow_multi_profile_faces: None,
         },
         sweep(Vec::new(), None),

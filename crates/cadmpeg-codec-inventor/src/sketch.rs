@@ -20,8 +20,8 @@ use crate::pmdc::{
 };
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
-const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1e-10;
-const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1e-10;
+const EPS_SKETCH_LINE_CARRIER_MATCHES_E10: f64 = 1.0e-10;
+const EPS_SKETCH_PROJECT_PLACEMENT_E10: f64 = 1.0e-10;
 
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
 const TRANSFORM_TYPE: [u8; 16] = inventor_id(0x9087_4d18);

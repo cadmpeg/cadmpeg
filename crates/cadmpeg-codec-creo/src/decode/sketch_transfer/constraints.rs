@@ -23,7 +23,7 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_CONSTRAINT_COORDINATE: f64 = 1e-9;
+const EPS_CONSTRAINT_COORDINATE: f64 = 1.0e-9;
 
 pub(in super::super) fn section_segment_verhor_definition(
     segment: &crate::feature::FeatureSegment,

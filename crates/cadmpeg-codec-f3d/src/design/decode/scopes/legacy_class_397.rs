@@ -17,7 +17,7 @@ pub(crate) fn exact_symmetric_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    const PROFILE_NORMAL_UNIT_EPS: f64 = 1e-12;
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
     if class_tag != "397"
         || paired_class_tag != "262"

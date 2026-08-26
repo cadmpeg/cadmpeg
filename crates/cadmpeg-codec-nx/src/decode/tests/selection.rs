@@ -1,23 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports)]
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
-};
-use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::report::{LossCategory, LossKind, LossTaxonomy};
+use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::report::LossCategory;
 use cadmpeg_ir::Exactness;
 
-use crate::container;
-use crate::parasolid::{self, StreamKind};
 use crate::test_support::*;
 use crate::NxCodec;
 
@@ -407,7 +401,7 @@ fn decode_transfers_bspline_surface_and_curve() {
         .expect("B-spline surface");
     assert_eq!(surface.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
     assert_eq!(surface.control_points.len(), 4);
-    assert!((surface.control_points[1].y - 20.0).abs() < 1e-9);
+    assert!((surface.control_points[1].y - 20.0).abs() < 1.0e-9);
     let curve = result
         .ir()
         .model
@@ -420,7 +414,7 @@ fn decode_transfers_bspline_surface_and_curve() {
         .expect("B-spline curve");
     assert_eq!(curve.knots, vec![0.0, 0.0, 1.0, 1.0]);
     assert_eq!(curve.control_points.len(), 2);
-    assert!((curve.control_points[1].x - 20.0).abs() < 1e-9);
+    assert!((curve.control_points[1].x - 20.0).abs() < 1.0e-9);
 }
 
 #[test]

@@ -14,7 +14,7 @@ use crate::records::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
-const EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9: f64 = 1e-9;
+const EPS_FACE_RESOLVE_SKETCH_CURVE_IS_SPATIAL_E9: f64 = 1.0e-9;
 
 /// Admit the legacy reference-aware face-target frame that omits its zero
 /// `Side1Offset` owner and parameter.
@@ -2131,7 +2131,6 @@ pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(unused_imports)]
     use super::*;
     use crate::records::{
         DesignConstructionOperandGroup, DesignEdgeOperand, DesignEdgeRecipeReferenceContext,
@@ -2139,6 +2138,7 @@ mod tests {
         DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext, DesignParameterScope,
         DesignRecipeReference,
     };
+
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::ids::{ShellId, SurfaceId};
@@ -2971,9 +2971,6 @@ mod tests {
 
     #[test]
     fn selected_face_start_requires_unique_sketch_plane_coincidence() {
-        use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
-        use cadmpeg_ir::topology::{Face, Sense};
-
         let sketch = Sketch {
             id: SketchId("sketch".into()),
             name: None,
@@ -3127,8 +3124,8 @@ mod tests {
 
     #[test]
     fn extrude_target_geometry_requires_one_forward_parallel_plane() {
-        const TARGET_LINEAR_TOLERANCE: f64 = 1e-9;
-        const TARGET_ANGULAR_TOLERANCE: f64 = 1e-9;
+        const TARGET_LINEAR_TOLERANCE: f64 = 1.0e-9;
+        const TARGET_ANGULAR_TOLERANCE: f64 = 1.0e-9;
 
         let face_with_surface = |slot: i64, surface: &str| Face {
             id: face(slot),

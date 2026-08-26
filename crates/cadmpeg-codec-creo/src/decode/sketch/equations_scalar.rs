@@ -11,10 +11,10 @@ use super::equations_coordinate::{
     SectionCoordinateEquation, SectionCoordinateVariable,
 };
 
-const EPS_SCALAR_AGREEMENT: f64 = 1e-9;
-const EPS_RADIUS_NONZERO: f64 = 1e-12;
-const EPS_ANGLE_NONZERO: f64 = 1e-12;
-const EPS_VARIABLE_NONZERO: f64 = 1e-12;
+const EPS_SCALAR_AGREEMENT: f64 = 1.0e-9;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_ANGLE_NONZERO: f64 = 1.0e-12;
+const EPS_VARIABLE_NONZERO: f64 = 1.0e-12;
 
 pub(crate) fn section_equation_coordinate_equalities(
     definition: &crate::feature::FeatureDefinition,

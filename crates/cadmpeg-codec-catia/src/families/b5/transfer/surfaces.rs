@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
@@ -21,7 +22,7 @@ use super::{
 };
 use crate::assemble::cgm_source;
 
-const EPS_FRAME_ORTHONORMAL: f64 = 1e-9;
+const EPS_FRAME_ORTHONORMAL: f64 = 1.0e-9;
 
 pub(super) fn neutral_analytic_surface(surface: &B5Surface) -> Option<SurfaceGeometry> {
     match surface {
@@ -340,10 +341,10 @@ pub(super) fn revolve_nurbs(
     }
     let profile_weights = match profile.weights.clone() {
         Some(weights) => weights,
-        None => cadmpeg_core::decode::alloc_filled(
+        None => alloc_filled(
             profile.control_points.len(),
             1.0,
-            "catia b5 revolve profile weights",
+            "catia b5 revolution profile weights",
         )
         .ok()?,
     };

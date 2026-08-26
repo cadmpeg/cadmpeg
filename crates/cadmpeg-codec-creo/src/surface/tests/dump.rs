@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
-use crate::container::{self, role, Layout};
-use crate::surface::TorusRadius2Encoding;
+use crate::container::{self};
 use crate::test_support::*;
 use crate::CreoCodec;
 
@@ -295,17 +291,17 @@ fn decode_places_complete_positional_torus() {
             ref_direction,
             major_radius,
             minor_radius,
-        } if (center.x - 1.0).abs() < 1e-12
-            && (center.y - 16.74).abs() < 1e-12
-            && center.z.abs() < 1e-12
-            && axis.x.abs() < 1e-12
-            && axis.y.abs() < 1e-12
-            && (axis.z - 1.0).abs() < 1e-12
-            && (ref_direction.x + 0.999_899_554_583_406_1).abs() < 1e-12
-            && (ref_direction.y - 0.014_173_240_416_574_131).abs() < 1e-12
-            && ref_direction.z.abs() < 1e-12
-            && (major_radius - 4.45).abs() < 1e-12
-            && (minor_radius - 0.5).abs() < 1e-12
+        } if (center.x - 1.0).abs() < 1.0e-12
+            && (center.y - 16.74).abs() < 1.0e-12
+            && center.z.abs() < 1.0e-12
+            && axis.x.abs() < 1.0e-12
+            && axis.y.abs() < 1.0e-12
+            && (axis.z - 1.0).abs() < 1.0e-12
+            && (ref_direction.x + 0.999_899_554_583_406_1).abs() < 1.0e-12
+            && (ref_direction.y - 0.014_173_240_416_574_131).abs() < 1.0e-12
+            && ref_direction.z.abs() < 1.0e-12
+            && (major_radius - 4.45).abs() < 1.0e-12
+            && (minor_radius - 0.5).abs() < 1.0e-12
     ));
     let record = &result.ir().native.namespace("creo").unwrap().arenas["surface_parameters"][0];
     assert!(
@@ -314,7 +310,7 @@ fn decode_places_complete_positional_torus() {
             .expect("major radius")
             - 4.45)
             .abs()
-            < 1e-12
+            < 1.0e-12
     );
     assert_eq!(
         result

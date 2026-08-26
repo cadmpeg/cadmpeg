@@ -17,7 +17,7 @@ use super::edits::{
 use cadmpeg_asm::edit::AsmEditSet;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
-const EPS_RECORDS_LINE_SCALAR_COUNT_E9: f64 = 1e-9;
+const EPS_RECORDS_LINE_SCALAR_COUNT_E9: f64 = 1.0e-9;
 
 pub(crate) fn patch_material_assignments(
     bytes: &mut [u8],

@@ -89,15 +89,38 @@ fn surface_parameter_units_follow_the_surface_chart() {
         basis: Box::new(cylinder.clone()),
         transform: Transform::identity(),
     };
-    assert_eq!(surface_parameter_scales(&plane, 10.0, 0.25), [10.0, 10.0]);
     assert_eq!(
-        surface_parameter_scales(&cylinder, 10.0, 0.25),
-        [0.25, 10.0]
+        surface_parameter_scales_for_step(
+            &ir,
+            &SurfaceId("plane".into()),
+            &plane,
+            10.0,
+            0.25,
+            &BTreeMap::new(),
+        ),
+        Some([10.0, 10.0])
     );
-    assert_eq!(surface_parameter_scales(&sphere, 10.0, 0.25), [0.25, 0.25]);
     assert_eq!(
-        surface_parameter_scales(&transformed, 10.0, 0.25),
-        [0.25, 10.0]
+        surface_parameter_scales_for_step(
+            &ir,
+            &SurfaceId("cylinder".into()),
+            &cylinder,
+            10.0,
+            0.25,
+            &BTreeMap::new(),
+        ),
+        Some([0.25, 10.0])
+    );
+    assert_eq!(
+        surface_parameter_scales_for_step(
+            &ir,
+            &SurfaceId("sphere".into()),
+            &sphere,
+            10.0,
+            0.25,
+            &BTreeMap::new(),
+        ),
+        Some([0.25, 0.25])
     );
     assert_eq!(
         surface_parameter_scales_for_step(
@@ -106,12 +129,20 @@ fn surface_parameter_units_follow_the_surface_chart() {
             &transformed,
             10.0,
             0.25,
+            &BTreeMap::new(),
         ),
         Some([0.25, 10.0])
     );
     assert_eq!(
-        surface_parameter_scales(&SurfaceGeometry::Unknown { record: None }, 10.0, 0.25),
-        [1.0, 1.0]
+        surface_parameter_scales_for_step(
+            &ir,
+            &SurfaceId("unknown".into()),
+            &SurfaceGeometry::Unknown { record: None },
+            10.0,
+            0.25,
+            &BTreeMap::new(),
+        ),
+        None
     );
 }
 
@@ -174,8 +205,9 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             &ir.model.surfaces[0].geometry,
             length_scale,
             angle_scale,
+            &BTreeMap::new(),
         ),
-        Some([length_scale, length_scale])
+        Some([length_scale, 1.0])
     );
     assert_eq!(
         surface_parameter_scales_for_step(
@@ -184,8 +216,47 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             &ir.model.surfaces[1].geometry,
             length_scale,
             angle_scale,
+            &BTreeMap::new(),
         ),
         Some([angle_scale, length_scale])
+    );
+}
+
+#[test]
+fn directrix_parameter_units_follow_step_curve_equations() {
+    let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let angle_scale = std::f64::consts::PI / 180.0;
+    let parabola = CurveGeometry::Parabola {
+        vertex: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        major_direction: Vector3::new(1.0, 0.0, 0.0),
+        focal_distance: 2.0,
+    };
+    let hyperbola = CurveGeometry::Hyperbola {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        major_direction: Vector3::new(1.0, 0.0, 0.0),
+        major_radius: 2.0,
+        minor_radius: 1.0,
+    };
+    let polyline = CurveGeometry::Polyline {
+        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        parameters: None,
+        chordal_deflection: 0.0,
+    };
+    let mut active = BTreeSet::new();
+
+    assert_eq!(
+        directrix_geometry_parameter_scale(&ir, &parabola, 0.001, angle_scale, &mut active),
+        Some(1.0)
+    );
+    assert_eq!(
+        directrix_geometry_parameter_scale(&ir, &hyperbola, 0.001, angle_scale, &mut active),
+        Some(1.0)
+    );
+    assert_eq!(
+        directrix_geometry_parameter_scale(&ir, &polyline, 0.001, angle_scale, &mut active),
+        Some(1.0)
     );
 }
 
@@ -225,6 +296,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
             &ir.model.surfaces[0].geometry,
             0.001,
             std::f64::consts::PI / 180.0,
+            &BTreeMap::new(),
         ),
         None
     );
@@ -267,6 +339,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
             &ir.model.surfaces[0].geometry,
             10.0,
             std::f64::consts::PI / 180.0,
+            &BTreeMap::new(),
         ),
         Some([std::f64::consts::PI / 180.0, 10.0])
     );
@@ -338,9 +411,9 @@ fn every_iso_si_prefix_resolves_to_its_exact_factor() {
         ("DECI", 1e-1),
         ("CENTI", 1e-2),
         ("MILLI", 1e-3),
-        ("MICRO", 1e-6),
-        ("NANO", 1e-9),
-        ("PICO", 1e-12),
+        ("MICRO", 1.0e-6),
+        ("NANO", 1.0e-9),
+        ("PICO", 1.0e-12),
         ("FEMTO", 1e-15),
         ("ATTO", 1e-18),
     ];
@@ -362,6 +435,26 @@ ENDSEC;END-ISO-10303-21;",
     assert_eq!(unit_scale_radians(1, &exchange, &mut active), Some(1.0e-3));
     assert!(active.is_empty());
     assert_eq!(unit_scale_radians(2, &exchange, &mut active), Some(1.0));
+    assert!(active.is_empty());
+}
+
+#[test]
+fn conversion_based_plane_angle_units_multiply_prefixed_base_scales() {
+    let (exchange, _) = crate::parse::parse(
+        b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
+#1=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT(.MILLI.,.RADIAN.));\
+#2=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(2.),#1);\
+#3=(CONVERSION_BASED_UNIT('two milli-radians',#2) NAMED_UNIT(*) PLANE_ANGLE_UNIT());\
+#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\
+#5=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(2.),#4);\
+#6=(CONVERSION_BASED_UNIT('two radians',#5) NAMED_UNIT(*) PLANE_ANGLE_UNIT());\
+ENDSEC;END-ISO-10303-21;",
+    )
+    .expect("parse conversion-based plane-angle units");
+    let mut active = BTreeSet::new();
+    assert_eq!(unit_scale_radians(3, &exchange, &mut active), Some(2.0e-3));
+    assert!(active.is_empty());
+    assert_eq!(unit_scale_radians(6, &exchange, &mut active), Some(2.0));
     assert!(active.is_empty());
 }
 

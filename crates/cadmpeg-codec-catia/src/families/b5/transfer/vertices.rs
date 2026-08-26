@@ -16,7 +16,7 @@ use super::edges::{b5_support_endpoints, b5_vertex_point};
 use super::{annotate, distance, B5SupportPlan, SurfacePlan, TransferPlan};
 use crate::assemble::cgm_source;
 
-const EPS_VERTEX_RESIDUAL_INCREMENT: f64 = 1e-9;
+const EPS_VERTEX_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
 pub(super) fn transfer_vertex_tolerances(
     graph: &B5Graph,

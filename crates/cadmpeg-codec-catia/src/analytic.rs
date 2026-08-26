@@ -19,7 +19,7 @@ use crate::wire::cursor::Cursor;
 
 /// Validate an active angular interval and its centered full-turn chart domain.
 pub(crate) fn periodic_angular_range_is_valid(range: [f64; 2], domain: [f64; 2]) -> bool {
-    const TOLERANCE: f64 = 1e-12;
+    const TOLERANCE: f64 = 1.0e-12;
     let range_midpoint = (range[0] + range[1]) * 0.5;
     let domain_midpoint = (domain[0] + domain[1]) * 0.5;
     range.iter().chain(&domain).all(|value| value.is_finite())

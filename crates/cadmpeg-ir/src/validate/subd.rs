@@ -9,9 +9,9 @@ use crate::math::{Point3, Vector3};
 use crate::subd::{SubdSurface, SubdSymmetryKind};
 use crate::validate::geometry_payloads::bounds_err;
 
-const EPS_SUBD_CHECK_PROCEDURAL_SURFACES_E9: f64 = 1e-9;
+const EPS_SUBD_CHECK_PROCEDURAL_SURFACES_E9: f64 = 1.0e-9;
 
-const SUBD_SYMMETRY_FRAME_EPS: f64 = 1e-9;
+const SUBD_SYMMETRY_FRAME_EPS: f64 = 1.0e-9;
 
 fn finite_point(point: &Point3) -> bool {
     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()

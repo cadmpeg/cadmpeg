@@ -13,9 +13,10 @@ use crate::geometry::{
     VariableBlendRadiusKind, VariableBlendRenderMode, VariableBlendSupportKind,
     VariableBlendSurfaceSubtype, VariableBlendValue, VariableBlendValuePayload,
 };
-use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::report::Check;
+use crate::topology::{Edge, Point, Vertex};
 use crate::transform::{Transform, Transform2};
 use crate::validate::validate_neutral;
 use crate::CadIr;
@@ -24,6 +25,8 @@ mod helix;
 mod law_sweep;
 mod ruled_sum;
 mod variable_blend;
+
+const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 
 fn bilinear_surface() -> NurbsSurface {
     NurbsSurface {
@@ -125,6 +128,57 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
             .hypot(point.y - target.y)
             .hypot(point.z - target.z);
         assert!(distance <= bound);
+    }
+}
+
+#[test]
+fn degree_zero_nurbs_surface_has_an_exact_parameter_segment_bound() {
+    let surface = NurbsSurface {
+        u_degree: 0,
+        v_degree: 0,
+        u_knots: vec![0.0, 1.0],
+        v_knots: vec![0.0, 1.0],
+        u_count: 1,
+        v_count: 1,
+        control_points: vec![Point3::new(1.0, 2.0, 3.0)],
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let point = Point3::new(1.0, 2.0, 3.0);
+    assert_eq!(nurbs_surface_point(&surface, 0.25, 0.75), Some(point));
+    let bound = nurbs_surface_parameter_segment_chord_bound(
+        &surface,
+        [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+        [point, point],
+    )
+    .expect("degree-zero surface bound");
+    assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
+}
+
+#[test]
+fn degree_zero_nurbs_surface_patch_spans_use_their_matching_poles() {
+    let surface = NurbsSurface {
+        u_degree: 0,
+        v_degree: 0,
+        u_knots: vec![0.0, 1.0, 2.0],
+        v_knots: vec![0.0, 1.0],
+        u_count: 2,
+        v_count: 1,
+        control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        weights: None,
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let poles = [Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)];
+    for (range, pole) in [([0.0, 1.0], poles[0]), ([1.0, 2.0], poles[1])] {
+        let bound = nurbs_surface_parameter_segment_chord_bound(
+            &surface,
+            [Point2::new(range[0], 0.0), Point2::new(range[1], 1.0)],
+            [pole, pole],
+        )
+        .expect("degree-zero patch span bound");
+        assert!(bound <= EPS_DEGREE_ZERO_SURFACE_BOUND, "{bound}");
     }
 }
 
@@ -289,6 +343,28 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
             .expect("polyline inverse");
         assert!((inverse - expected).abs() < 1.0e-12);
     }
+}
+
+#[test]
+fn indexed_curve_inverse_uses_the_caller_tolerance() {
+    let id = CurveId("test:inverse-tolerance".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let index = crate::index::ModelIndex::new(&ir);
+    let point = Point3::new(0.5, 0.005, 0.0);
+    assert!(super::model_curve_parameter_near_point_in_index(&index, &id, point, 0.5).is_none());
+    let inverse = super::model_curve_parameter_near_point_in_index_with_tolerance(
+        &index, &id, point, 0.5, 0.01,
+    )
+    .expect("caller tolerance admits the bounded residual");
+    assert!((inverse - 0.5).abs() < 1.0e-12);
 }
 
 #[test]
@@ -622,6 +698,52 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
 }
 
 #[test]
+fn curve_bounded_surface_delegates_evaluation_to_its_support() {
+    let support_id = SurfaceId("curve-bounded-support".into());
+    let bounded_id = SurfaceId("curve-bounded".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.surfaces = vec![
+        Surface {
+            id: support_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(1.0, 2.0, 3.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: bounded_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        },
+    ];
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("curve-bounded-construction".into()),
+        surface: bounded_id.clone(),
+        definition: ProceduralSurfaceDefinition::CurveBounded {
+            support: support_id,
+            boundaries: Vec::new(),
+            boundary_pcurves: Vec::new(),
+            implicit_outer: true,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &bounded_id, 0.25, 0.75),
+        Some(Point3::new(1.25, 2.75, 3.0))
+    );
+    let partials = model_surface_partials_by_id(&index, &bounded_id, 0.25, 0.75)
+        .expect("curve-bounded support evaluates");
+    assert_eq!(partials.point, Point3::new(1.25, 2.75, 3.0));
+    assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
 fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
     let directrix_id = CurveId("directrix".into());
     let surface_id = SurfaceId("sweep".into());
@@ -833,9 +955,12 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     let mut ir = CadIr::empty(crate::units::Units::default());
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
-        geometry: CurveGeometry::Line {
-            origin: Point3::new(2.0, 0.0, 0.0),
-            direction: Vector3::new(0.0, 0.0, 1.0),
+        geometry: CurveGeometry::Transformed {
+            basis: Box::new(CurveGeometry::Line {
+                origin: Point3::new(2.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            }),
+            transform: Transform::identity(),
         },
         source_object: None,
     });
@@ -926,6 +1051,86 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
 }
 
 #[test]
+fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
+    let directrix_id = CurveId("normalized-profile".into());
+    let surface_id = SurfaceId("normalized-revolution".into());
+    let start_point_id = PointId("normalized-profile-start-point".into());
+    let end_point_id = PointId("normalized-profile-end-point".into());
+    let start_vertex_id = VertexId("normalized-profile-start-vertex".into());
+    let end_vertex_id = VertexId("normalized-profile-end-vertex".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: directrix_id.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(2.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    });
+    ir.model.points.extend([
+        Point {
+            id: start_point_id.clone(),
+            position: Point3::new(2.0, 0.0, 0.0),
+            source_object: None,
+        },
+        Point {
+            id: end_point_id.clone(),
+            position: Point3::new(2.0, 0.0, 10.0),
+            source_object: None,
+        },
+    ]);
+    ir.model.vertices.extend([
+        Vertex {
+            id: start_vertex_id.clone(),
+            point: start_point_id,
+            tolerance: None,
+        },
+        Vertex {
+            id: end_vertex_id.clone(),
+            point: end_point_id,
+            tolerance: None,
+        },
+    ]);
+    ir.model.edges.push(Edge {
+        id: EdgeId("normalized-profile-edge".into()),
+        curve: Some(directrix_id.clone()),
+        start: start_vertex_id,
+        end: end_vertex_id,
+        param_range: Some([0.0, 10.0]),
+        tolerance: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("normalized-revolution-construction".into()),
+        surface: surface_id.clone(),
+        definition: ProceduralSurfaceDefinition::Revolution {
+            directrix: directrix_id,
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_direction: Vector3::new(0.0, 0.0, 1.0),
+            angular_interval: [0.0, std::f64::consts::TAU],
+            angular_parameter_interval: None,
+            parameter_interval: Some([0.0, 1.0]),
+            transposed: false,
+            revision_form: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: Some([Some(0.0), Some(10.0), None, None]),
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let point = model_surface_point_by_id(&index, &surface_id, 5.0, 0.0)
+        .expect("normalized line domain maps to distance carrier");
+    assert_eq!(point, Point3::new(2.0, 0.0, 5.0));
+    let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
+        .expect("normalized line domain partials");
+    assert_eq!(partials.du, Vector3::new(0.0, 0.0, 1.0));
+}
+
+#[test]
 fn analytic_and_transformed_surface_partials_follow_parameterization() {
     let cylinder = SurfaceGeometry::Cylinder {
         origin: Point3::new(0.0, 0.0, 0.0),
@@ -980,9 +1185,9 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
     assert_eq!(cylinder_second.duv, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(cylinder_second.dvv, Vector3::new(0.0, 0.0, 0.0));
     let cone = surface_partials(&cone, 0.0, 3.0).expect("cone partials evaluate");
-    assert!((cone.point.x - 5.0).abs() < 1e-12);
-    assert!((cone.du.y - 5.0).abs() < 1e-12);
-    assert!((cone.dv.x - 1.0).abs() < 1e-12);
+    assert!((cone.point.x - 5.0).abs() < 1.0e-12);
+    assert!((cone.du.y - 5.0).abs() < 1.0e-12);
+    assert!((cone.dv.x - 1.0).abs() < 1.0e-12);
     assert_eq!(cone.dv.z, 1.0);
     let sphere = surface_partials(&sphere, 0.0, 0.0).expect("sphere partials evaluate");
     assert_eq!(sphere.point, Point3::new(3.0, 0.0, 0.0));
@@ -1039,8 +1244,8 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         let tangent = curve_tangent(&arc, parameter).expect("rational arc tangent");
         let second = curve_second_derivative(&arc, parameter).expect("rational arc acceleration");
         let radial_dot = point.x * tangent.x + point.y * tangent.y;
-        assert!(radial_dot.abs() < 1e-12);
-        assert!((point.x * second.x + point.y * second.y + tangent.dot(tangent)).abs() < 1e-11);
+        assert!(radial_dot.abs() < 1.0e-12);
+        assert!((point.x * second.x + point.y * second.y + tangent.dot(tangent)).abs() < 1.0e-11);
         assert!(tangent.norm() > 0.0);
     }
 
@@ -1080,14 +1285,14 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
         v_periodic: false,
     };
     let partials = nurbs_surface_partials(&surface, 0.5, 0.25).expect("partials");
-    assert!((partials.point.x - 4.0 / 3.0).abs() < 1e-12);
-    assert!((partials.point.y - 0.75).abs() < 1e-12);
-    assert!((partials.du.x - 16.0 / 9.0).abs() < 1e-12);
-    assert!(partials.du.y.abs() < 1e-12);
-    assert!((partials.dv.y - 3.0).abs() < 1e-12);
+    assert!((partials.point.x - 4.0 / 3.0).abs() < 1.0e-12);
+    assert!((partials.point.y - 0.75).abs() < 1.0e-12);
+    assert!((partials.du.x - 16.0 / 9.0).abs() < 1.0e-12);
+    assert!(partials.du.y.abs() < 1.0e-12);
+    assert!((partials.dv.y - 3.0).abs() < 1.0e-12);
     let second = nurbs_surface_second_partials(&surface, 0.5, 0.25).expect("second partials");
-    assert!((second.duu.x + 64.0 / 27.0).abs() < 1e-12);
-    assert!(second.duu.y.abs() < 1e-12);
+    assert!((second.duu.x + 64.0 / 27.0).abs() < 1.0e-12);
+    assert!(second.duu.y.abs() < 1.0e-12);
     assert_eq!(second.duv, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(second.dvv, Vector3::new(0.0, 0.0, 0.0));
 }
@@ -1127,9 +1332,9 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
                 }
             };
             let actual = curve_point(&geometry, varying).expect("isocurve point");
-            assert!((actual.x - expected.x).abs() < 1e-12);
-            assert!((actual.y - expected.y).abs() < 1e-12);
-            assert!((actual.z - expected.z).abs() < 1e-12);
+            assert!((actual.x - expected.x).abs() < 1.0e-12);
+            assert!((actual.y - expected.y).abs() < 1.0e-12);
+            assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
     }
 }
@@ -1239,13 +1444,13 @@ fn analytic_pcurves_preserve_angular_parameterization() {
     let ellipse = pcurve_uv(&ellipse, std::f64::consts::FRAC_PI_2).expect("ellipse evaluates");
     let polar = pcurve_uv(&polar, std::f64::consts::FRAC_PI_2).expect("polar curve evaluates");
     let polar_nurbs = pcurve_uv(&polar_nurbs, 0.5).expect("polar NURBS evaluates");
-    assert!((circle.u - 2.0).abs() < 1e-12 && (circle.v + 1.0).abs() < 1e-12);
-    assert!((circle_tangent.u + 4.0).abs() < 1e-12 && circle_tangent.v.abs() < 1e-12);
-    assert!(ellipse.u.abs() < 1e-12 && (ellipse.v - 3.0).abs() < 1e-12);
-    assert!((polar.u - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
-    assert!((polar.v - 3.0).abs() < 1e-12);
-    assert!((polar_nurbs.u - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
-    assert!((polar_nurbs.v - 4.0).abs() < 1e-12);
+    assert!((circle.u - 2.0).abs() < 1.0e-12 && (circle.v + 1.0).abs() < 1.0e-12);
+    assert!((circle_tangent.u + 4.0).abs() < 1.0e-12 && circle_tangent.v.abs() < 1.0e-12);
+    assert!(ellipse.u.abs() < 1.0e-12 && (ellipse.v - 3.0).abs() < 1.0e-12);
+    assert!((polar.u - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((polar.v - 3.0).abs() < 1.0e-12);
+    assert!((polar_nurbs.u - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12);
+    assert!((polar_nurbs.v - 4.0).abs() < 1.0e-12);
 }
 
 #[test]
@@ -1331,8 +1536,8 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
         }),
     };
     let point = pcurve_uv(&line, 0.5).expect("regular line offset evaluates");
-    assert!((point.u - 0.9).abs() < 1e-12);
-    assert!((point.v - 5.2).abs() < 1e-12);
+    assert!((point.u - 0.9).abs() < 1.0e-12);
+    assert!((point.v - 5.2).abs() < 1.0e-12);
     assert_eq!(pcurve_uv(&circle, 0.0), Some(Point2::new(3.0, 0.0)));
     assert_eq!(pcurve_tangent(&line, 0.5), Some(Point2::new(3.0, 4.0)));
     assert_eq!(pcurve_tangent(&circle, 0.0), Some(Point2::new(0.0, 3.0)));
@@ -1355,8 +1560,8 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
         let point =
             pcurve_uv(&rational_arc, parameter).expect("regular rational NURBS offset evaluates");
         let tangent = pcurve_tangent(&rational_arc, parameter).expect("rational offset tangent");
-        assert!((point.u.hypot(point.v) - 0.75).abs() < 1e-12);
-        assert!((point.u * tangent.u + point.v * tangent.v).abs() < 1e-12);
+        assert!((point.u.hypot(point.v) - 0.75).abs() < 1.0e-12);
+        assert!((point.u * tangent.u + point.v * tangent.v).abs() < 1.0e-12);
     }
 
     let nested = PcurveGeometry::Offset {
@@ -1364,8 +1569,8 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
         basis: Box::new(line),
     };
     let nested_point = pcurve_uv(&nested, 0.5).expect("nested offset point");
-    assert!((nested_point.u - 0.1).abs() < 1e-12);
-    assert!((nested_point.v - 5.8).abs() < 1e-12);
+    assert!((nested_point.u - 0.1).abs() < 1.0e-12);
+    assert!((nested_point.v - 5.8).abs() < 1.0e-12);
     assert_eq!(pcurve_tangent(&nested, 0.5), None);
 }
 
@@ -1443,7 +1648,7 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
     )
     .unwrap();
     let radius = (point.x * point.x + point.y * point.y).sqrt();
-    assert!((radius - 5.0).abs() < 1e-12, "mid-span radius {radius}");
+    assert!((radius - 5.0).abs() < 1.0e-12, "mid-span radius {radius}");
 }
 
 #[test]

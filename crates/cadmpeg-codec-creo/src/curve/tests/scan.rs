@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
-use cadmpeg_ir::Exactness;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container::{self, role, Layout};
-use crate::surface::TorusRadius2Encoding;
+use crate::container::{self};
 use crate::test_support::*;
 use crate::CreoCodec;
 
@@ -386,8 +381,8 @@ fn scan_validates_fc05_circle_from_record_points() {
     let direction = circle
         .reference_direction_row_frame
         .expect("unique parameter-zero direction");
-    assert!((direction[0] - (-2.0_f64).cos()).abs() < 1e-12);
-    assert!((direction[1] - (-2.0_f64).sin()).abs() < 1e-12);
+    assert!((direction[0] - (-2.0_f64).cos()).abs() < 1.0e-12);
+    assert!((direction[1] - (-2.0_f64).sin()).abs() < 1.0e-12);
     let mut unknown_parameter = scan.curves.parameters[0].clone();
     unknown_parameter.body.splice(114..122, [0x39, 0x29, 0x00]);
     let carriers = crate::curve::fc05_circles(&[unknown_parameter]);

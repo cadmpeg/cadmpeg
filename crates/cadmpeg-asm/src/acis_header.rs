@@ -102,7 +102,7 @@ mod tests {
             bytes.push(u8::try_from(value.len()).expect("short string"));
             bytes.extend_from_slice(value.as_bytes());
         }
-        for value in [10.0_f64, 1e-6, 1e-10] {
+        for value in [10.0_f64, 1.0e-6, 1.0e-10] {
             bytes.push(0x06);
             bytes.extend_from_slice(&value.to_le_bytes());
         }

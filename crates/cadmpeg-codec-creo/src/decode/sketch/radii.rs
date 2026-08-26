@@ -30,8 +30,8 @@ use super::skamp::{
     section_line_entity_fixed_coordinate, section_segment_rows, unique_section_skamp_segment,
 };
 
-const EPS_RADIUS_NONZERO: f64 = 1e-12;
-const EPS_RADIUS_AGREEMENT: f64 = 1e-9;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
 pub(crate) fn resolved_section_radii(
     definition: &crate::feature::FeatureDefinition,

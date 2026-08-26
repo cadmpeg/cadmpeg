@@ -9,7 +9,7 @@
 )]
 use super::prelude::*;
 
-const EPS_SCALE_VALUE: f64 = 1e-12;
+const EPS_SCALE_VALUE: f64 = 1.0e-12;
 
 #[test]
 fn legacy_scale_resolves_explicit_point_data_center() {

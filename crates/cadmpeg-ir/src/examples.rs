@@ -21,7 +21,7 @@ use crate::topology::{
 };
 use crate::units::Units;
 
-const EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9: f64 = 1e-9;
+const EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9: f64 = 1.0e-9;
 
 /// Face input used to construct [`unit_cube`].
 type FaceDef = (

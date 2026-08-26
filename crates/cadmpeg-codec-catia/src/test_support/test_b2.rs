@@ -326,7 +326,7 @@ pub(crate) fn b2_edge_parameter_stream() -> Vec<u8> {
 pub(crate) fn b2_edge_parameter_stream_for(lo: f64, hi: f64) -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x23, 0x4e, 0];
     record.extend_from_slice(&[0; 6]);
-    for value in [lo, hi, 1e-6, lo, hi, 1.0, lo, hi, 1e-6] {
+    for value in [lo, hi, 1.0e-6, lo, hi, 1.0, lo, hi, 1.0e-6] {
         record.extend_from_slice(&le_f64(value));
     }
     record

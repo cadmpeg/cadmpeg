@@ -27,7 +27,7 @@ use crate::sab::Token;
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-const EPS_PARAMETER_AGREEMENT: f64 = 1e-12;
+const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
 
 /// Source curve and tail fields decoded from an `offset_int_cur` construction.
 pub type VectorOffsetDefinition = (NurbsCurve, [f64; 2], Vector3, [String; 2], [i64; 2]);

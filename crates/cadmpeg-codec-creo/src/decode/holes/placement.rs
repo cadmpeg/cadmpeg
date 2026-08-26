@@ -7,12 +7,12 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::super::sketch::normalized;
 
-const EPS_AXIS_ALIGNMENT: f64 = 1e-9;
-const EPS_SIGNED_LENGTH: f64 = 1e-9;
-const EPS_SPAN_AGREEMENT: f64 = 1e-9;
-const EPS_AXIS_COMPONENT: f64 = 1e-9;
-const EPS_CENTER_AGREEMENT: f64 = 1e-9;
-const EPS_RADIUS_AGREEMENT: f64 = 1e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_SIGNED_LENGTH: f64 = 1.0e-9;
+const EPS_SPAN_AGREEMENT: f64 = 1.0e-9;
+const EPS_AXIS_COMPONENT: f64 = 1.0e-9;
+const EPS_CENTER_AGREEMENT: f64 = 1.0e-9;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrusionSpan {

@@ -1,37 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rib, loft, sweep, and revolve projection.
 
-#![allow(unused_imports)]
-use crate::classification::{
-    classify, classify_type_token, classify_xml_element, native_object_class,
-    principal_plane_with_siblings, FeatureClass, NativeClassKind,
-};
-use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
-use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+use crate::classification::{native_object_class, NativeClassKind};
+use crate::records::{Feature, FeatureContent};
 use cadmpeg_ir::features::{
-    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    ConfigurationBodies, ConfigurationId, CosmeticThreadExtent, CurveProjectionDirection,
-    CurveProjectionDirectionState, DatumPlaneReference, DesignConfiguration, DesignParameter,
-    DimensionDisplay, EdgeSelection, ExtrudeExtent, ExtrudeSide, FaceMotion, FaceSelection,
-    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode,
-    HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
-    PatternKind, PatternSeed, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
-    ScaleCenter, ScaleFactors, SketchSpace, SplitFaceTool, SurfaceExtension, SweepMode,
-    Termination, TrimRegion, VariableRadius, VertexSelection, WrapMode,
+    Angle, BooleanOp, FeatureDefinition, Length, PathRef, ProfileRef, RevolutionAxis,
+    RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, SweepMode,
+    Termination,
 };
-use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::AttributeId;
-use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Body, Edge, Face};
-use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::Exactness;
-use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Write as _;
+use std::collections::HashMap;
 
 use crate::history::classify::{feature_input_class, loft_op};
 use crate::history::literals::{
@@ -146,8 +123,8 @@ pub(crate) fn project_loft(
             Some(NativeClassKind::SurfaceLoft)
         ),
         ruled: false,
+        linearize: false,
         max_degree: None,
-        check_compatibility: None,
         allow_multi_profile_faces: None,
     })
 }

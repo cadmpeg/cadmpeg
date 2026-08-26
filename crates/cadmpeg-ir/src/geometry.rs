@@ -399,7 +399,10 @@ pub struct ProceduralSurface {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_fit_tolerance: Option<f64>,
     /// Four optional U/V parameter bounds following the record's subtype
-    /// scope. `None` when the record stores no bound fields.
+    /// scope. For a procedural extrusion or revolution, the first pair is
+    /// the neutral surface-carrier interval; its definition retains the
+    /// source directrix interval separately. `None` when the record stores no
+    /// bound fields.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record_bounds: Option<[Option<f64>; 4]>,
 }
@@ -547,7 +550,9 @@ pub enum ProceduralSurfaceDefinition {
     Extrusion {
         /// Curve swept along `direction` to form the surface.
         directrix: CurveId,
-        /// Stored directrix parameter interval, when carried by the source.
+        /// Native source directrix parameter interval, when carried by the
+        /// source. The neutral surface-carrier interval is in
+        /// `ProceduralSurface::record_bounds`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameter_interval: Option<[f64; 2]>,
         /// Length-bearing sweep direction, in document length units.
@@ -582,8 +587,9 @@ pub enum ProceduralSurfaceDefinition {
         /// the revolution angle in radians.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         angular_parameter_interval: Option<[f64; 2]>,
-        /// Directrix surface-parameter start and end values, when carried by
-        /// the source representation.
+        /// Native source directrix parameter start and end values, when
+        /// carried by the source representation. The neutral surface-carrier
+        /// interval is in `ProceduralSurface::record_bounds`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameter_interval: Option<[f64; 2]>,
         /// Whether the source parameter directions are transposed.

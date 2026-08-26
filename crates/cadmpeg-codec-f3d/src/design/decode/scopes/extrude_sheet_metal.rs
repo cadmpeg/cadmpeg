@@ -642,7 +642,7 @@ fn exact_class_296_two_sided_to_faces_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    const PROFILE_NORMAL_UNIT_EPS: f64 = 1e-12;
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
     let frame_length = paired_at.checked_sub(start)?;
     if !is_class_296_two_sided_to_faces_layout(
@@ -796,7 +796,7 @@ fn exact_class_296_legacy_one_sided_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    const PROFILE_NORMAL_UNIT_EPS: f64 = 1e-12;
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
     let frame_length = paired_at.checked_sub(start)?;
     let (is_to_face, face_extend, first_extent) = if is_class_296_legacy_one_sided_to_face_layout(
@@ -1052,7 +1052,7 @@ fn exact_current_extrude_prologue(
     reference_members: &[u32],
     legacy_class_415_symmetric_distance: bool,
 ) -> Option<DesignExtrudePrologue> {
-    const PROFILE_NORMAL_UNIT_EPS: f64 = 1e-12;
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
     if legacy_class_415_symmetric_distance
         && (View::u32_le_at(bytes, start.checked_add(class_415::PREFIX_CONSTANT)?)? != 1
@@ -1283,7 +1283,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    const PROFILE_NORMAL_UNIT_EPS: f64 = 1e-12;
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
     const CLASS_TAG_OFFSET: usize = 4;
     const CLASS_TAG_LENGTH: usize = 3;
 
@@ -1871,7 +1871,7 @@ pub(crate) fn exact_class_338_two_sided_distance_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    const PROFILE_NORMAL_UNIT_EPS: f64 = 1e-12;
+    const PROFILE_NORMAL_UNIT_EPS: f64 = 1.0e-12;
 
     if class_tag != "338"
         || paired_class_tag != "262"

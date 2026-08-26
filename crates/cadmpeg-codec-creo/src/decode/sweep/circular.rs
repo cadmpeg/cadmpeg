@@ -28,7 +28,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::AnnotationBuilder;
 
-const EPS_AXIS_ALIGNMENT: f64 = 1e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 
 pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
     scan: &ContainerScan,

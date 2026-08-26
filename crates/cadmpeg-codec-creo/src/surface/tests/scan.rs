@@ -1,15 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
-use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId};
-use cadmpeg_ir::Exactness;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::container::{self, role, Layout};
+use crate::container::{self};
 use crate::surface::TorusRadius2Encoding;
 use crate::test_support::*;
 use crate::CreoCodec;
@@ -791,7 +787,7 @@ fn direct_round_radii_cover_homogeneous_and_mixed_carrier_sets() {
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
                 radius: cadmpeg_ir::features::Length(radius),
             }, ..
-        }] if (radius - 0.249_999_999_951_747_04).abs() < 1e-12)
+        }] if (radius - 0.249_999_999_951_747_04).abs() < 1.0e-12)
     ));
 
     let cylinder_panel = [

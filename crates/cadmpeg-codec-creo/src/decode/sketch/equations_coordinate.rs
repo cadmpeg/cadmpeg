@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section-equation coordinate constraints and linear solvers.
 
+use cadmpeg_core::decode::alloc_filled;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::feature_dimension_table_complete;
@@ -8,10 +9,10 @@ use super::super::sketch_transfer::section_solver_equation_is_disabled;
 use super::equations_scalar::SectionScalarVariable;
 use super::skamp::SectionPointSource;
 
-const EPS_DISTANCE_AGREEMENT: f64 = 1e-9;
-const EPS_SOLVER_SCALE: f64 = 1e-12;
-const EPS_DISCRIMINANT_SCALE: f64 = 1e-12;
-const EPS_SOLUTION_AGREEMENT: f64 = 1e-9;
+const EPS_DISTANCE_AGREEMENT: f64 = 1.0e-9;
+const EPS_SOLVER_SCALE: f64 = 1.0e-12;
+const EPS_DISCRIMINANT_SCALE: f64 = 1.0e-12;
+const EPS_SOLUTION_AGREEMENT: f64 = 1.0e-9;
 
 pub(crate) fn section_equation_function_six_distance_values(
     definition: &crate::feature::FeatureDefinition,
@@ -510,7 +511,13 @@ pub(crate) fn solve_unsigned_dimension_coordinates(
         .enumerate()
         .map(|(index, variable)| (*variable, index))
         .collect::<BTreeMap<_, _>>();
-    let mut adjacency = std::iter::repeat_n(BTreeSet::new(), variables.len()).collect::<Vec<_>>();
+    let Ok(mut adjacency) = alloc_filled(
+        variables.len(),
+        BTreeSet::new(),
+        "creo section equation adjacency",
+    ) else {
+        return BTreeMap::new();
+    };
     let connect = |members: Vec<usize>, adjacency: &mut [BTreeSet<usize>]| {
         for &first in &members {
             adjacency[first].extend(members.iter().copied().filter(|second| *second != first));
@@ -823,9 +830,20 @@ pub(crate) fn solve_section_coordinate_equations(
         .enumerate()
         .map(|(index, variable)| (*variable, index))
         .collect::<BTreeMap<_, _>>();
-    let mut adjacency = std::iter::repeat_n(BTreeSet::new(), variables.len()).collect::<Vec<_>>();
-    let mut variable_equations =
-        std::iter::repeat_n(BTreeSet::new(), variables.len()).collect::<Vec<_>>();
+    let Ok(mut adjacency) = alloc_filled(
+        variables.len(),
+        BTreeSet::new(),
+        "creo section coordinate adjacency",
+    ) else {
+        return BTreeMap::new();
+    };
+    let Ok(mut variable_equations) = alloc_filled(
+        variables.len(),
+        BTreeSet::new(),
+        "creo section coordinate equation membership",
+    ) else {
+        return BTreeMap::new();
+    };
     for (equation_index, equation) in equations.iter().enumerate() {
         let members = equation
             .terms

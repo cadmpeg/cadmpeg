@@ -8,9 +8,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-const EPS_UNITS_DEFAULT_2_E6: f64 = 1e-6;
-const EPS_UNITS_DEFAULT_2_E10: f64 = 1e-10;
-
 /// The canonical IR length unit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -44,6 +41,9 @@ impl Default for Units {
 /// accepts is one the topology contract also accepts.
 pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
 
+const DEFAULT_LINEAR_TOLERANCE: f64 = 1.0e-6;
+const DEFAULT_ANGULAR_TOLERANCE: f64 = 1.0e-10;
+
 /// Document-wide linear and angular tolerances.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -57,8 +57,8 @@ pub struct Tolerances {
 impl Default for Tolerances {
     fn default() -> Self {
         Tolerances {
-            linear: EPS_UNITS_DEFAULT_2_E6,
-            angular: EPS_UNITS_DEFAULT_2_E10,
+            linear: DEFAULT_LINEAR_TOLERANCE,
+            angular: DEFAULT_ANGULAR_TOLERANCE,
         }
     }
 }

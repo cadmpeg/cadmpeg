@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! IGES representation dispatch and unsupported-layout inspection.
+//! IGES representation dispatch and physical-envelope classification.
 
 use crate::card;
 use crate::layout::binary_flag;
-use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_core::{CodecError, ReadSeek};
 use cadmpeg_ir::codec::Confidence;
-use std::collections::BTreeMap;
 use std::io::{ErrorKind, SeekFrom};
 
 const DETECTION_PREFIX_BYTES: usize = 512;
@@ -68,7 +67,7 @@ pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
 
 pub(crate) fn classify(reader: &mut dyn ReadSeek) -> Result<Representation, CodecError> {
     let position = reader.stream_position()?;
-    let mut prefix = std::iter::repeat_n(0, DETECTION_PREFIX_BYTES).collect::<Vec<_>>();
+    let mut prefix = [0; DETECTION_PREFIX_BYTES];
     let mut count = 0;
     while count < prefix.len() {
         match reader.read(&mut prefix[count..]) {
@@ -78,40 +77,8 @@ pub(crate) fn classify(reader: &mut dyn ReadSeek) -> Result<Representation, Code
             Err(error) => return Err(CodecError::Io(error)),
         }
     }
-    prefix.truncate(count);
     reader.seek(SeekFrom::Start(position))?;
-    Ok(classify_prefix(&prefix))
-}
-
-pub(crate) fn unsupported_summary(representation: Representation) -> ContainerSummary {
-    let kind = match representation {
-        Representation::CompressedAscii => "compressed-ascii",
-        Representation::Binary => "binary",
-        Representation::FixedAscii | Representation::Unknown => "unknown",
-    };
-    ContainerSummary {
-        format: "iges".into(),
-        container_kind: kind.into(),
-        entries: vec![ContainerEntry {
-            name: "flag".into(),
-            role: "representation-flag".into(),
-            compression: "none".into(),
-            compressed_size: 80,
-            uncompressed_size: 80,
-            attributes: BTreeMap::from([("representation".into(), kind.into())]),
-        }],
-        notes: vec![format!("unsupported_representation={kind}")],
-    }
-}
-
-pub(crate) fn unsupported_error(representation: Representation) -> CodecError {
-    let name = match representation {
-        Representation::CompressedAscii => "Compressed ASCII",
-        Representation::Binary => "Binary",
-        Representation::FixedAscii => "Fixed ASCII",
-        Representation::Unknown => "unknown",
-    };
-    CodecError::NotImplemented(format!("IGES {name} representation decode"))
+    Ok(classify_prefix(&prefix[..count]))
 }
 
 #[cfg(test)]

@@ -28,11 +28,11 @@ use super::meta::{
     decode_types, design_primary_frames, metadata_for_bulk_stream, stream_types_by_class_tag,
 };
 
-const EPS_SKETCH_DECODE_PATTERN_DEFINITION_E6: f64 = 1e-6;
-const EPS_SKETCH_DECODE_CIRCULAR_ARC_E9: f64 = 1e-9;
-const EPS_SKETCH_DECODE_CIRCULAR_ARC_E12: f64 = 1e-12;
-const EPS_SKETCH_DECODE_LINE_COMPONENTS_E9: f64 = 1e-9;
-const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1e-12;
+const EPS_SKETCH_DECODE_PATTERN_DEFINITION_E6: f64 = 1.0e-6;
+const EPS_SKETCH_DECODE_CIRCULAR_ARC_E9: f64 = 1.0e-9;
+const EPS_SKETCH_DECODE_CIRCULAR_ARC_E12: f64 = 1.0e-12;
+const EPS_SKETCH_DECODE_LINE_COMPONENTS_E9: f64 = 1.0e-9;
+const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
 
 /// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
 /// the record index carried at header offset seven.
@@ -598,7 +598,7 @@ pub(crate) fn identity_matrix() -> [[f64; 4]; 4] {
 }
 
 pub(crate) fn valid_sketch_transform(transform: &[[f64; 4]; 4]) -> bool {
-    const EPSILON: f64 = 1e-10;
+    const EPSILON: f64 = 1.0e-10;
     if !transform.iter().flatten().all(|value| value.is_finite())
         || transform[3] != [0.0, 0.0, 0.0, 1.0]
     {
@@ -1738,7 +1738,7 @@ const SKETCH_TEXT_TRAILING_RUN: usize = 30;
 /// rigid placement writes there. The transform is composed in floating point,
 /// so its constants arrive rounded; the bound is far tighter than a run of
 /// misframed bytes would meet.
-const TEXT_PLACEMENT_TOLERANCE: f64 = 1e-9;
+const TEXT_PLACEMENT_TOLERANCE: f64 = 1.0e-9;
 
 /// Bytes between the end of the stored `txt_tag` rotation and the four f32 RGBA
 /// components. The first byte is zero and four further bytes are unclassified.

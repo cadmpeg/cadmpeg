@@ -91,7 +91,7 @@ impl Transform {
 
     /// Whether this is a finite, right-handed rigid transform.
     pub fn is_proper_rigid(&self) -> bool {
-        const EPSILON: f64 = 1e-9;
+        const EPSILON: f64 = 1.0e-9;
         if !self.is_finite()
             || self.rows[3]
                 .iter()

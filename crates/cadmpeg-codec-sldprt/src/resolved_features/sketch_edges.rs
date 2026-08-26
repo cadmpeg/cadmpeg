@@ -10,9 +10,9 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::Exactness;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-const EPS_SKETCH_EDGES_PROJECT_EDGE_E9: f64 = 1e-9;
-const EPS_SKETCH_EDGES_CIRCLE_CONTAINS_POINT_E9: f64 = 1e-9;
-const EPS_SKETCH_EDGES_ELLIPSE_CONTAINS_POINT_E9: f64 = 1e-9;
+const EPS_SKETCH_EDGES_PROJECT_EDGE_E9: f64 = 1.0e-9;
+const EPS_SKETCH_EDGES_CIRCLE_CONTAINS_POINT_E9: f64 = 1.0e-9;
+const EPS_SKETCH_EDGES_ELLIPSE_CONTAINS_POINT_E9: f64 = 1.0e-9;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn project_endpoint_constraints(

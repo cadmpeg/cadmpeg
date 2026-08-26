@@ -7,17 +7,17 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use super::super::analytic::{circular_cone, cross, dot, CarrierEquation};
 use super::super::sketch::normalized;
 
-const EPS_AXIS_ORTHO: f64 = 1e-10;
-const EPS_GEOMETRY_AGREEMENT: f64 = 1e-9;
-const EPS_DISTANCE_NONZERO: f64 = 1e-12;
-const EPS_TANGENCY_RESIDUAL: f64 = 1e-9;
-const EPS_HEIGHT_RESIDUAL: f64 = 1e-12;
-const EPS_RADIUS_NONZERO: f64 = 1e-12;
-const EPS_SLOPE_NONZERO: f64 = 1e-12;
-const EPS_METRIC_AGREEMENT: f64 = 1e-10;
-const EPS_DETERMINANT: f64 = 1e-12;
-const EPS_DISCRIMINANT: f64 = 1e-9;
-const EPS_PARAMETER_DEDUP: f64 = 1e-9;
+const EPS_AXIS_ORTHO: f64 = 1.0e-10;
+const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
+const EPS_DISTANCE_NONZERO: f64 = 1.0e-12;
+const EPS_TANGENCY_RESIDUAL: f64 = 1.0e-9;
+const EPS_HEIGHT_RESIDUAL: f64 = 1.0e-12;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_SLOPE_NONZERO: f64 = 1.0e-12;
+const EPS_METRIC_AGREEMENT: f64 = 1.0e-10;
+const EPS_DETERMINANT: f64 = 1.0e-12;
+const EPS_DISCRIMINANT: f64 = 1.0e-9;
+const EPS_PARAMETER_DEDUP: f64 = 1.0e-9;
 
 pub(in super::super) fn parallel_plane_cylinder_generator_candidates(
     first: CarrierEquation,

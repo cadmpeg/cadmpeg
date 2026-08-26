@@ -3,11 +3,11 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{alloc_filled, View};
 
 use crate::wire;
 
-const EPS_PARAMETER_ENDPOINT: f64 = 1e-9;
+const EPS_PARAMETER_ENDPOINT: f64 = 1.0e-9;
 
 /// Resolved graph of an E5 `0D 03` record stream: bodies, faces, edges, and
 /// the geometry records they reference. Produced by [`parse_topology`], which
@@ -751,7 +751,7 @@ fn plane_digon_orientation_hint(
     curve_supports: &BTreeMap<u32, E5CurveSupport>,
     bounds: &BTreeMap<u32, E5Bounds>,
 ) -> Option<i8> {
-    const EPS_PLANE_DIGON: f64 = 1e-8;
+    const EPS_PLANE_DIGON: f64 = 1.0e-8;
     if surface_class != Some(0xc8)
         || pcurve_ids.len() != 2
         || edge_ids.len() != 2
@@ -958,8 +958,13 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
                 .push((node, if reversed { -1 } else { 1 }));
         }
     }
-    let mut adjacency =
-        std::iter::repeat_n(Vec::<(usize, i8)>::new(), locations.len()).collect::<Vec<_>>();
+    let Ok(mut adjacency) = alloc_filled(
+        locations.len(),
+        Vec::<(usize, i8)>::new(),
+        "catia e5 orientation adjacency",
+    ) else {
+        return false;
+    };
     for uses in occurrences.values().filter(|uses| uses.len() == 2) {
         let [(left, left_r), (right, right_r)] = uses.as_slice() else {
             unreachable!("filtered to two occurrences");
@@ -968,7 +973,10 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
         adjacency[*left].push((*right, relation));
         adjacency[*right].push((*left, relation));
     }
-    let mut solved = std::iter::repeat_n(None, locations.len()).collect::<Vec<_>>();
+    let Ok(mut solved) = alloc_filled(locations.len(), None, "catia e5 orientation assignments")
+    else {
+        return false;
+    };
     for root in 0..locations.len() {
         if solved[root].is_some() {
             continue;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
-use cadmpeg_core::decode::{DecodeContext, WorkBudget};
+use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -39,13 +39,13 @@ use crate::solve::{mesh_quotient, missing_edge};
 use crate::variant::Variant;
 use crate::wire::records::ConsolidatedRecord;
 
-const EPS_PARAM_RESOLUTION_SPAN: f64 = 1e-7;
-const EPS_PARAM_TOLERANCE_SPAN: f64 = 1e-9;
-const EPS_CIRCLE_AXIS_ORTHO: f64 = 1e-6;
-const EPS_APEX_DISTANCE: f64 = 1e-6;
-const EPS_RANGE_ENDPOINT: f64 = 1e-9;
-const EPS_RANGE_GAP: f64 = 1e-6;
-const EPS_CROSS_PRODUCT: f64 = 1e-6;
+const EPS_PARAM_RESOLUTION_SPAN: f64 = 1.0e-7;
+const EPS_PARAM_TOLERANCE_SPAN: f64 = 1.0e-9;
+const EPS_CIRCLE_AXIS_ORTHO: f64 = 1.0e-6;
+const EPS_APEX_DISTANCE: f64 = 1.0e-6;
+const EPS_RANGE_ENDPOINT: f64 = 1.0e-9;
+const EPS_RANGE_GAP: f64 = 1.0e-6;
+const EPS_CROSS_PRODUCT: f64 = 1.0e-6;
 
 fn bind_consolidated_revolution_faces_and_seams(
     ir: &mut CadIr,
@@ -2884,7 +2884,7 @@ fn standard_limit_curve_bindings(
     surface_indices: &HashMap<SurfaceId, usize>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     curves: &[NurbsCurve],
-) -> Vec<Vec<StandardLimitCurveBinding>> {
+) -> Option<Vec<Vec<StandardLimitCurveBinding>>> {
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
 
     let curve_points = curves
@@ -2905,9 +2905,12 @@ fn standard_limit_curve_bindings(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    let mut edge_curves =
-        std::iter::repeat_n(Vec::<StandardLimitCurveBinding>::new(), supports.len())
-            .collect::<Vec<_>>();
+    let mut edge_curves = alloc_filled(
+        supports.len(),
+        Vec::<StandardLimitCurveBinding>::new(),
+        "catia standard limit-curve bindings",
+    )
+    .ok()?;
     for (curve, points) in curve_points.iter().enumerate() {
         for (edge, support) in supports.iter().enumerate() {
             if !matches!(
@@ -2960,7 +2963,7 @@ fn standard_limit_curve_bindings(
             }
         }
     }
-    edge_curves
+    Some(edge_curves)
 }
 
 fn resolve_standard_limit_curve_binding(
@@ -3037,8 +3040,11 @@ fn attach_standard_topology(
         .map(|(index, surface)| (surface.id.clone(), index))
         .collect::<HashMap<_, _>>();
     let face_bounds = (face_bounds.len() == face_count).then_some(face_bounds);
-    let limit_curve_bindings =
-        standard_limit_curve_bindings(ir, bindings, &surface_indices, &supports, limit_curves);
+    let Some(limit_curve_bindings) =
+        standard_limit_curve_bindings(ir, bindings, &surface_indices, &supports, limit_curves)
+    else {
+        return Err(StandardTopologyFailure::TopologySearchExhausted);
+    };
     let mut endpoint_candidates = Vec::with_capacity(supports.len());
     let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
     let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();
@@ -3197,13 +3203,15 @@ fn attach_standard_topology(
         .as_ref()
         .map(|roster| standard_successor_endpoint_pairs(&supports, roster, &endpoint_candidates));
     let native_support_ids = native_edge_supports.keys().copied().collect::<HashSet<_>>();
-    let native_support_edge_ids = standard_native_support_edge_ids(
+    let Some(native_support_edge_ids) = standard_native_support_edge_ids(
         &supports,
         &native_edges,
         &native_support_ids,
         vertex_roster.as_deref(),
         &endpoint_candidates,
-    );
+    ) else {
+        return Err(StandardTopologyFailure::TopologySearchExhausted);
+    };
     let native_supports_by_row = native_support_edge_ids
         .iter()
         .map(|edge| edge.and_then(|edge| native_edge_supports.get(&edge).cloned()))
@@ -3711,7 +3719,7 @@ fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
-        let branch_groups = standard_curve_branch_groups(&supports, options);
+        let branch_groups = standard_curve_branch_groups(&supports, options)?;
         let initial_assignment = options
             .iter()
             .map(|candidates| {
@@ -3730,7 +3738,7 @@ fn attach_standard_topology(
             Some(work_budget),
         )?;
         let mut branch_preferred_edges =
-            std::iter::repeat_n(false, options.len()).collect::<Vec<_>>();
+            alloc_filled(options.len(), false, "catia standard branch preferences").ok()?;
         for edge in branch_groups
             .iter()
             .flat_map(|group| group.edges.iter().copied())
@@ -3738,7 +3746,7 @@ fn attach_standard_topology(
             branch_preferred_edges[edge] = true;
         }
         let branch_assignment_dependencies =
-            standard_curve_branch_assignment_dependencies(&supports, &branch_groups);
+            standard_curve_branch_assignment_dependencies(&supports, &branch_groups)?;
         let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
             spine,
             &edge_faces,
@@ -3775,8 +3783,15 @@ fn attach_standard_topology(
             // accept the unconstrained bounded result only when it is uniquely
             // determined.
             retry_rejected_mesh_solution(preferred, || {
-                let unconstrained =
-                    std::iter::repeat_n(false, circle_constraint_edges.len()).collect::<Vec<_>>();
+                let Ok(unconstrained) = alloc_filled(
+                    circle_constraint_edges.len(),
+                    false,
+                    "catia standard unconstrained circle edges",
+                ) else {
+                    return mesh_quotient::MeshCandidateSolve::Rejected(
+                        mesh_quotient::MeshCandidateRejection::QuotientPreparation,
+                    );
+                };
                 mesh_quotient::parse_standard_mesh_candidate_outcome(
                     spine,
                     &edge_faces,
@@ -3875,7 +3890,7 @@ fn attach_standard_topology(
         .iter()
         .filter(|binding| binding.is_some())
         .count();
-    emit_standard_topology(
+    if !emit_standard_topology(
         ir,
         annotations,
         bindings,
@@ -3888,7 +3903,9 @@ fn attach_standard_topology(
         &native_supports_by_row,
         &resolved_limit_curve_bindings,
         limit_curves,
-    );
+    ) {
+        return Err(StandardTopologyFailure::TopologySearchExhausted);
+    }
     Ok(())
 }
 
@@ -3964,6 +3981,17 @@ fn standard_boundary_roles(
     face_index: usize,
     point_assignment: &[usize],
 ) -> Vec<LoopBoundaryRole> {
+    let unspecified = || {
+        alloc_filled(
+            topology
+                .faces()
+                .get(face_index)
+                .map_or(0, |face| face.boundaries.len()),
+            LoopBoundaryRole::Unspecified,
+            "catia standard boundary roles",
+        )
+        .unwrap_or_default()
+    };
     let Some(face_topology) = topology.faces().get(face_index) else {
         return Vec::new();
     };
@@ -3975,25 +4003,13 @@ fn standard_boundary_roles(
         };
     }
     let Some(surface_id) = bindings.get(face_index).map(|binding| &binding.0) else {
-        return std::iter::repeat_n(
-            LoopBoundaryRole::Unspecified,
-            face_topology.boundaries.len(),
-        )
-        .collect();
+        return unspecified();
     };
     let Some(&surface_index) = surface_indices.get(surface_id) else {
-        return std::iter::repeat_n(
-            LoopBoundaryRole::Unspecified,
-            face_topology.boundaries.len(),
-        )
-        .collect();
+        return unspecified();
     };
     let Some(surface) = ir.model.surfaces.get(surface_index) else {
-        return std::iter::repeat_n(
-            LoopBoundaryRole::Unspecified,
-            face_topology.boundaries.len(),
-        )
-        .collect();
+        return unspecified();
     };
     let Some(boundaries) = face_topology
         .boundaries
@@ -4010,11 +4026,7 @@ fn standard_boundary_roles(
         })
         .collect::<Option<Vec<_>>>()
     else {
-        return std::iter::repeat_n(
-            LoopBoundaryRole::Unspecified,
-            face_topology.boundaries.len(),
-        )
-        .collect();
+        return unspecified();
     };
     crate::boundary_roles::classify_planar_boundary_roles(&surface.geometry, &boundaries)
 }
@@ -4034,7 +4046,7 @@ fn emit_standard_topology(
     native_edge_supports: &[Option<StandardEdgeSupport>],
     limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
     limit_curves: &[NurbsCurve],
-) {
+) -> bool {
     let mut edge_reversed = Vec::with_capacity(supports.len());
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
     {
@@ -4105,8 +4117,13 @@ fn emit_standard_topology(
         .enumerate()
         .map(|(index, curve)| (curve.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    let mut edge_coedges =
-        std::iter::repeat_n(Vec::new(), ir.model.edges.len()).collect::<Vec<_>>();
+    let Ok(mut edge_coedges) = alloc_filled(
+        ir.model.edges.len(),
+        Vec::new(),
+        "catia standard edge coedges",
+    ) else {
+        return false;
+    };
     for (face_index, face_topology) in topology.faces().iter().enumerate() {
         let boundary_roles = standard_boundary_roles(
             ir,
@@ -4263,6 +4280,7 @@ fn emit_standard_topology(
             ir.model.coedges[*current].radial_next = ir.model.coedges[next].id.clone();
         }
     }
+    true
 }
 
 pub(crate) fn standard_native_support_endpoint_pair(
@@ -4271,7 +4289,7 @@ pub(crate) fn standard_native_support_endpoint_pair(
     candidates: &[usize],
     required_pair: Option<[usize; 2]>,
 ) -> Option<[usize; 2]> {
-    const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1e-6;
+    const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1.0e-6;
     const VERTEX_MATCH_TOLERANCE: f64 = 2e-3;
 
     let lifted = support
@@ -4548,13 +4566,13 @@ fn bind_standard_curve_branch_group(
     group: &[usize],
     all_candidates: &[Vec<[usize; 2]>],
     assignment: &[Option<[usize; 2]>],
-) {
+) -> bool {
     if supports.len() != all_candidates.len()
         || supports.len() != assignment.len()
         || candidates.len() != group.len()
         || group.len() < 2
     {
-        return;
+        return false;
     }
     let is_ranked_family =
         |geometry: &crate::families::standard::records::StandardCurveGeometry| {
@@ -4589,10 +4607,10 @@ fn bind_standard_curve_branch_group(
         .map(|(position, edge)| (edge, position))
         .collect::<HashMap<_, _>>();
     if group.windows(2).any(|edges| edges[0] >= edges[1]) {
-        return;
+        return false;
     }
     if group.iter().any(|edge| *edge >= supports.len()) {
-        return;
+        return false;
     }
     let mut faces = supports[group[0]].faces;
     faces.sort_unstable();
@@ -4603,7 +4621,7 @@ fn bind_standard_curve_branch_group(
             candidate_faces != faces
         }
     }) {
-        return;
+        return false;
     }
 
     let fixed_relations =
@@ -4635,7 +4653,9 @@ fn bind_standard_curve_branch_group(
                 .collect::<HashSet<_>>()
         };
 
-    let mut grouped = std::iter::repeat_n(false, group.len()).collect::<Vec<_>>();
+    let Ok(mut grouped) = alloc_filled(group.len(), false, "catia standard branch ranking") else {
+        return false;
+    };
     let mut normalized = candidates
         .iter()
         .map(|pairs| normalize(pairs))
@@ -4818,6 +4838,7 @@ fn bind_standard_curve_branch_group(
             grouped[position] = true;
         }
     }
+    true
 }
 
 #[cfg(test)]
@@ -4862,7 +4883,10 @@ fn bind_ordered_standard_curve_branches_with_focus(
             is_ranked_family(left) && std::mem::discriminant(left) == std::mem::discriminant(right)
         };
     let normalized = normalize(candidates);
-    let mut grouped = std::iter::repeat_n(false, supports.len()).collect::<Vec<_>>();
+    let Ok(mut grouped) = alloc_filled(supports.len(), false, "catia standard test branch ranking")
+    else {
+        return;
+    };
     for first in 0..supports.len() {
         if grouped[first]
             || !is_focused(first)
@@ -5193,9 +5217,9 @@ struct StandardCurveBranchGroup {
 fn standard_curve_branch_groups(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &[Vec<[usize; 2]>],
-) -> Vec<StandardCurveBranchGroup> {
+) -> Option<Vec<StandardCurveBranchGroup>> {
     if supports.len() != candidates.len() {
-        return Vec::new();
+        return None;
     }
     let normalize = |pairs: &[[usize; 2]]| {
         let mut pairs = pairs
@@ -5221,7 +5245,7 @@ fn standard_curve_branch_groups(
         .iter()
         .map(|pairs| normalize(pairs))
         .collect::<Vec<_>>();
-    let mut checked = std::iter::repeat_n(false, supports.len()).collect::<Vec<_>>();
+    let mut checked = alloc_filled(supports.len(), false, "catia standard branch groups").ok()?;
     let mut groups = Vec::new();
     for first in 0..supports.len() {
         if checked[first] || !ranked_family(&supports[first].geometry) {
@@ -5279,20 +5303,26 @@ fn standard_curve_branch_groups(
             faces,
         });
     }
-    groups
+    Some(groups)
 }
 
 fn standard_curve_branch_assignment_dependencies(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     groups: &[StandardCurveBranchGroup],
-) -> Vec<Vec<usize>> {
-    let mut grouped = std::iter::repeat_n(false, supports.len()).collect::<Vec<_>>();
+) -> Option<Vec<Vec<usize>>> {
+    let mut grouped =
+        alloc_filled(supports.len(), false, "catia standard branch dependencies").ok()?;
     for edge in groups.iter().flat_map(|group| group.edges.iter().copied()) {
         if let Some(grouped_edge) = grouped.get_mut(edge) {
             *grouped_edge = true;
         }
     }
-    let mut dependencies = std::iter::repeat_n(Vec::new(), supports.len()).collect::<Vec<_>>();
+    let mut dependencies = alloc_filled(
+        supports.len(),
+        Vec::new(),
+        "catia standard branch dependency lists",
+    )
+    .ok()?;
     for group in groups {
         let external = supports
             .iter()
@@ -5310,7 +5340,7 @@ fn standard_curve_branch_assignment_dependencies(
         edge_dependencies.sort_unstable();
         edge_dependencies.dedup();
     }
-    dependencies
+    Some(dependencies)
 }
 
 fn standard_curve_branch_candidates_after_partial_assignment(
@@ -5374,13 +5404,15 @@ fn standard_curve_branch_candidates_after_partial_assignment(
                 candidates
             })
             .collect::<Vec<_>>();
-        bind_standard_curve_branch_group(
+        if !bind_standard_curve_branch_group(
             supports,
             &mut group_constrained,
             group,
             candidates,
             assignment,
-        );
+        ) {
+            return None;
+        }
         if group.iter().enumerate().any(|(position, edge)| {
             assignment[*edge].is_some_and(|assigned| {
                 !group_constrained[position]
@@ -5505,9 +5537,9 @@ pub(crate) fn standard_native_support_edge_ids(
     native_support_ids: &HashSet<u32>,
     vertex_roster: Option<&[u32]>,
     endpoint_candidates: &[Vec<usize>],
-) -> Vec<Option<u32>> {
+) -> Option<Vec<Option<u32>>> {
     if supports.len() != endpoint_candidates.len() {
-        return std::iter::repeat_n(None, supports.len()).collect();
+        return None;
     }
 
     let exact_edge_ids = supports
@@ -5532,8 +5564,12 @@ pub(crate) fn standard_native_support_edge_ids(
             .then_some(support.tag)
         })
         .collect::<Vec<_>>();
-    let mut fallback_candidates =
-        std::iter::repeat_n(Vec::<u32>::new(), supports.len()).collect::<Vec<_>>();
+    let mut fallback_candidates = alloc_filled(
+        supports.len(),
+        Vec::<u32>::new(),
+        "catia standard native edge candidates",
+    )
+    .ok()?;
 
     if let Some(vertex_roster) = vertex_roster {
         let point_by_identity = vertex_roster
@@ -5586,7 +5622,7 @@ pub(crate) fn standard_native_support_edge_ids(
             break;
         }
     }
-    bindings
+    Some(bindings)
 }
 
 /// Return the sole distinct unordered native pair contained in a geometric
@@ -5779,7 +5815,7 @@ pub(crate) fn intersection_line_direction(
     left: &SurfaceGeometry,
     right: &SurfaceGeometry,
 ) -> Option<Vector3> {
-    const ANGULAR_TOLERANCE: f64 = 1e-9;
+    const ANGULAR_TOLERANCE: f64 = 1.0e-9;
 
     match (left, right) {
         (
@@ -6794,7 +6830,7 @@ pub(crate) fn native_support_circle_param_range(
     start: Point3,
     end: Point3,
 ) -> Option<[f64; 2]> {
-    const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1e-6;
+    const SUPPORT_AGREEMENT_TOLERANCE: f64 = 1.0e-6;
     const GEOMETRY_TOLERANCE: f64 = 2e-3;
 
     let parameters = [

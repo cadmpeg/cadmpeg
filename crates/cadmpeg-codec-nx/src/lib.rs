@@ -9,9 +9,9 @@
 //! topology. Detection uses file content because NX and Creo share the `.prt`
 //! extension.
 //!
-//! Support level: [L3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! for selected or terminal-lineage-resolved body images; L2 for unresolved
-//! multi-partition history. `RMFastLoad` body selection retains every body
+//! Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder).
+//! Connected B-rep on selected or terminal-lineage-resolved body images
+//! shows as extras. `RMFastLoad` body selection retains every body
 //! whose complete nonempty topology node-ID set is covered by the active
 //! object-ID set; when no body has that complete membership, it declines and
 //! falls back to terminal lineage when complete.

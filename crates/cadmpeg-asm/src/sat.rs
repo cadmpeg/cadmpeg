@@ -1459,7 +1459,7 @@ mod tests {
     use super::*;
 
     fn approx(a: f64, b: f64) -> bool {
-        (a - b).abs() <= 1e-12 * a.abs().max(b.abs()).max(1.0)
+        (a - b).abs() <= 1.0e-12 * a.abs().max(b.abs()).max(1.0)
     }
 
     fn asm_stream(body: &str) -> Vec<u8> {
@@ -1467,7 +1467,7 @@ mod tests {
         text.push_str(
             "16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 24 Fri Jul 17 14:46:47 2026 \n",
         );
-        text.push_str("1 1e-06 1e-10 \n");
+        text.push_str("1 1e-06 1.0e-10 \n");
         text.push_str(body);
         text.push_str("End-of-ASM-data \n");
         text.into_bytes()
@@ -1485,8 +1485,8 @@ mod tests {
         assert_eq!(asm.header.product_version, "ASM 232.4.0.65535 OSX");
         assert_eq!(asm.header.save_date, "Fri Jul 17 14:46:47 2026");
         assert!(approx(asm.header.scale, 1.0));
-        assert!(approx(asm.header.resabs, 1e-6));
-        assert!(approx(asm.header.resnor, 1e-10));
+        assert!(approx(asm.header.resabs, 1.0e-6));
+        assert!(approx(asm.header.resnor, 1.0e-10));
         assert_eq!(asm.records.len(), 1);
         assert_eq!(asm.records[0].name, "asmheader");
         assert_eq!(
@@ -1499,7 +1499,7 @@ mod tests {
         );
 
         let text = "700 0 1 0 \n30 Autodesk Translation Framework 21 ASM 232.4.0.65535 OSX 24 Fri \
-                    Jul 17 14:48:06 2026 \n25.4 1e-06 1e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 \
+                    Jul 17 14:48:06 2026 \n25.4 1e-06 1.0e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 \
                     #\nEnd-of-ACIS-data \n";
         let acis = parse(text.as_bytes()).expect("acis stream");
         assert_eq!(acis.dialect, Dialect::Acis);
@@ -1526,8 +1526,8 @@ mod tests {
         for scale in ["0", "-1", "NaN", "inf"] {
             let mut stream = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
             let scale_start = stream
-                .windows(b"1 1e-06 1e-10".len())
-                .position(|window| window == b"1 1e-06 1e-10")
+                .windows(b"1 1e-06 1.0e-10".len())
+                .position(|window| window == b"1 1e-06 1.0e-10")
                 .expect("tolerance line");
             stream.splice(scale_start..=scale_start, scale.bytes());
 
@@ -1540,21 +1540,21 @@ mod tests {
     #[test]
     fn invalid_header_tolerances_are_rejected() {
         for (resabs, resnor) in [
-            ("-1", "1e-10"),
-            ("NaN", "1e-10"),
-            ("inf", "1e-10"),
-            ("1e-6", "-1"),
-            ("1e-6", "NaN"),
-            ("1e-6", "inf"),
+            ("-1", "1.0e-10"),
+            ("NaN", "1.0e-10"),
+            ("inf", "1.0e-10"),
+            ("1.0e-6", "-1"),
+            ("1.0e-6", "NaN"),
+            ("1.0e-6", "inf"),
         ] {
             let mut stream = asm_stream("asmheader $-1 -1 @13 232.4.0.65535 #\n");
             let tolerance_start = stream
-                .windows(b"1 1e-06 1e-10".len())
-                .position(|window| window == b"1 1e-06 1e-10")
+                .windows(b"1 1e-06 1.0e-10".len())
+                .position(|window| window == b"1 1e-06 1.0e-10")
                 .expect("tolerance line");
             let replacement = format!("1 {resabs} {resnor}");
             stream.splice(
-                tolerance_start..tolerance_start + b"1 1e-06 1e-10".len(),
+                tolerance_start..tolerance_start + b"1 1e-06 1.0e-10".len(),
                 replacement.bytes(),
             );
 
@@ -1815,7 +1815,7 @@ mod tests {
         // Header scale 25.4 (inches): control points convert x2.54, knots and
         // parameters stay unscaled.
         let text = "700 0 1 0 \n30 Autodesk Translation Framework 21 ASM 232.4.0.65535 OSX 24 \
-                    Fri Jul 17 14:48:06 2026 \n25.4 1e-06 1e-10 \nintcurve-curve $-1 -1 $-1 \
+                    Fri Jul 17 14:48:06 2026 \n25.4 1e-06 1.0e-10 \nintcurve-curve $-1 -1 $-1 \
                     forward { exact_int_cur 23100 full nubs 1 open 2 0 1 1 1 1 2 3 4 5 6 0 \
                     null_surface null_surface nullbs nullbs I I 0 0 0 0 F 1 F 0 UNEXTENDED \
                     UNEXTENDED } I I #\nEnd-of-ACIS-data \n";
@@ -1862,7 +1862,7 @@ mod tests {
     #[test]
     fn record_indices_count_file_order_and_resolve_references() {
         let text = "700 0 2 0 \n30 Autodesk Translation Framework 21 ASM 232.4.0.65535 OSX 24 \
-                    Fri Jul 17 14:48:06 2026 \n1 1e-06 1e-10 \nbody $-1 -1 $-1 $2 $-1 $-1 #\nbody \
+                    Fri Jul 17 14:48:06 2026 \n1 1e-06 1.0e-10 \nbody $-1 -1 $-1 $2 $-1 $-1 #\nbody \
                     $-1 -1 $-1 $3 $-1 $-1 #\nlump $-1 -1 $-1 $-1 $-1 $0 #\nlump $-1 -1 $-1 $-1 \
                     $-1 $1 #\nEnd-of-ACIS-data \n";
         let stream = parse(text.as_bytes()).expect("bodies");
@@ -1879,7 +1879,7 @@ mod tests {
     #[test]
     fn a_stream_without_a_terminator_line_is_an_error() {
         let text = "700 0 1 0 \n30 Autodesk Translation Framework 21 ASM 232.4.0.65535 OSX 24 \
-                    Fri Jul 17 14:48:06 2026 \n1 1e-06 1e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 #\n";
+                    Fri Jul 17 14:48:06 2026 \n1 1e-06 1.0e-10 \nbody $-1 -1 $-1 $-1 $-1 $-1 #\n";
         assert!(parse(text.as_bytes()).is_err());
     }
 }

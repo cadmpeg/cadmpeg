@@ -21,9 +21,9 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
-const EPS_RELATION_LOCI_SAME_DIMENSION_ANGLE_E9: f64 = 1e-9;
-const EPS_RELATION_LOCI_MARKER_CENTER_DIMENSIONED_ENTITY_E8: f64 = 1e-8;
-const EPS_RELATION_LOCI_SAME_DIMENSION_LENGTH_E9: f64 = 1e-9;
+const EPS_RELATION_LOCI_SAME_DIMENSION_ANGLE_E9: f64 = 1.0e-9;
+const EPS_RELATION_LOCI_MARKER_CENTER_DIMENSIONED_ENTITY_E8: f64 = 1.0e-8;
+const EPS_RELATION_LOCI_SAME_DIMENSION_LENGTH_E9: f64 = 1.0e-9;
 
 pub(super) fn linked_single_arc_entity(
     marker: &SketchInputEntity,
@@ -1040,7 +1040,7 @@ pub(super) fn canonical_profile_loci(
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
 ) -> Vec<(Point2, SketchLocus)> {
-    const QUANTUM: f64 = 1e-8;
+    const QUANTUM: f64 = 1.0e-8;
     let mut loci = sketch_entities
         .iter()
         .filter(|entity| entity.sketch == *sketch)
@@ -1954,7 +1954,7 @@ pub(super) fn profile_loci_by_marker(
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, Vec<SketchLocus>> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1e-8;
+    const QUANTUM: f64 = 1.0e-8;
     let qualified_point_markers = lanes
         .iter()
         .flat_map(|lane| &lane.relation_instances)
@@ -2414,7 +2414,7 @@ pub(super) fn marker_transform_candidates_by_feature(
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, Vec<MarkerTransform>> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1e-8;
+    const QUANTUM: f64 = 1.0e-8;
 
     let sketches_by_feature = features
         .iter()

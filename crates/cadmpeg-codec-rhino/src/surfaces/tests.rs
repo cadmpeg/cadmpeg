@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports, dead_code, clippy::disallowed_methods)]
+#![allow(dead_code, clippy::disallowed_methods)]
 
 use super::*;
 use crate::chunks::{ArchiveVersion, BoundedReader};
-use crate::test_support::test_dump::*;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 fn push_i32(bytes: &mut Vec<u8>, value: i32) {
     bytes.extend(value.to_le_bytes());
@@ -109,6 +108,45 @@ fn surface_payload(
             push_f64(&mut bytes, 0.0);
             if rational {
                 push_f64(&mut bytes, f64::from(i + j + 1));
+            }
+        }
+    }
+    bytes
+}
+
+fn surface_2d_payload(rational: bool) -> Vec<u8> {
+    let mut bytes = vec![0x10];
+    push_i32(&mut bytes, 2);
+    push_i32(&mut bytes, i32::from(rational));
+    push_i32(&mut bytes, 2);
+    push_i32(&mut bytes, 2);
+    push_i32(&mut bytes, 3);
+    push_i32(&mut bytes, 2);
+    push_i32(&mut bytes, 0);
+    push_i32(&mut bytes, 0);
+    bytes.extend([0; 48]);
+    let u_knots = [10.0, 11.0, 12.0];
+    push_i32(&mut bytes, u_knots.len() as i32);
+    for knot in u_knots {
+        push_f64(&mut bytes, knot);
+    }
+    let v_knots = [20.0, 21.0];
+    push_i32(&mut bytes, v_knots.len() as i32);
+    for knot in v_knots {
+        push_f64(&mut bytes, knot);
+    }
+    push_i32(&mut bytes, 6);
+    for i in 0..3 {
+        for j in 0..2 {
+            let weight = if rational {
+                1.0 + f64::from(i + j)
+            } else {
+                1.0
+            };
+            push_f64(&mut bytes, (100.0 + f64::from(i)) * weight);
+            push_f64(&mut bytes, (200.0 + f64::from(j)) * weight);
+            if rational {
+                push_f64(&mut bytes, weight);
             }
         }
     }
@@ -220,11 +258,13 @@ fn clipping_plane_payload(item_order_valid: bool) -> Vec<u8> {
         clipping.extend(0_i32.to_le_bytes());
     }
     clipping.push(0);
+    clipping.extend([0xaa, 0xbb]);
     let clipping = anonymous(5, &clipping);
     let mut outer = 1_i32.to_le_bytes().to_vec();
-    outer.extend(0_i32.to_le_bytes());
+    outer.extend(2_i32.to_le_bytes());
     outer.extend(carrier);
     outer.extend(clipping);
+    outer.extend([0xcc, 0xdd]);
     crc_chunk(0x4000_8000, &outer)
 }
 
@@ -243,6 +283,7 @@ fn clipping_plane_decodes_plane_carrier_and_all_v8_suffix_items() {
     let DecodedSurface::Typed {
         geometry: SurfaceGeometry::Plane { origin, .. },
         derived,
+        ..
     } = decoded
     else {
         panic!("typed plane carrier");
@@ -290,6 +331,10 @@ fn line_wrapper(scale_source: f64) -> Vec<u8> {
     long_chunk(0x0002_7ffa, &class_body)
 }
 
+fn nil_object_wrapper() -> Vec<u8> {
+    long_chunk(0x0002_7ffa, &long_chunk(0x0002_fffb, &[0; 16]))
+}
+
 pub(crate) fn valid_revolution_payload(version: u8) -> Vec<u8> {
     let mut bytes = revolution_prefix(version);
     *bytes.last_mut().expect("required invariant") = 1;
@@ -303,7 +348,7 @@ fn valid_sum_payload() -> Vec<u8> {
         push_f64(&mut bytes, value);
     }
     bytes.extend(line_wrapper(1.0));
-    bytes.extend(line_wrapper(1.0));
+    bytes.extend(line_wrapper(2.0));
     bytes
 }
 
@@ -363,6 +408,19 @@ fn c2_nurbs_reads_two_dimensions_without_scaling_uv() {
     assert_eq!(curve.control_points[1].x, 1.0);
     assert_eq!(curve.control_points[1].y, 2.0);
     assert_eq!(curve.weights.as_ref().expect("required invariant")[0], 2.0);
+    assert_eq!(
+        curve.knots,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
+    );
+}
+
+#[test]
+fn top_level_nurbs_lifts_a_valid_two_dimensional_curve() {
+    let bytes = curve_2d_payload(false);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+    let curve = read_nurbs_curve(&mut reader, 2.0).expect("valid two-dimensional curve");
+    assert_eq!(reader.remaining(), 0);
+    assert_eq!(curve.control_points[1], Point3::new(2.0, 4.0, 0.0));
     assert_eq!(
         curve.knots,
         vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0]
@@ -435,11 +493,34 @@ fn surface_bytes_reconstruct_independent_knots_and_reject_count_mismatch() {
 }
 
 #[test]
+fn surface_reads_a_valid_two_dimensional_lattice_and_lifts_zero_z() {
+    let bytes = surface_2d_payload(false);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+    let surface = read_nurbs_surface(&mut reader, 2.0).expect("valid two-dimensional surface");
+    assert_eq!(reader.remaining(), 0);
+    assert_eq!((surface.u_count, surface.v_count), (3, 2));
+    assert_eq!(surface.control_points[1], Point3::new(200.0, 402.0, 0.0));
+    assert_eq!(surface.u_knots, vec![10.0, 10.0, 11.0, 12.0, 12.0]);
+    assert_eq!(surface.v_knots, vec![20.0, 20.0, 21.0, 21.0]);
+}
+
+#[test]
+fn surface_reads_a_rational_two_dimensional_lattice() {
+    let bytes = surface_2d_payload(true);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+    let surface = read_nurbs_surface(&mut reader, 2.0).expect("valid rational surface");
+    assert_eq!(reader.remaining(), 0);
+    assert_eq!(surface.control_points[1], Point3::new(200.0, 402.0, 0.0));
+    assert_eq!(surface.weights, Some(vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0]));
+}
+
+#[test]
 fn plane_versions_consume_defaults_and_explicit_extents() {
     for version in [0x10, 0x11] {
         let bytes = plane_payload(version, false, false);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        let plane = read_plane_surface(&mut reader, 1.0).expect("required invariant");
+        let (plane, _) =
+            read_plane_surface_with_parameterization(&mut reader, 1.0).expect("required invariant");
         assert_eq!(reader.remaining(), 0);
         assert!(matches!(
             plane,
@@ -449,8 +530,20 @@ fn plane_versions_consume_defaults_and_explicit_extents() {
     for (bad_frame, bad_range) in [(true, false), (false, true)] {
         let bytes = plane_payload(0x11, bad_frame, bad_range);
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-        assert!(read_plane_surface(&mut reader, 1.0).is_err());
+        assert!(read_plane_surface_with_parameterization(&mut reader, 1.0).is_err());
     }
+}
+
+#[test]
+fn plane_parameterization_maps_domain_to_physical_extents() {
+    let bytes = plane_payload(0x11, false, false);
+    let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+    let (_, parameterization) =
+        read_plane_surface_with_parameterization(&mut reader, 1.0).expect("plane surface");
+    assert_eq!(
+        parameterization.map_point(Point2::new(0.25, 2.5)),
+        Point2::new(4.25, 6.5)
+    );
 }
 
 #[test]
@@ -670,13 +763,13 @@ fn revolution_rejects_versions_axis_intervals_transpose_and_presence() {
 }
 
 #[test]
-fn sum_surface_rejects_future_packed_version_before_children() {
-    let bytes = [0x11];
+fn sum_surface_accepts_later_minor_version_and_skips_suffix() {
+    let mut bytes = valid_sum_payload();
+    bytes[0] = 0x11;
+    bytes.push(0xaa);
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
-    assert!(matches!(
-        super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0),
-        Err(crate::curves::GeometryError::UnsupportedVersion { .. })
-    ));
+    assert!(super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_ok());
+    assert_eq!(reader.remaining(), 0);
 }
 
 #[test]
@@ -698,9 +791,10 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
         assert_eq!(children.len(), 1);
         let super::DecodedProceduralSurface::Revolution {
             axis_origin,
+            axis_direction,
             angular_interval,
             parameter_interval,
-            ..
+            transposed,
         } = definition
         else {
             panic!("expected revolution fields");
@@ -708,7 +802,9 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
         assert!((axis_origin.x - 25.4).abs() < 1.0e-12);
         assert!((axis_origin.y - 50.8).abs() < 1.0e-12);
         assert!((axis_origin.z - 76.2).abs() < 1.0e-12);
+        assert_eq!(axis_direction, Vector3::new(0.0, 0.0, 1.0));
         assert_eq!(angular_interval, [0.25, 1.25]);
+        assert!(!transposed);
         assert_eq!(
             parameter_interval,
             if version == 0x10 {
@@ -747,9 +843,34 @@ fn sum_surface_decodes_ordered_children_and_scales_once() {
     assert!((basepoint.x - 25.4).abs() < 1.0e-12);
     assert!((basepoint.y - 50.8).abs() < 1.0e-12);
     assert!((basepoint.z - 76.2).abs() < 1.0e-12);
-    assert!((geometry.control_points[0].x - 127.0).abs() < 1.0e-12);
+    assert!((geometry.control_points[0].x - 177.8).abs() < 1.0e-12);
     assert!((geometry.control_points[0].y - 50.8).abs() < 1.0e-12);
     assert!((geometry.control_points[0].z - 76.2).abs() < 1.0e-12);
+    let CurveGeometry::Nurbs(first) = &children[0].geometry else {
+        panic!("expected first NURBS child");
+    };
+    let CurveGeometry::Nurbs(second) = &children[1].geometry else {
+        panic!("expected second NURBS child");
+    };
+    assert_eq!(first.control_points[0].x, 2.0 * 25.4);
+    assert_eq!(second.control_points[0].x, 4.0 * 25.4);
+}
+
+#[test]
+fn sum_surface_rejects_nil_child_object() {
+    for (first, second) in [
+        (nil_object_wrapper(), line_wrapper(1.0)),
+        (line_wrapper(1.0), nil_object_wrapper()),
+    ] {
+        let mut bytes = vec![0x10];
+        for value in [1.0, 2.0, 3.0, -10.0, -10.0, -10.0, 10.0, 10.0, 10.0] {
+            push_f64(&mut bytes, value);
+        }
+        bytes.extend(first);
+        bytes.extend(second);
+        let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("required invariant");
+        assert!(super::read_sum(&bytes, &mut reader, 1.0, ArchiveVersion::V5, 0).is_err());
+    }
 }
 
 #[test]

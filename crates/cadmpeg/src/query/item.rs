@@ -9,6 +9,7 @@
 use std::fmt;
 
 use anyhow::{bail, Context, Result};
+use cadmpeg_core::decode::alloc_filled;
 use clap::Args;
 use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -19,7 +20,7 @@ use super::{detect, print_json, read_input, Artifact};
 /// Input selection for `query item`.
 #[derive(Debug, Args)]
 pub struct ItemArgs {
-    /// Artifact file, or `-` for standard input.
+    /// JSON file, or `-` for standard input.
     pub file: std::path::PathBuf,
     /// Arena address: `model.<arena>`, `native.<codec>.<arena>`, or bare
     /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as
@@ -73,7 +74,7 @@ impl ArenaTarget {
         }
     }
 
-    fn dotted(&self) -> String {
+    pub(crate) fn dotted(&self) -> String {
         match self {
             Self::Model { arena } => format!("model.{arena}"),
             Self::Native { codec, arena } => format!("native.{codec}.{arena}"),
@@ -107,8 +108,8 @@ struct Capture {
     kept: Vec<Box<RawValue>>,
     /// Every JSON-string `id` observed in the target arena (ID mode).
     all_ids: Vec<String>,
-    /// Dotted names of every addressable (JSON-array) arena in the document.
-    addressable: Vec<String>,
+    /// Dotted names of every addressable (JSON-array) arena, with entry counts.
+    addressable: Vec<(String, u64)>,
 }
 
 /// Tolerant id probe: a non-string `id` becomes `None` instead of failing the
@@ -136,12 +137,12 @@ pub fn run(args: &ItemArgs) -> Result<()> {
         Artifact::Report(_) => bail!(
             "{} is a command report; reports have no arenas. Use \
              `cadmpeg query findings` / `cadmpeg query losses` on the report, or \
-             `cadmpeg decode SOURCE -o doc.json && cadmpeg query item doc.json ARENA ID`",
+             `cadmpeg dump SOURCE -o doc.json && cadmpeg query item doc.json ARENA ID`",
             args.file.display()
         ),
         Artifact::Sidecar(_) => bail!(
             "{} is a decode sidecar (`<stem>.fidelity.json`); sidecars have no \
-             arenas. Run `cadmpeg decode SOURCE -o doc.json && cadmpeg query item \
+             arenas. Run `cadmpeg dump SOURCE -o doc.json && cadmpeg query item \
              doc.json ARENA ID`",
             args.file.display()
         ),
@@ -269,8 +270,18 @@ fn resolve_one<'a>(
 }
 
 fn emit(args: &ItemArgs, values: &[serde_json::Value]) -> Result<()> {
-    if args.json {
-        print_json("item", &serde_json::Value::Array(values.to_vec()));
+    emit_values("item", args.json, args.fields.as_deref(), values)
+}
+
+/// Pretty-print records, TSV `--fields`, or the versioned `--json` envelope.
+pub(crate) fn emit_values(
+    view: &str,
+    json: bool,
+    fields: Option<&[String]>,
+    values: &[serde_json::Value],
+) -> Result<()> {
+    if json {
+        print_json(view, &serde_json::Value::Array(values.to_vec()));
         return Ok(());
     }
     // Empty arena / no matches: empty stdout (no TSV header), exit 0 unless a
@@ -278,7 +289,7 @@ fn emit(args: &ItemArgs, values: &[serde_json::Value]) -> Result<()> {
     if values.is_empty() {
         return Ok(());
     }
-    if let Some(paths) = &args.fields {
+    if let Some(paths) = fields {
         let (tsv, empty_paths) = project_fields(values, paths)?;
         print!("{tsv}");
         if !empty_paths.is_empty() {
@@ -298,11 +309,15 @@ fn emit(args: &ItemArgs, values: &[serde_json::Value]) -> Result<()> {
     Ok(())
 }
 
-fn unknown_arena_message(target: &ArenaTarget, addressable: &[String]) -> String {
+pub(crate) fn unknown_arena_message(target: &ArenaTarget, addressable: &[(String, u64)]) -> String {
     let list = if addressable.is_empty() {
         "(none — this document has no array arenas)".to_owned()
     } else {
-        addressable.join(", ")
+        addressable
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
     };
     format!(
         "unknown arena {}; addressable arenas in this document: {}; run \
@@ -312,7 +327,12 @@ fn unknown_arena_message(target: &ArenaTarget, addressable: &[String]) -> String
     )
 }
 
-fn miss_id_message(arena: &str, request: &str, entry_count: u64, all_ids: &[String]) -> String {
+pub(crate) fn miss_id_message(
+    arena: &str,
+    request: &str,
+    entry_count: u64,
+    all_ids: &[String],
+) -> String {
     const SHOWN: usize = 10;
     let lower = request.to_lowercase();
     let mut label = "close ids";
@@ -340,7 +360,7 @@ fn miss_id_message(arena: &str, request: &str, entry_count: u64, all_ids: &[Stri
     }
 }
 
-fn ambiguous_message(request: &str, arena: &str, matches: &[String]) -> String {
+pub(crate) fn ambiguous_message(request: &str, arena: &str, matches: &[String]) -> String {
     const SHOWN: usize = 10;
     let shown: Vec<&str> = matches.iter().take(SHOWN).map(String::as_str).collect();
     format!(
@@ -350,7 +370,7 @@ fn ambiguous_message(request: &str, arena: &str, matches: &[String]) -> String {
     )
 }
 
-fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[String]) -> String {
+pub(crate) fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[String]) -> String {
     let mut parts = Vec::new();
     for path in empty_paths {
         let keys = first_parent_keys(values, path);
@@ -363,6 +383,11 @@ fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[String]) ->
             "field path {path:?} was empty in every projected row{key_note}"
         ));
     }
+    parts.push(
+        "list fields with `cadmpeg query schema FILE ARENA` (native records) or \
+         `cadmpeg query schema model.<arena>` (IR types)"
+            .to_owned(),
+    );
     parts.join("\n")
 }
 
@@ -390,7 +415,10 @@ fn first_parent_keys(values: &[serde_json::Value], path: &str) -> Option<Vec<Str
 /// Cell rules (projection-specific; not the other views' [`super::cell`]):
 /// JSON strings/numbers/bools are bare; tab/newline in a string become `\t`/
 /// `\n`; null or absent is an empty cell; arrays/objects are compact JSON.
-fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(String, Vec<String>)> {
+pub(crate) fn project_fields(
+    values: &[serde_json::Value],
+    paths: &[String],
+) -> Result<(String, Vec<String>)> {
     if paths.is_empty() {
         bail!("--fields requires at least one dotted path");
     }
@@ -398,7 +426,7 @@ fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(Str
     out.push_str(&paths.join("\t"));
     out.push('\n');
 
-    let mut empty_counts = std::iter::repeat_n(0usize, paths.len()).collect::<Vec<_>>();
+    let mut empty_counts = alloc_filled(paths.len(), 0usize, "cli query field counts")?;
     let row_count = values.len();
     for value in values {
         for (i, path) in paths.iter().enumerate() {
@@ -430,7 +458,10 @@ fn project_fields(values: &[serde_json::Value], paths: &[String]) -> Result<(Str
     Ok((out, empty_paths))
 }
 
-fn navigate<'a>(value: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+pub(crate) fn navigate<'a>(
+    value: &'a serde_json::Value,
+    path: &str,
+) -> Option<&'a serde_json::Value> {
     let mut cur = value;
     for part in path.split('.') {
         cur = cur.as_object()?.get(part)?;
@@ -438,7 +469,7 @@ fn navigate<'a>(value: &'a serde_json::Value, path: &str) -> Option<&'a serde_js
     Some(cur)
 }
 
-fn field_cell(value: &serde_json::Value) -> String {
+pub(crate) fn field_cell(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Null => String::new(),
         serde_json::Value::Bool(b) => b.to_string(),
@@ -732,9 +763,12 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
     }
 
     fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<(), A::Error> {
-        self.capture.addressable.push(self.dotted);
         if !self.is_target {
-            while seq.next_element::<IgnoredAny>()?.is_some() {}
+            let mut n = 0u64;
+            while seq.next_element::<IgnoredAny>()?.is_some() {
+                n += 1;
+            }
+            self.capture.addressable.push((self.dotted, n));
             return Ok(());
         }
         self.capture.found_array = true;
@@ -760,6 +794,9 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
                 }
             }
         }
+        self.capture
+            .addressable
+            .push((self.dotted, self.capture.entry_count));
         Ok(())
     }
 

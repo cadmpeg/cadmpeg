@@ -9,14 +9,14 @@ use super::super::sketch::normalized;
 
 use super::intersection_candidates::apex_plane_cone_generator_candidates;
 
-const EPS_AXIS_ORTHO: f64 = 1e-10;
-const EPS_CARRIER_AGREEMENT: f64 = 1e-9;
-const EPS_CONE_SLOPE_NONZERO: f64 = 1e-12;
-const EPS_RADIUS_NONZERO: f64 = 1e-12;
-const EPS_DISTANCE_NONZERO: f64 = 1e-12;
-const EPS_TRANSVERSE_RESIDUAL: f64 = 1e-9;
-const EPS_RADIUS_AGREEMENT: f64 = 1e-9;
-const EPS_DISCRIMINANT_RESIDUAL: f64 = 1e-9;
+const EPS_AXIS_ORTHO: f64 = 1.0e-10;
+const EPS_CARRIER_AGREEMENT: f64 = 1.0e-9;
+const EPS_CONE_SLOPE_NONZERO: f64 = 1.0e-12;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_DISTANCE_NONZERO: f64 = 1.0e-12;
+const EPS_TRANSVERSE_RESIDUAL: f64 = 1.0e-9;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+const EPS_DISCRIMINANT_RESIDUAL: f64 = 1.0e-9;
 
 pub(in super::super) fn carrier_intersection_curve(
     first: CarrierEquation,

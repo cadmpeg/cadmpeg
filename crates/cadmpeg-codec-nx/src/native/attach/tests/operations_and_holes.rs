@@ -1,25 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(unused_imports)]
 
-use std::io::{Cursor, Write};
-
-use flate2::write::ZlibEncoder;
-use flate2::Compression;
-
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-
-use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
-};
-use cadmpeg_ir::math::{Point2, Vector3};
-use cadmpeg_ir::report::LossCategory;
-use cadmpeg_ir::Exactness;
-
-use crate::container;
-use crate::parasolid::{self, StreamKind};
-use crate::test_support::*;
-use crate::NxCodec;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::math::Vector3;
 
 use super::*;
 
@@ -1404,16 +1386,16 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         FeatureSimpleHoleConstructionGroup, FeatureSimpleHoleTemplate, SimpleHoleEndTreatment,
         SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
     };
-    use cadmpeg_ir::document::{CadIr, Model, IR_VERSION};
+    use cadmpeg_ir::document::{CadIr, Model};
     use cadmpeg_ir::features::HolePlacement;
     use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface};
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, RegionId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::native::Native;
+
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
-    use cadmpeg_ir::units::{Tolerances, Units};
+    use cadmpeg_ir::units::Units;
     use cadmpeg_ir::SourceObjectAssociation;
 
     let operations = ["hole-a".to_string(), "hole-b".to_string()];

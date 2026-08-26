@@ -195,11 +195,11 @@ pub(super) fn validate_consolidated_cones(
                 .any(|value| !value.is_finite())
             || [cone.direction_x, cone.direction_y, cone.axis]
                 .into_iter()
-                .any(|direction| (dot(direction, direction) - 1.0).abs() > 1e-9)
+                .any(|direction| (dot(direction, direction) - 1.0).abs() > 1.0e-9)
             || cross
                 .iter()
                 .zip(cone.axis)
-                .any(|(cross, axis)| (cross - axis).abs() > 1e-9)
+                .any(|(cross, axis)| (cross - axis).abs() > 1.0e-9)
             || cone.half_angle <= 0.0
             || cone.half_angle >= std::f64::consts::FRAC_PI_2
             || !crate::analytic::periodic_angular_range_is_valid(
@@ -254,9 +254,9 @@ pub(super) fn validate_consolidated_cylinders(
                         .iter()
                         .chain(reference_direction)
                         .all(|value| value.is_finite())
-                    && (squared_length(*axis) - 1.0).abs() <= 1e-9
-                    && (squared_length(*reference_direction) - 1.0).abs() <= 1e-9
-                    && dot(*axis, *reference_direction).abs() <= 1e-9
+                    && (squared_length(*axis) - 1.0).abs() <= 1.0e-9
+                    && (squared_length(*reference_direction) - 1.0).abs() <= 1.0e-9
+                    && dot(*axis, *reference_direction).abs() <= 1.0e-9
                     && crate::families::b2::records::circle_range_is_full_turn(
                         cylinder.radius,
                         cylinder.u_range,
@@ -273,7 +273,7 @@ pub(super) fn validate_consolidated_cylinders(
                         .iter()
                         .chain(std::iter::once(range_origin))
                         .all(|value| value.is_finite())
-                    && (stored_vector[0].hypot(stored_vector[1]) - 1.0).abs() <= 1e-9
+                    && (stored_vector[0].hypot(stored_vector[1]) - 1.0).abs() <= 1.0e-9
                     && *axis == [0.0, 1.0, 0.0]
                     && *reference_direction == [stored_vector[0], 0.0, stored_vector[1]]
                     && crate::families::b2::records::circle_range_is_within_full_turn(
@@ -356,9 +356,9 @@ pub(super) fn validate_consolidated_embedded_cylinders(
             || !matches!(cylinder.frame_token, 0x19 | 0x1c)
             || cylinder.axis[2] != 0.0
             || cylinder.reference_direction != [-cylinder.axis[1], cylinder.axis[0], 0.0]
-            || (squared_length(cylinder.axis) - 1.0).abs() > 1e-9
-            || (squared_length(cylinder.reference_direction) - 1.0).abs() > 1e-9
-            || dot(cylinder.axis, cylinder.reference_direction).abs() > 1e-9
+            || (squared_length(cylinder.axis) - 1.0).abs() > 1.0e-9
+            || (squared_length(cylinder.reference_direction) - 1.0).abs() > 1.0e-9
+            || dot(cylinder.axis, cylinder.reference_direction).abs() > 1.0e-9
             || !crate::families::b2::records::circle_range_is_full_turn(
                 cylinder.radius,
                 cylinder.u_range,
@@ -503,8 +503,8 @@ pub(super) fn valid_consolidated_plane_geometry(
         .all(|value| value.is_finite());
     let norm = direction[0].hypot(direction[1]).hypot(direction[2]);
     finite
-        && (norm - 1.0).abs() <= 1e-9
-        && direction[2].abs() <= 1e-9
+        && (norm - 1.0).abs() <= 1.0e-9
+        && direction[2].abs() <= 1.0e-9
         && tail[0] > 0.0
         && tail[1] < tail[2]
 }
@@ -579,11 +579,11 @@ pub(super) fn validate_consolidated_revolutions(
                 revolution.axis,
             ]
             .into_iter()
-            .any(|direction| (squared_length(direction) - 1.0).abs() > 1e-12)
+            .any(|direction| (squared_length(direction) - 1.0).abs() > 1.0e-12)
             || cross
                 .iter()
                 .zip(revolution.axis)
-                .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
+                .any(|(cross, axis)| (cross - axis).abs() > 1.0e-12)
             || revolution.angular_range[0] / revolution.angular_scale != 0.5
             || (revolution.angular_range[1] - revolution.angular_range[0])
                 / revolution.angular_scale
@@ -615,7 +615,7 @@ pub(super) fn validate_consolidated_line_profiles(
                 .chain(&line.direction)
                 .chain(&line.range)
                 .any(|value| !value.is_finite())
-            || (squared_length - 1.0).abs() > 1e-12
+            || (squared_length - 1.0).abs() > 1.0e-12
             || line.range[0] >= line.range[1]
             || index > 0 && lines[index - 1].byte_offset >= line.byte_offset
         {
@@ -657,14 +657,14 @@ pub(super) fn validate_consolidated_spheres(
                 .any(|value| !value.is_finite())
             || [sphere.direction_x, sphere.direction_y, sphere.axis]
                 .into_iter()
-                .any(|direction| (dot(direction, direction) - 1.0).abs() > 1e-12)
-            || dot(sphere.direction_x, sphere.direction_y).abs() > 1e-12
-            || dot(sphere.direction_x, sphere.axis).abs() > 1e-12
-            || dot(sphere.direction_y, sphere.axis).abs() > 1e-12
+                .any(|direction| (dot(direction, direction) - 1.0).abs() > 1.0e-12)
+            || dot(sphere.direction_x, sphere.direction_y).abs() > 1.0e-12
+            || dot(sphere.direction_x, sphere.axis).abs() > 1.0e-12
+            || dot(sphere.direction_y, sphere.axis).abs() > 1.0e-12
             || cross
                 .iter()
                 .zip(sphere.axis)
-                .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
+                .any(|(cross, axis)| (cross - axis).abs() > 1.0e-12)
             || sphere.radius <= 0.0
             || !crate::analytic::sphere_angular_ranges_are_valid(
                 sphere.azimuth_range,
@@ -717,14 +717,14 @@ pub(super) fn validate_consolidated_tori(
                 .any(|value| !value.is_finite())
             || [torus.direction_x, torus.direction_y, torus.axis]
                 .into_iter()
-                .any(|direction| (dot(direction, direction) - 1.0).abs() > 1e-12)
-            || dot(torus.direction_x, torus.direction_y).abs() > 1e-12
-            || dot(torus.direction_x, torus.axis).abs() > 1e-12
-            || dot(torus.direction_y, torus.axis).abs() > 1e-12
+                .any(|direction| (dot(direction, direction) - 1.0).abs() > 1.0e-12)
+            || dot(torus.direction_x, torus.direction_y).abs() > 1.0e-12
+            || dot(torus.direction_x, torus.axis).abs() > 1.0e-12
+            || dot(torus.direction_y, torus.axis).abs() > 1.0e-12
             || cross
                 .iter()
                 .zip(torus.axis)
-                .any(|(cross, axis)| (cross - axis).abs() > 1e-12)
+                .any(|(cross, axis)| (cross - axis).abs() > 1.0e-12)
             || torus.major_radius <= 0.0
             || torus.minor_radius <= 0.0
             || !crate::analytic::periodic_angular_range_is_valid(
@@ -1103,20 +1103,20 @@ pub(super) fn validate_zero_entity_model_curve_construction(
                 && [pitch.x, pitch.y, pitch.z].into_iter().all(f64::is_finite)
                 && apex_factor.is_finite()
                 && finite_vector(axis)
-                && (norm(axis) - 1.0).abs() <= 1e-9
-                && (norm(major) - norm(minor)).abs() <= 1e-9 * norm(major).max(norm(minor))
-                && normalized_dot(major, minor).abs() <= 1e-9
-                && normalized_dot(major, axis).abs() <= 1e-9
-                && normalized_dot(minor, axis).abs() <= 1e-9
+                && (norm(axis) - 1.0).abs() <= 1.0e-9
+                && (norm(major) - norm(minor)).abs() <= 1.0e-9 * norm(major).max(norm(minor))
+                && normalized_dot(major, minor).abs() <= 1.0e-9
+                && normalized_dot(major, axis).abs() <= 1.0e-9
+                && normalized_dot(minor, axis).abs() <= 1.0e-9
                 && (pitch.x == 0.0 && pitch.y == 0.0 && pitch.z == 0.0
-                    || normalized_dot(pitch, axis).abs() >= 1.0 - 1e-9)
+                    || normalized_dot(pitch, axis).abs() >= 1.0 - 1.0e-9)
                 && {
                     let handed_minor = cadmpeg_ir::math::Vector3::new(
                         axis.y * major.z - axis.z * major.y,
                         axis.z * major.x - axis.x * major.z,
                         axis.x * major.y - axis.y * major.x,
                     );
-                    normalized_dot(&handed_minor, minor) >= 1.0 - 1e-9
+                    normalized_dot(&handed_minor, minor) >= 1.0 - 1.0e-9
                 }
         }
         (_, Some(_), None)

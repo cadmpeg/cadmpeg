@@ -17,12 +17,12 @@ use super::super::feature_history::{
 use super::super::sketch::{approximately_equal, normalized};
 use super::drilled::paired_corner_envelope_axis_spans;
 
-const EPS_RADIUS_AGREEMENT: f64 = 1e-9;
-const EPS_PARAMETER_DELTA: f64 = 1e-9;
-const EPS_GEOMETRY_AGREEMENT: f64 = 1e-9;
-const EPS_LENGTH_NONZERO: f64 = 1e-12;
-const EPS_DEPTH_BOUND: f64 = 1e-9;
-const EPS_AXIS_ALIGNMENT: f64 = 1e-9;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+const EPS_PARAMETER_DELTA: f64 = 1.0e-9;
+const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
+const EPS_LENGTH_NONZERO: f64 = 1.0e-12;
+const EPS_DEPTH_BOUND: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
 
 pub fn counterbore_dimensions(
     scan: &ContainerScan,

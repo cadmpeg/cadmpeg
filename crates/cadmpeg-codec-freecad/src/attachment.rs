@@ -3,12 +3,72 @@
 
 use std::collections::HashMap;
 
-use crate::native::{AttachmentRecord, ObjectRecord, PropertyRecord};
+use cadmpeg_core::CodecError;
+
+use crate::native::{AttachmentRecord, LinkTarget, ObjectRecord, PropertyRecord};
+
+const MAP_MODE_NAMES: &[&str] = &[
+    "Deactivated",
+    "Translate",
+    "ObjectXY",
+    "ObjectXZ",
+    "ObjectYZ",
+    "FlatFace",
+    "TangentPlane",
+    "NormalToEdge",
+    "FrenetNB",
+    "FrenetTN",
+    "FrenetTB",
+    "Concentric",
+    "SectionOfRevolution",
+    "ThreePointsPlane",
+    "ThreePointsNormal",
+    "Folding",
+    "ObjectX",
+    "ObjectY",
+    "ObjectZ",
+    "AxisOfCurvature",
+    "Directrix1",
+    "Directrix2",
+    "Asymptote1",
+    "Asymptote2",
+    "Tangent",
+    "Normal",
+    "Binormal",
+    "TangentU",
+    "TangentV",
+    "TwoPointLine",
+    "IntersectionLine",
+    "ProximityLine",
+    "ObjectOrigin",
+    "Focus1",
+    "Focus2",
+    "OnEdge",
+    "CenterOfCurvature",
+    "CenterOfMass",
+    "IntersectionPoint",
+    "Vertex",
+    "ProximityPoint1",
+    "ProximityPoint2",
+    "AxisOfInertia1",
+    "AxisOfInertia2",
+    "AxisOfInertia3",
+    "InertialCS",
+    "FaceNormal",
+    "OZX",
+    "OZY",
+    "OXY",
+    "OXZ",
+    "OYZ",
+    "OYX",
+    "ParallelPlane",
+    "MidPoint",
+];
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-) -> Vec<AttachmentRecord> {
+) -> Result<Vec<AttachmentRecord>, CodecError> {
     let by_owner = properties.iter().fold(
         HashMap::<&str, Vec<&PropertyRecord>>::new(),
         |mut map, property| {
@@ -18,39 +78,141 @@ pub(crate) fn transfer(
     );
     objects
         .iter()
-        .filter_map(|object| {
-            let owned = by_owner.get(object.id.as_str())?;
-            let named = |name: &str| owned.iter().copied().find(|property| property.name == name);
-            let support = named("Support");
-            let mode = named("MapMode");
-            let placement = named("Placement").and_then(crate::product::placement_matrix);
-            let offset = named("AttachmentOffset").and_then(crate::product::placement_matrix);
+        .map(|object| {
+            let Some(owned) = by_owner.get(object.id.as_str()) else {
+                return Ok(None);
+            };
+            let support = unique_property(owned, "AttachmentSupport")?;
+            let mode = unique_property(owned, "MapMode")?;
+            let placement = placement_matrix(unique_property(owned, "Placement")?)?;
+            let offset = placement_matrix(unique_property(owned, "AttachmentOffset")?)?;
             if support.is_none() && mode.is_none() && placement.is_none() && offset.is_none() {
-                return None;
+                return Ok(None);
             }
-            let effective_frame = placement.or(offset).unwrap_or(IDENTITY);
-            Some(AttachmentRecord {
+            let effective_frame = effective_frame(placement, offset);
+            Ok(Some(AttachmentRecord {
                 id: crate::native::native_id("attachment", &object.name),
                 object: object.id.clone(),
-                supports: support.map_or_else(Vec::new, |property| property.links.clone()),
-                map_mode: mode.and_then(property_text),
+                supports: support.map(support_links).transpose()?.unwrap_or_default(),
+                map_mode: mode.map(map_mode_value).transpose()?.flatten(),
                 placement,
                 offset,
                 effective_frame,
-            })
+            }))
         })
-        .collect()
+        .collect::<Result<Vec<_>, CodecError>>()
+        .map(|records| records.into_iter().flatten().collect())
 }
 
-fn property_text(property: &PropertyRecord) -> Option<String> {
-    property.values.iter().find_map(|value| {
-        value
-            .attributes
-            .iter()
-            .find(|(name, _)| matches!(name.as_str(), "value" | "Value"))
-            .map(|(_, value)| value.clone())
-            .or_else(|| value.text.clone())
-    })
+pub(crate) fn effective_frame(
+    placement: Option<[[f64; 4]; 4]>,
+    offset: Option<[[f64; 4]; 4]>,
+) -> [[f64; 4]; 4] {
+    match (placement, offset) {
+        (Some(placement), Some(offset)) => crate::product::multiply(placement, offset),
+        (Some(placement), None) => placement,
+        (None, Some(offset)) => offset,
+        (None, None) => IDENTITY,
+    }
+}
+
+fn unique_property<'a>(
+    properties: &[&'a PropertyRecord],
+    name: &str,
+) -> Result<Option<&'a PropertyRecord>, CodecError> {
+    let mut matches = properties
+        .iter()
+        .copied()
+        .filter(|property| property.name == name);
+    let Some(property) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(malformed(format!(
+            "attachment property {name} occurs more than once"
+        )));
+    }
+    Ok(Some(property))
+}
+
+fn placement_matrix(
+    property: Option<&PropertyRecord>,
+) -> Result<Option<[[f64; 4]; 4]>, CodecError> {
+    let Some(property) = property else {
+        return Ok(None);
+    };
+    crate::product::placement_matrix(property)
+}
+
+fn support_links(property: &PropertyRecord) -> Result<Vec<LinkTarget>, CodecError> {
+    if property.type_name != "App::PropertyLinkSubList" {
+        return Err(malformed(format!(
+            "attachment property {} has runtime type {}, expected App::PropertyLinkSubList",
+            property.id, property.type_name
+        )));
+    }
+    if property
+        .values
+        .first()
+        .is_none_or(|value| value.tag != "LinkSubList")
+        || property.values[1..].iter().any(|value| value.tag != "Link")
+    {
+        return Err(malformed(format!(
+            "attachment property {} requires one LinkSubList value",
+            property.id
+        )));
+    }
+    Ok(property.links.clone())
+}
+
+fn map_mode_value(property: &PropertyRecord) -> Result<Option<String>, CodecError> {
+    if property.type_name != "App::PropertyEnumeration" {
+        return Err(malformed(format!(
+            "attachment property {} has runtime type {}, expected App::PropertyEnumeration",
+            property.id, property.type_name
+        )));
+    }
+    let [value] = property.values.as_slice() else {
+        return Err(malformed(format!(
+            "attachment property {} requires one Integer value",
+            property.id
+        )));
+    };
+    if value.tag != "Integer" {
+        return Err(malformed(format!(
+            "attachment property {} requires an Integer value",
+            property.id
+        )));
+    }
+    let index = value
+        .attributes
+        .get("value")
+        .ok_or_else(|| {
+            malformed(format!(
+                "attachment property {} has no enum index",
+                property.id
+            ))
+        })?
+        .parse::<usize>()
+        .map_err(|_| {
+            malformed(format!(
+                "attachment property {} has an invalid enum index",
+                property.id
+            ))
+        })?;
+    MAP_MODE_NAMES
+        .get(index)
+        .map(|_| Some(index.to_string()))
+        .ok_or_else(|| {
+            malformed(format!(
+                "attachment property {} enum index {index} is out of range",
+                property.id
+            ))
+        })
+}
+
+fn malformed(message: impl Into<String>) -> CodecError {
+    CodecError::Malformed(message.into())
 }
 
 const IDENTITY: [[f64; 4]; 4] = [

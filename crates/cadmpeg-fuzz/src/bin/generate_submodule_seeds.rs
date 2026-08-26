@@ -6,19 +6,20 @@ use std::io::Write as _;
 
 include!("../seed_paths.rs");
 
-const EPS_GENERATE_SUBMODULE_SEEDS_GENERATE_ACIS_HEADER_SEED_E6: f64 = 1e-6;
-const EPS_GENERATE_SUBMODULE_SEEDS_GENERATE_ACIS_HEADER_SEED_E10: f64 = 1e-10;
+use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::CodecError;
 
-fn main() {
+fn main() -> Result<(), CodecError> {
     generate_acis_header_seed();
     generate_f3d_submodule_seeds();
     generate_sldprt_submodule_seeds();
     generate_catia_submodule_seeds();
     generate_creo_submodule_seeds();
     generate_nx_submodule_seeds();
-    generate_inventor_submodule_seeds();
+    generate_inventor_submodule_seeds()?;
     generate_rhino_submodule_seeds();
     println!("All sub-module seeds generated.");
+    Ok(())
 }
 
 fn generate_acis_header_seed() {
@@ -31,7 +32,7 @@ fn generate_acis_header_seed() {
         header.push(u8::try_from(value.len()).expect("short synthetic string"));
         header.extend_from_slice(value.as_bytes());
     }
-    for value in [1.0_f64, EPS_GENERATE_SUBMODULE_SEEDS_GENERATE_ACIS_HEADER_SEED_E6, EPS_GENERATE_SUBMODULE_SEEDS_GENERATE_ACIS_HEADER_SEED_E10] {
+    for value in [1.0_f64, 1.0e-6, 1.0e-10] {
         header.push(0x06);
         header.extend_from_slice(&value.to_le_bytes());
     }
@@ -451,8 +452,8 @@ fn generate_nx_submodule_seeds() {
 // Inventor and shared-container seeds
 // ============================================================================
 
-fn generate_inventor_submodule_seeds() {
-    let cfb = synthetic_cfb_seed();
+fn generate_inventor_submodule_seeds() -> Result<(), CodecError> {
+    let cfb = synthetic_cfb_seed()?;
     write_seed("seeds/inventor_codec", "minimal", &cfb);
     write_seed("seeds/compound_snapshot", "minimal", &cfb);
     write_seed(
@@ -504,6 +505,7 @@ fn generate_inventor_submodule_seeds() {
         &0_u32.to_le_bytes(),
     );
     write_seed("seeds/protein_decode", "malformed_page", &[0; 304]);
+    Ok(())
 }
 
 fn generate_rhino_submodule_seeds() {
@@ -549,12 +551,12 @@ fn rhino_crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
     bytes
 }
 
-fn synthetic_cfb_seed() -> Vec<u8> {
+fn synthetic_cfb_seed() -> Result<Vec<u8>, CodecError> {
     const SECTOR: usize = 512;
     const FREE: u32 = 0xffff_ffff;
     const END: u32 = 0xffff_fffe;
     const FAT: u32 = 0xffff_fffd;
-    let mut file = std::iter::repeat_n(0_u8, SECTOR * 13).collect::<Vec<_>>();
+    let mut file = alloc_filled(SECTOR * 13, 0_u8, "Inventor synthetic CFB seed")?;
     file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
     put_u16(&mut file, 24, 0x003e);
     put_u16(&mut file, 26, 3);
@@ -594,7 +596,7 @@ fn synthetic_cfb_seed() -> Vec<u8> {
     put_u32(fat, 1 * 4, END);
     put_u32(fat, 10 * 4, END);
     put_u32(fat, 11 * 4, FAT);
-    file
+    Ok(file)
 }
 
 fn synthetic_registry_seed() -> Vec<u8> {

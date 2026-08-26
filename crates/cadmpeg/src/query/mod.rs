@@ -4,14 +4,18 @@
 //! `cadmpeg query` reads one of the three JSON artifact kinds the CLI
 //! produces — a decoded CADIR document, a versioned command report, or a
 //! `<stem>.fidelity.json` decode sidecar — detects which one it was given, and prints one
-//! named view. Aggregate views print tab-separated rows; `item` prints
-//! pretty-printed JSON records (or a TSV projection with `--fields`). It
+//! named view. Aggregate views print tab-separated rows; `item`, `graph`, and
+//! `join` print pretty-printed JSON records (or a TSV projection with `--fields`). It
 //! replaces ad-hoc `jq` path exploration: the view names are stable and each
 //! view's help states which artifact kinds it accepts.
 
+mod document;
 mod fidelity;
+mod graph;
 mod item;
+mod join;
 mod schema;
+mod schema_infer;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -26,29 +30,37 @@ use serde::{Deserialize, Deserializer};
 use crate::commands::CLI_SCHEMA_VERSION;
 
 pub use fidelity::FidelityArgs;
+pub use graph::GraphArgs;
 pub use item::ItemArgs;
+pub use join::JoinArgs;
 pub use schema::SchemaArgs;
 
 /// One named projection over a cadmpeg JSON artifact.
 #[derive(Debug, Subcommand)]
 pub enum QueryView {
-    /// Artifact kind and section counts. Accepts every artifact kind.
+    /// What this JSON file is.
+    ///
+    /// Accepts every artifact kind.
     Summary(QueryArgs),
-    /// Decode coverage counts. Accepts a command report or a decode
-    /// sidecar; empty coverage is not an error.
+    /// Decode coverage counts.
+    ///
+    /// Accepts a command report or a decode sidecar. Empty coverage is not an error.
     Coverage(QueryArgs),
-    /// Validation findings: severity, check, entity, message. Accepts a
-    /// command report written by `validate` or `convert`.
+    /// Check errors and warnings.
+    ///
+    /// Accepts a command report written by `check` or `convert`.
     Findings(QueryArgs),
-    /// Loss notes: severity, code, message. Accepts a command report or a
-    /// decode sidecar.
+    /// What was dropped or reduced.
+    ///
+    /// Accepts a command report or a decode sidecar.
     Losses(QueryArgs),
-    /// Per-arena entity counts. Accepts a CADIR document (arena lengths,
-    /// including `native.<codec>` arenas) or a command report
-    /// (`entity_counts`).
+    /// Entity counts.
+    ///
+    /// Accepts a CADIR document (arena lengths, including `native.<codec>`
+    /// arenas) or a command report (`entity_counts`).
     #[command(visible_alias = "arenas")]
     Counts(QueryArgs),
-    /// One or more arena records by ID (CADIR documents only).
+    /// One record by id.
     ///
     /// Arena names are the dotted keys from `query counts --json`
     /// (`model.<arena>` or `native.<codec>.<arena>`; a bare name means
@@ -61,20 +73,54 @@ pub enum QueryView {
     /// in strings → `\t`/`\n`). Alias: `record` (also `get`).
     #[command(visible_alias = "record", alias = "get")]
     Item(ItemArgs),
-    /// The IR schema of one model arena's records (no FILE — compile time).
+    /// Fields of an entity type.
     ///
-    /// Unlike the other views this takes no file: it prints what this
-    /// binary's IR types allow — every field of an arena's element type,
-    /// which fields are optional, and every variant of a tagged union
-    /// (`FaceSelection`'s `value` is absent, a string, an array, or an
-    /// object depending on `kind`; the discriminator of a feature's
-    /// `definition` is `.definition.definition`). Bare `query schema`
-    /// lists every model arena and its element type; `sidecar` prints the
-    /// `<stem>.fidelity.json` decode-sidecar shape. Which arenas a given
-    /// document actually has still comes from `query counts FILE`; native
-    /// arena records are codec-owned — fetch one with `query item` instead.
+    /// With no FILE this prints what this binary's IR types allow — every
+    /// field of an arena's element type, which fields are optional, and
+    /// every variant of a tagged union (`FaceSelection`'s `value` is
+    /// absent, a string, an array, or an object depending on `kind`; the
+    /// discriminator of a feature's `definition` is
+    /// `.definition.definition`). Bare `query schema` lists every model
+    /// arena and its element type; `sidecar` prints the
+    /// `<stem>.fidelity.json` decode-sidecar shape.
+    ///
+    /// Native arena records are per-document. `query schema FILE ARENA`
+    /// infers each dotted path's presence, JSON type, an example, and a
+    /// `relation` column (`id` / `ref` / `refs`) from the records
+    /// (`layout_prefix  435/710  array`). Unknown arena names
+    /// list every addressable arena and its entry count. Which arenas a
+    /// given document actually has also comes from `query counts FILE`.
     Schema(SchemaArgs),
-    /// Retained source records and annotations of a decode sidecar.
+    /// Walk identity references from start records.
+    ///
+    /// Accepts a CADIR document. Arena names and ID selection match
+    /// `query item` (`model.<arena>` or `native.<codec>.<arena>`; suffix
+    /// IDs; `--head` when IDs are omitted). `--hops N` (default 1) is the
+    /// maximum edge length from a start; `0` emits only the starts.
+    /// Default walk follows every string that equals another record's `id`
+    /// in this document. The record's own `id` is not an outgoing edge.
+    /// Array members use the array's path (`links`), not `links.0`; an
+    /// array of objects uses the nested field path without indices
+    /// (`pcurves.pcurve`). `--follow PATH,...` keeps only those field
+    /// paths (exact match). `--reverse` walks incoming references.
+    /// Discover follow paths with `query schema FILE ARENA` (`relation`
+    /// column). Arena names come from `query counts`. `--max-paths`
+    /// (default 10000) caps explosion: a truncated walk prints a note on
+    /// standard error and still exits 0. A record with no string `id`
+    /// uses `ARENA#<index>` as its locator and cannot be selected by id.
+    Graph(GraphArgs),
+    /// Join two arenas on named key paths.
+    ///
+    /// Accepts a CADIR document. `--left-key` and `--right-key` are
+    /// required dotted paths (no default). `--mode matched` (default) is
+    /// an inner join (one row per pair). `--mode unmatched` is a left
+    /// anti-join. `--mode all` keeps every left record with matching
+    /// rights as an array. `--right-file` joins two documents by key
+    /// value only. Arena names match `query item`. Discover key paths
+    /// with `query schema FILE ARENA`. This is not SQL: no expressions,
+    /// no WHERE, no three-way join.
+    Join(JoinArgs),
+    /// Retained source bytes.
     ///
     /// The bare view lists `retained_records` as a table (stream, offset,
     /// bytes, whether the bytes are retained, id) with annotation counts
@@ -88,7 +134,7 @@ pub enum QueryView {
 /// Input selection and output format for one query view.
 #[derive(Debug, Args)]
 pub struct QueryArgs {
-    /// Artifact file, or `-` for standard input.
+    /// JSON file, or `-` for standard input.
     pub file: PathBuf,
     /// Print the projected subtree as JSON instead of the table.
     #[arg(long)]
@@ -105,6 +151,8 @@ impl QueryView {
             | Self::Counts(args) => args,
             Self::Item(_) => unreachable!("item uses ItemArgs"),
             Self::Schema(_) => unreachable!("schema uses SchemaArgs"),
+            Self::Graph(_) => unreachable!("graph uses GraphArgs"),
+            Self::Join(_) => unreachable!("join uses JoinArgs"),
             Self::Fidelity(_) => unreachable!("fidelity uses FidelityArgs"),
         }
     }
@@ -158,7 +206,7 @@ struct ReportProbe {
     #[serde(default)]
     decode_report: Option<DecodeReportProbe>,
     #[serde(default)]
-    validation_report: Option<ValidationReportProbe>,
+    check_report: Option<CheckReportProbe>,
 }
 
 #[derive(Deserialize)]
@@ -188,7 +236,7 @@ struct DecodeReportProbe {
 }
 
 #[derive(Deserialize)]
-struct ValidationReportProbe {
+struct CheckReportProbe {
     #[serde(default)]
     entity_counts: BTreeMap<String, u64>,
     #[serde(default)]
@@ -331,6 +379,12 @@ pub fn run(view: &QueryView) -> Result<()> {
     if let QueryView::Schema(args) = view {
         return schema::run(args);
     }
+    if let QueryView::Graph(args) = view {
+        return graph::run(args);
+    }
+    if let QueryView::Join(args) = view {
+        return join::run(args);
+    }
     if let QueryView::Fidelity(args) = view {
         return fidelity::run(args);
     }
@@ -346,7 +400,11 @@ pub fn run(view: &QueryView) -> Result<()> {
         QueryView::Findings(args) => findings(&artifact, args),
         QueryView::Losses(args) => losses(&artifact, args),
         QueryView::Counts(args) => counts(&artifact, args),
-        QueryView::Item(_) | QueryView::Schema(_) | QueryView::Fidelity(_) => {
+        QueryView::Item(_)
+        | QueryView::Schema(_)
+        | QueryView::Graph(_)
+        | QueryView::Join(_)
+        | QueryView::Fidelity(_) => {
             unreachable!("handled above")
         }
     }
@@ -468,7 +526,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                 }
                 None => rows.push(("decode_report".to_owned(), "null".to_owned())),
             }
-            match &report.validation_report {
+            match &report.check_report {
                 Some(validation) => {
                     rows.push((
                         "findings".to_owned(),
@@ -480,7 +538,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                         ),
                     ));
                     rows.push((
-                        "validation_losses".to_owned(),
+                        "check_losses".to_owned(),
                         validation.losses.len().to_string(),
                     ));
                     rows.push((
@@ -488,7 +546,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                         validation.entity_counts.len().to_string(),
                     ));
                 }
-                None => rows.push(("validation_report".to_owned(), "null".to_owned())),
+                None => rows.push(("check_report".to_owned(), "null".to_owned())),
             }
         }
         Artifact::Cadir(cadir) => {
@@ -568,7 +626,7 @@ fn coverage(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         Artifact::Sidecar(sidecar) => sidecar.report.as_ref(),
         Artifact::Cadir(_) => bail!(
             "a CADIR document has no decode report; coverage is in the report \
-             written by `decode --report` or in the `.fidelity.json` sidecar"
+             written by `dump --report` or in the `.fidelity.json` sidecar"
         ),
     };
     let (coverage, note): (&BTreeMap<String, u64>, Option<&str>) = match decode {
@@ -602,21 +660,18 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
     let report = match artifact {
         Artifact::Report(report) => report,
         Artifact::Cadir(_) => bail!(
-            "a CADIR document has no findings; run: cadmpeg validate FILE -o report.json \
+            "a CADIR document has no findings; run: cadmpeg check FILE -o report.json \
              && cadmpeg query findings report.json"
         ),
         Artifact::Sidecar(_) => bail!(
-            "a decode sidecar has no validation findings; run: cadmpeg validate FILE \
+            "a decode sidecar has no check findings; run: cadmpeg check FILE \
              -o report.json && cadmpeg query findings report.json \
              (a sidecar carries `coverage` and `losses`)"
         ),
     };
-    let (rows, note): (&[FindingProbe], Option<&str>) = match &report.validation_report {
+    let (rows, note): (&[FindingProbe], Option<&str>) = match &report.check_report {
         Some(validation) => (&validation.findings, None),
-        None => (
-            &[],
-            Some("(no validation report — this command did not validate)"),
-        ),
+        None => (&[], Some("(no check report; this command did not check)")),
     };
     if args.json {
         let payload = rows
@@ -651,10 +706,10 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
 
 fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
     let (rows, note): (&[LossProbe], Option<&str>) = match artifact {
-        Artifact::Report(report) => match (&report.validation_report, &report.decode_report) {
+        Artifact::Report(report) => match (&report.check_report, &report.decode_report) {
             (Some(validation), _) => (&validation.losses, None),
             (None, Some(decode)) => (&decode.losses, None),
-            (None, None) => (&[], Some("(this report has no decode or validation stage)")),
+            (None, None) => (&[], Some("(this report has no decode or check stage)")),
         },
         Artifact::Sidecar(sidecar) => match &sidecar.report {
             Some(decode) => (&decode.losses, None),
@@ -726,13 +781,13 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         }
         Artifact::Report(report) => {
             let (entity_counts, note): (&BTreeMap<String, u64>, Option<&str>) =
-                match &report.validation_report {
+                match &report.check_report {
                     Some(validation) => (&validation.entity_counts, None),
                     None => {
                         static EMPTY: BTreeMap<String, u64> = BTreeMap::new();
                         (
                             &EMPTY,
-                            Some("(no validation report — this command did not validate)"),
+                            Some("(no check report; this command did not check)"),
                         )
                     }
                 };
@@ -751,7 +806,7 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         }
         Artifact::Sidecar(_) => bail!(
             "a decode sidecar has no entity counts; use `cadmpeg query coverage` or \
-             `cadmpeg query losses` on it, or run `cadmpeg validate` for entity counts"
+             `cadmpeg query losses` on it, or run `cadmpeg check` for entity counts"
         ),
     }
 }

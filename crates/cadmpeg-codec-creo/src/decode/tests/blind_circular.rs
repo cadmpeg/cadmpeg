@@ -464,10 +464,10 @@ fn torus_outline_identifies_exactly_one_prototype_radius_delta() {
 
 #[test]
 fn unique_parallel_round_supports_define_constant_radius() {
-    assert_eq!(unique_positive_length(&[0.5, 0.5 + 1e-12]), Some(0.5));
+    assert_eq!(unique_positive_length(&[0.5, 0.5 + 1.0e-12]), Some(0.5));
     assert_eq!(unique_positive_length(&[0.5, 0.6]), None);
     assert_eq!(unique_positive_length(&[0.0]), None);
-    assert!(!differing_positive_lengths(&[15.0, 15.0 + 1e-12]));
+    assert!(!differing_positive_lengths(&[15.0, 15.0 + 1.0e-12]));
     assert!(differing_positive_lengths(&[15.0, 7.0, 15.0]));
     assert!(!differing_positive_lengths(&[0.0, 1.0]));
     assert_eq!(

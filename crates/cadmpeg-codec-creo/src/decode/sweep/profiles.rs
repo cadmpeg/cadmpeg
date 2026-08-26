@@ -9,11 +9,11 @@ use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchGeometry, SketchId};
 
-const EPS_ENDPOINT_AGREEMENT: f64 = 1e-9;
-const EPS_PARAMETER_SCALE: f64 = 1e-12;
-const EPS_FULL_TURN: f64 = 1e-12;
-const EPS_AREA: f64 = 1e-12;
-const EPS_GEOMETRY_AGREEMENT: f64 = 1e-9;
+const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
+const EPS_PARAMETER_SCALE: f64 = 1.0e-12;
+const EPS_FULL_TURN: f64 = 1.0e-12;
+const EPS_AREA: f64 = 1.0e-12;
+const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 use std::collections::BTreeMap;
 
 pub(in super::super) fn sketch_geometry_endpoints(

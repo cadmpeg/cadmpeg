@@ -30,11 +30,11 @@ use cadmpeg_ir::geometry::{
     Surface, SurfaceGeometry,
 };
 
-const EPS_RADIUS_NONZERO: f64 = 1e-10;
-const EPS_COPLANAR_RESIDUAL: f64 = 1e-9;
-const EPS_RADIAL_SPEED: f64 = 1e-10;
-const EPS_AXIAL_RATE: f64 = 1e-10;
-const EPS_MAJOR_RADIUS: f64 = 1e-10;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-10;
+const EPS_COPLANAR_RESIDUAL: f64 = 1.0e-9;
+const EPS_RADIAL_SPEED: f64 = 1.0e-10;
+const EPS_AXIAL_RATE: f64 = 1.0e-10;
+const EPS_MAJOR_RADIUS: f64 = 1.0e-10;
 use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchId};

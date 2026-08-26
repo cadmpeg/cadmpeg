@@ -14,11 +14,11 @@ use super::super::feature_history::{
 use super::super::sketch::{approximately_equal, normalized};
 use super::super::sweep::unique_available_positional_cylinder_frames;
 
-const EPS_RADIUS_AGREEMENT: f64 = 1e-9;
-const EPS_AXIS_ALIGNMENT: f64 = 1e-9;
-const EPS_COORDINATE_AGREEMENT: f64 = 1e-9;
-const EPS_DIAMETER_NONZERO: f64 = 1e-12;
-const EPS_GEOMETRY_AGREEMENT: f64 = 1e-9;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_COORDINATE_AGREEMENT: f64 = 1.0e-9;
+const EPS_DIAMETER_NONZERO: f64 = 1.0e-12;
+const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
 
 pub fn stepped_hole_form(
     feature_id: u32,

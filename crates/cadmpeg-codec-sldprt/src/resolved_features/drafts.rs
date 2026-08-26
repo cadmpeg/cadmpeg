@@ -17,8 +17,8 @@ use crate::layout::draft_compact_selection_prefix as compact_sel;
 use crate::layout::draft_extended_direction_frame as extended_dir;
 use crate::layout::draft_plane_reference_prefix as draft_plane;
 
-const EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12: f64 = 1e-12;
-const EPS_DRAFTS_UNIQUE_DRAFT_DIRECTION_E9: f64 = 1e-9;
+const EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12: f64 = 1.0e-12;
+const EPS_DRAFTS_UNIQUE_DRAFT_DIRECTION_E9: f64 = 1.0e-9;
 
 const DIRECTION_FRAME_PREFIX_LEN: usize = 24;
 const MAX_PATH_CELLS: usize = 65;

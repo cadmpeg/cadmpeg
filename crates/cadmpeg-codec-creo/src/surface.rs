@@ -14,56 +14,15 @@ use crate::psb::{self, compact_int};
 use crate::scalar;
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_SURFACE_TYPE24_SINGLE_DIAMETER_ROUND_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_TYPE24_SINGLE_DIAMETER_ROUND_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_TYPE24_SQUARE_RADIAL_ROUND_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_TYPE24_SQUARE_RADIAL_ROUND_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_REPEATED_DIAMETER_TYPE24_ROUND_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_REPEATED_DIAMETER_TYPE24_ROUND_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_TYPE24_HELD_COORDINATE_ROUND_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_TYPE24_SPLIT_COORDINATE_ROUND_LAYOUT_E12: f64 = 1e-12;
-const EPS_SURFACE_TYPE24_SPLIT_COORDINATE_ROUND_LAYOUT_E9: f64 = 1e-9;
-const EPS_SURFACE_TYPE24_FIRST_COORDINATE_ROUND_LAYOUT_E12: f64 = 1e-12;
-const EPS_SURFACE_TYPE24_SEGMENTED_FIRST_COORDINATE_ROUND_LAYOUT_E12: f64 = 1e-12;
-const EPS_SURFACE_TYPE24_SCALAR_FRAME_ROUND_LAYOUT_E12: f64 = 1e-12;
-const EPS_SURFACE_TYPE24_SCALAR_FRAME_ROUND_LAYOUT_E9: f64 = 1e-9;
-const EPS_SURFACE_POSITIONAL_FRAME_PLANES_E9: f64 = 1e-9;
-const EPS_SURFACE_FRAME_BOUND_OUTLINE_PLANES_E10: f64 = 1e-10;
-const EPS_SURFACE_FRAME_BOUND_OUTLINE_PLANES_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_POSITIONAL_TORUS_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_POSITIONAL_TORUS_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_DECODE_POSITIONAL_TORUS_FRAME_E10: f64 = 1e-10;
-const EPS_SURFACE_DECODE_XZ_AXIS_Y_RADIAL_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_XZ_AXIS_Y_RADIAL_CYLINDER_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_DECODE_AXIAL_ENDPOINT_RADIAL_SAMPLE_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_AXIAL_ENDPOINT_RADIAL_SAMPLE_CYLINDER_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_DECODE_SYMMETRIC_REVOLUTION_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_SYMMETRIC_REVOLUTION_CYLINDER_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_DECODE_COMPACT_Y_AXIS_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_COMPACT_Y_AXIS_CYLINDER_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_DECODE_PLANAR_ENVELOPE_CONE_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_SUPPORT_APEX_CONE_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_SUPPORT_APEX_CONE_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_DECODE_REFERENCED_PLANAR_ENVELOPE_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_HELD_AXIS_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_AXIAL_RADIAL_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_LOCAL_SYSTEM_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_ZERO_SUPPORT_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_SIGNED_ZERO_SUPPORT_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_SIGNED_AXIS_ALIGNED_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_SIGNED_AXIS_ALIGNED_CYLINDER_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_DECODE_SIGNED_RADIAL_ENVELOPE_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_SIGNED_RADIAL_ENVELOPE_CYLINDER_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_DECODE_PRECISE_CENTER_EDGE_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_PRECISE_CENTER_EDGE_CYLINDER_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_DECODE_PRECISE_HELD_CENTER_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_DECODE_PRECISE_HELD_CENTER_CYLINDER_FRAME_E12: f64 = 1e-12;
-const EPS_SURFACE_DECODE_LOCAL_SYSTEM_SUFFIX_CYLINDER_FRAME_E9: f64 = 1e-9;
-const EPS_SURFACE_CYLINDER_FRAME_FROM_LOCAL_SYSTEM_E9: f64 = 1e-9;
-const EPS_SURFACE_AXIS_ALIGNED_CYLINDER_FROM_CORNERS_E9: f64 = 1e-9;
-const EPS_SURFACE_SLOT_EQUALITY_E9: f64 = 1e-9;
-const EPS_SURFACE_PLANE_FRAME_E6: f64 = 1e-6;
-const EPS_SURFACE_PLANE_FRAME_E9: f64 = 1e-9;
+const EPS_SURFACE_AGREEMENT: f64 = 1.0e-9;
+const EPS_SURFACE_NONZERO: f64 = 1.0e-12;
+const EPS_FRAME_AGREEMENT: f64 = 1.0e-10;
+const EPS_FRAME_ORTHOGONALITY: f64 = 1.0e-10;
+const EPS_AXIS_COMPONENT_NONZERO: f64 = 1.0e-9;
+const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
+const EPS_SUPPORT_ORTHOGONALITY: f64 = 1.0e-9;
+const EPS_SUPPORT_VECTOR_NONZERO: f64 = 1.0e-9;
+const EPS_SUPPORT_VECTOR_MINIMUM: f64 = 1.0e-6;
 
 /// Surface family encoded by an `srf_array` row's `geom_type` byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -965,14 +924,9 @@ impl SurfaceParameterRecord {
             .chain([&diameter])
             .map(|value| value.abs())
             .fold(1.0, f64::max);
-        (diameter.is_finite()
-            && diameter > EPS_SURFACE_TYPE24_SINGLE_DIAMETER_ROUND_FRAME_E12 * scale)
-            .then_some(())?;
+        (diameter.is_finite() && diameter > EPS_SURFACE_NONZERO * scale).then_some(())?;
         let radial_axes = (0..3)
-            .filter(|axis| {
-                (spans[*axis].abs() - diameter).abs()
-                    <= EPS_SURFACE_TYPE24_SINGLE_DIAMETER_ROUND_FRAME_E9 * scale
-            })
+            .filter(|axis| (spans[*axis].abs() - diameter).abs() <= EPS_SURFACE_AGREEMENT * scale)
             .collect::<Vec<_>>();
         let [radial_axis] = radial_axes.as_slice() else {
             return None;
@@ -984,7 +938,7 @@ impl SurfaceParameterRecord {
             .map(|value| value * value)
             .sum::<f64>()
             .sqrt();
-        (length > EPS_SURFACE_TYPE24_SINGLE_DIAMETER_ROUND_FRAME_E12 * scale).then_some(())?;
+        (length > EPS_SURFACE_NONZERO * scale).then_some(())?;
         let mut origin = first;
         origin[*radial_axis] = f64::midpoint(first[*radial_axis], second[*radial_axis]);
         let axis = axis_delta.map(|value| value / length);
@@ -1036,8 +990,7 @@ impl SurfaceParameterRecord {
         let equal_pairs = [(0, 1), (0, 2), (1, 2)]
             .into_iter()
             .filter(|(first, second)| {
-                (spans[*first].abs() - spans[*second].abs()).abs()
-                    <= EPS_SURFACE_TYPE24_SQUARE_RADIAL_ROUND_FRAME_E9 * scale
+                (spans[*first].abs() - spans[*second].abs()).abs() <= EPS_SURFACE_AGREEMENT * scale
             })
             .collect::<Vec<_>>();
         let [(first_radial, second_radial)] = equal_pairs.as_slice() else {
@@ -1046,8 +999,8 @@ impl SurfaceParameterRecord {
         let axis_index = 3usize.checked_sub(first_radial + second_radial)?;
         let diameter = f64::midpoint(spans[*first_radial].abs(), spans[*second_radial].abs());
         let length = spans[axis_index].abs();
-        (diameter > EPS_SURFACE_TYPE24_SQUARE_RADIAL_ROUND_FRAME_E12 * scale).then_some(())?;
-        let bounded = length > EPS_SURFACE_TYPE24_SQUARE_RADIAL_ROUND_FRAME_E12 * scale;
+        (diameter > EPS_SURFACE_NONZERO * scale).then_some(())?;
+        let bounded = length > EPS_SURFACE_NONZERO * scale;
         (!repeated_diameter_shell || !bounded).then_some(())?;
         let mut origin = first;
         origin[*first_radial] = f64::midpoint(first[*first_radial], second[*first_radial]);
@@ -1088,8 +1041,7 @@ impl SurfaceParameterRecord {
             .iter()
             .enumerate()
             .filter_map(|(index, span)| {
-                ((span.abs() - layout.diameter).abs()
-                    <= EPS_SURFACE_REPEATED_DIAMETER_TYPE24_ROUND_FRAME_E9 * scale)
+                ((span.abs() - layout.diameter).abs() <= EPS_SURFACE_AGREEMENT * scale)
                     .then_some(index)
             })
             .collect::<Vec<_>>();
@@ -1103,9 +1055,7 @@ impl SurfaceParameterRecord {
             .map(|value| value * value)
             .sum::<f64>()
             .sqrt();
-        (length.is_finite()
-            && length > EPS_SURFACE_REPEATED_DIAMETER_TYPE24_ROUND_FRAME_E12 * scale)
-            .then_some(())?;
+        (length.is_finite() && length > EPS_SURFACE_NONZERO * scale).then_some(())?;
         let mut origin = layout.extent_endpoints[0];
         origin[*radial_index] = f64::midpoint(
             layout.extent_endpoints[0][*radial_index],
@@ -1184,8 +1134,8 @@ impl SurfaceParameterRecord {
         (held.is_finite()
             && axial_span.is_finite()
             && radial_span.is_finite()
-            && axial_span.abs() > EPS_SURFACE_TYPE24_HELD_COORDINATE_ROUND_FRAME_E12 * scale
-            && radial_span.abs() > EPS_SURFACE_TYPE24_HELD_COORDINATE_ROUND_FRAME_E12 * scale)
+            && axial_span.abs() > EPS_SURFACE_NONZERO * scale
+            && radial_span.abs() > EPS_SURFACE_NONZERO * scale)
             .then_some(PositionalCylinderFrame {
                 origin: [axial_start, f64::midpoint(radial_start, radial_end), held],
                 axis: [axial_span.signum(), 0.0, 0.0],
@@ -1240,13 +1190,12 @@ impl SurfaceParameterRecord {
             .chain(extent_endpoints.iter().flatten())
             .map(|value| value.abs())
             .fold(1.0, f64::max);
-        (diameter > EPS_SURFACE_TYPE24_SPLIT_COORDINATE_ROUND_LAYOUT_E12 * scale
+        (diameter > EPS_SURFACE_NONZERO * scale
             && extent_endpoints[0]
                 .iter()
                 .zip(extent_endpoints[1])
                 .any(|(first, second)| {
-                    ((second - first).abs() - diameter).abs()
-                        <= EPS_SURFACE_TYPE24_SPLIT_COORDINATE_ROUND_LAYOUT_E9 * scale
+                    ((second - first).abs() - diameter).abs() <= EPS_SURFACE_AGREEMENT * scale
                 }))
         .then_some(Type24RoundEnvelope {
             diameter,
@@ -1285,12 +1234,10 @@ impl SurfaceParameterRecord {
             .chain(coordinates.iter().copied())
             .map(f64::abs)
             .fold(1.0, f64::max);
-        (diameter > EPS_SURFACE_TYPE24_FIRST_COORDINATE_ROUND_LAYOUT_E12 * scale).then_some(
-            Type24RoundEnvelope {
-                diameter,
-                extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
-            },
-        )
+        (diameter > EPS_SURFACE_NONZERO * scale).then_some(Type24RoundEnvelope {
+            diameter,
+            extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
+        })
     }
 
     fn type24_segmented_first_coordinate_round_layout(
@@ -1324,11 +1271,10 @@ impl SurfaceParameterRecord {
             .chain(coordinates.iter().copied())
             .map(f64::abs)
             .fold(1.0, f64::max);
-        (diameter > EPS_SURFACE_TYPE24_SEGMENTED_FIRST_COORDINATE_ROUND_LAYOUT_E12 * scale)
-            .then_some(Type24RoundEnvelope {
-                diameter,
-                extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
-            })
+        (diameter > EPS_SURFACE_NONZERO * scale).then_some(Type24RoundEnvelope {
+            diameter,
+            extent_endpoints: [[*a0, *a1, *a2], [*b0, *b1, *b2]],
+        })
     }
 
     fn is_type24_first_coordinate_round_body(&self) -> bool {
@@ -1436,13 +1382,12 @@ impl SurfaceParameterRecord {
             .chain(extent_endpoints.iter().flatten())
             .map(|value| value.abs())
             .fold(1.0, f64::max);
-        (diameter > EPS_SURFACE_TYPE24_SCALAR_FRAME_ROUND_LAYOUT_E12 * scale).then_some(())?;
+        (diameter > EPS_SURFACE_NONZERO * scale).then_some(())?;
         extent_endpoints[0]
             .iter()
             .zip(extent_endpoints[1])
             .any(|(first, second)| {
-                ((second - first).abs() - diameter).abs()
-                    <= EPS_SURFACE_TYPE24_SCALAR_FRAME_ROUND_LAYOUT_E9 * scale
+                ((second - first).abs() - diameter).abs() <= EPS_SURFACE_AGREEMENT * scale
             })
             .then_some(Type24RoundEnvelope {
                 diameter,
@@ -1813,8 +1758,7 @@ pub fn positional_frame_planes(
                 values.iter().all(|value| value.is_finite()).then_some(())?;
                 let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
                 let equal = std::array::from_fn::<_, 3, _>(|axis| {
-                    (values[axis] - values[axis + 3]).abs()
-                        <= EPS_SURFACE_POSITIONAL_FRAME_PLANES_E9 * scale
+                    (values[axis] - values[axis + 3]).abs() <= EPS_SURFACE_AGREEMENT * scale
                 });
                 let held = equal
                     .iter()
@@ -1864,9 +1808,7 @@ pub fn frame_bound_outline_planes(
 ) -> Vec<OutlinePlane> {
     let vectors_agree = |first: [f64; 3], second: [f64; 3]| {
         first.iter().zip(second).all(|(first, second)| {
-            (first - second).abs()
-                <= EPS_SURFACE_FRAME_BOUND_OUTLINE_PLANES_E10
-                    * first.abs().max(second.abs()).max(1.0)
+            (first - second).abs() <= EPS_FRAME_AGREEMENT * first.abs().max(second.abs()).max(1.0)
         })
     };
     let mut result = Vec::new();
@@ -1891,9 +1833,7 @@ pub fn frame_bound_outline_planes(
         let axes = normal
             .iter()
             .enumerate()
-            .filter_map(|(axis, value)| {
-                (value.abs() > EPS_SURFACE_FRAME_BOUND_OUTLINE_PLANES_E9).then_some(axis)
-            })
+            .filter_map(|(axis, value)| (value.abs() > EPS_AXIS_COMPONENT_NONZERO).then_some(axis))
             .collect::<Vec<_>>();
         let [axis] = axes.as_slice() else {
             continue;
@@ -3129,9 +3069,7 @@ fn decode_positional_torus_frame(
         .chain([major_radius, minor_radius])
         .map(f64::abs)
         .fold(1.0, f64::max);
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_SURFACE_DECODE_POSITIONAL_TORUS_FRAME_E9 * scale
-    };
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let [a1, a2, b0, b1, b2] = envelope;
     let proves_radii = |outer_delta: f64, minor_delta: f64| {
         close(outer_delta.abs(), 2.0 * (major_radius + minor_radius))
@@ -3147,10 +3085,9 @@ fn decode_positional_torus_frame(
     let scale = first_norm.max(second_norm).max(1.0);
     (first_norm.is_finite()
         && second_norm.is_finite()
-        && first_norm > EPS_SURFACE_DECODE_POSITIONAL_TORUS_FRAME_E12
-        && second_norm > EPS_SURFACE_DECODE_POSITIONAL_TORUS_FRAME_E12
-        && (first_norm - second_norm).abs()
-            <= EPS_SURFACE_DECODE_POSITIONAL_TORUS_FRAME_E10 * scale)
+        && first_norm > EPS_SURFACE_NONZERO
+        && second_norm > EPS_SURFACE_NONZERO
+        && (first_norm - second_norm).abs() <= EPS_FRAME_AGREEMENT * scale)
         .then_some(())?;
     let ref_direction = first.map(|value| value / first_norm);
     let second = second.map(|value| value / second_norm);
@@ -3159,15 +3096,14 @@ fn decode_positional_torus_frame(
         .zip(second)
         .map(|(first, second)| first * second)
         .sum::<f64>();
-    (orthogonality.abs() <= EPS_SURFACE_DECODE_POSITIONAL_TORUS_FRAME_E10).then_some(())?;
+    (orthogonality.abs() <= EPS_FRAME_ORTHOGONALITY).then_some(())?;
     let axis = [
         ref_direction[1] * second[2] - ref_direction[2] * second[1],
         ref_direction[2] * second[0] - ref_direction[0] * second[2],
         ref_direction[0] * second[1] - ref_direction[1] * second[0],
     ];
     let axis_norm = axis.iter().map(|value| value * value).sum::<f64>().sqrt();
-    (axis_norm.is_finite() && axis_norm > EPS_SURFACE_DECODE_POSITIONAL_TORUS_FRAME_E12)
-        .then_some(())?;
+    (axis_norm.is_finite() && axis_norm > EPS_SURFACE_NONZERO).then_some(())?;
     let axis = axis.map(|value| value / axis_norm);
 
     Some(PositionalTorusFrame {
@@ -3235,13 +3171,11 @@ fn decode_xz_axis_y_radial_cylinder_frame(
         .into_iter()
         .map(f64::abs)
         .fold(length.max(radius).max(1.0), f64::max);
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_SURFACE_DECODE_XZ_AXIS_Y_RADIAL_CYLINDER_FRAME_E9 * scale
-    };
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     (length.is_finite()
-        && length > EPS_SURFACE_DECODE_XZ_AXIS_Y_RADIAL_CYLINDER_FRAME_E12 * scale
+        && length > EPS_SURFACE_NONZERO * scale
         && radius.is_finite()
-        && radius > EPS_SURFACE_DECODE_XZ_AXIS_Y_RADIAL_CYLINDER_FRAME_E12 * scale
+        && radius > EPS_SURFACE_NONZERO * scale
         && auxiliary.abs() < length
         && close(second_axial - first_axial, z1 - z0))
     .then_some(())?;
@@ -3291,12 +3225,11 @@ fn decode_axial_endpoint_radial_sample_cylinder_frame(
     ];
     values.into_iter().all(f64::is_finite).then_some(())?;
     let scale = values.into_iter().map(f64::abs).fold(1.0, f64::max);
-    let tolerance = EPS_SURFACE_DECODE_AXIAL_ENDPOINT_RADIAL_SAMPLE_CYLINDER_FRAME_E9 * scale;
+    let tolerance = EPS_SURFACE_AGREEMENT * scale;
     let length = (axial_end - axial_start).abs();
-    (radius > EPS_SURFACE_DECODE_AXIAL_ENDPOINT_RADIAL_SAMPLE_CYLINDER_FRAME_E12 * scale
-        && length > EPS_SURFACE_DECODE_AXIAL_ENDPOINT_RADIAL_SAMPLE_CYLINDER_FRAME_E12 * scale
-        && radial_x.abs()
-            > EPS_SURFACE_DECODE_AXIAL_ENDPOINT_RADIAL_SAMPLE_CYLINDER_FRAME_E12 * scale
+    (radius > EPS_SURFACE_NONZERO * scale
+        && length > EPS_SURFACE_NONZERO * scale
+        && radial_x.abs() > EPS_SURFACE_NONZERO * scale
         && auxiliary_radial.abs() <= radius + tolerance
         && (radial_x * radial_x + radial_z * radial_z - radius * radius).abs()
             <= tolerance * radius.max(1.0))
@@ -3340,9 +3273,7 @@ fn decode_symmetric_revolution_cylinder_frame(
             scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
         cursor = next;
         let scale = radial_low.abs().max(repeated_radial_low.abs()).max(1.0);
-        ((radial_low - repeated_radial_low).abs()
-            <= EPS_SURFACE_DECODE_SYMMETRIC_REVOLUTION_CYLINDER_FRAME_E9 * scale)
-            .then_some(())?;
+        ((radial_low - repeated_radial_low).abs() <= EPS_SURFACE_AGREEMENT * scale).then_some(())?;
     }
     let (radial_high, next) =
         scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
@@ -3354,8 +3285,7 @@ fn decode_symmetric_revolution_cylinder_frame(
             scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
         cursor = next;
         let scale = radial_high.abs().max(repeated_radial_high.abs()).max(1.0);
-        ((radial_high - repeated_radial_high).abs()
-            <= EPS_SURFACE_DECODE_SYMMETRIC_REVOLUTION_CYLINDER_FRAME_E9 * scale)
+        ((radial_high - repeated_radial_high).abs() <= EPS_SURFACE_AGREEMENT * scale)
             .then_some(())?;
     } else {
         let (_, next) = scalar::decode_model_reference_coordinate(body, cursor, cache)?;
@@ -3373,16 +3303,13 @@ fn decode_symmetric_revolution_cylinder_frame(
     ];
     values.into_iter().all(f64::is_finite).then_some(())?;
     let scale = values.into_iter().map(f64::abs).fold(1.0, f64::max);
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_SURFACE_DECODE_SYMMETRIC_REVOLUTION_CYLINDER_FRAME_E9 * scale
-    };
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let axial_midpoint = f64::midpoint(first_axial, first_opposite);
     close(axial_midpoint, f64::midpoint(second_axial, second_opposite)).then_some(())?;
     let radius = 0.5 * (radial_high - radial_low).abs();
-    (radius > EPS_SURFACE_DECODE_SYMMETRIC_REVOLUTION_CYLINDER_FRAME_E12 * scale
+    (radius > EPS_SURFACE_NONZERO * scale
         && close(f64::midpoint(radial_low, radial_high), 0.0)
-        && (first_axial - first_opposite).abs()
-            > EPS_SURFACE_DECODE_SYMMETRIC_REVOLUTION_CYLINDER_FRAME_E12 * scale
+        && (first_axial - first_opposite).abs() > EPS_SURFACE_NONZERO * scale
         && (second_axial - axial_midpoint).abs() > (first_axial - axial_midpoint).abs())
     .then_some(())?;
 
@@ -3474,16 +3401,14 @@ fn decode_compact_y_axis_cylinder_frame(
     .into_iter()
     .map(f64::abs)
     .fold(1.0, f64::max);
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_SURFACE_DECODE_COMPACT_Y_AXIS_CYLINDER_FRAME_E9 * scale
-    };
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     close(axial_start, repeated_start).then_some(())?;
     close(axial_end, repeated_end).then_some(())?;
     let radius = 0.5 * (radial_high - radial_low).abs();
-    (radius > EPS_SURFACE_DECODE_COMPACT_Y_AXIS_CYLINDER_FRAME_E12 * scale).then_some(())?;
+    (radius > EPS_SURFACE_NONZERO * scale).then_some(())?;
     close((transverse_edge - transverse_center).abs(), radius).then_some(())?;
     let length = (axial_end - axial_start).abs();
-    (length > EPS_SURFACE_DECODE_COMPACT_Y_AXIS_CYLINDER_FRAME_E12 * scale).then_some(())?;
+    (length > EPS_SURFACE_NONZERO * scale).then_some(())?;
     Some(PositionalCylinderFrame {
         origin: [
             transverse_center,
@@ -3513,7 +3438,7 @@ fn decode_planar_envelope_cone_frame(
 ) -> Option<PositionalConeFrame> {
     let close = |left: f64, right: f64| {
         let scale = left.abs().max(right.abs()).max(1.0);
-        (left - right).abs() <= EPS_SURFACE_DECODE_PLANAR_ENVELOPE_CONE_FRAME_E9 * scale
+        (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale
     };
     let mut cursor = 1;
     let (outer_distance, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
@@ -3635,7 +3560,7 @@ fn decode_support_apex_cone_frame(
         .map(|(a, b)| a * b)
         .sum::<f64>()
         .abs()
-        <= EPS_SURFACE_DECODE_SUPPORT_APEX_CONE_FRAME_E9)
+        <= EPS_SUPPORT_ORTHOGONALITY)
         .then_some(())?;
     let cross = [
         first[1] * second[2] - first[2] * second[1],
@@ -3646,16 +3571,14 @@ fn decode_support_apex_cone_frame(
     let axis_indices = axis
         .iter()
         .enumerate()
-        .filter_map(|(index, value)| {
-            (value.abs() >= 1.0 - EPS_SURFACE_DECODE_SUPPORT_APEX_CONE_FRAME_E9).then_some(index)
-        })
+        .filter_map(|(index, value)| (value.abs() >= 1.0 - EPS_AXIS_ALIGNMENT).then_some(index))
         .collect::<Vec<_>>();
     let [axis_index] = axis_indices.as_slice() else {
         return None;
     };
     let mut apex = [0.0; 3];
     apex[*axis_index] = *apex_coordinate;
-    (apex_coordinate.abs() > EPS_SURFACE_DECODE_SUPPORT_APEX_CONE_FRAME_E12).then_some(())?;
+    (apex_coordinate.abs() > EPS_SURFACE_NONZERO).then_some(())?;
     if axis[*axis_index] * apex_coordinate > 0.0 {
         axis = axis.map(|value| -value);
     }
@@ -3736,10 +3659,7 @@ fn decode_referenced_planar_envelope_cylinder_frame(
     values.iter().all(|value| value.is_finite()).then_some(())?;
     (length > 0.0 && radius > 0.0).then_some(())?;
     let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
-    let close = |left: f64, right: f64| {
-        (left - right).abs()
-            <= EPS_SURFACE_DECODE_REFERENCED_PLANAR_ENVELOPE_CYLINDER_FRAME_E9 * scale
-    };
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     close((second_axial - first_axial).abs(), length).then_some(())?;
     close((second_radial - first_radial).abs(), 2.0 * radius).then_some(())?;
 
@@ -3789,8 +3709,7 @@ fn decode_held_axis_cylinder_frame(
         .into_iter()
         .map(f64::abs)
         .fold(1.0, f64::max);
-    ((second_axial - first_axial).abs() <= EPS_SURFACE_DECODE_HELD_AXIS_CYLINDER_FRAME_E9 * scale)
-        .then_some(())?;
+    ((second_axial - first_axial).abs() <= EPS_SURFACE_AGREEMENT * scale).then_some(())?;
     let radius = 0.5 * (second_radial - first_radial).abs();
     (radius > 0.0).then_some(())?;
     Some(PositionalCylinderFrame {
@@ -3866,8 +3785,7 @@ fn axial_radial_cylinder_frame(
     .into_iter()
     .map(f64::abs)
     .fold(1.0, f64::max);
-    (((second_axial - first_axial).abs() - length).abs()
-        <= EPS_SURFACE_AXIAL_RADIAL_CYLINDER_FRAME_E9 * scale)
+    (((second_axial - first_axial).abs() - length).abs() <= EPS_SURFACE_AGREEMENT * scale)
         .then_some(())?;
     let radius = (radial_sample - radial_center).abs();
     (radius > 0.0).then_some(())?;
@@ -3918,9 +3836,7 @@ fn decode_local_system_cylinder_frame(
         .chain([radius, length].iter())
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    let close = |first: f64, second: f64| {
-        (first - second).abs() <= EPS_SURFACE_DECODE_LOCAL_SYSTEM_CYLINDER_FRAME_E9 * scale
-    };
+    let close = |first: f64, second: f64| (first - second).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let axis_indices = (0..2)
         .filter(|index| close((envelope[1 + index] - envelope[4 + index]).abs(), length))
         .collect::<Vec<_>>();
@@ -3953,8 +3869,7 @@ fn decode_local_system_cylinder_frame(
         .sum::<f64>()
         .sqrt();
     (magnitude.is_finite() && magnitude > 0.0).then_some(())?;
-    (support[*axis_index].abs() <= EPS_SURFACE_DECODE_LOCAL_SYSTEM_CYLINDER_FRAME_E9 * magnitude)
-        .then_some(())?;
+    (support[*axis_index].abs() <= EPS_SURFACE_AGREEMENT * magnitude).then_some(())?;
     let ref_direction = support.map(|value| sign * value / magnitude);
     Some(PositionalCylinderFrame {
         origin,
@@ -3989,9 +3904,7 @@ fn decode_zero_support_cylinder_frame(
         .chain([radius, length].iter())
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    let close = |first: f64, second: f64| {
-        (first - second).abs() <= EPS_SURFACE_DECODE_ZERO_SUPPORT_CYLINDER_FRAME_E9 * scale
-    };
+    let close = |first: f64, second: f64| (first - second).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let axes = (0..2)
         .filter_map(|axis_index| {
             let radial_index = 1 - axis_index;
@@ -4064,9 +3977,7 @@ fn decode_signed_zero_support_cylinder_frame(
         .chain([signed_length, radius].iter())
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_SURFACE_DECODE_SIGNED_ZERO_SUPPORT_CYLINDER_FRAME_E9 * scale
-    };
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let candidates = (0..3)
         .filter_map(|axis_index| {
             let radial = (0..3)
@@ -4164,9 +4075,7 @@ fn decode_signed_axis_aligned_cylinder_frame(
         .map(|value| value.abs())
         .fold(1.0, f64::max);
     (auxiliary.abs() < signed_length.abs()).then_some(())?;
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_SURFACE_DECODE_SIGNED_AXIS_ALIGNED_CYLINDER_FRAME_E9 * scale
-    };
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let spans =
         std::array::from_fn::<_, 3, _>(|index| (corners[1][index] - corners[0][index]).abs());
     let mut axis_indices = (0..3).filter(|index| close(spans[*index], signed_length.abs()));
@@ -4187,7 +4096,7 @@ fn decode_signed_axis_aligned_cylinder_frame(
         _ => return None,
     };
     let radius = spans[radius_index];
-    (radius > EPS_SURFACE_DECODE_SIGNED_AXIS_ALIGNED_CYLINDER_FRAME_E12 * scale).then_some(())?;
+    (radius > EPS_SURFACE_NONZERO * scale).then_some(())?;
 
     let origin_corner = usize::from(!reversed);
     let other_corner = 1 - origin_corner;
@@ -4290,9 +4199,7 @@ fn decode_signed_radial_envelope_cylinder_frame(
         .chain([leading, signed_length].iter())
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_SURFACE_DECODE_SIGNED_RADIAL_ENVELOPE_CYLINDER_FRAME_E9 * scale
-    };
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let (diameter_index, radius_index) = match (
         close(radial_spans[0], 2.0 * radial_spans[1]),
         close(radial_spans[1], 2.0 * radial_spans[0]),
@@ -4302,15 +4209,13 @@ fn decode_signed_radial_envelope_cylinder_frame(
         _ => return None,
     };
     let radius = radial_spans[radius_index];
-    (radius > EPS_SURFACE_DECODE_SIGNED_RADIAL_ENVELOPE_CYLINDER_FRAME_E12 * scale).then_some(())?;
+    (radius > EPS_SURFACE_NONZERO * scale).then_some(())?;
 
     let axial_end = values[6];
     let axial_start = axial_end - signed_length.abs();
     let axial_sample = values[3];
-    (axial_sample
-        >= axial_start - EPS_SURFACE_DECODE_SIGNED_RADIAL_ENVELOPE_CYLINDER_FRAME_E9 * scale
-        && axial_sample
-            <= axial_end + EPS_SURFACE_DECODE_SIGNED_RADIAL_ENVELOPE_CYLINDER_FRAME_E9 * scale)
+    (axial_sample >= axial_start - EPS_SURFACE_AGREEMENT * scale
+        && axial_sample <= axial_end + EPS_SURFACE_AGREEMENT * scale)
         .then_some(())?;
     let mut origin = [0.0; 3];
     origin[diameter_index] =
@@ -4353,15 +4258,12 @@ fn decode_precise_center_edge_cylinder_frame(
     let second: [f64; 3] = values[4..7].try_into().ok()?;
     let spans = std::array::from_fn::<_, 3, _>(|index| (second[index] - first[index]).abs());
     let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_SURFACE_DECODE_PRECISE_CENTER_EDGE_CYLINDER_FRAME_E9 * scale
-    };
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let candidates = [(0, 1, 2), (0, 2, 1), (1, 2, 0)]
         .into_iter()
         .filter_map(|(first_radial, second_radial, axis_index)| {
             (close(spans[first_radial], spans[second_radial])
-                && spans[first_radial]
-                    > EPS_SURFACE_DECODE_PRECISE_CENTER_EDGE_CYLINDER_FRAME_E12 * scale
+                && spans[first_radial] > EPS_SURFACE_NONZERO * scale
                 && spans[axis_index] > spans[first_radial])
                 .then_some((first_radial, second_radial, axis_index))
         })
@@ -4373,12 +4275,9 @@ fn decode_precise_center_edge_cylinder_frame(
     let origin_axial = second[*axis_index] + signed_length;
     let lower = origin_axial.min(second[*axis_index]);
     let upper = origin_axial.max(second[*axis_index]);
-    (first[*axis_index]
-        >= lower - EPS_SURFACE_DECODE_PRECISE_CENTER_EDGE_CYLINDER_FRAME_E9 * scale
-        && first[*axis_index]
-            <= upper + EPS_SURFACE_DECODE_PRECISE_CENTER_EDGE_CYLINDER_FRAME_E9 * scale
-        && (first[*axis_index] - origin_axial).abs()
-            <= radius + EPS_SURFACE_DECODE_PRECISE_CENTER_EDGE_CYLINDER_FRAME_E9 * scale)
+    (first[*axis_index] >= lower - EPS_SURFACE_AGREEMENT * scale
+        && first[*axis_index] <= upper + EPS_SURFACE_AGREEMENT * scale
+        && (first[*axis_index] - origin_axial).abs() <= radius + EPS_SURFACE_AGREEMENT * scale)
         .then_some(())?;
 
     let mut origin = first;
@@ -4437,22 +4336,18 @@ fn decode_precise_held_center_cylinder_frame(
     .into_iter()
     .map(f64::abs)
     .fold(1.0, f64::max);
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_SURFACE_DECODE_PRECISE_HELD_CENTER_CYLINDER_FRAME_E9 * scale
-    };
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     (signed_length != 0.0
-        && first_radius > EPS_SURFACE_DECODE_PRECISE_HELD_CENTER_CYLINDER_FRAME_E12 * scale
+        && first_radius > EPS_SURFACE_NONZERO * scale
         && close(first_radius, second_radius)
         && close((radial_edge - held_center).abs(), first_radius))
     .then_some(())?;
     let origin_axial = first_axial - signed_length;
     let lower = first_axial.min(origin_axial);
     let upper = first_axial.max(origin_axial);
-    (second_axial >= lower - EPS_SURFACE_DECODE_PRECISE_HELD_CENTER_CYLINDER_FRAME_E9 * scale
-        && second_axial
-            <= upper + EPS_SURFACE_DECODE_PRECISE_HELD_CENTER_CYLINDER_FRAME_E9 * scale
-        && (second_axial - origin_axial).abs()
-            <= first_radius + EPS_SURFACE_DECODE_PRECISE_HELD_CENTER_CYLINDER_FRAME_E9 * scale)
+    (second_axial >= lower - EPS_SURFACE_AGREEMENT * scale
+        && second_axial <= upper + EPS_SURFACE_AGREEMENT * scale
+        && (second_axial - origin_axial).abs() <= first_radius + EPS_SURFACE_AGREEMENT * scale)
         .then_some(())?;
     Some(PositionalCylinderFrame {
         origin: [origin_axial, held_center, held_center],
@@ -4482,15 +4377,14 @@ fn decode_local_system_suffix_cylinder_frame(
             let second_magnitude = second.iter().map(|value| value * value).sum::<f64>().sqrt();
             let scale = first_magnitude.max(second_magnitude).max(1.0);
             first_magnitude > 0.0
-                && (first_magnitude - second_magnitude).abs()
-                    <= EPS_SURFACE_DECODE_LOCAL_SYSTEM_SUFFIX_CYLINDER_FRAME_E9 * scale
+                && (first_magnitude - second_magnitude).abs() <= EPS_SURFACE_AGREEMENT * scale
                 && first
                     .iter()
                     .zip(second)
                     .map(|(left, right)| left * right)
                     .sum::<f64>()
                     .abs()
-                    <= EPS_SURFACE_DECODE_LOCAL_SYSTEM_SUFFIX_CYLINDER_FRAME_E9 * scale
+                    <= EPS_SUPPORT_ORTHOGONALITY * scale
         })
         .collect::<Vec<_>>();
     let [slots] = frames.as_slice() else {
@@ -4548,16 +4442,14 @@ fn cylinder_frame_from_local_system(
     let (first, first_magnitude) = normalize(slots[0..3].try_into().ok()?)?;
     let (second, second_magnitude) = normalize(slots[3..6].try_into().ok()?)?;
     let scale = first_magnitude.max(second_magnitude).max(1.0);
-    ((first_magnitude - second_magnitude).abs()
-        <= EPS_SURFACE_CYLINDER_FRAME_FROM_LOCAL_SYSTEM_E9 * scale)
-        .then_some(())?;
+    ((first_magnitude - second_magnitude).abs() <= EPS_SURFACE_AGREEMENT * scale).then_some(())?;
     (first
         .iter()
         .zip(second)
         .map(|(left, right)| left * right)
         .sum::<f64>()
         .abs()
-        <= EPS_SURFACE_CYLINDER_FRAME_FROM_LOCAL_SYSTEM_E9)
+        <= EPS_SUPPORT_ORTHOGONALITY)
         .then_some(())?;
     let (axis, _) = normalize([
         first[1] * second[2] - first[2] * second[1],
@@ -4707,9 +4599,7 @@ fn axis_aligned_cylinder_from_corners(
         .chain(stored_length.iter())
         .map(|value| value.abs())
         .fold(1.0, f64::max);
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_SURFACE_AXIS_ALIGNED_CYLINDER_FROM_CORNERS_E9 * scale
-    };
+    let close = |left: f64, right: f64| (left - right).abs() <= EPS_SURFACE_AGREEMENT * scale;
     let radial_pairs = [(0, 1, 2), (0, 2, 1), (1, 2, 0)]
         .into_iter()
         .filter_map(|(first_radial, second_radial, axis_index)| {
@@ -5257,7 +5147,7 @@ fn named_positive_dict(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     raw[1] = second;
     raw[2..].copy_from_slice(tail);
     // Computed IEEE bytes 0..1 plus six file bytes; not a contiguous window.
-    Some((scalar::be_f64(raw), offset + 7))
+    Some((f64::from_be_bytes(raw), offset + 7))
 }
 
 fn named_ieee8(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
@@ -5266,7 +5156,7 @@ fn named_ieee8(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
     raw[0] = first;
     raw[1..].copy_from_slice(tail);
     // Injected IEEE byte 0 plus seven file bytes; not a contiguous window.
-    Some((scalar::be_f64(raw), offset + 8))
+    Some((f64::from_be_bytes(raw), offset + 8))
 }
 
 fn named_ieee7(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
@@ -5275,7 +5165,7 @@ fn named_ieee7(body: &[u8], offset: usize, first: u8) -> Option<(f64, usize)> {
     raw[0] = first;
     raw[1..7].copy_from_slice(tail);
     // Injected IEEE byte 0 plus six file bytes and a zero low byte; not a contiguous window.
-    Some((scalar::be_f64(raw), offset + 7))
+    Some((f64::from_be_bytes(raw), offset + 7))
 }
 
 fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<Option<f64>> {
@@ -5362,7 +5252,7 @@ fn slot_equality(first: &(Option<f64>, Vec<u8>), second: &(Option<f64>, Vec<u8>)
     match (first.0, second.0) {
         (Some(first), Some(second)) => {
             let scale = first.abs().max(second.abs()).max(1.0);
-            Some((first - second).abs() <= EPS_SURFACE_SLOT_EQUALITY_E9 * scale)
+            Some((first - second).abs() <= EPS_SURFACE_AGREEMENT * scale)
         }
         (None, None) if !first.1.is_empty() && !second.1.is_empty() => Some(first.1 == second.1),
         _ => None,
@@ -5471,8 +5361,8 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
     });
     if magnitudes
         .into_iter()
-        .filter(|magnitude| *magnitude <= EPS_SURFACE_PLANE_FRAME_E6)
-        .any(|magnitude| magnitude > EPS_SURFACE_PLANE_FRAME_E9)
+        .filter(|magnitude| *magnitude <= EPS_SUPPORT_VECTOR_MINIMUM)
+        .any(|magnitude| magnitude > EPS_SUPPORT_VECTOR_NONZERO)
     {
         return PlaneFrame {
             origin,
@@ -5491,12 +5381,12 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
                 .zip(supports[*second])
                 .map(|(first, second)| first * second)
                 .sum::<f64>();
-            first_magnitude > EPS_SURFACE_PLANE_FRAME_E6
-                && second_magnitude > EPS_SURFACE_PLANE_FRAME_E6
+            first_magnitude > EPS_SUPPORT_VECTOR_MINIMUM
+                && second_magnitude > EPS_SUPPORT_VECTOR_MINIMUM
                 && (first_magnitude - second_magnitude).abs()
-                    <= EPS_SURFACE_PLANE_FRAME_E9 * scale.max(1.0)
+                    <= EPS_SURFACE_AGREEMENT * scale.max(1.0)
                 && support_dot.abs()
-                    <= EPS_SURFACE_PLANE_FRAME_E9 * first_magnitude * second_magnitude
+                    <= EPS_SUPPORT_ORTHOGONALITY * first_magnitude * second_magnitude
         })
         .collect::<Vec<_>>();
     let [(first_index, second_index)] = pairs.as_slice() else {
@@ -5520,7 +5410,7 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
         first[0].mul_add(second[1], -(first[1] * second[0])),
     ];
     let magnitude = cross.iter().map(|value| value * value).sum::<f64>().sqrt();
-    let normal = (magnitude > EPS_SURFACE_PLANE_FRAME_E6).then(|| {
+    let normal = (magnitude > EPS_SUPPORT_VECTOR_MINIMUM).then(|| {
         [
             cross[0] / magnitude,
             cross[1] / magnitude,

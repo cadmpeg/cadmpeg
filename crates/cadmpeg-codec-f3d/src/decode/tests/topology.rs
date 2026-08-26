@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-#![allow(unused_imports)]
 #![allow(
     clippy::cloned_ref_to_slice_refs,
     clippy::default_trait_access,
@@ -11,17 +10,11 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use std::io::{Cursor, Read, Seek, Write};
+use std::io::Cursor;
 
 use cadmpeg_asm::asm_header;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
-use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, Encoder};
-use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
-use cadmpeg_ir::report::{LossKind as LossCode, LossTaxonomy, Severity};
-use zip::CompressionMethod;
+use cadmpeg_ir::codec::{Codec, DecodeOptions, Encoder};
 
-use crate::bytes::lp_utf16_bytes;
-use crate::container::{self, role};
 use crate::test_support::*;
 use crate::F3dCodec;
 
@@ -1014,7 +1007,7 @@ fn analytic_carrier_decode_covers_each_shape() {
             ref_direction,
             ..
         } => {
-            assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1e-12);
+            assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, 1.0, "positive slope keeps the axis");
             assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
         }
@@ -1044,9 +1037,9 @@ fn analytic_carrier_decode_covers_each_shape() {
             radius,
             ..
         } => {
-            assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1e-12);
+            assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, -1.0, "negative slope flips the axis");
-            assert!((radius - 46.55).abs() < 1e-12);
+            assert!((radius - 46.55).abs() < 1.0e-12);
         }
         other => panic!("expected cone, got {other:?}"),
     }

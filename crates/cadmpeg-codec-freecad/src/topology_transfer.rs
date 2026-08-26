@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -24,20 +24,15 @@ use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::{
-    surface_parameter_affine, ShapePayloadRecord, SurfaceParameterAffine, TextCurve2d,
+    surface_parameter_affine, ShapePayloadRecord, SurfaceParameterAffine, TextCurve, TextCurve2d,
     TextEdgeRepresentation, TextLocation, TextOrientation, TextPolygon3d,
     TextPolygonOnTriangulation, TextShapeKind, TextShapeUse, TextSurface, TextTShape,
     TextTShapeGeometry, TextTriangulation,
 };
 use crate::native::PropertyRecord;
 
-const EPS_TOPOLOGY_TRANSFER_NORMALIZE_PCURVE_PARAMETER_RANGE_E9: f64 = 1e-9;
-const EPS_TOPOLOGY_TRANSFER_SIMILARITY_E10: f64 = 1e-10;
-const EPS_TOPOLOGY_TRANSFER_TRANSFORMS_EQUAL_E12: f64 = 1e-12;
-const EPS_TOPOLOGY_TRANSFER_NORMALIZE_OCCT_CURVE_RANGE_E9: f64 = 1e-9;
-const EPS_TOPOLOGY_TRANSFER_NORMALIZE_OCCT_CURVE_RANGE_E12: f64 = 1e-12;
-
 type IndexedPolygon = (Vec<Point3>, Option<Vec<f64>>, f64);
+type FacePcurve = (PcurveId, Option<[f64; 2]>);
 
 pub(crate) struct TopologyOccurrence {
     pub(crate) property: String,
@@ -91,6 +86,7 @@ pub(crate) fn transfer(
 struct Tables<'a> {
     locations: &'a [TextLocation],
     curve2ds: &'a [TextCurve2d],
+    curves: &'a [TextCurve],
     surfaces: &'a [TextSurface],
     polygons3d: &'a [TextPolygon3d],
     polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
@@ -107,6 +103,7 @@ impl<'a> Tables<'a> {
             .map(|text| Self {
                 locations: &text.locations,
                 curve2ds: &text.curve2ds,
+                curves: &text.curves,
                 surfaces: &text.surfaces,
                 polygons3d: &text.polygons3d,
                 polygons_on_triangulations: &text.polygons_on_triangulations,
@@ -118,6 +115,7 @@ impl<'a> Tables<'a> {
                 payload.binary.as_ref().map(|binary| Self {
                     locations: &binary.locations,
                     curve2ds: &binary.curve2ds,
+                    curves: &binary.curves,
                     surfaces: &binary.surfaces,
                     polygons3d: &binary.polygons3d,
                     polygons_on_triangulations: &binary.polygons_on_triangulations,
@@ -159,7 +157,7 @@ struct SourceOccurrenceKey(String);
 
 impl SourceOccurrenceKey {
     fn new(shape: usize, transform: Transform) -> Self {
-        Self(format!("{}@{}", shape, exact_transform_digest(transform)))
+        Self(format!("{}@{}", shape, transform_digest(transform)))
     }
 }
 
@@ -684,7 +682,7 @@ impl<'a> Builder<'a> {
             connectivity.push(keys);
         }
 
-        Ok(connected_components(&connectivity))
+        connected_components(&connectivity)
     }
 
     fn append_face(
@@ -920,16 +918,16 @@ impl<'a> Builder<'a> {
             &self.payload.id,
             self.topology_label(edge_use.shape, transform),
         ));
-        let curve_representation = representations
-            .iter()
-            .find(|representation| representation.kind == 1);
-        let polygon_representation = representations
-            .iter()
-            .enumerate()
-            .find(|(_, representation)| matches!(representation.kind, 5..=7));
+        let curve_representation =
+            select_exact_curve_representation(edge_use.shape, &representations, &self.tables)?;
+        let polygon_representation = if curve_representation.is_none() {
+            unique_fallback_polygon_representation(edge_use.shape, &representations)?
+        } else {
+            None
+        };
         let curve = if degenerated {
             None
-        } else if let Some(representation) = curve_representation {
+        } else if let Some((_, representation)) = curve_representation {
             let carrier_transform =
                 transform.compose(self.tables.location(representation.location));
             Some(self.located_curve(ir, representation.primary, carrier_transform)?)
@@ -939,7 +937,7 @@ impl<'a> Builder<'a> {
             None
         };
         let param_range = curve_representation
-            .and_then(|representation| representation.parameter_range)
+            .and_then(|(_, representation)| representation.parameter_range)
             .or_else(|| {
                 polygon_representation.and_then(|(_, representation)| {
                     self.polygon_parameters(representation)
@@ -1222,7 +1220,7 @@ impl<'a> Builder<'a> {
         edge_transform: Transform,
         surface: usize,
         surface_transform: Transform,
-    ) -> Option<(PcurveId, Option<[f64; 2]>)> {
+    ) -> Option<FacePcurve> {
         let TextTShapeGeometry::Edge {
             degenerated,
             representations,
@@ -1231,35 +1229,31 @@ impl<'a> Builder<'a> {
         else {
             return None;
         };
-        representations
-            .iter()
-            .enumerate()
-            .find(|(_, representation)| {
+        let (index, representation) =
+            first_edge_representation(representations, |representation| {
                 matches!(representation.kind, 2 | 3)
                     && representation.surface == Some(surface)
-                    && transforms_equal(
+                    && exact_transforms_equal(
                         edge_transform.compose(self.tables.location(representation.location)),
                         surface_transform,
                     )
-            })
-            .map(|(index, representation)| {
-                let reversed = is_reversed(edge_use.orientation);
-                let secondary = representation.secondary.is_some() && reversed;
-                let curve_index = if secondary {
-                    representation
-                        .secondary
-                        .expect("secondary representation exists")
-                } else {
-                    representation.primary
-                };
-                let geometry = pcurve_geometry(&self.tables.curve2ds[curve_index - 1]);
-                let parameter_range =
-                    normalize_pcurve_parameter_range(&geometry, representation.parameter_range);
-                (
-                    self.pcurve_id(edge_use.shape, index, secondary),
-                    bounded_pcurve_range(*degenerated, parameter_range),
-                )
-            })
+            })?;
+        let reversed = is_reversed(edge_use.orientation);
+        let secondary = representation.secondary.is_some() && reversed;
+        let curve_index = if secondary {
+            representation
+                .secondary
+                .expect("secondary representation exists")
+        } else {
+            representation.primary
+        };
+        let geometry = pcurve_geometry(&self.tables.curve2ds[curve_index - 1]);
+        let parameter_range =
+            normalize_pcurve_parameter_range(&geometry, representation.parameter_range);
+        Some((
+            self.pcurve_id(edge_use.shape, index, secondary),
+            bounded_pcurve_range(*degenerated, parameter_range),
+        ))
     }
 
     fn shape(&self, index: usize) -> Result<&TextTShape, CodecError> {
@@ -1308,7 +1302,7 @@ fn normalize_pcurve_parameter_range(
         .into_iter()
         .chain(domain)
         .fold(1.0_f64, |scale, value| scale.max(value.abs()));
-    let tolerance = scale * EPS_TOPOLOGY_TRANSFER_NORMALIZE_PCURVE_PARAMETER_RANGE_E9;
+    let tolerance = scale * 1.0e-9;
     for value in &mut range {
         if (*value - domain[0]).abs() <= tolerance {
             *value = domain[0];
@@ -1319,8 +1313,12 @@ fn normalize_pcurve_parameter_range(
     Some(range)
 }
 
-fn connected_components(connectivity: &[HashSet<String>]) -> Vec<Vec<usize>> {
-    let mut assigned = std::iter::repeat_n(false, connectivity.len()).collect::<Vec<_>>();
+fn connected_components(connectivity: &[HashSet<String>]) -> Result<Vec<Vec<usize>>, CodecError> {
+    let mut assigned = alloc_filled(
+        connectivity.len(),
+        false,
+        "freecad connected-component assignment",
+    )?;
     let mut components = Vec::new();
     for seed in 0..connectivity.len() {
         if assigned[seed] {
@@ -1343,7 +1341,7 @@ fn connected_components(connectivity: &[HashSet<String>]) -> Vec<Vec<usize>> {
         component.sort_unstable();
         components.push(component);
     }
-    components
+    Ok(components)
 }
 
 fn transformed_pcurve_geometry(
@@ -1479,7 +1477,7 @@ fn similarity(transform: Transform) -> Result<Similarity, CodecError> {
         ),
     ];
     let scale = columns[0].norm();
-    let tolerance = EPS_TOPOLOGY_TRANSFER_SIMILARITY_E10 * scale.max(1.0);
+    let tolerance = 1.0e-10 * scale.max(1.0);
     if !scale.is_finite()
         || scale <= 0.0
         || columns
@@ -1557,21 +1555,19 @@ fn source_topology_indices(
         TextShapeKind::CompSolid,
         TextShapeKind::Compound,
     ] {
+        let mut next_index = 1;
         for root in tables.roots {
-            let mut seen = HashSet::new();
-            let mut next_index = 1;
             let mut stack = vec![(root.clone(), Transform::identity())];
             while let Some((shape_use, parent)) = stack.pop() {
                 let transform = parent.compose(tables.location(shape_use.location));
                 let shape = &tables.tshapes[shape_use.shape - 1];
                 if shape.kind == target {
                     let key = SourceOccurrenceKey::new(shape_use.shape, transform);
-                    if seen.insert(key.clone()) {
-                        indices.entry((target, key)).or_insert_with(|| {
-                            let index = next_index;
-                            next_index += 1;
-                            index
-                        });
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        indices.entry((target, key))
+                    {
+                        entry.insert(next_index);
+                        next_index += 1;
                     }
                     continue;
                 }
@@ -1618,46 +1614,28 @@ fn indexed_name(kind: TextShapeKind) -> &'static str {
 }
 
 fn transform_digest(transform: Transform) -> String {
+    // TopLoc_Location equality is exact; neutral identities must not merge
+    // source-distinct placements at a decoder tolerance boundary.
     let mut bytes = Vec::with_capacity(16 * 8);
     for row in transform.rows {
         for value in row {
-            // TopLoc locations can encode the same placement through different
-            // factor chains. Matrix composition then leaves sub-picometre
-            // roundoff even though OCCT treats the occurrences as identical.
-            // Canonicalize with one decimal digit of margin around the codec's
-            // transform-equivalence tolerance so shared topology receives one
-            // occurrence identity even when roundoff crosses zero.
-            let rounded = (value * 1.0e11).round() / 1.0e11;
-            let canonical = if rounded == 0.0 { 0.0 } else { rounded };
+            let canonical = if value == 0.0 { 0.0 } else { value };
             bytes.extend_from_slice(&canonical.to_bits().to_le_bytes());
         }
     }
     sha256_hex(&bytes)[..16].to_owned()
 }
 
-fn exact_transform_digest(transform: Transform) -> String {
-    let mut bytes = Vec::with_capacity(16 * 8);
-    for row in transform.rows {
-        for value in row {
-            bytes.extend_from_slice(&value.to_bits().to_le_bytes());
-        }
-    }
-    sha256_hex(&bytes)[..16].to_owned()
-}
-
 fn is_identity(transform: Transform) -> bool {
-    transforms_equal(transform, Transform::identity())
+    exact_transforms_equal(transform, Transform::identity())
 }
 
-fn transforms_equal(left: Transform, right: Transform) -> bool {
+fn exact_transforms_equal(left: Transform, right: Transform) -> bool {
     left.rows
         .into_iter()
         .flatten()
         .zip(right.rows.into_iter().flatten())
-        .all(|(left, right)| {
-            left.to_bits() == right.to_bits()
-                || (left - right).abs() <= EPS_TOPOLOGY_TRANSFER_TRANSFORMS_EQUAL_E12
-        })
+        .all(|(left, right)| left == right)
 }
 
 fn is_reversed(orientation: TextOrientation) -> bool {
@@ -1689,17 +1667,102 @@ fn edge_endpoint_uses(
     edge: usize,
     children: &[TextShapeUse],
 ) -> Result<(&TextShapeUse, &TextShapeUse), CodecError> {
-    let start = children
-        .iter()
-        .rfind(|child| child.orientation == TextOrientation::Forward);
-    let end = children
-        .iter()
-        .rfind(|child| child.orientation == TextOrientation::Reversed);
+    let mut start = None;
+    let mut end = None;
+    for child in children {
+        match child.orientation {
+            TextOrientation::Forward => {
+                if start.replace(child).is_some() {
+                    return Err(CodecError::malformed(format_args!(
+                        "edge TShape {edge} has multiple forward endpoint uses"
+                    )));
+                }
+            }
+            TextOrientation::Reversed => {
+                if end.replace(child).is_some() {
+                    return Err(CodecError::malformed(format_args!(
+                        "edge TShape {edge} has multiple reversed endpoint uses"
+                    )));
+                }
+            }
+            TextOrientation::Internal | TextOrientation::External => {}
+        }
+    }
     start.zip(end).ok_or_else(|| {
         CodecError::malformed(format_args!(
             "edge TShape {edge} does not have both forward and reversed endpoint uses"
         ))
     })
+}
+
+fn first_edge_representation<Predicate>(
+    representations: &[TextEdgeRepresentation],
+    predicate: Predicate,
+) -> Option<(usize, &TextEdgeRepresentation)>
+where
+    Predicate: Fn(&TextEdgeRepresentation) -> bool,
+{
+    representations
+        .iter()
+        .enumerate()
+        .find(|(_, representation)| predicate(representation))
+}
+
+fn select_exact_curve_representation<'a>(
+    edge: usize,
+    representations: &'a [TextEdgeRepresentation],
+    tables: &Tables<'_>,
+) -> Result<Option<(usize, &'a TextEdgeRepresentation)>, CodecError> {
+    let mut matches = representations
+        .iter()
+        .enumerate()
+        .filter(|(_, representation)| representation.kind == 1);
+    let Some(first) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.any(|(_, representation)| {
+        !equivalent_exact_curve_representation(first.1, representation, tables)
+    }) {
+        return Err(CodecError::malformed(format_args!(
+            "edge TShape {edge} has non-equivalent 3D curve representations"
+        )));
+    }
+    Ok(Some(first))
+}
+
+fn equivalent_exact_curve_representation(
+    left: &TextEdgeRepresentation,
+    right: &TextEdgeRepresentation,
+    tables: &Tables<'_>,
+) -> bool {
+    let Some(left_curve) = left.primary.checked_sub(1) else {
+        return false;
+    };
+    let Some(right_curve) = right.primary.checked_sub(1) else {
+        return false;
+    };
+    tables.curves.get(left_curve) == tables.curves.get(right_curve)
+        && tables.location(left.location) == tables.location(right.location)
+        && left.parameter_range == right.parameter_range
+}
+
+fn unique_fallback_polygon_representation(
+    edge: usize,
+    representations: &[TextEdgeRepresentation],
+) -> Result<Option<(usize, &TextEdgeRepresentation)>, CodecError> {
+    let mut matches = representations
+        .iter()
+        .enumerate()
+        .filter(|(_, representation)| matches!(representation.kind, 5..=7));
+    let Some(first) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::malformed(format_args!(
+            "edge TShape {edge} has multiple fallback polygon representations"
+        )));
+    }
+    Ok(Some(first))
 }
 
 pub(crate) fn normalize_occt_curve_range(
@@ -1711,16 +1774,11 @@ pub(crate) fn normalize_occt_curve_range(
             let [start, end] = range?;
             let sweep = end - start;
             let tau = std::f64::consts::TAU;
-            if !start.is_finite()
-                || !end.is_finite()
-                || (sweep - tau).abs() <= EPS_TOPOLOGY_TRANSFER_NORMALIZE_OCCT_CURVE_RANGE_E9
-            {
+            if !start.is_finite() || !end.is_finite() || (sweep - tau).abs() <= 1.0e-9 {
                 return Some([start, end]);
             }
             let canonical_start = start.rem_euclid(tau);
-            let canonical_start = if (tau - canonical_start).abs()
-                <= EPS_TOPOLOGY_TRANSFER_NORMALIZE_OCCT_CURVE_RANGE_E12
-            {
+            let canonical_start = if (tau - canonical_start).abs() <= 1.0e-12 {
                 0.0
             } else {
                 canonical_start

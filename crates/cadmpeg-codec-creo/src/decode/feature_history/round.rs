@@ -16,13 +16,13 @@ use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::SurfaceId;
 use std::collections::{BTreeMap, BTreeSet};
 
-const EPS_CYLINDER_FIT: f64 = 1e-8;
-const EPS_GEOMETRY_AGREEMENT: f64 = 1e-9;
-const EPS_NORMAL_ALIGNMENT: f64 = 1e-10;
-const EPS_RADIUS_NONZERO: f64 = 1e-12;
-const EPS_CONE_ANGLE: f64 = 1e-10;
-const EPS_DENOMINATOR_ALIGNMENT: f64 = 1e-10;
-const EPS_SETBACK_NONZERO: f64 = 1e-12;
+const EPS_CYLINDER_FIT: f64 = 1.0e-8;
+const EPS_GEOMETRY_AGREEMENT: f64 = 1.0e-9;
+const EPS_NORMAL_ALIGNMENT: f64 = 1.0e-10;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_CONE_ANGLE: f64 = 1.0e-10;
+const EPS_DENOMINATOR_ALIGNMENT: f64 = 1.0e-10;
+const EPS_SETBACK_NONZERO: f64 = 1.0e-12;
 
 pub(in super::super) fn parallel_support_radius(
     planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,

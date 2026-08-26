@@ -20,17 +20,17 @@ use super::radii::{
 };
 use super::skamp::section_line_fixed_coordinate;
 
-const EPS_LINE_INTERSECTION: f64 = 1e-12;
-const EPS_RADIUS_NONZERO: f64 = 1e-12;
-const EPS_RADIAL_RESIDUAL: f64 = 1e-10;
-const EPS_PARAMETER_BOUND: f64 = 1e-10;
-const EPS_CENTER_DISTANCE: f64 = 1e-12;
-const EPS_HEIGHT_RESIDUAL: f64 = 1e-9;
-const EPS_RADIUS_AGREEMENT: f64 = 1e-9;
-const EPS_DISTANCE_MATCH: f64 = 1e-9;
-const EPS_DIRECTION_NONZERO: f64 = 1e-12;
-const EPS_OFFSET_RESIDUAL: f64 = 1e-9;
-const EPS_ENDPOINT_AGREEMENT: f64 = 1e-9;
+const EPS_LINE_INTERSECTION: f64 = 1.0e-12;
+const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
+const EPS_RADIAL_RESIDUAL: f64 = 1.0e-10;
+const EPS_PARAMETER_BOUND: f64 = 1.0e-10;
+const EPS_CENTER_DISTANCE: f64 = 1.0e-12;
+const EPS_HEIGHT_RESIDUAL: f64 = 1.0e-9;
+const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
+const EPS_DISTANCE_MATCH: f64 = 1.0e-9;
+const EPS_DIRECTION_NONZERO: f64 = 1.0e-12;
+const EPS_OFFSET_RESIDUAL: f64 = 1.0e-9;
+const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
 
 pub(crate) fn section_line_origin_direction(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
     match geometry {

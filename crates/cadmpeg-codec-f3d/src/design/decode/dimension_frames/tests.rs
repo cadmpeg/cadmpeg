@@ -34,7 +34,7 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
-const TEST_LINEAR_TOLERANCE: f64 = 1e-6;
+const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
 
 #[test]
 fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
