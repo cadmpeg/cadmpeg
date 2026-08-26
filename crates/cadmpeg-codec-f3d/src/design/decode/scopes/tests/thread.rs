@@ -27,7 +27,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     bytes[108..113].copy_from_slice(&[0, 1, 0, 0, 0]);
     bytes[113..121].copy_from_slice(&2.97345f64.to_le_bytes());
     bytes[121..129].copy_from_slice(&2.5732f64.to_le_bytes());
-    bytes[129] = 0;
+    bytes[129] = 1;
     bytes[130..138].copy_from_slice(&0.35f64.to_le_bytes());
     bytes[138..146].copy_from_slice(&2.7568f64.to_le_bytes());
     bytes[146..148].copy_from_slice(&[0, 1]);
@@ -52,7 +52,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         &expected,
     );
     let mut invalid_standard_pitch_marker = bytes.clone();
-    invalid_standard_pitch_marker[129] = 1;
+    invalid_standard_pitch_marker[129] = 0;
     assert_eq!(
         parse_thread_payload(
             &invalid_standard_pitch_marker,
