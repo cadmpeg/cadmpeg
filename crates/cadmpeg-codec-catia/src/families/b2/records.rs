@@ -630,7 +630,8 @@ pub(crate) fn b2_edge_nodes_from_records(
                 references.map(|reference| reference.value);
             let reference_encodings = references.map(|reference| reference.encoding);
             let tail = *data.get(at)?;
-            (at + 1 == frame.end && matches!(tail, 0x01 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a))
+            (at + 1 == frame.end
+                && matches!(tail, 0x01 | 0x02 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a))
                 .then_some(B2EdgeNode {
                     pos: frame.pos,
                     header_token: frame.header_token,

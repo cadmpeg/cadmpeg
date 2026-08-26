@@ -268,7 +268,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does the terminal byte of a `b2`, `b3`, or `b4 03 5e` record control?
 
-**Known.** The decoder retains the byte after the framed edge payload.
+**Known.** The width-coded record admits terminal bytes `01`, `02`, `21`, `22`, `25`, `29`, and `2a`; the object-stream record additionally admits `26`. Each terminal exhausts the five-reference payload and is retained independently of the endpoint identities.
 
 **Need.** We must know its role to validate and write the record.
 

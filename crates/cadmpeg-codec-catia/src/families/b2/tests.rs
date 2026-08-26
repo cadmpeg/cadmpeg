@@ -2110,3 +2110,21 @@ fn consolidated_edge_nodes_require_canonical_headers_and_terminal_controls() {
     *invalid_terminal.last_mut().expect("edge terminal") = 0x03;
     assert!(crate::families::b2::records::b2_edge_nodes(&invalid_terminal).is_empty());
 }
+
+#[test]
+fn consolidated_edge_nodes_accept_width_coded_terminal_two() {
+    let mut bytes = b2_edge_node_stream();
+    *bytes.last_mut().expect("edge terminal") = 0x02;
+
+    let nodes = crate::families::b2::records::b2_edge_nodes(&bytes);
+    let [node] = nodes.as_slice() else {
+        panic!("width-coded terminal-two edge node")
+    };
+    assert_eq!(node.tail, 0x02);
+
+    let mut object_stream_only_terminal = bytes;
+    *object_stream_only_terminal
+        .last_mut()
+        .expect("edge terminal") = 0x26;
+    assert!(crate::families::b2::records::b2_edge_nodes(&object_stream_only_terminal).is_empty());
+}

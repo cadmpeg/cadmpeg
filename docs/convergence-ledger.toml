@@ -34,9 +34,9 @@ bare_tolerance_literals = 710
 nonliteral_vec_repeat = 144
 crate_root_tests_rs = 0
 path_test_includes = 0
-test_line_debt = 1919
+test_line_debt = 1937
 production_line_debt = 393
 
 [reasons]
 bare_tolerance_literals = "extended counted exponents to 1e-7/1e-8/1e-11 so the counter matches the hoist set; earlier slices added named geometric comparison tolerances; this slice adds one distinct named 1e-8 fixed-radius evaluator tolerance for D8 rolling-ball jets; still occurrence-only (does not see naming or collapse of distinct values)"
-test_line_debt = "added source-boundary and native round-trip tests for the SN-37 class-0x5b/0x5c retained control-lane arena; the test-only modules already exceed the 2000-line placement limit and this coverage increases their measured debt; added synthesized width-coded owner-chart coverage for SN-17 in the owning b2 test module"
+test_line_debt = "added source-boundary and native round-trip tests for the SN-37 class-0x5b/0x5c retained control-lane arena; the test-only modules already exceed the 2000-line placement limit and this coverage increases their measured debt; added synthesized width-coded owner-chart coverage for SN-17 in the owning b2 test module; added one synthesized width-coded class-0x5e terminal-0x02 admission test for SN-04 in the owning b2 test module"
