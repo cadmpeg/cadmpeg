@@ -30,7 +30,7 @@ pub(super) use crate::families::standard::decode::{
     SPHERE_SECTION_ENDPOINT_TOLERANCE,
 };
 
-pub(super) use crate::families::b2::records::B2OwnerNumericTail;
+pub(super) use crate::families::b2::records::{B2OwnerNumericTail, B2OwnerReferenceEncoding};
 pub(super) use crate::families::b5::graph::{B5Graph, B5Profile, B5Surface};
 pub(super) use crate::test_support::{
     append_b5_record, append_e5_record, b5_closed_triangle_stream, e5_d8_rolling_ball_stream,

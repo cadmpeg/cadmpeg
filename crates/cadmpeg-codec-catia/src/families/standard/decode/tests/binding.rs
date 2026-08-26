@@ -75,8 +75,38 @@ fn owner_face_candidate_requires_complete_trimmed_bounds_containment() {
         ..contained
     };
 
-    assert!(owner_contains_face_bounds(&owner, contained));
-    assert!(!owner_contains_face_bounds(&owner, protruding));
+    assert!(owner_contains_face_bounds(
+        B2OwnerReferenceEncoding::AllCompact,
+        &owner,
+        contained,
+    ));
+    assert!(!owner_contains_face_bounds(
+        B2OwnerReferenceEncoding::AllCompact,
+        &owner,
+        protruding,
+    ));
+}
+
+#[test]
+fn owner_face_bounds_are_not_a_witness_for_other_fixed_nine_dialects() {
+    let owner = owner_tail(
+        [0.0, 0.0],
+        [1.0, 1.0],
+        [[-1.0, 1.0], [-2.0, 2.0], [-3.0, 3.0]],
+    );
+    let face = StandardFaceBounds {
+        aabb_center: [0.0, 0.0, 0.0],
+        aabb_half_extents: [0.5, 1.5, 2.5],
+        sphere_center: [0.0, 0.0, 0.0],
+        sphere_radius: 3.0,
+    };
+
+    for encoding in [
+        B2OwnerReferenceEncoding::TaggedU16Strong,
+        B2OwnerReferenceEncoding::WidthCodedStrong,
+    ] {
+        assert!(!owner_contains_face_bounds(encoding, &owner, face));
+    }
 }
 
 #[test]

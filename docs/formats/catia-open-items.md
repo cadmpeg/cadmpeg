@@ -362,7 +362,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What do the binary64 and binary32 lanes represent in tagged alternating and width-coded fixed-nine owner packets?
 
-**Known.** In the all-compact grammar, the three binary32 pairs are the model-space X, Y, and Z bounds of the owned face boundary. In tagged alternating packets with an established NURBS-carrier relation, the binary64 pairs are the carrier parameter rectangle and may cover a proper subdomain. The source-closed owner carrier chart in `catia.md` §6.4 also proves that the binary64 pairs are the carrier parameter rectangle for its fixed-nine packet. The tagged binary32 lane is not a direct face-boundary box. Width-coded binary32 bounds can enclose more than one face boundary.
+**Known.** In the all-compact grammar, the three binary32 pairs are the model-space X, Y, and Z bounds of the owned face boundary. In tagged alternating packets with an established NURBS-carrier relation, the binary64 pairs are the carrier parameter rectangle and may cover a proper subdomain. The source-closed owner carrier chart in `catia.md` §6.4 also proves that the binary64 pairs are the carrier parameter rectangle for its fixed-nine packet. The tagged binary32 lane is not a direct face-boundary box. Width-coded binary32 bounds can enclose more than one face boundary. The standard face-boundary candidate predicate therefore applies only to all-compact owners; tagged alternating and width-coded lanes do not supply that predicate.
 
 **Need.** We must define the binary64 lane in the all-compact and width-coded grammars and the binary32 lane in the tagged alternating and width-coded grammars.
 

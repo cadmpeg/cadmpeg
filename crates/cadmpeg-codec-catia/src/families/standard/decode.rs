@@ -6634,9 +6634,13 @@ fn owner_matches_a5_carrier(
 }
 
 fn owner_contains_face_bounds(
+    reference_encoding: crate::families::b2::records::B2OwnerReferenceEncoding,
     tail: &crate::families::b2::records::B2OwnerNumericTail,
     bounds: crate::families::standard::records::StandardFaceBounds,
 ) -> bool {
+    if reference_encoding != crate::families::b2::records::B2OwnerReferenceEncoding::AllCompact {
+        return false;
+    }
     (0..3).all(|axis| {
         let lower = bounds.aabb_center[axis] - bounds.aabb_half_extents[axis];
         let upper = bounds.aabb_center[axis] + bounds.aabb_half_extents[axis];
@@ -6795,7 +6799,11 @@ fn bind_standard_a5_owner_surfaces(
             .enumerate()
             .filter_map(|(owner, value)| {
                 (!owner_carriers[owner].is_empty()
-                    && owner_contains_face_bounds(&value.numeric_tail, *bounds))
+                    && owner_contains_face_bounds(
+                        value.reference_encoding,
+                        &value.numeric_tail,
+                        *bounds,
+                    ))
                 .then_some(owner)
             })
             .collect::<Vec<_>>();
