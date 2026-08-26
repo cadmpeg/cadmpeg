@@ -1626,7 +1626,10 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::LoftUnresolved
             | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::BoundarySurfaceUnresolved
-            | FeatureDefinition::DraftUnresolved => true,
+            | FeatureDefinition::DraftUnresolved
+            | FeatureDefinition::ExtrudeUnresolved
+            | FeatureDefinition::RevolveUnresolved
+            | FeatureDefinition::FilletUnresolved => true,
             }
         })
         .count();

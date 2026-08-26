@@ -362,6 +362,18 @@ fn framed_records_ignore_marker_shaped_bytes_inside_b5_payloads() {
 }
 
 #[test]
+fn wide_header_loop_is_a_topology_root_for_population_selection() {
+    let mut bytes = vec![0xa8, 0x03, 0x62];
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+
+    assert_eq!(topology_root_run_ranges(&bytes), vec![0..bytes.len()]);
+    let selection = select_object_stream_population(&[bytes], None);
+    assert!(selection.selected);
+    assert!(!selection.source.is_empty());
+}
+
+#[test]
 fn indexed_frame_parse_matches_one_shot_parse() {
     let bytes = crate::test_support::b5_closed_triangle_stream();
     let frames = object_stream_frames(&bytes);
@@ -400,6 +412,33 @@ fn indexed_frame_parse_matches_one_shot_parse() {
         typed_vertex_incidence_rosters(&bytes),
         typed_vertex_incidence_rosters_from_records(&records)
     );
+}
+
+#[test]
+fn budgeted_dependency_admission_matches_one_shot_records() {
+    let bytes = crate::test_support::b5_closed_triangle_stream();
+    let frames = object_stream_frames(&bytes);
+    let expected = records_from_frames(&bytes, &frames);
+    let budget = cadmpeg_core::decode::WorkBudget::new(10_000);
+
+    let actual = records_from_frames_budgeted(&bytes, &frames, Some(&budget));
+
+    assert_eq!(actual, expected);
+    assert!(!budget.exhausted());
+}
+
+#[test]
+fn indexed_population_selection_preserves_records_and_census() {
+    let topology = crate::test_support::b5_closed_triangle_stream();
+    let expected = select_object_stream_population(std::slice::from_ref(&topology), None);
+    let budget = cadmpeg_core::decode::WorkBudget::new(100_000);
+    let actual = select_object_stream_population(std::slice::from_ref(&topology), Some(&budget));
+
+    assert!(actual.selected);
+    assert!(!actual.exhausted);
+    assert_eq!(actual.source, expected.source);
+    assert_eq!(actual.records, expected.records);
+    assert_eq!(actual.census_records, expected.census_records);
 }
 
 fn a8_class21_test_payload() -> Vec<u8> {
@@ -981,7 +1020,7 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         direction_y: [0.0, 1.0, 0.0],
         axis: [0.0, 0.0, 1.0],
         half_angle: std::f64::consts::FRAC_PI_4,
-        pre_angular_range_scalar: 0.0,
+        reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
         slant_range: [0.0, 1.0],
         angular_scale: 1.0,
@@ -997,7 +1036,7 @@ fn supported_surface_preserves_ordered_support_pcurves() {
         direction_y: [0.0, 1.0, 0.0],
         axis: [0.0, 0.0, 1.0],
         half_angle: std::f64::consts::FRAC_PI_6,
-        pre_angular_range_scalar: 0.0,
+        reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
         slant_range: [0.0, 1.0],
         angular_scale: 1.0,
@@ -1107,7 +1146,7 @@ fn supported_surface_parameter_matching_is_scale_independent() {
         direction_y: [0.0, 1.0, 0.0],
         axis: [0.0, 0.0, 1.0],
         half_angle: carrier_half_angle,
-        pre_angular_range_scalar: 0.0,
+        reference_radius: 0.0,
         angular_range: [0.0, std::f64::consts::TAU],
         slant_range: [0.0, 1.0],
         angular_scale: 1.0,

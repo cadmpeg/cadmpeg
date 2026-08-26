@@ -5,7 +5,8 @@ use super::*;
 use crate::examples::unit_cube;
 use crate::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
+    ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite, Surface,
+    SurfaceGeometry, SurfaceParameterAxis,
 };
 use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
 use crate::math::{Point2, Point3, Vector3};
@@ -35,6 +36,103 @@ fn bilinear_surface() -> NurbsSurface {
         u_periodic: false,
         v_periodic: false,
     }
+}
+
+#[test]
+fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
+    const TEST_TOLERANCE: f64 = 1e-12;
+    let derivative = RollingBallJetDerivative {
+        first_limit: Vector3::new(1.0 / 3.0, 0.0, 0.0),
+        second_limit: Vector3::new(1.0 / 3.0, 0.0, 0.0),
+        center: Vector3::new(1.0 / 3.0, 0.0, 0.0),
+        angle: 0.0,
+    };
+    let definition = ProceduralSurfaceDefinition::RollingBallJet {
+        degree: 5,
+        knots: vec![2.0, 5.0],
+        multiplicities: vec![6, 6],
+        sites: vec![
+            RollingBallJetSite {
+                first_limit: Point3::new(2.0, 0.0, 0.0),
+                second_limit: Point3::new(0.0, 2.0, 0.0),
+                center: Point3::new(0.0, 0.0, 0.0),
+                angle: std::f64::consts::FRAC_PI_2,
+                first_derivative: derivative.clone(),
+                second_derivative: RollingBallJetDerivative {
+                    first_limit: Vector3::new(0.0, 0.0, 0.0),
+                    second_limit: Vector3::new(0.0, 0.0, 0.0),
+                    center: Vector3::new(0.0, 0.0, 0.0),
+                    angle: 0.0,
+                },
+            },
+            RollingBallJetSite {
+                first_limit: Point3::new(3.0, 0.0, 0.0),
+                second_limit: Point3::new(1.0, 2.0, 0.0),
+                center: Point3::new(1.0, 0.0, 0.0),
+                angle: std::f64::consts::FRAC_PI_2,
+                first_derivative: derivative,
+                second_derivative: RollingBallJetDerivative {
+                    first_limit: Vector3::new(0.0, 0.0, 0.0),
+                    second_limit: Vector3::new(0.0, 0.0, 0.0),
+                    center: Vector3::new(0.0, 0.0, 0.0),
+                    angle: 0.0,
+                },
+            },
+        ],
+    };
+
+    let point = rolling_ball_jet_point(&definition, 3.5, 0.5).expect("jet point");
+    let expected = Point3::new(0.5 + 2.0_f64.sqrt(), 2.0_f64.sqrt(), 0.0);
+    assert!((point.x - expected.x).abs() <= TEST_TOLERANCE);
+    assert!((point.y - expected.y).abs() <= TEST_TOLERANCE);
+    assert!((point.z - expected.z).abs() <= TEST_TOLERANCE);
+    let start = rolling_ball_jet_point(&definition, 2.0, 0.0).expect("jet start");
+    assert!((start.x - 2.0).abs() <= TEST_TOLERANCE);
+    assert!(start.y.abs() <= TEST_TOLERANCE);
+    assert!(start.z.abs() <= TEST_TOLERANCE);
+    assert!(rolling_ball_jet_point(&definition, 5.0, 1.0).is_some());
+    assert!(rolling_ball_jet_point(&definition, 1.0, 0.5).is_none());
+}
+
+#[test]
+fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
+    const TEST_TOLERANCE: f64 = 1e-12;
+    let zero = RollingBallJetDerivative {
+        first_limit: Vector3::new(0.0, 0.0, 0.0),
+        second_limit: Vector3::new(0.0, 0.0, 0.0),
+        center: Vector3::new(0.0, 0.0, 0.0),
+        angle: 0.0,
+    };
+    let definition = ProceduralSurfaceDefinition::RollingBallJet {
+        degree: 5,
+        knots: vec![2.0, 5.0],
+        multiplicities: vec![6, 6],
+        sites: vec![
+            RollingBallJetSite {
+                first_limit: Point3::new(2.0, 0.0, 0.0),
+                second_limit: Point3::new(0.0, 2.0, 0.0),
+                center: Point3::new(0.0, 0.0, 0.0),
+                angle: std::f64::consts::FRAC_PI_2,
+                first_derivative: zero.clone(),
+                second_derivative: zero.clone(),
+            },
+            RollingBallJetSite {
+                first_limit: Point3::new(0.0, 2.0, 0.0),
+                second_limit: Point3::new(-2.0, 0.0, 0.0),
+                center: Point3::new(0.0, 0.0, 0.0),
+                angle: std::f64::consts::FRAC_PI_2,
+                first_derivative: zero.clone(),
+                second_derivative: zero,
+            },
+        ],
+    };
+
+    let point = rolling_ball_jet_point(&definition, 3.5, 0.5).expect("jet point");
+    let root_two = 2.0_f64.sqrt();
+    let expected = Point3::new(root_two / 2.0 - 1.0, root_two / 2.0 + 1.0, 0.0);
+    assert!((point.x - expected.x).abs() <= TEST_TOLERANCE);
+    assert!((point.y - expected.y).abs() <= TEST_TOLERANCE);
+    assert!((point.z - expected.z).abs() <= TEST_TOLERANCE);
 }
 
 #[test]

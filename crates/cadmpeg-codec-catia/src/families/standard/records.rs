@@ -10,6 +10,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::assemble::unit_vector;
+use crate::families::standard::fbb::FbbPopulationLayout;
 use crate::layout::analytic_surface_cone as analytic_cone;
 use crate::layout::analytic_surface_cylinder as analytic_cylinder;
 use crate::layout::analytic_surface_plane as analytic_plane;
@@ -17,6 +18,11 @@ use crate::layout::analytic_surface_sphere as analytic_sphere;
 use crate::layout::analytic_surface_torus as analytic_torus;
 use crate::layout::freeform_surface_core as freeform_core;
 use crate::layout::vertex_roster_row as vertex_roster;
+
+/// Binary32 multiplication and addition can leave a unit XY direction just
+/// below the unit circle.  Treat that deficit as roundoff instead of creating
+/// a false binary64 Z component when the carrier stores only the Z sign.
+const F32_UNIT_NORM2_ROUNDING_TOLERANCE: f64 = 4.0 * (f32::EPSILON as f64);
 
 /// The standard-nested plane bounds record. Its three-byte tag is the bridge to
 /// the matching `SurfacicReps` plane marker.
@@ -92,8 +98,20 @@ fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
     if values.iter().any(|value| !value.is_finite())
         || values[3..6].iter().any(|extent| *extent < 0.0)
         || values[9] < 0.0
-        || (0..3).any(|axis| (values[axis] - values[6 + axis]).abs() + values[3 + axis] > values[9])
     {
+        return None;
+    }
+    if (0..3).any(|axis| {
+        let containment_error = (f64::from(values[axis]) - f64::from(values[6 + axis])).abs()
+            + f64::from(values[3 + axis])
+            - f64::from(values[9]);
+        let rounding_slack = MAX_F32_CONTAINMENT_ULPS
+            * [values[axis], values[6 + axis], values[3 + axis], values[9]]
+                .into_iter()
+                .map(f32_ulp)
+                .fold(0.0, f64::max);
+        containment_error > rounding_slack
+    }) {
         return None;
     }
     Some(StandardFaceBounds {
@@ -114,6 +132,20 @@ fn face_bounds_at(brep: &[u8], position: usize) -> Option<StandardFaceBounds> {
         ],
         sphere_radius: f64::from(values[9]),
     })
+}
+
+/// Maximum per-coordinate mismatch admitted for independently computed
+/// binary32 bounds before the bounds are considered malformed.
+const MAX_F32_CONTAINMENT_ULPS: f64 = 3.0;
+
+/// Return the spacing between adjacent finite binary32 values at `value`.
+fn f32_ulp(value: f32) -> f64 {
+    let exponent = (value.abs().to_bits() >> 23) & 0xff;
+    if exponent == 0 {
+        f64::from(f32::from_bits(1))
+    } else {
+        2.0_f64.powi(exponent as i32 - 127 - 23)
+    }
 }
 
 /// Read the spatial bounds of one complete face-local surface record.
@@ -163,18 +195,12 @@ impl StandardSurfaceRecord {
     }
 }
 
-/// Walk the complete face-local surface roster. Records are accepted only as a
-/// unique contiguous chain of `face_count` non-overlapping entries terminated
-/// by the first curve-support row. A byte pattern inside an analytic payload
-/// cannot create a competing freeform record.
-#[must_use]
-pub fn standard_surface_records(
-    brep: &[u8],
-    face_count: usize,
-) -> Option<Vec<StandardSurfaceRecord>> {
-    if face_count == 0 {
-        return None;
-    }
+struct StandardSurfaceRecordTable {
+    records: Vec<StandardSurfaceRecord>,
+    successors: Vec<Option<usize>>,
+}
+
+fn standard_surface_record_table(brep: &[u8]) -> StandardSurfaceRecordTable {
     let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
     for prefix in surface_prefixes(brep) {
         if face_sense(brep, &prefix).is_some() {
@@ -234,19 +260,115 @@ pub fn standard_surface_records(
         );
     }
 
-    if face_count > records.len() {
-        return None;
-    }
+    let records = records.into_values().collect::<Vec<_>>();
     let record_indices = records
-        .keys()
+        .iter()
         .enumerate()
-        .map(|(index, &start)| (start, index))
+        .map(|(index, record)| (record.pos(), index))
         .collect::<HashMap<_, _>>();
-    let ordered_records = records.values().collect::<Vec<_>>();
-    let successors = ordered_records
+    let successors = records
         .iter()
         .map(|record| record_indices.get(&record.end()).copied())
-        .collect::<Vec<_>>();
+        .collect();
+    StandardSurfaceRecordTable {
+        records,
+        successors,
+    }
+}
+
+/// Return every surface roster chain that ends directly at a complete `0x60`
+/// support table. Each chain is a source-closed face population; records that
+/// cannot reach that boundary are not assigned to a population.
+#[must_use]
+pub fn standard_surface_record_groups(brep: &[u8]) -> Vec<Vec<StandardSurfaceRecord>> {
+    let table = standard_surface_record_table(brep);
+    let mut has_predecessor = vec![false; table.records.len()];
+    for successor in table.successors.iter().flatten() {
+        has_predecessor[*successor] = true;
+    }
+    table
+        .records
+        .iter()
+        .enumerate()
+        .filter(|(start, _)| !has_predecessor[*start])
+        .filter_map(|(start, _)| {
+            let mut current = Some(start);
+            let mut group = Vec::new();
+            while let Some(index) = current {
+                group.push(table.records[index].clone());
+                current = table.successors[index];
+            }
+            let last = group.last()?;
+            (brep.get(last.end()) == Some(&0x60)).then_some(group)
+        })
+        .collect()
+}
+
+/// One surface roster and its positionally following, face-local support
+/// table. Support face references remain local to this population.
+#[derive(Debug, Clone)]
+pub struct StandardSurfacePopulation {
+    /// The source-closed face-local surface roster.
+    pub records: Vec<StandardSurfaceRecord>,
+    /// The source-closed `0x60` edge-support roster.
+    pub supports: Vec<StandardCurveSupport>,
+}
+
+/// Return every source-closed surface/support population with valid local
+/// face references. No population is selected by row count or allocation
+/// order.
+#[must_use]
+pub fn standard_surface_populations(brep: &[u8]) -> Vec<StandardSurfacePopulation> {
+    standard_surface_record_groups(brep)
+        .into_iter()
+        .filter_map(|records| {
+            let support_start = records.last()?.end();
+            let supports = standard_curve_supports_at(brep, records.len(), support_start)?;
+            Some(StandardSurfacePopulation { records, supports })
+        })
+        .collect()
+}
+
+/// Pair source-ordered, source-closed FBB layouts with source-ordered,
+/// source-closed surface/support populations. The relation is admitted only
+/// when both lanes have the same population count and every local face and
+/// edge cardinality agrees. Allocation order and a repeated count key never
+/// select a population.
+#[must_use]
+pub(crate) fn pair_standard_populations(
+    layouts: &[FbbPopulationLayout],
+    populations: &[StandardSurfacePopulation],
+) -> Option<Vec<(FbbPopulationLayout, StandardSurfacePopulation)>> {
+    if layouts.is_empty() || layouts.len() != populations.len() {
+        return None;
+    }
+    layouts
+        .iter()
+        .copied()
+        .zip(populations.iter().cloned())
+        .map(|(layout, population)| {
+            (layout.face_count == population.records.len()
+                && layout.edge_count == population.supports.len())
+            .then_some((layout, population))
+        })
+        .collect()
+}
+
+/// Walk the complete face-local surface roster. Records are accepted only as a
+/// unique contiguous chain of `face_count` non-overlapping entries terminated
+/// by the first curve-support row. A byte pattern inside an analytic payload
+/// cannot create a competing freeform record.
+#[must_use]
+pub fn standard_surface_records(
+    brep: &[u8],
+    face_count: usize,
+) -> Option<Vec<StandardSurfaceRecord>> {
+    let table = standard_surface_record_table(brep);
+    if face_count == 0 || face_count > table.records.len() {
+        return None;
+    }
+    let ordered_records = &table.records;
+    let successors = &table.successors;
     let remaining_steps = face_count - 1;
     let level_count = usize::BITS as usize - remaining_steps.leading_zeros() as usize;
     let mut jumps = Vec::new();
@@ -506,7 +628,7 @@ pub enum StandardCurveGeometry {
 pub struct StandardCurveSupport {
     /// Offset of the `0x60` row marker in the BREP stream.
     pub pos: usize,
-    /// Little-endian u24 local allocation tag for this row.
+    /// Little-endian u24 object id in the file-global allocation journal.
     pub tag: u32,
     /// The two adjacent standard face ordinals forming this edge's
     /// edge-to-face incidence.
@@ -533,6 +655,23 @@ pub fn standard_curve_supports(
     face_count: usize,
     edge_count: Option<usize>,
 ) -> Vec<StandardCurveSupport> {
+    let populations = standard_surface_populations(brep);
+    let matching_populations = populations
+        .iter()
+        .filter(|population| {
+            population.records.len() == face_count
+                && edge_count.is_none_or(|count| population.supports.len() == count)
+        })
+        .collect::<Vec<_>>();
+    if populations
+        .iter()
+        .any(|population| population.records.len() == face_count)
+    {
+        return <[&StandardSurfacePopulation; 1]>::try_from(matching_populations)
+            .ok()
+            .map(|[population]| population.supports.clone())
+            .unwrap_or_default();
+    }
     if let Some(first) = standard_surface_records(brep, face_count)
         .and_then(|records| records.last().map(StandardSurfaceRecord::end))
     {
@@ -818,8 +957,13 @@ fn pt(x: f32, y: f32, z: f32) -> Point3 {
 /// sign from a companion signed field (the cone/cylinder store `sign(az)` in the
 /// sign of the semi-angle / radius).
 fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Option<Vector3> {
-    let az2 = (1.0 - (ax * ax + ay * ay) as f64).max(0.0);
-    let az = az2.sqrt().copysign(signed as f64);
+    let norm2 = f64::from(ax).mul_add(f64::from(ax), f64::from(ay) * f64::from(ay));
+    let residual = 1.0 - norm2;
+    let az = if residual > F32_UNIT_NORM2_ROUNDING_TOLERANCE {
+        residual.sqrt().copysign(signed as f64)
+    } else {
+        0.0
+    };
     unit_vector(Vector3::new(ax as f64, ay as f64, az))
 }
 
@@ -847,7 +991,7 @@ fn all_finite(vs: &[f32]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::unit_vector;
+    use super::{axis_from_xy, unit_vector};
     use cadmpeg_ir::math::Vector3;
 
     #[test]
@@ -858,5 +1002,28 @@ mod tests {
         );
         assert_eq!(unit_vector(Vector3::new(0.0, 0.0, 0.0)), None);
         assert_eq!(unit_vector(Vector3::new(f64::from_bits(1), 0.0, 0.0)), None);
+    }
+
+    #[test]
+    fn axis_from_xy_discards_binary32_equatorial_norm_roundoff() {
+        const AXIS_COMPONENT_TOLERANCE: f64 = 1e-7;
+        let axis = axis_from_xy(0.707_106_77_f32, -0.707_106_77_f32, 1.0).expect("axis");
+
+        assert_eq!(axis.z, 0.0);
+        assert!((axis.x - std::f64::consts::FRAC_1_SQRT_2).abs() < AXIS_COMPONENT_TOLERANCE);
+        assert!((axis.y + std::f64::consts::FRAC_1_SQRT_2).abs() < AXIS_COMPONENT_TOLERANCE);
+    }
+
+    #[test]
+    fn axis_from_xy_preserves_a_genuine_third_component() {
+        const AXIS_COMPONENT_TOLERANCE: f64 = 1e-15;
+        let x = 0.8_f32;
+        let y = 0.5_f32;
+        let axis = axis_from_xy(x, y, -1.0).expect("axis");
+        let x = f64::from(x);
+        let y = f64::from(y);
+        let expected = (1.0 - x * x - y * y).sqrt();
+
+        assert!((axis.z + expected).abs() < AXIS_COMPONENT_TOLERANCE);
     }
 }

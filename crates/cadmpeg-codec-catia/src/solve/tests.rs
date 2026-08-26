@@ -3,10 +3,41 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::test_support::standard_quad_topology_stream;
+use crate::test_support::{
+    compact_standard_triangle_topology_stream, standard_quad_topology_stream,
+};
 
 #[test]
-fn standard_mesh_ports_bridge_table_local_endpoint_names() {
+fn compact_standard_ports_reuse_handles_in_the_global_trim_namespace() {
+    let ports = crate::solve::missing_edge::standard_global_edge_port_identities(
+        &compact_standard_triangle_topology_stream(),
+    )
+    .expect("compact standard ports");
+
+    assert_eq!(ports, vec![[0, 1], [1, 2], [2, 0]]);
+}
+
+#[test]
+fn standard_full_table_reuses_terminal_handles_for_every_row_layout() {
+    let mut bytes = vec![0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2];
+    bytes.extend_from_slice(&[0x01, 0x01, 0x03]);
+    for handles in [&[10u16, 11][..], &[11, 12, 13][..], &[11, 12][..]] {
+        bytes.extend_from_slice(&[0x02, handles.len() as u8]);
+        for handle in handles {
+            bytes.extend_from_slice(&handle.to_be_bytes());
+        }
+    }
+    bytes.extend_from_slice(&[
+        0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x06, 0x00,
+    ]);
+
+    let ports = crate::solve::missing_edge::standard_global_edge_port_identities(&bytes)
+        .expect("standard full-table ports");
+    assert_eq!(ports, vec![[0, 1], [1, 2], [1, 3]]);
+}
+
+#[test]
+fn standard_mesh_ports_preserve_global_terminal_handle_identity() {
     let mut bytes = standard_quad_topology_stream();
     let header = bytes
         .windows(3)
@@ -23,16 +54,16 @@ fn standard_mesh_ports_bridge_table_local_endpoint_names() {
 
     let ports =
         crate::solve::missing_edge::standard_mesh_edge_ports(&bytes).expect("mesh port collapse");
-    let table_ports = crate::solve::missing_edge::standard_edge_port_identities(&bytes)
-        .expect("table-local ports");
-    assert_ne!(table_ports[1][1], table_ports[2][0]);
+    let table_ports = crate::solve::missing_edge::standard_global_edge_port_identities(&bytes)
+        .expect("global terminal-handle ports");
+    assert_eq!(table_ports[1][1], table_ports[2][0]);
     assert_eq!(
         table_ports
             .iter()
             .flatten()
             .collect::<std::collections::HashSet<_>>()
             .len(),
-        8
+        4
     );
     assert_eq!(ports[0][1], ports[1][0]);
     assert_eq!(ports[1][1], ports[2][0]);
@@ -40,12 +71,13 @@ fn standard_mesh_ports_bridge_table_local_endpoint_names() {
     assert_eq!(ports[3][1], ports[0][0]);
     assert_eq!(
         ports
-            .into_iter()
+            .iter()
             .flatten()
             .collect::<std::collections::HashSet<_>>()
             .len(),
         4
     );
+    assert_eq!(table_ports, ports);
 }
 
 #[test]
@@ -76,7 +108,7 @@ fn standard_mesh_resolver_derives_trim_components_from_local_ports() {
     assert_eq!(assignment, vec![0, 1, 2, 3]);
     assert_eq!(
         topology.edge_vertices().expect("resolved edge endpoints"),
-        vec![[0, 1], [1, 2], [2, 3], [3, 0]]
+        vec![[0, 1], [1, 2], [2, 3], [0, 3]]
     );
 }
 
@@ -326,6 +358,42 @@ fn unmatched_standard_row_arity_does_not_fix_trim_span() {
 }
 
 #[test]
+fn unmatched_fbb_complete_row_arity_fixes_trim_span() {
+    let mut bytes = crate::test_support::fbb_only_quad_topology_stream();
+    let first_row = bytes
+        .windows(5)
+        .position(|window| window == [0x01, 0x01, 0x02, 0x02, 0x03])
+        .expect("first FBB edge table");
+    let second_row = first_row + 8;
+    for (offset, handle) in (first_row + 5..first_row + 11)
+        .chain(second_row + 5..second_row + 11)
+        .zip([0u8, 20, 0, 21, 0, 22, 0, 30, 0, 31, 0, 32])
+    {
+        bytes[offset] = handle;
+    }
+    let coverage = crate::solve::missing_edge::standard_mesh_face_coverage(&bytes, &[[0, 0]; 4])
+        .expect("unmatched FBB row coverage");
+    assert_eq!(coverage[0].missing_edges, [0, 1]);
+    assert_eq!(coverage[0].gaps[0].length, 4);
+
+    let assignments = crate::solve::missing_edge::standard_mesh_missing_edge_assignments(
+        &bytes,
+        &[[0, 0]; 4],
+        None,
+        false,
+    )
+    .expect("complete FBB row spans");
+    assert_eq!(assignments[0].len(), 2);
+    assert!(assignments[0].iter().all(|assignment| {
+        assignment
+            .iter()
+            .map(|placement| placement.segment_count)
+            .collect::<Vec<_>>()
+            == [2, 2]
+    }));
+}
+
+#[test]
 fn standard_mesh_runs_include_flanking_segments() {
     let runs =
         crate::solve::missing_edge::standard_mesh_edge_runs(&standard_quad_topology_stream())
@@ -340,7 +408,7 @@ fn standard_mesh_runs_include_flanking_segments() {
 }
 
 #[test]
-fn standard_mesh_gap_assignment_does_not_merge_row_local_endpoint_names() {
+fn standard_mesh_gap_assignment_uses_compact_endpoint_identity() {
     let mut bytes = standard_quad_topology_stream();
     for _ in 0..4 {
         let row = bytes
@@ -359,7 +427,7 @@ fn standard_mesh_gap_assignment_does_not_merge_row_local_endpoint_names() {
     )
     .expect("native port-ordered full gap");
     assert_eq!(assignments.len(), 1);
-    assert_eq!(assignments[0].len(), 840);
+    assert_eq!(assignments[0].len(), 280);
     assert!(assignments[0].iter().all(|assignment| {
         assignment
             .iter()

@@ -1076,7 +1076,7 @@ fn native_store_paths_write_the_current_schema_version() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::CATIA_FAMILIES.len(), 42);
+    assert_eq!(crate::native::CATIA_FAMILIES.len(), 43);
     assert_eq!(
         catalogue_names,
         crate::native::CATIA_ARENA_NAMES

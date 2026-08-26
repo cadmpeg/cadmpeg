@@ -109,9 +109,124 @@ pub(crate) fn b2_width_coded_owner_packet_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn b2_width_coded_owner_with_allocation_stream() -> (Vec<u8>, [usize; 5], usize) {
+    let mut bytes = Vec::new();
+    let mut target_positions = [0usize; 5];
+    for (index, class) in [0x5d, 0x5e, 0x5d, 0x5e, 0x5e].into_iter().enumerate() {
+        target_positions[index] = bytes.len();
+        bytes.extend_from_slice(&[0xb2, 0x03, class, 0x00, 0x05]);
+    }
+    let owner_pos = bytes.len();
+    let mut owner = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
+    for distance in [1u8, 4, 2, 3, 5] {
+        owner.push(4 * distance + 1);
+        owner.push(0);
+    }
+    owner.pop();
+    owner.extend_from_slice(&owner_numeric_tail());
+    owner[3] = u8::try_from(owner.len() - 5).expect("fixed owner packet length");
+    bytes.extend_from_slice(&owner);
+    (bytes, target_positions, owner_pos)
+}
+
+pub(crate) fn b2_fixed_owner_boundary_cycle_stream() -> (Vec<u8>, [usize; 4], usize, [[usize; 2]; 4])
+{
+    let mut bytes = Vec::new();
+    let mut endpoint_positions = [0usize; 4];
+    for position in &mut endpoint_positions {
+        *position = bytes.len();
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x5d, 0x02, 0x05, 0x03, 0x00]);
+    }
+
+    let endpoint_indices = [[0usize, 1], [0, 2], [2, 3], [1, 3]];
+    let mut edge_positions = [0usize; 4];
+    for (edge_index, indices) in endpoint_indices.into_iter().enumerate() {
+        let current_ordinal = 4 + edge_index;
+        let distances = indices
+            .map(|index| u8::try_from(current_ordinal - index).expect("cycle endpoint distance"));
+        edge_positions[edge_index] = bytes.len();
+        let mut edge = vec![
+            0xb2,
+            0x03,
+            0x5e,
+            0x09,
+            0x05,
+            0x06,
+            0,
+            4 * distances[0] + 1,
+            4 * distances[1] + 1,
+            0x06,
+            0,
+            0x06,
+            0,
+            0x21,
+        ];
+        bytes.append(&mut edge);
+    }
+
+    let owner_pos = bytes.len();
+    let mut owner = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
+    for (index, distance) in [1000u16, 4, 1001, 3, 1002, 2, 1003, 1, 1004]
+        .into_iter()
+        .enumerate()
+    {
+        if index % 2 == 0 {
+            owner.push(0x0a);
+            owner.extend_from_slice(&distance.to_le_bytes());
+        } else {
+            owner.push(4 * u8::try_from(distance).expect("cycle distance") + 1);
+        }
+    }
+    owner.extend_from_slice(&owner_numeric_tail());
+    owner[3] = u8::try_from(owner.len() - 5).expect("fixed owner packet length");
+    bytes.extend_from_slice(&owner);
+
+    (
+        bytes,
+        edge_positions,
+        owner_pos,
+        endpoint_indices.map(|indices| {
+            [
+                endpoint_positions[indices[0]],
+                endpoint_positions[indices[1]],
+            ]
+        }),
+    )
+}
+
+pub(crate) fn b2_fixed_owner_boundary_face_node_cycle_stream(
+) -> (Vec<u8>, [usize; 4], usize, [[usize; 2]; 4], usize) {
+    let (mut bytes, mut edge_positions, mut owner_pos, endpoint_records) =
+        b2_fixed_owner_boundary_cycle_stream();
+    let node_pos = edge_positions[0];
+    let node = [
+        0xb4, 0x03, 0x5f, 0x06, 0x08, 0x2e, 0x0a, 0x82, 0x0a, 0xf6, 0x03, 0x27, 0x05,
+    ];
+    bytes.splice(node_pos..node_pos, node);
+    for edge in &mut edge_positions {
+        *edge += node.len();
+    }
+    owner_pos += node.len();
+    (bytes, edge_positions, owner_pos, endpoint_records, node_pos)
+}
+
+pub(crate) fn b2_all_compact_owner_packet_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
+    for value in [278, 324, 276, 268, 277, 374, 199, 195, 279] {
+        record.extend_from_slice(&compact_uint_bytes(value));
+    }
+    record.extend_from_slice(&owner_numeric_tail());
+    record[3] = u8::try_from(record.len() - 5).expect("all-compact owner packet length");
+    record
+}
+
 pub(crate) fn owner_numeric_tail() -> Vec<u8> {
+    owner_numeric_tail_for([-0.0, 4.5], [12.25, 7.0])
+}
+
+fn owner_numeric_tail_for(lower: [f64; 2], upper: [f64; 2]) -> Vec<u8> {
     let mut tail = vec![0x84, 0x41, 0xbb, 0x05, 0x0d];
-    for value in [-0.0f64, 4.5, 12.25, 7.0] {
+    for value in [lower[0], lower[1], upper[0], upper[1]] {
         tail.extend_from_slice(&value.to_le_bytes());
     }
     tail.push(0x01);
@@ -119,6 +234,115 @@ pub(crate) fn owner_numeric_tail() -> Vec<u8> {
         tail.extend_from_slice(&value.to_le_bytes());
     }
     tail
+}
+
+pub(crate) fn b2_owner_chart_stream(carrier_class: u8) -> Vec<u8> {
+    b2_owner_chart_stream_with_encoding(carrier_class, false)
+}
+
+pub(crate) fn b2_width_coded_owner_chart_stream(carrier_class: u8) -> Vec<u8> {
+    b2_owner_chart_stream_with_encoding(carrier_class, true)
+}
+
+fn b2_owner_chart_stream_with_encoding(carrier_class: u8, width_coded: bool) -> Vec<u8> {
+    let mut bytes = match carrier_class {
+        0x28 => b2_cylinder_stream(),
+        0x2b => b2_torus_stream(),
+        0x32 => vec![0xa5, 0x03, 0x32, 0x00, 0x00, 0x00, 0x00, 0x05],
+        _ => panic!("owner-chart fixture requires an admitted analytic carrier"),
+    };
+    let carrier_selector = match carrier_class {
+        0x28 => 0x05,
+        0x2b => 0x09,
+        0x32 => 0x11,
+        _ => unreachable!("carrier class checked above"),
+    };
+    let mut bridge = vec![
+        0xb2, 0x03, 0x37, 0, 0x05, 0x85, 0x05, 0x04, 100, 0x03, 0x04, 101, 0x07,
+    ];
+    bridge.extend_from_slice(&[carrier_selector, 0x05]);
+    bridge.extend_from_slice(&1.0f64.to_le_bytes());
+    bridge.extend_from_slice(&[0x03, 0x05]);
+    bridge.extend_from_slice(&[0; 8]);
+    bridge.extend_from_slice(&[0x01, 0x05]);
+    bridge[3] = u8::try_from(bridge.len() - 5).expect("owner-chart bridge length");
+    bytes.extend_from_slice(&bridge);
+    let (lower, upper, side_values) = match carrier_class {
+        0x28 => (
+            [2.0, 3.0],
+            [5.0, 7.0],
+            vec![
+                vec![2.0, 3.0, 7.0],
+                vec![5.0, 3.0, 7.0],
+                vec![3.0, 2.0, 5.0],
+                vec![7.0, 2.0, 5.0],
+            ],
+        ),
+        0x2b => (
+            [2.0, 3.0],
+            [5.0, 7.0],
+            vec![
+                vec![3.0, 2.0, 5.0],
+                vec![7.0, 2.0, 5.0],
+                vec![2.0, 3.0, 7.0],
+                vec![5.0, 3.0, 7.0],
+            ],
+        ),
+        0x32 => (
+            [0.0, 0.0],
+            [596.25, 10.0],
+            vec![
+                vec![596.25],
+                vec![10.0, 596.25],
+                vec![10.0],
+                vec![596.25, 10.0],
+            ],
+        ),
+        _ => unreachable!("carrier class checked above"),
+    };
+    for (prefix, values) in [0x05, 0x09, 0x0d, 0x11].into_iter().zip(side_values) {
+        let length = u8::try_from(2 + values.len() * size_of::<f64>())
+            .expect("owner-chart parameter-point length");
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x18, length, 0x05, prefix, 0x12]);
+        for value in values {
+            bytes.extend_from_slice(&le_f64(value));
+        }
+    }
+    let mut owner = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
+    let references = if width_coded {
+        [278, 1, 276, 2, 277, 3, 199, 4, 279]
+    } else {
+        [278, 324, 276, 268, 277, 374, 199, 195, 279]
+    };
+    for (index, value) in references.into_iter().enumerate() {
+        if width_coded && index % 2 == 1 {
+            owner.push(u8::try_from(value).expect("width-coded owner identity"));
+        } else {
+            owner.extend_from_slice(&compact_uint_bytes(value));
+        }
+    }
+    owner.extend_from_slice(&owner_numeric_tail_for(lower, upper));
+    owner[3] = u8::try_from(owner.len() - 5).expect("owner-chart packet length");
+    bytes.extend_from_slice(&owner);
+    bytes
+}
+
+pub(crate) fn b2_owner_chart_stream_with_extended_bridge() -> Vec<u8> {
+    let mut bytes = b2_owner_chart_stream(0x32);
+    let bridge_pos = bytes
+        .windows(3)
+        .position(|window| window == [0xb2, 0x03, 0x37])
+        .expect("owner-chart bridge marker");
+    let bridge_end = bridge_pos + 5 + usize::from(bytes[bridge_pos + 3]);
+    let mut bridge = vec![
+        0xb2, 0x03, 0x37, 0, 0x05, 0x88, 0x05, 0x04, 100, 0x03, 0x04, 101, 0x07, 0x0b, 0x0f, 0x13,
+    ];
+    bridge.extend_from_slice(&[0x11, 0x09, 0x05, 0x05]);
+    bridge.extend_from_slice(&[0; 8]);
+    bridge.extend_from_slice(&[0x01, 0x05]);
+    bridge[3] = u8::try_from(bridge.len() - 5).expect("extended bridge length");
+    bytes.splice(bridge_pos..bridge_end, bridge);
+    bytes
 }
 
 pub(crate) fn b2_counted_61_stream() -> Vec<u8> {
@@ -145,13 +369,47 @@ pub(crate) fn b2_long_61_stream() -> Vec<u8> {
     record
 }
 
-pub(crate) fn b2_link_5f_stream() -> Vec<u8> {
+pub(crate) fn b2_class5b5c_stream() -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let records = [
+        (
+            0xb2,
+            0x13,
+            0x5b,
+            vec![0x81, 0x03, 0x05, 0x00, 0x08, 0x3a, 0x1c],
+            vec![0x1f],
+        ),
+        (
+            0xb3,
+            0x03,
+            0x5c,
+            vec![0x81, 0x1f, 0x81, 0x01, 0x00, 0x01, 0x00, 0x05, 0x0d],
+            vec![0x34, 0x12],
+        ),
+        (
+            0xb4,
+            0x83,
+            0x5b,
+            vec![0x42, 0x00, 0x7f],
+            vec![0x01, 0x00, 0x10],
+        ),
+    ];
+    for (lead, flag, class, payload, token) in records {
+        assert_eq!(usize::from(lead - 0xb1), token.len());
+        bytes.extend_from_slice(&[lead, flag, class, u8::try_from(payload.len()).unwrap()]);
+        bytes.extend_from_slice(&token);
+        bytes.extend_from_slice(&payload);
+    }
+    bytes
+}
+
+pub(crate) fn b2_face_node_5f_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x08, 0x5d, 0x02, 0x03, 0x05,
     ]
 }
 
-pub(crate) fn b2_linked_owner_stream() -> Vec<u8> {
+pub(crate) fn b2_adjacent_face_owner_stream() -> Vec<u8> {
     let mut bytes = vec![
         0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x08, 0xeb, 0x03, 0x03, 0x05,
     ];
@@ -159,7 +417,23 @@ pub(crate) fn b2_linked_owner_stream() -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn b2_linked_counted_owner_stream() -> Vec<u8> {
+pub(crate) fn b2_adjacent_secondary_face_owner_stream() -> Vec<u8> {
+    let target = compact_uint_bytes(278);
+    let mut bytes = vec![
+        0xb2,
+        0x03,
+        0x5f,
+        u8::try_from(1 + target.len() + 2).expect("face-node payload length"),
+        0x05,
+        0x82,
+    ];
+    bytes.extend_from_slice(&target);
+    bytes.extend_from_slice(&[0x03, 0x03]);
+    bytes.extend_from_slice(&b2_all_compact_owner_packet_stream());
+    bytes
+}
+
+pub(crate) fn b2_adjacent_face_counted_owner_stream() -> Vec<u8> {
     vec![
         0xb2, 0x03, 0x5f, 0x06, 0x11, 0x82, 0x08, 0x94, 0x03, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x19,
         0x05, 0x87, 0x08, 0x8f, 0x03, 0x1d, 0x08, 0x07, 0x01, 0x08, 0x02, 0x01, 0x08, 0x19, 0x01,

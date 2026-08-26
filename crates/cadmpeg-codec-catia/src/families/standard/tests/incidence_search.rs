@@ -184,6 +184,16 @@ fn incidence_propagation_removes_candidates_with_unsupported_vertices() {
 }
 
 #[test]
+fn incidence_deferred_support_retains_an_explicit_boundary_gap() {
+    let mut choices = vec![vec![[0, 1]]];
+    let edge_faces = [[0, 0]];
+
+    prune_incidence_choices_with_deferred_support(&mut choices, &edge_faces, 1, 2)
+        .expect("deferred boundary support is not an explicit contradiction");
+    assert_eq!(choices, vec![vec![[0, 1]]]);
+}
+
+#[test]
 fn incidence_propagation_indexes_wide_endpoint_support_domains() {
     let domain = (0..4096).map(|point| [0, point]).collect::<Vec<_>>();
     let mut choices = vec![domain.clone(), domain.clone()];
@@ -233,6 +243,7 @@ fn incidence_component_rejects_a_choice_that_strands_a_degree_one_vertex() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -280,6 +291,7 @@ fn incidence_component_indexes_and_revalidates_frontier_support() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -327,6 +339,7 @@ fn incidence_component_caches_implicit_frontier_support() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -336,16 +349,17 @@ fn incidence_component_caches_implicit_frontier_support() {
     assert!(search.candidate_fits(0, [0, 1]));
     assert_eq!(
         *search.degree_support_witnesses.borrow(),
-        HashMap::from([((0, 0), (1, [0, 1])), ((0, 1), (1, [0, 1]))])
+        HashMap::from([((0, 0), vec![(1, [0, 1])]), ((0, 1), vec![(1, [0, 1])]),])
     );
 }
 
 #[test]
-fn incidence_degree_support_scan_exhausts_its_component_budget() {
+fn incidence_degree_support_budget_exhaustion_keeps_candidate_unknown() {
     let choices = vec![vec![[0, 1]], vec![[0, 1]]];
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
-    let budget = WorkBudget::new(1);
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+    let degree_budget = WorkBudget::new(1);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
@@ -369,16 +383,18 @@ fn incidence_degree_support_scan_exhausts_its_component_budget() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &degree_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
         stopped: false,
     };
 
-    assert!(!search.candidate_fits(0, [0, 1]));
-    assert!(budget.exhausted());
+    assert!(search.candidate_fits(0, [0, 1]));
+    assert!(!budget.exhausted());
+    assert!(degree_budget.exhausted());
     search.search();
-    assert!(search.exhausted);
+    assert!(!search.exhausted);
 }
 
 #[test]
@@ -410,6 +426,7 @@ fn incidence_component_requires_degree_support_to_fit_every_incident_face() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -465,6 +482,7 @@ fn incidence_candidate_checks_ordered_faces_with_implicit_edge_domains() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -504,6 +522,7 @@ fn incidence_branch_reuses_candidate_viability_across_incident_face_frontiers() 
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -543,6 +562,7 @@ fn incidence_branch_stops_ranking_at_a_singleton_domain() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -591,6 +611,7 @@ fn incidence_component_uses_operation_budget_for_a_wide_rejected_frontier() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -642,6 +663,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
         }),
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -696,6 +718,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         }),
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -745,6 +768,7 @@ fn incidence_component_declines_when_its_work_budget_is_exhausted() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -796,6 +820,7 @@ fn incidence_face_configuration_scan_does_not_charge_irrelevant_faces() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -845,6 +870,7 @@ fn exhausted_boundary_lookahead_does_not_exhaust_exact_incidence_search() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &search_budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -904,6 +930,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_estimated_face() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -964,6 +991,7 @@ fn incidence_face_configuration_branches_on_the_narrowest_projected_face() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -1019,6 +1047,7 @@ fn incidence_face_configuration_reuses_persistent_domains_across_assignments() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -1084,6 +1113,7 @@ fn incidence_face_factor_masks_roll_back_between_configuration_branches() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -1340,6 +1370,7 @@ fn incidence_forced_face_chain_does_not_consume_branch_budget() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -1392,6 +1423,7 @@ fn incidence_forced_face_configuration_closes_its_frontier_atomically() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -1455,6 +1487,7 @@ fn incidence_candidate_uses_a_separate_global_quotient_validation_budget() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,
@@ -1512,6 +1545,7 @@ fn incidence_selection_validates_only_its_affected_faces() {
         partial_solution_filter: None,
         dead_states: HashSet::new(),
         budget: &budget,
+        degree_support_budget: &propagation_budget,
         coordinate_propagation_budget: &propagation_budget,
         boundary_propagation_budget: &propagation_budget,
         exhausted: false,

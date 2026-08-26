@@ -13,7 +13,7 @@
 //! container view returned by codec inspection.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
 use cadmpeg_core::bytes::{find, find_from};
@@ -676,24 +676,28 @@ pub struct ContainerScan<'a> {
     pub finjpl_segments: Vec<FinjplSegment>,
     /// Exact model-container declarations from the outer `Data` stream.
     pub outer_container_declarations: Vec<OuterContainerDeclaration>,
+    /// Canonical outer persistent-surface aliases available to geometry routes.
+    pub(crate) surface_alias_tags: HashMap<u32, Option<u32>>,
     /// Record-family census.
     pub census: Census,
     /// Identified storage variant.
     pub variant: Variant,
 }
 
-/// Return the physical file regions that can carry consolidated A/B records.
+/// Return the logical record sources that can carry consolidated A/B records.
 ///
-/// Catalogued stream extents are the authoritative source boundaries. When a
+/// Each catalogued descriptor is one source. Its physical extents remain in
+/// logical-offset order. When a
 /// file has no outer directory, the bytes after the outer header and before a
 /// nested container (or the outer directory) are the unnamed outer-preamble
 /// source. The nested directory itself and all directory headers stay outside
-/// the inventory. Ranges remain separate even when they are adjacent: a
-/// record cannot establish an ordered relationship across two stream extents.
-pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<usize>> {
-    let mut ranges = Vec::new();
-    let add_directory = |ranges: &mut Vec<Range<usize>>, directory: &InnerDir| {
+/// the inventory. Records can establish ordered relationships across extents
+/// of one descriptor, but never across descriptors.
+pub(crate) fn consolidated_record_sources(scan: &ContainerScan<'_>) -> Vec<Vec<Range<usize>>> {
+    let mut sources = Vec::new();
+    let add_directory = |sources: &mut Vec<Vec<Range<usize>>>, directory: &InnerDir| {
         for descriptor in &directory.descriptors {
+            let mut source = Vec::new();
             for extent in &descriptor.extents {
                 let Some(start) = directory.inner.checked_add(extent.phys_off as usize) else {
                     continue;
@@ -702,14 +706,17 @@ pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<
                     continue;
                 };
                 if end <= scan.data.len() {
-                    ranges.push(start..end);
+                    source.push(start..end);
                 }
+            }
+            if !source.is_empty() && !sources.contains(&source) {
+                sources.push(source);
             }
         }
     };
 
     if let Some(outer) = scan.outer.as_ref() {
-        add_directory(&mut ranges, outer);
+        add_directory(&mut sources, outer);
     } else {
         let outer_end = scan
             .inner
@@ -718,19 +725,27 @@ pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<
             .or_else(|| outer_stream_directory_range(&scan.data).map(|range| range.start))
             .unwrap_or(scan.data.len());
         if outer_hdr::FILL_FF < outer_end {
-            ranges.push(outer_hdr::FILL_FF..outer_end);
+            sources.push(std::iter::once(outer_hdr::FILL_FF..outer_end).collect());
         }
     }
     if let Some(inner) = scan.inner.as_ref() {
-        add_directory(&mut ranges, inner);
+        add_directory(&mut sources, inner);
     }
 
-    if ranges.is_empty() && scan.data.len() > outer_hdr::FILL_FF {
-        ranges.push(outer_hdr::FILL_FF..scan.data.len());
+    if sources.is_empty() && scan.data.len() > outer_hdr::FILL_FF {
+        sources.push(std::iter::once(outer_hdr::FILL_FF..scan.data.len()).collect());
     }
-    ranges.sort_by_key(|range| (range.start, range.end));
-    ranges.dedup();
-    ranges
+    sources
+}
+
+/// Flatten the descriptor-scoped source inventory without changing logical
+/// source or extent order.
+#[cfg(test)]
+pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<usize>> {
+    consolidated_record_sources(scan)
+        .into_iter()
+        .flatten()
+        .collect()
 }
 
 /// Reconstruct each catalogued logical stream as an independent record source.
@@ -1221,22 +1236,35 @@ fn unique_largest_descriptor<'a>(
 /// Identify the storage variant from container-level evidence ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#1-variant-families)).
 ///
 /// The identification is intentionally structural: standard-nested requires an
-/// FBB spine plus the standard edge-table delimiter; FBB-only requires an FBB
-/// spine without that delimiter; zero-entity requires no nested container and an
+/// FBB spine plus an admitted standard edge-table grammar; FBB-only requires
+/// an admitted two-table FBB edge grammar. The delimiter byte sequence is not
+/// sufficient to distinguish them because FBB-only widths one and three reuse
+/// the standard delimiter. Zero-entity requires no nested container and an
 /// `a9 03` family; the object-stream / E5 families are named from their record
-/// census. A coherent E5 walk owns its bounded stream before the weaker
-/// container and marker fallbacks are considered. Anything that matches no
-/// invariant is [`Variant::Unknown`].
+/// census. An admitted standard edge-table grammar is a complete nested FBB
+/// spine and owns route selection over a coherent E5 walk. An FBB-only grammar
+/// is a partial spine; when it coexists with a coherent E5 walk, E5 owns the
+/// route. Anything that matches no invariant is [`Variant::Unknown`].
 fn identify_variant(
     inner: Option<&InnerDir>,
     brep: Option<&[u8]>,
+    main_data_stream: Option<&[u8]>,
     census: &Census,
     coherent_e5: bool,
 ) -> Variant {
-    if coherent_e5 {
-        return Variant::E5Stream;
-    }
     match (inner, brep) {
+        // A standard edge table establishes a complete nested FBB body. It
+        // takes precedence over an unrelated E5 stream in the same container.
+        (Some(_), Some(brep)) if census.fbb_runs > 0 => {
+            let variant = identify_fbb_variant(main_data_stream.unwrap_or(brep), census);
+            if variant == Variant::FbbOnly && coherent_e5 {
+                Variant::E5Stream
+            } else {
+                variant
+            }
+        }
+        // E5 is the geometry route when no complete nested FBB body is present.
+        _ if coherent_e5 => Variant::E5Stream,
         // No nested container at all.
         (None, _) => {
             if census.a9_records > 0 {
@@ -1247,17 +1275,21 @@ fn identify_variant(
         }
         // Nested container, but its directory catalogues no BREP body.
         (Some(_), None) => Variant::InnerNoDirectory,
-        (Some(_), Some(_)) => {
-            if census.fbb_runs > 0 {
-                if census.edge_delimiters > 0 {
-                    Variant::StandardNested
-                } else {
-                    Variant::FbbOnly
-                }
-            } else {
-                Variant::FloatPackedInnerNoFbb
-            }
-        }
+        (Some(_), Some(_)) => Variant::FloatPackedInnerNoFbb,
+    }
+}
+
+fn identify_fbb_variant(brep: &[u8], census: &Census) -> Variant {
+    if crate::families::standard::fbb::standard_edge_count(brep).is_some() {
+        return Variant::StandardNested;
+    }
+    if crate::families::standard::fbb::fbb_only_edge_count(brep).is_some() {
+        return Variant::FbbOnly;
+    }
+    if census.edge_delimiters == 0 && census.vertex_markers > 0 {
+        Variant::FbbOnly
+    } else {
+        Variant::Unknown
     }
 }
 
@@ -1308,11 +1340,15 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let variant = identify_variant(
         inner.as_ref(),
         brep.as_deref(),
+        main_data_stream.as_deref(),
         &census,
         outer_body.is_some_and(|body| {
             e5_record_stream_in_segments(&data, body, &finjpl_segments).is_some()
         }),
     );
+    let surface_alias_tags = matches!(variant, Variant::StandardNested)
+        .then(|| crate::object_graph::surface_alias_tag_map(&data))
+        .unwrap_or_default();
 
     ContainerScan {
         data,
@@ -1327,6 +1363,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         external_references,
         finjpl_segments,
         outer_container_declarations,
+        surface_alias_tags,
         census,
         variant,
     }
