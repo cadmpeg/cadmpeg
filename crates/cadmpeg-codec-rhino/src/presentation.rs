@@ -1922,10 +1922,15 @@ fn parse_material(
     let specular = reader.array()?;
     let reflection = reader.array()?;
     let mut transparent = reader.array()?;
+    // A pre-2009 writer stores a bogus [128, 128, 128] transparent color that
+    // the diffuse color replaces. Without a stamp the stored color stands, so
+    // the emitted color rests on the missing stamp - but only where the two
+    // readings disagree. Where diffuse already equals the stored color, both
+    // readings give the same IR and nothing was substituted.
     if !modern && transparent[..3] == [128, 128, 128] {
         if writer_version.is_some_and(|version| version < 200_912_010) {
             transparent = diffuse;
-        } else if writer_version.is_none() {
+        } else if writer_version.is_none() && diffuse != transparent {
             losses.push(RhinoLossCode::SourceDialectUnverified.note(format!(
                 "legacy material at offset {source_offset} kept its stored transparent color \
                  instead of the pre-2009 diffuse substitution because {}",
@@ -5464,14 +5469,14 @@ mod tests {
     }
 
     /// One legacy (outer version 2.0) material whose transparent color is the
-    /// bogus [128, 128, 128] that the pre-2009 rule replaces with diffuse.
-    fn legacy_material_bytes() -> Vec<u8> {
+    /// bogus [128, 128, 128] that the pre-2009 rule replaces with `diffuse`.
+    fn legacy_material_bytes(diffuse: [u8; 4]) -> Vec<u8> {
         let mut body = [[0x11; 16].as_slice(), 2_i32.to_le_bytes().as_slice()].concat();
         body.extend(utf16("steel"));
         body.extend([0x22; 16]);
         for color in [
             [1, 2, 3, 4],
-            [5, 6, 7, 8],
+            diffuse,
             [9, 10, 11, 12],
             [13, 14, 15, 16],
             [17, 18, 19, 20],
@@ -5501,7 +5506,7 @@ mod tests {
 
     #[test]
     fn legacy_material_preserves_core_appearance_and_switches() {
-        let bytes = legacy_material_bytes();
+        let bytes = legacy_material_bytes([5, 6, 7, 8]);
         let material = parse_material(
             &bytes,
             0..bytes.len(),
@@ -5524,10 +5529,11 @@ mod tests {
     ///
     /// The same bytes give diffuse under an old stamp and the stored
     /// [128, 128, 128] under none, so an unstamped archive emits a color the
-    /// archive does not vouch for.
+    /// archive does not vouch for - unless diffuse already equals the stored
+    /// color, where both readings agree and nothing was substituted.
     #[test]
     fn unstamped_legacy_material_charges_the_transparency_dialect_loss() {
-        let bytes = legacy_material_bytes();
+        let bytes = legacy_material_bytes([5, 6, 7, 8]);
         let mut losses = Vec::new();
         let material = parse_material(
             &bytes,
@@ -5559,6 +5565,22 @@ mod tests {
         .expect("legacy material with a modern writer stamp");
         assert_eq!(stamped.transparent, [128, 128, 128, 24]);
         assert!(stamped_losses.is_empty(), "{stamped_losses:?}");
+
+        // Both readings give the same color, so no color was substituted.
+        let agreeing = legacy_material_bytes([128, 128, 128, 24]);
+        let mut agreeing_losses = Vec::new();
+        let material = parse_material(
+            &agreeing,
+            0..agreeing.len(),
+            ArchiveVersion::V5,
+            None,
+            0,
+            None,
+            &mut agreeing_losses,
+        )
+        .expect("legacy material whose diffuse equals its transparent color");
+        assert_eq!(material.transparent, material.diffuse);
+        assert!(agreeing_losses.is_empty(), "{agreeing_losses:?}");
     }
 
     fn v2_v3_material_payload(minor: u8) -> Vec<u8> {
