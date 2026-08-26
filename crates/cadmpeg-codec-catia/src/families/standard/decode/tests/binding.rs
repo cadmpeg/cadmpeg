@@ -182,49 +182,7 @@ fn same_cone_generator_requires_an_apex_collinear_endpoint_pair() {
 }
 
 #[test]
-fn standard_edge_allocation_binds_two_successor_vertices() {
-    let supports = [
-        StandardCurveSupport {
-            pos: 8,
-            tag: 100,
-            faces: [1, 2],
-            geometry: StandardCurveGeometry::Bspline,
-        },
-        StandardCurveSupport {
-            pos: 9,
-            tag: 200,
-            faces: [2, 3],
-            geometry: StandardCurveGeometry::Bspline,
-        },
-    ];
-
-    assert_eq!(
-        standard_successor_endpoint_pairs(
-            &supports,
-            &[99, 101, 102, 202],
-            &[vec![1, 2], vec![0, 3]],
-        ),
-        [Some([1, 2]), None]
-    );
-}
-
-#[test]
-fn standard_edge_allocation_rejects_geometrically_unrelated_successors() {
-    let supports = [StandardCurveSupport {
-        pos: 8,
-        tag: 100,
-        faces: [1, 2],
-        geometry: StandardCurveGeometry::Bspline,
-    }];
-
-    assert_eq!(
-        standard_successor_endpoint_pairs(&supports, &[99, 101, 102], &[vec![0, 1]]),
-        [None]
-    );
-}
-
-#[test]
-fn standard_edge_allocation_binds_one_present_successor_vertex() {
+fn standard_edge_successor_points_are_only_domain_corroboration() {
     let supports = [
         StandardCurveSupport {
             pos: 8,
@@ -241,25 +199,32 @@ fn standard_edge_allocation_binds_one_present_successor_vertex() {
     ];
 
     assert_eq!(
-        standard_successor_endpoint_points(&supports, &[99, 101, 202]),
-        [Some(1), None]
+        standard_successor_endpoint_points(&supports, &[99, 101, 102]),
+        [[Some(1), Some(2)], [None, None]]
     );
 }
 
 #[test]
-fn lone_successor_vertex_requires_geometric_corroboration() {
+fn successor_endpoint_points_filter_independently_and_jointly() {
     let mut options = [
         vec![[2, 4], [2, 5], [3, 5]],
         vec![[7, 8], [7, 9]],
         vec![[10, 11]],
     ];
 
-    corroborate_successor_endpoint_points(&mut options, &[Some(5), Some(6), None]);
+    corroborate_successor_endpoint_points(
+        &mut options,
+        &[[None, Some(5)], [Some(6), None], [None, None]],
+    );
 
     assert_eq!(
         options,
         [vec![[2, 5], [3, 5]], vec![[7, 8], [7, 9]], vec![[10, 11]],]
     );
+
+    let mut joint_options = vec![vec![[2, 4], [2, 5], [3, 5]]];
+    corroborate_successor_endpoint_points(&mut joint_options, &[[Some(2), Some(5)]]);
+    assert_eq!(joint_options, [vec![[2, 5]]]);
 }
 
 #[test]

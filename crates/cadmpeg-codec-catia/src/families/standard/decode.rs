@@ -3731,9 +3731,6 @@ fn attach_standard_topology(
     let roster_endpoint_pairs = vertex_roster
         .as_ref()
         .and_then(|roster| standard_serialized_endpoint_pairs(&supports, &native_edges, roster));
-    let allocation_endpoint_pairs = vertex_roster
-        .as_ref()
-        .map(|roster| standard_successor_endpoint_pairs(&supports, roster, &endpoint_candidates));
     let native_support_ids = native_edge_supports.keys().copied().collect::<HashSet<_>>();
     let native_support_edge_ids = standard_native_support_edge_ids(&supports, &native_support_ids);
     let native_supports_by_row = native_support_edge_ids
@@ -3743,10 +3740,7 @@ fn attach_standard_topology(
     let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
         graph_endpoint_pairs.as_deref(),
         roster_endpoint_pairs.as_deref(),
-    )
-    .and_then(|evidence| {
-        merge_native_endpoint_evidence(evidence.as_deref(), allocation_endpoint_pairs.as_deref())
-    }) else {
+    ) else {
         return Err(StandardTopologyFailure::ConflictingNativeEndpoints);
     };
     diagnostics.native_endpoint_pairs = native_endpoint_evidence
@@ -5678,37 +5672,15 @@ pub(crate) fn merge_derived_endpoint_pair(
     }
 }
 
-pub(crate) fn standard_successor_endpoint_pairs(
-    supports: &[crate::families::standard::records::StandardCurveSupport],
-    vertex_roster: &[u32],
-    endpoint_candidates: &[Vec<usize>],
-) -> Vec<Option<[usize; 2]>> {
-    let point_by_identity = vertex_roster
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(point, identity)| (identity, point))
-        .collect::<HashMap<_, _>>();
-    supports
-        .iter()
-        .enumerate()
-        .map(|(edge, support)| {
-            let candidates = endpoint_candidates.get(edge)?;
-            let pair = [
-                *point_by_identity.get(&support.tag.checked_add(1)?)?,
-                *point_by_identity.get(&support.tag.checked_add(2)?)?,
-            ];
-            pair.into_iter()
-                .all(|point| candidates.contains(&point))
-                .then_some(pair)
-        })
-        .collect()
-}
-
+/// Return checked successor identities as endpoint-domain corroboration.
+///
+/// The creation-order pattern is not a row identity. It may narrow an
+/// existing geometric domain independently for either successor identity, but
+/// it never supplies native endpoint evidence by itself.
 pub(crate) fn standard_successor_endpoint_points(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     vertex_roster: &[u32],
-) -> Vec<Option<usize>> {
+) -> Vec<[Option<usize>; 2]> {
     let point_by_identity = vertex_roster
         .iter()
         .copied()
@@ -5717,20 +5689,30 @@ pub(crate) fn standard_successor_endpoint_points(
         .collect::<HashMap<_, _>>();
     supports
         .iter()
-        .map(|support| point_by_identity.get(&support.tag.checked_add(1)?).copied())
+        .map(|support| {
+            [
+                support
+                    .tag
+                    .checked_add(1)
+                    .and_then(|identity| point_by_identity.get(&identity).copied()),
+                support
+                    .tag
+                    .checked_add(2)
+                    .and_then(|identity| point_by_identity.get(&identity).copied()),
+            ]
+        })
         .collect()
 }
 
 pub(crate) fn corroborate_successor_endpoint_points(
     options: &mut [Vec<[usize; 2]>],
-    points: &[Option<usize>],
+    points: &[[Option<usize>; 2]],
 ) {
-    for (options, point) in options.iter_mut().zip(points) {
-        let Some(point) = point else {
-            continue;
-        };
-        if options.iter().any(|pair| pair.contains(point)) {
-            options.retain(|pair| pair.contains(point));
+    for (options, points) in options.iter_mut().zip(points) {
+        for point in points.iter().flatten() {
+            if options.iter().any(|pair| pair.contains(point)) {
+                options.retain(|pair| pair.contains(point));
+            }
         }
     }
 }
