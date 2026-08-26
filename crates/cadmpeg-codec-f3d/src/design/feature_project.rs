@@ -1092,6 +1092,43 @@ pub fn project_parameter_design_with_edge_identities(
                                 construction_groups,
                                 face_operands,
                             );
+                            let has_parameter_owners = owners.iter().any(|owner| {
+                                native_stream(&owner.id) == Some(native_scope)
+                                    && owner.scope_record_index == scope.record_index
+                            });
+                            let face_reference_count = construction
+                                .face_group_record_indices
+                                .len()
+                                .saturating_mul(2);
+                            let full_face_extent = !has_parameter_owners
+                                && scope.reference_members.len() == face_reference_count
+                                && construction
+                                    .face_group_record_indices
+                                    .iter()
+                                    .enumerate()
+                                    .all(|(group_ordinal, group_record_index)| {
+                                        let pair_at = group_ordinal.saturating_mul(2);
+                                        let Some(member_record_index) = scope
+                                            .reference_members
+                                            .get(pair_at.saturating_add(1))
+                                            .copied()
+                                        else {
+                                            return false;
+                                        };
+                                        scope.reference_members.get(pair_at)
+                                            == Some(group_record_index)
+                                            && construction_groups.iter().any(|group| {
+                                                native_stream(&group.id) == Some(native_scope)
+                                                    && group.scope_record_index
+                                                        == scope.record_index
+                                                    && group.record_index == *group_record_index
+                                                    && group.role == ROLE_0X10
+                                                    && group.members.as_slice()
+                                                        == std::slice::from_ref(
+                                                            &member_record_index,
+                                                        )
+                                            })
+                                    });
                             let extent = parameters
                                 .iter()
                                 .find(|(ordinal, _)| *ordinal == 1)
@@ -1099,6 +1136,11 @@ pub fn project_parameter_design_with_edge_identities(
                                 .filter(|length| length.0 > 0.0)
                                 .map(|length| cadmpeg_ir::features::CosmeticThreadExtent::Blind {
                                     length,
+                                })
+                                .or_else(|| {
+                                    full_face_extent.then_some(
+                                        cadmpeg_ir::features::CosmeticThreadExtent::Through,
+                                    )
                                 });
                             FeatureDefinition::CosmeticThread {
                                 face,

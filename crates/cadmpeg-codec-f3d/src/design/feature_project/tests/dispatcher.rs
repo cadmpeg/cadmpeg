@@ -522,9 +522,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         pitch_diameter: 0.3166,
         trailing_reference_record_index: None,
         trailing_reference_offset: None,
-        face_group_record_indices: vec![701, 703],
+        face_group_record_indices: vec![701],
     });
-    thread.reference_members = vec![701, 702, 703, 704];
+    thread.reference_members = vec![701, 702];
 
     let scopes = vec![
         base_flange,
@@ -540,7 +540,6 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         group(20, 0, 200, &[201], 0x0000_0004_0000_0000),
         group(30, 0, 300, &[301], 0x0000_0005_0000_0000),
         group(70, 0, 701, &[702], 0x0000_0010_0000_0000),
-        group(70, 2, 703, &[704], 0x0000_0010_0000_0000),
     ];
     let placement = DesignSketchPlacement {
         id: format!("{stream}:placement#7"),
@@ -623,9 +622,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(
         definition("Thread"),
         FeatureDefinition::CosmeticThread {
-            face: FaceSelection::Native(scopes[6].id.clone()),
+            face: FaceSelection::Native(groups[3].id.clone()),
             diameter: Some(Length(3.5)),
-            extent: None,
+            extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through),
         }
     );
 }
