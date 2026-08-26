@@ -1175,7 +1175,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
                 ..
             },
             op: cadmpeg_ir::features::BooleanOp::NewBody,
-        } if (*angle - std::f64::consts::TAU).abs() < 1e-12
+        } if (*angle - std::f64::consts::TAU).abs() < 1.0e-12
     ));
     let records =
         &result.ir().native.namespace("creo").unwrap().arenas["feature_revolution_extents"];

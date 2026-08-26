@@ -20,17 +20,21 @@ use super::radii::{
 };
 use super::skamp::section_line_entity_fixed_coordinate_with_unique_rows;
 
-const EPS_LINE_INTERSECTION: f64 = 1.0e-12;
-const EPS_RADIUS_NONZERO: f64 = 1.0e-12;
-const EPS_RADIAL_RESIDUAL: f64 = 1.0e-10;
-const EPS_PARAMETER_BOUND: f64 = 1.0e-10;
-const EPS_CENTER_DISTANCE: f64 = 1.0e-12;
-const EPS_HEIGHT_RESIDUAL: f64 = 1.0e-9;
-const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
-const EPS_DISTANCE_MATCH: f64 = 1.0e-9;
-const EPS_DIRECTION_NONZERO: f64 = 1.0e-12;
-const EPS_OFFSET_RESIDUAL: f64 = 1.0e-9;
-const EPS_ENDPOINT_AGREEMENT: f64 = 1.0e-9;
+const EPS_SKETCH_INTERSECTION_GEOMETRY: f64 = 1.0e-9;
+const EPS_SKETCH_INTERSECTION_DEGENERATE: f64 = 1.0e-10;
+const EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY: f64 = 1.0e-12;
+
+const EPS_LINE_INTERSECTION: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
+const EPS_RADIUS_NONZERO: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
+const EPS_RADIAL_RESIDUAL: f64 = EPS_SKETCH_INTERSECTION_DEGENERATE;
+const EPS_PARAMETER_BOUND: f64 = EPS_SKETCH_INTERSECTION_DEGENERATE;
+const EPS_CENTER_DISTANCE: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
+const EPS_HEIGHT_RESIDUAL: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
+const EPS_RADIUS_AGREEMENT: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
+const EPS_DISTANCE_MATCH: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
+const EPS_DIRECTION_NONZERO: f64 = EPS_SKETCH_INTERSECTION_EXACT_GEOMETRY;
+const EPS_OFFSET_RESIDUAL: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
+const EPS_ENDPOINT_AGREEMENT: f64 = EPS_SKETCH_INTERSECTION_GEOMETRY;
 
 pub(crate) fn section_line_origin_direction(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
     match geometry {
@@ -612,8 +616,8 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
             definition,
             segment.external_id,
         ) {
-            Some(0) => (start[0] - end[0]).abs() <= 1.0e-9 * scale,
-            Some(1) => (start[1] - end[1]).abs() <= 1.0e-9 * scale,
+            Some(0) => (start[0] - end[0]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale,
+            Some(1) => (start[1] - end[1]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale,
             _ => false,
         };
         orientation_matches.then_some(())?;

@@ -15,12 +15,15 @@ use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, Termination};
 use cadmpeg_ir::geometry::{NurbsSurface, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 
-const EPS_PLANE_PARALLEL: f64 = 1.0e-10;
-const EPS_STATION_RELATIVE: f64 = 1.0e-9;
-const EPS_COORDINATE_AGREEMENT: f64 = 1.0e-9;
-const EPS_VECTOR_AGREEMENT: f64 = 1.0e-9;
-const EPS_AXIS_ALIGNMENT: f64 = 1.0e-10;
-const EPS_WEIGHT_AGREEMENT: f64 = 1.0e-10;
+const EPS_SWEEP_EXTENT_GEOMETRY: f64 = 1.0e-9;
+const EPS_SWEEP_EXTENT_DEGENERATE: f64 = 1.0e-10;
+
+const EPS_PLANE_PARALLEL: f64 = EPS_SWEEP_EXTENT_DEGENERATE;
+const EPS_STATION_RELATIVE: f64 = EPS_SWEEP_EXTENT_GEOMETRY;
+const EPS_COORDINATE_AGREEMENT: f64 = EPS_SWEEP_EXTENT_GEOMETRY;
+const EPS_VECTOR_AGREEMENT: f64 = EPS_SWEEP_EXTENT_GEOMETRY;
+const EPS_AXIS_ALIGNMENT: f64 = EPS_SWEEP_EXTENT_DEGENERATE;
+const EPS_WEIGHT_AGREEMENT: f64 = EPS_SWEEP_EXTENT_DEGENERATE;
 
 pub(in super::super) struct ExtrusionCarrierSpan {
     pub(in super::super) starts: Vec<[f64; 3]>,
@@ -232,41 +235,44 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                 }
                 _ => return None,
             },
-            crate::surface::SurfaceKind::Cylinder => match surfaces.as_slice() {
-                [Surface {
-                    geometry: SurfaceGeometry::Unknown { .. },
-                    ..
-                }] => {}
-                [Surface {
-                    geometry: SurfaceGeometry::Cylinder { origin, axis, .. },
-                    ..
-                }] => {
-                    let parameters = crate::surface::unique_surface_parameter(
-                        &scan.surfaces.parameters,
-                        row.id,
-                    )?;
-                    let frame = parameters.positional_cylinder_frame?;
-                    let transferred_origin = [origin.x, origin.y, origin.z];
-                    let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
-                    let frame_axis = normalized(frame.axis)?;
-                    let scale = transferred_origin
-                        .into_iter()
-                        .chain(frame.origin)
-                        .map(f64::abs)
-                        .fold(1.0, f64::max);
-                    (transferred_origin
-                        .into_iter()
-                        .zip(frame.origin)
-                        .all(|(left, right)| (left - right).abs() <= 1.0e-9 * scale)
-                        && transferred_axis
+            crate::surface::SurfaceKind::Cylinder => {
+                match surfaces.as_slice() {
+                    [Surface {
+                        geometry: SurfaceGeometry::Unknown { .. },
+                        ..
+                    }] => {}
+                    [Surface {
+                        geometry: SurfaceGeometry::Cylinder { origin, axis, .. },
+                        ..
+                    }] => {
+                        let parameters = crate::surface::unique_surface_parameter(
+                            &scan.surfaces.parameters,
+                            row.id,
+                        )?;
+                        let frame = parameters.positional_cylinder_frame?;
+                        let transferred_origin = [origin.x, origin.y, origin.z];
+                        let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
+                        let frame_axis = normalized(frame.axis)?;
+                        let scale = transferred_origin
                             .into_iter()
-                            .zip(frame_axis)
-                            .all(|(left, right)| (left - right).abs() <= 1.0e-10))
-                    .then_some(())?;
-                    frames.push(frame);
+                            .chain(frame.origin)
+                            .map(f64::abs)
+                            .fold(1.0, f64::max);
+                        (transferred_origin
+                            .into_iter()
+                            .zip(frame.origin)
+                            .all(|(left, right)| {
+                                (left - right).abs() <= EPS_SWEEP_EXTENT_GEOMETRY * scale
+                            })
+                            && transferred_axis.into_iter().zip(frame_axis).all(
+                                |(left, right)| (left - right).abs() <= EPS_SWEEP_EXTENT_DEGENERATE,
+                            ))
+                        .then_some(())?;
+                        frames.push(frame);
+                    }
+                    _ => return None,
                 }
-                _ => return None,
-            },
+            }
             _ => unreachable!("surface family checked above"),
         }
     }

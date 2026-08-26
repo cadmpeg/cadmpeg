@@ -7,6 +7,9 @@ use std::collections::VecDeque;
 
 use crate::geometry::PcurveGeometry;
 
+const EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9: f64 = 1.0e-9;
+const EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12: f64 = 1.0e-12;
+
 pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut surfaces = ir
         .model
@@ -805,15 +808,21 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                     // its serialized phase, which may use any equivalent
                     // angular branch.
                     let sweep = end - start;
-                    let full_period = (sweep - tau).abs() < 1.0e-9;
-                    valid &= sweep <= tau + 1.0e-9 && (full_period || (0.0..tau).contains(&start));
+                    let full_period = (sweep - tau).abs()
+                        < EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9;
+                    valid &= sweep
+                        <= tau + EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9
+                        && (full_period || (0.0..tau).contains(&start));
                 }
                 CurveGeometry::Nurbs(nurbs) => {
                     valid &= crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(
                         |[lower, upper]| {
                             if nurbs.periodic {
                                 let period = upper - lower;
-                                let tolerance = 1.0e-9_f64.max(period.abs() * 1.0e-9);
+                                let tolerance = 1.0e-9_f64.max(
+                                    period.abs()
+                                        * EPS_CARRIERS_PARAMETERIZATION_CHECK_PARAMETER_DOMAINS_E9,
+                                );
                                 end - start <= period + tolerance
                             } else {
                                 parameter_in_domain(start, [lower, upper])
@@ -907,7 +916,7 @@ fn parameter_in_domain(value: f64, [lower, upper]: [f64; 2]) -> bool {
     // Independent serialization of a carrier and its use range can round the
     // same boundary to adjacent floating-point values.
     let scale = value.abs().max(lower.abs()).max(upper.abs()).max(1.0);
-    let tolerance = scale * 1.0e-12;
+    let tolerance = scale * EPS_CARRIERS_PARAMETERIZATION_PARAMETER_IN_DOMAIN_E12;
     value >= lower - tolerance && value <= upper + tolerance
 }
 

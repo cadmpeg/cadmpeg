@@ -212,6 +212,7 @@ fn scale_datum_point_construction(
         cadmpeg_ir::features::DatumPointConstruction::CircleCenter { .. }
         | cadmpeg_ir::features::DatumPointConstruction::TwoEdgeIntersection { .. }
         | cadmpeg_ir::features::DatumPointConstruction::Vertex { .. }
+        | cadmpeg_ir::features::DatumPointConstruction::SketchPoint { .. }
         | cadmpeg_ir::features::DatumPointConstruction::DistanceOnEdge { .. } => {}
     }
 }
@@ -719,6 +720,12 @@ fn scale_sheet_metal_flange_width(
         SheetMetalFlangeWidth::TwoSides { first, second } => {
             scale_length(first, scale);
             scale_length(second, scale);
+        }
+        SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => {
+            for width in widths {
+                scale_length(&mut width.first, scale);
+                scale_length(&mut width.second, scale);
+            }
         }
         SheetMetalFlangeWidth::FullEdge => {}
     }

@@ -36,6 +36,9 @@ use super::geometry::surface_parameter_periods;
 use super::index::CarrierIndex;
 use super::StageOutcome;
 
+const EPS_TOPOLOGY_READ_DEGENERATE: f64 = 1.0e-10;
+const EPS_TOPOLOGY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
+
 mod admissions;
 
 pub(super) struct TopologyData {
@@ -2955,9 +2958,9 @@ fn implicit_face_points(
     (!loops.is_empty()).then_some(loops)
 }
 
-const IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE: f64 = 1.0e-12;
-const IMPLICIT_FACE_NORMAL_ALIGNMENT_TOLERANCE: f64 = 1.0e-10;
-const IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE: f64 = 1.0e-12;
+const IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE: f64 = EPS_TOPOLOGY_READ_EXACT_GEOMETRY;
+const IMPLICIT_FACE_NORMAL_ALIGNMENT_TOLERANCE: f64 = EPS_TOPOLOGY_READ_DEGENERATE;
+const IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE: f64 = EPS_TOPOLOGY_READ_EXACT_GEOMETRY;
 
 fn implicit_face_plane(
     bounds: &[u64],
@@ -3446,7 +3449,7 @@ fn clamp_selection_parameter(value: f64, domain: Option<[f64; 2]>) -> f64 {
     let Some([lower, upper]) = domain else {
         return value;
     };
-    let tolerance = 1.0e-12 * (1.0 + lower.abs().max(upper.abs()));
+    let tolerance = EPS_TOPOLOGY_READ_EXACT_GEOMETRY * (1.0 + lower.abs().max(upper.abs()));
     if value < lower && lower - value <= tolerance {
         lower
     } else if value > upper && value - upper <= tolerance {

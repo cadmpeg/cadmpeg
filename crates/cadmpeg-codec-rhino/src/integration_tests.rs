@@ -1677,7 +1677,7 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
     let position = annotation.position.expect("authored text point");
     for axis in 0..3 {
         assert!(
-            (position[axis] - expected[axis]).abs() < 1e-12,
+            (position[axis] - expected[axis]).abs() < 1.0e-12,
             "{position:?} != {expected:?}"
         );
     }
@@ -1686,7 +1686,7 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
     // family's 3.0 and the record's 2.0 scale.
     let value = annotation.value.expect("persisted measurement");
     assert!(
-        (value - 3.0 * 2.0 * MILLIMETERS_PER_UNIT).abs() < 1e-12,
+        (value - 3.0 * 2.0 * MILLIMETERS_PER_UNIT).abs() < 1.0e-12,
         "{value}"
     );
 

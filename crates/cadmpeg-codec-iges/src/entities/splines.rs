@@ -19,6 +19,8 @@ use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
+const EPS_SPLINE_DEGENERATE: f64 = 1.0e-10;
+
 const MAX_SPLINE_SEGMENTS: usize = 100_000;
 const MAX_SPLINE_SURFACE_POLES: usize = 1_000_000;
 
@@ -113,7 +115,7 @@ fn points_within_resolution(left: Point3, right: Point3, resolution: f64) -> boo
 
 fn surface_point_close(left: Point3, right: Point3) -> bool {
     let close = |left: f64, right: f64| {
-        (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10
+        (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * EPS_SPLINE_DEGENERATE
     };
     close(left.x, right.x) && close(left.y, right.y) && close(left.z, right.z)
 }

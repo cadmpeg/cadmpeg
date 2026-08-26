@@ -16,8 +16,8 @@ pub(crate) fn synthetic_smbh() -> Vec<u8> {
     push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
     push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
     push_tagged_f64(&mut b, 60.0); // scale
-    push_tagged_f64(&mut b, 1e-6); // resabs
-    push_tagged_f64(&mut b, 1e-10); // resnor
+    push_tagged_f64(&mut b, 1.0e-6); // resabs
+    push_tagged_f64(&mut b, 1.0e-10); // resnor
 
     // Some active-model filler (no delta_state here).
     b.extend_from_slice(&[0x0d, 0x04, b'b', b'o', b'd', b'y', 0x11]);
@@ -57,8 +57,8 @@ pub(crate) fn smbh_header_prefix() -> Vec<u8> {
     push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
     push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
     push_tagged_f64(&mut b, 60.0);
-    push_tagged_f64(&mut b, 1e-6);
-    push_tagged_f64(&mut b, 1e-10);
+    push_tagged_f64(&mut b, 1.0e-6);
+    push_tagged_f64(&mut b, 1.0e-10);
     b
 }
 
@@ -82,7 +82,7 @@ pub(crate) fn bf4_header_prefix(flags: u32) -> Vec<u8> {
     push_u8_string(&mut b, "ASM 227.5.0.65535 NT");
     push_u8_string(&mut b, "Mon Aug  8 02:39:24 2022");
     push_tagged_f64(&mut b, 50.0); // scale
-    push_tagged_f64(&mut b, 1e-6); // resabs
-    push_tagged_f64(&mut b, 1e-10); // resnor
+    push_tagged_f64(&mut b, 1.0e-6); // resabs
+    push_tagged_f64(&mut b, 1.0e-10); // resnor
     b
 }

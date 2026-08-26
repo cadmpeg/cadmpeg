@@ -5,8 +5,9 @@
 //! length-prefixes. Callers build IDs through the named functions below.
 
 use crate::records::{
-    DesignAssemblyAxialSelectorIdentity, DesignCombineExternalBodyIdentity, DesignParameter,
-    DesignParameterScope, DesignSketchPlacement,
+    DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacySelection,
+    DesignCombineExternalBodyIdentity, DesignParameter, DesignParameterScope,
+    DesignSketchPlacement,
 };
 
 /// The scheme prefix shared by every `f3d:` URN. Used to strip or test the
@@ -309,6 +310,27 @@ pub(crate) fn neutral_assembly_axial_object_id(
         u8::from(identity.external_version_urn.is_some()),
         version_urn.len(),
         version_urn,
+    )
+}
+
+/// Feature-input-local connector key for one direct legacy `As-built` face
+/// selection.
+pub(crate) fn neutral_assembly_legacy_object_id(
+    selection: &DesignAssemblyLegacySelection,
+) -> String {
+    let asset = identity_key_component(&selection.asset_id.to_ascii_lowercase());
+    let context = identity_key_component(&selection.context_id.to_ascii_lowercase());
+    let recipe = identity_key_component(&selection.recipe_id.to_ascii_lowercase());
+    format!(
+        "f3d:feature-input:connector#assembly-legacy:{}:{}:{}:{}:{}:{}:{}:{}",
+        asset.len(),
+        asset,
+        context.len(),
+        context,
+        recipe.len(),
+        recipe,
+        selection.record_index,
+        selection.recipe_record_index,
     )
 }
 
@@ -638,9 +660,19 @@ native_record_id!(
     "design-parameter-scope"
 );
 native_record_id!(
+    /// The native `SurfaceTrim` BRep-cell carrier record key.
+    native_design_surface_trim_operation_id,
+    "design-surface-trim-operation"
+);
+native_record_id!(
     /// The native ordered Design feature-timeline record key.
     native_design_feature_timeline_id,
     "design-feature-timeline"
+);
+native_record_id!(
+    /// The native Design component naming-space binding key.
+    native_design_component_naming_space_id,
+    "design-component-naming-space"
 );
 
 /// The native ordered Design feature-timeline key in an already encoded
@@ -680,6 +712,11 @@ native_record_id!(
     /// The native design-dimension-annotation-frame record key.
     native_design_dimension_annotation_frame_id,
     "design-dimension-annotation-frame"
+);
+native_record_id!(
+    /// The native design-dimension-presentation-frame record key.
+    native_design_dimension_presentation_frame_id,
+    "design-dimension-presentation-frame"
 );
 native_record_id!(
     /// The native design-dimension-locus-group record key.
@@ -722,6 +759,11 @@ native_record_id!(
     "design-body-recipe-operand"
 );
 native_record_id!(
+    /// The native legacy-Loft body-carrier record key.
+    native_design_loft_legacy_body_carrier_id,
+    "design-loft-legacy-body-carrier"
+);
+native_record_id!(
     /// The native design-edge-operand record key.
     native_design_edge_operand_id,
     "design-edge-operand"
@@ -730,6 +772,11 @@ native_record_id!(
     /// The native design-face-operand record key.
     native_design_face_operand_id,
     "design-face-operand"
+);
+native_record_id!(
+    /// The native design-face-source-group record key.
+    native_design_face_source_group_id,
+    "design-face-source-group"
 );
 native_record_id!(
     /// The native design-sketch-placement record key.
@@ -821,9 +868,11 @@ native_record_id!(
 mod tests {
     use super::{
         decode_identity_key_component, design_segment, native_design_feature_timeline_id_in_stream,
-        native_design_type_id, native_scope, neutral_face_appearance_binding_id,
-        neutral_sketch_record_id, neutral_sketch_text_id, same_native_occurrence, SCHEME_PREFIX,
+        native_design_type_id, native_scope, neutral_assembly_legacy_object_id,
+        neutral_face_appearance_binding_id, neutral_sketch_record_id, neutral_sketch_text_id,
+        same_native_occurrence, SCHEME_PREFIX,
     };
+    use crate::records::{ConstructionRecipeKind, DesignAssemblyLegacySelection};
 
     #[test]
     fn design_segment_joins_sibling_meta_and_bulk_stream_ids() {
@@ -910,5 +959,34 @@ mod tests {
         assert_ne!(persistent, source_record);
         assert_eq!(source_record, neutral_sketch_record_id(&sketch, 42));
         assert_ne!(source_record, neutral_sketch_record_id(&sketch, 43));
+    }
+
+    #[test]
+    fn legacy_assembly_connector_key_is_namespace_and_recipe_scoped() {
+        let selection = DesignAssemblyLegacySelection {
+            record_index: 7,
+            byte_offset: 100,
+            class_tag: "264".into(),
+            asset_id: "A B".into(),
+            asset_id_offset: 110,
+            context_id: "CTX#".into(),
+            context_id_offset: 120,
+            recipe_record_index: 8,
+            recipe_record_byte_offset: 130,
+            recipe_id: "Recipe:1".into(),
+            recipe_kind: ConstructionRecipeKind::Face,
+            recipe_references: Vec::new(),
+            next_byte_offset: 140,
+        };
+        assert_eq!(
+            neutral_assembly_legacy_object_id(&selection),
+            "f3d:feature-input:connector#assembly-legacy:5:a%20b:6:ctx%23:10:recipe%3A1:7:8"
+        );
+        let mut second = selection.clone();
+        second.record_index += 1;
+        assert_ne!(
+            neutral_assembly_legacy_object_id(&selection),
+            neutral_assembly_legacy_object_id(&second)
+        );
     }
 }

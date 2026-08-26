@@ -22,6 +22,8 @@ use crate::history::project::{
     neutral_feature_id, neutral_parameter_id, pattern_form, projected_parameter_names,
 };
 
+const EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9: f64 = 1.0e-9;
+
 mod eval;
 pub(crate) use eval::*;
 
@@ -695,7 +697,8 @@ pub(crate) fn parameter_value_states(
 
 pub(crate) fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) -> bool {
     let close = |left: f64, right: f64| {
-        (left - right).abs() <= 1.0e-9 * (1.0 + left.abs().max(right.abs()))
+        (left - right).abs()
+            <= EPS_PARAMETERS_EQUIVALENT_PARAMETER_VALUES_E9 * (1.0 + left.abs().max(right.abs()))
     };
     match (left, right) {
         (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right)))

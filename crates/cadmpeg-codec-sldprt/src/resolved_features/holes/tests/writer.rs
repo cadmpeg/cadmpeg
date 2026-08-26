@@ -275,7 +275,7 @@ fn semantic_writer_round_trips_counterbore_and_countersink_holes() {
             },
             extent: Some(Termination::ThroughAll),
             ..
-        } if (*value - 82f64.to_radians()).abs() < 1e-12
+        } if (*value - 82f64.to_radians()).abs() < 1.0e-12
     ));
 
     {

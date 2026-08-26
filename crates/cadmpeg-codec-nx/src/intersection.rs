@@ -12,8 +12,9 @@ use crate::framing::read_xmt_width as read_xmt;
 use crate::layout::chart_s_preamble as chart_preamble;
 use crate::topology::{self, CompositeCurve};
 
+const EPS_INTERSECTION_CHART_POINTS_E9: f64 = 1.0e-9;
+
 const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
-const EPS_TANGENT_NORM: f64 = 1.0e-9;
 const INLINE_TERM_TAIL: &[u8] = b"\x00\x00\x00\x01\x01\x63\x43\x5a";
 const INLINE_UV_TAIL: &[u8] = b"\x00\x00\x00\x02\x01\x66\x01";
 /// Two ordered optional support-surface parameter lanes.
@@ -955,7 +956,7 @@ fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2
     let parameter = mid.f64_be()?;
     let norm = tangent.iter().map(|v| v * v).sum::<f64>().sqrt();
     let parameter_lanes = [[u0, v0], [u1, v1]];
-    ((norm - 1.0).abs() < EPS_TANGENT_NORM && parameter.is_finite()).then_some((
+    ((norm - 1.0).abs() < EPS_INTERSECTION_CHART_POINTS_E9 && parameter.is_finite()).then_some((
         point,
         parameter,
         parameter_lanes,

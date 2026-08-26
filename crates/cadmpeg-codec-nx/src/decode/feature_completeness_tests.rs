@@ -244,7 +244,7 @@ fn nx_datum_completeness_requires_coherent_finite_frames() {
     assert!(super::datum_coordinate_system_is_incomplete(
         origin,
         x_axis,
-        Vector3::new(1e-6, 1.0, 0.0),
+        Vector3::new(1.0e-6, 1.0, 0.0),
         z_axis,
     ));
 }

@@ -17,6 +17,9 @@ fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtr
         | DesignExtrudePrologue::ReferenceAware {
             operation: value, ..
         }
+        | DesignExtrudePrologue::ShiftedReferenceAware {
+            operation: value, ..
+        }
         | DesignExtrudePrologue::LegacyShifted {
             operation: value, ..
         },
@@ -48,7 +51,9 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
                 DesignExtrudeExtent::OneSidedToFace => (1, [2, 0]),
                 DesignExtrudeExtent::OneSidedThroughNext => (1, [3, 0]),
                 DesignExtrudeExtent::OneSidedThroughAll => (1, [4, 0]),
+                DesignExtrudeExtent::TwoSidedToFaces => (2, [2, 0]),
                 DesignExtrudeExtent::TwoSidedDistance => (2, [1, 1]),
+                DesignExtrudeExtent::TwoSidedDistanceToFace => (2, [1, 2]),
                 DesignExtrudeExtent::SymmetricDistance => (3, [1, 0]),
                 DesignExtrudeExtent::SymmetricThroughAll => (3, [4, 4]),
             };
@@ -68,10 +73,22 @@ fn set_extrude_extent(scope: &mut DesignParameterScope, extent: DesignExtrudeExt
                 DesignExtrudeExtent::OneSidedToFace => ([1, 0], [2, 0]),
                 DesignExtrudeExtent::OneSidedThroughNext => ([1, 0], [3, 0]),
                 DesignExtrudeExtent::OneSidedThroughAll => ([1, 0], [4, 0]),
+                DesignExtrudeExtent::TwoSidedToFaces => ([2, 0], [2, 0]),
                 DesignExtrudeExtent::TwoSidedDistance => ([2, 0], [1, 1]),
+                DesignExtrudeExtent::TwoSidedDistanceToFace => ([2, 0], [1, 2]),
                 DesignExtrudeExtent::SymmetricDistance => ([3, 0], [1, 0]),
                 DesignExtrudeExtent::SymmetricThroughAll => ([3, 0], [4, 4]),
             };
+        }
+        DesignExtrudePrologue::ShiftedReferenceAware {
+            extent: value,
+            direction_face_extend_values,
+            side_extent_discriminators,
+            ..
+        } => {
+            assert_eq!(extent, DesignExtrudeExtent::TwoSidedToFaces);
+            *value = extent;
+            (*direction_face_extend_values, *side_extent_discriminators) = ([2, 1], [2, 0]);
         }
     }
 }
@@ -82,6 +99,9 @@ fn set_extrude_direction_reversed(scope: &mut DesignParameterScope, reversed: bo
             direction_reversed, ..
         }
         | DesignExtrudePrologue::ReferenceAware {
+            direction_reversed, ..
+        }
+        | DesignExtrudePrologue::ShiftedReferenceAware {
             direction_reversed, ..
         }
         | DesignExtrudePrologue::LegacyShifted {
@@ -97,6 +117,7 @@ fn set_extrude_direction_reversed(scope: &mut DesignParameterScope, reversed: bo
 fn set_extrude_start(scope: &mut DesignParameterScope, start: DesignExtrudeStart) {
     let Some(
         DesignExtrudePrologue::ReferenceAware { start: value, .. }
+        | DesignExtrudePrologue::ShiftedReferenceAware { start: value, .. }
         | DesignExtrudePrologue::LegacyShifted { start: value, .. },
     ) = scope.extrude_prologue.as_mut()
     else {
@@ -222,6 +243,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
@@ -452,6 +474,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             spatial_sketches: &[],
             spatial_entities: &[],
             histories: &[],
+            scope_histories: &std::collections::HashMap::new(),
             linear_tolerance: 1.0e-6,
             angular_tolerance: 1.0e-9,
             arrangement_budget: &arrangement_budget,
@@ -523,7 +546,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     sketch_scope.kind = "Sketch".into();
     sketch_scope.extrude_prologue = None;
     sketch_scope.extrude_profile = None;
-    let scopes = [sketch_scope, scope.clone()];
+    let scopes = vec![sketch_scope, scope.clone()];
     let (mut features, _) = project_parameter_design(
         std::slice::from_ref(&owned_along),
         std::slice::from_ref(&owner),
@@ -755,6 +778,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         asset_id_offset: 0,
         context_id: "context".into(),
         context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
         references: vec![DesignBodyRecipeReference {
             design_reference: 301,
             design_reference_offset: 0,
@@ -1207,6 +1232,159 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         } if id == &face_group.id
     ));
 
+    let mut omitted_zero_offset_scope = scope.clone();
+    omitted_zero_offset_scope.class_tag = "330".into();
+    omitted_zero_offset_scope.paired_class_tag = "258".into();
+    omitted_zero_offset_scope.frame_length = 476;
+    let omitted_zero_offset = project_extrude(
+        &omitted_zero_offset_scope,
+        &[(0, &taper)],
+        &[body_group.clone(), face_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+        &[],
+    )
+    .expect("class-330 face-target Extrude admits omitted zero offset");
+    assert!(matches!(
+        omitted_zero_offset,
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToFace {
+                        face: FaceSelection::Native(ref id),
+                        offset: None,
+                    },
+                    ..
+                },
+            },
+            ..
+        } if id == &face_group.id
+    ));
+    omitted_zero_offset_scope.class_tag = "331".into();
+    assert!(project_extrude(
+        &omitted_zero_offset_scope,
+        &[(0, &taper)],
+        &[body_group.clone(), face_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+        &[],
+    )
+    .is_none());
+
+    set_extrude_direction_reversed(&mut scope, false);
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedToFaces);
+    let mut second_face_group = face_group.clone();
+    second_face_group.id = "f3d:Design/BulkStream.dat:operand-group#104".into();
+    second_face_group.scope_reference_ordinal = 3;
+    let second_side_offset = parameter("Side2Offset", "mm", 0.05);
+    let two_sided_to_faces = project_extrude(
+        &scope,
+        &[
+            (0, &side_offset),
+            (1, &taper),
+            (2, &second_side_offset),
+            (3, &side_two_taper),
+        ],
+        &[
+            body_group.clone(),
+            face_group.clone(),
+            second_face_group.clone(),
+        ],
+        &[],
+        std::slice::from_ref(&placement),
+        &[],
+    )
+    .expect("typed two-sided face-target Extrude");
+    assert!(matches!(
+        two_sided_to_faces,
+        FeatureDefinition::Extrude {
+            direction: ExtrudeDirection::ProfileNormal,
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::ToFace {
+                        face: FaceSelection::Native(ref first_id),
+                        offset: Some(Length(0.25)),
+                    },
+                    draft: Some(Angle(0.2)),
+                    ..
+                },
+                second: ExtrudeSide {
+                    termination: Termination::ToFace {
+                        face: FaceSelection::Native(ref second_id),
+                        offset: Some(Length(0.5)),
+                    },
+                    draft: Some(Angle(-0.3)),
+                    ..
+                },
+            },
+            ..
+        } if first_id == &face_group.id && second_id == &second_face_group.id
+    ));
+
+    set_extrude_direction_reversed(&mut scope, true);
+    let reversed_two_sided_to_faces = project_extrude(
+        &scope,
+        &[
+            (0, &side_offset),
+            (1, &taper),
+            (2, &second_side_offset),
+            (3, &side_two_taper),
+        ],
+        &[
+            body_group.clone(),
+            face_group.clone(),
+            second_face_group.clone(),
+        ],
+        &[],
+        std::slice::from_ref(&placement),
+        &[],
+    )
+    .expect("typed reversed two-sided face-target Extrude");
+    assert!(matches!(
+        reversed_two_sided_to_faces,
+        FeatureDefinition::Extrude {
+            direction: ExtrudeDirection::ReversedProfileNormal,
+            extent: ExtrudeExtent::TwoSided { .. },
+            ..
+        }
+    ));
+    set_extrude_direction_reversed(&mut scope, false);
+
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::TwoSidedDistanceToFace);
+    let mixed_two_sided = project_extrude(
+        &scope,
+        &[(0, &along), (1, &second_side_offset), (2, &side_two_taper)],
+        &[body_group.clone(), face_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+        &[],
+    )
+    .expect("typed mixed two-sided Extrude");
+    assert!(matches!(
+        mixed_two_sided,
+        FeatureDefinition::Extrude {
+            direction: ExtrudeDirection::ProfileNormal,
+            extent: ExtrudeExtent::TwoSided {
+                first: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(5.5)
+                    },
+                    ..
+                },
+                second: ExtrudeSide {
+                    termination: Termination::ToFace {
+                        face: FaceSelection::Native(ref id),
+                        offset: Some(Length(0.5)),
+                    },
+                    draft: Some(Angle(-0.3)),
+                    ..
+                },
+            },
+            ..
+        } if id == &face_group.id
+    ));
+
+    set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedToFace);
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     let mut start_group = face_group.clone();
     start_group.id = "f3d:Design/BulkStream.dat:operand-group#103".into();

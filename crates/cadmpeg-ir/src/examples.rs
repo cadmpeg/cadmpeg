@@ -21,6 +21,8 @@ use crate::topology::{
 };
 use crate::units::Units;
 
+const EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9: f64 = 1.0e-9;
+
 /// Face input used to construct [`unit_cube`].
 type FaceDef = (
     &'static str,
@@ -290,24 +292,28 @@ pub fn directed_subd_sum() -> CadIr {
             basepoint: Vector3::new(0.0, 0.0, 0.0),
             revision_form: None,
         },
-        cache_fit_tolerance: Some(1.0e-9),
+        cache_fit_tolerance: Some(EPS_EXAMPLES_DIRECTED_SUBD_SUM_E9),
         record_bounds: None,
     });
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:v2:subd#directed".into()),
         scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
         vertices: vec![
             SubdVertex {
                 point: Point3::new(0.0, 0.0, 0.0),
                 tag: SubdVertexTag::Crease,
+                secondary_grips: None,
             },
             SubdVertex {
                 point: Point3::new(1.0, 0.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
             SubdVertex {
                 point: Point3::new(0.0, 1.0, 0.0),
                 tag: SubdVertexTag::Corner,
+                secondary_grips: None,
             },
         ],
         edges: vec![
@@ -315,18 +321,21 @@ pub fn directed_subd_sum() -> CadIr {
                 vertices: [0, 1],
                 sharpness: [0.25, 0.75],
                 tag: SubdEdgeTag::Crease,
+                knot_interval: None,
                 sector_coefficients: [0.125, 0.875],
             },
             SubdEdge {
                 vertices: [1, 2],
                 sharpness: [0.0, 0.5],
                 tag: SubdEdgeTag::SmoothX,
+                knot_interval: None,
                 sector_coefficients: [0.25, 0.75],
             },
             SubdEdge {
                 vertices: [2, 0],
                 sharpness: [1.0, 0.0],
                 tag: SubdEdgeTag::Smooth,
+                knot_interval: None,
                 sector_coefficients: [0.5, 0.5],
             },
         ],

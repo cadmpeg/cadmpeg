@@ -4,11 +4,14 @@
 
 use super::*;
 use crate::geometry::{knots_nondecreasing, knots_strictly_increasing};
-use cadmpeg_core::decode::alloc_filled;
-
 const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
 const EPS_SPATIAL_CURVE_DIRECTION: f64 = 1.0e-9;
 const EPS_HELIX_RADIUS: f64 = 1.0e-9;
+
+const EPS_GEOMETRY_PAYLOADS_UNIT_VECTOR_E9: f64 = 1.0e-9;
+const EPS_GEOMETRY_PAYLOADS_ORTHONORMAL_E9: f64 = 1.0e-9;
+const EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E9: f64 = 1.0e-9;
+const EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E10: f64 = 1.0e-10;
 
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {
@@ -105,19 +108,8 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
         }
         if !mesh.triangle_groups.is_empty() {
-            let Ok(mut memberships) = alloc_filled(
-                mesh.triangles.len(),
-                0_u32,
-                "IR tessellation triangle-group memberships",
-            ) else {
-                findings.push(Finding {
-                    check: Check::Tessellation,
-                    severity: Severity::Error,
-                    message: "cannot allocate tessellation triangle-group memberships".into(),
-                    entity: Some(mesh.id.clone()),
-                });
-                continue;
-            };
+            let mut memberships =
+                std::iter::repeat_n(0u32, mesh.triangles.len()).collect::<Vec<_>>();
             let mut source_ids = std::collections::BTreeSet::new();
             let valid = mesh.triangle_groups.iter().all(|group| {
                 !group.triangles.is_empty()
@@ -148,19 +140,8 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         if !mesh.texture_assignments.is_empty() {
-            let Ok(mut memberships) = alloc_filled(
-                mesh.triangles.len(),
-                0_u32,
-                "IR tessellation texture memberships",
-            ) else {
-                findings.push(Finding {
-                    check: Check::Tessellation,
-                    severity: Severity::Error,
-                    message: "cannot allocate tessellation texture memberships".into(),
-                    entity: Some(mesh.id.clone()),
-                });
-                continue;
-            };
+            let mut memberships =
+                std::iter::repeat_n(0u32, mesh.triangles.len()).collect::<Vec<_>>();
             let mut source_ids = std::collections::BTreeSet::new();
             let mut anonymous_textures = std::collections::BTreeSet::new();
             let valid = mesh.texture_assignments.iter().all(|assignment| {
@@ -299,13 +280,14 @@ pub(super) fn degenerate(v: &Vector3) -> bool {
 }
 
 fn unit_vector(v: &Vector3) -> bool {
-    (v.norm() - 1.0).abs() <= 1.0e-9
+    (v.norm() - 1.0).abs() <= EPS_GEOMETRY_PAYLOADS_UNIT_VECTOR_E9
 }
 
 fn orthonormal(left: &Vector3, right: &Vector3) -> bool {
     unit_vector(left)
         && unit_vector(right)
-        && (left.x * right.x + left.y * right.y + left.z * right.z).abs() <= 1.0e-9
+        && (left.x * right.x + left.y * right.y + left.z * right.z).abs()
+            <= EPS_GEOMETRY_PAYLOADS_ORTHONORMAL_E9
 }
 
 fn point3_finite(point: &crate::math::Point3) -> bool {
@@ -914,6 +896,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 match expression {
                     crate::geometry::LawExpression::Null
                     | crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Text { value } => !value.is_empty(),
                     crate::geometry::LawExpression::Double { value } => value.is_finite(),
                     crate::geometry::LawExpression::Point { value } => {
                         value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
@@ -1009,6 +992,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 match expression {
                     crate::geometry::LawExpression::Null => true,
+                    crate::geometry::LawExpression::Text { value } => !value.is_empty(),
                     crate::geometry::LawExpression::Integer { .. } => true,
                     crate::geometry::LawExpression::Double { value } => value.is_finite(),
                     crate::geometry::LawExpression::Point { value } => {
@@ -1116,6 +1100,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 match expression {
                     crate::geometry::LawExpression::Null
                     | crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Text { value } => !value.is_empty(),
                     crate::geometry::LawExpression::Double { value } => value.is_finite(),
                     crate::geometry::LawExpression::Point { value } => {
                         value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
@@ -1211,6 +1196,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 match expression {
                     crate::geometry::LawExpression::Null
                     | crate::geometry::LawExpression::Integer { .. } => true,
+                    crate::geometry::LawExpression::Text { value } => !value.is_empty(),
                     crate::geometry::LawExpression::Double { value } => value.is_finite(),
                     crate::geometry::LawExpression::Point { value } => {
                         value.x.is_finite() && value.y.is_finite() && value.z.is_finite()
@@ -1455,7 +1441,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             let minor_length =
                 (path.minor.x.powi(2) + path.minor.y.powi(2) + path.minor.z.powi(2)).sqrt();
             let circular_path = major_length > 0.0
-                && (major_length - minor_length).abs() <= 1.0e-9 * major_length.max(1.0);
+                && (major_length - minor_length).abs()
+                    <= EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E9 * major_length.max(1.0);
             let profile_valid = match construction.profile {
                 crate::geometry::HelixSurfaceProfile::Circle { length, radius } => {
                     length.is_finite() && radius.is_finite() && radius != 0.0
@@ -1542,6 +1529,26 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 } => frame_valid(frame) && guide_parameter.is_finite(),
                 crate::geometry::DeformableSurfaceData::Minimal { vectors, .. } => {
                     vectors.iter().all(vector_finite)
+                }
+                crate::geometry::DeformableSurfaceData::RevisionMode3 {
+                    leading_vectors,
+                    leading_parameter,
+                    trailing_point,
+                    trailing_vectors,
+                    frame_parameter,
+                    parameters,
+                    trailing_parameter,
+                    ..
+                } => {
+                    leading_vectors.iter().all(vector_finite)
+                        && leading_parameter.is_finite()
+                        && trailing_point.x.is_finite()
+                        && trailing_point.y.is_finite()
+                        && trailing_point.z.is_finite()
+                        && trailing_vectors.iter().all(vector_finite)
+                        && frame_parameter.is_finite()
+                        && parameters.iter().all(|value| value.is_finite())
+                        && trailing_parameter.is_finite()
                 }
             };
             if !data_valid
@@ -1862,9 +1869,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if let Some((enumeration, parameterization)) = revision_tail_form(&procedural.definition) {
             // Tail enum `0` stores a solved cache and its fit tolerance; `2`
             // stores the parameterization instead. No other value is defined.
+            let cache_is_stale = matches!(
+                &procedural.definition,
+                ProceduralSurfaceDefinition::VariableBlend { construction }
+                    if construction.shape_prefix == 0
+            );
             let form_matches = match enumeration {
-                0 => parameterization.is_none(),
-                2 => parameterization.is_some(),
+                0 => {
+                    parameterization.is_none()
+                        && if cache_is_stale {
+                            procedural.cache_fit_tolerance.is_none()
+                        } else {
+                            procedural.cache_fit_tolerance.is_some()
+                        }
+                }
+                2 => parameterization.is_some() && procedural.cache_fit_tolerance.is_none(),
                 _ => false,
             };
             if !form_matches {
@@ -2210,7 +2229,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 normal.x.is_finite()
                     && normal.y.is_finite()
                     && normal.z.is_finite()
-                    && (normal.norm() - 1.0).abs() <= 1.0e-10
+                    && (normal.norm() - 1.0).abs() <= EPS_GEOMETRY_PAYLOADS_LAW_VALID_4_E10
             });
             let range_valid = parameter_range.is_none_or(|range| {
                 range.iter().all(|value| value.is_finite()) && range[0] < range[1]
@@ -3027,6 +3046,13 @@ fn revision_tail_form(
                 construction.tail_enum,
                 construction.tail_parameterization.as_ref(),
             ))
+        }
+        ProceduralSurfaceDefinition::Sweep {
+            native: Some(construction),
+            ..
+        } => {
+            let form = construction.revision_form.as_ref()?;
+            return Some((form.tail_enum, form.tail_parameterization.as_ref()));
         }
         _ => None,
     }?;

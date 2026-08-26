@@ -415,11 +415,13 @@ fn decode_table(
 struct ChannelGroup {
     record_index: u32,
     record_index_offset: usize,
-    entity_id: String,
-    entity_id_offset: usize,
+    entity_id: Option<String>,
+    entity_id_offset: Option<usize>,
     class_tag: String,
     channels: BTreeMap<String, String>,
     guid_offsets: BTreeMap<String, u64>,
+    class_tail: Vec<u8>,
+    class_tail_offset: Option<u64>,
 }
 
 fn merge_entities(
@@ -442,6 +444,8 @@ fn merge_entities(
             channel_class_tag: None,
             channels: BTreeMap::new(),
             channel_guid_offsets: BTreeMap::new(),
+            channel_class_tail: Vec::new(),
+            channel_class_tail_offset: None,
         };
         if by_index.insert(record_index, entity).is_some() {
             return Err(CodecError::malformed(format_args!(
@@ -451,7 +455,11 @@ fn merge_entities(
     }
     for group in groups {
         if let Some(entity) = by_index.get_mut(&group.record_index) {
-            if entity.entity_id != group.entity_id {
+            if group
+                .entity_id
+                .as_ref()
+                .is_some_and(|group_id| entity.entity_id != *group_id)
+            {
                 return Err(CodecError::malformed(format_args!(
                     "F3D ACTTable entity key conflicts with its change group: {stream}:{}",
                     group.record_index
@@ -466,9 +474,11 @@ fn merge_entities(
             entity.channel_class_tag = Some(group.class_tag);
             entity.channels = group.channels;
             entity.channel_record_index_offset = Some(group.record_index_offset as u64);
-            entity.channel_entity_id_offset = Some(group.entity_id_offset as u64);
+            entity.channel_entity_id_offset = group.entity_id_offset.map(|offset| offset as u64);
             entity.channel_guid_offsets = group.guid_offsets;
-        } else {
+            entity.channel_class_tail = group.class_tail;
+            entity.channel_class_tail_offset = group.class_tail_offset;
+        } else if let Some(entity_id) = group.entity_id {
             by_index.insert(
                 group.record_index,
                 ActEntity {
@@ -476,13 +486,15 @@ fn merge_entities(
                     record_index: group.record_index,
                     table_record_index_offset: None,
                     channel_record_index_offset: Some(group.record_index_offset as u64),
-                    entity_id: group.entity_id,
+                    entity_id,
                     table_entity_id_offset: None,
-                    channel_entity_id_offset: Some(group.entity_id_offset as u64),
+                    channel_entity_id_offset: group.entity_id_offset.map(|offset| offset as u64),
                     in_table: false,
                     channel_class_tag: Some(group.class_tag),
                     channels: group.channels,
                     channel_guid_offsets: group.guid_offsets,
+                    channel_class_tail: group.class_tail,
+                    channel_class_tail_offset: group.class_tail_offset,
                 },
             );
         }
@@ -543,22 +555,30 @@ fn decode_channel_group(
         guid_offsets.insert(name, (after_name + 4) as u64);
         cursor = after_guid;
     }
-    let Some((entity_id, end)) = lp_utf16_bounded(bytes, cursor, 1..=1024)
-        .filter(|(entity_id, end)| *end <= frame.end && is_entity_key(entity_id))
-    else {
-        return Ok(None);
+    let (entity_id, entity_id_offset, end) = if let Some((entity_id, end)) =
+        lp_utf16_bounded(bytes, cursor, 1..=1024)
+            .filter(|(entity_id, end)| *end <= frame.end && is_entity_key(entity_id))
+    {
+        (Some(entity_id), Some(cursor + 4), end)
+    } else {
+        (None, None, cursor)
     };
-    if !bytes[end..frame.end].iter().all(|byte| *byte == 0) {
-        return Ok(None);
-    }
+    let remainder = &bytes[end..frame.end];
+    let (class_tail, class_tail_offset) = if remainder.iter().all(|byte| *byte == 0) {
+        (Vec::new(), None)
+    } else {
+        (remainder.to_vec(), Some(end as u64))
+    };
     Ok(Some(ChannelGroup {
         record_index: frame.record_index,
         record_index_offset: frame.record_index_offset,
         entity_id,
-        entity_id_offset: cursor + 4,
+        entity_id_offset,
         class_tag: frame.class_tag.clone(),
         channels,
         guid_offsets,
+        class_tail,
+        class_tail_offset,
     }))
 }
 
@@ -694,14 +714,16 @@ mod tests {
         ChannelGroup {
             record_index: 7,
             record_index_offset: 100,
-            entity_id: entity_id.into(),
-            entity_id_offset: 200,
+            entity_id: Some(entity_id.into()),
+            entity_id_offset: Some(200),
             class_tag: "261".into(),
             channels: BTreeMap::from([(
                 "Appearance".into(),
                 "11111111-2222-3333-4444-555555555555".into(),
             )]),
             guid_offsets: BTreeMap::from([("Appearance".into(), 120)]),
+            class_tail: Vec::new(),
+            class_tail_offset: None,
         }
     }
 
@@ -744,18 +766,28 @@ mod tests {
             .expect("a change group need not have an inline ACTTable row");
         assert!(!group_only[0].in_table);
         assert!(group_only[0].table_record_index_offset.is_none());
+
+        let mut table_keyed_group = channel_group("0_985");
+        table_keyed_group.entity_id = None;
+        table_keyed_group.entity_id_offset = None;
+        let entities = merge_entities(stream, vec![table_entry("0_985")], vec![table_keyed_group])
+            .expect("the table can supply an omitted group key");
+        assert_eq!(entities[0].entity_id, "0_985");
+        assert!(entities[0].channel_entity_id_offset.is_none());
     }
 
     #[test]
-    fn channel_group_allows_only_zero_frame_padding() {
+    fn channel_group_distinguishes_zero_padding_from_a_class_tail() {
         let payload_offset = 11;
         let mut bytes = vec![0; payload_offset + 10];
         bytes.extend_from_slice(&1u32.to_le_bytes());
         lp_ascii(&mut bytes, "Appearance");
         lp_utf16(&mut bytes, "11111111-2222-3333-4444-555555555555");
+        let entity_at = bytes.len();
         lp_utf16(&mut bytes, "0_985");
+        let tail_at = bytes.len();
         bytes.extend_from_slice(&[0; 11]);
-        let frame = RecordFrame {
+        let mut frame = RecordFrame {
             start: 0,
             end: bytes.len(),
             record_index: 7,
@@ -768,11 +800,31 @@ mod tests {
             .expect("well-framed group")
             .expect("zero padding belongs to the group frame");
         assert_eq!(group.record_index, 7);
-        assert_eq!(group.entity_id, "0_985");
+        assert_eq!(group.entity_id.as_deref(), Some("0_985"));
+        assert!(group.class_tail.is_empty());
+        assert!(group.class_tail_offset.is_none());
 
-        *bytes.last_mut().expect("padding byte") = 1;
-        assert!(decode_channel_group(&bytes, &frame, "synthetic")
-            .expect("non-group records are not malformed")
-            .is_none());
+        let keyless_frame = RecordFrame {
+            start: frame.start,
+            end: entity_at,
+            record_index: frame.record_index,
+            record_index_offset: frame.record_index_offset,
+            payload_offset: frame.payload_offset,
+            class_tag: frame.class_tag.clone(),
+        };
+        let keyless = decode_channel_group(&bytes, &keyless_frame, "synthetic")
+            .expect("well-framed keyless group")
+            .expect("table-keyed group");
+        assert!(keyless.entity_id.is_none());
+
+        let class_tail = b"\0synthetic-class-tail\x01";
+        bytes.truncate(tail_at);
+        bytes.extend_from_slice(class_tail);
+        frame.end = bytes.len();
+        let group = decode_channel_group(&bytes, &frame, "synthetic")
+            .expect("well-framed group with a class tail")
+            .expect("class tail follows the complete channel grammar");
+        assert_eq!(group.class_tail, class_tail);
+        assert_eq!(group.class_tail_offset, Some(tail_at as u64));
     }
 }

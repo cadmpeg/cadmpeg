@@ -696,6 +696,7 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
             &sketch,
             2.0,
             &parameter,
+            0.0,
         ).as_slice(),
         [SketchConstraintDefinition::VerticalDistance { first, second, parameter: actual }]
             if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("first".into()))
@@ -704,7 +705,7 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
     ));
     entities.push(point("ambiguous", 10.0, 8.0));
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
-        &entities, &sketch, 2.0, &parameter,
+        &entities, &sketch, 2.0, &parameter, 0.0,
     );
     assert_eq!(candidates.len(), 2);
     assert_eq!(
@@ -741,6 +742,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &sketch,
             2.0,
             &cadmpeg_ir::features::ParameterId("parameter".into()),
+            0.0,
         ).as_slice(),
         [SketchConstraintDefinition::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId("first".into()), SketchEntityId("second".into())]
@@ -767,6 +769,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &sketch,
             2.0,
             &cadmpeg_ir::features::ParameterId("parameter".into()),
+            0.0,
         ).as_slice(),
         [SketchConstraintDefinition::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId("first".into()), SketchEntityId("second".into())]
@@ -799,6 +802,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId("parameter".into()),
+            0.0,
         ),
         Some(SketchConstraintDefinition::Distance {
             entities,
@@ -878,6 +882,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId("parameter".into()),
+            0.0,
         )
         .is_none()
     );
@@ -929,7 +934,7 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
         point("off-carrier-vertical", 4.0, 2.0),
     ];
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
-        &entities, &sketch, 2.0, &parameter,
+        &entities, &sketch, 2.0, &parameter, 0.0,
     );
     assert!(candidates.len() > 2);
     assert!(matches!(
@@ -962,7 +967,7 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
         },
     ]);
     let candidates = crate::design::dimensions::recipe_linear_dimension_candidates(
-        &ambiguous, &sketch, 2.0, &parameter,
+        &ambiguous, &sketch, 2.0, &parameter, 0.0,
     );
     assert!(crate::design::dimensions::recipe_extension_point_dimension(
         &candidates,
@@ -1019,6 +1024,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
         &sketch,
         &parameter,
         &cadmpeg_ir::features::ParameterId("parameter".into()),
+        0.0,
     )
     .expect("two disjoint concentric pairs");
     assert!(matches!(
@@ -1053,6 +1059,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
             &sketch,
             &parameter,
             &cadmpeg_ir::features::ParameterId("parameter".into()),
+            0.0,
         )
         .is_none()
     );

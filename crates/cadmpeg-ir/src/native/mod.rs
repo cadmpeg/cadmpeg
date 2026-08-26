@@ -9,6 +9,7 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value};
 
+mod canon;
 pub mod catalogue;
 mod replay;
 
@@ -95,15 +96,41 @@ impl NativeRecord {
     }
 
     /// Build a record by serializing one codec-owned typed record.
+    ///
+    /// Streams the record into canonical text — the bytes
+    /// [`canonical_json`](Self::canonical_json) renders for the record's
+    /// [`Value`] tree — without materializing that tree.
     fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
-        let Value::Object(mut fields) = serde_json::to_value(record)? else {
+        let canon::Node::Object(mut fields) = record.serialize(canon::CanonValue)? else {
             return Err(NativeConvertError::NonObject);
         };
-        let Some(Value::String(id)) = fields.remove("id") else {
+        let Some(id_json) = fields.remove("id") else {
             return Err(NativeConvertError::MissingId);
         };
-        let json = Self::canonical_json(&id, &fields);
-        Ok(Self { id, json })
+        if !id_json.starts_with('"') {
+            return Err(NativeConvertError::MissingId);
+        }
+        let id: String = serde_json::from_str(&id_json)?;
+        let mut json = String::with_capacity(
+            8 + id_json.len()
+                + fields
+                    .iter()
+                    .map(|(key, value)| key.len() + value.len() + 4)
+                    .sum::<usize>(),
+        );
+        json.push_str("{\"id\":");
+        json.push_str(&id_json);
+        for (key, value) in &fields {
+            json.push(',');
+            json.push_str(&serde_json::to_string(key)?);
+            json.push(':');
+            json.push_str(value);
+        }
+        json.push('}');
+        Ok(Self {
+            id,
+            json: json.into_boxed_str(),
+        })
     }
 
     /// Globally unique record identity.

@@ -5,7 +5,6 @@ use crate::records::{
     ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry,
     SketchPointCompanionReferenceEncoding, SketchPointRecordForm, SketchText,
 };
-use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::CurveGeometry;
@@ -128,12 +127,15 @@ pub(crate) fn encode_design_bulkstream(
                 fillet_radius_groups: &native.design_fillet_radius_groups,
                 edge_operands: &native.design_edge_operands,
                 edge_identity_operands: &native.design_edge_identity_operands,
+                edge_treatment_vertex_operands: &native.design_edge_treatment_vertex_operands,
                 entity_selection_operands: &native.design_entity_selection_operands,
                 curve_identities: &native.sketch_curve_identities,
                 face_operands: &native.design_face_operands,
                 body_recipe_operands: &native.design_body_recipe_operands,
+                legacy_loft_body_carriers: &native.design_loft_legacy_body_carriers,
                 placements: &native.design_sketch_placements,
                 body_bindings: &native.design_body_bindings,
+                component_naming_spaces: &native.design_component_naming_spaces,
                 histories: &native.asm_histories,
             },
         )?;
@@ -144,6 +146,8 @@ pub(crate) fn encode_design_bulkstream(
     }
     if !native.design_parameter_companions.is_empty()
         || !native.design_dimension_annotation_frames.is_empty()
+        || !native.design_dimension_presentation_frames.is_empty()
+        || !native.design_face_source_groups.is_empty()
         || !native.design_dimension_locus_pairs.is_empty()
         || !native.design_dimension_locus_groups.is_empty()
         || !native.design_dimension_null_locus_pairs.is_empty()
@@ -172,6 +176,7 @@ pub(crate) fn encode_design_bulkstream(
         && native.design_body_members.is_empty()
         && native.design_entity_headers.is_empty()
         && native.design_record_headers.is_empty()
+        && native.design_face_source_groups.is_empty()
         && native.design_material_assignments.is_empty()
         && native.sketch_points.is_empty()
         && native.sketch_curve_identities.is_empty()
@@ -479,7 +484,7 @@ fn encode_sketch_point(
             point.id
         ))
     })?;
-    let mut record = alloc_filled(105 + shift, 0_u8, "f3d sketch point record")?;
+    let mut record = std::iter::repeat_n(0u8, 105 + shift).collect::<Vec<_>>();
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
     record[20] = 1;
     record[21..25].copy_from_slice(&(1 + u32::from(point.entity_genesis.is_some())).to_le_bytes());
@@ -555,7 +560,7 @@ fn encode_sketch_point_companion(
         CodecError::Malformed("source-less sketch point companion exceeds u32::MAX curves".into())
     })?;
     let prefix_len = if prefix_present_zero { 25 } else { 21 };
-    let mut record = alloc_filled(prefix_len, 0_u8, "f3d sketch point companion record")?;
+    let mut record = std::iter::repeat_n(0u8, prefix_len).collect::<Vec<_>>();
     encode_sketch_record_header(&mut record, class_tag, record_index)?;
     if prefix_present_zero {
         record[20] = 1;
@@ -581,7 +586,7 @@ fn encode_sketch_curve_identity(
         ))
     })?;
     let shift = usize::from(curve.entity_genesis.is_some()) * 52;
-    let mut record = alloc_filled(133 + shift, 0_u8, "f3d sketch curve record")?;
+    let mut record = std::iter::repeat_n(0u8, 133 + shift).collect::<Vec<_>>();
     encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
     record[20] = 1;
     record[21..25].copy_from_slice(&(2 + u32::from(curve.entity_genesis.is_some())).to_le_bytes());

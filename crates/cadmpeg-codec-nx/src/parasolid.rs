@@ -1414,7 +1414,7 @@ fn inflate_stream<'a>(
 /// compression level as a format discriminator.
 #[allow(clippy::manual_is_multiple_of)] // `is_multiple_of` exceeds the workspace MSRV.
 fn is_zlib_header(cmf: u8, flg: u8) -> bool {
-    cmf & 0x0f == 8 && cmf >> 4 <= 7 && u16::from_be_bytes([cmf, flg]).is_multiple_of(31)
+    cmf & 0x0f == 8 && cmf >> 4 <= 7 && ((u16::from(cmf) << 8) | u16::from(flg)).is_multiple_of(31)
 }
 
 /// Classify an inflated payload from its prologue text and read the schema token.

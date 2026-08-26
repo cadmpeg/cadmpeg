@@ -402,7 +402,7 @@ fn decode_transfers_bspline_surface_and_curve() {
         .expect("B-spline surface");
     assert_eq!(surface.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
     assert_eq!(surface.control_points.len(), 4);
-    assert!((surface.control_points[1].y - 20.0).abs() < 1e-9);
+    assert!((surface.control_points[1].y - 20.0).abs() < 1.0e-9);
     let curve = result
         .ir()
         .model
@@ -415,7 +415,7 @@ fn decode_transfers_bspline_surface_and_curve() {
         .expect("B-spline curve");
     assert_eq!(curve.knots, vec![0.0, 0.0, 1.0, 1.0]);
     assert_eq!(curve.control_points.len(), 2);
-    assert!((curve.control_points[1].x - 20.0).abs() < 1e-9);
+    assert!((curve.control_points[1].x - 20.0).abs() < 1.0e-9);
 }
 
 #[test]
@@ -1520,6 +1520,7 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
             faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]),
             tool: PathRef::Edges(vec![cadmpeg_ir::ids::EdgeId("edge".into())]),
             keep: TrimRegion::Inside,
+            cell_selection: None,
         },
         native_ref: None,
     });

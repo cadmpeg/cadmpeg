@@ -348,6 +348,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
             faces: FaceSelection::Unresolved,
             tool: PathRef::Unresolved(_),
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            ..
         }
     ));
     assert!(matches!(
@@ -367,7 +368,7 @@ fn native_operation_identity_selects_surface_and_solid_projectors() {
             angle: Some(Angle(value)),
             outward: None,
             ..
-        } if (value - std::f64::consts::PI / 60.0).abs() < 1e-12
+        } if (value - std::f64::consts::PI / 60.0).abs() < 1.0e-12
     ));
 }
 

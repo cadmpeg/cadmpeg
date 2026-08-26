@@ -35,8 +35,8 @@ fn parse_token<T: Copy>(table: &[(&'static str, T)], raw: &str) -> Option<T> {
         .map(|(_, value)| *value)
 }
 
-/// Canonical native spelling for a typed token-table variant. Panics only if a
-/// variant is absent from its table, which the tables above make unreachable.
+/// Canonical native spelling for a closed token table. Callers use this helper
+/// only when every value is represented by the table.
 fn format_token<T: PartialEq>(table: &[(&'static str, T)], value: &T) -> &'static str {
     table
         .iter()
@@ -70,7 +70,24 @@ pub(crate) fn parse_surface_extension(raw: &str) -> Option<SurfaceExtension> {
     parse_token(SURFACE_EXTENSION_TOKENS, raw)
 }
 
-/// Canonical native token for a surface-extension method.
-pub(crate) fn surface_extension_token(value: SurfaceExtension) -> &'static str {
-    format_token(SURFACE_EXTENSION_TOKENS, &value)
+/// Canonical native token for a surface-extension method, when the native
+/// schema has a representation for the neutral value.
+pub(crate) fn surface_extension_token(value: SurfaceExtension) -> Option<&'static str> {
+    SURFACE_EXTENSION_TOKENS
+        .iter()
+        .find(|(_, candidate)| *candidate == value)
+        .map(|(token, _)| *token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn surface_extension_token_rejects_unrepresented_method() {
+        assert_eq!(
+            surface_extension_token(SurfaceExtension::Perpendicular),
+            None
+        );
+    }
 }

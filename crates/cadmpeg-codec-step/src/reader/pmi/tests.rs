@@ -780,7 +780,7 @@ fn composite_presentation_placement_does_not_depend_on_set_order() {
 fn associated_curve_placement_does_not_create_presentation_ambiguity() {
     use cadmpeg_ir::pmi::PmiDefinition;
 
-    const EPS_PLACEMENT_COORDINATE: f64 = 1e-12;
+    const EPS_PLACEMENT_COORDINATE: f64 = 1.0e-12;
 
     let result = StepCodec::default()
         .decode(
@@ -1379,7 +1379,7 @@ fn complex_datum_reads_identification_from_its_named_partial() {
 fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
     use cadmpeg_ir::pmi::{DatumTargetForm, DimensionKind, PmiDefinition, PmiTarget};
 
-    const EPS_POINT_COORDINATE: f64 = 1e-12;
+    const EPS_POINT_COORDINATE: f64 = 1.0e-12;
 
     let source =
         String::from_utf8(include_bytes!("../../../tests/fixtures/ap203_sheet.p21").to_vec())

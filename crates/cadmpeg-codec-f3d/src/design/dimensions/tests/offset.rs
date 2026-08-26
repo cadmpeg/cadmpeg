@@ -8,6 +8,11 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use cadmpeg_ir::sketches::SketchOffsetPair;
+
+const TEST_LINEAR_TOLERANCE: f64 = 1.0e-6;
+const TEST_DISTANCE_EPSILON: f64 = 1.0e-9;
+const TEST_ANGLE_ROUNDING: f64 = 5.0e-7;
 
 #[test]
 fn counted_offset_return_run_pairs_sources_and_results() {
@@ -254,6 +259,79 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
         &entities,
         &HashMap::new(),
         1.0e-6,
+    )
+    .is_none());
+}
+
+#[test]
+fn counted_offset_accepts_concentric_full_circles() {
+    let circle = |id: &str, radius| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#0".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(3.0, -4.0),
+            radius: Length(radius),
+        },
+    };
+    let source = circle("generated:circle#source", 5.0);
+    let result = circle("generated:circle#result", 3.5);
+    let entities = HashMap::from([(1, &source), (2, &result)]);
+
+    assert!(matches!(
+        exact_counted_offset(
+            &[(1, 7), (2, 0)],
+            &[1, 2],
+            &entities,
+            &HashMap::new(),
+            TEST_LINEAR_TOLERANCE,
+        ),
+        Some(SketchConstraintDefinition::Offset {
+            pairs,
+            distance: Length(distance),
+            ..
+        }) if pairs.as_slice() == [SketchOffsetPair {
+            source: source.id.clone(),
+            result: result.id.clone(),
+            source_reversed: false,
+        }] && (distance - 1.5).abs() <= TEST_DISTANCE_EPSILON
+    ));
+
+    let reversed_entities = HashMap::from([(1, &result), (2, &source)]);
+    assert!(matches!(
+        exact_counted_offset(
+            &[(1, 7), (2, 0)],
+            &[1, 2],
+            &reversed_entities,
+            &HashMap::new(),
+            TEST_LINEAR_TOLERANCE,
+        ),
+        Some(SketchConstraintDefinition::Offset {
+            pairs,
+            distance: Length(distance),
+            ..
+        }) if pairs.as_slice() == [SketchOffsetPair {
+            source: result.id.clone(),
+            result: source.id.clone(),
+            source_reversed: true,
+        }] && (distance - 1.5).abs() <= TEST_DISTANCE_EPSILON
+    ));
+
+    let mut displaced = result.clone();
+    displaced.geometry = SketchGeometry::Circle {
+        center: Point2::new(3.0, -3.9),
+        radius: Length(3.5),
+    };
+    let entities = HashMap::from([(1, &source), (2, &displaced)]);
+    assert!(exact_counted_offset(
+        &[(1, 7), (2, 0)],
+        &[1, 2],
+        &entities,
+        &HashMap::new(),
+        TEST_LINEAR_TOLERANCE,
     )
     .is_none());
 }
@@ -556,6 +634,82 @@ fn counted_roles_require_matching_solved_geometry() {
         counted_role_relation(&[&arc, &horizontal], 0x100),
         Some(SketchConstraintDefinition::Tangent { first, second })
             if first == arc.id && second == horizontal.id
+    ));
+
+    let tangent_arc = cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId("generated:arc#arc-tangent".into()),
+        sketch: horizontal.sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(-2.0, 5.0),
+            radius: Length(2.0),
+            start_angle: Angle(-std::f64::consts::FRAC_PI_2),
+            end_angle: Angle(0.0),
+        },
+    };
+    assert!(matches!(
+        counted_role_relation(&[&arc, &tangent_arc], 0x100),
+        Some(SketchConstraintDefinition::Tangent { first, second })
+            if first == arc.id && second == tangent_arc.id
+    ));
+
+    let non_tangent_arc = cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId("generated:arc#arc-not-tangent".into()),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(-1.0, 3.0),
+            radius: Length(1.0),
+            start_angle: Angle(std::f64::consts::PI),
+            end_angle: Angle(2.0 * std::f64::consts::PI),
+        },
+        ..tangent_arc.clone()
+    };
+    assert!(counted_role_relation(&[&arc, &non_tangent_arc], 0x100).is_none());
+
+    let interior_tangent_arc = cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId("generated:arc#arc-interior-tangent".into()),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(-2.0 - 2.0 / 2.0_f64.sqrt(), 2.0 + 2.0 / 2.0_f64.sqrt()),
+            radius: Length(1.0),
+            start_angle: Angle(-std::f64::consts::FRAC_PI_2),
+            end_angle: Angle(0.0),
+        },
+        ..tangent_arc.clone()
+    };
+    assert!(matches!(
+        counted_role_relation(&[&arc, &interior_tangent_arc], 0x100),
+        Some(SketchConstraintDefinition::Tangent { first, second })
+            if first == arc.id && second == interior_tangent_arc.id
+    ));
+
+    let tangent_circle = cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId("generated:circle#rounded-tangent".into()),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(1.0),
+        },
+        ..tangent_arc.clone()
+    };
+    let rounded_tangent_arc = cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId("generated:arc#rounded-tangent".into()),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(2.0, 0.0),
+            radius: Length(1.0),
+            start_angle: Angle(TEST_ANGLE_ROUNDING),
+            end_angle: Angle(std::f64::consts::PI),
+        },
+        ..tangent_arc.clone()
+    };
+    assert!(matches!(
+        crate::design::dimensions::counted_role_relation_at_tolerance(
+            &[&tangent_circle, &rounded_tangent_arc],
+            0x100,
+            TEST_LINEAR_TOLERANCE,
+        ),
+        Some(SketchConstraintDefinition::Tangent { first, second })
+            if first == tangent_circle.id && second == rounded_tangent_arc.id
     ));
 
     let mut equal_arc = arc.clone();

@@ -11,6 +11,8 @@ use super::prelude::*;
 
 #[test]
 fn dimension_proofs_require_the_evaluated_measurement() {
+    const DOCUMENT_LINEAR_TOLERANCE: f64 = 1.0e-6;
+
     let dimension = |source_kind: &str, unit: &str| {
         parse_design_parameter(&parameter_record(
             Some(44),
@@ -33,6 +35,12 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     ));
     assert!(crate::design::feature_project::design_dimension_unit(
         &dimension("Angular Dimension-2", "rad")
+    ));
+    assert!(crate::design::feature_project::design_dimension_unit(
+        &dimension("Tangent Dimension-2", "mm")
+    ));
+    assert!(!crate::design::feature_project::design_dimension_unit(
+        &dimension("Tangent Dimension-2", "deg")
     ));
     assert!(!crate::design::feature_project::design_dimension_unit(
         &dimension("Angular Dimension-2", "mm")
@@ -113,6 +121,7 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         &horizontal,
         &diagonal,
         2.0,
+        0.0,
     ));
     assert!(!crate::design::dimensions::line_angle_matches(
         &horizontal.geometry,
@@ -174,11 +183,13 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         &inner_circle,
         &outer_circle,
         0.25,
+        0.0,
     ));
     assert!(!crate::design::dimensions::concentric_circle_separation(
         &inner_circle,
         &outer_circle,
         0.5,
+        0.0,
     ));
     let displaced_circle = entity(
         "generated:circle#displaced",
@@ -191,7 +202,335 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         &inner_circle,
         &displaced_circle,
         0.25,
+        0.0,
     ));
+
+    let tolerant_center_circle = entity(
+        "generated:circle#tolerant-center",
+        SketchGeometry::Circle {
+            center: Point2::new(3.000_000_5, -2.0),
+            radius: cadmpeg_ir::features::Length(4.25),
+        },
+    );
+    assert!(crate::design::dimensions::concentric_circle_separation(
+        &inner_circle,
+        &tolerant_center_circle,
+        0.25,
+        DOCUMENT_LINEAR_TOLERANCE,
+    ));
+    assert!(!crate::design::dimensions::concentric_circle_separation(
+        &inner_circle,
+        &tolerant_center_circle,
+        0.25,
+        0.0,
+    ));
+    let tolerant_parallel = entity(
+        "generated:line#tolerant-parallel",
+        SketchGeometry::Line {
+            start: Point2::new(0.0, 2.000_000_5),
+            end: Point2::new(10.0, 2.000_000_5),
+        },
+    );
+    assert!(crate::design::dimensions::parallel_line_separation(
+        &horizontal,
+        &tolerant_parallel,
+        2.0,
+        DOCUMENT_LINEAR_TOLERANCE,
+    ));
+    assert!(!crate::design::dimensions::parallel_line_separation(
+        &horizontal,
+        &tolerant_parallel,
+        2.0,
+        0.0,
+    ));
+    let tolerant_outer_circle = entity(
+        "generated:circle#tolerant-outer",
+        SketchGeometry::Circle {
+            center: Point2::new(3.0, -2.0),
+            radius: cadmpeg_ir::features::Length(4.250_000_5),
+        },
+    );
+    assert!(crate::design::dimensions::concentric_circle_separation(
+        &inner_circle,
+        &tolerant_outer_circle,
+        0.25,
+        DOCUMENT_LINEAR_TOLERANCE,
+    ));
+    assert!(!crate::design::dimensions::concentric_circle_separation(
+        &inner_circle,
+        &tolerant_outer_circle,
+        0.25,
+        0.0,
+    ));
+}
+
+#[test]
+fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
+    let sketch = SketchId("generated:sketch#presentation".into());
+    let entity = |record_index: u32, geometry: SketchGeometry| SketchEntity {
+        id: SketchEntityId(format!("generated:entity#{record_index}")),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(format!("stream:geometry#{record_index}")),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let line = entity(
+        306,
+        SketchGeometry::Line {
+            start: Point2::new(90.4875, -17.78),
+            end: Point2::new(90.4875, 17.78),
+        },
+    );
+    let circle = entity(
+        331,
+        SketchGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: cadmpeg_ir::features::Length(11.1125),
+        },
+    );
+    let arc = entity(
+        796,
+        SketchGeometry::Arc {
+            center: Point2::new(60.344_057_626_1, -19.05),
+            radius: cadmpeg_ir::features::Length(12.7),
+            start_angle: cadmpeg_ir::features::Angle(0.0),
+            end_angle: cadmpeg_ir::features::Angle(0.975_682_713_4),
+        },
+    );
+    let outer_arc = entity(
+        782,
+        SketchGeometry::Arc {
+            center: Point2::new(60.344_057_626_1, 19.05),
+            radius: cadmpeg_ir::features::Length(12.7),
+            start_angle: cadmpeg_ir::features::Angle(0.0),
+            end_angle: cadmpeg_ir::features::Angle(0.975_682_713_4),
+        },
+    );
+    let first_point = entity(
+        1061,
+        SketchGeometry::Point {
+            position: Point2::new(11.1125, -11.1125),
+        },
+    );
+    let second_point = entity(
+        1075,
+        SketchGeometry::Point {
+            position: Point2::new(11.1125, -7.3025),
+        },
+    );
+    let entities = [line, circle, arc, outer_arc, first_point, second_point];
+    let projected = entities
+        .iter()
+        .map(|entity| {
+            let record_index = entity
+                .native_ref
+                .as_deref()
+                .and_then(|native_ref| native_ref.rsplit_once('#'))
+                .and_then(|(_, index)| index.parse::<u32>().ok())
+                .expect("synthetic native geometry record");
+            (("stream", record_index), entity)
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let frame = |operands| crate::records::DesignDimensionPresentationFrame {
+        id: "stream:presentation#0".into(),
+        byte_offset: 0,
+        class_tag: "314".into(),
+        record_index: 0,
+        frame_length: 0,
+        operands,
+        presentation_bytes: Vec::new(),
+        presentation_byte_offset: 0,
+        paired_class_tag: "281".into(),
+        paired_byte_offset: 0,
+        owner_reference: 0,
+        owner_reference_offset: 0,
+        governing_owner_record_index: 0,
+        governing_parameter_record_index: 0,
+        governing_companion_record_index: 0,
+    };
+    let operand = |record_index| crate::records::DesignDimensionAnnotationOperand {
+        geometry_record_index: record_index,
+        geometry_reference_offset: 0,
+        role: 0,
+        role_offset: 0,
+    };
+    let tangent_span = parse_design_parameter(&parameter_record(
+        Some(44),
+        "10.16",
+        "Tangent Dimension-2",
+        Some("cm"),
+        "d4",
+        10.16,
+    ))
+    .expect("synthetic tangent dimension");
+    assert!(matches!(
+        crate::design::dimensions::presentation_dimension_definition(
+            "stream",
+            &frame(vec![operand(306), operand(331)]),
+            &projected,
+            &tangent_span,
+            &cadmpeg_ir::features::ParameterId("parameter:d4".into()),
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::Distance { entities, .. })
+            if entities.len() == 2
+    ));
+
+    let tangent_radius = parse_design_parameter(&parameter_record(
+        Some(45),
+        "1.27",
+        "Tangent Dimension-2",
+        Some("cm"),
+        "d16",
+        1.27,
+    ))
+    .expect("synthetic tangent radius dimension");
+    assert!(matches!(
+        crate::design::dimensions::presentation_dimension_definition(
+            "stream",
+            &frame(vec![operand(796)]),
+            &projected,
+            &tangent_radius,
+            &cadmpeg_ir::features::ParameterId("parameter:d16".into()),
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::Radius { entity, .. })
+            if entity.0 == "generated:entity#796"
+    ));
+    assert!(matches!(
+        crate::design::dimensions::presentation_dimension_definition(
+            "stream",
+            &frame(vec![operand(782), operand(796)]),
+            &projected,
+            &tangent_radius,
+            &cadmpeg_ir::features::ParameterId("parameter:d16".into()),
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::Distance { entities, .. })
+            if entities.len() == 2
+    ));
+    let ambiguous_tangent = parse_design_parameter(&parameter_record(
+        Some(47),
+        "3.81",
+        "Tangent Dimension-2",
+        Some("cm"),
+        "d16_ambiguous",
+        3.81,
+    ))
+    .expect("synthetic ambiguous tangent dimension");
+    assert!(
+        crate::design::dimensions::presentation_dimension_definition(
+            "stream",
+            &frame(vec![operand(782), operand(796)]),
+            &projected,
+            &ambiguous_tangent,
+            &cadmpeg_ir::features::ParameterId("parameter:d16_ambiguous".into()),
+            1.0e-6,
+        )
+        .is_none()
+    );
+
+    let point_distance = parse_design_parameter(&parameter_record(
+        Some(46),
+        "0.381",
+        "Linear Dimension-2",
+        Some("cm"),
+        "d32",
+        0.381,
+    ))
+    .expect("synthetic point distance dimension");
+    let point_definition = crate::design::dimensions::presentation_dimension_definition(
+        "stream",
+        &frame(vec![operand(1061), operand(1075)]),
+        &projected,
+        &point_distance,
+        &cadmpeg_ir::features::ParameterId("parameter:d32".into()),
+        1.0e-6,
+    );
+    assert!(matches!(
+        point_definition,
+        Some(SketchConstraintDefinition::VerticalDistance { .. })
+    ));
+}
+
+#[test]
+fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
+    let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: SketchId("generated:sketch#symmetric-distance".into()),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let first = entity(
+        "generated:line#first",
+        SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(0.0, 10.0),
+        },
+    );
+    let second = entity(
+        "generated:line#second",
+        SketchGeometry::Line {
+            start: Point2::new(5.0, 2.0),
+            end: Point2::new(5.0, 8.0),
+        },
+    );
+    let parameter = parse_design_parameter(&parameter_record(
+        Some(44),
+        "value",
+        "Linear Dimension-3",
+        Some("mm"),
+        "d1",
+        1.0,
+    ))
+    .expect("symmetric line-width parameter");
+    let parameter_id = cadmpeg_ir::features::ParameterId("generated:parameter#symmetric".into());
+
+    assert!(matches!(
+        crate::design::dimensions::symmetric_parallel_line_dimension_definition(
+            &first,
+            &second,
+            1,
+            1,
+            &parameter,
+            parameter_id.clone(),
+            1.0e-6,
+        ),
+        Some(SketchConstraintDefinition::Distance { entities, parameter: actual })
+            if entities == vec![first.id.clone(), second.id.clone()] && actual == parameter_id
+    ));
+
+    let mut direct_parameter = parameter.clone();
+    direct_parameter.evaluated_value = 0.5;
+    assert!(
+        crate::design::dimensions::symmetric_parallel_line_dimension_definition(
+            &first,
+            &second,
+            1,
+            1,
+            &direct_parameter,
+            parameter_id.clone(),
+            1.0e-6,
+        )
+        .is_none()
+    );
+    assert!(
+        crate::design::dimensions::symmetric_parallel_line_dimension_definition(
+            &first,
+            &second,
+            0,
+            1,
+            &parameter,
+            parameter_id,
+            1.0e-6,
+        )
+        .is_none()
+    );
 }
 
 #[test]

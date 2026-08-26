@@ -656,8 +656,8 @@ pub fn decode_with_header(
         format,
     );
     project_subshell_faces(&mut out, records, &by_index, format);
+    let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format);
     if purpose == DecodePurpose::Model {
-        let emitted_attributes = emit_attributes(&mut out, records, &by_index, &reach, format);
         emit_passthrough_unknowns(&mut out, records, bytes, &reach, format);
         count_other_records(&mut out, records, &reach, &emitted_attributes);
         emit_annotation_records(&mut out, records, &by_index, stream, format);

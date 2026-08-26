@@ -979,6 +979,30 @@ fn decode_retains_versioned_nested_translational_extrusion() {
 }
 
 #[test]
+fn revision_cylinder_rejects_tokens_after_its_terminal_surface_tail() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_versioned_cyl_spl_sur_with_trailing_token_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("opaque revision-cylinder decode");
+
+    assert!(result
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.definition,
+            ProceduralSurfaceDefinition::Unknown { .. }
+        )));
+}
+
+#[test]
 fn generated_f3d_rewrites_translational_extrusion_header() {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 

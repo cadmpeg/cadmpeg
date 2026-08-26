@@ -40,6 +40,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
+        with:
+          # The convergence ledger verifies that its measured commit exists
+          # and is an ancestor of the checked revision.
+          fetch-depth: 0
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -78,11 +82,14 @@ jobs:
 
       - name: Public API ledger
         # Parse docs/public-api-ledger.toml and confirm snapshot files exist.
-        # Does not install cargo-public-api; regenerate snapshots locally.
+        # Change rows retain SHAs from completed refactor branches. Those
+        # commits are not necessarily advertised by a current remote ref, so
+        # even a full clone cannot resolve them. Shape and snapshot checks are
+        # the durable CI contract; regenerate snapshots locally.
         run: |
           set -euo pipefail
           python3 -m unittest -v scripts/test_check_public_api_ledger.py
-          python3 scripts/check-public-api-ledger.py
+          python3 scripts/check-public-api-ledger.py --skip-git-objects
 
       - name: Codec facade
         # Crate-root pub items must match docs/codec-facade.toml.

@@ -152,9 +152,15 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         blob_name_offset: 0,
         body: None,
     };
-    let scopes = [scope.clone(), next_scope];
+    let scopes = vec![scope.clone(), next_scope];
     let bindings = bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories);
     assert_eq!(bindings[&scope.id], histories[1].id);
+    assert_eq!(
+        bound_scope_history(&scope.id, &bindings, &histories)
+            .expect("scope binding resolves one history")
+            .id,
+        histories[1].id
+    );
 
     let operand = DesignBodyRecipeOperand {
         id: format!("{stream}:design-body-recipe-operand#120"),
@@ -169,6 +175,8 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         asset_id_offset: 0,
         context_id: String::new(),
         context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
         references: vec![DesignBodyRecipeReference {
             design_reference: 1,
             design_reference_offset: 0,
@@ -252,7 +260,8 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         crate::records::DesignParameterScope::empty("f3d:native:scope#2", "EdgeFlange", 2);
     successor.history_state_id = Some(10);
     successor.previous_history_state_id = Some(6);
-    let bindings = bind_scope_histories(&[root, successor], &[], &[], &histories);
+    let scopes = vec![root, successor];
+    let bindings = bind_scope_histories(&scopes, &[], &[], &histories);
     assert_eq!(bindings.len(), 2);
     assert_eq!(bindings["f3d:native:scope#1"], "history");
     assert_eq!(bindings["f3d:native:scope#2"], "history");
@@ -1020,7 +1029,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
     assert_eq!(
         historical_face_support_contexts(
             &[FaceId("f3d:brep:entity#40".into())],
-            &[history.clone()],
+            &history,
             &preceding,
             &changed_faces,
         ),
@@ -1035,9 +1044,24 @@ fn active_face_support_retains_invariant_preceding_owners() {
 
     let mut variant = history;
     variant.states[1].topology.as_mut().unwrap().face_surfaces[0].carrier = 21;
+    assert_eq!(
+        historical_face_support_contexts(
+            &[FaceId("f3d:brep:entity#4".into())],
+            &variant,
+            &preceding,
+            &changed_faces,
+        ),
+        [crate::records::DesignHistoricalFaceSupportContext {
+            active_face_slot: 4,
+            surface_slot: 20,
+            preceding_face_slots: vec![4, 5],
+            preceding_face_boundaries: Vec::new(),
+            changed_preceding_face_slots: vec![5],
+        }]
+    );
     assert!(historical_face_support_contexts(
         &[FaceId("f3d:brep:entity#40".into())],
-        &[variant],
+        &variant,
         &preceding,
         &changed_faces,
     )
@@ -1432,6 +1456,22 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         ordered_loop_vertices(&[7, 8, 9], &cyclic),
         Some(vec![1, 2, 3])
     );
+    let disconnected = AsmHistoricalTopology {
+        edge_vertices: vec![
+            AsmHistoricalEdge {
+                edge: 7,
+                start_vertex: 1,
+                end_vertex: 2,
+            },
+            AsmHistoricalEdge {
+                edge: 8,
+                start_vertex: 3,
+                end_vertex: 4,
+            },
+        ],
+        ..AsmHistoricalTopology::default()
+    };
+    assert_eq!(ordered_loop_vertices(&[7, 8], &disconnected), None);
 }
 
 #[test]
@@ -1675,7 +1715,7 @@ fn nested_entity_identity_resolves_through_input_coedge_incidence() {
         }],
     };
     let identities = HistoricalIdentityIndex::build(std::slice::from_ref(&history), [700, 800]);
-    let candidates = entity_selection_edge_candidates([700, 800], 3, &identities, &topology);
+    let candidates = entity_selection_edge_candidates(&[700, 800], 3, &identities, &topology);
     assert_eq!(
         candidates,
         [

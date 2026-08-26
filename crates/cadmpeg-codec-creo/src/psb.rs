@@ -7,6 +7,8 @@
 //! stream.
 #![deny(clippy::disallowed_methods)]
 
+use crate::scalar;
+
 /// Structural token bytes ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#22-structural-tokens)).
 pub mod token {
     /// Named-record header: `e0 <type> <name>\0`.
@@ -258,7 +260,7 @@ pub fn short_form_float(data: &[u8], offset: usize) -> Option<(f64, usize)> {
     }
     // Reconstructed IEEE-754 bytes, not a contiguous file window: byte0 comes
     // from the prefix table, then XX and a fill derived from YY.
-    Some((f64::from_be_bytes(ieee), offset + 3))
+    Some((scalar::be_f64(ieee), offset + 3))
 }
 
 /// A forward-only byte cursor over a PSB body.
@@ -449,7 +451,7 @@ mod tests {
             let (val, next) = short_form_float(bytes, 0).expect("known short form");
             assert_eq!(next, 3);
             assert!(
-                (val - expected).abs() < 1e-9,
+                (val - expected).abs() < 1.0e-9,
                 "decoding {bytes:02x?}: got {val}, want {expected}"
             );
         }

@@ -54,8 +54,8 @@ pub fn decode_decal_images(
                 .filter_map(|scope| parse_decal_image(bytes, &entry.name, scope)),
         );
     }
-    images.sort_by_key(|image| image.id.clone());
-    images.dedup_by_key(|image| image.id.clone());
+    images.sort_by(|a, b| a.id.cmp(&b.id));
+    images.dedup_by(|a, b| a.id == b.id);
     Ok(images)
 }
 
@@ -102,7 +102,7 @@ pub fn project_decal_images(
             .iter()
             .flat_map(|reference| reference.candidate_faces.iter().cloned())
             .collect::<Vec<_>>();
-        faces.sort_by_key(|face| face.0.clone());
+        faces.sort_by(|a, b| a.0.cmp(&b.0));
         faces.dedup();
         if faces.is_empty() {
             continue;
@@ -127,8 +127,8 @@ pub fn project_decal_images(
         };
         assets.push(asset);
     }
-    assets.sort_by_key(|asset| asset.id.clone());
-    assets.dedup_by_key(|asset| asset.id.clone());
+    assets.sort_by(|a, b| a.id.cmp(&b.id));
+    assets.dedup_by(|a, b| a.id == b.id);
     Ok(assets)
 }
 

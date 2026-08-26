@@ -701,6 +701,7 @@ pub fn cadmpeg_core::decode::refuse_local_limit(&'static str, u64, u64, core::op
 pub fn cadmpeg_core::decode::resolve_address(&[cadmpeg_core::decode::SpaceDescriptor], cadmpeg_core::decode::SourceLocation) -> cadmpeg_core::decode::ResolvedAddress
 pub mod cadmpeg_core::error
 #[non_exhaustive] pub enum cadmpeg_core::error::CodecError
+pub cadmpeg_core::error::CodecError::InvalidInput(alloc::string::String)
 pub cadmpeg_core::error::CodecError::Io(core::io::error::Error)
 pub cadmpeg_core::error::CodecError::Malformed(alloc::string::String)
 pub cadmpeg_core::error::CodecError::NotImplemented(alloc::string::String)

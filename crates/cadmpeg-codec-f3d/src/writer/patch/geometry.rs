@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{knots_nondecreasing, NurbsCurve};
@@ -340,12 +341,12 @@ fn patch_asm_geometry(
                 }
                 DirectColorCarrier::AutodeskTrueColor { field } => {
                     let [red, green, blue] = exact_8_bit_rgb(*color, record)?;
-                    let packed = u32::from_be_bytes([0xc2, red, green, blue]);
+                    let packed = assemble_u32_be([0xc2, red, green, blue]);
                     asm_edits.patch_truecolor_field(bytes, record, *field, packed)?;
                 }
                 DirectColorCarrier::DecimalRgb { field } => {
                     let [red, green, blue] = exact_8_bit_rgb(*color, record)?;
-                    let packed = u32::from_be_bytes([0, red, green, blue]);
+                    let packed = assemble_u32_be([0, red, green, blue]);
                     asm_edits.patch_decimal_rgb_field(bytes, record, *field, packed)?;
                 }
             }

@@ -71,8 +71,8 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
     };
     assert_eq!(center, cadmpeg_ir::math::Point2::new(0.0, 0.0));
     assert_eq!(radius, Length(2.0));
-    assert!((start_angle.0 - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
-    assert!((end_angle.0 - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    assert!((start_angle.0 - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((end_angle.0 - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
 }
 
 #[test]
@@ -818,8 +818,8 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                 point
             },
         );
-        assert!((point[0] - expected).abs() < 1e-12);
-        assert!(point[1].abs() < 1e-12 && point[2].abs() < 1e-12);
+        assert!((point[0] - expected).abs() < 1.0e-12);
+        assert!(point[1].abs() < 1.0e-12 && point[2].abs() < 1.0e-12);
     }
     for parameter in [0.0, 2.0] {
         let derivative = nurbs.control_points.iter().enumerate().fold(
@@ -838,8 +838,8 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                 derivative
             },
         );
-        assert!((derivative[0] - 1.0).abs() < 1e-12);
-        assert!(derivative[1].abs() < 1e-12 && derivative[2].abs() < 1e-12);
+        assert!((derivative[0] - 1.0).abs() < 1.0e-12);
+        assert!(derivative[1].abs() < 1.0e-12 && derivative[2].abs() < 1.0e-12);
     }
     assert!(matches!(
         saved_spline_sketch_geometry(&spline),
@@ -982,9 +982,9 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
             let point = &nurbs.control_points[u * 4 + v];
             let expected_u = u as f64 / 3.0;
             let expected_v = v as f64 / 3.0;
-            assert!((point.x - expected_u).abs() < 1e-12);
-            assert!((point.y - expected_v).abs() < 1e-12);
-            assert!((point.z - expected_u - 2.0 * expected_v).abs() < 1e-12);
+            assert!((point.x - expected_u).abs() < 1.0e-12);
+            assert!((point.y - expected_v).abs() < 1.0e-12);
+            assert!((point.z - expected_u - 2.0 * expected_v).abs() < 1.0e-12);
         }
     }
 }
@@ -1497,12 +1497,12 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     assert!(generator
         .control_points
         .iter()
-        .all(|point| point.x.abs() <= 1e-8));
+        .all(|point| point.x.abs() <= 1.0e-8));
     assert_eq!(generator.control_points[0].z, 0.0);
     assert_eq!(generator.control_points[1].z, 2.0);
     let weights = generator.weights.expect("rational generator");
     assert_eq!(weights.len(), 2);
-    assert!((weights[0] - weights[1]).abs() <= 1e-12);
+    assert!((weights[0] - weights[1]).abs() <= 1.0e-12);
 
     assert!(with_decode_ctx(|ctx| cubic_extrusion_plane_generator_curve(
         ctx,
@@ -1525,11 +1525,11 @@ fn cubic_extrusion_plane_generator_requires_one_directrix_root() {
     .expect("resource limits")
     .is_none());
     assert_eq!(
-        cubic_unit_interval_roots(1.0, -1.5, 0.66, -0.08, 1e-12).len(),
+        cubic_unit_interval_roots(1.0, -1.5, 0.66, -0.08, 1.0e-12).len(),
         3
     );
     assert_eq!(
-        cubic_unit_interval_roots(1.0, -1.8, 1.05, -0.2, 1e-12).len(),
+        cubic_unit_interval_roots(1.0, -1.8, 1.05, -0.2, 1.0e-12).len(),
         2
     );
 }
@@ -1600,8 +1600,8 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
             ],
         ),
         Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cone_torus_circle"))
-            if (center.z - upper_parameter).abs() < 1e-12
-                && (radius - upper_radius).abs() < 1e-12
+            if (center.z - upper_parameter).abs() < 1.0e-12
+                && (radius - upper_radius).abs() < 1.0e-12
     ));
     let tangent_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [3.0 + 7.0_f64.sqrt(), 0.0, 0.0],
@@ -1609,9 +1609,9 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
     });
     let vertex = solve_carriers(&[cone, secant_torus, tangent_plane])
         .expect("unique cone-torus circle tangent");
-    assert!((vertex[0] - upper_radius).abs() < 1e-12);
-    assert!(vertex[1].abs() < 1e-12);
-    assert!((vertex[2] - upper_parameter).abs() < 1e-12);
+    assert!((vertex[0] - upper_radius).abs() < 1.0e-12);
+    assert!(vertex[1].abs() < 1.0e-12);
+    assert!((vertex[2] - upper_parameter).abs() < 1.0e-12);
 
     let tangent_torus = CarrierEquation::Torus(TorusEquation {
         center: [0.0, 0.0, 0.0],
@@ -1624,12 +1624,12 @@ fn coaxial_cone_torus_components_support_edges_and_vertices() {
     assert!(matches!(
         tangent_candidates.as_slice(),
         [(CurveGeometry::Circle { center, radius, .. }, "coaxial_cone_torus_circle")]
-            if (center.z - 1.5).abs() < 1e-12 && (radius - 3.5).abs() < 1e-12
+            if (center.z - 1.5).abs() < 1.0e-12 && (radius - 3.5).abs() < 1.0e-12
     ));
     assert!(matches!(
         resolve_curve_candidates(tangent_candidates, None),
         Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cone_torus_circle"))
-            if (center.z - 1.5).abs() < 1e-12 && (radius - 3.5).abs() < 1e-12
+            if (center.z - 1.5).abs() < 1.0e-12 && (radius - 3.5).abs() < 1.0e-12
     ));
     assert!(resolve_curve_candidates(
         coaxial_cone_torus_circle_candidates(cone, tangent_torus),
@@ -1665,10 +1665,10 @@ fn axis_containing_plane_torus_components_support_edges_and_vertices() {
     assert!(matches!(
         select_unique_curve_candidate(candidates, [[4.0, 0.0, 0.0], [3.0, 0.0, 1.0]]),
         Some((CurveGeometry::Circle { center, radius, .. }, "axis_containing_plane_torus_meridian_circle"))
-            if (center.x - 3.0).abs() < 1e-12
-                && center.y.abs() < 1e-12
-                && center.z.abs() < 1e-12
-                && (radius - 1.0).abs() < 1e-12
+            if (center.x - 3.0).abs() < 1.0e-12
+                && center.y.abs() < 1.0e-12
+                && center.z.abs() < 1.0e-12
+                && (radius - 1.0).abs() < 1.0e-12
     ));
 
     let tangent_plane = CarrierEquation::Plane(PlaneEquation {
@@ -1710,7 +1710,7 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     assert!(matches!(
         select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]),
         Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cones_circle"))
-            if (center.z - 4.0).abs() < 1e-12 && (radius - 6.0).abs() < 1e-12
+            if (center.z - 4.0).abs() < 1.0e-12 && (radius - 6.0).abs() < 1.0e-12
     ));
     let tangent_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [10.0, 0.0, 0.0],
@@ -1718,9 +1718,9 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     });
     let vertex = solve_carriers(&[first, second, tangent_plane])
         .expect("unique coaxial-cone circle tangent");
-    assert!((vertex[0] - 6.0).abs() < 1e-12);
-    assert!(vertex[1].abs() < 1e-12);
-    assert!((vertex[2] - 4.0).abs() < 1e-12);
+    assert!((vertex[0] - 6.0).abs() < 1.0e-12);
+    assert!(vertex[1].abs() < 1.0e-12);
+    assert!((vertex[2] - 4.0).abs() < 1.0e-12);
 
     let reversed = CarrierEquation::Cone(ConeEquation {
         origin: [0.0, 0.0, 0.0],
@@ -1735,8 +1735,8 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
     assert!(reversed_candidates.iter().any(|(geometry, _)| matches!(
         geometry,
         CurveGeometry::Circle { center, radius, .. }
-            if (center.z - 4.0 / 3.0).abs() < 1e-12
-                && (radius - 10.0 / 3.0).abs() < 1e-12
+            if (center.z - 4.0 / 3.0).abs() < 1.0e-12
+                && (radius - 10.0 / 3.0).abs() < 1.0e-12
     )));
     assert!(coaxial_cones_section_candidates(first, first).is_empty());
     let shifted = CarrierEquation::Cone(ConeEquation {
@@ -1773,9 +1773,9 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
                 ..
             },
             "coaxial_cones_ellipse"
-        ) if (center.z - 4.0).abs() < 1e-12
-            && (major_radius - 6.0).abs() < 1e-12
-            && (minor_radius - 3.0).abs() < 1e-12
+        ) if (center.z - 4.0).abs() < 1.0e-12
+            && (major_radius - 6.0).abs() < 1.0e-12
+            && (minor_radius - 3.0).abs() < 1.0e-12
     ));
     for parameter in [-1.0, 0.0, 1.0] {
         let point = cadmpeg_ir::eval::curve_point(&selected.0, parameter)
@@ -1805,9 +1805,9 @@ fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
                 ..
             },
             "coaxial_cones_ellipse"
-        ) if (center.z - 12.0).abs() < 1e-12
-            && (major_radius - 14.0).abs() < 1e-12
-            && (minor_radius - 7.0).abs() < 1e-12
+        ) if (center.z - 12.0).abs() < 1.0e-12
+            && (major_radius - 14.0).abs() < 1.0e-12
+            && (minor_radius - 7.0).abs() < 1.0e-12
     ));
     for parameter in [-1.0, 0.0, 1.0] {
         let point = cadmpeg_ir::eval::curve_point(&selected.0, parameter)

@@ -329,7 +329,10 @@ pub(crate) fn incomplete_expression_parameters(ir: &CadIr) -> BTreeSet<Parameter
 }
 
 pub(crate) fn trim_surface_definition_is_incomplete(feature: &Feature) -> bool {
-    let FeatureDefinition::TrimSurface { faces, tool, keep } = &feature.definition else {
+    let FeatureDefinition::TrimSurface {
+        faces, tool, keep, ..
+    } = &feature.definition
+    else {
         return true;
     };
     face_selection_is_incomplete(faces)

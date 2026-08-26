@@ -185,7 +185,7 @@ pub(super) fn operand_kind(tag: [u8; 2]) -> Option<FeatureInputOperandKind> {
         [0, 0] | [0xff, 0xff] => None,
         [0xd6, 0x80] => Some(FeatureInputOperandKind::D6),
         [0xe1, 0x80] => Some(FeatureInputOperandKind::E1),
-        bytes => Some(FeatureInputOperandKind::Native(u16::from_le_bytes(bytes))),
+        bytes => Some(FeatureInputOperandKind::Native(View::u16_le_at(&bytes, 0)?)),
     }
 }
 

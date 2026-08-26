@@ -414,7 +414,7 @@ fn frame_sketch_text_record_takes_its_anchor_and_rotation_from_the_transform() {
         text.anchor,
         Some(cadmpeg_ir::math::Point2::new(21.75, -5.0))
     );
-    assert!((text.rotation.expect("rotation") - rotation).abs() < 1e-12);
+    assert!((text.rotation.expect("rotation") - rotation).abs() < 1.0e-12);
     // Frame text stores 128 more bytes than path text.
     assert_eq!(
         text.raw_bytes.len(),

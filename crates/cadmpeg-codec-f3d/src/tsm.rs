@@ -3,13 +3,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::SubdId;
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
-    SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
+    SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,
+    SubdSymmetry, SubdSymmetryKind, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
 };
 use cadmpeg_ir::SourceObjectAssociation;
 
@@ -17,6 +18,10 @@ use crate::container::ContainerScan;
 use crate::loss::F3dLossCode;
 
 const ENTRY_MARKER: &str = "/TSplines.BlobParts/";
+const CAGE_COORDINATE_SCALE: f64 = 10.0;
+const FULL_CREASE_SHARPNESS: f64 = 1.0;
+const EDGE_KNOT_MIRROR_RELATIVE_EPS: f64 = 1.0e-12;
+const SYMMETRY_FRAME_EPS: f64 = 1.0e-9;
 
 #[derive(Clone, Copy)]
 struct HalfEdge {
@@ -25,6 +30,12 @@ struct HalfEdge {
     mate: usize,
     vertex: usize,
     face: i64,
+}
+
+#[derive(Clone, Copy)]
+struct GripPoint {
+    point: Point3,
+    weight: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -57,10 +68,16 @@ pub(crate) fn decode(
     }) {
         match parse(ctx, &entry.name, scan.entry_bytes(&entry.name)?) {
             Ok(parsed) => {
-                if parsed.unknown_records != 0 {
+                if !parsed.unknown_record_kinds.is_empty() {
+                    let count = parsed.unknown_record_kinds.values().sum::<usize>();
+                    let kinds = parsed
+                        .unknown_record_kinds
+                        .iter()
+                        .map(|(kind, count)| format!("{kind}={count}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     losses.push(F3dLossCode::TsplineRecordUntyped.note(format!(
-                        "{} T-spline record(s) were retained without typed semantics.",
-                        parsed.unknown_records
+                        "{count} T-spline record(s) were retained without typed semantics: {kinds}."
                     )));
                 }
                 cages.push(parsed.surface);
@@ -98,6 +115,16 @@ fn parse_f64(name: &str, value: Option<&str>, field: &str) -> Result<f64, CodecE
         .ok_or_else(|| malformed(name, format!("invalid {field}")))
 }
 
+fn parse_direction(name: &str, value: Option<&str>) -> Result<SubdGripDirection, CodecError> {
+    match value {
+        Some("NORTH") => Ok(SubdGripDirection::North),
+        Some("EAST") => Ok(SubdGripDirection::East),
+        Some("SOUTH") => Ok(SubdGripDirection::South),
+        Some("WEST") => Ok(SubdGripDirection::West),
+        _ => Err(malformed(name, "invalid vertex direction")),
+    }
+}
+
 /// Map each program slot to its IR index, or `None` for a deleted slot.
 fn compact(live: impl Iterator<Item = bool>) -> Vec<Option<u32>> {
     let mut next = 0u32;
@@ -125,25 +152,73 @@ fn require_end<'a>(
 #[derive(Debug)]
 struct ParsedCage {
     surface: SubdSurface,
-    unknown_records: usize,
+    unknown_record_kinds: BTreeMap<String, usize>,
 }
 
 #[derive(Debug)]
 struct DerivedGripConnectivity {
     vertex: usize,
+    wedges: usize,
+    spoke_lengths: Vec<usize>,
     grip_indices: Vec<i64>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Copy)]
+struct FanSlot {
+    half_edge: Option<usize>,
+    face: Option<usize>,
+    phantom: bool,
+}
+
+impl FanSlot {
+    fn phantom() -> Self {
+        Self {
+            half_edge: None,
+            face: None,
+            phantom: true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SymmetryMode {
+    Correspondence,
+    Radial,
+}
+
+#[derive(Debug)]
 struct SymmetryBlock {
+    mode: SymmetryMode,
     plane: Option<[f64; 12]>,
-    map_kinds: BTreeSet<String>,
+    radial_segments: Option<u32>,
+    radial_sweep: Option<f64>,
+    radial_maps: Vec<SubdRadialSymmetryMap>,
+    record_kinds: BTreeSet<String>,
     face_forward: BTreeMap<usize, usize>,
     face_reverse: BTreeMap<usize, usize>,
     edge_forward: BTreeMap<usize, usize>,
     edge_reverse: BTreeMap<usize, usize>,
     vertex_forward: BTreeMap<usize, usize>,
     vertex_reverse: BTreeMap<usize, usize>,
+}
+
+impl SymmetryBlock {
+    fn new(mode: SymmetryMode) -> Self {
+        Self {
+            mode,
+            plane: None,
+            radial_segments: None,
+            radial_sweep: None,
+            radial_maps: Vec::new(),
+            record_kinds: BTreeSet::new(),
+            face_forward: BTreeMap::new(),
+            face_reverse: BTreeMap::new(),
+            edge_forward: BTreeMap::new(),
+            edge_reverse: BTreeMap::new(),
+            vertex_forward: BTreeMap::new(),
+            vertex_reverse: BTreeMap::new(),
+        }
+    }
 }
 
 fn parse_pairs<'a>(
@@ -162,6 +237,34 @@ fn parse_pairs<'a>(
         if pairs.insert(pair[0], pair[1]).is_some() {
             return Err(malformed(name, format!("{record} repeats a source index")));
         }
+    }
+    Ok(pairs)
+}
+
+fn parse_radial_pairs<'a>(
+    name: &str,
+    fields: impl Iterator<Item = &'a str>,
+) -> Result<Vec<[u64; 2]>, CodecError> {
+    let values = fields
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .map_err(|_| malformed(name, "invalid radial symmetry map index"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if values.len() % 2 != 0 {
+        return Err(malformed(name, "radial symmetry map has an unpaired index"));
+    }
+    let mut sources = BTreeSet::new();
+    let mut pairs = Vec::with_capacity(values.len() / 2);
+    for pair in values.chunks_exact(2) {
+        if !sources.insert(pair[0]) {
+            return Err(malformed(
+                name,
+                "radial symmetry map repeats a source index",
+            ));
+        }
+        pairs.push([pair[0], pair[1]]);
     }
     Ok(pairs)
 }
@@ -198,6 +301,401 @@ fn validate_symmetry_map(
     Ok(())
 }
 
+fn symmetry_plane(name: &str, values: [f64; 12]) -> Result<SubdPlaneFrame, CodecError> {
+    let origin = Point3::new(
+        values[0] * CAGE_COORDINATE_SCALE,
+        values[1] * CAGE_COORDINATE_SCALE,
+        values[2] * CAGE_COORDINATE_SCALE,
+    );
+    let first_axis = Vector3::new(values[4], values[5], values[6]);
+    let second_axis = Vector3::new(values[8], values[9], values[10]);
+    if (values[3] - 1.0).abs() > SYMMETRY_FRAME_EPS
+        || values[7].abs() > SYMMETRY_FRAME_EPS
+        || values[11].abs() > SYMMETRY_FRAME_EPS
+        || (first_axis.norm() - 1.0).abs() > SYMMETRY_FRAME_EPS
+        || (second_axis.norm() - 1.0).abs() > SYMMETRY_FRAME_EPS
+        || first_axis.dot(second_axis).abs() > SYMMETRY_FRAME_EPS
+    {
+        return Err(malformed(
+            name,
+            "symmetry plane is not a homogeneous orthonormal frame",
+        ));
+    }
+    Ok(SubdPlaneFrame {
+        origin,
+        first_axis,
+        second_axis,
+    })
+}
+
+fn remap_symmetry_pairs(
+    name: &str,
+    map: &BTreeMap<usize, usize>,
+    ir_indices: &[Option<u32>],
+    element: &str,
+) -> Result<Vec<[u32; 2]>, CodecError> {
+    map.iter()
+        .map(|(&source, &target)| {
+            let source =
+                ir_indices.get(source).copied().flatten().ok_or_else(|| {
+                    malformed(name, format!("{element} symmetry source is deleted"))
+                })?;
+            let target =
+                ir_indices.get(target).copied().flatten().ok_or_else(|| {
+                    malformed(name, format!("{element} symmetry target is deleted"))
+                })?;
+            Ok([source, target])
+        })
+        .collect()
+}
+
+fn direction_offset(direction: SubdGripDirection) -> usize {
+    match direction {
+        SubdGripDirection::North => 0,
+        SubdGripDirection::East => 1,
+        SubdGripDirection::South => 2,
+        SubdGripDirection::West => 3,
+    }
+}
+
+fn build_fan(
+    name: &str,
+    vertex: usize,
+    root: usize,
+    half_edges: &[Option<HalfEdge>],
+    face_live: &[bool],
+) -> Result<Vec<FanSlot>, CodecError> {
+    let root_half = half_edges
+        .get(root)
+        .and_then(Option::as_ref)
+        .ok_or_else(|| malformed(name, "vertex root names a deleted half-edge"))?;
+    if root_half.vertex != vertex {
+        return Err(malformed(
+            name,
+            "vertex root does not terminate at its vertex",
+        ));
+    }
+
+    let mut fan = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut current = root;
+    loop {
+        if !seen.insert(current) {
+            if current == root {
+                break;
+            }
+            return Err(malformed(
+                name,
+                "vertex half-edge fan repeats before its root",
+            ));
+        }
+        let half = half_edges
+            .get(current)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| malformed(name, "vertex half-edge fan names a deleted slot"))?;
+        if half.vertex != vertex {
+            return Err(malformed(
+                name,
+                "vertex half-edge fan leaves its terminal vertex",
+            ));
+        }
+        let face = match half.face {
+            -1 => None,
+            face if face >= 0 && face_live.get(face as usize).copied().unwrap_or(false) => {
+                Some(face as usize)
+            }
+            _ => {
+                return Err(malformed(
+                    name,
+                    "vertex half-edge fan names an invalid face",
+                ))
+            }
+        };
+        fan.push(FanSlot {
+            half_edge: Some(current),
+            face,
+            phantom: false,
+        });
+
+        let next = half_edges
+            .get(half.next)
+            .and_then(Option::as_ref)
+            .ok_or_else(|| malformed(name, "vertex fan next half-edge is deleted"))?;
+        current = half_edges
+            .get(next.mate)
+            .and_then(Option::as_ref)
+            .map(|mate| {
+                if mate.vertex == vertex {
+                    next.mate
+                } else {
+                    usize::MAX
+                }
+            })
+            .ok_or_else(|| malformed(name, "vertex fan mate half-edge is deleted"))?;
+        if current == usize::MAX {
+            return Err(malformed(
+                name,
+                "vertex fan rotation leaves its terminal vertex",
+            ));
+        }
+        if current == root {
+            break;
+        }
+        if seen.len() >= half_edges.len() {
+            return Err(malformed(name, "vertex half-edge fan does not close"));
+        }
+    }
+
+    let gap_positions = fan
+        .iter()
+        .enumerate()
+        .filter_map(|(index, slot)| slot.face.is_none().then_some(index))
+        .collect::<Vec<_>>();
+    if gap_positions.len() > 1 {
+        return Err(malformed(
+            name,
+            "vertex half-edge fan has multiple boundary gaps",
+        ));
+    }
+    if let Some(gap) = gap_positions.first().copied() {
+        let phantom_count = 4usize.saturating_sub(fan.len());
+        for _ in 0..phantom_count {
+            fan.insert(gap + 1, FanSlot::phantom());
+        }
+    }
+    Ok(fan)
+}
+
+struct GripDecodeContext<'a> {
+    name: &'a str,
+    vertex: usize,
+    grip_vertices: &'a [GripVertexMarker],
+    grip_points: &'a [Option<GripPoint>],
+    grip_owners: &'a mut [Option<usize>],
+}
+
+impl GripDecodeContext<'_> {
+    fn block(
+        &mut self,
+        indices: &[i64],
+        cursor: &mut usize,
+        count: usize,
+    ) -> Result<Vec<Option<SubdSecondaryGrip>>, CodecError> {
+        let end = cursor
+            .checked_add(count)
+            .ok_or_else(|| malformed(self.name, "derived-grip block arity overflows"))?;
+        let values = indices.get(*cursor..end).ok_or_else(|| {
+            malformed(
+                self.name,
+                "derived-grip run is shorter than its declared arity",
+            )
+        })?;
+        *cursor = end;
+        values
+            .iter()
+            .map(|index| match *index {
+                -1 => Ok(None),
+                index if index >= 0 => {
+                    let index = usize::try_from(index)
+                        .map_err(|_| malformed(self.name, "derived-grip index overflows"))?;
+                    if !matches!(
+                        self.grip_vertices.get(index),
+                        Some(GripVertexMarker::Secondary(Some(owner))) if *owner == self.vertex
+                    ) {
+                        return Err(malformed(
+                            self.name,
+                            "derived-grip entry is not a secondary grip of its vertex",
+                        ));
+                    }
+                    let point =
+                        self.grip_points
+                            .get(index)
+                            .copied()
+                            .flatten()
+                            .ok_or_else(|| {
+                                malformed(self.name, "derived-grip entry names a deleted grip")
+                            })?;
+                    let owner_slot = self.grip_owners.get_mut(index).ok_or_else(|| {
+                        malformed(self.name, "derived-grip entry is out of range")
+                    })?;
+                    if owner_slot.replace(self.vertex).is_some() {
+                        return Err(malformed(
+                            self.name,
+                            "secondary grip is named more than once",
+                        ));
+                    }
+                    Ok(Some(SubdSecondaryGrip {
+                        source_index: u32::try_from(index).map_err(|_| {
+                            malformed(self.name, "secondary grip index overflows IR")
+                        })?,
+                        point: point.point,
+                        weight: point.weight,
+                    }))
+                }
+                _ => Err(malformed(self.name, "derived-grip index is below -1")),
+            })
+            .collect()
+    }
+}
+
+struct SecondaryLayoutContext<'a> {
+    name: &'a str,
+    vertex_roots: &'a [Option<(usize, SubdGripDirection)>],
+    vertex_live: &'a [bool],
+    vertex_ir: &'a [Option<u32>],
+    face_live: &'a [bool],
+    face_ir: &'a [Option<u32>],
+    half_edges: &'a [Option<HalfEdge>],
+    edge_by_half: &'a [Option<(u32, bool)>],
+    grip_vertices: &'a [GripVertexMarker],
+    grip_points: &'a [Option<GripPoint>],
+}
+
+fn build_secondary_layouts(
+    ctx: &DecodeContext<'_>,
+    context: &SecondaryLayoutContext<'_>,
+    derived_grips: &[DerivedGripConnectivity],
+) -> Result<Vec<Option<SubdVertexGripLayout>>, CodecError> {
+    let SecondaryLayoutContext {
+        name,
+        vertex_roots,
+        vertex_live,
+        vertex_ir,
+        face_live,
+        face_ir,
+        half_edges,
+        edge_by_half,
+        grip_vertices,
+        grip_points,
+    } = *context;
+    let live_vertices = vertex_ir.iter().flatten().count();
+    let mut layouts = ctx.alloc_filled(live_vertices, None, "f3d subd secondary layouts")?;
+    let mut has_cg = ctx.alloc_filled(
+        vertex_live.len(),
+        false,
+        "f3d subd derived-grip ownership flags",
+    )?;
+    let mut secondary_counts =
+        ctx.alloc_filled(vertex_live.len(), 0usize, "f3d subd secondary-grip counts")?;
+    let mut grip_owners =
+        ctx.alloc_filled(grip_vertices.len(), None, "f3d subd secondary-grip owners")?;
+    for marker in grip_vertices {
+        if let GripVertexMarker::Secondary(Some(vertex)) = marker {
+            *secondary_counts
+                .get_mut(*vertex)
+                .ok_or_else(|| malformed(name, "secondary grip vertex is out of range"))? += 1;
+        }
+    }
+
+    for connectivity in derived_grips {
+        let vertex = connectivity.vertex;
+        if !vertex_live.get(vertex).copied().unwrap_or(false) {
+            return Err(malformed(name, "derived-grip vertex is out of range"));
+        }
+        if has_cg[vertex] {
+            return Err(malformed(
+                name,
+                "vertex has more than one derived-grip record",
+            ));
+        }
+        has_cg[vertex] = true;
+        let (root, direction) = vertex_roots
+            .get(vertex)
+            .copied()
+            .flatten()
+            .ok_or_else(|| malformed(name, "derived-grip vertex has no root direction"))?;
+        let fan = build_fan(name, vertex, root, half_edges, face_live)?;
+        if connectivity.wedges != fan.len() {
+            return Err(malformed(
+                name,
+                "derived-grip wedge count does not match the completed vertex fan",
+            ));
+        }
+
+        let offset = direction_offset(direction);
+        let mut cursor = 0usize;
+        let mut wedges = Vec::with_capacity(connectivity.wedges);
+        for wedge in 0..connectivity.wedges {
+            let spoke_count = connectivity.spoke_lengths[wedge];
+            let sector_count = spoke_count
+                .checked_mul(connectivity.spoke_lengths[(wedge + 1) % connectivity.wedges])
+                .ok_or_else(|| malformed(name, "derived-grip sector arity overflows"))?;
+            let slot = fan[(wedge + offset) % fan.len()];
+            if slot.phantom && spoke_count != 0 {
+                return Err(malformed(
+                    name,
+                    "phantom wedge carries a nonzero spoke length",
+                ));
+            }
+            let edge = match slot.half_edge {
+                Some(half) => Some(
+                    edge_by_half
+                        .get(half)
+                        .copied()
+                        .flatten()
+                        .map(|(edge, _)| edge)
+                        .ok_or_else(|| malformed(name, "fan half-edge has no owning edge"))?,
+                ),
+                None => None,
+            };
+            let sector_face = match slot.face {
+                Some(face) => Some(
+                    face_ir
+                        .get(face)
+                        .copied()
+                        .flatten()
+                        .ok_or_else(|| malformed(name, "fan sector names a deleted face"))?,
+                ),
+                None => None,
+            };
+            let mut grip_context = GripDecodeContext {
+                name,
+                vertex,
+                grip_vertices,
+                grip_points,
+                grip_owners: &mut grip_owners,
+            };
+            let spokes =
+                grip_context.block(&connectivity.grip_indices, &mut cursor, spoke_count)?;
+            let sectors =
+                grip_context.block(&connectivity.grip_indices, &mut cursor, sector_count)?;
+            wedges.push(SubdGripWedge {
+                edge,
+                sector_face,
+                phantom: slot.phantom,
+                spokes,
+                sectors,
+            });
+        }
+        if cursor != connectivity.grip_indices.len() {
+            return Err(malformed(name, "derived-grip run has trailing entries"));
+        }
+        let vertex_ir =
+            vertex_ir[vertex].ok_or_else(|| malformed(name, "derived-grip vertex is deleted"))?;
+        layouts[vertex_ir as usize] = Some(SubdVertexGripLayout { direction, wedges });
+    }
+
+    for (vertex, count) in secondary_counts.into_iter().enumerate() {
+        if (count != 0) != has_cg[vertex] {
+            return Err(malformed(
+                name,
+                "secondary-grip ownership does not have exactly one derived-grip record",
+            ));
+        }
+    }
+    for (index, marker) in grip_vertices.iter().enumerate() {
+        if let GripVertexMarker::Secondary(Some(vertex)) = marker {
+            if grip_owners[index] != Some(*vertex) {
+                return Err(malformed(
+                    name,
+                    "secondary grip is not named exactly once by derived connectivity",
+                ));
+            }
+        }
+    }
+    Ok(layouts)
+}
+
 fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| malformed(name, format!("payload is not UTF-8: {error}")))?;
@@ -211,13 +709,17 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     // through validation and compacted only when the IR cage is built.
     let mut face_roots: Vec<Option<usize>> = Vec::new();
     let mut edge_roots: Vec<Option<usize>> = Vec::new();
+    let mut edge_knot_intervals: Vec<Option<f64>> = Vec::new();
+    let mut edge_knot_records = Vec::new();
+    let mut vertex_roots: Vec<Option<(usize, SubdGripDirection)>> = Vec::new();
     let mut vertex_live: Vec<bool> = Vec::new();
     let mut half_edges: Vec<Option<HalfEdge>> = Vec::new();
     let mut crease_edges = BTreeSet::new();
     let mut grip_vertices: Vec<GripVertexMarker> = Vec::new();
-    let mut grip_points: Vec<Option<Point3>> = Vec::new();
+    let mut grip_points: Vec<Option<GripPoint>> = Vec::new();
     let mut in_grip_map = false;
     let mut declarations = BTreeSet::new();
+    let mut end_conditions = None;
     let mut derived_grips = Vec::new();
     let mut selected_edges = BTreeSet::new();
     let mut selected_vertices = BTreeSet::new();
@@ -226,7 +728,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     let mut symmetry_blocks = Vec::new();
     let mut current_symmetry: Option<SymmetryBlock> = None;
     let mut terminal_declarations = BTreeSet::new();
-    let mut unknown_records = 0usize;
+    let mut unknown_record_kinds = BTreeMap::new();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         let mut fields = line.split_ascii_whitespace();
         match fields.next() {
@@ -239,8 +741,11 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 declarations.insert("degree");
             }
             Some(declaration @ ("cap-type" | "end-conditions" | "star-knot-rule")) => {
-                if fields.next().is_none() {
-                    return Err(malformed(name, format!("missing {declaration} value")));
+                let value = fields
+                    .next()
+                    .ok_or_else(|| malformed(name, format!("missing {declaration} value")))?;
+                if declaration == "end-conditions" {
+                    end_conditions = Some(value);
                 }
                 require_end(name, fields, declaration)?;
                 declarations.insert(declaration);
@@ -266,24 +771,35 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             },
             Some("e") => match fields.next() {
-                None => edge_roots.push(None),
+                None => {
+                    edge_roots.push(None);
+                    edge_knot_intervals.push(None);
+                }
                 root => {
                     edge_roots.push(Some(parse_usize(name, root, "edge root")?));
-                    // TS-03: the scalar's target quantity is not established;
-                    // `ec` records independently define crease membership.
-                    parse_f64(name, fields.next(), "edge scalar")?;
+                    let knot_interval = parse_f64(name, fields.next(), "edge knot interval")?;
+                    if knot_interval <= 0.0 {
+                        return Err(malformed(name, "edge knot interval is not positive"));
+                    }
+                    edge_knot_intervals.push(Some(knot_interval));
                     require_end(name, fields, "edge")?;
                 }
             },
+            Some("106ek") => {
+                edge_knot_records.push(parse_f64(name, fields.next(), "106ek value")?);
+                require_end(name, fields, "106ek")?;
+            }
             Some("v") => match fields.next() {
-                None => vertex_live.push(false),
+                None => {
+                    vertex_live.push(false);
+                    vertex_roots.push(None);
+                }
                 root => {
-                    parse_usize(name, root, "vertex root")?;
-                    if fields.next().is_none() {
-                        return Err(malformed(name, "missing vertex direction"));
-                    }
+                    let root = parse_usize(name, root, "vertex root")?;
+                    let direction = parse_direction(name, fields.next())?;
                     require_end(name, fields, "vertex")?;
                     vertex_live.push(true);
+                    vertex_roots.push(Some((root, direction)));
                 }
             },
             Some("l") => match fields.next() {
@@ -356,6 +872,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     require_end(name, fields, "derived-grip connectivity")?;
                     derived_grips.push(DerivedGripConnectivity {
                         vertex,
+                        wedges,
+                        spoke_lengths,
                         grip_indices,
                     });
                 }
@@ -365,15 +883,15 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 None => grip_points.push(None),
                 x => {
                     let point = Point3::new(
-                        parse_f64(name, x, "grip x")? * 10.0,
-                        parse_f64(name, fields.next(), "grip y")? * 10.0,
-                        parse_f64(name, fields.next(), "grip z")? * 10.0,
+                        parse_f64(name, x, "grip x")? * CAGE_COORDINATE_SCALE,
+                        parse_f64(name, fields.next(), "grip y")? * CAGE_COORDINATE_SCALE,
+                        parse_f64(name, fields.next(), "grip z")? * CAGE_COORDINATE_SCALE,
                     );
                     let weight = parse_f64(name, fields.next(), "grip weight")?;
                     if weight <= 0.0 || fields.next().is_some() {
                         return Err(malformed(name, "grip weight is not positive"));
                     }
-                    grip_points.push(Some(point));
+                    grip_points.push(Some(GripPoint { point, weight }));
                 }
             },
             Some(selection @ ("100edges" | "100verts" | "50000grip")) => {
@@ -391,11 +909,13 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 }
             }
             Some("105sym") => {
-                if parse_i64(name, fields.next(), "symmetry flags")? != 0 {
-                    return Err(malformed(name, "unsupported symmetry flags"));
-                }
+                let mode = match parse_i64(name, fields.next(), "symmetry flags")? {
+                    0 => SymmetryMode::Correspondence,
+                    1 => SymmetryMode::Radial,
+                    _ => return Err(malformed(name, "unsupported symmetry flags")),
+                };
                 require_end(name, fields, "symmetry header")?;
-                if let Some(block) = current_symmetry.replace(SymmetryBlock::default()) {
+                if let Some(block) = current_symmetry.replace(SymmetryBlock::new(mode)) {
                     symmetry_blocks.push(block);
                 }
             }
@@ -421,7 +941,13 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 let block = current_symmetry
                     .as_mut()
                     .ok_or_else(|| malformed(name, "symmetry map has no header"))?;
-                if !block.map_kinds.insert(kind.into()) {
+                if block.mode != SymmetryMode::Correspondence {
+                    return Err(malformed(
+                        name,
+                        "correspondence map belongs to a radial symmetry block",
+                    ));
+                }
+                if !block.record_kinds.insert(kind.into()) {
                     return Err(malformed(name, format!("duplicate {kind} symmetry map")));
                 }
                 let target = match kind {
@@ -434,6 +960,69 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     _ => return Err(malformed(name, "unknown symmetry map kind")),
                 };
                 *target = pairs;
+            }
+            Some("105r") => {
+                let kind = fields
+                    .next()
+                    .ok_or_else(|| malformed(name, "missing radial symmetry record kind"))?;
+                let block = current_symmetry
+                    .as_mut()
+                    .ok_or_else(|| malformed(name, "radial symmetry record has no header"))?;
+                if block.mode != SymmetryMode::Radial {
+                    return Err(malformed(
+                        name,
+                        "radial symmetry record belongs to a correspondence block",
+                    ));
+                }
+                if !block.record_kinds.insert(kind.into()) {
+                    return Err(malformed(
+                        name,
+                        format!("duplicate {kind} radial symmetry record"),
+                    ));
+                }
+                match kind {
+                    "segments" => {
+                        let segments =
+                            parse_usize(name, fields.next(), "radial symmetry segments")?;
+                        if segments == 0 {
+                            return Err(malformed(
+                                name,
+                                "radial symmetry segments is not positive",
+                            ));
+                        }
+                        block.radial_segments =
+                            Some(u32::try_from(segments).map_err(|_| {
+                                malformed(name, "radial symmetry segments exceed u32")
+                            })?);
+                        require_end(name, fields, "radial symmetry segments")?;
+                    }
+                    "sweep" => {
+                        block.radial_sweep =
+                            Some(parse_f64(name, fields.next(), "radial symmetry sweep")?);
+                        require_end(name, fields, "radial symmetry sweep")?;
+                    }
+                    kind @ ("ef" | "er" | "ff" | "fr" | "vf" | "vr") => {
+                        let selector = match kind {
+                            "ef" => SubdRadialMapSelector::Ef,
+                            "er" => SubdRadialMapSelector::Er,
+                            "ff" => SubdRadialMapSelector::Ff,
+                            "fr" => SubdRadialMapSelector::Fr,
+                            "vf" => SubdRadialMapSelector::Vf,
+                            "vr" => SubdRadialMapSelector::Vr,
+                            _ => unreachable!("radial selector is matched above"),
+                        };
+                        let pairs = parse_radial_pairs(name, fields)?;
+                        block
+                            .radial_maps
+                            .push(SubdRadialSymmetryMap { selector, pairs });
+                    }
+                    _ => {
+                        return Err(malformed(
+                            name,
+                            format!("unknown radial symmetry record {kind}"),
+                        ));
+                    }
+                }
             }
             Some(declaration @ ("tol" | "geom-tol")) => {
                 let tolerance = parse_f64(name, fields.next(), declaration)?;
@@ -454,11 +1043,31 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     return Err(malformed(name, format!("duplicate {declaration}")));
                 }
             }
-            _ => unknown_records += 1,
+            Some(kind) => *unknown_record_kinds.entry(kind.to_owned()).or_default() += 1,
+            None => {}
         }
     }
     if let Some(block) = current_symmetry {
         symmetry_blocks.push(block);
+    }
+
+    let edge_knot_mirror = !edge_knot_records.is_empty()
+        && end_conditions == Some("SUBD_CREASES")
+        && edge_knot_records.len() == edge_roots.len()
+        && edge_knot_records
+            .iter()
+            .zip(&edge_knot_intervals)
+            .all(|(record, interval)| match interval {
+                Some(interval) => {
+                    *record > 0.0
+                        && (*record - interval).abs()
+                            <= EDGE_KNOT_MIRROR_RELATIVE_EPS
+                                * record.abs().max(interval.abs()).max(1.0)
+                }
+                None => *record == -1.0,
+            });
+    if !edge_knot_records.is_empty() && !edge_knot_mirror {
+        *unknown_record_kinds.entry("106ek".to_owned()).or_default() += edge_knot_records.len();
     }
 
     let live_vertices = vertex_live.iter().filter(|live| **live).count();
@@ -497,27 +1106,38 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         if block.plane.is_none() {
             return Err(malformed(name, "symmetry block has no plane"));
         }
-        validate_symmetry_map(
-            name,
-            &block.face_forward,
-            &block.face_reverse,
-            &face_live,
-            "face",
-        )?;
-        validate_symmetry_map(
-            name,
-            &block.edge_forward,
-            &block.edge_reverse,
-            &edge_live,
-            "edge",
-        )?;
-        validate_symmetry_map(
-            name,
-            &block.vertex_forward,
-            &block.vertex_reverse,
-            &vertex_live,
-            "vertex",
-        )?;
+        if block.mode == SymmetryMode::Correspondence {
+            validate_symmetry_map(
+                name,
+                &block.face_forward,
+                &block.face_reverse,
+                &face_live,
+                "face",
+            )?;
+            validate_symmetry_map(
+                name,
+                &block.edge_forward,
+                &block.edge_reverse,
+                &edge_live,
+                "edge",
+            )?;
+            validate_symmetry_map(
+                name,
+                &block.vertex_forward,
+                &block.vertex_reverse,
+                &vertex_live,
+                "vertex",
+            )?;
+        } else {
+            for required in ["segments", "sweep", "ef", "er", "ff", "fr", "vf", "vr"] {
+                if !block.record_kinds.contains(required) {
+                    return Err(malformed(
+                        name,
+                        format!("radial symmetry block is missing {required}"),
+                    ));
+                }
+            }
+        }
     }
     for connectivity in &derived_grips {
         if !vertex_live
@@ -567,10 +1187,70 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             return Err(malformed(name, "half-edge topology is inconsistent"));
         }
     }
+    for (vertex, live) in vertex_live.iter().copied().enumerate() {
+        if live {
+            let (root, _) = vertex_roots
+                .get(vertex)
+                .copied()
+                .flatten()
+                .ok_or_else(|| malformed(name, "live vertex has no root direction"))?;
+            build_fan(name, vertex, root, &half_edges, &face_live)?;
+        }
+    }
 
     // Slot indices address the program; IR indices address only populated slots.
     let vertex_ir = compact(vertex_live.iter().copied());
     let edge_ir = compact(edge_roots.iter().map(Option::is_some));
+    let face_ir = compact(face_roots.iter().map(Option::is_some));
+    let symmetries = symmetry_blocks
+        .iter()
+        .map(|block| {
+            let plane = symmetry_plane(
+                name,
+                block
+                    .plane
+                    .ok_or_else(|| malformed(name, "symmetry block has no plane"))?,
+            )?;
+            let kind = match block.mode {
+                SymmetryMode::Correspondence => SubdSymmetryKind::Correspondence,
+                SymmetryMode::Radial => SubdSymmetryKind::Radial {
+                    segments: block.radial_segments.ok_or_else(|| {
+                        malformed(name, "radial symmetry block has no segment count")
+                    })?,
+                    sweep: block
+                        .radial_sweep
+                        .ok_or_else(|| malformed(name, "radial symmetry block has no sweep"))?,
+                },
+            };
+            let (face_pairs, edge_pairs, vertex_pairs, radial_maps) = match block.mode {
+                SymmetryMode::Correspondence => (
+                    remap_symmetry_pairs(name, &block.face_forward, &face_ir, "face")?,
+                    remap_symmetry_pairs(name, &block.edge_forward, &edge_ir, "edge")?,
+                    remap_symmetry_pairs(name, &block.vertex_forward, &vertex_ir, "vertex")?,
+                    Vec::new(),
+                ),
+                SymmetryMode::Radial => (
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    block.radial_maps.clone(),
+                ),
+            };
+            Ok(SubdSymmetry {
+                kind,
+                plane,
+                face_pairs,
+                edge_pairs,
+                vertex_pairs,
+                radial_maps,
+            })
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    let edge_knot_intervals_ir = edge_knot_intervals
+        .iter()
+        .copied()
+        .flatten()
+        .collect::<Vec<_>>();
     let vertex_of = |slot: usize| {
         vertex_ir
             .get(slot)
@@ -584,17 +1264,20 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         if grip_points.len() != vertex_live.len() {
             return Err(malformed(name, "positional grip vertex map is incomplete"));
         }
-        for (slot, point) in grip_points.into_iter().enumerate() {
+        for (slot, point) in grip_points.iter().enumerate() {
             if let (true, Some(point)) = (vertex_live[slot], point) {
-                vertex_points.insert(vertex_of(slot)?, point);
+                vertex_points.insert(vertex_of(slot)?, point.point);
             }
         }
     } else {
-        for (marker, point) in grip_vertices.into_iter().zip(grip_points) {
+        for (marker, point) in grip_vertices.iter().zip(grip_points.iter()) {
             let (GripVertexMarker::Primary(slot), Some(point)) = (marker, point) else {
                 continue;
             };
-            if vertex_points.insert(vertex_of(slot)?, point).is_some() {
+            if vertex_points
+                .insert(vertex_of(*slot)?, point.point)
+                .is_some()
+            {
                 return Err(malformed(name, "primary grip vertex map is inconsistent"));
             }
         }
@@ -603,7 +1286,8 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         return Err(malformed(name, "primary grip vertex map is incomplete"));
     }
 
-    let mut edge_by_half = alloc_filled(half_edges.len(), None, "f3d T-spline half-edge map")?;
+    let mut edge_by_half =
+        ctx.alloc_filled(half_edges.len(), None, "f3d subd half-edge ownership")?;
     let mut edge_vertices = Vec::with_capacity(live_vertices);
     for (edge_slot, root) in edge_roots.iter().copied().enumerate() {
         let Some(root) = root else { continue };
@@ -627,6 +1311,26 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
     {
         return Err(malformed(name, "edge roots do not cover every half-edge"));
     }
+    if edge_knot_intervals_ir.len() != edge_vertices.len() {
+        return Err(malformed(name, "edge knot interval map is incomplete"));
+    }
+
+    let secondary_layouts = build_secondary_layouts(
+        ctx,
+        &SecondaryLayoutContext {
+            name,
+            vertex_roots: &vertex_roots,
+            vertex_live: &vertex_live,
+            vertex_ir: &vertex_ir,
+            face_live: &face_live,
+            face_ir: &face_ir,
+            half_edges: &half_edges,
+            edge_by_half: &edge_by_half,
+            grip_vertices: &grip_vertices,
+            grip_points: &grip_points,
+        },
+        &derived_grips,
+    )?;
 
     let mut faces = Vec::new();
     for (face_slot, start) in face_roots.iter().copied().enumerate() {
@@ -676,6 +1380,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 2 => SubdVertexTag::Crease,
                 _ => SubdVertexTag::Corner,
             },
+            secondary_grips: secondary_layouts[index].clone(),
         })
         .collect();
     let creased_edges = crease_edges
@@ -687,14 +1392,16 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
         .enumerate()
         .map(|(index, vertices)| {
             let crease = creased_edges.contains(&(index as u32));
+            let sharpness = if crease { FULL_CREASE_SHARPNESS } else { 0.0 };
             SubdEdge {
                 vertices,
-                sharpness: [0.0, 0.0],
+                sharpness: [sharpness; 2],
                 tag: if crease {
                     SubdEdgeTag::Crease
                 } else {
                     SubdEdgeTag::Smooth
                 },
+                knot_interval: Some(edge_knot_intervals_ir[index]),
                 sector_coefficients: [0.0, 0.0],
             }
         })
@@ -711,6 +1418,7 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             vertices,
             edges,
             faces,
+            symmetries,
             source_object: Some(SourceObjectAssociation {
                 format: "f3d".into(),
                 object_id: name.into(),
@@ -721,13 +1429,15 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                 instance_path: Vec::new(),
             }),
         },
-        unknown_records,
+        unknown_record_kinds,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    const EPS_KNOT_INTERVAL: f64 = 1.0e-12;
 
     const QUAD_TOPOLOGY: &str = "degree 3\n\
 cap-type G1CAPS\n\
@@ -780,7 +1490,10 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
         );
         let cage = parse_cage(source.as_bytes()).expect("quad cage");
-        assert_eq!(cage.unknown_records, 1);
+        assert_eq!(
+            cage.unknown_record_kinds,
+            std::collections::BTreeMap::from([("vendor-extension".to_string(), 1)])
+        );
         assert_quad(&cage.surface);
     }
 
@@ -788,9 +1501,9 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
     fn parses_editor_metadata_and_derived_grip_connectivity() {
         let source = format!(
             "#TS0200\n{QUAD_TOPOLOGY}\
-             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n\
-             0m cg 0 1 1 -1 -1\n\
-             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n0m gv 0\n\
+             0m cg 0 4 1 0 0 0 4\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n0g 0.5 0 0 1\n\
              100edges 0 2\n100verts 1\n50000grip 0\n50000grip 1\n\
              105sym 0\n105plane 0 2 0 1 0 1 0 0 0 0 1 0\n\
              105a fr 0 0\n105a er 0 0 1 2\n105a e 2 1\n\
@@ -798,8 +1511,281 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
         );
         let cage = parse_cage(source.as_bytes()).expect("typed metadata");
-        assert_eq!(cage.unknown_records, 0);
+        assert!(cage.unknown_record_kinds.is_empty());
         assert_quad(&cage.surface);
+        let layout = cage.surface.vertices[0]
+            .secondary_grips
+            .as_ref()
+            .expect("secondary grip layout");
+        assert_eq!(layout.direction, cadmpeg_ir::SubdGripDirection::North);
+        assert_eq!(layout.wedges.len(), 4);
+        assert_eq!(layout.wedges[0].spokes[0].as_ref().unwrap().source_index, 4);
+        assert!(layout.wedges[2..]
+            .iter()
+            .all(|wedge| wedge.phantom && wedge.spokes.is_empty()));
+        assert!(layout.wedges[1].sector_face.is_none());
+
+        assert_eq!(cage.surface.symmetries.len(), 1);
+        let symmetry = &cage.surface.symmetries[0];
+        assert_eq!(symmetry.kind, cadmpeg_ir::SubdSymmetryKind::Correspondence);
+        assert_eq!(
+            symmetry.plane.origin,
+            cadmpeg_ir::math::Point3::new(0.0, 20.0, 0.0)
+        );
+        assert_eq!(
+            symmetry.plane.first_axis,
+            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+        );
+        assert_eq!(
+            symmetry.plane.second_axis,
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        );
+        assert_eq!(symmetry.face_pairs, vec![[0, 0]]);
+        assert_eq!(symmetry.edge_pairs, vec![[0, 0], [1, 2]]);
+        assert_eq!(symmetry.vertex_pairs, vec![[0, 1]]);
+    }
+
+    #[test]
+    fn rejects_secondary_grips_on_phantom_wedges() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n\
+             0m gv 0\n0m gv 0\n\
+             0m cg 0 4 1 0 1 0 4 5\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             0g 0.5 0 0 1\n0g 0.6 0 0 1\n"
+        );
+        let error = parse_cage(source.as_bytes()).expect_err("phantom spoke");
+        assert!(
+            error
+                .to_string()
+                .contains("phantom wedge carries a nonzero spoke length"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn partitions_rectangular_sector_grids_with_product_arity() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0m odd-grip-map\n0m gvp 0\n0m gvp 1\n0m gvp 2\n0m gvp 3\n\
+             0m gv 0\n0m gv 0\n0m gv 0\n0m gv 0\n0m gv 0\n\
+             0m cg 0 4 2 1 0 0 4 5 6 7 8\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             0g 0.1 0 0 1\n0g 0.2 0 0 1\n0g 0.3 0 0 1\n0g 0.4 0 0 1\n0g 0.5 0 0 1\n"
+        );
+        let cage = parse_cage(source.as_bytes()).expect("rectangular sector grid");
+        let layout = cage.surface.vertices[0]
+            .secondary_grips
+            .as_ref()
+            .expect("secondary grip layout");
+        assert_eq!(layout.wedges[0].spokes.len(), 2);
+        assert_eq!(layout.wedges[0].sectors.len(), 2);
+        assert_eq!(layout.wedges[1].spokes.len(), 1);
+        assert!(layout.wedges[1].sectors.is_empty());
+        assert_eq!(
+            layout.wedges[0]
+                .spokes
+                .iter()
+                .chain(layout.wedges[0].sectors.iter())
+                .chain(layout.wedges[1].spokes.iter())
+                .map(|grip| grip.as_ref().unwrap().source_index)
+                .collect::<Vec<_>>(),
+            vec![4, 5, 6, 7, 8]
+        );
+    }
+
+    #[test]
+    fn maps_compass_words_to_north_anchored_offsets() {
+        assert_eq!(
+            super::direction_offset(cadmpeg_ir::SubdGripDirection::North),
+            0
+        );
+        assert_eq!(
+            super::direction_offset(cadmpeg_ir::SubdGripDirection::East),
+            1
+        );
+        assert_eq!(
+            super::direction_offset(cadmpeg_ir::SubdGripDirection::South),
+            2
+        );
+        assert_eq!(
+            super::direction_offset(cadmpeg_ir::SubdGripDirection::West),
+            3
+        );
+    }
+
+    #[test]
+    fn transfers_knot_intervals_and_absolute_crease_sharpness() {
+        let source = QUAD_TOPOLOGY
+            .replace("e 0 1\n", "e 0 0.5\n")
+            .replace("e 2 1\n", "e 2 0.25\n")
+            .replace("e 4 1\n", "e 4 0.125\n")
+            .replace("e 6 1\n", "e 6 0.0625\n");
+        let cage = parse_cage(
+            format!(
+                "#TS0200\n{source}\
+                 0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
+            )
+            .as_bytes(),
+        )
+        .expect("knot intervals");
+        let expected = [0.5, 0.25, 0.125, 0.0625];
+        for (edge, expected) in cage.surface.edges.iter().zip(expected) {
+            let actual = edge.knot_interval.expect("knot interval");
+            assert!((actual - expected).abs() < EPS_KNOT_INTERVAL);
+            assert!(edge
+                .sharpness
+                .iter()
+                .all(|sharpness| (*sharpness - 1.0).abs() < EPS_KNOT_INTERVAL));
+        }
+    }
+
+    #[test]
+    fn validates_the_subd_creases_edge_knot_mirror() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}106ek 0.9999999999999\n106ek 1\n106ek 1\n106ek 1\n\
+                     0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
+        );
+        let cage = parse_cage(source.as_bytes()).expect("edge-knot mirror");
+        assert!(cage.unknown_record_kinds.is_empty());
+        assert_eq!(cage.surface.edges.len(), 4);
+    }
+
+    #[test]
+    fn validates_deleted_slots_in_the_subd_creases_edge_knot_mirror() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}e\n106ek 1\n106ek 1\n106ek 1\n106ek 1\n106ek -1\n\
+                     0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n"
+        );
+        let cage = parse_cage(source.as_bytes()).expect("deleted edge-knot slot");
+        assert!(cage.unknown_record_kinds.is_empty());
+        assert_eq!(cage.surface.edges.len(), 4);
+    }
+
+    #[test]
+    fn retains_the_unresolved_edge_knot_state_form() {
+        let source = format!(
+            "#TS0200\n{}106ek 0\n106ek 1\n106ek 0\n106ek 1\n\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n",
+            QUAD_TOPOLOGY.replace(
+                "end-conditions SUBD_CREASES",
+                "end-conditions MULTIPLE_KNOTS"
+            )
+        );
+        let cage = parse_cage(source.as_bytes()).expect("unresolved edge-knot state");
+        assert_eq!(
+            cage.unknown_record_kinds,
+            std::collections::BTreeMap::from([("106ek".to_string(), 4)])
+        );
+    }
+
+    #[test]
+    fn parses_radial_symmetry_metadata() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             105sym 1\n105plane 0 0 0 1 0 1 0 0 0 0 1 0\n\
+             105r segments 4\n105r sweep 1\n\
+             105r ef 0 1\n105r er 1 0\n105r ff 0 0\n105r fr 0 0\n\
+             105r vf 0 1\n105r vr 1 0\n\
+             tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
+        );
+        let cage = parse_cage(source.as_bytes()).expect("radial symmetry metadata");
+        assert!(cage.unknown_record_kinds.is_empty());
+        assert_quad(&cage.surface);
+        assert_eq!(cage.surface.symmetries.len(), 1);
+        let symmetry = &cage.surface.symmetries[0];
+        assert_eq!(
+            symmetry.kind,
+            cadmpeg_ir::SubdSymmetryKind::Radial {
+                segments: 4,
+                sweep: 1.0
+            }
+        );
+        assert_eq!(
+            symmetry.plane.origin,
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            symmetry.plane.first_axis,
+            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+        );
+        assert_eq!(
+            symmetry.plane.second_axis,
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+        );
+        assert!(symmetry.face_pairs.is_empty());
+        assert!(symmetry.edge_pairs.is_empty());
+        assert!(symmetry.vertex_pairs.is_empty());
+        assert_eq!(
+            symmetry.radial_maps,
+            vec![
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Ef,
+                    pairs: vec![[0, 1]],
+                },
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Er,
+                    pairs: vec![[1, 0]],
+                },
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Ff,
+                    pairs: vec![[0, 0]],
+                },
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Fr,
+                    pairs: vec![[0, 0]],
+                },
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Vf,
+                    pairs: vec![[0, 1]],
+                },
+                cadmpeg_ir::SubdRadialSymmetryMap {
+                    selector: cadmpeg_ir::SubdRadialMapSelector::Vr,
+                    pairs: vec![[1, 0]],
+                },
+            ]
+        );
+
+        let unsupported = source.replace("105sym 1", "105sym 2");
+        let error = parse_cage(unsupported.as_bytes()).expect_err("unsupported symmetry mode");
+        assert!(
+            error.to_string().contains("unsupported symmetry flags"),
+            "unexpected error: {error}"
+        );
+
+        let missing = source.replace("105r vf 0 1\n", "");
+        let error = parse_cage(missing.as_bytes()).expect_err("incomplete radial maps");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+
+        let native_id = u64::MAX;
+        let replacement = format!("105r ef {native_id} {native_id}\n");
+        let native = source.replace("105r ef 0 1\n", &replacement);
+        let cage = parse_cage(native.as_bytes()).expect("opaque radial native id");
+        let ef = cage.surface.symmetries[0]
+            .radial_maps
+            .iter()
+            .find(|map| map.selector == cadmpeg_ir::SubdRadialMapSelector::Ef)
+            .expect("ef radial map");
+        assert_eq!(ef.pairs, vec![[native_id, native_id]]);
+    }
+
+    #[test]
+    fn rejects_nonorthonormal_symmetry_plane() {
+        let source = format!(
+            "#TS0200\n{QUAD_TOPOLOGY}\
+             0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n\
+             105sym 0\n105plane 0 0 0 1 1 0 0 0 1 0 0 0\n\
+             tol 0.00001\nver 6021\nbehavior-version 6.5.0\n"
+        );
+        let error = parse_cage(source.as_bytes()).expect_err("nonorthonormal symmetry plane");
+        assert!(
+            error
+                .to_string()
+                .contains("symmetry plane is not a homogeneous orthonormal frame"),
+            "unexpected error: {error}"
+        );
     }
 
     /// A bare topology token is a deleted slot: it consumes an index and

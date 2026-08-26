@@ -34,6 +34,8 @@ pub enum F3dLossCode {
     ConfigurationFeatureSuppressionUnbound,
     /// Non-root `ACT` component links stay source-only; product role is unresolved.
     ActComponentLinkUnresolved,
+    /// An F3Z drawing root was omitted while its derived 3D model transferred.
+    DrawingDocumentOmitted,
     /// ASM history binding work exceeded the decoder safety budget.
     HistoryBindingBudgetExceeded,
     /// An ASM history span stays opaque because record framing failed.
@@ -56,6 +58,8 @@ pub enum F3dLossCode {
     ParameterOwnerUnrecognized,
     /// Design parameters retain unit tokens without a settled quantity kind.
     ParameterUnitUntyped,
+    /// Material Distance properties retain unit tags without a length conversion.
+    MaterialDistanceUnitUntyped,
     /// Parameter expression symbols name same-stream parameters without an edge.
     ParameterExpressionUnbound,
     /// Feature history-state dependency links were not projected.
@@ -86,6 +90,8 @@ pub enum F3dLossCode {
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
     FeatureFaceSelectionNative,
+    /// Legacy face operands use a current active face after no historical slot proof.
+    FeatureFaceSelectionActiveSubstituted,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
     /// Feature face operands stay unresolved inside historical selections.
@@ -108,6 +114,10 @@ pub enum F3dLossCode {
     MeshAttributeNotTransferred,
     /// The external-reference table was present but not decoded.
     XrefTableUndecoded,
+    /// A typed occurrence placement named a role but failed its payload grammar.
+    XrefPlacementUndecoded,
+    /// Structured placement records were superseded by scope-bound carriers.
+    XrefPlacementSuperseded,
     /// Mesh body geometry stores vertex coordinates at f32 precision.
     MeshVertexPrecisionReduced,
     /// A bodyless design's sketches or reference images are its complete carrier.
@@ -166,6 +176,7 @@ impl F3dLossCode {
         Self::ConfigurationParameterOverrideUnbound,
         Self::ConfigurationFeatureSuppressionUnbound,
         Self::ActComponentLinkUnresolved,
+        Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryRecordFramingFailed,
         Self::DesignBodyBindingUnresolved,
@@ -177,6 +188,7 @@ impl F3dLossCode {
         Self::ParameterUnprojected,
         Self::ParameterOwnerUnrecognized,
         Self::ParameterUnitUntyped,
+        Self::MaterialDistanceUnitUntyped,
         Self::ParameterExpressionUnbound,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
@@ -192,6 +204,7 @@ impl F3dLossCode {
         Self::FeatureProfileSelectionNative,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
+        Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureBodySelectionNative,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
@@ -203,6 +216,8 @@ impl F3dLossCode {
         Self::MeshContainerMissing,
         Self::MeshAttributeNotTransferred,
         Self::XrefTableUndecoded,
+        Self::XrefPlacementUndecoded,
+        Self::XrefPlacementSuperseded,
         Self::MeshVertexPrecisionReduced,
         Self::BodylessDesignCarrier,
         Self::AssemblyComponentsExternal,
@@ -242,6 +257,7 @@ impl F3dLossCode {
                 "configuration.feature-suppression-unbound"
             }
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
+            Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
@@ -253,6 +269,7 @@ impl F3dLossCode {
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
             Self::ParameterUnitUntyped => "parameter.unit-untyped",
+            Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
@@ -268,6 +285,9 @@ impl F3dLossCode {
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
+            Self::FeatureFaceSelectionActiveSubstituted => {
+                "feature.face-selection-active-substituted"
+            }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
@@ -279,6 +299,8 @@ impl F3dLossCode {
             Self::MeshContainerMissing => "mesh.container-missing",
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::XrefTableUndecoded => "xref.table-undecoded",
+            Self::XrefPlacementUndecoded => "xref.placement-undecoded",
+            Self::XrefPlacementSuperseded => "xref.placement-superseded",
             Self::MeshVertexPrecisionReduced => "mesh.vertex-precision-reduced",
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
             Self::AssemblyComponentsExternal => "assembly.components-external",
@@ -341,13 +363,16 @@ impl F3dLossCode {
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
+            | Self::DrawingDocumentOmitted
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
             | Self::XrefCycle
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
-            | Self::XrefUnitsMismatch => LossTaxonomy::AssemblyComponentsExternal,
+            | Self::XrefUnitsMismatch
+            | Self::XrefPlacementUndecoded
+            | Self::XrefPlacementSuperseded => LossTaxonomy::AssemblyComponentsExternal,
             Self::HistoryBindingBudgetExceeded
             | Self::FeatureDefinitionIncomplete
             | Self::FeatureScopeUnprojected
@@ -369,11 +394,13 @@ impl F3dLossCode {
             | Self::FeatureProfileSelectionNative
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
+            | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost => LossTaxonomy::FeatureHistoryRetained,
+            Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
@@ -438,6 +465,7 @@ mod tests {
                 "configuration.parameter-override-unbound",
                 "configuration.feature-suppression-unbound",
                 "assembly.act-component-link-unresolved",
+                "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
@@ -449,6 +477,7 @@ mod tests {
                 "parameter.unprojected",
                 "parameter.owner-unrecognized",
                 "parameter.unit-untyped",
+                "material.distance-unit-untyped",
                 "parameter.expression-unbound",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
@@ -464,6 +493,7 @@ mod tests {
                 "feature.profile-selection-native",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
+                "feature.face-selection-active-substituted",
                 "feature.body-selection-native",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",
@@ -475,6 +505,8 @@ mod tests {
                 "mesh.container-missing",
                 "mesh.attribute-not-transferred",
                 "xref.table-undecoded",
+                "xref.placement-undecoded",
+                "xref.placement-superseded",
                 "mesh.vertex-precision-reduced",
                 "design.bodyless-carrier",
                 "assembly.components-external",

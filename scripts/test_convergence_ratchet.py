@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).with_name("convergence-ratchet.py")
 SPEC = importlib.util.spec_from_file_location("convergence_ratchet", SCRIPT)
@@ -94,6 +95,13 @@ class StripCfgTest(unittest.TestCase):
 
 
 class PatternFilters(unittest.TestCase):
+    def test_test_support_is_not_production_source(self) -> None:
+        self.assertFalse(
+            ratchet.is_production_rs(
+                Path("crates/codec/src/test_support/fixture_builder.rs")
+            )
+        )
+
     def test_excludes_loss_note_return_and_struct(self) -> None:
         text = (
             "struct LossNote {\n"
@@ -130,11 +138,48 @@ class PatternFilters(unittest.TestCase):
         self.assertTrue(ratchet.is_production_rs(Path("crates/c/src/decode.rs")))
 
     def test_bare_tolerance_includes_seven_eight_eleven(self) -> None:
-        text = "a 1e-6 b 1e-7 c 1e-8 d 1e-9 e 1e-10 f 1e-11 g 1e-12 h 1e-18\n"
+        text = (
+            "a 1e-6 b 1e-7 c 1e-8 d 1e-9 e 1e-10 f 1e-11 g 1e-12 "
+            "h 1e-18 i 1.0e-9 j 1.00E-10\n"
+        )
         self.assertEqual(
             ratchet.BARE_TOLERANCE.findall(text),
-            ["1e-6", "1e-7", "1e-8", "1e-9", "1e-10", "1e-11", "1e-12"],
+            [
+                "1e-6",
+                "1e-7",
+                "1e-8",
+                "1e-9",
+                "1e-10",
+                "1e-11",
+                "1e-12",
+                "1.0e-9",
+                "1.00E-10",
+            ],
         )
+
+    def test_metric_source_masks_comments_and_literals(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "source.rs"
+            path.write_text(
+                '// from_le_bytes 1e-9\nconst NOTE: &str = "from_be_bytes 1e-8";\n'
+                "fn actual() { from_le_bytes(); let _ = 1e-7; }\n",
+                encoding="utf-8",
+            )
+            source = ratchet.metric_source_text(path)
+        self.assertEqual(ratchet.FROM_ENDIAN.findall(source), ["from_le_bytes"])
+        self.assertEqual(ratchet.count_bare_tolerance_literals(source), 1)
+
+    def test_bare_tolerance_excludes_named_threshold_initializers(self) -> None:
+        text = (
+            "const EPS_DIRECT: f64 = 1e-9;\n"
+            "pub(crate) static EPS_STATIC: f64 = 1.0e-10;\n"
+            "let direct = 1e-9;\n"
+            "let formatted = 1.0e-10;\n"
+            "const DERIVED: f64 = f64::from_bits(1e-9 as u64);\n"
+            "const MULTILINE: f64 =\n"
+            "    1.0e-11;\n"
+        )
+        self.assertEqual(ratchet.count_bare_tolerance_literals(text), 3)
 
     def test_vec_repeat_scanner_ignores_nested_delimiters_and_strings(self) -> None:
         text = r'''
@@ -146,6 +191,13 @@ class PatternFilters(unittest.TestCase):
         self.assertEqual(
             list(ratchet.iter_vec_repeat_counts(text)), ["len", "outer_len"]
         )
+
+    def test_existing_collection_lengths_are_admitted_repeat_sizes(self) -> None:
+        self.assertIsNotNone(ratchet.ADMITTED_LEN_REPEAT.fullmatch("records.len()"))
+        self.assertIsNotNone(
+            ratchet.ADMITTED_LEN_REPEAT.fullmatch("self.records.len() + 1")
+        )
+        self.assertIsNone(ratchet.ADMITTED_LEN_REPEAT.fullmatch("parsed_count"))
 
     def test_from_endian_counts_non_codec_crates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -471,6 +523,27 @@ class LedgerRoundTrip(unittest.TestCase):
             measured_at="0123456789abcdef0123456789abcdef01234567",
         )
         self.assertEqual(failures, [])
+
+    def test_measured_commit_must_exist_and_be_reachable(self) -> None:
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        with patch.object(ratchet, "git_object_exists", return_value=False):
+            self.assertEqual(
+                ratchet.check_measured_commit(sha),
+                ["ledger measured_at does not identify an existing commit"],
+            )
+        with (
+            patch.object(ratchet, "git_object_exists", return_value=True),
+            patch.object(ratchet, "git_is_ancestor", return_value=False),
+        ):
+            self.assertEqual(
+                ratchet.check_measured_commit(sha),
+                ["ledger measured_at is not an ancestor of HEAD"],
+            )
+        with (
+            patch.object(ratchet, "git_object_exists", return_value=True),
+            patch.object(ratchet, "git_is_ancestor", return_value=True),
+        ):
+            self.assertEqual(ratchet.check_measured_commit(sha), [])
 
     def test_raise_without_reason_fails(self) -> None:
         failures = ratchet.check(

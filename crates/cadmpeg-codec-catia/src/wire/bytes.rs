@@ -55,12 +55,7 @@ pub(crate) fn f64_vector(bytes: &[u8], at: usize) -> Option<Vector3> {
 }
 
 pub(crate) fn u32_le_24(bytes: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_le_bytes([
-        *bytes.get(at)?,
-        *bytes.get(at + 1)?,
-        *bytes.get(at + 2)?,
-        0,
-    ]))
+    View::u24_le_at(bytes, at)
 }
 
 pub(crate) fn compact_int(bytes: &[u8], at: &mut usize) -> Option<u32> {

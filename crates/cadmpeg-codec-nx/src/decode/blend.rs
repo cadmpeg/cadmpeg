@@ -29,13 +29,16 @@ use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::VecDeque;
 
+const EPS_BLEND_POSITION: f64 = 1.0e-8;
+const EPS_BLEND_EXACT_GEOMETRY: f64 = 1.0e-12;
+
 const BLEND_SECTION_CANONICAL_DOMAIN: [f64; 2] = [0.0, 1.0];
 // A source intersection chart can continue across either finite blend rail.
 // Admit one additional section on each side, then require point reproduction
 // before transferring the continuation back into the chart.
 const BLEND_SECTION_SOURCE_CONTINUATION_DOMAIN: [f64; 2] = [-1.0, 2.0];
-const BLEND_SECTION_BOUNDARY_EPSILON: f64 = 1.0e-12;
-const BLEND_INVERSE_MIN_SWEEP: f64 = 1.0e-12;
+const BLEND_SECTION_BOUNDARY_EPSILON: f64 = EPS_BLEND_EXACT_GEOMETRY;
+const BLEND_INVERSE_MIN_SWEEP: f64 = EPS_BLEND_EXACT_GEOMETRY;
 
 #[derive(Clone, Copy)]
 enum BlendSectionDomain {
@@ -454,7 +457,7 @@ fn blend_surface_parameters_inner(
             point.z - center.z,
         ))?;
         let alpha = signed_angle(first, second, tangent);
-        if !alpha.is_finite() || alpha.abs() <= 1.0e-12 {
+        if !alpha.is_finite() || alpha.abs() <= EPS_BLEND_EXACT_GEOMETRY {
             return None;
         }
         let theta = signed_angle(first, radial, tangent);
@@ -478,7 +481,7 @@ fn blend_surface_parameters_inner(
                 ))
             })
             .min_by(|first, second| {
-                if (first.1 - second.1).abs() <= 1.0e-12 {
+                if (first.1 - second.1).abs() <= EPS_BLEND_EXACT_GEOMETRY {
                     first.2.total_cmp(&second.2)
                 } else {
                     first.1.total_cmp(&second.1)
@@ -912,8 +915,10 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
         let Some(candidate) = accepted else {
             break;
         };
-        let converged = (candidate.u - parameters.u).abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
-            && (candidate.v - parameters.v).abs() <= 1.0e-12 * (1.0 + parameters.v.abs());
+        let converged = (candidate.u - parameters.u).abs()
+            <= EPS_BLEND_EXACT_GEOMETRY * (1.0 + parameters.u.abs())
+            && (candidate.v - parameters.v).abs()
+                <= EPS_BLEND_EXACT_GEOMETRY * (1.0 + parameters.v.abs());
         parameters = candidate;
         if converged {
             break;
@@ -2767,7 +2772,7 @@ fn spine_contact_point_with_index_and_budget_and_options(
     )
 }
 
-const BLEND_CONTACT_ANGULAR_TOLERANCE_FLOOR: f64 = 1.0e-8;
+const BLEND_CONTACT_ANGULAR_TOLERANCE_FLOOR: f64 = EPS_BLEND_POSITION;
 
 #[allow(clippy::too_many_arguments)]
 fn spine_contact_point_from_offset_side_with_index_and_budget(
@@ -3415,7 +3420,7 @@ fn blend_surface_contact_direction_with_budget(
         point.z - frame.0.z,
     ))?;
     let sweep = signed_angle(frame.2, frame.3, frame.1);
-    if !sweep.is_finite() || sweep.abs() <= 1.0e-12 {
+    if !sweep.is_finite() || sweep.abs() <= EPS_BLEND_EXACT_GEOMETRY {
         return None;
     }
     let angle = signed_angle(frame.2, radial, frame.1);

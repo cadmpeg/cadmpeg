@@ -1,0 +1,91 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {},
+      "compressed_size": 571,
+      "compression": "stored",
+      "name": "Manifest.dat",
+      "role": "manifest",
+      "uncompressed_size": 571
+    },
+    {
+      "attributes": {},
+      "compressed_size": 589,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/Manifest.dat",
+      "role": "manifest",
+      "uncompressed_size": 589
+    },
+    {
+      "attributes": {
+        "acis_save_format_version": "23100",
+        "asm_entity_count": "5",
+        "asm_flags": "3",
+        "asm_magic": "ASM BinaryFile8",
+        "asm_width": "8",
+        "history_partition_offset": "1597",
+        "product_family": "Autodesk Neutron",
+        "product_version": "ASM 231.6.3.65535 OSX",
+        "resabs": "0.000001",
+        "resnor": "0.0000000001",
+        "save_date": "Tue Mar 31 16:16:19 2026",
+        "scale": "60",
+        "sha256": "38630ab6494f356459e0ee34e122e2a86685f44db32f30456c5b4fbb02a7cf6c",
+        "solved_record_len": "1597"
+      },
+      "compressed_size": 1610,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+      "role": "brep-smbh",
+      "uncompressed_size": 1610
+    },
+    {
+      "attributes": {},
+      "compressed_size": 898,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein",
+      "role": "protein-assets",
+      "uncompressed_size": 898
+    },
+    {
+      "attributes": {},
+      "compressed_size": 4600,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/Design1/BulkStream.dat",
+      "role": "bulkstream",
+      "uncompressed_size": 4600
+    },
+    {
+      "attributes": {},
+      "compressed_size": 2581,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/Design1/MetaStream.dat",
+      "role": "metastream",
+      "uncompressed_size": 2581
+    },
+    {
+      "attributes": {},
+      "compressed_size": 686,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
+      "role": "bulkstream",
+      "uncompressed_size": 686
+    },
+    {
+      "attributes": {},
+      "compressed_size": 1057,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
+      "role": "metastream",
+      "uncompressed_size": 1057
+    }
+  ],
+  "format": "f3d",
+  "notes": [
+    "Design asset folder (from manifests): FusionAssetName[Active]",
+    "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
+    "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh (1610 bytes uncompressed)",
+    "container-level inspection only; run `decode` to resolve Design body bindings and build each referenced BREP graph"
+  ]
+}

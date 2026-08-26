@@ -64,6 +64,62 @@ fn dispatcher_projects_datum_feature_scopes() {
 }
 
 #[test]
+fn dispatcher_projects_scale_point_center_in_neutral_units() {
+    let mut scale = DesignParameterScope::empty("f3d:native:parameter-scope#4", "Scale", 4);
+    scale.scale_operation = Some(DesignScaleOperation {
+        body_group_record_index: 5,
+        center_record_index: 6,
+        center_position: Some([1.25, -2.5, 3.75]),
+        center_position_offset: Some(40),
+        uniform_factor: 2.5,
+        uniform_factor_offset: 20,
+    });
+
+    let (features, _) = project_parameter_design(&[], &[], &[scale], &[], &[], &[], &[], &[]);
+    let FeatureDefinition::Scale {
+        bodies,
+        center: Some(cadmpeg_ir::features::ScaleCenter::Point(center)),
+        factors,
+    } = &features[0].definition
+    else {
+        panic!("scale feature with explicit center");
+    };
+    assert!(matches!(
+        bodies,
+        cadmpeg_ir::features::BodySelection::Unresolved
+    ));
+    for (actual, expected) in [center.x, center.y, center.z]
+        .into_iter()
+        .zip([12.5, -25.0, 37.5])
+    {
+        assert!((actual - expected).abs() < f64::EPSILON);
+    }
+    assert!(factors
+        .uniform
+        .is_some_and(|uniform| (uniform - 2.5).abs() < f64::EPSILON));
+}
+
+#[test]
+fn dispatcher_projects_referenced_work_plane_frame() {
+    let mut referenced =
+        DesignParameterScope::empty("f3d:native:parameter-scope#10", "WorkPlane", 10);
+    referenced.work_plane_transform = Some(identity_matrix());
+    referenced.work_plane_reference = Some(11);
+
+    let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        } if *origin == Point3::new(0.0, 0.0, 0.0)
+            && *normal == Vector3::new(0.0, 0.0, 1.0)
+            && *u_axis == Vector3::new(1.0, 0.0, 0.0)
+    ));
+}
+
+#[test]
 fn dispatcher_projects_three_point_work_plane_vertices() {
     use crate::records::{DesignVertexRecipe, DesignWorkPlaneConstruction};
     use cadmpeg_ir::features::VertexSelection;
@@ -242,7 +298,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         item_record_indices: vec![10, 20],
         item_record_index_offsets: vec![0, 0],
     };
-    let scopes = [predecessor, point];
+    let scopes = vec![predecessor, point];
     let (features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &[],
@@ -253,12 +309,15 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
             fillet_radius_groups: &[],
             edge_operands: &[],
             edge_identity_operands: &[],
+            edge_treatment_vertex_operands: &[],
             entity_selection_operands: &[],
             curve_identities: &[],
             face_operands: &[],
             body_recipe_operands: &[],
+            legacy_loft_body_carriers: &[],
             placements: &[],
             body_bindings: &[],
+            component_naming_spaces: &[],
             histories: &[],
         },
     )
@@ -461,9 +520,11 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         minor_diameter: 0.293,
         pitch: 0.06,
         pitch_diameter: 0.3166,
-        face_group_record_indices: vec![701, 703],
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
+        face_group_record_indices: vec![701],
     });
-    thread.reference_members = vec![701, 702, 703, 704];
+    thread.reference_members = vec![701, 702];
 
     let scopes = vec![
         base_flange,
@@ -479,7 +540,6 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         group(20, 0, 200, &[201], 0x0000_0004_0000_0000),
         group(30, 0, 300, &[301], 0x0000_0005_0000_0000),
         group(70, 0, 701, &[702], 0x0000_0010_0000_0000),
-        group(70, 2, 703, &[704], 0x0000_0010_0000_0000),
     ];
     let placement = DesignSketchPlacement {
         id: format!("{stream}:placement#7"),
@@ -562,9 +622,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(
         definition("Thread"),
         FeatureDefinition::CosmeticThread {
-            face: FaceSelection::Native(scopes[6].id.clone()),
+            face: FaceSelection::Native(groups[3].id.clone()),
             diameter: Some(Length(3.5)),
-            extent: None,
+            extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through),
         }
     );
 }
@@ -675,6 +735,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
+        symmetries: Vec::new(),
         source_object: None,
     }];
 
@@ -756,6 +817,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
         vertices: Vec::new(),
         edges: Vec::new(),
         faces: Vec::new(),
+        symmetries: Vec::new(),
         source_object: None,
     }];
 

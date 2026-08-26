@@ -322,18 +322,11 @@ item = "cadmpeg_ir::FeatureDefinition::CutWithSurface::reverse: bool -> Option<b
 reason = "optional native side flag; omit when the source does not declare reverse"
 
 [[change]]
-commit = "a49fb0791dad979a82ff49222d891feb8cc26511"
+commit = "4f1a3cd86fcbd8652b693f7e6e77df216f36a1b5"
 crate = "cadmpeg-ir"
 kind = "field"
-item = "cadmpeg_ir::FeatureDefinition::Loft::linearize"
-reason = "FreeCAD Part::Loft persists an explicit post-construction linearization flag"
-
-[[change]]
-commit = "0e8054c68f852931fec5f6a15a2ba8c2cd0adaf4"
-crate = "cadmpeg-ir"
-kind = "deletion"
-item = "cadmpeg_ir::FeatureDefinition::Loft::check_compatibility"
-reason = "FreeCAD has no Loft persistence carrier with this name; CADIR retains any same-named native property without projecting it"
+item = "cadmpeg_ir::features::{SheetMetalFlangeWidth::TwoSidesPerEdge,SheetMetalFlangeTwoSidedWidth}"
+reason = "F3D DR-66 requires independent first-end and second-end extents for each selected edge"
 
 [[change]]
 commit = "31894f1dcb4933048ae98588eb354a47511aed64"
@@ -469,14 +462,49 @@ item = "cadmpeg_core::decode::View::utf16_le"
 reason = "sequential UTF-16LE reader paired with View::utf16le_at"
 
 [[change]]
-commit = "ad3eb0048"
+commit = "9ceb2cb18edf7bbcd3657921dfc5c16ada833400"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::{SubdVertex::secondary_grips,SubdGripDirection,SubdGripWedge,SubdSecondaryGrip,SubdVertexGripLayout}"
+reason = "F3D T-spline control cages expose typed secondary-grip topology and compass-anchored wedge layouts"
+
+[[change]]
+commit = "97fd619b1e3e3ce1fe350e8a8ad74a586aa18e78"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::SubdEdge::knot_interval"
+reason = "F3D T-spline edge records expose their positive knot interval without conflating it with crease sharpness"
+
+[[change]]
+commit = "0ef951c2d48ab97721bd89109a52a8b2183bc126"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::LawExpression::Text"
+reason = "preserve serializer-owned string law expressions in revision-gated sweep carriers"
+
+[[change]]
+commit = "9434689579c9ac7b44f0f0720ce4e44710eaa192"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::SweepRevisionForm::tail_parameterization"
+reason = "preserve shared revision-gated form-2 U/V parameterization when a sweep has no solved cache"
+
+[[change]]
+commit = "cca2bd127dbe5dd394abf15b8fa59105854c3fa4"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::features::{FeatureDefinition::TrimSurface::cell_selection,TrimCellSelection}"
+reason = "preserve arbitrary SurfaceTrim removal-cell partitions instead of collapsing them to an incorrect inside/outside side"
+
+[[change]]
+commit = "ad3eb004858b99e64319c1bdef309d251fdcc40c"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::sketches::{SketchSolverScalar,SketchConstraintDefinition::AngleDifference}"
 reason = "Creo direct Function 16 angle differences transfer as typed solver-scalar sketch relations"
 
 [[change]]
-commit = "3d9ad9160"
+commit = "3d9ad9160ae125d40e660454d6ba65b1ee158b92"
 crate = "cadmpeg-ir"
 kind = "signature"
 item = "cadmpeg_ir::sketches::SketchConstraintDefinition::ScalarEquality"

@@ -428,7 +428,7 @@ mod tests {
         assert!(diff(&left, &right).tolerance_change.is_some());
     }
 
-    /// A change with physical meaning stays reported. A relative `1e-6` on a
+    /// A change with physical meaning stays reported. A relative `1.0e-6` on a
     /// coordinate is six orders above the tolerance.
     #[test]
     fn a_genuine_coordinate_change_is_still_reported() {
@@ -436,7 +436,7 @@ mod tests {
         let mut right = left.clone();
         let index = scaled_point(&left);
         let point = &mut right.model.points[index].position;
-        point.x = point.x.mul_add(1e-6, point.x);
+        point.x = point.x.mul_add(1.0e-6, point.x);
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());

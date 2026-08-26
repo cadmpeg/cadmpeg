@@ -17,6 +17,9 @@ use crate::layout::draft_compact_selection_prefix as compact_sel;
 use crate::layout::draft_extended_direction_frame as extended_dir;
 use crate::layout::draft_plane_reference_prefix as draft_plane;
 
+const EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12: f64 = 1.0e-12;
+const EPS_DRAFTS_UNIQUE_DRAFT_DIRECTION_E9: f64 = 1.0e-9;
+
 const DIRECTION_FRAME_PREFIX_LEN: usize = 24;
 const MAX_PATH_CELLS: usize = 65;
 
@@ -41,9 +44,12 @@ pub(super) fn same_draft_operands(left: &DraftOperands, right: &DraftOperands) -
             .iter()
             .zip(&right.faces)
             .all(|(left, right)| same_component_path_semantics(left, right))
-        && (left.pull_direction.x - right.pull_direction.x).abs() <= 1.0e-12
-        && (left.pull_direction.y - right.pull_direction.y).abs() <= 1.0e-12
-        && (left.pull_direction.z - right.pull_direction.z).abs() <= 1.0e-12
+        && (left.pull_direction.x - right.pull_direction.x).abs()
+            <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
+        && (left.pull_direction.y - right.pull_direction.y).abs()
+            <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
+        && (left.pull_direction.z - right.pull_direction.z).abs()
+            <= EPS_DRAFTS_SAME_DRAFT_OPERANDS_E12
 }
 
 pub(super) fn draft_operands(
@@ -300,7 +306,8 @@ fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<Ve
                     scalar(relative + 16)?,
                 );
                 let norm = direction.norm();
-                ((norm - 1.0).abs() <= 1.0e-9).then_some(canonical_unit_direction(direction))
+                ((norm - 1.0).abs() <= EPS_DRAFTS_UNIQUE_DRAFT_DIRECTION_E9)
+                    .then_some(canonical_unit_direction(direction))
             };
             direction_at(aligned_dir::PULL_DIRECTION).or_else(|| {
                 (frame.len() >= extended_dir::LEN

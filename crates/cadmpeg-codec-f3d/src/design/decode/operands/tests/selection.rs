@@ -129,6 +129,49 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
 }
 
 #[test]
+fn generated_base_flange_profile_frame_resolves() {
+    let (bytes, _) = crate::test_support::generated_design_base_flange_bulkstream();
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let profile_offset = records
+        .offsets(1501)
+        .first()
+        .copied()
+        .expect("generated BaseFlange profile");
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#1501".into(),
+        byte_offset: profile_offset as u64,
+        class_tag: "377".into(),
+        record_index: 1501,
+    };
+    let entity = DesignEntityHeader {
+        id: "f3d:Design/BulkStream.dat:entity#800".into(),
+        byte_offset: 0,
+        entity_suffix: 800,
+        entity_id: "Sketch_800".into(),
+        class_tag: "365".into(),
+        optional_slot_present: false,
+        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
+        record_reference: None,
+        record_reference_offset: None,
+        declared_reference_count: None,
+        reference_indices: Vec::new(),
+        reference_offsets: Vec::new(),
+        member_indices: Vec::new(),
+        member_offsets: Vec::new(),
+    };
+    let profile = parse_sketch_profile(
+        &bytes,
+        "f3d:Design/BulkStream.dat",
+        1,
+        &header,
+        std::slice::from_ref(&entity),
+    )
+    .expect("generated BaseFlange profile operand");
+    assert_eq!(profile.entity_id, "Sketch_800");
+    assert_eq!(profile.entity_suffix, 800);
+}
+
+#[test]
 fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -359,6 +402,44 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         Some(identity_at as u64 + 21)
     );
     assert_eq!(curve_operand.next_byte_offset, curve_next_at as u64);
+
+    let mut class_338_curve_identity = bytes[..identity_at].to_vec();
+    class_338_curve_identity[4..7].copy_from_slice(b"338");
+    header(&mut class_338_curve_identity, *b"361", 103);
+    class_338_curve_identity.extend_from_slice(&[0; 9]);
+    class_338_curve_identity.push(1);
+    class_338_curve_identity.extend_from_slice(&[0; 12]);
+    class_338_curve_identity.extend_from_slice(&949u32.to_le_bytes());
+    class_338_curve_identity.extend_from_slice(&0u32.to_le_bytes());
+    class_338_curve_identity.extend_from_slice(&249u32.to_le_bytes());
+    class_338_curve_identity.extend_from_slice(&0u32.to_le_bytes());
+    let class_338_next_at = class_338_curve_identity.len();
+    header(&mut class_338_curve_identity, *b"268", 104);
+    let class_338_record = DesignRecordHeader {
+        class_tag: "338".into(),
+        ..record
+    };
+    let class_338_operand =
+        parse_entity_selection_operand(&class_338_curve_identity, &group, 0, &class_338_record)
+            .expect("class-338 Sketch-curve entity-selection frame");
+    assert_eq!(class_338_operand.primary_identity, 949);
+    assert_eq!(class_338_operand.secondary_identity, Some(249));
+    assert_eq!(class_338_operand.curve_secondary_identity, None);
+    assert_eq!(
+        class_338_operand.primary_identity_offset,
+        identity_at as u64 + 33
+    );
+    assert_eq!(
+        class_338_operand.secondary_identity_offset,
+        Some(identity_at as u64 + 41)
+    );
+    assert_eq!(class_338_operand.next_byte_offset, class_338_next_at as u64);
+
+    let mut invalid_class_338 = class_338_curve_identity.clone();
+    invalid_class_338[identity_at + 20] = 0;
+    assert!(
+        parse_entity_selection_operand(&invalid_class_338, &group, 0, &class_338_record).is_none()
+    );
 }
 
 #[test]
@@ -439,6 +520,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         rectangular_pattern_construction: None,
         assembly_alignment: None,
         component_insert_construction: None,
+        derived_instance_construction: None,
         copy_paste_component_operation: None,
         mirror_construction: None,
         base_flange_profile: None,
@@ -672,10 +754,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 spatial_sketches: &[],
                 spatial_entities: &[],
                 histories: &[],
+                scope_histories: &std::collections::HashMap::new(),
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
-            },
+            }
+            .scoped(&[]),
             None,
             None,
         ),
@@ -747,10 +831,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 spatial_sketches: &[],
                 spatial_entities: &[],
                 histories: &[],
+                scope_histories: &std::collections::HashMap::new(),
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
-            },
+            }
+            .scoped(&[]),
             None,
             None,
         ),
@@ -771,10 +857,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 spatial_sketches: &[],
                 spatial_entities: &[],
                 histories: &[],
+                scope_histories: &std::collections::HashMap::new(),
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
-            },
+            }
+            .scoped(&[]),
             None,
             None,
         ),
@@ -796,10 +884,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 spatial_sketches: &[],
                 spatial_entities: &[],
                 histories: &[],
+                scope_histories: &std::collections::HashMap::new(),
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
-            },
+            }
+            .scoped(&[]),
             None,
             None,
         ),

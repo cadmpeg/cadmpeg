@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::unwrap_used)]
+#![allow(clippy::unwrap_used, unused_imports)]
 
 use super::*;
 use crate::examples::unit_cube;
 use crate::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, OffsetSupportExtension, PcurveGeometry,
-    ProceduralSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite,
-    Surface, SurfaceGeometry, SurfaceParameterAxis,
+    BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LawExpression,
+    LawFormula, NurbsCurve, NurbsSurface, OffsetSupportExtension, PcurveGeometry,
+    ProceduralSurface, ProceduralSurfaceDefinition, RevisionSurfaceForm,
+    RevisionSurfaceParameterization, RollingBallConstruction, RollingBallJetDerivative,
+    RollingBallJetSite, RollingBallRadiusSelector, RollingBallSide, Surface, SurfaceGeometry,
+    SurfaceParameterAxis, SweepRevisionForm, SweepSurfaceConstruction, SweepSurfaceLayout,
+    VariableBlendConstruction, VariableBlendConvexity, VariableBlendCrossSection,
+    VariableBlendRadiusKind, VariableBlendRenderMode, VariableBlendSupportKind,
+    VariableBlendSurfaceSubtype, VariableBlendValue, VariableBlendValuePayload,
 };
 use crate::ids::{CurveId, EdgeId, PointId, ProceduralSurfaceId, SurfaceId, VertexId};
 use crate::math::{Point2, Point3, Vector3};
@@ -16,6 +22,11 @@ use crate::transform::{Transform, Transform2};
 use crate::validate::validate_neutral;
 use crate::CadIr;
 use cadmpeg_core::decode::WorkBudget;
+
+mod helix;
+mod law_sweep;
+mod ruled_sum;
+mod variable_blend;
 
 const EPS_DEGREE_ZERO_SURFACE_BOUND: f64 = 1.0e-12;
 
@@ -38,6 +49,18 @@ fn bilinear_surface() -> NurbsSurface {
         u_periodic: false,
         v_periodic: false,
     }
+}
+
+#[test]
+fn periodic_nurbs_surface_coordinates_reduce_into_the_knot_domain() {
+    let mut surface = bilinear_surface();
+    surface.u_periodic = true;
+    let expected = nurbs_surface_point(&surface, 0.25, 0.75).expect("in-domain surface point");
+    assert_eq!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
+    assert_eq!(nurbs_surface_point(&surface, -0.75, 0.75), Some(expected));
+
+    surface.u_periodic = false;
+    assert_ne!(nurbs_surface_point(&surface, 1.25, 0.75), Some(expected));
 }
 
 #[test]
@@ -1165,6 +1188,166 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
 }
 
 #[test]
+fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
+    let directrix_id = CurveId("reversed-directrix".into());
+    let surface_id = SurfaceId("cacheless-extrusion".into());
+    let construction_id = ProceduralSurfaceId("cacheless-extrusion-construction".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves.push(Curve {
+        id: directrix_id.clone(),
+        geometry: CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 2.0, 2.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        }),
+        source_object: None,
+    });
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction_id.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction_id,
+        surface: surface_id.clone(),
+        definition: ProceduralSurfaceDefinition::Extrusion {
+            directrix: directrix_id,
+            parameter_interval: Some([-2.0, 0.0]),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+            native_position: Some(Point3::new(0.0, 0.0, 0.0)),
+            revision_form: Some(RevisionSurfaceForm {
+                revision: 1,
+                support_bounds: [None; 4],
+                reference_endpoints: [None; 2],
+                second_endpoints: [None; 2],
+                flags: vec![true],
+                tail_enum: 2,
+                tail_parameterization: Some(RevisionSurfaceParameterization::default()),
+                discontinuities: Default::default(),
+                tail_flag: false,
+                trailing_flags: Vec::new(),
+            }),
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let partials = model_surface_partials_by_id(&index, &surface_id, -0.5, 3.0)
+        .expect("cacheless reversed extrusion point");
+    assert_eq!(partials.point, Point3::new(0.5, 0.0, 3.0));
+    assert_eq!(partials.du, Vector3::new(-1.0, 0.0, 0.0));
+    assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
+}
+
+#[test]
+fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
+    let profile_id = CurveId("profile".into());
+    let spine_id = CurveId("spine".into());
+    let surface_id = SurfaceId("cacheless-sweep".into());
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.curves = vec![
+        Curve {
+            id: profile_id.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Curve {
+            id: spine_id.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(7.0, 11.0, 13.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        },
+    ];
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: ProceduralSurfaceId("cacheless-sweep-construction".into()),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: ProceduralSurfaceId("cacheless-sweep-construction".into()),
+        surface: surface_id.clone(),
+        definition: ProceduralSurfaceDefinition::Sweep {
+            profile: profile_id,
+            spine: spine_id,
+            native: Some(Box::new(SweepSurfaceConstruction {
+                primary_kind: 0,
+                revision_form: Some(SweepRevisionForm {
+                    revision: 23100,
+                    primary_flag: false,
+                    profile_endpoints: [Some(0.0), Some(1.0)],
+                    path_endpoints: [Some(0.0), Some(1.0)],
+                    tail_enum: 2,
+                    tail_parameterization: Some(RevisionSurfaceParameterization::default()),
+                }),
+                layout: SweepSurfaceLayout::LawDriven {
+                    mode: 10,
+                    profile_range: [0.0, 1.0],
+                    profile_frame: None,
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    directions: [
+                        Vector3::new(1.0, 0.0, 0.0),
+                        Vector3::new(0.0, 1.0, 0.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                    ],
+                    first_law: Box::new(LawExpression::Text {
+                        value: "2.0*X".into(),
+                    }),
+                    first_mode: 21,
+                    first_range: [0.0, 1.0],
+                    law_direction: Vector3::new(0.0, 0.0, 1.0),
+                    path_mode: 1,
+                    path_flag: false,
+                    path_range: [0.0, 1.0],
+                    path_parameter: 0.0,
+                    second_law_flag: false,
+                    second_law: Box::new(LawExpression::Text {
+                        value: "VEC(1,1,1)".into(),
+                    }),
+                    formula_mode: 0,
+                    formula: LawFormula {
+                        name: "null_law".into(),
+                        variables: Vec::new(),
+                    },
+                    trailing_flag: false,
+                },
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+                discontinuity_flag: false,
+            })),
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+
+    let index = crate::index::ModelIndex::new(&ir);
+    let expected = Point3::new(0.5, -0.5, 0.25);
+    assert_eq!(
+        model_surface_point_by_id(&index, &surface_id, 0.5, 0.25),
+        Some(expected)
+    );
+    assert_eq!(
+        model_surface_point(&ir, &ir.model.surfaces[0].geometry, 0.5, 0.25),
+        Some(expected)
+    );
+    let partials = model_surface_partials_by_id(&index, &surface_id, 0.5, 0.25)
+        .expect("cacheless sweep partials");
+    assert_eq!(partials.point, expected);
+    assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(partials.dv, Vector3::new(0.0, -2.0, 1.0));
+}
+
+#[test]
 fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
     let directrix_id = CurveId("profile".into());
     let surface_id = SurfaceId("revolution".into());
@@ -1401,9 +1584,9 @@ fn analytic_and_transformed_surface_partials_follow_parameterization() {
     assert_eq!(cylinder_second.duv, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(cylinder_second.dvv, Vector3::new(0.0, 0.0, 0.0));
     let cone = surface_partials(&cone, 0.0, 3.0).expect("cone partials evaluate");
-    assert!((cone.point.x - 5.0).abs() < 1e-12);
-    assert!((cone.du.y - 5.0).abs() < 1e-12);
-    assert!((cone.dv.x - 1.0).abs() < 1e-12);
+    assert!((cone.point.x - 5.0).abs() < 1.0e-12);
+    assert!((cone.du.y - 5.0).abs() < 1.0e-12);
+    assert!((cone.dv.x - 1.0).abs() < 1.0e-12);
     assert_eq!(cone.dv.z, 1.0);
     let sphere = surface_partials(&sphere, 0.0, 0.0).expect("sphere partials evaluate");
     assert_eq!(sphere.point, Point3::new(3.0, 0.0, 0.0));
@@ -1460,8 +1643,8 @@ fn analytic_and_rational_curve_derivatives_are_exact() {
         let tangent = curve_tangent(&arc, parameter).expect("rational arc tangent");
         let second = curve_second_derivative(&arc, parameter).expect("rational arc acceleration");
         let radial_dot = point.x * tangent.x + point.y * tangent.y;
-        assert!(radial_dot.abs() < 1e-12);
-        assert!((point.x * second.x + point.y * second.y + tangent.dot(tangent)).abs() < 1e-11);
+        assert!(radial_dot.abs() < 1.0e-12);
+        assert!((point.x * second.x + point.y * second.y + tangent.dot(tangent)).abs() < 1.0e-11);
         assert!(tangent.norm() > 0.0);
     }
 
@@ -1502,14 +1685,14 @@ fn rational_surface_partials_apply_the_weight_quotient_rule() {
         v_periodic: false,
     };
     let partials = nurbs_surface_partials(&surface, 0.5, 0.25).expect("partials");
-    assert!((partials.point.x - 4.0 / 3.0).abs() < 1e-12);
-    assert!((partials.point.y - 0.75).abs() < 1e-12);
-    assert!((partials.du.x - 16.0 / 9.0).abs() < 1e-12);
-    assert!(partials.du.y.abs() < 1e-12);
-    assert!((partials.dv.y - 3.0).abs() < 1e-12);
+    assert!((partials.point.x - 4.0 / 3.0).abs() < 1.0e-12);
+    assert!((partials.point.y - 0.75).abs() < 1.0e-12);
+    assert!((partials.du.x - 16.0 / 9.0).abs() < 1.0e-12);
+    assert!(partials.du.y.abs() < 1.0e-12);
+    assert!((partials.dv.y - 3.0).abs() < 1.0e-12);
     let second = nurbs_surface_second_partials(&surface, 0.5, 0.25).expect("second partials");
-    assert!((second.duu.x + 64.0 / 27.0).abs() < 1e-12);
-    assert!(second.duu.y.abs() < 1e-12);
+    assert!((second.duu.x + 64.0 / 27.0).abs() < 1.0e-12);
+    assert!(second.duu.y.abs() < 1.0e-12);
     assert_eq!(second.duv, Vector3::new(0.0, 0.0, 0.0));
     assert_eq!(second.dvv, Vector3::new(0.0, 0.0, 0.0));
 }
@@ -1550,9 +1733,9 @@ fn rational_surface_isocurves_preserve_the_tensor_product_parameterization() {
                 }
             };
             let actual = curve_point(&geometry, varying).expect("isocurve point");
-            assert!((actual.x - expected.x).abs() < 1e-12);
-            assert!((actual.y - expected.y).abs() < 1e-12);
-            assert!((actual.z - expected.z).abs() < 1e-12);
+            assert!((actual.x - expected.x).abs() < 1.0e-12);
+            assert!((actual.y - expected.y).abs() < 1.0e-12);
+            assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
     }
 }
@@ -1662,13 +1845,13 @@ fn analytic_pcurves_preserve_angular_parameterization() {
     let ellipse = pcurve_uv(&ellipse, std::f64::consts::FRAC_PI_2).expect("ellipse evaluates");
     let polar = pcurve_uv(&polar, std::f64::consts::FRAC_PI_2).expect("polar curve evaluates");
     let polar_nurbs = pcurve_uv(&polar_nurbs, 0.5).expect("polar NURBS evaluates");
-    assert!((circle.u - 2.0).abs() < 1e-12 && (circle.v + 1.0).abs() < 1e-12);
-    assert!((circle_tangent.u + 4.0).abs() < 1e-12 && circle_tangent.v.abs() < 1e-12);
-    assert!(ellipse.u.abs() < 1e-12 && (ellipse.v - 3.0).abs() < 1e-12);
-    assert!((polar.u - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
-    assert!((polar.v - 3.0).abs() < 1e-12);
-    assert!((polar_nurbs.u - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
-    assert!((polar_nurbs.v - 4.0).abs() < 1e-12);
+    assert!((circle.u - 2.0).abs() < 1.0e-12 && (circle.v + 1.0).abs() < 1.0e-12);
+    assert!((circle_tangent.u + 4.0).abs() < 1.0e-12 && circle_tangent.v.abs() < 1.0e-12);
+    assert!(ellipse.u.abs() < 1.0e-12 && (ellipse.v - 3.0).abs() < 1.0e-12);
+    assert!((polar.u - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((polar.v - 3.0).abs() < 1.0e-12);
+    assert!((polar_nurbs.u - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12);
+    assert!((polar_nurbs.v - 4.0).abs() < 1.0e-12);
 }
 
 #[test]
@@ -1754,8 +1937,8 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
         }),
     };
     let point = pcurve_uv(&line, 0.5).expect("regular line offset evaluates");
-    assert!((point.u - 0.9).abs() < 1e-12);
-    assert!((point.v - 5.2).abs() < 1e-12);
+    assert!((point.u - 0.9).abs() < 1.0e-12);
+    assert!((point.v - 5.2).abs() < 1.0e-12);
     assert_eq!(pcurve_uv(&circle, 0.0), Some(Point2::new(3.0, 0.0)));
     assert_eq!(pcurve_tangent(&line, 0.5), Some(Point2::new(3.0, 4.0)));
     assert_eq!(pcurve_tangent(&circle, 0.0), Some(Point2::new(0.0, 3.0)));
@@ -1778,8 +1961,8 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
         let point =
             pcurve_uv(&rational_arc, parameter).expect("regular rational NURBS offset evaluates");
         let tangent = pcurve_tangent(&rational_arc, parameter).expect("rational offset tangent");
-        assert!((point.u.hypot(point.v) - 0.75).abs() < 1e-12);
-        assert!((point.u * tangent.u + point.v * tangent.v).abs() < 1e-12);
+        assert!((point.u.hypot(point.v) - 0.75).abs() < 1.0e-12);
+        assert!((point.u * tangent.u + point.v * tangent.v).abs() < 1.0e-12);
     }
 
     let nested = PcurveGeometry::Offset {
@@ -1787,209 +1970,8 @@ fn signed_offset_pcurves_use_the_exact_left_normal() {
         basis: Box::new(line),
     };
     let nested_point = pcurve_uv(&nested, 0.5).expect("nested offset point");
-    assert!((nested_point.u - 0.1).abs() < 1e-12);
-    assert!((nested_point.v - 5.8).abs() < 1e-12);
+    assert!((nested_point.u - 0.1).abs() < 1.0e-12);
+    assert!((nested_point.v - 5.8).abs() < 1.0e-12);
     assert_eq!(pcurve_tangent(&nested, 0.5), None);
 }
-
-#[test]
-fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
-    let nurbs = crate::geometry::NurbsCurve {
-        degree: 1,
-        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
-        control_points: vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 0.0),
-        ],
-        weights: None,
-        periodic: true,
-    };
-    let geometry = CurveGeometry::Nurbs(nurbs.clone());
-    assert_eq!(
-        crate::eval::curve_point(&geometry, 0.5),
-        crate::eval::curve_point(&geometry, 2.5)
-    );
-
-    let mut ir = unit_cube();
-    let curve_id = ir.model.edges[0].curve.clone().unwrap();
-    ir.model
-        .curves
-        .iter_mut()
-        .find(|curve| curve.id == curve_id)
-        .unwrap()
-        .geometry = geometry;
-    ir.model.edges[0].param_range = Some([0.5, 2.5]);
-    assert!(!validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::ParameterDomain));
-
-    ir.model.edges[0].param_range = Some([0.5, 2.500_001]);
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::ParameterDomain));
-
-    let CurveGeometry::Nurbs(nurbs) = &mut ir
-        .model
-        .curves
-        .iter_mut()
-        .find(|curve| curve.id == curve_id)
-        .unwrap()
-        .geometry
-    else {
-        unreachable!()
-    };
-    nurbs.periodic = false;
-    ir.model.edges[0].param_range = Some([0.5, 2.5]);
-    assert!(validate_neutral(&ir, Vec::new())
-        .findings
-        .iter()
-        .any(|finding| finding.check == Check::ParameterDomain));
-}
-
-#[test]
-fn rational_quadratic_arc_evaluates_on_the_circle() {
-    // Quarter circle of radius 5 as a rational quadratic Bezier.
-    let weight = 0.5_f64.sqrt();
-    let point = crate::eval::nurbs_curve_point(
-        2,
-        &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        &[
-            Point3::new(5.0, 0.0, 0.0),
-            Point3::new(5.0, 5.0, 0.0),
-            Point3::new(0.0, 5.0, 0.0),
-        ],
-        Some(&[1.0, weight, 1.0]),
-        0.5,
-    )
-    .unwrap();
-    let radius = (point.x * point.x + point.y * point.y).sqrt();
-    assert!((radius - 5.0).abs() < 1e-12, "mid-span radius {radius}");
-}
-
-#[test]
-fn rational_pcurve_membership_finds_interior_points_without_sampling() {
-    use crate::math::Point2;
-
-    let weight = 0.5_f64.sqrt();
-    let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
-    let controls = [
-        Point2::new(5.0, 0.0),
-        Point2::new(5.0, 5.0),
-        Point2::new(0.0, 5.0),
-    ];
-    let weights = [1.0, weight, 1.0];
-    let interior =
-        crate::eval::nurbs_pcurve_uv(2, &knots, &controls, Some(&weights), 0.375).unwrap();
-    assert_eq!(
-        crate::eval::nurbs_pcurve_contains_point(
-            2,
-            &knots,
-            &controls,
-            Some(&weights),
-            interior,
-            1.0e-9,
-        ),
-        Some(true)
-    );
-    assert_eq!(
-        crate::eval::nurbs_pcurve_contains_point(
-            2,
-            &knots,
-            &controls,
-            Some(&weights),
-            Point2::new(4.0, 4.0),
-            1.0e-6,
-        ),
-        Some(false)
-    );
-}
-
-#[test]
-fn analytic_parabola_and_hyperbola_use_step_parameterization() {
-    let axis = Vector3::new(0.0, 0.0, 1.0);
-    let major = Vector3::new(1.0, 0.0, 0.0);
-    let parabola = CurveGeometry::Parabola {
-        vertex: Point3::new(0.0, 0.0, 0.0),
-        axis,
-        major_direction: major,
-        focal_distance: 2.0,
-    };
-    assert_eq!(
-        crate::eval::curve_point(&parabola, 1.5),
-        Some(Point3::new(4.5, 6.0, 0.0))
-    );
-
-    let hyperbola = CurveGeometry::Hyperbola {
-        center: Point3::new(1.0, 2.0, 3.0),
-        axis,
-        major_direction: major,
-        major_radius: 2.0,
-        minor_radius: 3.0,
-    };
-    let point = crate::eval::curve_point(&hyperbola, 0.5).unwrap();
-    assert_eq!(point.x, 1.0 + 2.0 * 0.5_f64.cosh());
-    assert_eq!(point.y, 2.0 + 3.0 * 0.5_f64.sinh());
-    assert_eq!(point.z, 3.0);
-}
-
-#[test]
-fn transformed_carriers_preserve_basis_parameters() {
-    let transform = crate::transform::Transform {
-        rows: [
-            [-2.0, 0.0, 0.0, 4.0],
-            [0.0, 2.0, 0.0, 5.0],
-            [0.0, 0.0, 2.0, 6.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    };
-    let curve = CurveGeometry::Transformed {
-        basis: Box::new(CurveGeometry::Line {
-            origin: Point3::new(1.0, 0.0, 0.0),
-            direction: Vector3::new(1.0, 0.0, 0.0),
-        }),
-        transform,
-    };
-    assert_eq!(
-        crate::eval::curve_point(&curve, 3.0),
-        Some(Point3::new(-4.0, 5.0, 6.0))
-    );
-
-    let surface = SurfaceGeometry::Transformed {
-        basis: Box::new(SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        }),
-        transform,
-    };
-    assert_eq!(
-        crate::eval::surface_point(&surface, 2.0, 3.0),
-        Some(Point3::new(0.0, 11.0, 6.0))
-    );
-}
-
-#[test]
-fn polyline_carriers_evaluate_in_both_parameter_directions() {
-    let increasing = CurveGeometry::Polyline {
-        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        parameters: Some(vec![1.0, 3.0]),
-        chordal_deflection: 0.01,
-    };
-    assert_eq!(
-        crate::eval::curve_point(&increasing, 2.0),
-        Some(Point3::new(1.0, 0.0, 0.0))
-    );
-
-    let decreasing = CurveGeometry::Polyline {
-        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        parameters: Some(vec![3.0, 1.0]),
-        chordal_deflection: 0.01,
-    };
-    assert_eq!(
-        crate::eval::curve_point(&decreasing, 2.5),
-        Some(Point3::new(0.5, 0.0, 0.0))
-    );
-}
+mod periodic_and_analytic;

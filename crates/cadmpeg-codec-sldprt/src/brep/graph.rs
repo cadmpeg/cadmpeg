@@ -6047,10 +6047,10 @@ mod tests {
         let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = geometry else {
             panic!("expected affine line pcurve");
         };
-        assert!(origin.u.abs() < 1e-12);
-        assert!((origin.v - 0.5).abs() < 1e-12);
-        assert!((direction.u - 2.0 / 3.0).abs() < 1e-12);
-        assert!(direction.v.abs() < 1e-12);
+        assert!(origin.u.abs() < 1.0e-12);
+        assert!((origin.v - 0.5).abs() < 1.0e-12);
+        assert!((direction.u - 2.0 / 3.0).abs() < 1.0e-12);
+        assert!(direction.v.abs() < 1.0e-12);
     }
 
     #[test]
@@ -6094,10 +6094,10 @@ mod tests {
         let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = geometry else {
             panic!("expected isoparametric line pcurve");
         };
-        assert!(origin.u.abs() < 1e-12);
-        assert!((origin.v - 0.15).abs() < 1e-12);
-        assert!((direction.u - 1.0).abs() < 1e-12);
-        assert!(direction.v.abs() < 1e-12);
+        assert!(origin.u.abs() < 1.0e-12);
+        assert!((origin.v - 0.15).abs() < 1.0e-12);
+        assert!((direction.u - 1.0).abs() < 1.0e-12);
+        assert!(direction.v.abs() < 1.0e-12);
     }
 
     #[test]
@@ -6385,10 +6385,10 @@ mod tests {
         let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = geometry else {
             panic!("expected affine line pcurve");
         };
-        assert!((origin.u - 0.5).abs() < 1e-8);
-        assert!(origin.v.abs() < 1e-12);
-        assert!(direction.u.abs() < 1e-12);
-        assert!((direction.v - 1.0).abs() < 1e-12);
+        assert!((origin.u - 0.5).abs() < 1.0e-8);
+        assert!(origin.v.abs() < 1.0e-12);
+        assert!(direction.u.abs() < 1.0e-12);
+        assert!((direction.v - 1.0).abs() < 1.0e-12);
     }
 
     #[test]

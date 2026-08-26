@@ -2809,9 +2809,9 @@ mod tests {
             (ir.model.points[1].position, expected_start),
             (ir.model.points[0].position, expected_end),
         ] {
-            assert!((actual.x - expected.x).abs() < 1e-12);
-            assert!((actual.y - expected.y).abs() < 1e-12);
-            assert!((actual.z - expected.z).abs() < 1e-12);
+            assert!((actual.x - expected.x).abs() < 1.0e-12);
+            assert!((actual.y - expected.y).abs() < 1.0e-12);
+            assert!((actual.z - expected.z).abs() < 1.0e-12);
         }
         ir.finalize();
         let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new());
@@ -3399,7 +3399,7 @@ mod tests {
                 (lifted.x - locus.x)
                     .hypot(lifted.y - locus.y)
                     .hypot(lifted.z - locus.z)
-                    < 1e-9,
+                    < 1.0e-9,
                 "recharted site must lift onto its definition locus"
             );
         }
@@ -3418,7 +3418,7 @@ mod tests {
         // The linear part carries derivatives without the translation.
         let derivative = chart.derivative([1.0, 0.0]);
         assert!(
-            (derivative[0].hypot(derivative[1]) - 1.0).abs() < 1e-12,
+            (derivative[0].hypot(derivative[1]) - 1.0).abs() < 1.0e-12,
             "an isometry preserves derivative magnitude"
         );
     }

@@ -251,8 +251,8 @@ pub(crate) fn transfers_part_construction_geometry_features() {
             start_angle: cadmpeg_ir::features::Angle(start),
             end_angle: cadmpeg_ir::features::Angle(end),
             ..
-        } if (start - 30_f64.to_radians()).abs() < 1e-12
-            && (end - 300_f64.to_radians()).abs() < 1e-12
+        } if (start - 30_f64.to_radians()).abs() < 1.0e-12
+            && (end - 300_f64.to_radians()).abs() < 1.0e-12
     ));
     assert!(matches!(
         feature("Ellipse").definition,
@@ -1866,10 +1866,10 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
         } if faces.ends_with(":Base")
             && plane.ends_with(":NeutralPlane")
             && pull_direction.is_some_and(|direction|
-                (direction.x - 0.0).abs() < 1e-12
-                    && (direction.y + 1.0).abs() < 1e-12
-                    && direction.z.abs() < 1e-12)
-            && (*angle + 5f64.to_radians()).abs() < 1e-12
+                (direction.x - 0.0).abs() < 1.0e-12
+                    && (direction.y + 1.0).abs() < 1.0e-12
+                    && direction.z.abs() < 1.0e-12)
+            && (*angle + 5f64.to_radians()).abs() < 1.0e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);
     let face_draft = result

@@ -820,7 +820,7 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
                 && ref_direction == Vector3::new(1.0, 0.0, 0.0)
                 && radius == 25.0
                 && ratio == 1.0
-                && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1e-12
+                && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
     )));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }

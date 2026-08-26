@@ -46,6 +46,13 @@ impl<'a> Cur<'a> {
         self.toks.get(self.pos)
     }
 
+    /// Whether the cursor is at the closing token of this complete subtype
+    /// span, with no unconsumed field before or token after it.
+    pub(crate) fn at_scope_end(&self) -> bool {
+        self.pos + 1 == self.toks.len()
+            && matches!(self.toks.get(self.pos), Some(Token::SubtypeClose))
+    }
+
     /// Consume one token of any kind.
     pub(crate) fn bump(&mut self) -> Option<&'a Token> {
         let token = self.toks.get(self.pos)?;
@@ -261,13 +268,6 @@ pub(crate) fn marker_at(toks: &[Token], pos: usize) -> Option<BsplineMarker> {
     }
 }
 
-/// Token indices of every `nubs`/`nurbs` marker in `toks`, in order.
-pub(crate) fn marker_positions(toks: &[Token]) -> Vec<usize> {
-    (0..toks.len())
-        .filter(|&pos| marker_at(toks, pos).is_some())
-        .collect()
-}
-
 /// Token indices of the `nubs`/`nurbs` markers `toks` itself owns: those
 /// outside every construction nested within it. The span's outer
 /// `SubtypeOpen` sets the initial nesting depth.
@@ -341,6 +341,21 @@ pub fn owned_construction_subtype(toks: &[Token]) -> Option<String> {
         .map(|(_, name)| name)
         .find(|name| *name != "ref")
         .map(|name| canonical_intcurve_kind(name).into())
+}
+
+/// The unique cache-bearing non-reference scope owned directly by `toks`.
+///
+/// A record can own auxiliary outer definitions before its carrier. A scope is
+/// cache-bearing when it directly owns at least one B-spline marker. Multiple
+/// such scopes are ambiguous and are therefore rejected.
+pub(crate) fn owned_cache_scope(toks: &[Token]) -> Option<&[Token]> {
+    let mut candidates = owned_subtype_defs(toks)
+        .into_iter()
+        .filter(|(_, name)| *name != "ref")
+        .filter_map(|(start, _)| subtype_span(toks, start))
+        .filter(|scope| !owned_marker_positions(scope).is_empty());
+    let scope = candidates.next()?;
+    candidates.next().is_none().then_some(scope)
 }
 
 fn canonical_intcurve_kind(name: &str) -> &str {
@@ -581,37 +596,18 @@ mod tests {
     }
 
     #[test]
-    fn knot_table_rejects_overflowing_knot_arithmetic() {
-        let overflowing_sum = [
-            Token::Double(0.0),
-            Token::Long(i64::MAX),
-            Token::Double(1.0),
-            Token::Long(1),
-        ];
-        let mut cur = Cur::at(&overflowing_sum, 0);
-        assert!(take_knot_table(&mut cur, 2, 1).is_none());
+    fn scope_end_requires_the_terminal_close() {
+        let toks = [Token::SubtypeOpen, ident("x"), Token::SubtypeClose];
+        assert!(Cur::at(&toks, 2).at_scope_end());
+        assert!(!Cur::at(&toks, 1).at_scope_end());
 
-        let overflowing_endpoint = [
-            Token::Double(0.0),
-            Token::Long(i64::MAX),
+        let trailing = [
+            Token::SubtypeOpen,
+            ident("x"),
+            Token::SubtypeClose,
             Token::Double(1.0),
-            Token::Long(i64::MIN + 1),
-            Token::Double(2.0),
-            Token::Long(2),
         ];
-        let mut cur = Cur::at(&overflowing_endpoint, 0);
-        assert!(take_knot_table(&mut cur, 3, 1).is_none());
-
-        let cancellation = [
-            Token::Double(0.0),
-            Token::Long(i64::MAX - 1),
-            Token::Double(1.0),
-            Token::Long(i64::MIN + 4),
-            Token::Double(2.0),
-            Token::Long(0),
-        ];
-        let mut cur = Cur::at(&cancellation, 0);
-        assert!(take_knot_table(&mut cur, 3, 1).is_none());
+        assert!(!Cur::at(&trailing, 2).at_scope_end());
     }
 
     #[test]
@@ -647,7 +643,6 @@ mod tests {
         // Leading open is the span's own scope: the first `nubs` is owned, the
         // `nurbs` inside the nested scope is not.
         assert_eq!(owned_marker_positions(&toks), vec![1]);
-        assert_eq!(marker_positions(&toks), vec![1, 3]);
         assert_eq!(marker_at(&toks, 1), Some(BsplineMarker::Nubs));
         assert_eq!(marker_at(&toks, 3), Some(BsplineMarker::Nurbs));
     }

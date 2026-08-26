@@ -26,7 +26,15 @@ LEDGER = ROOT / "docs" / "public-api-ledger.toml"
 REQUIRED_TOP = ("baseline_commit", "api_baseline_dir", "measured_at")
 REQUIRED_CHANGE = ("commit", "crate", "kind", "item", "reason")
 KINDS = frozenset(
-    {"deletion", "move", "visibility", "signature", "trait_impl", "field"}
+    {
+        "deletion",
+        "move",
+        "visibility",
+        "signature",
+        "trait_impl",
+        "field",
+        "variant",
+    }
 )
 SHA = re.compile(r"^[0-9a-f]{40}$")
 GENERATED = re.compile(r"^# generated at [0-9a-f]+$")

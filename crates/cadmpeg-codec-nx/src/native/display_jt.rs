@@ -4573,8 +4573,8 @@ mod tests {
         })
         .expect("complete scene binding");
         assert_eq!(tessellations.len(), 2);
-        assert!((tessellations[0].0.vertices[1].x - 12.0).abs() < 1e-6);
-        assert!((tessellations[0].0.vertices[2].y - 26.0).abs() < 1e-6);
+        assert!((tessellations[0].0.vertices[1].x - 12.0).abs() < 1.0e-6);
+        assert!((tessellations[0].0.vertices[2].y - 26.0).abs() < 1.0e-6);
         assert_eq!(tessellations[0].0.triangles, vec![[0, 1, 2]]);
         assert_eq!(
             tessellations[0].0.normals[1],

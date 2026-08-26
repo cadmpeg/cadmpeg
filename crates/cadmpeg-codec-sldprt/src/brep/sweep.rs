@@ -21,6 +21,9 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 use super::LEN_TO_MM;
 
+const EPS_SWEEP_UNIT3_E9: f64 = 1.0e-9;
+const EPS_SWEEP_PROFILE_NURBS_E9: f64 = 1.0e-9;
+
 /// A parsed swept- or spun-surface carrier.
 #[derive(Debug, Clone)]
 pub(crate) struct SweepCarrier {
@@ -59,7 +62,7 @@ fn unit3(bytes: &[u8], at: usize) -> Option<Vector3> {
         return None;
     }
     let norm = (x * x + y * y + z * z).sqrt();
-    if (norm - 1.0).abs() > 1.0e-9 {
+    if (norm - 1.0).abs() > EPS_SWEEP_UNIT3_E9 {
         return None;
     }
     Some(Vector3::new(x, y, z))
@@ -164,7 +167,7 @@ pub(crate) fn profile_nurbs(geometry: &CurveGeometry) -> Option<NurbsCurve> {
         && minor_radius.is_finite()
         && major_radius > 0.0
         && minor_radius > 0.0
-        && axis.dot(major).abs() <= 1.0e-9)
+        && axis.dot(major).abs() <= EPS_SWEEP_PROFILE_NURBS_E9)
     {
         return None;
     }
@@ -595,12 +598,15 @@ mod tests {
         for &(u, v) in &[(0.25, 0.3), (0.5, 2.0), (0.9, 5.5)] {
             let p = eval_surface(&surface, u, v);
             let r = (p.x * p.x + p.y * p.y).sqrt();
-            assert!((r - 2.0).abs() < 1e-12, "radius {r} at ({u}, {v})");
-            assert!((p.z - u).abs() < 1e-12, "height {} at ({u}, {v})", p.z);
+            assert!((r - 2.0).abs() < 1.0e-12, "radius {r} at ({u}, {v})");
+            assert!((p.z - u).abs() < 1.0e-12, "height {} at ({u}, {v})", p.z);
             // Angle follows A × x_hat, in the direction of revolution.
             let angle = p.y.atan2(p.x).rem_euclid(2.0 * std::f64::consts::PI);
             let want = expected_angle(v);
-            assert!((angle - want).abs() < 1e-12, "angle {angle} at ({u}, {v})");
+            assert!(
+                (angle - want).abs() < 1.0e-12,
+                "angle {angle} at ({u}, {v})"
+            );
         }
     }
 
@@ -616,8 +622,8 @@ mod tests {
         let surface =
             swept_nurbs(&profile, Vector3::new(0.0, 1.0, 0.0), -2.0, 3.0).expect("swept surface");
         let p = eval_surface(&surface, 0.5, 1.5);
-        assert!((p.x - 0.5).abs() < 1e-12);
-        assert!((p.y - 1.5).abs() < 1e-12);
-        assert!(p.z.abs() < 1e-12);
+        assert!((p.x - 0.5).abs() < 1.0e-12);
+        assert!((p.y - 1.5).abs() < 1.0e-12);
+        assert!(p.z.abs() < 1.0e-12);
     }
 }

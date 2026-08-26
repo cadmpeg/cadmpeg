@@ -28,11 +28,15 @@ use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::history::{is_history_metadata_record, parse_count, parse_positive_angle_rad};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{Angle, FeatureDefinition, Length, PathRef, PatternKind, PatternSeed};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
 use std::collections::{HashMap, HashSet};
+
+const EPS_BINDINGS_BIND_PATTERN_INPUTS_E12: f64 = 1e-12;
+const EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9: f64 = 1e-9;
 
 pub(super) fn history_metadata_ids(
     histories: &[crate::records::FeatureHistory],
@@ -149,8 +153,7 @@ pub(crate) fn bind_pattern_inputs(
                     .filter_map(|offset| mirror_pattern_component_path_at(object, offset))
                     .filter_map(|components| {
                         for component in components.iter().rev() {
-                            let source =
-                                u32::from_le_bytes(component.type_signature[4..8].try_into().ok()?);
+                            let source = View::u32_le_at(&component.type_signature, 4)?;
                             let mut matches = history_features.iter().filter(|candidate| {
                                 candidate
                                     .source_id
@@ -229,20 +232,14 @@ pub(crate) fn bind_pattern_inputs(
                             })
                             .filter(|identity| {
                                 identity.components.first().is_some_and(|component| {
-                                    u32::from_le_bytes(
-                                        component.type_signature[4..8]
-                                            .try_into()
-                                            .expect("four-byte pattern source"),
-                                    ) == pattern_source
+                                    View::u32_le_at(&component.type_signature, 4)
+                                        == Some(pattern_source)
                                 })
                             })
                             .filter(|identity| {
                                 identity.components.last().is_some_and(|component| {
-                                    u32::from_le_bytes(
-                                        component.type_signature[4..8]
-                                            .try_into()
-                                            .expect("four-byte seed source"),
-                                    ) == identity.feature_source_id
+                                    View::u32_le_at(&component.type_signature, 4)
+                                        == Some(identity.feature_source_id)
                                         && component.local_id == Some(identity.local_identity)
                                 })
                             })
@@ -395,7 +392,7 @@ pub(crate) fn bind_pattern_inputs(
                         let dot = candidate.x * direction.x
                             + candidate.y * direction.y
                             + candidate.z * direction.z;
-                        (dot.abs() - 1.0).abs() <= 1.0e-12
+                        (dot.abs() - 1.0).abs() <= EPS_BINDINGS_BIND_PATTERN_INPUTS_E12
                     }) {
                         unique_directions.push(direction);
                     }
@@ -719,11 +716,8 @@ pub(crate) fn bind_mirror_surface_planes(
             let Some(component) = selection.components.last() else {
                 continue;
             };
-            let source = u32::from_le_bytes(
-                component.type_signature[4..8]
-                    .try_into()
-                    .expect("four-byte feature source ID slice"),
-            );
+            let source = View::u32_le_at(&component.type_signature, 4)
+                .expect("four-byte feature source ID slice");
             let Some(local) = component.local_id else {
                 continue;
             };
@@ -1305,7 +1299,8 @@ fn bind_detached_spatial_relation_objects(
                 scalars.iter().any(|(candidate, value_m)| {
                     candidate == name
                         && (value_m * 1000.0 - expected_mm).abs()
-                            <= expected_mm.abs().max(1.0) * 1.0e-9
+                            <= expected_mm.abs().max(1.0)
+                                * EPS_BINDINGS_BIND_DETACHED_SPATIAL_RELATION_OBJECTS_E9
                 })
             });
             if exact {

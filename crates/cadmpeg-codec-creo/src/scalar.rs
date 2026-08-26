@@ -3,12 +3,20 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use cadmpeg_core::bytes::find_from;
+use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
 use cadmpeg_core::decode::View;
 
 use crate::psb::{compact_int, short_form_float};
 
 const EPS_SUPPORT_FRAME_AGREEMENT: f64 = 1.0e-9;
+
+pub(crate) const fn be_f64(bytes: [u8; 8]) -> f64 {
+    assemble_f64_be(bytes)
+}
+
+pub(crate) const fn be_f32(bytes: [u8; 4]) -> f32 {
+    assemble_f32_be(bytes)
+}
 
 /// Counted `double_xar` dictionary stored in a model-level scalar section.
 #[derive(Debug, Clone, PartialEq)]

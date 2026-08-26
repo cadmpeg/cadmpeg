@@ -186,7 +186,7 @@ pub(crate) fn take_reference(bytes: &[u8], at: &mut usize) -> Option<Reference> 
                     if !is_guid_hyphenated(&guid) {
                         return None;
                     }
-                    let (link_name, end) = lp_utf16_bounded(bytes, end, 0..=64)?;
+                    let (link_name, end) = lp_utf16_bounded(bytes, end, 0..=256)?;
                     reference.link_name = Some(link_name);
                     cursor = end;
                     match *bytes.get(cursor)? {

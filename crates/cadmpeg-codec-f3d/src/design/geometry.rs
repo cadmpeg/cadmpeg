@@ -8,6 +8,11 @@ use cadmpeg_ir::geometry::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3};
 use std::collections::{HashMap, HashSet};
 
+const EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6: f64 = 1.0e-6;
+const EPS_GEOMETRY_CERTIFIED_CIRCLE_E6: f64 = 1.0e-6;
+const EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12: f64 = 1.0e-12;
+const EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10: f64 = 1.0e-10;
+
 /// Format-side work cap for arrangement edge retention walks.
 ///
 /// Session `work_budget` callers take `min(this, policy.max_work_units)`.
@@ -1718,7 +1723,7 @@ fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<Certif
             [start.u.abs(), start.v.abs(), end.u.abs(), end.v.abs()]
         })
         .fold(1.0_f64, f64::max);
-    let tolerance = 1.0e-6 * scale;
+    let tolerance = EPS_GEOMETRY_CERTIFIED_ANALYTIC_LOOP_E6 * scale;
     let mut vertices = Vec::new();
     let mut tubes = Vec::new();
     for segment in segments {
@@ -1742,7 +1747,8 @@ fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<Certif
 }
 
 fn certified_circle(center: Point2, radius: f64) -> Option<CertifiedProfileLoop> {
-    let tolerance = 1.0e-6 * (1.0 + center.u.abs().max(center.v.abs()).max(radius));
+    let tolerance =
+        EPS_GEOMETRY_CERTIFIED_CIRCLE_E6 * (1.0 + center.u.abs().max(center.v.abs()).max(radius));
     let tubes = certified_arc_tubes(center, radius, 0.0, std::f64::consts::TAU, tolerance)?;
     let vertices = tubes.iter().map(|tube| tube.start).collect();
     Some(CertifiedProfileLoop { vertices, tubes })
@@ -2044,7 +2050,7 @@ fn horizontal_ray_arc_winding(
     }
     let principal = ordinate.asin();
     let sweep = end_angle - start_angle;
-    let angles = if principal.cos().abs() <= 1.0e-12 {
+    let angles = if principal.cos().abs() <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
         vec![principal]
     } else {
         vec![principal, std::f64::consts::PI - principal]
@@ -2056,20 +2062,24 @@ fn horizontal_ray_arc_winding(
             let parameter = directed_angle_parameter(angle, start_angle, end_angle)?;
             let derivative = radius * angle.cos() * sweep;
             let second_derivative = -radius * angle.sin() * sweep * sweep;
-            let direction = if parameter <= 1.0e-12 && derivative.abs() <= 1.0e-12 {
+            let direction = if parameter <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12
+                && derivative.abs() <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12
+            {
                 second_derivative
-            } else if parameter >= 1.0 - 1.0e-12 && derivative.abs() <= 1.0e-12 {
+            } else if parameter >= 1.0 - EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12
+                && derivative.abs() <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12
+            {
                 -second_derivative
             } else {
                 derivative
             };
-            if parameter <= 1.0e-12 {
+            if parameter <= EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
                 (direction > 0.0).then_some(1)
-            } else if parameter >= 1.0 - 1.0e-12 {
+            } else if parameter >= 1.0 - EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
                 (direction < 0.0).then_some(-1)
-            } else if direction > 1.0e-12 {
+            } else if direction > EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
                 Some(1)
-            } else if direction < -1.0e-12 {
+            } else if direction < -EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12 {
                 Some(-1)
             } else {
                 None
@@ -2723,7 +2733,7 @@ pub(crate) fn closed_sketch_profiles(
         .filter_map(|entity| sketch_entity_endpoints(entity).map(|ends| (entity, ends)))
         .collect::<Vec<_>>();
     if edges.is_empty() {
-        profiles.sort_by_key(|profile| profile[0].entity.clone());
+        profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
         return profiles;
     }
 
@@ -2767,7 +2777,7 @@ pub(crate) fn closed_sketch_profiles(
         adjacency.entry(end).or_default().push(edge);
     }
     for incident in adjacency.values_mut() {
-        incident.sort_by_key(|edge| edges[*edge].0.id.clone());
+        incident.sort_by(|a, b| edges[*a].0.id.cmp(&edges[*b].0.id));
     }
 
     let Ok(mut visited) =
@@ -2776,7 +2786,7 @@ pub(crate) fn closed_sketch_profiles(
         return Vec::new();
     };
     let mut order = (0..edges.len()).collect::<Vec<_>>();
-    order.sort_by_key(|edge| edges[*edge].0.id.clone());
+    order.sort_by(|a, b| edges[*a].0.id.cmp(&edges[*b].0.id));
     for first_edge in order {
         if visited[first_edge] {
             continue;
@@ -2832,7 +2842,7 @@ pub(crate) fn closed_sketch_profiles(
             continue;
         }
 
-        component.sort_by_key(|edge| edges[*edge].0.id.clone());
+        component.sort_by(|a, b| edges[*a].0.id.cmp(&edges[*b].0.id));
         let first_edge = component[0];
         let start_node = edge_nodes[first_edge][0];
         let mut current_node = edge_nodes[first_edge][1];
@@ -2863,7 +2873,7 @@ pub(crate) fn closed_sketch_profiles(
             profiles.push(profile);
         }
     }
-    profiles.sort_by_key(|profile| profile[0].entity.clone());
+    profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
     profiles
 }
 
@@ -2930,7 +2940,7 @@ fn branched_line_profiles(
         .iter()
         .flat_map(|edge| [edge * 2, edge * 2 + 1])
         .collect::<Vec<_>>();
-    starts.sort_by_key(|half_edge| (edges[*half_edge / 2].0.id.clone(), half_edge % 2));
+    starts.sort_by(|a, b| (&edges[*a / 2].0.id, *a % 2).cmp(&(&edges[*b / 2].0.id, *b % 2)));
     for start in starts {
         if visited.contains(&start) {
             continue;
@@ -3029,7 +3039,8 @@ fn tangent_nested_line_profile(
     let same_ray = |left: (f64, f64), right: (f64, f64)| {
         let dot = left.0 * right.0 + left.1 * right.1;
         let cross = left.0 * right.1 - left.1 * right.0;
-        dot > 1.0 - 1.0e-10 && cross.abs() <= 1.0e-10
+        dot > 1.0 - EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10
+            && cross.abs() <= EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10
     };
     if directions.iter().enumerate().any(|(index, direction)| {
         directions

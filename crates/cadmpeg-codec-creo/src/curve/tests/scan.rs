@@ -437,8 +437,8 @@ fn scan_validates_fc05_circle_from_record_points() {
     let direction = circle
         .reference_direction_row_frame
         .expect("unique parameter-zero direction");
-    assert!((direction[0] - (-2.0_f64).cos()).abs() < 1e-12);
-    assert!((direction[1] - (-2.0_f64).sin()).abs() < 1e-12);
+    assert!((direction[0] - (-2.0_f64).cos()).abs() < 1.0e-12);
+    assert!((direction[1] - (-2.0_f64).sin()).abs() < 1.0e-12);
     let mut unknown_parameter = scan.curves.parameters[0].clone();
     unknown_parameter.body.splice(114..122, [0x39, 0x29, 0x00]);
     let carriers = crate::curve::fc05_circles(&[unknown_parameter]);

@@ -51,7 +51,7 @@ pub(crate) fn binary_sphere_stream(kind: BinaryFixtureKind) -> Vec<u8> {
         bytes.push(u8::try_from(text.len()).unwrap());
         bytes.extend_from_slice(text.as_bytes());
     }
-    for value in [10.0f64, 1e-6, 1e-10] {
+    for value in [10.0f64, 1.0e-6, 1.0e-10] {
         bytes.push(0x06);
         bytes.extend_from_slice(&value.to_le_bytes());
     }

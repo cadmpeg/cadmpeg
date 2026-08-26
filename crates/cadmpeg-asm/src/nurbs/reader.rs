@@ -91,6 +91,35 @@ pub(crate) fn owned_marker_positions(b: &[u8], int_width: usize) -> Vec<usize> {
     out
 }
 
+/// Positions of the B-spline markers owned by a complete record's unique
+/// cache-bearing outer construction.
+///
+/// Record slices can contain auxiliary outer definitions before the carrier
+/// construction. Enter every non-reference outer scope and admit its markers
+/// only when exactly one such scope owns markers. Multiple cache-bearing outer
+/// scopes are ambiguous and therefore not writable.
+pub(crate) fn construction_marker_positions(b: &[u8], int_width: usize) -> Vec<usize> {
+    let candidates = crate::nurbs::subtypes::owned_subtype_defs(b, int_width)
+        .into_iter()
+        .filter(|(_, name)| *name != b"ref")
+        .filter_map(|(start, _)| {
+            let scope = crate::nurbs::subtypes::subtype_span(b, start, int_width)?;
+            let positions = owned_marker_positions(scope, int_width)
+                .into_iter()
+                .map(|position| start + position)
+                .collect::<Vec<_>>();
+            (!positions.is_empty()).then_some(positions)
+        })
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return owned_marker_positions(b, int_width);
+    }
+    if candidates.len() != 1 {
+        return Vec::new();
+    }
+    candidates.into_iter().next().unwrap_or_default()
+}
+
 /// Bounds for the shared ASM NURBS knot expansion check.
 const MAX_NURBS_POLES: usize = 100_000;
 const MAX_NURBS_DEGREE: usize = 20;

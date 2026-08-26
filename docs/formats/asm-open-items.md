@@ -104,21 +104,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We cannot read a record with a value other than `0` or `2`. **Settling specimen:** a document whose cache-first intcurve leading enum carries a value other than `0` or `2` gives that value's layout. GC-27 gives the separate limit that value `2` reaches.
 
-### GC-24. Binding of the law formula text infix operator `O`
-
-**Question.** What are the precedence and associativity of the infix operator `O` in stored law formula text?
-
-**Known.** `asm.md` §6.3 "**Law formulas**" gives `O` as composition with the right operand innermost, and gives the `MTRAIL` curve as a rail direction requiring no further construction input. A writer parenthesizes both `O` operands, so stored text never exercises the operator's binding against a neighbouring operator and never chains two occurrences. A `law_int_cur` written from the field order in `asm.md` §6.3 over a solved curve cache is refused on read, and the refusal covers the smallest form, whose law is `null_law` and which carries no operator at all. The field order and the arity encoding are both speculative, so the refusal bears on neither the operator token spellings nor the binding, and it does not show that the record is unreachable by a different field order.
-
-**Need.** We must know the binding to parse law text that a different writer produced without full parenthesization. Text this codec emits is unaffected, because it parenthesizes both operands.
-
 ### GC-25. Payload after a true shared revision-gated surface tail logical
 
 **Question.** What follows the closing logical of the shared revision-gated surface tail when that logical is true?
 
-**Known.** `asm.md` §6.3 "**Revision-gated spline-surface forms**" ends the tail with six counted float arrays and one logical, for each value of the form enum. The specification gives no payload after that logical, and the decoder ends the tail there for either value.
+**Known.** `asm.md` §6.3 "**Revision-gated spline-surface forms**" ends the tail with six counted float arrays and one logical, for each value of the form enum. Revision-gated cylinder, loft, sweep, offset, revolution, and sum surfaces end at that tail and require the subtype close immediately after it. Other admitted shared-tail subtypes consume their defined suffix and then require the close. The decoder retains a construction with another token as opaque data while continuing to use a valid solved cache as the face carrier.
 
-**Need.** A false logical is the only state the decoder can account for. A carrier whose tail is its last field, such as the revision-gated `cyl_spl_sur`, would end its scope at a true logical and drop the bytes after it without a diagnostic, and would then write the record back short. A carrier with its own fields after the tail, such as `rb_blend_spl_sur` and `var_blend_spl_sur`, reads those fields at the wrong offset instead and keeps the whole record as opaque bytes. No subtype scope has a full-consumption check that would separate the two outcomes from a correct decode. **Settling specimen:** a document whose shared revision-gated surface tail closes with a true logical shows what follows it.
+**Need.** A false logical is the only state with established semantics. Carriers with their own fields after the tail, such as `rb_blend_spl_sur` and `var_blend_spl_sur`, read their defined suffix immediately after either logical value. **Settling specimen:** a document whose shared revision-gated surface tail closes with a true logical shows whether the logical has semantic effect or selects a different suffix grammar.
 
 ### GC-26. Position of the `sss_blend_spl_sur` third-side graph
 
@@ -136,57 +128,17 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A form-`2` record that stores no curve block anywhere gives the context no parameter domain, so the decoder retains the record verbatim and the neutral model loses the curve. To read such a record the shared context and every carrier that builds it must accept a record with no solved curve. Whether the record then takes its domain from the interval the form stores, from the support surfaces, or from a curve outside the record is not established. **Settling specimen:** a document holding a form-`2` record whose construction stores no curve block settles which of the three the domain comes from.
 
-### GC-28. Parameter chart of a procedural spline support cache
+### GC-32. Unadmitted rolling-ball branches
 
-**Question.** How does a pcurve in a procedural spline support's construction chart map to the parameter chart of that support's solved NURBS cache?
+**Question.** Does an `rb_blend_spl_sur` record outside the complete and compact grammars carry another defined layout?
 
-**Known.** A cache-first intcurve support can store `spline`, a subtype-table reference to a procedural spline-surface construction, and four optional bounds. The referenced construction supplies a solved NURBS cache. The intcurve pcurve uses the procedural construction's parameter chart. That chart is not necessarily the solved cache's chart. A `cl_loft_spl_sur` support can map one construction-chart isoline to a nonlinear curve in the solved cache chart. The intcurve and the cache therefore do not establish a direct pcurve-on-surface relation without a chart map.
+**Known.** `asm.md` §6.6 gives both admitted layouts. The complete form has ordered side graphs, a slice curve, offsets, radius selection, and cross-section fields. The compact form has a positional run of labelled supports, one spine, two radius values, enum `-1`, one solved cache, and an optional fit tolerance. A record outside both grammars remains opaque and retains its native payload and solved cache; it does not infer members by encounter order.
 
-**Need.** The decoder currently attaches the construction-chart pcurve directly to the solved NURBS support. This relation is invalid when the charts differ. We must retain or derive the exact chart map before the neutral support relation can be complete. A fitted map is not sufficient because it does not preserve the stored construction semantics.
+Optional side ranges, locations, and other doubles can occur after the actual offsets, so scalar encounter order does not identify the radius law. A support or nested construction can contain a later curve block, so curve encounter order does not identify the slice. The serialized cross-section selector, not subtype membership, determines whether the section is circular.
 
-### GC-29. Ownership of multiple 3D curve cache blocks
+**Need.** A branch outside both admitted grammars must identify each field and state whether that branch is recoverable.
 
-**Question.** Which 3D curve block is the writable cache when a carrier record contains multiple decodable blocks or supports more than one integer width?
-
-**Known.** `first_curve_patch_layout` scans the admitted integer widths and marker positions and accepts the first block that decodes. `final_curve_patch_layout` uses the final decodable block for a different caller. Neither function verifies a record-specific owner, cache role, or relationship between the selected block and the carrier subtype.
-
-**Need.** A record with more than one decodable 3D curve can make the writer patch a support or pcurve instead of the writable cache. We need an owner reference, subtype rule, or full-consumption invariant before the first-block selection can be used for writing.
-
-### GC-30. Missing major-axis vector of an analytic cone
-
-**Question.** Is a `cone` record with no valid major-axis vector a valid form? If it is valid, which member gives its radius and reference direction?
-
-**Known.** `asm.md` §6.2 `cone` states that the major-axis vector gives the base radius. It states that `u_scale` is a parameter scale and is not a radius. `decode_surface` in `brep/geometry.rs` accepts a missing or zero-length major-axis vector. It then uses `u_scale` as the radius and `deterministic_ref_direction(axis)` as the reference direction. It records no loss.
-
-If an offset-derived cone has a `u_scale` that differs from its major-axis radius, the emitted radius is wrong. Its zero-azimuth direction is also invented, so an attached cone pcurve can use the wrong chart.
-
-**Need.** We need a valid-record witness or a rule that requires the record to remain native when the major-axis vector is absent.
-
-**Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/geometry.rs:98-118`. The fixed layout and the text shape table are counter-evidence against treating the fallback as a conforming form, but they do not justify emitting substitute geometry when the binary reader reaches it.
-
-### GC-31. Missing analytic-surface frame members
-
-**Question.** Which frame does an analytic surface carry when one of its direction vectors is absent?
-
-**Known.** `asm.md` §6.2 gives both frame members for `plane`, `sphere`, and `torus`: plane normal plus reference direction, sphere equator plus polar axis, and torus axis plus reference direction. `decode_surface` in `brep/geometry.rs` synthesizes a plane reference direction when only its normal is present, uses `sphere.dir1` as the polar axis when `dir2` is absent and synthesizes a new equator, and synthesizes a torus reference direction when only its axis is present. It records no loss.
-
-If a one-vector sphere is accepted, the point set is unchanged but the pole and seam frame is rotated: the decoder treats the equator as the polar axis. A pcurve or trim measured in the stored frame then lands on the wrong parameters. The same substitution moves a plane seam or torus zero-azimuth direction.
-
-**Need.** A conforming record carries the complete frame. We need a specimen or an authoritative alternate form that identifies the one stored vector, or the decoder must retain the record without synthesizing a frame.
-
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/brep/geometry.rs:82-96,155-183`. Required-vector layouts are counter-evidence against a valid one-vector form, not evidence for the substitutions.
-
-### GC-32. Rolling-ball fallback field selection
-
-**Question.** Which members give the radii, spine, and two supports of an `rb_blend_spl_sur` record when the structured side decoder fails?
-
-**Known.** `asm.md` §6.6 `rb_blend_spl_sur` gives ordered side graphs, a slice curve, offsets, radius selection, and cross-section fields. `procedural_surface_resolving_refs` calls `rb_blend_spl_sur_fallback` after the complete decoder fails. The fallback in `nurbs/blend.rs` collects every `DOUBLE` before the first tail cache, takes the last two as the radius endpoints, takes the last decodable curve as the spine, assigns analytic support surfaces by encounter order to slots zero and one, forces a circular cross-section, and drops the native rolling-ball payload. It records no distinction between a structured decode failure and a successful fallback.
-
-If optional side ranges, locations, or other doubles occur after the actual offsets, the last two doubles are not the radius law. If a support or nested construction has a later curve block, the last curve is not the slice. A valid non-circular selector is emitted as circular geometry. The neutral result can therefore contain a wrong radius, wrong spine, or wrong surface with no loss.
-
-**Need.** A real `rb_blend_spl_sur` specimen with a failed structured branch must identify each field by its grammar and must state whether a failed branch is recoverable. Until then the fallback must not infer members from encounter order and must retain the native payload or report the loss.
-
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/proc_surface.rs:4087-4115` and `crates/cadmpeg-asm/src/nurbs/blend.rs:1505-1577`. The complete decoder and the structured grammar are counter-evidence for conforming records that parse successfully, not for the fallback's behavior after a parse failure.
+**Note.** The complete decoder and its structured grammar establish conforming records only; they do not establish the layout of a rejected branch.
 
 ### GC-33. Cone pcurve chart sign and scale
 
@@ -228,13 +180,36 @@ If the discarded Boolean is the support reversal, every reversed blend support i
 
 **Question.** Which NURBS block is the owning cache when a record contains multiple decodable blocks or when more than one integer width parses a candidate?
 
-**Known.** `marker_positions` scans every marker without nesting, while `owned_marker_positions` exists specifically to exclude nested construction scopes. Token readers still use the raw scan in `surface_cache`, `curve_cache`, `decode_pcurve_cache`, `decode_curve_cache`, and the compound/directrix helpers. `surface_cache` chooses the first block when any `comp_spl_sur` bytes occur anywhere and otherwise the last block; `curve_cache` chooses the first. Binary readers try `INT_WIDTHS = [8, 4]` and return the first width with a decodable block. `procedural_curve_recursive` changes the ordinal to last for wrapper flags and first for other families. No path counts competing valid blocks or withholds on a tie.
+**Known.** `asm.md` §6.3 "**Construction-cache ownership**" defines ownership relative to the outer non-`ref` construction scope. The token-space `surface_cache`, `curve_cache`, pcurve fit-tolerance reader, procedural-curve record reader, and procedural-surface family readers consume only directly owned cache markers. The procedural-curve reader takes the last directly owned curve for source-wrapper families and the first for other families. Fixed-layout procedural-surface readers and the `comp_int_cur`, `subset_int_cur`, and `offset_int_cur` directrix helpers consume their construction fields in grammar order. The shared revision surface-tail reader returns the domain of the solved cache it consumes, so a containing construction does not scan the enclosing scope again. Generic binary surface, curve, and pcurve cache helpers try both integer widths but return a value only when exactly one `(width, marker)` candidate decodes; they do not infer a role from record-name bytes. Surface, curve, and pcurve patch-layout readers use directly owned markers at the stream's known integer width; their callers supply the final-cache, first-cache, or explicit-ordinal role. A generic binary helper can still accept one nested candidate because it has no enclosing-scope grammar.
 
 If a nested support cache precedes an owning cache, a raw scan can return the support. If a wrapper has a source curve before its solved cache, a first-block caller returns the source; a last-block caller applied to a non-wrapper returns a later nested curve. A second valid block is accepted without an owner reference, and a wrong-width parse is accepted without a stream-width witness. The resulting face, edge, pcurve, or patch can therefore use a different carrier while remaining numerically valid.
 
-**Need.** A specimen with multiple valid blocks and the stream header's integer width must establish the owner, scope boundary, ordinal, and whether a second candidate is invalid. Until then every read and patch path must use the owning scope and known width, and must withhold when two blocks remain valid. GC-29 covers the separate writer helper; this item covers the read paths.
+**Need.** Every remaining read path must use the owning construction scope and the stream's known integer width, and must withhold when two blocks remain valid.
 
 **Note.** QA sweep locations: `crates/cadmpeg-asm/src/nurbs/reader.rs:20-26,52-92`, `crates/cadmpeg-asm/src/nurbs/core.rs:146-187,551-630`, `crates/cadmpeg-asm/src/nurbs/pcurve.rs:160-171`, and `crates/cadmpeg-asm/src/nurbs/proc_curve.rs:560-583,2876-2935`. The format paragraphs in `asm.md` §6.3-§6.6 assert first/final cache roles, and owned-scope helpers exist, but neither is an independent witness for every generic caller.
+
+### GC-37. Procedural construction identity with auxiliary outer definitions
+
+**Question.** Which directly owned non-`ref` subtype definition identifies the procedural
+construction when one record contains an auxiliary outer definition before the cache-bearing
+construction?
+
+**Known.** `asm.md` §6.3 "**Construction-cache ownership**" assigns the solved cache to the outer
+non-`ref` construction that owns it. A record can contain auxiliary directly owned subtype
+definitions before that construction. Cache selection admits the unique directly owned
+cache-bearing scope. Construction-kind selection instead takes the first directly owned non-`ref`
+subtype definition.
+
+**Need.** Define the structural relation that identifies the record's procedural construction and
+separates it from auxiliary outer definitions. The construction kind, construction scope, solved
+cache, parameter domain, and native family must come from the same owner.
+
+**Conflict.** An auxiliary definition that occurs first can supply `native_kind` while geometry comes
+from a later unique cache-bearing construction. Family-specific interpretation can then use an
+identity that does not own the admitted carrier.
+
+**Note.** Do not use first-definition order as construction identity. Reject an ambiguous owner when
+the record grammar does not identify one construction.
 
 ## 2. Topology
 
@@ -288,6 +263,27 @@ If a chain contains `truecolor` before `rgb_color`, the first record supplies th
 
 **Note.** QA sweep location: `crates/cadmpeg-asm/src/brep/attributes.rs:132-193`. Chain order is counter-evidence only if the format explicitly defines it as precedence.
 
+### AT-02. Precedence of multiple display-name attributes
+
+**Question.** Which display name applies when one entity attribute chain contains more than one
+nonempty `string_attrib-name_attrib-gen-attrib` record whose attribute name is `name`?
+
+**Known.** `asm.md` §5.6 "`string_attrib-name_attrib-gen-attrib` stores" defines each `name` record as a body
+or face display-name carrier. Attribute records have explicit forward and backward chain links. The
+format model does not state whether chain order, migration flags, attribute ownership, or another
+field selects among multiple nonempty name carriers.
+
+**Need.** Define display-name precedence, including the roles of empty values, nested attribute
+ownership, and the four keep/copy/ignore/copy flags. State whether multiple applicable name carriers
+are valid and, if they are, which one supplies the neutral display name.
+
+**Conflict.** The current neutral projection returns the first nonempty `name` value encountered in
+the forward attribute chain. A different chain order can therefore change the neutral display name
+without changing the set of name attributes.
+
+**Note.** Preserve every native name attribute independently of the single neutral display-name
+projection.
+
 ## 4. Text encoding
 
 ### TE-01. Migration-flag words of a `gen-attrib` record in the text encoding
@@ -305,15 +301,3 @@ If a chain contains `truecolor` before `rgb_color`, the first record supplies th
 **Known.** `asm.md` §7.1 gives the header lines. The flags word keeps its binary semantics, so bit 0 is the history-partition flag. No further text-specific marking is known, and the record grammar for a text history partition is not known.
 
 **Need.** A reader must know the marking to separate the solved records from history records; without it, a history-bearing text stream would read history records as model records.
-
-### TE-03. Invalid text-header scale handling
-
-**Question.** What scale values are valid in the SAT/SMT text header, and what must a reader do for zero, negative, or non-finite values?
-
-**Known.** `asm.md` §7.1 defines `scale` as millimetres per model-space unit. `parse_header` accepts any value that `f64::parse` accepts and does not require finiteness, positivity, or an exact three-field line. `parse` converts positive values with `scale / 10.0` but substitutes `1.0` for every non-positive value; `NaN` also takes that branch because its comparison with zero is false. No loss is recorded.
-
-If a stream carries zero, a negative value, or `NaN`, every length-bearing text field is decoded with the fallback factor instead of being rejected or retained. A malformed header can therefore produce plausible but wrongly scaled geometry and tolerances.
-
-**Need.** An authoritative valid-domain rule or a specimen with an invalid header must settle whether the stream is malformed, uses a special unit convention, or requires a different conversion. The reader must not fabricate a scale while this is open.
-
-**Note.** QA sweep locations: `crates/cadmpeg-asm/src/sat.rs:274-324,331-341`. The settled unit rule and existing valid positive headers are counter-evidence against treating the fallback as a valid convention.

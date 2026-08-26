@@ -11,9 +11,15 @@ use std::io::{Cursor, Write};
 
 use zip::CompressionMethod;
 
-use super::{parse_design_parameter, parse_parameter_companion, parse_parameter_owner};
+use super::{
+    decode_parameters, parse_design_parameter, parse_legacy_parameter_owner_68,
+    parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
+};
 use crate::design::test_support::{lp_utf16, parameter_owner_frame, parameter_record};
-use crate::records::DesignParameterKind;
+use crate::records::{
+    ConstructionRecipe, ConstructionRecipeKind, DesignParameter, DesignParameterCompanion,
+    DesignParameterKind, DesignParameterOwner,
+};
 use crate::test_support::*;
 
 fn compact_owned_parameter_record(
@@ -46,6 +52,85 @@ fn compact_owned_parameter_record(
     out.extend_from_slice(&evaluated_value.to_le_bytes());
     out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     out
+}
+
+fn class_287_parameter_record(source_kind: &str, name: &str) -> Vec<u8> {
+    class_287_parameter_record_with_expression_trailer(source_kind, name, [0; 5])
+}
+
+fn class_287_parameter_record_with_expression_trailer(
+    source_kind: &str,
+    name: &str,
+    expression_trailer: [u8; 5],
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"287");
+    out.extend_from_slice(&887u32.to_le_bytes());
+    out.extend_from_slice(&[0; 15]);
+    out.extend_from_slice(&20u32.to_le_bytes());
+    out.push(1);
+    out.extend_from_slice(&886u32.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
+    lp_utf16(&mut out, "0.4375 in");
+    out.extend_from_slice(&expression_trailer);
+    lp_utf16(&mut out, source_kind);
+    lp_utf16(&mut out, "in");
+    lp_utf16(&mut out, name);
+    out.extend_from_slice(&1.11125f64.to_le_bytes());
+    out.extend_from_slice(&[0, 1, 175, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    out
+}
+
+#[test]
+fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
+    let parameter = parse_design_parameter(&class_287_parameter_record("HoleDepth", "d20"))
+        .expect("class-287 parameter");
+    assert_eq!(parameter.class_tag, "287");
+    assert_eq!(parameter.record_index, 887);
+    assert_eq!(parameter.owner_record_index, Some(886));
+    assert_eq!(parameter.source_ordinal, 20);
+    assert_eq!(parameter.expression, "0.4375 in");
+    assert_eq!(parameter.expression_offset, 45);
+    assert_eq!(parameter.source_kind, "HoleDepth");
+    assert_eq!(parameter.unit.as_deref(), Some("in"));
+    assert_eq!(parameter.unit_offset, Some(94));
+    assert_eq!(parameter.name, "d20");
+    assert_eq!(parameter.evaluated_value_offset, 108);
+
+    let dimension =
+        parse_design_parameter(&class_287_parameter_record("Diameter Dimension-2", "d1"))
+            .expect("class-287 dimension parameter");
+    assert_eq!(dimension.source_kind, "Diameter Dimension-2");
+    assert_eq!(dimension.name, "d1");
+}
+
+#[test]
+fn class_287_parameter_accepts_the_marked_expression_trailer() {
+    let parameter = parse_design_parameter(&class_287_parameter_record_with_expression_trailer(
+        "OffsetX",
+        "d63",
+        [0, 0, 0, 1, 0],
+    ))
+    .expect("class-287 parameter with marked expression trailer");
+    assert_eq!(parameter.source_kind, "OffsetX");
+    assert_eq!(parameter.name, "d63");
+
+    let malformed =
+        class_287_parameter_record_with_expression_trailer("OffsetX", "d63", [0, 0, 0, 2, 0]);
+    assert!(parse_design_parameter(&malformed).is_none());
+}
+
+#[test]
+fn class_287_parameter_requires_its_marker_and_tail() {
+    let mut frame = class_287_parameter_record("HoleDepth", "d20");
+    frame[30] = 0;
+    assert!(parse_design_parameter(&frame).is_none());
+
+    let mut frame = class_287_parameter_record("HoleDepth", "d20");
+    let tail = frame.len() - 12;
+    frame[tail + 2] = 174;
+    assert!(parse_design_parameter(&frame).is_none());
 }
 
 #[test]
@@ -153,6 +238,15 @@ fn parameter_variants_have_exact_string_and_scalar_boundaries() {
         Some(0)
     );
 
+    let mut scale_factor = parameter_record(Some(1331), "1", "ScaleFactor", None, "scale", 1.0);
+    let scale_factor_tail = scale_factor.len() - 12;
+    scale_factor[scale_factor_tail + 2] = 16;
+    let scale_factor = parse_design_parameter(&scale_factor).expect("scale-factor parameter");
+    assert_eq!(scale_factor.family_discriminator, Some(5));
+    assert_eq!(scale_factor.owner_record_index, Some(1331));
+    assert_eq!(scale_factor.unit, None);
+    assert_eq!(scale_factor.evaluated_value, 1.0);
+
     for discriminator in [3u64, 4] {
         let mut earlier_distance = parameter_record(
             Some(44),
@@ -229,6 +323,30 @@ fn parameter_record_rejects_noncanonical_tail() {
     assert!(parse_design_parameter(&record).is_none());
 }
 
+#[test]
+fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let mut bulk = parameter_record(Some(44), "first", "AlongDistance", Some("mm"), "d71", 1.0);
+    let second = parameter_record(Some(44), "second", "AlongDistance", Some("mm"), "d71", 2.0);
+    bulk.extend_from_slice(&second);
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+
+    let parameters = with_scan(&archive, decode_parameters).unwrap();
+    let [parameter] = parameters.as_slice() else {
+        panic!("expected one canonical parameter");
+    };
+    assert_eq!(parameter.record_index, 71);
+    assert_eq!(parameter.byte_offset, 0);
+    assert_eq!(parameter.expression, "first");
+    assert_eq!(parameter.evaluated_value, 1.0);
+}
+
 fn compact_parameter_owner_frame() -> Vec<u8> {
     let mut frame = vec![0; 103];
     frame[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -249,6 +367,41 @@ fn compact_parameter_owner_frame() -> Vec<u8> {
     frame[81..85].copy_from_slice(&6655u32.to_le_bytes());
     frame[92] = 1;
     frame[93..97].copy_from_slice(&6644u32.to_le_bytes());
+    frame
+}
+
+fn compact_variant_parameter_owner_frame() -> Vec<u8> {
+    let mut frame = compact_parameter_owner_frame();
+    frame[4..7].copy_from_slice(b"299");
+    frame[78] = 1;
+    frame[79] = 0;
+    frame
+}
+
+fn legacy_parameter_owner_68_frame(class_tag: &str) -> Vec<u8> {
+    let mut frame = vec![0; 68];
+    frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+    frame[4..7].copy_from_slice(class_tag.as_bytes());
+    frame[7..11].copy_from_slice(&100u32.to_le_bytes());
+    frame[19] = 1;
+    frame[33] = 1;
+    frame[34..38].copy_from_slice(&101u32.to_le_bytes());
+    frame[44..48].copy_from_slice(&290u32.to_le_bytes());
+    frame[55] = 1;
+    frame[56..60].copy_from_slice(&102u32.to_le_bytes());
+    frame
+}
+
+fn legacy_parameter_owner_88_frame(class_tag: &str) -> Vec<u8> {
+    let mut frame = legacy_parameter_owner_68_frame(class_tag);
+    frame.resize(88, 0);
+    frame[48..52].fill(0);
+    frame[52] = 1;
+    frame[53..57].copy_from_slice(&77u32.to_le_bytes());
+    frame[65] = 1;
+    frame[66..70].copy_from_slice(&102u32.to_le_bytes());
+    frame[77] = 1;
+    frame[78..82].copy_from_slice(&77u32.to_le_bytes());
     frame
 }
 
@@ -458,6 +611,80 @@ fn counted_parameter_owner_uses_typed_u32_scalar() {
 }
 
 #[test]
+fn legacy_counted_parameter_owner_uses_zero_typed_u32_scalar() {
+    let mut frame = counted_parameter_owner_frame();
+    frame[40] = 0;
+    let parsed = parse_parameter_owner(&frame)
+        .expect("legacy counted parameter owner with zero scalar marker");
+    assert_eq!(parsed.frame_length, 101);
+    assert_eq!(parsed.evaluated_value, 6.0);
+    assert_eq!(parsed.evaluated_value_offset, 41);
+    assert_eq!(parsed.parameter_record_index, 45);
+    assert_eq!(parsed.companion_record_index, 46);
+}
+
+#[test]
+fn legacy_parameter_owner_68_uses_parameter_scalar_and_zero_scope() {
+    let parsed = parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame("284"), 0.0)
+        .expect("legacy 68-byte parameter owner");
+    assert_eq!(parsed.frame_length, 68);
+    assert_eq!(parsed.class_tag, "284");
+    assert_eq!(parsed.record_index, 100);
+    assert_eq!(parsed.parameter_record_index, 101);
+    assert_eq!(parsed.companion_record_index, 102);
+    assert_eq!(parsed.scope_record_index, 0);
+    assert_eq!(parsed.local_ordinal, 0);
+    assert_eq!(parsed.owned_ordinal, 290);
+    assert_eq!(parsed.evaluated_value, 0.0);
+
+    for class_tag in ["268", "282", "289", "297", "299", "325", "336"] {
+        assert!(
+            parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame(class_tag), 1.25)
+                .is_some()
+        );
+    }
+}
+
+#[test]
+fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
+    assert!(
+        parse_legacy_parameter_owner_68(&legacy_parameter_owner_68_frame("291"), 1.0).is_none()
+    );
+
+    let mut malformed = legacy_parameter_owner_68_frame("284");
+    malformed[55] = 0;
+    assert!(parse_legacy_parameter_owner_68(&malformed, 1.0).is_none());
+}
+
+#[test]
+fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
+    let parsed = parse_legacy_parameter_owner_88(&legacy_parameter_owner_88_frame("284"), 2.5)
+        .expect("legacy 88-byte parameter owner");
+    assert_eq!(parsed.frame_length, 88);
+    assert_eq!(parsed.scope_record_index, 77);
+    assert_eq!(parsed.local_ordinal, 0);
+    assert_eq!(parsed.owned_ordinal, 290);
+    assert_eq!(parsed.parameter_record_index, 101);
+    assert_eq!(parsed.companion_record_index, 102);
+    assert_eq!(parsed.evaluated_value, 2.5);
+
+    for class_tag in ["282", "336", "325", "297"] {
+        assert!(
+            parse_legacy_parameter_owner_88(&legacy_parameter_owner_88_frame(class_tag), 2.5)
+                .is_some(),
+            "class {class_tag} must use the admitted 88-byte owner grammar"
+        );
+    }
+    assert!(
+        parse_legacy_parameter_owner_88(&legacy_parameter_owner_88_frame("268"), 2.5).is_none()
+    );
+
+    let mut mismatched = legacy_parameter_owner_88_frame("284");
+    mismatched[78..82].copy_from_slice(&78u32.to_le_bytes());
+    assert!(parse_legacy_parameter_owner_88(&mismatched, 2.5).is_none());
+}
+
+#[test]
 fn compact_typed_counted_parameter_owner_omits_variant_slot() {
     let parsed = parse_parameter_owner(&compact_typed_counted_parameter_owner_frame())
         .expect("compact typed counted parameter owner");
@@ -510,6 +737,17 @@ fn tagged_scalar_parameter_owner_can_carry_a_variant_slot() {
     assert_eq!(parsed.owned_ordinal, 73);
     assert_eq!(parsed.variant, Some(0));
     assert_eq!(parsed.companion_record_index, 46);
+}
+
+#[test]
+fn compact_scalar_parameter_owner_can_carry_a_two_byte_variant_slot() {
+    let parsed = parse_parameter_owner(&compact_variant_parameter_owner_frame())
+        .expect("compact scalar variant parameter owner");
+    assert_eq!(parsed.frame_length, 103);
+    assert_eq!(parsed.class_tag, "299");
+    assert_eq!(parsed.variant, Some(0));
+    assert_eq!(parsed.parameter_record_index, 6654);
+    assert_eq!(parsed.companion_record_index, 6655);
 }
 
 #[test]
@@ -626,6 +864,16 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert_eq!(owner.frame_length, 104);
     assert_eq!(owner.evaluated_value_offset, 40);
 
+    let unresolved = with_scan(&archive(stream, &[]), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&parameter),
+            &[],
+        )
+    })
+    .expect("missing owner frame is retained as an unresolved binding");
+    assert!(unresolved.is_empty());
+
     let mut extended = owner_frame();
     extended.push(0);
     extended.extend_from_slice(&paired_header());
@@ -638,4 +886,90 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     })
     .expect_err("an owner-shaped prefix must not shorten the exact frame");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn parameter_companion_orders_recipes_by_payload_byte_offset() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let parameter = DesignParameter {
+        id: format!("{stream}:design-parameter#20"),
+        byte_offset: 1,
+        class_tag: "305".into(),
+        record_index: 20,
+        family_discriminator: None,
+        family_discriminator_offset: None,
+        source_ordinal: 0,
+        owner_record_index: Some(21),
+        expression: "distance".into(),
+        expression_offset: 0,
+        source_kind: "Linear Dimension-1".into(),
+        source_kind_offset: 0,
+        kind: DesignParameterKind::Dimension,
+        unit: Some("mm".into()),
+        unit_offset: Some(0),
+        name: "d1".into(),
+        name_offset: 0,
+        evaluated_value: 2.0,
+        evaluated_value_offset: 0,
+    };
+    let owner = DesignParameterOwner {
+        id: format!("{stream}:design-parameter-owner#21"),
+        byte_offset: 0,
+        frame_length: 104,
+        class_tag: "292".into(),
+        record_index: 21,
+        scope_record_index: 10,
+        local_ordinal: 0,
+        evaluated_value: 2.0,
+        evaluated_value_offset: 0,
+        parameter_record_index: 20,
+        owned_ordinal: 0,
+        variant: None,
+        companion_record_index: 22,
+    };
+    let mut companion = DesignParameterCompanion {
+        id: format!("{stream}:design-parameter-companion#22"),
+        byte_offset: 10,
+        class_tag: "408".into(),
+        record_index: 22,
+        owner_record_index: 21,
+        timestamp_micros: 1,
+        timestamp_micros_offset: 50,
+        payload_byte_offset: 0,
+        payload_byte_length: 0,
+        owned_recipe_ids: Vec::new(),
+    };
+    let recipe = |record_index, byte_offset| ConstructionRecipe {
+        id: format!("{stream}:construction-recipe#{record_index}"),
+        byte_offset,
+        record_index_offset: None,
+        kind: ConstructionRecipeKind::Edge,
+        design_id: None,
+        design_id_offset: None,
+        design_selector: None,
+        recipe_index: 0,
+        record_index,
+    };
+    let recipes = [recipe(31, 100), recipe(30, 80)];
+
+    super::bind_parameter_companion_payloads(
+        std::slice::from_mut(&mut companion),
+        std::slice::from_ref(&parameter),
+        std::slice::from_ref(&owner),
+        &[],
+        &[],
+        &[],
+        &recipes,
+        &std::collections::HashMap::from([(stream.to_owned(), 200)]),
+    );
+
+    assert_eq!(companion.payload_byte_offset, 68);
+    assert_eq!(companion.payload_byte_length, 132);
+    assert_eq!(
+        companion.owned_recipe_ids,
+        [
+            format!("{stream}:construction-recipe#30"),
+            format!("{stream}:construction-recipe#31"),
+        ]
+    );
 }

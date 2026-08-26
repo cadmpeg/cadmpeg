@@ -58,6 +58,38 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
             "design_appearances_protein",
             f3d_with_smbh_and_protein(&synthetic_geometry_smbh()),
         ),
+        (
+            "design_sketch_constraints",
+            f3d_with_smbh_and_protein_with_generated_sketch_dimension(&synthetic_geometry_smbh()),
+        ),
+        (
+            "design_base_feature",
+            f3d_with_smbh_and_protein_with_generated_base_feature(&synthetic_geometry_smbh()),
+        ),
+        (
+            "design_base_flange",
+            f3d_with_smbh_and_protein_with_generated_base_flange(&synthetic_geometry_smbh()),
+        ),
+        (
+            "design_remove_body",
+            f3d_with_smbh_and_protein_with_generated_remove_body(&synthetic_geometry_smbh()),
+        ),
+        (
+            "design_surface_stitch",
+            f3d_with_smbh_and_protein_with_generated_surface_stitch(&synthetic_geometry_smbh()),
+        ),
+        (
+            "design_copy_paste",
+            f3d_with_smbh_and_protein_with_generated_copy_paste(&synthetic_geometry_smbh()),
+        ),
+        (
+            "design_copy_paste_bodies",
+            f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(&synthetic_geometry_smbh()),
+        ),
+        (
+            "design_form",
+            f3d_with_smbh_and_protein_with_generated_form(&synthetic_geometry_smbh()),
+        ),
         ("container_metadata_only", f3d_with_smbh(&synthetic_smbh())),
         (
             "mesh_surface",
@@ -763,7 +795,7 @@ fn an_edit_survives_the_patch_writer() {
                     let moved = edited.model.points[0].position.x;
                     let returned = round_trip.ir().model.points[0].position.x;
                     assert!(
-                        (returned - moved).abs() <= 1e-9,
+                        (returned - moved).abs() <= 1.0e-9,
                         "fixture `{name}`: the patch writer produced a container that round-trips, but the \
                          edited coordinate came back as {returned} rather than {moved}; the edit was dropped"
                     );

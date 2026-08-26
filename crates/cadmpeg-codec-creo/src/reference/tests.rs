@@ -380,7 +380,7 @@ fn decodes_arc_z_positive_full_width_coordinate_rows() {
     assert_eq!(circle.center[0], -30.0);
     assert_eq!(circle.start[0], -30.0);
     assert_eq!(circle.end[0], -30.0);
-    assert!((circle.axis[0].abs() - 1.0).abs() < 1e-12);
+    assert!((circle.axis[0].abs() - 1.0).abs() < 1.0e-12);
 }
 
 #[test]

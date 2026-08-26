@@ -6,10 +6,9 @@
 //! from `.smb` and `.smbh` B-rep streams, and locates their `delta_state`
 //! history boundaries. Model geometry is selected from Design body-to-blob
 //! bindings by [`crate::decode`]. [`select_history_brep`] independently locates
-//! the stream whose header declares a history partition. When Design bindings
-//! are absent, [`legacy_design_model_breps`] and [`select_fallback_brep`]
-//! supply explicit compatibility fallbacks without asserting that one
-//! extension is the document model.
+//! the stream whose header declares a history partition. Compatibility helpers
+//! expose unique or legacy carrier sets for metadata reporting; model decode
+//! uses the typed Design body-map catalog.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -219,6 +218,12 @@ pub struct ContainerScan<'a> {
     pub kind: F3dContainerKind,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
+    /// Entry indices per native scope key, in entry order.
+    scope_entry_indices: std::collections::HashMap<String, Vec<usize>>,
+    /// Parsed `MetaStream` entries, memoized for the scan's duration.
+    metastream_cache: std::cell::RefCell<
+        std::collections::HashMap<String, std::rc::Rc<crate::metastream::MetaStream>>,
+    >,
 }
 
 impl<'a> ContainerScan<'a> {
@@ -232,6 +237,36 @@ impl<'a> ContainerScan<'a> {
     /// Returns an entry's payload view.
     pub(crate) fn entry_view(&self, name: &str) -> Option<View<'a>> {
         self.inflated_entries.get(name).copied()
+    }
+
+    /// The first entry, in entry order, whose native scope key is `scope` and
+    /// which is a Design stream of `expected_role`. Equivalent to a linear
+    /// `find` over `entries` with both predicates.
+    pub(crate) fn design_stream_entry_for_scope(
+        &self,
+        expected_role: &str,
+        scope: &str,
+    ) -> Option<&ContainerEntry> {
+        self.scope_entry_indices
+            .get(scope)?
+            .iter()
+            .filter_map(|index| self.entries.get(*index))
+            .find(|entry| self.is_design_stream(entry, expected_role))
+    }
+
+    /// The parse of one `MetaStream` entry, computed at most once per scan.
+    pub(crate) fn parsed_metastream(
+        &self,
+        name: &str,
+    ) -> Result<std::rc::Rc<crate::metastream::MetaStream>, CodecError> {
+        if let Some(cached) = self.metastream_cache.borrow().get(name) {
+            return Ok(std::rc::Rc::clone(cached));
+        }
+        let parsed = std::rc::Rc::new(crate::metastream::parse(self.entry_bytes(name)?, name)?);
+        self.metastream_cache
+            .borrow_mut()
+            .insert(name.to_owned(), std::rc::Rc::clone(&parsed));
+        Ok(parsed)
     }
 
     /// Exact archive folder of the manifest-selected Design asset. An outer
@@ -420,12 +455,22 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         ));
     };
 
+    let mut scope_entry_indices = std::collections::HashMap::<String, Vec<usize>>::new();
+    for (index, entry) in entries.iter().enumerate() {
+        scope_entry_indices
+            .entry(crate::ids::native_scope(&entry.name))
+            .or_default()
+            .push(index);
+    }
+
     Ok(ContainerScan {
         source_image,
         entries,
         breps,
         kind,
         inflated_entries,
+        scope_entry_indices,
+        metastream_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
     })
 }
 
@@ -497,10 +542,7 @@ pub fn select_history_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFa
     candidates.next().is_none().then_some(candidate)
 }
 
-/// Compatibility fallback used only when Design body-to-blob bindings are
-/// absent. It returns a BREP only when the available evidence identifies one
-/// unambiguously: exactly one history-bearing stream, or exactly one BREP in
-/// total. Ambiguous archives do not acquire an archive-order guess.
+/// Return one unambiguous BREP for compatibility metadata and reporting.
 pub fn select_fallback_brep<'s>(scan: &'s ContainerScan<'_>) -> Option<&'s BrepFacts> {
     if let Some(history) = select_history_brep(scan) {
         return Some(history);

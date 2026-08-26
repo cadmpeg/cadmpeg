@@ -12,6 +12,8 @@ use crate::features::{
 };
 use crate::math::Point3;
 
+const EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9: f64 = 1.0e-9;
+
 const EPS_TORUS_AXES_ORTHO: f64 = 1.0e-9;
 
 fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
@@ -2546,9 +2548,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 let frame_is_valid = [origin.x, origin.y, origin.z]
                     .into_iter()
                     .all(f64::is_finite)
-                    && (u_axis.norm() - 1.0).abs() <= 1.0e-9
-                    && (v_axis.norm() - 1.0).abs() <= 1.0e-9
-                    && u_axis.dot(*v_axis).abs() <= 1.0e-9;
+                    && (u_axis.norm() - 1.0).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
+                    && (v_axis.norm() - 1.0).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
+                    && u_axis.dot(*v_axis).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9;
                 let [first, second] = bounds;
                 let bounds_are_valid = [first.u, first.v, second.u, second.v]
                     .into_iter()
@@ -2986,8 +2988,19 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     crate::features::SheetMetalFlangeWidth::TwoSides { first, second } => {
                         vec![*first, *second]
                     }
+                    crate::features::SheetMetalFlangeWidth::TwoSidesPerEdge { widths } => widths
+                        .iter()
+                        .flat_map(|width| [width.first, width.second])
+                        .collect(),
                 };
-                if !widths.iter().copied().all(positive_feature_length) {
+                let per_edge_widths_are_nonempty = !matches!(
+                    width,
+                    crate::features::SheetMetalFlangeWidth::TwoSidesPerEdge { widths }
+                        if widths.is_empty()
+                );
+                if !per_edge_widths_are_nonempty
+                    || !widths.iter().copied().all(positive_feature_length)
+                {
                     feature_geometry_error(
                         findings,
                         feature,
@@ -3331,9 +3344,24 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
                 face_selections.push(support_faces);
             }
-            FeatureDefinition::TrimSurface { faces, tool, .. } => {
+            FeatureDefinition::TrimSurface {
+                faces,
+                tool,
+                keep,
+                cell_selection,
+            } => {
                 face_selections.push(faces);
                 paths.push(tool);
+                if cell_selection.as_ref().is_some_and(|selection| {
+                    !selection.is_valid()
+                        || !matches!(keep, crate::features::TrimRegion::Unresolved)
+                }) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "surface trim cell selection is invalid or conflicts with keep",
+                    );
+                }
             }
             FeatureDefinition::ExtendSurface {
                 faces, distance, ..
@@ -3873,13 +3901,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 let valid = [origin.x, origin.y, origin.z]
                     .into_iter()
                     .all(f64::is_finite)
-                    && [x_axis, y_axis, z_axis]
-                        .into_iter()
-                        .all(|axis| (axis.norm() - 1.0).abs() <= 1.0e-9)
-                    && dot(*x_axis, *y_axis).abs() <= 1.0e-9
-                    && dot(*x_axis, *z_axis).abs() <= 1.0e-9
-                    && dot(*y_axis, *z_axis).abs() <= 1.0e-9
-                    && dot(cross, *z_axis) >= 1.0 - 1.0e-9;
+                    && [x_axis, y_axis, z_axis].into_iter().all(|axis| {
+                        (axis.norm() - 1.0).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
+                    })
+                    && dot(*x_axis, *y_axis).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
+                    && dot(*x_axis, *z_axis).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
+                    && dot(*y_axis, *z_axis).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
+                    && dot(cross, *z_axis) >= 1.0 - EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9;
                 if !valid {
                     feature_geometry_error(findings, feature, "coordinate-system frame is invalid");
                 }
@@ -4007,9 +4035,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         [origin.x, origin.y, origin.z]
                             .into_iter()
                             .all(f64::is_finite)
-                            && (axis.norm() - 1.0).abs() <= 1.0e-9
-                            && (radial.norm() - 1.0).abs() <= 1.0e-9
-                            && dot.abs() <= 1.0e-9
+                            && (axis.norm() - 1.0).abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
+                            && (radial.norm() - 1.0).abs()
+                                <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
+                            && dot.abs() <= EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
                     }
                     CoilPlacement::Native { native_ref } => !native_ref.trim().is_empty(),
                 };
@@ -4337,7 +4366,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     || !valid_feature_direction(*normal)
                     || !valid_feature_direction(*u_axis)
                     || !scale.is_finite()
-                    || normal.dot(*u_axis).abs() > 1.0e-9 * scale
+                    || normal.dot(*u_axis).abs() > EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9 * scale
                 {
                     feature_geometry_error(findings, feature, "datum-plane frame is invalid");
                 }
@@ -4353,7 +4382,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     || !valid_feature_direction(*normal)
                     || !valid_feature_direction(*u_axis)
                     || !scale.is_finite()
-                    || normal.dot(*u_axis).abs() > 1.0e-9 * scale
+                    || normal.dot(*u_axis).abs() > EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9 * scale
                 {
                     feature_geometry_error(
                         findings,
@@ -4416,6 +4445,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         crate::features::DatumPointConstruction::Vertex { vertex } => {
                             vertex_selections.push((vertex, "datum-point"));
                         }
+                        crate::features::DatumPointConstruction::SketchPoint { .. } => {}
                         crate::features::DatumPointConstruction::EdgePlaneIntersection {
                             edge,
                             plane,
@@ -4493,7 +4523,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 || !valid_feature_direction(*normal)
                                 || !valid_feature_direction(*u_axis)
                                 || normal.dot(*u_axis).abs()
-                                    > 1.0e-9 * normal.norm() * u_axis.norm()
+                                    > EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
+                                        * normal.norm()
+                                        * u_axis.norm()
                             {
                                 feature_geometry_error(
                                     findings,
@@ -4663,7 +4695,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 || !valid_feature_direction(*u_axis)
                                 || (normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z)
                                     .abs()
-                                    > 1.0e-9 * normal.norm() * u_axis.norm()
+                                    > EPS_TOPOLOGY_CHECK_FEATURE_REFERENCES_E9
+                                        * normal.norm()
+                                        * u_axis.norm()
                             {
                                 feature_geometry_error(
                                     findings,
@@ -5793,7 +5827,7 @@ fn check_feature_sketch_references(
     sketches: &HashSet<&str>,
     findings: &mut Vec<Finding>,
 ) {
-    use crate::features::{FeatureDefinition, PathRef, ProfileRef};
+    use crate::features::{FeatureDefinition, PathRef, ProfileRef, SketchPointSelection};
 
     let spatial_sketches = ir
         .model
@@ -5835,6 +5869,88 @@ fn check_feature_sketch_references(
                 message: format!("sketch `{sketch}` has multiple owning features"),
                 entity: Some(feature.id.0.clone()),
             });
+        }
+    }
+
+    for feature in &ir.model.features {
+        let FeatureDefinition::DatumPoint {
+            construction: Some(construction),
+            ..
+        } = &feature.definition
+        else {
+            continue;
+        };
+        let crate::features::DatumPointConstruction::SketchPoint { point } = construction.as_ref()
+        else {
+            continue;
+        };
+        let valid = match point {
+            SketchPointSelection::Planar {
+                sketch,
+                point,
+                native,
+            } => {
+                !native.trim().is_empty()
+                    && sketches.contains(sketch.0.as_str())
+                    && sketch_entity_owners
+                        .get(point.0.as_str())
+                        .is_some_and(|owner| *owner == sketch.0.as_str())
+                    && ir.model.sketch_entities.iter().any(|entity| {
+                        entity.id == *point
+                            && entity.sketch == *sketch
+                            && matches!(
+                                &entity.geometry,
+                                crate::sketches::SketchGeometry::Point { .. }
+                            )
+                    })
+            }
+            SketchPointSelection::Spatial {
+                sketch,
+                point,
+                native,
+            } => {
+                !native.trim().is_empty()
+                    && spatial_sketches.contains(sketch.0.as_str())
+                    && spatial_sketch_entity_owners
+                        .get(point.0.as_str())
+                        .is_some_and(|owner| *owner == sketch.0.as_str())
+                    && ir.model.spatial_sketch_entities.iter().any(|entity| {
+                        entity.id == *point
+                            && entity.sketch == *sketch
+                            && matches!(
+                                &entity.geometry,
+                                crate::sketches::SpatialSketchGeometry::Point { .. }
+                            )
+                    })
+            }
+            SketchPointSelection::Native(native) => !native.trim().is_empty(),
+            SketchPointSelection::Unresolved => true,
+        };
+        if !valid {
+            feature_geometry_error(
+                findings,
+                feature,
+                "datum-point sketch-point selection is invalid",
+            );
+        }
+        let sketch_id = match point {
+            SketchPointSelection::Planar { sketch, .. } => Some(sketch.0.as_str()),
+            SketchPointSelection::Spatial { sketch, .. } => Some(sketch.0.as_str()),
+            SketchPointSelection::Native(_) | SketchPointSelection::Unresolved => None,
+        };
+        if let Some(sketch_id) = sketch_id {
+            if let Some((owner, ordinal)) = owners.get(sketch_id) {
+                if *ordinal >= feature.ordinal {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "sketch owner `{owner}` does not precede its datum-point consumer"
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    });
+                }
+            }
         }
     }
 

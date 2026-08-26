@@ -1,8 +1,88 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared byte-slice search over untrusted decode windows.
+//! Shared byte-order assembly and byte-slice search over decode data.
 //!
 //! Empty needles are never a match. That matches the codec helpers this
 //! module replaces and avoids `memchr`'s empty-needle-at-zero behavior.
+
+/// Assemble a 16-bit little-endian integer from an exact byte array.
+pub const fn assemble_u16_le(bytes: [u8; 2]) -> u16 {
+    bytes[0] as u16 | ((bytes[1] as u16) << 8)
+}
+
+/// Assemble a 16-bit big-endian integer from an exact byte array.
+pub const fn assemble_u16_be(bytes: [u8; 2]) -> u16 {
+    ((bytes[0] as u16) << 8) | bytes[1] as u16
+}
+
+/// Assemble a 24-bit little-endian integer from an exact byte array.
+pub const fn assemble_u24_le(bytes: [u8; 3]) -> u32 {
+    bytes[0] as u32 | ((bytes[1] as u32) << 8) | ((bytes[2] as u32) << 16)
+}
+
+/// Assemble a 24-bit big-endian integer from an exact byte array.
+pub const fn assemble_u24_be(bytes: [u8; 3]) -> u32 {
+    ((bytes[0] as u32) << 16) | ((bytes[1] as u32) << 8) | bytes[2] as u32
+}
+
+/// Assemble a 32-bit little-endian integer from an exact byte array.
+pub const fn assemble_u32_le(bytes: [u8; 4]) -> u32 {
+    bytes[0] as u32
+        | ((bytes[1] as u32) << 8)
+        | ((bytes[2] as u32) << 16)
+        | ((bytes[3] as u32) << 24)
+}
+
+/// Assemble a 32-bit big-endian integer from an exact byte array.
+pub const fn assemble_u32_be(bytes: [u8; 4]) -> u32 {
+    ((bytes[0] as u32) << 24)
+        | ((bytes[1] as u32) << 16)
+        | ((bytes[2] as u32) << 8)
+        | bytes[3] as u32
+}
+
+/// Assemble a 64-bit little-endian integer from an exact byte array.
+pub const fn assemble_u64_le(bytes: [u8; 8]) -> u64 {
+    bytes[0] as u64
+        | ((bytes[1] as u64) << 8)
+        | ((bytes[2] as u64) << 16)
+        | ((bytes[3] as u64) << 24)
+        | ((bytes[4] as u64) << 32)
+        | ((bytes[5] as u64) << 40)
+        | ((bytes[6] as u64) << 48)
+        | ((bytes[7] as u64) << 56)
+}
+
+/// Assemble a 64-bit big-endian integer from an exact byte array.
+pub const fn assemble_u64_be(bytes: [u8; 8]) -> u64 {
+    ((bytes[0] as u64) << 56)
+        | ((bytes[1] as u64) << 48)
+        | ((bytes[2] as u64) << 40)
+        | ((bytes[3] as u64) << 32)
+        | ((bytes[4] as u64) << 24)
+        | ((bytes[5] as u64) << 16)
+        | ((bytes[6] as u64) << 8)
+        | bytes[7] as u64
+}
+
+/// Assemble an IEEE-754 binary32 value from exact little-endian bytes.
+pub const fn assemble_f32_le(bytes: [u8; 4]) -> f32 {
+    f32::from_bits(assemble_u32_le(bytes))
+}
+
+/// Assemble an IEEE-754 binary32 value from exact big-endian bytes.
+pub const fn assemble_f32_be(bytes: [u8; 4]) -> f32 {
+    f32::from_bits(assemble_u32_be(bytes))
+}
+
+/// Assemble an IEEE-754 binary64 value from exact little-endian bytes.
+pub const fn assemble_f64_le(bytes: [u8; 8]) -> f64 {
+    f64::from_bits(assemble_u64_le(bytes))
+}
+
+/// Assemble an IEEE-754 binary64 value from exact big-endian bytes.
+pub const fn assemble_f64_be(bytes: [u8; 8]) -> f64 {
+    f64::from_bits(assemble_u64_be(bytes))
+}
 
 /// First offset of `needle` in `haystack`, or `None` when `needle` is empty.
 pub fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -44,6 +124,19 @@ pub fn find_iter<'a>(haystack: &'a [u8], needle: &'a [u8]) -> impl Iterator<Item
 #[cfg(test)]
 mod tests {
     use super::{contains, find, find_from, find_in, find_iter};
+
+    #[test]
+    fn assembles_wire_byte_orders_without_host_endian_assumptions() {
+        assert_eq!(super::assemble_u16_le([0x02, 0x01]), 0x0102);
+        assert_eq!(super::assemble_u24_be([0x01, 0x02, 0x03]), 0x0001_0203);
+        assert_eq!(
+            super::assemble_u32_be([0x01, 0x02, 0x03, 0x04]),
+            0x0102_0304
+        );
+        assert_eq!(super::assemble_u64_le([1, 0, 0, 0, 0, 0, 0, 0]), 1);
+        assert_eq!(super::assemble_f32_be([0x3f, 0xc0, 0, 0]), 1.5);
+        assert_eq!(super::assemble_f64_le([0, 0, 0, 0, 0, 0, 0xf0, 0x3f]), 1.0);
+    }
 
     #[test]
     fn empty_needle_is_never_a_match() {

@@ -838,7 +838,12 @@ pub(crate) fn repeated_face_endpoint_closures(
     {
         return None;
     }
-    let mut degrees = vec![BTreeMap::<usize, u8>::new(); face_count];
+    let mut degrees = alloc_filled(
+        face_count,
+        BTreeMap::<usize, u8>::new(),
+        "catia missing-edge face degrees",
+    )
+    .ok()?;
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
         add_pair(&mut degrees[faces[0]], endpoint_pairs[edge])?;
         if faces[1] != faces[0] {
@@ -883,11 +888,10 @@ pub(crate) fn repeated_face_endpoint_closures(
         exhausted: false,
         solutions: Vec::new(),
     };
-    search.visit(
-        &mut degrees,
-        &mut vec![0; branches.len()],
-        &mut vec![false; branches.len()],
-    );
+    let mut assignment =
+        alloc_filled(branches.len(), 0, "catia missing-edge branch assignment").ok()?;
+    let mut used = alloc_filled(branches.len(), false, "catia missing-edge used branches").ok()?;
+    search.visit(&mut degrees, &mut assignment, &mut used);
     if search.exhausted {
         return None;
     }

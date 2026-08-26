@@ -6,6 +6,7 @@ use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
 };
+use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FeatureDefinition;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -30,9 +31,9 @@ pub(crate) fn component_path_features(
     }
     let mut result = Vec::new();
     for component in components {
-        let mut source_id = [0; 4];
-        source_id.copy_from_slice(&component.type_signature[4..8]);
-        let source_id = u32::from_le_bytes(source_id);
+        let Some(source_id) = View::u32_le_at(&component.type_signature, 4) else {
+            continue;
+        };
         if let Some(Some(feature)) = by_source.get(&source_id) {
             if !result.iter().any(|existing| existing == feature) {
                 result.push((*feature).to_string());
@@ -121,11 +122,8 @@ pub(crate) fn component_path_terminal_feature(
             .or_insert(Some(feature.id.as_str()));
     }
     for component in components.iter().rev() {
-        let source_id = u32::from_le_bytes(
-            component.type_signature[4..8]
-                .try_into()
-                .expect("four-byte component source"),
-        );
+        let source_id =
+            View::u32_le_at(&component.type_signature, 4).expect("four-byte component source");
         match by_source.get(&source_id) {
             Some(Some(feature)) => return Some((*feature).to_string()),
             Some(None) => return None,
@@ -172,7 +170,7 @@ pub(super) fn component_path_feature<'a>(
             .or_insert(Some(*feature));
     }
     let candidate = |component: &'a FeatureInputComponentPathEntry| {
-        let source_id = u32::from_le_bytes(component.type_signature[4..8].try_into().ok()?);
+        let source_id = View::u32_le_at(&component.type_signature, 4)?;
         let feature = by_source.get(&source_id)?.as_ref()?;
         (source_id < owner_source).then_some((component, *feature))
     };

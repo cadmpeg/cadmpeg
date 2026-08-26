@@ -3,11 +3,12 @@
 
 use crate::geometry::{Curve, CurveGeometry};
 use crate::ids::{CurveId, SubdId};
-use crate::math::Point3;
+use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 use crate::subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
-    SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
+    SubdScheme, SubdSecondaryGrip, SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdVertex,
+    SubdVertexGripLayout, SubdVertexTag,
 };
 use crate::topology::Color;
 use crate::validate::validate_neutral;
@@ -19,20 +20,24 @@ fn subd_rejects_short_rings_and_negative_sharpness() {
     ir.model.subds.push(SubdSurface {
         id: SubdId("synthetic:subd:surface#short".into()),
         scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
         vertices: vec![
             SubdVertex {
                 point: Point3::new(0.0, 0.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
             SubdVertex {
                 point: Point3::new(1.0, 0.0, 0.0),
                 tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
             },
         ],
         edges: vec![SubdEdge {
             vertices: [0, 1],
             sharpness: [-0.1, 0.0],
             tag: SubdEdgeTag::Smooth,
+            knot_interval: None,
             sector_coefficients: [0.0, 0.0],
         }],
         faces: vec![SubdFace {
@@ -56,6 +61,253 @@ fn subd_rejects_short_rings_and_negative_sharpness() {
     assert!(findings
         .iter()
         .any(|finding| finding.message.contains("edge 0 is invalid")));
+}
+
+#[test]
+fn subd_rejects_invalid_secondary_grip_sector_arity() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#grips".into()),
+        scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
+        vertices: vec![
+            SubdVertex {
+                point: Point3::new(0.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: Some(SubdVertexGripLayout {
+                    direction: SubdGripDirection::North,
+                    wedges: vec![SubdGripWedge {
+                        edge: Some(0),
+                        sector_face: None,
+                        phantom: false,
+                        spokes: vec![Some(SubdSecondaryGrip {
+                            source_index: 0,
+                            point: Point3::new(0.25, 0.0, 0.0),
+                            weight: 1.0,
+                        })],
+                        sectors: Vec::new(),
+                    }],
+                }),
+            },
+            SubdVertex {
+                point: Point3::new(1.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+        ],
+        edges: vec![SubdEdge {
+            vertices: [0, 1],
+            sharpness: [0.0, 0.0],
+            tag: SubdEdgeTag::Smooth,
+            knot_interval: None,
+            sector_coefficients: [0.0, 0.0],
+        }],
+        faces: Vec::new(),
+        source_object: None,
+    });
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("invalid sector arity")));
+}
+
+#[test]
+fn subd_rejects_secondary_grip_edge_not_incident_to_owner() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#grip-incidence".into()),
+        scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
+        vertices: vec![
+            SubdVertex {
+                point: Point3::new(0.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: Some(SubdVertexGripLayout {
+                    direction: SubdGripDirection::North,
+                    wedges: vec![SubdGripWedge {
+                        edge: Some(0),
+                        sector_face: None,
+                        phantom: false,
+                        spokes: Vec::new(),
+                        sectors: Vec::new(),
+                    }],
+                }),
+            },
+            SubdVertex {
+                point: Point3::new(1.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+            SubdVertex {
+                point: Point3::new(2.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+        ],
+        edges: vec![SubdEdge {
+            vertices: [1, 2],
+            sharpness: [0.0, 0.0],
+            tag: SubdEdgeTag::Smooth,
+            knot_interval: Some(1.0),
+            sector_coefficients: [0.0, 0.0],
+        }],
+        faces: Vec::new(),
+        source_object: None,
+    });
+
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("is not incident to its owner")));
+}
+
+#[test]
+fn subd_rejects_secondary_grip_sector_face_not_incident_to_owner() {
+    let edge = |vertices| SubdEdge {
+        vertices,
+        sharpness: [0.0, 0.0],
+        tag: SubdEdgeTag::Smooth,
+        knot_interval: Some(1.0),
+        sector_coefficients: [0.0, 0.0],
+    };
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#grip-sector-incidence".into()),
+        scheme: SubdScheme::CatmullClark,
+        symmetries: Vec::new(),
+        vertices: (0..4)
+            .map(|index| SubdVertex {
+                point: Point3::new(f64::from(index), 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: (index == 0).then_some(SubdVertexGripLayout {
+                    direction: SubdGripDirection::North,
+                    wedges: vec![SubdGripWedge {
+                        edge: Some(0),
+                        sector_face: Some(0),
+                        phantom: false,
+                        spokes: Vec::new(),
+                        sectors: Vec::new(),
+                    }],
+                }),
+            })
+            .collect(),
+        edges: vec![edge([0, 1]), edge([1, 2]), edge([2, 3]), edge([3, 1])],
+        faces: vec![SubdFace {
+            edges: vec![
+                SubdEdgeUse {
+                    edge: 1,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 2,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 3,
+                    reversed: false,
+                },
+            ],
+        }],
+        source_object: None,
+    });
+
+    assert!(validate_neutral(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding
+            .message
+            .contains("sector face is not incident to its owner")));
+}
+
+#[test]
+fn subd_rejects_invalid_symmetry_carriers() {
+    let mut ir = CadIr::empty(crate::units::Units::default());
+    ir.model.subds.push(SubdSurface {
+        id: SubdId("synthetic:subd:surface#symmetry".into()),
+        scheme: SubdScheme::CatmullClark,
+        symmetries: vec![SubdSymmetry {
+            kind: SubdSymmetryKind::Radial {
+                segments: 0,
+                sweep: f64::NAN,
+            },
+            plane: SubdPlaneFrame {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                first_axis: Vector3::new(1.0, 0.0, 0.0),
+                second_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            face_pairs: vec![[0, 1]],
+            edge_pairs: vec![[0, 1]],
+            vertex_pairs: vec![[0, 3]],
+            radial_maps: Vec::new(),
+        }],
+        vertices: vec![
+            SubdVertex {
+                point: Point3::new(0.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+            SubdVertex {
+                point: Point3::new(1.0, 0.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+            SubdVertex {
+                point: Point3::new(0.0, 1.0, 0.0),
+                tag: SubdVertexTag::Smooth,
+                secondary_grips: None,
+            },
+        ],
+        edges: vec![
+            SubdEdge {
+                vertices: [0, 1],
+                sharpness: [0.0, 0.0],
+                tag: SubdEdgeTag::Smooth,
+                knot_interval: None,
+                sector_coefficients: [0.0, 0.0],
+            },
+            SubdEdge {
+                vertices: [1, 2],
+                sharpness: [0.0, 0.0],
+                tag: SubdEdgeTag::Smooth,
+                knot_interval: None,
+                sector_coefficients: [0.0, 0.0],
+            },
+            SubdEdge {
+                vertices: [2, 0],
+                sharpness: [0.0, 0.0],
+                tag: SubdEdgeTag::Smooth,
+                knot_interval: None,
+                sector_coefficients: [0.0, 0.0],
+            },
+        ],
+        faces: vec![SubdFace {
+            edges: vec![
+                SubdEdgeUse {
+                    edge: 0,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 1,
+                    reversed: false,
+                },
+                SubdEdgeUse {
+                    edge: 2,
+                    reversed: false,
+                },
+            ],
+        }],
+        source_object: None,
+    });
+    let findings = validate_neutral(&ir, Vec::new()).findings;
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("plane frame is invalid")));
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("radial controls are invalid")));
+    assert!(findings
+        .iter()
+        .any(|finding| finding.message.contains("vertex pair 0 is invalid")));
 }
 
 #[test]

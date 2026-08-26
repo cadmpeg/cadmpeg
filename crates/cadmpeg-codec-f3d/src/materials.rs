@@ -14,7 +14,7 @@ use std::io::{Cursor, Write};
 use crate::records::{DesignBodyBinding, DesignMaterialAssignment};
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
     Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
@@ -115,14 +115,21 @@ pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecEr
     }
     let instance = page_logical(&logical)?;
     let mut catalog = RECORD_MARKER.to_vec();
-    for value in [
-        schema,
-        name,
-        "Default",
+    push_lp(&mut catalog, schema)?;
+    catalog.push(0);
+    push_lp(&mut catalog, name)?;
+    push_lp(&mut catalog, name)?;
+    catalog.extend_from_slice(&2_u32.to_le_bytes());
+    push_lp(
+        &mut catalog,
         appearance.category.as_deref().unwrap_or("Generated"),
-    ] {
-        push_lp(&mut catalog, value)?;
-    }
+    )?;
+    push_lp(&mut catalog, "Default")?;
+    push_lp(&mut catalog, "")?;
+    catalog.extend_from_slice(&0_u32.to_le_bytes());
+    catalog.extend_from_slice(&1_u32.to_le_bytes());
+    push_lp(&mut catalog, "")?;
+    let catalog = page_logical(&catalog)?;
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file("AssetData/InstanceProperties.bin", options)
@@ -466,6 +473,9 @@ pub struct DecodedMaterials {
     /// assigned to topology. This distinguishes an unassigned catalog from an
     /// assignment that failed to resolve.
     pub has_topology_assignments: bool,
+    /// Distance-valued texture properties omitted because their unit tag has
+    /// no defined model-space conversion.
+    pub untyped_distance_properties: usize,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without resolved
@@ -490,6 +500,7 @@ pub fn decode_with_body_bindings<'a>(
     body_bindings: &[DesignBodyBinding],
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
+    let mut untyped_distance_properties = 0usize;
     for entry in scan
         .entries
         .iter()
@@ -501,13 +512,18 @@ pub fn decode_with_body_bindings<'a>(
         let Some(instance) = instance_properties(ctx, protein)? else {
             continue;
         };
-        let Some(record_frames) = cadmpeg_protein::record_frames(instance.window()) else {
-            continue;
-        };
+        let record_frames = cadmpeg_protein::record_frames(instance.window()).ok_or_else(|| {
+            CodecError::Malformed("Protein InstanceProperties page framing is invalid".into())
+        })?;
         let catalog = definition_catalog(ctx, protein)?;
         let mut appearances = if cadmpeg_protein::has_schemas(protein.window()) {
             let records = cadmpeg_protein::decode(protein.window(), instance.window())?;
-            let mut decoded = appearances_from_schema_records(&records);
+            let (mut decoded, untyped_count) = appearances_from_schema_records(&records)?;
+            untyped_distance_properties = untyped_distance_properties
+                .checked_add(untyped_count)
+                .ok_or_else(|| {
+                    CodecError::Malformed("untyped material distance count overflows".into())
+                })?;
             let decoded_ids = decoded
                 .iter()
                 .map(|appearance| appearance.id.clone())
@@ -523,9 +539,18 @@ pub fn decode_with_body_bindings<'a>(
         };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
-                if let Some((schema, category)) = catalog.get(name) {
-                    appearance.schema = Some(schema.clone());
-                    appearance.category = category.clone();
+                let mut matches = catalog.iter().filter(|((asset_id, schema), _)| {
+                    asset_id == name
+                        && appearance
+                            .schema
+                            .as_ref()
+                            .is_none_or(|expected| expected == schema)
+                });
+                if let Some(((_, schema), category)) = matches.next() {
+                    if matches.next().is_none() {
+                        appearance.schema = Some(schema.clone());
+                        appearance.category = category.clone();
+                    }
                 }
             }
         }
@@ -614,16 +639,36 @@ pub fn decode_with_body_bindings<'a>(
         bindings,
         face_assignments,
         has_topology_assignments,
+        untyped_distance_properties,
     })
 }
 
-fn appearances_from_schema_records(records: &[cadmpeg_protein::DecodedRecord]) -> Vec<Appearance> {
-    let textures = records
-        .iter()
-        .filter_map(texture_asset)
-        .map(|texture| (texture.asset_guid.clone(), texture))
-        .collect::<BTreeMap<_, _>>();
-    records
+fn appearances_from_schema_records(
+    records: &[cadmpeg_protein::DecodedRecord],
+) -> Result<(Vec<Appearance>, usize), CodecError> {
+    let mut textures = BTreeMap::new();
+    let mut untyped_distance_properties = 0usize;
+    for (texture, untyped_count) in records.iter().map(texture_asset) {
+        untyped_distance_properties = untyped_distance_properties
+            .checked_add(untyped_count)
+            .ok_or_else(|| {
+                CodecError::Malformed("untyped material distance count overflows".into())
+            })?;
+        let Some(texture) = texture else { continue };
+        match textures.entry(texture.asset_guid.clone()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(texture);
+            }
+            std::collections::btree_map::Entry::Occupied(entry) if entry.get() == &texture => {}
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                return Err(CodecError::malformed(format_args!(
+                    "Protein texture asset {} has conflicting payloads",
+                    entry.key()
+                )));
+            }
+        }
+    }
+    let appearances = records
         .iter()
         .filter(|record| {
             !matches!(
@@ -666,7 +711,8 @@ fn appearances_from_schema_records(records: &[cadmpeg_protein::DecodedRecord]) -
                 textures: connected,
             }
         })
-        .collect()
+        .collect();
+    Ok((appearances, untyped_distance_properties))
 }
 
 /// Resolve the one schema member that supplies an appearance's neutral base
@@ -728,12 +774,12 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
         })
 }
 
-fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureRef> {
+fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> (Option<TextureRef>, usize) {
     if !matches!(
         record.schema.as_str(),
         "UnifiedBitmapSchema" | "BumpMapSchema"
     ) {
-        return None;
+        return (None, 0);
     }
     let paths = record
         .properties
@@ -757,6 +803,15 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureRef> 
                 _ => None,
             })
     });
+    let mut untyped_distance_properties = 0usize;
+    let mut distance = |suffix: &str, default| match distance_property(record, suffix) {
+        Ok(Some(value)) => value,
+        Ok(None) => default,
+        Err(_) => {
+            untyped_distance_properties += 1;
+            default
+        }
+    };
     let mapping = TextureMap2d {
         map_channel: integer_property(record, "MapChannel").unwrap_or(1),
         uvw_source: integer_property(record, "MapChannel_UVWSource_Advanced").unwrap_or(0),
@@ -767,17 +822,17 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureRef> 
         rotation: float_property(record, "WAngle").unwrap_or(0.0).to_radians(),
         repeat_u: boolean_property(record, "URepeat").unwrap_or(true),
         repeat_v: boolean_property(record, "VRepeat").unwrap_or(true),
-        real_world_offset_x: distance_property(record, "RealWorldOffsetX").unwrap_or(0.0),
-        real_world_offset_y: distance_property(record, "RealWorldOffsetY").unwrap_or(0.0),
-        real_world_scale_x: distance_property(record, "RealWorldScaleX").unwrap_or(0.0),
-        real_world_scale_y: distance_property(record, "RealWorldScaleY").unwrap_or(0.0),
+        real_world_offset_x: distance("RealWorldOffsetX", 0.0),
+        real_world_offset_y: distance("RealWorldOffsetY", 0.0),
+        real_world_scale_x: distance("RealWorldScaleX", 0.0),
+        real_world_scale_y: distance("RealWorldScaleY", 0.0),
     };
     let bump = (record.schema == "BumpMapSchema").then(|| BumpMap {
         normal_map: integer_property(record, "bumpmap_Type") == Some(1),
-        depth: distance_property(record, "bumpmap_Depth").unwrap_or(0.0),
+        depth: distance("bumpmap_Depth", 0.0),
         normal_scale: float_property(record, "bumpmap_NormalScale").unwrap_or(1.0),
     });
-    Some(TextureRef {
+    let texture = TextureRef {
         asset_guid: record.guid.clone(),
         slot: String::new(),
         schema: record.schema.clone(),
@@ -785,7 +840,11 @@ fn texture_asset(record: &cadmpeg_protein::DecodedRecord) -> Option<TextureRef> 
         urn,
         mapping,
         bump,
-    })
+    };
+    (
+        (untyped_distance_properties == 0).then_some(texture),
+        untyped_distance_properties,
+    )
 }
 
 fn property_with_suffix<'a>(
@@ -833,17 +892,20 @@ fn boolean_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Op
     }
 }
 
-fn distance_property(record: &cadmpeg_protein::DecodedRecord, suffix: &str) -> Option<f64> {
-    let cadmpeg_protein::PropertyValue::Distance { unit, value } =
-        property_with_suffix(record, suffix)?
+fn distance_property(
+    record: &cadmpeg_protein::DecodedRecord,
+    suffix: &str,
+) -> Result<Option<f64>, u32> {
+    let Some(cadmpeg_protein::PropertyValue::Distance { unit, value }) =
+        property_with_suffix(record, suffix)
     else {
-        return None;
+        return Ok(None);
     };
     match *unit {
-        0x2016 => Some(*value * 25.4),
-        0x200e => Some(*value),
-        0x200d => Some(*value * 10.0),
-        _ => None,
+        0x2016 => Ok(Some(*value * 25.4)),
+        0x200e => Ok(Some(*value)),
+        0x200d => Ok(Some(*value * 10.0)),
+        unit => Err(unit),
     }
 }
 
@@ -1621,6 +1683,20 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
     let mut out = Vec::new();
     let mut offset = 0usize;
     while offset + 4 <= bytes.len() {
+        let Some(count) =
+            View::u32_le_at(bytes, offset).and_then(|count| usize::try_from(count).ok())
+        else {
+            offset += 1;
+            continue;
+        };
+        let Some(payload_at) = offset.checked_add(4) else {
+            offset += 1;
+            continue;
+        };
+        if !(2..=256).contains(&count) || !utf16_string_prefix_is_text(bytes, payload_at, count) {
+            offset += 1;
+            continue;
+        }
         if let Some((value, record_len)) = lp_utf16_string_at(bytes, offset) {
             out.push((offset, value));
             offset += record_len;
@@ -1629,6 +1705,43 @@ fn lp_utf16_strings(bytes: &[u8]) -> Vec<(usize, String)> {
         }
     }
     out
+}
+
+/// Reject an unframed string candidate before decoding its full declared run.
+///
+/// Appearance streams contain several unrelated binary records, so scanning
+/// every byte can encounter a plausible length word whose payload is not text.
+/// Checking only the first four code units keeps the heuristic bounded while
+/// accepting supplementary-plane characters whose surrogate pair spans the
+/// prefix boundary. The full strict decode remains authoritative.
+fn utf16_string_prefix_is_text(bytes: &[u8], payload_at: usize, count: usize) -> bool {
+    let prefix_count = count.min(4);
+    let mut high_surrogate = false;
+    for ordinal in 0..prefix_count {
+        let Some(unit_offset) = ordinal
+            .checked_mul(2)
+            .and_then(|delta| payload_at.checked_add(delta))
+        else {
+            return false;
+        };
+        let Some(unit) = View::u16_le_at(bytes, unit_offset) else {
+            return false;
+        };
+        if high_surrogate && !(0xdc00..=0xdfff).contains(&unit) {
+            return false;
+        }
+        match unit {
+            0 => return false,
+            0xd800..=0xdbff => high_surrogate = true,
+            0xdc00..=0xdfff if !high_surrogate => return false,
+            0xdc00..=0xdfff => high_surrogate = false,
+            value if char::from_u32(u32::from(value)).is_some_and(|value| !value.is_control()) => {
+                high_surrogate = false;
+            }
+            _ => return false,
+        }
+    }
+    true
 }
 
 /// Decode one LP-UTF16 string at `offset`. Rejects a count outside 2..=256,
@@ -1674,50 +1787,136 @@ fn instance_properties<'a>(
 fn definition_catalog<'a>(
     ctx: &DecodeContext<'a>,
     protein: View<'a>,
-) -> Result<std::collections::HashMap<String, (String, Option<String>)>, CodecError> {
+) -> Result<std::collections::HashMap<(String, String), Option<String>>, CodecError> {
     let Some(entry) = nested_entry(ctx, protein, "AssetData/DefinitionIteratorProperties.bin")?
     else {
         return Ok(std::collections::HashMap::new());
     };
-    let bytes = entry.window();
-    let marker = b"\x80\x00\x01\x00";
-    let starts: Vec<usize> = bytes
-        .windows(marker.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == marker).then_some(offset))
-        .collect();
-    let mut out = std::collections::HashMap::new();
-    for (index, start) in starts.iter().enumerate() {
-        let end = starts.get(index + 1).copied().unwrap_or(bytes.len());
-        let mut strings = Vec::new();
-        let mut position = *start + marker.len();
-        while position + 4 <= end && strings.len() < 8 {
-            let length = View::u32_le_at(bytes, position)
-                .expect("invariant: position + 4 <= end <= bytes.len()")
-                as usize;
-            if (1..=200).contains(&length) && position + 4 + length <= end {
-                let raw = &bytes[position + 4..position + 4 + length];
-                if raw.iter().all(|byte| (0x20..=0x7e).contains(byte)) {
-                    strings.push(String::from_utf8_lossy(raw).into_owned());
-                    position += 4 + length;
-                    continue;
-                }
-            }
-            position += 1;
+    let frames = cadmpeg_protein::record_frames(entry.window()).ok_or_else(|| {
+        CodecError::Malformed("cannot frame Protein DefinitionIteratorProperties pages".into())
+    })?;
+    let mut definitions = std::collections::HashMap::new();
+    for frame in frames {
+        let definition = decode_definition_catalog_record(&frame.bytes)?;
+        merge_definition_catalog_record(&mut definitions, definition);
+    }
+    Ok(definitions
+        .into_iter()
+        .map(|((asset_id, schema), definition)| ((asset_id, schema), definition.category))
+        .collect())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct DefinitionCatalogRecord {
+    schema: String,
+    asset_id: String,
+    base_asset_id: String,
+    category: Option<String>,
+    group: Option<String>,
+    subgroup: Option<String>,
+    description: String,
+    tags: Vec<String>,
+    preview_paths: Vec<String>,
+}
+
+fn merge_definition_catalog_record(
+    definitions: &mut std::collections::HashMap<(String, String), DefinitionCatalogRecord>,
+    definition: DefinitionCatalogRecord,
+) {
+    let key = (definition.asset_id.clone(), definition.schema.clone());
+    match definitions.entry(key) {
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(definition);
         }
-        if strings
-            .first()
-            .is_some_and(|schema| schema.ends_with("Schema"))
-        {
-            if let Some(asset_id) = strings.get(1) {
-                out.insert(
-                    asset_id.clone(),
-                    (strings[0].clone(), strings.get(3).cloned()),
-                );
+        std::collections::hash_map::Entry::Occupied(mut entry) => {
+            if entry.get().category != definition.category {
+                entry.get_mut().category = None;
             }
         }
     }
-    Ok(out)
+}
+
+fn decode_definition_catalog_record(record: &[u8]) -> Result<DefinitionCatalogRecord, CodecError> {
+    let malformed = malformed_definition_catalog_record;
+    if !record.starts_with(RECORD_MARKER) {
+        return Err(malformed("marker", 0));
+    }
+    let mut position = RECORD_MARKER.len();
+    let schema =
+        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("schema", position))?;
+    let flag = *record
+        .get(position)
+        .ok_or_else(|| malformed("flag", position))?;
+    if flag > 1 {
+        return Err(malformed("flag", position));
+    }
+    position += 1;
+    let asset_id = take_lp_utf8(record, &mut position)
+        .ok_or_else(|| malformed("asset identifier", position))?;
+    let base_asset_id = take_lp_utf8(record, &mut position)
+        .ok_or_else(|| malformed("base asset identifier", position))?;
+    let version =
+        View::u32_le_at(record, position).ok_or_else(|| malformed("format version", position))?;
+    position += 4;
+    if version > 3 {
+        return Err(malformed("format version", position - 4));
+    }
+    let category = if version >= 2 {
+        Some(take_lp_utf8(record, &mut position).ok_or_else(|| malformed("category", position))?)
+    } else {
+        None
+    };
+    let group = if version >= 1 {
+        Some(take_lp_utf8(record, &mut position).ok_or_else(|| malformed("group", position))?)
+    } else {
+        None
+    };
+    let subgroup = if version == 3 {
+        Some(take_lp_utf8(record, &mut position).ok_or_else(|| malformed("subgroup", position))?)
+    } else {
+        None
+    };
+    let description =
+        take_lp_utf8(record, &mut position).ok_or_else(|| malformed("description", position))?;
+    let tags = take_catalog_strings(record, &mut position)?;
+    let preview_paths = take_catalog_strings(record, &mut position)?;
+    if record[position..].iter().any(|byte| *byte != 0) {
+        return Err(malformed("trailing padding", position));
+    }
+    Ok(DefinitionCatalogRecord {
+        schema,
+        asset_id,
+        base_asset_id,
+        category,
+        group,
+        subgroup,
+        description,
+        tags,
+        preview_paths,
+    })
+}
+
+fn malformed_definition_catalog_record(_field: &str, _position: usize) -> CodecError {
+    CodecError::Malformed("Protein definition catalog record is malformed".into())
+}
+
+fn take_catalog_strings(record: &[u8], position: &mut usize) -> Result<Vec<String>, CodecError> {
+    let count = View::u32_le_at(record, *position)
+        .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
+    *position += 4;
+    let count = bounded_len(u64::from(count), 4, record.len().saturating_sub(*position))
+        .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
+    let mut values = Vec::new();
+    values
+        .try_reserve(count)
+        .map_err(|_| malformed_definition_catalog_record("string capacity", *position))?;
+    for _ in 0..count {
+        values.push(
+            take_lp_utf8(record, position)
+                .ok_or_else(|| malformed_definition_catalog_record("string", *position))?,
+        );
+    }
+    Ok(values)
 }
 
 pub(crate) fn nested_entry<'a>(

@@ -14,6 +14,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::history::literals::{parse_point3_mm, parse_vector3};
 
+const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9: f64 = 1e-9;
+const EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8: f64 = 1e-8;
+
 pub(crate) type SurfaceSelectionFaceBindings =
     HashMap<(String, String), Option<Vec<cadmpeg_ir::ids::FaceId>>>;
 
@@ -474,7 +477,8 @@ pub(crate) fn resolve_planar_face_selection(
                 + displacement.y * candidate_normal.y
                 + displacement.z * candidate_normal.z)
                 / candidate_length;
-            ((alignment.abs() - 1.0).abs() <= 1.0e-9 && separation.abs() <= 1.0e-8)
+            ((alignment.abs() - 1.0).abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E9
+                && separation.abs() <= EPS_SELECTIONS_RESOLVE_PLANAR_FACE_SELECTION_E8)
                 .then_some(face.id.clone())
         })
         .collect::<Vec<_>>();

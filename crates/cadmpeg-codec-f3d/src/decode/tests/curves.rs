@@ -505,7 +505,7 @@ fn generated_subset_curve_decodes_edits_and_writes_source_less() {
             .expect("subset fit tolerance")
             - 0.006)
             .abs()
-            < 1e-12
+            < 1.0e-12
     );
 
     let mut edited = result.ir().clone();
@@ -889,7 +889,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .expect("compound fit tolerance")
             - 0.003)
             .abs()
-            < 1e-12
+            < 1.0e-12
     );
     let component_ids = components.clone();
 

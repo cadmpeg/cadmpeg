@@ -105,24 +105,25 @@ fn decode_builds_valid_topology_and_geometry() {
 
 #[test]
 fn history_topology_decode_matches_full_brep_graph() {
-    for bytes in [
-        synthetic_geometry_with_pcurve_smbh(),
-        synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"),
+    for (bytes, expected_tag_count) in [
+        (synthetic_geometry_with_pcurve_smbh(), 0),
+        (synthetic_geometry_with_face_attribute_smbh(), 3),
+        (synthetic_full_rolling_ball_smbh("rb_blend_spl_sur"), 0),
     ] {
         let start = asm_header::record_stream_start(&bytes).expect("record stream start");
         let limit = asm_header::solved_record_limit(&bytes).expect("solved record limit");
         let records = cadmpeg_asm::sab::frame(&bytes, start, limit, 8).expect("frame BREP");
 
-        let full = crate::history::historical_topology(
-            &crate::brep::decode(&records, &bytes, "full", crate::ids::ID_FORMAT).asm,
-        )
-        .expect("full topology");
-        let history = crate::history::historical_topology(
-            &crate::brep::decode_history_topology(&records, &bytes, crate::ids::ID_FORMAT).asm,
-        )
-        .expect("history topology");
+        let full_brep = crate::brep::decode(&records, &bytes, "full", crate::ids::ID_FORMAT);
+        let full =
+            crate::history::historical_topology_with_tags(&full_brep).expect("full topology");
+        let history_brep =
+            crate::brep::decode_history_topology(&records, &bytes, crate::ids::ID_FORMAT);
+        let history =
+            crate::history::historical_topology_with_tags(&history_brep).expect("history topology");
 
         assert_eq!(history, full);
+        assert_eq!(history.persistent_subentity_tags.len(), expected_tag_count);
     }
 }
 
@@ -1006,7 +1007,7 @@ fn analytic_carrier_decode_covers_each_shape() {
             ref_direction,
             ..
         } => {
-            assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1e-12);
+            assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, 1.0, "positive slope keeps the axis");
             assert_eq!(ref_direction, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
         }
@@ -1036,9 +1037,9 @@ fn analytic_carrier_decode_covers_each_shape() {
             radius,
             ..
         } => {
-            assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1e-12);
+            assert!((half_angle - 0.5f64.atan2(0.866_025_4)).abs() < 1.0e-12);
             assert_eq!(axis.z, -1.0, "negative slope flips the axis");
-            assert!((radius - 46.55).abs() < 1e-12);
+            assert!((radius - 46.55).abs() < 1.0e-12);
         }
         other => panic!("expected cone, got {other:?}"),
     }

@@ -14,6 +14,11 @@ use cadmpeg_ir::transform::{Transform, Transform2};
 
 use crate::writer::{real, refs, Emitter, Ref};
 
+const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12: f64 = 1.0e-12;
+const EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10: f64 = 1.0e-10;
+const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10: f64 = 1.0e-10;
+const EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12: f64 = 1.0e-12;
+
 pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
     match surface {
         SurfaceGeometry::Transformed { basis, transform } => {
@@ -95,10 +100,10 @@ fn similarity_transform(transform: &Transform) -> bool {
         .iter()
         .flatten()
         .any(|value| !value.is_finite())
-        || transform.rows[3][0].abs() > 1.0e-12
-        || transform.rows[3][1].abs() > 1.0e-12
-        || transform.rows[3][2].abs() > 1.0e-12
-        || (transform.rows[3][3] - 1.0).abs() > 1.0e-12
+        || transform.rows[3][0].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
+        || transform.rows[3][1].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
+        || transform.rows[3][2].abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
+        || (transform.rows[3][3] - 1.0).abs() > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
     {
         return false;
     }
@@ -120,8 +125,8 @@ fn similarity_transform(transform: &Transform) -> bool {
         ),
     ];
     let scale = columns[0].norm();
-    let tolerance = 1.0e-10 * scale.max(1.0);
-    scale > 1.0e-12
+    let tolerance = EPS_GEOMETRY_SIMILARITY_TRANSFORM_E10 * scale.max(1.0);
+    scale > EPS_GEOMETRY_SIMILARITY_TRANSFORM_E12
         && columns
             .iter()
             .all(|column| (column.norm() - scale).abs() <= tolerance)
@@ -158,8 +163,8 @@ fn similarity_transform_2d(transform: &Transform2) -> bool {
     let first = Point2::new(transform.rows[0][0], transform.rows[1][0]);
     let second = Point2::new(transform.rows[0][1], transform.rows[1][1]);
     let scale = first.u.hypot(first.v);
-    let tolerance = 1.0e-10 * scale.max(1.0);
-    scale > 1.0e-12
+    let tolerance = EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E10 * scale.max(1.0);
+    scale > EPS_GEOMETRY_SIMILARITY_TRANSFORM_2D_E12
         && (second.u.hypot(second.v) - scale).abs() <= tolerance
         && (first.u * second.u + first.v * second.v).abs() <= tolerance * scale
 }

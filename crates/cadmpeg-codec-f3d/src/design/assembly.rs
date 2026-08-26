@@ -5,26 +5,228 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
-    AssemblyJoint, ExternalDocumentReference, ExternalResolution, JointKind, JointOperand,
+    AssemblyJoint, ExternalDocumentReference, ExternalResolution, JointKind, JointLimits,
+    JointOperand,
 };
 
 use crate::ids::native_stream;
 use crate::records::{
-    DesignAssemblyAxialOperandTarget, DesignAssemblyOperandPath, DesignComponentOccurrence,
-    DesignParameterScope,
+    DesignAssemblyAxialOperandTarget, DesignAssemblyLegacyOperand, DesignAssemblyLimitKind,
+    DesignAssemblyOperandQualifier, DesignComponentOccurrence, DesignParameterScope,
 };
+
+/// One exact generation of the legacy 421-byte `As-built` alignment grammar.
+///
+/// The scope class pair is the admission key. All other fields are part of
+/// that key's grammar and must not be inferred from a neighboring generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LegacyAsBuilt421Generation {
+    Class364,
+    Class420,
+    Class417,
+    Class457,
+}
+
+/// Operand-frame form for a non-axial `Assemble` scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AssemblyOperandFrameVariant {
+    Standard,
+    Compact,
+    Axial,
+    LegacyClass388,
+}
+
+/// Whether a scope belongs to the variable-reference `Assemble` generation.
+///
+/// This generation keeps the standard operand and locator prefix while its
+/// owner and reference trailers grow with additional placement and limit
+/// groups. The class pair, rather than the total frame length, admits it.
+pub(crate) fn variable_reference_assembly_generation(
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> bool {
+    matches!(
+        (class_tag, paired_class_tag),
+        ("283", "264") | ("347", "260")
+    )
+}
+
+/// Select the exact operand-frame grammar admitted for an `Assemble` scope.
+///
+/// The class-430 generation is keyed by both class tags because its 744- and
+/// 748-byte spans are also used by other scope families with different
+/// payloads. Those spans must not become a frame-length-only admission.
+/// The 671-byte generation is likewise keyed to class-406 paired with
+/// class-261; its standard payload is not a generic length variant.
+pub(crate) fn operand_frame_variant(
+    frame_length: u64,
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> Option<AssemblyOperandFrameVariant> {
+    if variable_reference_assembly_generation(class_tag, paired_class_tag) {
+        return Some(AssemblyOperandFrameVariant::Standard);
+    }
+    match frame_length {
+        length
+            if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64
+                && class_tag == "388"
+                && paired_class_tag == "266" =>
+        {
+            Some(AssemblyOperandFrameVariant::LegacyClass388)
+        }
+        length
+            if length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64
+                && class_tag == "383"
+                && paired_class_tag == "258" =>
+        {
+            Some(AssemblyOperandFrameVariant::Standard)
+        }
+        627 | 637 | 692 => Some(AssemblyOperandFrameVariant::Standard),
+        671 if class_tag == "406" && paired_class_tag == "261" => {
+            Some(AssemblyOperandFrameVariant::Standard)
+        }
+        633 | 732 => Some(AssemblyOperandFrameVariant::Compact),
+        744 if class_tag == "430" && paired_class_tag == "262" => {
+            Some(AssemblyOperandFrameVariant::Compact)
+        }
+        748 if class_tag == "430" && paired_class_tag == "262" => {
+            Some(AssemblyOperandFrameVariant::Standard)
+        }
+        705 | 772 => Some(AssemblyOperandFrameVariant::Axial),
+        _ => None,
+    }
+}
+
+/// Admit the legacy 383/258 assembly scope only as its exact generation.
+pub(crate) fn legacy_class_383_258_scope(
+    frame_length: u64,
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> bool {
+    frame_length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64
+        && class_tag == "383"
+        && paired_class_tag == "258"
+}
+
+impl LegacyAsBuilt421Generation {
+    /// Owner-frame primary class for the six scalar lanes.
+    pub(crate) const fn owner_class_tag(self) -> &'static str {
+        match self {
+            Self::Class364 => "293",
+            Self::Class420 => "378",
+            Self::Class417 => "318",
+            Self::Class457 => "418",
+        }
+    }
+
+    /// Owner-frame paired class.
+    pub(crate) const fn owner_paired_class_tag(self) -> &'static str {
+        match self {
+            Self::Class364 => "272",
+            Self::Class420 => "262",
+            Self::Class417 => "263",
+            Self::Class457 => "258",
+        }
+    }
+
+    /// Solved connector-frame primary class named by reference-table entry 8.
+    pub(crate) const fn frame_class_tag(self) -> &'static str {
+        match self {
+            Self::Class364 => "376",
+            Self::Class420 => "327",
+            Self::Class417 => "448",
+            Self::Class457 => "297",
+        }
+    }
+
+    /// Solved connector-frame paired class.
+    pub(crate) const fn frame_paired_class_tag(self) -> &'static str {
+        self.owner_paired_class_tag()
+    }
+
+    /// Byte length from the solved frame primary header to its paired header.
+    pub(crate) const fn frame_length(self) -> usize {
+        match self {
+            Self::Class364 => 389,
+            Self::Class420 | Self::Class417 => 390,
+            Self::Class457 => 385,
+        }
+    }
+
+    /// Offset of the four-byte marker immediately before the solved matrix.
+    pub(crate) const fn matrix_prefix(self) -> usize {
+        match self {
+            Self::Class420 | Self::Class417 => 46,
+            Self::Class364 | Self::Class457 => 45,
+        }
+    }
+
+    /// Offset of the first f64 in the solved row-major matrix.
+    pub(crate) const fn matrix_offset(self) -> usize {
+        match self {
+            Self::Class420 | Self::Class417 => 50,
+            Self::Class364 | Self::Class457 => 49,
+        }
+    }
+
+    /// Domain of the two limit lanes.
+    pub(crate) const fn limit_kind(self) -> DesignAssemblyLimitKind {
+        match self {
+            Self::Class364 => DesignAssemblyLimitKind::Angular,
+            Self::Class420 | Self::Class417 | Self::Class457 => DesignAssemblyLimitKind::Linear,
+        }
+    }
+
+    /// Whether source limit lanes are stored maximum then minimum.
+    pub(crate) const fn reverse_limit_order(self) -> bool {
+        matches!(self, Self::Class420 | Self::Class417)
+    }
+}
+
+/// Admit one exact 421-byte `As-built` scope generation.
+pub(crate) fn legacy_as_built_421_generation(
+    frame_length: u64,
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> Option<LegacyAsBuilt421Generation> {
+    if frame_length != 421 {
+        return None;
+    }
+    match (class_tag, paired_class_tag) {
+        ("364", "272") => Some(LegacyAsBuilt421Generation::Class364),
+        ("420", "262") => Some(LegacyAsBuilt421Generation::Class420),
+        ("417", "263") => Some(LegacyAsBuilt421Generation::Class417),
+        ("457", "258") => Some(LegacyAsBuilt421Generation::Class457),
+        _ => None,
+    }
+}
 
 /// Return the half-open owner-lane range that carries assembly alignment.
 ///
 /// The serialized frame length fixes both the Cartesian/axial form and the
 /// number of placement lanes that precede the alignment values.
-pub(crate) const fn alignment_lane_bounds(
+pub(crate) fn alignment_lane_bounds(
     frame_length: u64,
+    class_tag: &str,
+    paired_class_tag: &str,
     owner_count: usize,
 ) -> Option<(usize, usize)> {
+    if variable_reference_assembly_generation(class_tag, paired_class_tag)
+        && owner_count >= 12
+        && matches!((owner_count - 12) % 4, 0 | 2)
+    {
+        return Some((8, 12));
+    }
     match (frame_length, owner_count) {
+        (length, 28) if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64 => {
+            Some((4, 8))
+        }
+        (length, 20) if length == crate::layout::assembly_class_383_258_scope_1011::LEN as u64 => {
+            Some((8, 12))
+        }
         (399 | 627 | 633 | 637 | 692, 4) => Some((0, 4)),
-        (604 | 732, 8) => Some((4, 8)),
+        (671, 6) => Some((4, 6)),
+        (604 | 732 | 744 | 748, 8) => Some((4, 8)),
         (705, 6) => Some((4, 6)),
         (772, 10) => Some((8, 10)),
         _ => None,
@@ -33,11 +235,26 @@ pub(crate) const fn alignment_lane_bounds(
 
 /// Return the scope-relative marker offsets of the two ordered operand-path
 /// locator references carried by a non-axial assembly frame.
-pub(crate) const fn operand_path_locator_offsets(frame_length: u64) -> Option<[usize; 2]> {
+pub(crate) fn operand_path_locator_offsets(
+    frame_length: u64,
+    class_tag: &str,
+    paired_class_tag: &str,
+) -> Option<[usize; 2]> {
+    if variable_reference_assembly_generation(class_tag, paired_class_tag) {
+        return Some([366, 377]);
+    }
     match frame_length {
         399 => Some([51, 62]),
-        627 | 637 | 692 => Some([366, 377]),
-        633 | 732 => Some([362, 373]),
+        length if length == crate::layout::assembly_class_388_266_scope_968::LEN as u64 => Some([
+            crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES,
+            crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES + 11,
+        ]),
+        627 | 637 | 692 | 748 => Some([366, 377]),
+        671 => Some([
+            crate::layout::assembly_class_406_261_scope_671::FIRST_LOCATOR_REFERENCE,
+            crate::layout::assembly_class_406_261_scope_671::SECOND_LOCATOR_REFERENCE,
+        ]),
+        633 | 732 | 744 => Some([362, 373]),
         _ => None,
     }
 }
@@ -69,16 +286,31 @@ pub(crate) fn project_assembly_joints(
         let Some(frames) = &alignment.operand_frames else {
             continue;
         };
-        let operands = match (
-            alignment.operand_paths.as_ref(),
-            alignment.axial_operand_targets.as_ref(),
-        ) {
-            (Some(paths), None) => project_path_operands(paths, stream, &occurrences),
-            (None, Some(targets)) => project_axial_operands(targets, stream, scopes, features),
-            _ => None,
+        let operands = if let Some(carriers) = alignment.legacy_operand_carriers.as_ref() {
+            project_legacy_operands(carriers)
+        } else {
+            alignment
+                .operand_qualifiers
+                .as_ref()
+                .and_then(|qualifiers| {
+                    project_qualified_operands(qualifiers, stream, &occurrences, scopes, features)
+                })
         };
         let Some(operands) = operands else {
             continue;
+        };
+        let (angular_limits, linear_limits) = match alignment.limits.as_ref() {
+            Some(limits) => {
+                let projected = JointLimits {
+                    minimum: Some(limits.minimum),
+                    maximum: Some(limits.maximum),
+                };
+                match limits.kind {
+                    DesignAssemblyLimitKind::Angular => (Some(projected), None),
+                    DesignAssemblyLimitKind::Linear => (None, Some(projected)),
+                }
+            }
+            None => (None, None),
         };
         let id = crate::ids::neutral_assembly_joint_id(scope);
         joints.entry(id.0.clone()).or_insert_with(|| AssemblyJoint {
@@ -96,8 +328,8 @@ pub(crate) fn project_assembly_joints(
             translation_offset: Some(alignment.offset.map(|value| value * 10.0)),
             distance: None,
             distance2: None,
-            angular_limits: None,
-            linear_limits: None,
+            angular_limits,
+            linear_limits,
             properties: BTreeMap::new(),
             native_ref: Some(scope.id.clone()),
         });
@@ -105,90 +337,116 @@ pub(crate) fn project_assembly_joints(
     joints.into_values().collect()
 }
 
-fn project_path_operands(
-    paths: &[DesignAssemblyOperandPath; 2],
-    stream: &str,
-    occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
+fn project_legacy_operands(
+    carriers: &[DesignAssemblyLegacyOperand; 2],
 ) -> Option<Vec<JointOperand>> {
-    paths
+    carriers
         .iter()
-        .map(|path| {
-            let root_guid = path.occurrence_guids.first()?;
-            let occurrence = occurrences
-                .get(&(stream, root_guid.to_ascii_lowercase()))
-                .copied()
-                .flatten();
-            if occurrence.is_none() && path.class_tag != "386" {
-                return None;
-            }
+        .map(|carrier| {
             Some(JointOperand {
-                occurrence: occurrence
-                    .map(|_| crate::ids::neutral_component_occurrence_id(root_guid)),
-                external_document: occurrence.is_none().then(|| ExternalDocumentReference {
-                    path: None,
-                    document_id: path.identity_guids.first().cloned(),
-                    resolution: ExternalResolution::Unresolved,
-                }),
-                object: Some(root_guid.to_ascii_lowercase()),
-                subelements: path.occurrence_guids[1..]
-                    .iter()
-                    .map(|guid| guid.to_ascii_lowercase())
-                    .collect(),
+                occurrence: None,
+                external_document: None,
+                object: Some(crate::ids::neutral_assembly_legacy_object_id(
+                    &carrier.selection,
+                )),
+                subelements: Vec::new(),
             })
         })
         .collect()
 }
 
-fn project_axial_operands(
-    targets: &[DesignAssemblyAxialOperandTarget; 2],
+fn project_qualified_operands(
+    qualifiers: &[DesignAssemblyOperandQualifier; 2],
     stream: &str,
+    occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
     scopes: &[DesignParameterScope],
     features: &[Feature],
 ) -> Option<Vec<JointOperand>> {
-    targets
+    qualifiers
         .iter()
-        .map(|target| match target {
-            DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
-                component_insert_scope_record_index,
-                selectors,
-                ..
-            } => {
-                let target_scope = unique_scope(
-                    scopes,
-                    stream,
-                    *component_insert_scope_record_index,
-                    "Component Insert",
-                )?;
-                let feature = unique_feature(features, &target_scope.id)?;
-                let FeatureDefinition::InsertComponent { occurrence } = &feature.definition else {
-                    return None;
-                };
-                Some(JointOperand {
-                    occurrence: Some(occurrence.clone()),
-                    external_document: None,
-                    object: Some(crate::ids::neutral_assembly_axial_object_id(&selectors[0])),
-                    subelements: Vec::new(),
-                })
-            }
-            DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin { scope_record_index } => {
-                let target_scope =
-                    unique_scope(scopes, stream, *scope_record_index, "JointOrigin")?;
-                let feature = unique_feature(features, &target_scope.id)?;
-                if !matches!(
-                    feature.definition,
-                    FeatureDefinition::DatumCoordinateSystem { .. }
-                ) {
+        .map(|qualifier| match qualifier {
+            DesignAssemblyOperandQualifier::OccurrencePath { path } => {
+                let root_guid = path.occurrence_guids.first()?;
+                let occurrence = occurrences
+                    .get(&(stream, root_guid.to_ascii_lowercase()))
+                    .copied()
+                    .flatten();
+                if occurrence.is_none() && !matches!(path.class_tag.as_str(), "330" | "386") {
                     return None;
                 }
                 Some(JointOperand {
-                    occurrence: None,
-                    external_document: None,
-                    object: Some(crate::ids::neutral_feature_id(target_scope).0),
-                    subelements: Vec::new(),
+                    occurrence: occurrence
+                        .map(|_| crate::ids::neutral_component_occurrence_id(root_guid)),
+                    external_document: occurrence.is_none().then(|| ExternalDocumentReference {
+                        path: None,
+                        document_id: path.identity_guids.first().cloned(),
+                        resolution: ExternalResolution::Unresolved,
+                    }),
+                    object: Some(root_guid.to_ascii_lowercase()),
+                    subelements: path.occurrence_guids[1..]
+                        .iter()
+                        .map(|guid| guid.to_ascii_lowercase())
+                        .collect(),
                 })
             }
+            DesignAssemblyOperandQualifier::AxialTarget { target } => match target {
+                DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                    component_insert_scope_record_index,
+                    selectors,
+                    ..
+                } => {
+                    let target_scope = unique_scope(
+                        scopes,
+                        stream,
+                        *component_insert_scope_record_index,
+                        "Component Insert",
+                    )?;
+                    let feature = unique_feature(features, &target_scope.id)?;
+                    let FeatureDefinition::InsertComponent { occurrence } = &feature.definition
+                    else {
+                        return None;
+                    };
+                    Some(JointOperand {
+                        occurrence: Some(occurrence.clone()),
+                        external_document: None,
+                        object: Some(crate::ids::neutral_assembly_axial_object_id(&selectors[0])),
+                        subelements: Vec::new(),
+                    })
+                }
+                DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+                    scope_record_index,
+                } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
+            },
+            DesignAssemblyOperandQualifier::JointOrigin {
+                scope_record_index, ..
+            } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
         })
         .collect()
+}
+
+fn project_joint_origin_operand(
+    scope_record_index: u32,
+    stream: &str,
+    scopes: &[DesignParameterScope],
+    features: &[Feature],
+) -> Option<JointOperand> {
+    let target_scope = unique_scope(scopes, stream, scope_record_index, "JointOrigin")?;
+    if let Some(feature) = unique_feature(features, &target_scope.id) {
+        if !matches!(
+            feature.definition,
+            FeatureDefinition::DatumCoordinateSystem { .. }
+        ) {
+            return None;
+        }
+    } else if target_scope.joint_origin_transform.is_none() {
+        return None;
+    }
+    Some(JointOperand {
+        occurrence: None,
+        external_document: None,
+        object: Some(crate::ids::neutral_feature_id(target_scope).0),
+        subelements: Vec::new(),
+    })
 }
 
 fn unique_scope<'a>(
@@ -223,6 +481,7 @@ fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Tra
 
 #[cfg(test)]
 mod tests {
+    use crate::records::DesignAssemblyOperandQualifier;
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
@@ -230,7 +489,8 @@ mod tests {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     use crate::records::{
-        DesignAssemblyAxialOperandTarget, DesignAssemblyAxialSelectorIdentity, DesignParameterScope,
+        DesignAssemblyAxialOperandTarget, DesignAssemblyAxialSelectorIdentity,
+        DesignAssemblyLimitKind, DesignParameterScope,
     };
 
     fn selector() -> DesignAssemblyAxialSelectorIdentity {
@@ -335,47 +595,254 @@ mod tests {
     }
 
     #[test]
+    fn legacy_as_built_421_generation_map_is_exact() {
+        for (
+            scope_class,
+            scope_paired_class,
+            owner_class,
+            owner_paired_class,
+            frame_class,
+            frame_paired_class,
+            frame_length,
+            matrix_prefix,
+            matrix_offset,
+            limit_kind,
+            reverse_limit_order,
+        ) in [
+            (
+                "364",
+                "272",
+                "293",
+                "272",
+                "376",
+                "272",
+                389,
+                45,
+                49,
+                DesignAssemblyLimitKind::Angular,
+                false,
+            ),
+            (
+                "420",
+                "262",
+                "378",
+                "262",
+                "327",
+                "262",
+                390,
+                46,
+                50,
+                DesignAssemblyLimitKind::Linear,
+                true,
+            ),
+            (
+                "417",
+                "263",
+                "318",
+                "263",
+                "448",
+                "263",
+                390,
+                46,
+                50,
+                DesignAssemblyLimitKind::Linear,
+                true,
+            ),
+            (
+                "457",
+                "258",
+                "418",
+                "258",
+                "297",
+                "258",
+                385,
+                45,
+                49,
+                DesignAssemblyLimitKind::Linear,
+                false,
+            ),
+        ] {
+            let generation =
+                super::legacy_as_built_421_generation(421, scope_class, scope_paired_class)
+                    .expect("generation is admitted");
+            assert_eq!(generation.owner_class_tag(), owner_class);
+            assert_eq!(generation.owner_paired_class_tag(), owner_paired_class);
+            assert_eq!(generation.frame_class_tag(), frame_class);
+            assert_eq!(generation.frame_paired_class_tag(), frame_paired_class);
+            assert_eq!(generation.frame_length(), frame_length);
+            assert_eq!(generation.matrix_prefix(), matrix_prefix);
+            assert_eq!(generation.matrix_offset(), matrix_offset);
+            assert_eq!(generation.limit_kind(), limit_kind);
+            assert_eq!(generation.reverse_limit_order(), reverse_limit_order);
+        }
+        assert!(super::legacy_as_built_421_generation(420, "364", "272").is_none());
+        assert!(super::legacy_as_built_421_generation(421, "364", "262").is_none());
+        assert!(super::legacy_as_built_421_generation(421, "999", "272").is_none());
+    }
+
+    #[test]
     fn alignment_lane_bounds_require_the_exact_frame_and_owner_count() {
         for (frame_length, owner_count, expected) in [
+            (
+                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                28,
+                (4, 8),
+            ),
+            (
+                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                20,
+                (8, 12),
+            ),
             (627, 4, (0, 4)),
             (633, 4, (0, 4)),
             (637, 4, (0, 4)),
             (692, 4, (0, 4)),
             (604, 8, (4, 8)),
             (732, 8, (4, 8)),
+            (744, 8, (4, 8)),
+            (748, 8, (4, 8)),
             (705, 6, (4, 6)),
+            (671, 6, (4, 6)),
             (772, 10, (8, 10)),
         ] {
             assert_eq!(
-                super::alignment_lane_bounds(frame_length, owner_count),
+                super::alignment_lane_bounds(frame_length, "", "", owner_count),
                 Some(expected)
             );
         }
         for (frame_length, owner_count) in [(627, 6), (732, 6), (705, 8), (772, 8), (604, 4)] {
             assert_eq!(
-                super::alignment_lane_bounds(frame_length, owner_count),
+                super::alignment_lane_bounds(frame_length, "", "", owner_count),
                 None
             );
         }
+        for (class_tag, paired_class_tag) in [("283", "264"), ("347", "260")] {
+            for owner_count in [12, 14, 16, 20, 22, 36, 38, 44, 60] {
+                assert_eq!(
+                    super::alignment_lane_bounds(
+                        800 + owner_count as u64,
+                        class_tag,
+                        paired_class_tag,
+                        owner_count,
+                    ),
+                    Some((8, 12))
+                );
+            }
+            for owner_count in [0, 10, 13, 15] {
+                assert_eq!(
+                    super::alignment_lane_bounds(
+                        800 + owner_count as u64,
+                        class_tag,
+                        paired_class_tag,
+                        owner_count,
+                    ),
+                    None
+                );
+            }
+        }
+        assert_eq!(super::alignment_lane_bounds(869, "283", "260", 12), None);
     }
 
     #[test]
     fn operand_path_locator_offsets_follow_the_frame_layout() {
-        for frame_length in [627, 637, 692] {
+        let class_388_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
+        assert_eq!(
+            super::operand_path_locator_offsets(class_388_length, "388", "266"),
+            Some([366, 377])
+        );
+        for frame_length in [627, 637, 692, 748] {
             assert_eq!(
-                super::operand_path_locator_offsets(frame_length),
+                super::operand_path_locator_offsets(frame_length, "", ""),
                 Some([366, 377])
             );
         }
-        for frame_length in [633, 732] {
+        for frame_length in [633, 732, 744] {
             assert_eq!(
-                super::operand_path_locator_offsets(frame_length),
+                super::operand_path_locator_offsets(frame_length, "", ""),
                 Some([362, 373])
             );
         }
+        assert_eq!(
+            super::operand_path_locator_offsets(671, "406", "261"),
+            Some([388, 399])
+        );
         for frame_length in [604, 705, 772] {
-            assert_eq!(super::operand_path_locator_offsets(frame_length), None);
+            assert_eq!(
+                super::operand_path_locator_offsets(frame_length, "", ""),
+                None
+            );
         }
+        assert_eq!(
+            super::operand_path_locator_offsets(869, "283", "264"),
+            Some([366, 377])
+        );
+        assert_eq!(
+            super::operand_path_locator_offsets(843, "347", "260"),
+            Some([366, 377])
+        );
+        assert_eq!(super::operand_path_locator_offsets(869, "283", "260"), None);
+    }
+
+    #[test]
+    fn operand_frames_are_scoped_by_class_pair() {
+        assert_eq!(
+            super::operand_frame_variant(
+                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                "388",
+                "266"
+            ),
+            Some(super::AssemblyOperandFrameVariant::LegacyClass388)
+        );
+        assert_eq!(
+            super::operand_frame_variant(
+                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                "388",
+                "258"
+            ),
+            None
+        );
+        assert_eq!(
+            super::operand_frame_variant(
+                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                "383",
+                "258"
+            ),
+            Some(super::AssemblyOperandFrameVariant::Standard)
+        );
+        assert_eq!(
+            super::operand_frame_variant(
+                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                "383",
+                "261"
+            ),
+            None
+        );
+        assert!(super::legacy_class_383_258_scope(
+            crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+            "383",
+            "258"
+        ));
+        assert!(!super::legacy_class_383_258_scope(
+            crate::layout::assembly_class_383_258_scope_1011::LEN as u64 - 1,
+            "383",
+            "258"
+        ));
+        assert_eq!(
+            super::operand_frame_variant(744, "430", "262"),
+            Some(super::AssemblyOperandFrameVariant::Compact)
+        );
+        assert_eq!(
+            super::operand_frame_variant(748, "430", "262"),
+            Some(super::AssemblyOperandFrameVariant::Standard)
+        );
+        assert_eq!(
+            super::operand_frame_variant(671, "406", "261"),
+            Some(super::AssemblyOperandFrameVariant::Standard)
+        );
+        assert_eq!(super::operand_frame_variant(671, "406", "258"), None);
+        assert_eq!(super::operand_frame_variant(671, "430", "261"), None);
+        assert_eq!(super::operand_frame_variant(744, "327", "262"), None);
+        assert_eq!(super::operand_frame_variant(748, "430", "261"), None);
     }
 
     #[test]
@@ -390,6 +857,13 @@ mod tests {
             "JointOrigin",
             80,
         );
+        let mut origin_scope = origin_scope;
+        origin_scope.joint_origin_transform = Some([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]);
         let occurrence = OccurrenceId("test:model:occurrence#component".into());
         let features = [
             feature(
@@ -425,10 +899,13 @@ mod tests {
             },
         ];
 
+        let qualifiers =
+            targets.map(|target| DesignAssemblyOperandQualifier::AxialTarget { target });
         let scopes = vec![component_scope, origin_scope.clone()];
-        let operands = super::project_axial_operands(
-            &targets,
+        let operands = super::project_qualified_operands(
+            &qualifiers,
             "f3d:Design/BulkStream.dat",
+            &BTreeMap::new(),
             &scopes,
             &features,
         )
@@ -446,6 +923,16 @@ mod tests {
             operands[1].object.as_deref(),
             Some(crate::ids::neutral_feature_id(&origin_scope).0.as_str())
         );
+
+        let unlisted_operands = super::project_qualified_operands(
+            &qualifiers,
+            "f3d:Design/BulkStream.dat",
+            &BTreeMap::new(),
+            &scopes,
+            &features[..1],
+        )
+        .expect("frame-resolved unlisted root JointOrigin");
+        assert_eq!(unlisted_operands[1].object, operands[1].object);
     }
 
     #[test]

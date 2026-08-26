@@ -21,7 +21,7 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.model.procedural_surfaces {
         if !surface_owners.insert(&procedural.surface) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "surface {} has multiple procedural constructions",
                 procedural.surface
             )));
@@ -32,7 +32,7 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
             .iter()
             .find(|surface| surface.id == procedural.surface)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                CodecError::InvalidInput(format!(
                     "procedural surface {} references missing carrier {}",
                     procedural.id, procedural.surface
                 ))
@@ -41,7 +41,7 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
             SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
             SurfaceGeometry::Procedural { construction } if *construction == procedural.id => {}
             SurfaceGeometry::Procedural { construction } => {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "surface {} links construction {construction} but is produced by {}",
                     surface.id, procedural.id
                 )));
@@ -58,7 +58,7 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
     let mut curve_owners = BTreeSet::new();
     for procedural in &target.model.procedural_curves {
         if !curve_owners.insert(&procedural.curve) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "curve {} has multiple procedural constructions",
                 procedural.curve
             )));
@@ -69,7 +69,7 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
             .iter()
             .find(|curve| curve.id == procedural.curve)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!(
+                CodecError::InvalidInput(format!(
                     "procedural curve {} references missing carrier {}",
                     procedural.id, procedural.curve
                 ))
@@ -79,7 +79,7 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
             CurveGeometry::Procedural { construction }
                 if *construction == procedural.id && procedural.cache_fit_tolerance.is_none() => {}
             CurveGeometry::Procedural { construction } => {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "curve {} links construction {construction} but is produced by {} or carries a cache fit",
                     curve.id, procedural.id
                 )));
@@ -114,7 +114,7 @@ pub(crate) fn validate_source_less_topology_tolerances(
         edge.tolerance
             .is_some_and(|tolerance| !tolerance.is_finite() || tolerance < 0.0)
     }) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(CodecError::InvalidInput(format!(
             "F3D edge {} tolerance must be finite and nonnegative",
             edge.id
         )));
@@ -185,7 +185,7 @@ pub(crate) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), Cod
         .windows(2)
         .any(|pair| pair[0].record_index > pair[1].record_index)
     {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::InvalidInput(
             "F3D construction recipes must be ordered by record index".into(),
         ));
     }
@@ -195,7 +195,7 @@ pub(crate) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), Cod
             .entry((recipe.kind, recipe.design_id.as_deref()))
             .or_insert(0u32);
         if recipe.recipe_index != *expected {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D construction recipe {} has noncontiguous group index {}",
                 recipe.id, recipe.recipe_index
             )));
@@ -217,17 +217,17 @@ fn source_less_design_record_type<'a>(
         .ok()
         .and_then(|class_tag| class_tag.checked_sub(256))
         .ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            CodecError::InvalidInput(format!(
                 "F3D {record_kind} class tag {class_tag} is below the dynamic type range"
             ))
         })?;
     let design_type = native.design_types.get(type_ordinal).ok_or_else(|| {
-        CodecError::malformed(format_args!(
+        CodecError::InvalidInput(format!(
             "F3D {record_kind} class tag {class_tag} is outside the Design type table"
         ))
     })?;
     if !design_type.entity_ids.contains(&u64::from(record_index)) {
-        return Err(CodecError::malformed(format_args!(
+        return Err(CodecError::InvalidInput(format!(
             "F3D {record_kind} {record_index} is not registered by class tag {class_tag}"
         )));
     }
@@ -288,7 +288,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         }))
     {
         if let Some(before) = typed_indices.insert(record_index, id) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch records {before} and {id} share record index {record_index}"
             )));
         }
@@ -332,7 +332,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             )));
         }
         if !point.record_form.closure_is_valid(point.closure.as_ref()) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "source-less F3D sketch point {} has an invalid versioned closure",
                 point.id
             )));
@@ -341,19 +341,19 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             .persistent_id
             .is_none_or(|persistent_id| persistent_id == 0)
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "source-less F3D sketch point {} has no persistent identity",
                 point.id
             )));
         }
         let owner_reference = point.owner_reference.ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            CodecError::InvalidInput(format!(
                 "F3D sketch point {} has no direct sketch owner",
                 point.id
             ))
         })?;
         if !sketch_owners.contains(&u64::from(owner_reference)) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch point {} references missing sketch owner {owner_reference}",
                 point.id
             )));
@@ -369,7 +369,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             })
             .count();
         if owner_type_count != 1 {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch point {} owner {owner_reference} does not have one sketch-container type registration",
                 point.id
             )));
@@ -378,7 +378,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             || typed_indices.contains_key(&point.paired_reference)
             || !point_companions.insert(point.paired_reference)
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch point {} has a conflicting companion record {}",
                 point.id, point.paired_reference
             )));
@@ -397,13 +397,13 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             })
             .count();
         if companion_type != 1 {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch point {} companion {} does not have one current companion type registration",
                 point.id, point.paired_reference
             )));
         }
         let companion = point.companion.as_ref().ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            CodecError::InvalidInput(format!(
                 "source-less F3D sketch point {} has no inverse companion",
                 point.id
             ))
@@ -419,13 +419,13 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
         let mut incident_curves = BTreeSet::new();
         for curve in &companion.incident_curves {
             if !incident_curves.insert(*curve) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D sketch point {} companion repeats curve {curve}",
                     point.id
                 )));
             }
             if !curve_indices.contains(curve) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D sketch point {} companion references missing curve {curve}",
                     point.id
                 )));
@@ -464,13 +464,13 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             )));
         }
         let owner_reference = curve.owner_reference.ok_or_else(|| {
-            CodecError::malformed(format_args!(
+            CodecError::InvalidInput(format!(
                 "F3D sketch curve {} has no direct sketch owner",
                 curve.id
             ))
         })?;
         if !sketch_owners.contains(&u64::from(owner_reference)) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch curve {} references missing sketch owner {owner_reference}",
                 curve.id
             )));
@@ -479,13 +479,13 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     }
     for relation in &native.sketch_relations {
         if !root_indices.contains(&relation.record_index) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch relation {} is not reachable from a sketch header",
                 relation.id
             )));
         }
         if !sketch_owners.contains(&u64::from(relation.owner_reference)) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch relation {} references missing sketch owner {}",
                 relation.id, relation.owner_reference
             )));
@@ -495,7 +495,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
                 .get(member)
                 .is_some_and(|owner| *owner != relation.owner_reference)
             {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D sketch relation {} owner disagrees with geometry record {member}",
                     relation.id
                 )));
@@ -504,13 +504,13 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     }
     for text in &native.sketch_texts {
         if !root_indices.contains(&text.record_index) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch text {} is not reachable from a sketch header",
                 text.id
             )));
         }
         if !sketch_owners.contains(&u64::from(text.owner_reference)) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch text {} references missing sketch owner {}",
                 text.id, text.owner_reference
             )));
@@ -524,19 +524,19 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     let mut explicit_headers = BTreeSet::new();
     for header in &native.design_record_headers {
         if !explicit_headers.insert(header.record_index) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "multiple F3D Design record headers use index {}",
                 header.record_index
             )));
         }
         if typed_indices.contains_key(&header.record_index) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D Design record header {} shadows a typed sketch record",
                 header.id
             )));
         }
         if !reachable_headers.contains(&header.record_index) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D Design record header {} is unreachable from the sketch graph",
                 header.id
             )));
@@ -554,7 +554,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
                 &parameter.source_kind,
             );
         if parameter.family_discriminator != Some(expected_discriminator) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
                 parameter.id, parameter.family_discriminator, parameter.source_kind
             )));
@@ -573,7 +573,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
             || parameter.unit.as_ref().is_some_and(String::is_empty)
             || !parameter.evaluated_value.is_finite()
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D Design parameter {} has an invalid document parameter value",
                 parameter.id
             )));
@@ -581,7 +581,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         if !parameter_indices.insert(parameter.record_index)
             || !parameter_ordinals.insert(parameter.source_ordinal)
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D Design parameter {} duplicates a record index or source ordinal",
                 parameter.id
             )));
@@ -595,14 +595,14 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
             .insert(design_type.type_guid.as_str(), design_type)
             .is_some()
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "duplicate F3D Design type GUID: {}",
                 design_type.type_guid
             )));
         }
         for entity_id in &design_type.entity_ids {
             if let Some(before) = entity_types.insert(*entity_id, design_type.type_guid.as_str()) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D Design entity {entity_id} is registered by both type {before} and type {}",
                     design_type.type_guid
                 )));
@@ -614,7 +614,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
     // base GUID is legal; a resolved chain must still terminate.
     for design_type in &native.design_types {
         if design_type.base_type_guid.as_deref() == Some(design_type.type_guid.as_str()) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D Design type {} is its own base type",
                 design_type.id
             )));
@@ -627,7 +627,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
             .and_then(|base| types_by_guid.get(base))
         {
             if !ancestors.insert(base.type_guid.as_str()) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D Design type hierarchy contains a cycle at {}",
                     base.type_guid
                 )));
@@ -642,14 +642,14 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
             .next()
             .and_then(|suffix| suffix.parse::<u64>().ok());
         if suffix != Some(header.entity_suffix) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D Design header {} entity id conflicts with suffix {}",
                 header.id, header.entity_suffix
             )));
         }
         let owned_module = entity_modules.get(&header.entity_suffix).cloned();
         if header.module != owned_module {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D Design header {} module conflicts with MetaStream ownership",
                 header.id
             )));
@@ -663,7 +663,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
             || header.declared_reference_count.is_some()
             || !header.reference_indices.is_empty()
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D non-sketch Design header {} carries discarded sketch references",
                 header.id
             )));
@@ -701,7 +701,7 @@ pub(crate) fn validate_source_less_design_bindings(
                 .insert(suffix, key)
                 .is_some_and(|before| before != key)
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D Design body binding {id} conflicts with the body-map key/suffix bijection"
             )));
         }
@@ -744,7 +744,7 @@ pub(crate) fn validate_source_less_history_graph(
                 .map(cadmpeg_ir::NativeRecord::id)
                 .collect::<BTreeSet<_>>();
             if unique.len() != records.len() {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D {arena} contains duplicate record ids"
                 )));
             }
@@ -772,7 +772,7 @@ pub(crate) fn validate_source_less_history_graph(
         .iter()
         .any(|(arena, count)| stored_count(arena) != *count)
     {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::InvalidInput(
             "F3D ASM history graph contains orphaned or ambiguously parented records".into(),
         ));
     }
@@ -780,7 +780,7 @@ pub(crate) fn validate_source_less_history_graph(
         for board in &state.bulletin_boards {
             for change in &board.changes {
                 if change.kind != history_change_kind(change.old_ref, change.new_ref)? {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::InvalidInput(format!(
                         "F3D entity change {} has a kind inconsistent with its references",
                         change.id
                     )));
@@ -789,7 +789,7 @@ pub(crate) fn validate_source_less_history_graph(
         }
         for record in &state.records {
             if record.raw_bytes.is_empty() {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D ASM history record {} has an empty native payload",
                     record.id
                 )));
@@ -805,14 +805,14 @@ pub(crate) fn validate_source_less_history_graph(
                     .is_some_and(|state| state.state_id == size)
                     && entry_count >= 0 => {}
             (Some(_), Some(_)) => {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
             }
             (None, None) => {}
             _ => {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D history {} has an incomplete history-stream preamble",
                     history.id
                 )));
@@ -824,7 +824,7 @@ pub(crate) fn validate_source_less_history_graph(
         .iter()
         .any(|history| !crate::history::graph_is_coherent(history))
     {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::InvalidInput(
             "F3D ASM history graph is not a coherent doubly linked state chain".into(),
         ));
     }
@@ -856,13 +856,13 @@ pub(crate) fn validate_source_less_design_links(
             continue;
         };
         if !coedges.contains(coedge) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D sketch-curve link {} targets a missing coedge {}",
                 link.id, coedge.0
             )));
         }
         if !linked_coedges.insert(coedge) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "source-less F3D generation supports one sketch-curve link per coedge: {}",
                 coedge.0
             )));
@@ -896,7 +896,7 @@ pub(crate) fn validate_source_less_design_links(
             _ => None,
         };
         let Some(target_key) = target_key else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D persistent design link {} has an unsupported or missing target",
                 link.id
             )));
@@ -905,7 +905,7 @@ pub(crate) fn validate_source_less_design_links(
             || link.design_id.is_empty()
             || !link.design_id.bytes().all(|byte| byte.is_ascii_digit())
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D persistent body link {} has an invalid kind or design id",
                 link.id
             )));
@@ -925,13 +925,13 @@ pub(crate) fn validate_source_less_design_links(
             _ => None,
         };
         let Some(target_key) = target_key else {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D persistent subentity tag {} has an unsupported or missing target",
                 tag.id
             )));
         };
         if tag.token.is_empty() {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D persistent subentity tag {} requires a token",
                 tag.id
             )));
@@ -942,7 +942,7 @@ pub(crate) fn validate_source_less_design_links(
         tags.sort_by_key(|tag| tag.ordinal);
         for (ordinal, tag) in tags.iter().enumerate() {
             if tag.ordinal != ordinal as u32 {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D persistent subentity tags for {target:?} require contiguous ordinals"
                 )));
             }
@@ -952,7 +952,7 @@ pub(crate) fn validate_source_less_design_links(
         links.sort_by_key(|link| link.ordinal);
         for (ordinal, link) in links.iter().enumerate() {
             if link.ordinal != ordinal as u32 || link.is_current != (ordinal + 1 == links.len()) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(CodecError::InvalidInput(format!(
                     "F3D persistent design links for {target:?} require contiguous ordinals and only the final link current"
                 )));
             }
@@ -980,13 +980,13 @@ pub(crate) fn validate_source_less_design_links(
     let mut tolerant_coedges = BTreeSet::new();
     for parameters in &native.tolerant_coedge_parameters {
         if !coedge_ids.contains(&parameters.coedge) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-coedge metadata {} targets missing coedge {}",
                 parameters.id, parameters.coedge
             )));
         }
         if !tolerant_coedges.insert(&parameters.coedge) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "multiple F3D tolerant-coedge records target {}",
                 parameters.coedge
             )));
@@ -996,7 +996,7 @@ pub(crate) fn validate_source_less_design_links(
             .iter()
             .any(|value| !value.is_finite())
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-coedge metadata {} has non-finite parameters",
                 parameters.id
             )));
@@ -1014,13 +1014,13 @@ pub(crate) fn validate_source_less_design_links(
                     .copied()
                     .expect("validated tolerant-coedge target");
                 let curve_id = coedge.use_curve.as_ref().ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has no use curve",
                         parameters.id
                     ))
                 })?;
                 let curve = curve_by_id.get(curve_id.as_str()).copied().ok_or_else(|| {
-                    CodecError::malformed(format_args!(
+                    CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} references missing use curve {curve_id}",
                         parameters.id
                     ))
@@ -1035,7 +1035,7 @@ pub(crate) fn validate_source_less_design_links(
                 if effective_range.iter().any(|value| !value.is_finite())
                     || coedge.use_curve_parameter_range != Some(effective_range)
                 {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::InvalidInput(format!(
                         "F3D tolerant-coedge extension {} has an inconsistent use-curve parameter range",
                         parameters.id
                     )));
@@ -1103,13 +1103,13 @@ pub(crate) fn validate_source_less_design_links(
             let mut seen = BTreeSet::new();
             for item in $items {
                 if !$valid.contains(&item.$field) {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::InvalidInput(format!(
                         "F3D {} metadata {} targets missing entity {}",
                         $label, item.id, item.$field
                     )));
                 }
                 if !seen.insert(&item.$field) {
-                    return Err(CodecError::malformed(format_args!(
+                    return Err(CodecError::InvalidInput(format!(
                         "multiple F3D {} records target {}",
                         $label, item.$field
                     )));
@@ -1139,13 +1139,13 @@ pub(crate) fn validate_source_less_design_links(
     let mut wire_record_indices = BTreeSet::new();
     for wire in &native.wire_topologies {
         if !shells.contains(&wire.shell) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D wire-topology metadata {} targets missing entity {}",
                 wire.id, wire.shell
             )));
         }
         if !wire_record_indices.insert(wire.record_index) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "multiple F3D wire-topology records use native index {}",
                 wire.record_index
             )));
@@ -1158,14 +1158,14 @@ pub(crate) fn validate_source_less_design_links(
             .copied()
             .expect("validated body-visibility target");
         if body.visible != Some(visibility.visible) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D body visibility {} conflicts with body {} visibility",
                 visibility.id, visibility.body
             )));
         }
         let emitted_key = source_less_body_key(attributes, body, ordinal)?;
         if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D body visibility {} uses an ASM key different from body {}",
                 visibility.id, visibility.body
             )));
@@ -1177,7 +1177,7 @@ pub(crate) fn validate_source_less_design_links(
             .map(|(_, body)| *body)
             .is_none_or(|body| body.transform.is_none())
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D transform hints {} target a body without a transform",
                 hints.id
             )));
@@ -1193,7 +1193,7 @@ pub(crate) fn validate_source_less_design_links(
                 .copied()
                 .is_none_or(|vertex| vertex.tolerance.is_none() && !tail.evaluated_unset)
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
                 tail.id
             )));
@@ -1205,7 +1205,7 @@ pub(crate) fn validate_source_less_design_links(
             .copied()
             .is_none_or(|edge| edge.tolerance.is_none())
         {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D tolerant-edge metadata {} requires a tolerant edge",
                 tail.id
             )));
@@ -1224,7 +1224,7 @@ pub(crate) fn validate_source_less_design_links(
             _ => false,
         };
         if !member_form_is_valid {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D wire metadata {} has invalid edge-ring or isolated-vertex membership",
                 wire.id
             )));
@@ -1236,7 +1236,7 @@ pub(crate) fn validate_source_less_design_links(
             .copied()
             .expect("validated face-sidedness target");
         if sidedness.normalized_sense != face.sense {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "F3D face sidedness {} normalized sense conflicts with face {}",
                 sidedness.id, sidedness.face
             )));
@@ -1296,7 +1296,7 @@ pub(crate) fn validate_source_less_body_kinds(
             cadmpeg_ir::topology::BodyKind::Sheet
         };
         if body.kind != derived {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "body {} declares {:?} but its incidence graph is {:?}",
                 body.id, body.kind, derived
             )));
@@ -1339,23 +1339,23 @@ pub(crate) fn validate_source_less_wire_vertices(
     let mut free_vertex_ids = BTreeSet::new();
     for vertex in model.shells.iter().flat_map(|shell| &shell.free_vertices) {
         if !vertex_ids.contains(vertex) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "wire references missing free vertex {vertex}"
             )));
         }
         if edge_vertex_ids.contains(vertex) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "wire vertex {vertex} is both free and an edge endpoint"
             )));
         }
         if !free_vertex_ids.insert(vertex.clone()) {
-            return Err(CodecError::malformed(format_args!(
+            return Err(CodecError::InvalidInput(format!(
                 "free vertex {vertex} belongs to more than one wire"
             )));
         }
     }
     if vertex_ids != edge_vertex_ids.union(&free_vertex_ids).cloned().collect() {
-        return Err(CodecError::Malformed(
+        return Err(CodecError::InvalidInput(
             "source-less F3D vertices must be edge endpoints or free wire vertices".into(),
         ));
     }

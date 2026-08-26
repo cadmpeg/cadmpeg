@@ -87,6 +87,10 @@ fn feature_family_tokens_are_localized() {
         Some(DesignFeatureFamily::OffsetFaces)
     );
     assert_eq!(
+        design_feature_family("ReplaceFace"),
+        Some(DesignFeatureFamily::ReplaceFace)
+    );
+    assert_eq!(
         design_feature_family("Schale"),
         Some(DesignFeatureFamily::Shell)
     );
@@ -118,6 +122,10 @@ fn feature_family_tokens_are_localized() {
     assert_eq!(
         design_feature_family("BoundaryFill"),
         Some(DesignFeatureFamily::BoundaryFill)
+    );
+    assert_eq!(
+        design_feature_family("SurfaceTrim"),
+        Some(DesignFeatureFamily::SurfaceTrim)
     );
     assert_eq!(
         design_feature_family("Hole"),
@@ -354,7 +362,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     .is_err());
 
     let (mut sketches, mut entities) =
-        project_sketch_design(&placements, &points, &[], &[], 1.0e-6);
+        project_sketch_design(&placements, &points, &[], &[], &[], 1.0e-6);
     let mut constraints =
         project_sketch_constraints(&placements, &[], &points, &[], &[], &relations, &entities);
     assert_eq!(sketches.len(), 2);

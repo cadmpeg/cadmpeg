@@ -141,7 +141,11 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         [0.0, 1.0],
         [1.0, 0.0],
     );
-    assert!(profile_segments_intersect(&diagonal, &crossing_line, 1e-9));
+    assert!(profile_segments_intersect(
+        &diagonal,
+        &crossing_line,
+        1.0e-9
+    ));
 
     for reversed in [false, true] {
         let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
@@ -153,10 +157,10 @@ fn interpolation_spline_remains_a_closed_extrusion_profile() {
         assert_eq!(weights, &Some(vec![1.0, 0.75, 0.75, 1.0]));
         let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).expect("spline start");
         let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 5.0).expect("spline end");
-        assert!((first.u - start[0]).abs() < 1e-12);
-        assert!((first.v - start[1]).abs() < 1e-12);
-        assert!((last.u - end[0]).abs() < 1e-12);
-        assert!((last.v - end[1]).abs() < 1e-12);
+        assert!((first.u - start[0]).abs() < 1.0e-12);
+        assert!((first.v - start[1]).abs() < 1.0e-12);
+        assert!((last.u - end[0]).abs() < 1.0e-12);
+        assert!((last.v - end[1]).abs() < 1.0e-12);
         assert_eq!(
             extrusion_side_uvs(
                 &spline,
@@ -299,22 +303,22 @@ fn extrusion_profile_intersections_include_analytic_tangency() {
     assert!(line_arc_intersect(
         [[-2.0, 1.0], [2.0, 1.0]],
         full_upper_circle,
-        1e-9,
+        1.0e-9,
     ));
     assert!(!line_arc_intersect(
         [[-2.0, 1.1], [2.0, 1.1]],
         full_upper_circle,
-        1e-9,
+        1.0e-9,
     ));
     assert!(arcs_intersect(
         full_upper_circle,
         ([2.0, 0.0], 1.0, std::f64::consts::PI, std::f64::consts::PI),
-        1e-9,
+        1.0e-9,
     ));
     assert!(!arcs_intersect(
         full_upper_circle,
         ([3.0, 0.0], 1.0, std::f64::consts::PI, std::f64::consts::PI),
-        1e-9,
+        1.0e-9,
     ));
 }
 

@@ -21,6 +21,10 @@ use crate::loss::F3dLossCode;
 use crate::test_support::*;
 use crate::F3dCodec;
 
+use super::{
+    merge_definition_catalog_record, DefinitionCatalogRecord, RECORD_MARKER, STREAM_HEADER_LEN,
+};
+
 fn raw_body_map_pair(
     asm_key_offset: usize,
     entity_suffix: u64,
@@ -57,6 +61,162 @@ fn resolved_body_binding(
         blob_name_offset: asm_key_offset + 32,
         body: Some(cadmpeg_ir::ids::BodyId(body.into())),
     }
+}
+
+#[test]
+fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker() {
+    fn lp(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    let category: String = std::iter::repeat_n('x', 0x1_0080).collect();
+    let mut logical = RECORD_MARKER.to_vec();
+    lp(&mut logical, "GenericSchema");
+    logical.push(0);
+    lp(&mut logical, "Prism-001");
+    lp(&mut logical, "Prism-001");
+    logical.extend_from_slice(&2_u32.to_le_bytes());
+    lp(&mut logical, &category);
+    lp(&mut logical, "Default");
+    lp(&mut logical, "Generated appearance");
+    logical.extend_from_slice(&0_u32.to_le_bytes());
+    logical.extend_from_slice(&1_u32.to_le_bytes());
+    lp(&mut logical, "");
+
+    let paged = super::page_logical(&logical).expect("page catalog record");
+    let frames = cadmpeg_protein::record_frames(&paged).expect("frame catalog pages");
+    let [frame] = frames.as_slice() else {
+        panic!("marker-shaped length prefix must remain inside one logical record")
+    };
+    let decoded = super::decode_definition_catalog_record(&frame.bytes)
+        .expect("decode framed definition record");
+    assert_eq!(decoded.schema, "GenericSchema");
+    assert_eq!(decoded.asset_id, "Prism-001");
+    assert_eq!(decoded.category.as_deref(), Some(category.as_str()));
+}
+
+#[test]
+fn definition_catalog_version_one_omits_category() {
+    fn lp(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    let mut logical = RECORD_MARKER.to_vec();
+    lp(&mut logical, "PrismOpaqueSchema");
+    logical.push(1);
+    lp(&mut logical, "Opaque(246,246,243)");
+    lp(&mut logical, "EFD2D83C-576F-3A9B-8535-31523D8D8432");
+    logical.extend_from_slice(&1_u32.to_le_bytes());
+    lp(&mut logical, "Default");
+    lp(&mut logical, "Prism opaque material.");
+    logical.extend_from_slice(&2_u32.to_le_bytes());
+    lp(&mut logical, "materials");
+    lp(&mut logical, "opaque");
+    logical.extend_from_slice(&0_u32.to_le_bytes());
+
+    let decoded = super::decode_definition_catalog_record(&logical)
+        .expect("decode version-one definition record");
+    assert_eq!(decoded.schema, "PrismOpaqueSchema");
+    assert_eq!(decoded.asset_id, "Opaque(246,246,243)");
+    assert_eq!(decoded.category, None);
+    assert_eq!(decoded.group.as_deref(), Some("Default"));
+    assert_eq!(decoded.tags, ["materials", "opaque"]);
+}
+
+#[test]
+fn definition_catalog_version_zero_omits_category_and_group() {
+    fn lp(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    let mut logical = RECORD_MARKER.to_vec();
+    lp(&mut logical, "UnifiedBitmapSchema");
+    logical.push(0);
+    lp(&mut logical, "Metal-045_metal_pattern_shader");
+    lp(&mut logical, "Metal-045_metal_pattern_shader");
+    logical.extend_from_slice(&0_u32.to_le_bytes());
+    lp(&mut logical, "Unified Bitmap.");
+    logical.extend_from_slice(&2_u32.to_le_bytes());
+    lp(&mut logical, "maps");
+    lp(&mut logical, "misc");
+    logical.extend_from_slice(&1_u32.to_le_bytes());
+    lp(&mut logical, "Maps/UnifiedBitmap/UnifiedBitmap.png");
+
+    let decoded = super::decode_definition_catalog_record(&logical)
+        .expect("decode version-zero definition record");
+    assert_eq!(decoded.category, None);
+    assert_eq!(decoded.group, None);
+    assert_eq!(decoded.description, "Unified Bitmap.");
+}
+
+#[test]
+fn definition_catalog_version_three_adds_subgroup() {
+    fn lp(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    let mut logical = RECORD_MARKER.to_vec();
+    lp(&mut logical, "GenericSchema");
+    logical.push(0);
+    lp(&mut logical, "InvGen-063");
+    lp(&mut logical, "InvGen-063");
+    logical.extend_from_slice(&3_u32.to_le_bytes());
+    for value in ["Metal", "Default", "Miscellaneous", "Generic material."] {
+        lp(&mut logical, value);
+    }
+    logical.extend_from_slice(&0_u32.to_le_bytes());
+    logical.extend_from_slice(&0_u32.to_le_bytes());
+
+    let decoded = super::decode_definition_catalog_record(&logical)
+        .expect("decode version-three definition record");
+    assert_eq!(decoded.category.as_deref(), Some("Metal"));
+    assert_eq!(decoded.group.as_deref(), Some("Default"));
+    assert_eq!(decoded.subgroup.as_deref(), Some("Miscellaneous"));
+    assert_eq!(decoded.description, "Generic material.");
+}
+
+#[test]
+fn definition_catalog_uses_asset_and_schema_identity() {
+    fn definition(asset: &str, category: &str) -> DefinitionCatalogRecord {
+        DefinitionCatalogRecord {
+            schema: "PrismMetalSchema".into(),
+            asset_id: asset.into(),
+            base_asset_id: asset.into(),
+            category: Some(category.into()),
+            group: Some("Default".into()),
+            subgroup: None,
+            description: "Steel - satin".into(),
+            tags: vec!["Metal".into(), "Steel".into()],
+            preview_paths: vec!["Mats/PrismMetal/Presets/t_Prism-256.png".into()],
+        }
+    }
+
+    let mut definitions = std::collections::HashMap::new();
+    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"));
+    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Steel"));
+    assert_eq!(definitions.len(), 1);
+
+    let mut alternate_description = definition("Prism-256", "Metal/Steel");
+    alternate_description.description = "CCAF1000-E7D9-2CF1-9BA1-B9224CFEBAF6".into();
+    merge_definition_catalog_record(&mut definitions, alternate_description);
+
+    merge_definition_catalog_record(&mut definitions, definition("Prism-256", "Metal/Stainless"));
+    let key = ("Prism-256".to_owned(), "PrismMetalSchema".to_owned());
+    assert_eq!(definitions[&key].category, None);
+
+    let mut second_schema = definition("Prism-256", "Metal/Steel");
+    second_schema.schema = "GenericSchema".into();
+    merge_definition_catalog_record(&mut definitions, second_schema);
+    assert_eq!(definitions.len(), 2);
+
+    let mut alternate_base = definition("Prism-256", "Metal/Steel");
+    alternate_base.base_asset_id = "another-base".into();
+    merge_definition_catalog_record(&mut definitions, alternate_base);
+    assert_eq!(definitions.len(), 2);
 }
 
 #[test]
@@ -296,7 +456,10 @@ fn decoded_color_requires_finite_normalized_channels() {
 fn distance_tags_convert_to_millimetres() {
     for (unit, value, expected) in [(0x2016, 1.0, 25.4), (0x200e, 0.5, 0.5), (0x200d, 0.5, 5.0)] {
         let record = distance_record(unit, value);
-        assert_eq!(super::distance_property(&record, "Depth"), Some(expected));
+        assert_eq!(
+            super::distance_property(&record, "Depth"),
+            Ok(Some(expected))
+        );
     }
 }
 
@@ -390,12 +553,103 @@ fn appearance_record(
     }
 }
 
+fn texture_record(guid: &str, path: &str) -> cadmpeg_protein::DecodedRecord {
+    cadmpeg_protein::DecodedRecord {
+        ordinal: 0,
+        logical_offset: 0,
+        schema: "UnifiedBitmapSchema".to_owned(),
+        guid: guid.to_owned(),
+        base: "Texture-001".to_owned(),
+        asset_lib_id: String::new(),
+        properties: std::collections::BTreeMap::from([(
+            "unifiedbitmap_Bitmap".to_owned(),
+            cadmpeg_protein::DecodedProperty {
+                value_offset: 0,
+                value: cadmpeg_protein::PropertyValue::TextureUri(vec![path.to_owned()]),
+                connections: Vec::new(),
+            },
+        )]),
+    }
+}
+
+fn appearance_connected_to(texture_guid: &str) -> cadmpeg_protein::DecodedRecord {
+    appearance_record(
+        "GenericSchema",
+        std::collections::BTreeMap::from([(
+            "generic_diffuse".to_owned(),
+            cadmpeg_protein::DecodedProperty {
+                value_offset: 0,
+                value: cadmpeg_protein::PropertyValue::Color([0.25, 0.5, 0.75, 1.0]),
+                connections: vec![texture_guid.to_owned()],
+            },
+        )]),
+    )
+}
+
+#[test]
+fn equivalent_duplicate_texture_guids_bind_once() {
+    let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let texture = texture_record(guid, "textures/albedo.png");
+    let (appearances, untyped_count) = super::appearances_from_schema_records(&[
+        appearance_connected_to(guid),
+        texture.clone(),
+        texture,
+    ])
+    .expect("equivalent texture records deduplicate");
+
+    assert_eq!(untyped_count, 0);
+    assert_eq!(appearances.len(), 1);
+    assert_eq!(appearances[0].textures.len(), 1);
+    assert_eq!(appearances[0].textures[0].paths, ["textures/albedo.png"]);
+}
+
+#[test]
+fn conflicting_duplicate_texture_guids_reject_in_both_orders() {
+    let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let first = texture_record(guid, "textures/first.png");
+    let second = texture_record(guid, "textures/second.png");
+    for textures in [[first.clone(), second.clone()], [second, first]] {
+        let error = super::appearances_from_schema_records(&[
+            appearance_connected_to(guid),
+            textures[0].clone(),
+            textures[1].clone(),
+        ])
+        .expect_err("one texture GUID cannot select conflicting payloads");
+
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    }
+}
+
 /// A Distance whose tag names a quantity other than length has no
 /// millimetre reading and must not be silently taken as one.
 #[test]
 fn a_non_length_distance_tag_yields_no_value() {
     let record = distance_record(0x0002_1008, 1.0);
-    assert_eq!(super::distance_property(&record, "Depth"), None);
+    assert_eq!(super::distance_property(&record, "Depth"), Err(0x0002_1008));
+}
+
+#[test]
+fn unknown_texture_distance_unit_omits_typed_texture_and_counts_loss() {
+    let guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let mut texture = texture_record(guid, "textures/albedo.png");
+    texture.properties.insert(
+        "unifiedbitmap_RealWorldScaleX".into(),
+        cadmpeg_protein::DecodedProperty {
+            value_offset: 0,
+            value: cadmpeg_protein::PropertyValue::Distance {
+                unit: 0x0002_1008,
+                value: 3.0,
+            },
+            connections: Vec::new(),
+        },
+    );
+
+    let (appearances, untyped_count) =
+        super::appearances_from_schema_records(&[appearance_connected_to(guid), texture])
+            .expect("unknown unit is retained as a typed-projection loss");
+
+    assert_eq!(untyped_count, 1);
+    assert!(appearances[0].textures.is_empty());
 }
 
 #[test]
@@ -886,6 +1140,19 @@ fn decode_transfers_generated_protein_appearance() {
         .iter()
         .all(|member| member.flags == 0));
     assert!(crate::validate::validate_native(result.ir()).is_empty());
+}
+
+#[test]
+fn decode_rejects_invalid_instance_property_page_framing() {
+    let mut properties = generated_instance_properties_for("11111111-2222-3333-4444-555555555555");
+    properties[STREAM_HEADER_LEN + 4] ^= 1;
+    let f3d = f3d_with_smbh_and_instance_properties(&synthetic_geometry_smbh(), &[properties]);
+
+    let error = F3dCodec
+        .decode(&mut Cursor::new(f3d), &DecodeOptions::default())
+        .expect_err("invalid Protein page framing must reject material decode");
+
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
 }
 
 #[test]
@@ -1434,6 +1701,17 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
         crate::materials::face_appearance_assignments(&bytes).is_empty(),
         "a body-owned visual marker is not also a face assignment"
     );
+}
+
+#[test]
+fn browser_body_appearance_scan_rejects_binary_utf16_length_candidates() {
+    let mut bytes = vec![0u8; 8];
+    for _ in 0..32 {
+        bytes.extend_from_slice(&256u32.to_le_bytes());
+        bytes.extend(std::iter::repeat_n(0, 256 * 2));
+    }
+
+    assert!(super::lp_utf16_strings(&bytes).is_empty());
 }
 
 #[test]

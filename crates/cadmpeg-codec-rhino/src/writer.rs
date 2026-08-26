@@ -12,6 +12,8 @@ use sha2::{Digest, Sha256};
 
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
 
+const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
+
 pub(crate) trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
@@ -691,9 +693,9 @@ fn prepare_write(ir: &CadIr, archive_version: u64) -> Result<WritePlan, CodecErr
             || *radius <= 0.0
             || !axis_norm.is_finite()
             || !reference_norm.is_finite()
-            || (axis_norm - 1.0).abs() > 1.0e-10
-            || (reference_norm - 1.0).abs() > 1.0e-10
-            || dot.abs() > 1.0e-10
+            || (axis_norm - 1.0).abs() > EPS_WRITE_DEGENERATE
+            || (reference_norm - 1.0).abs() > EPS_WRITE_DEGENERATE
+            || dot.abs() > EPS_WRITE_DEGENERATE
         {
             return Err(CodecError::malformed(format_args!(
                 "curve {} has an invalid circle frame",
@@ -1129,7 +1131,10 @@ fn planar_sheet_brep_payload(
         validate_planar_edge(model, edge, ir.tolerances.linear)?;
     }
     if let Some((origin, normal, _, _)) = plane_frame {
-        let plane_tolerance = face.tolerance.unwrap_or(ir.tolerances.linear).max(1.0e-10);
+        let plane_tolerance = face
+            .tolerance
+            .unwrap_or(ir.tolerances.linear)
+            .max(EPS_WRITE_DEGENERATE);
         for point in &ordered_points {
             let distance = (point.x - origin.x) * normal.x
                 + (point.y - origin.y) * normal.y
@@ -1776,7 +1781,7 @@ fn multi_face_brep_payload(
         let tolerance = model.faces[face_position]
             .tolerance
             .unwrap_or(ir.tolerances.linear)
-            .max(1.0e-10);
+            .max(EPS_WRITE_DEGENERATE);
         let mut boundary = Vec::with_capacity(loop_.coedges.len());
         for coedge_id in &loop_.coedges {
             let coedge =
@@ -2146,7 +2151,7 @@ fn validate_planar_edge(
     }
     let (expected_start, expected_end) = match &curve.geometry {
         CurveGeometry::Line { origin, direction } => {
-            if (direction.norm() - 1.0).abs() > 1.0e-10 {
+            if (direction.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE {
                 return Err(CodecError::malformed(format_args!(
                     "edge {} has an invalid line parameterization",
                     edge.id.0
@@ -2192,7 +2197,10 @@ fn validate_planar_edge(
     })?;
     let end = vertex_point(model, &edge.end)
         .ok_or_else(|| CodecError::malformed(format_args!("edge {} end is missing", edge.id.0)))?;
-    let tolerance = edge.tolerance.unwrap_or(document_tolerance).max(1.0e-10);
+    let tolerance = edge
+        .tolerance
+        .unwrap_or(document_tolerance)
+        .max(EPS_WRITE_DEGENERATE);
     if !close_point(start, expected_start, tolerance) || !close_point(end, expected_end, tolerance)
     {
         return Err(CodecError::malformed(format_args!(
@@ -2524,7 +2532,7 @@ fn validate_nurbs_trim_loop(
             .find(|pcurve| pcurve.id == *pcurve_id)
             .expect("validated NURBS-face pcurve");
         let domain = edge.param_range.expect("validated edge domain");
-        let uv_epsilon = 1.0e-10
+        let uv_epsilon = EPS_WRITE_DEGENERATE
             * u_domain
                 .into_iter()
                 .chain(v_domain)
@@ -2598,7 +2606,7 @@ fn validate_nurbs_trim_loop(
         let tolerance = face_tolerance
             .max(edge.tolerance.unwrap_or(0.0))
             .max(pcurve.fit_tolerance.unwrap_or(0.0))
-            .max(1.0e-10);
+            .max(EPS_WRITE_DEGENERATE);
         for span in breaks.windows(2) {
             for step in 0..=16 {
                 let fraction = f64::from(step) / 16.0;
@@ -2962,9 +2970,9 @@ fn check_frame(
     if !origin.x.is_finite()
         || !origin.y.is_finite()
         || !origin.z.is_finite()
-        || (normal.norm() - 1.0).abs() > 1.0e-10
-        || (x.norm() - 1.0).abs() > 1.0e-10
-        || dot.abs() > 1.0e-10
+        || (normal.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
+        || (x.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE
+        || dot.abs() > EPS_WRITE_DEGENERATE
     {
         return Err(CodecError::malformed(format_args!(
             "{family} {id} has an invalid frame"

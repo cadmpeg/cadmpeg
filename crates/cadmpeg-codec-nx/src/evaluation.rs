@@ -2552,6 +2552,7 @@ mod tests {
                 faces: faces.clone(),
                 tool: PathRef::Curves(vec![CurveId("trim-curve".to_string())]),
                 keep: TrimRegion::Inside,
+                cell_selection: None,
             },
         );
         trim.outputs = vec![first.clone(), second.clone()];
@@ -2582,6 +2583,7 @@ mod tests {
                 faces: FaceSelection::Unresolved,
                 tool: PathRef::Unresolved("trim".to_string()),
                 keep: TrimRegion::Unresolved,
+                cell_selection: None,
             },
             FeatureDefinition::ExtendSurface {
                 faces: FaceSelection::Unresolved,
@@ -2677,6 +2679,7 @@ mod tests {
                 faces: FaceSelection::Faces(vec![FaceId("face".to_string())]),
                 tool: PathRef::Curves(vec![CurveId("trim-curve".to_string())]),
                 keep: TrimRegion::Outside,
+                cell_selection: None,
             },
         );
         trim.outputs = vec![missing];

@@ -591,6 +591,8 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         asset_id_offset: 0,
         context_id: "context".into(),
         context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
         references: vec![reference(&[
             "f3d:brep/current/face#1",
             "f3d:brep/external/face#1",
@@ -708,6 +710,8 @@ fn body_recipe_history_resolves_the_complete_input_body_boundary() {
         asset_id_offset: 0,
         context_id: "context".into(),
         context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
         references: vec![crate::records::DesignBodyRecipeReference {
             design_reference: 301,
             design_reference_offset: 0,
@@ -854,7 +858,9 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
 
 #[test]
 fn direct_body_recipe_selection_resolves_compact_coil_target() {
-    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::features::{
+        BodySelection, Feature, FeatureDefinition, FeatureId, ScaleCenter, ScaleFactors,
+    };
     use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
 
@@ -911,6 +917,8 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         asset_id_offset: 0,
         context_id: "context".into(),
         context_id_offset: 0,
+        selector_tail: None,
+        selector_tail_offset: None,
         references: vec![crate::records::DesignBodyRecipeReference {
             design_reference: 301,
             design_reference_offset: 0,
@@ -1033,6 +1041,93 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             native: vec![native],
         }
     );
+
+    let mut scale_scope = scope.clone();
+    scale_scope.kind = "Scale".into();
+    scale_scope.previous_history_state_id = Some(7);
+    let mut scale_group = group.clone();
+    scale_group.role = 0x0000_0004_0000_0000;
+    let scale_inputs = super::super::FeatureBodySelectionInputs {
+        scopes: std::slice::from_ref(&scale_scope),
+        groups: std::slice::from_ref(&scale_group),
+        body_recipe_operands: std::slice::from_ref(&operand),
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: &[],
+        bodies: std::slice::from_ref(&body),
+        regions: std::slice::from_ref(&region),
+        shells: std::slice::from_ref(&shell),
+    };
+    let mut feature = Feature::new(
+        FeatureId("f3d:feature#scale".into()),
+        0,
+        FeatureDefinition::Scale {
+            bodies: BodySelection::Native(group_id.into()),
+            center: Some(ScaleCenter::ModelOrigin),
+            factors: ScaleFactors {
+                uniform: Some(1.5),
+                x: None,
+                y: None,
+                z: None,
+            },
+        },
+    );
+    feature.native_ref = Some(scale_scope.id.clone());
+    super::super::bind_feature_body_selections(std::slice::from_mut(&mut feature), &scale_inputs);
+    assert!(matches!(
+        feature.definition,
+        FeatureDefinition::Scale {
+            bodies: BodySelection::Resolved { ref bodies, ref native },
+            ..
+        } if bodies == &[body.id.clone()] && native == group_id
+    ));
+
+    let mut move_scope = scope;
+    move_scope.kind = "Move".into();
+    move_scope.history_state_id = Some(42);
+    move_scope.previous_history_state_id = Some(41);
+    let move_history = crate::history_records::AsmHistory {
+        id: "f3d:history".into(),
+        byte_offset: 0,
+        stream_size: None,
+        history_entry_count: None,
+        record_table_binding_budget_exceeded: false,
+        projection_finalized: true,
+        states: Vec::new(),
+    };
+    let move_inputs = super::super::FeatureBodySelectionInputs {
+        scopes: std::slice::from_ref(&move_scope),
+        groups: std::slice::from_ref(&scale_group),
+        body_recipe_operands: std::slice::from_ref(&operand),
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: std::slice::from_ref(&move_history),
+        bodies: std::slice::from_ref(&body),
+        regions: std::slice::from_ref(&region),
+        shells: std::slice::from_ref(&shell),
+    };
+    let mut move_feature = Feature::new(
+        FeatureId("f3d:feature#move".into()),
+        0,
+        FeatureDefinition::MoveBody {
+            bodies: BodySelection::Native(group_id.into()),
+            translation: cadmpeg_ir::math::Vector3::new(1.0, 2.0, 3.0),
+            rotation: None,
+            copies: 0,
+        },
+    );
+    move_feature.native_ref = Some(move_scope.id.clone());
+    super::super::bind_feature_body_selections(
+        std::slice::from_mut(&mut move_feature),
+        &move_inputs,
+    );
+    assert!(matches!(
+        move_feature.definition,
+        FeatureDefinition::MoveBody {
+            bodies: BodySelection::Resolved { ref bodies, ref native },
+            ..
+        } if bodies == &[body.id.clone()] && native == group_id
+    ));
 }
 
 #[test]
@@ -1160,6 +1255,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
         next_record_index: 204,
         next_byte_offset: 1500,
     };
@@ -1336,6 +1432,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
         resolved_face_slots: Vec::new(),
+        resolved_active_face: None,
         next_record_index: 204,
         next_byte_offset: 1_500,
     };
@@ -1378,6 +1475,24 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
                 1,
                 AsmHistoricalTopology {
                     faces: vec![7, 8, 9, 10],
+                    persistent_subentity_tags: [
+                        (7, "3", 203),
+                        (8, "3", 203),
+                        (9, "-1", 199),
+                        (10, "-1", 199),
+                    ]
+                    .into_iter()
+                    .map(|(entity_ref, token, design_reference)| {
+                        crate::history_records::AsmHistoricalPersistentSubentityTag {
+                            entity_kind: AsmHistoricalEntityKind::Face,
+                            entity_ref,
+                            selector: 17,
+                            token: token.into(),
+                            design_references: vec![design_reference],
+                            ordinal: 0,
+                        }
+                    })
+                    .collect(),
                     ..AsmHistoricalTopology::default()
                 },
                 None,
@@ -1390,7 +1505,9 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &mut operands,
         std::slice::from_ref(&scope),
         std::slice::from_ref(&group),
+        &[],
         std::slice::from_ref(&history),
+        &HashMap::new(),
     );
     assert_eq!(operands[0].preceding_candidate_faces, [face(7), face(8)]);
     assert_eq!(operands[0].changed_candidate_faces, [face(7)]);
@@ -1408,6 +1525,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         minor_diameter: 0.2,
         pitch: 0.07,
         pitch_diameter: 0.3,
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
         face_group_record_indices: vec![100],
     });
     let mut cylinder_operand = operand.clone();
@@ -1451,22 +1570,26 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &mut cylinder_operands,
         std::slice::from_ref(&cylinder_scope),
         std::slice::from_ref(&group),
+        &[],
         std::slice::from_ref(&cylinder_history),
+        &HashMap::new(),
     );
     assert_eq!(cylinder_operands[0].resolved_face_slots, [7]);
 
-    let mut ambiguous_source_operand = cylinder_operands[0].clone();
-    ambiguous_source_operand.recipe_references[0]
+    let mut stale_active_operand = cylinder_operands[0].clone();
+    stale_active_operand.recipe_references[0]
         .candidate_faces
         .push(FaceId("f3d:brep/input/brep:entity#998".into()));
-    let mut ambiguous_source_operands = vec![ambiguous_source_operand];
+    let mut stale_active_operands = vec![stale_active_operand];
     bind_face_operand_history_candidates(
-        &mut ambiguous_source_operands,
+        &mut stale_active_operands,
         std::slice::from_ref(&cylinder_scope),
         std::slice::from_ref(&group),
+        &[],
         std::slice::from_ref(&cylinder_history),
+        &HashMap::new(),
     );
-    assert!(ambiguous_source_operands[0].resolved_face_slots.is_empty());
+    assert_eq!(stale_active_operands[0].resolved_face_slots, [7]);
 
     let mut ambiguous_geometry_history = cylinder_history;
     ambiguous_geometry_history.states[0]
@@ -1488,7 +1611,9 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         &mut ambiguous_geometry_operands,
         &[cylinder_scope],
         std::slice::from_ref(&group),
+        &[],
         &[ambiguous_geometry_history],
+        &HashMap::new(),
     );
     assert!(ambiguous_geometry_operands[0]
         .resolved_face_slots
@@ -1497,7 +1622,14 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     let mut unrelated_group = group;
     unrelated_group.role = 0x0000_0011_0000_0000;
     let mut rejected = vec![operand];
-    bind_face_operand_history_candidates(&mut rejected, &[scope], &[unrelated_group], &[history]);
+    bind_face_operand_history_candidates(
+        &mut rejected,
+        &[scope],
+        &[unrelated_group],
+        &[],
+        &[history],
+        &HashMap::new(),
+    );
     assert_eq!(rejected[0].preceding_candidate_faces, [face(9), face(10)]);
     assert!(rejected[0].changed_candidate_faces.is_empty());
     assert!(rejected[0].resolved_face_slots.is_empty());
@@ -1613,59 +1745,221 @@ fn historical_brep_source_qualifies_state_local_candidates() {
 }
 
 #[test]
-fn projection_caches_end_after_history_consumers() {
-    let transition = crate::history_records::AsmHistoricalTransition {
-        previous_state_id: Some(1),
-        records: Default::default(),
-        topology: Default::default(),
+fn legacy_extrude_face_lane_prefers_history_then_source_identity() {
+    use crate::history_records::AsmHistoricalTopology;
+    use cadmpeg_ir::ids::FaceId;
+    use std::collections::HashSet;
+
+    let source_face = |source: &str, slot| FaceId(format!("f3d:brep/{source}/entity#{slot}"));
+    let active_candidates = vec![source_face("old", 10), source_face("new", 10)];
+    assert_eq!(
+        select_legacy_extrude_face_candidate(
+            &active_candidates,
+            &AsmHistoricalTopology::default(),
+            &HashSet::new(),
+            Some("old"),
+        ),
+        Some(LegacyFaceResolution::Active(source_face("old", 10)))
+    );
+    assert_eq!(
+        select_legacy_extrude_face_candidate(
+            &active_candidates,
+            &AsmHistoricalTopology::default(),
+            &HashSet::new(),
+            Some("missing"),
+        ),
+        None
+    );
+
+    let historical_candidates = vec![FaceId("f3d:brep:entity#20".into()), source_face("new", 21)];
+    let topology = AsmHistoricalTopology {
+        faces: vec![20, 21],
+        ..AsmHistoricalTopology::default()
     };
-    let state = AsmDeltaState {
-        id: "history:state#2".into(),
+    let mut changed = HashSet::new();
+    changed.insert(21);
+    assert_eq!(
+        select_legacy_extrude_face_candidate(
+            &historical_candidates,
+            &topology,
+            &changed,
+            Some("new"),
+        ),
+        Some(LegacyFaceResolution::Historical(21))
+    );
+    assert_eq!(
+        select_legacy_extrude_face_candidate(
+            &[FaceId("f3d:brep:entity#20".into())],
+            &topology,
+            &changed,
+            None,
+        ),
+        Some(LegacyFaceResolution::Historical(20))
+    );
+}
+
+#[test]
+fn hole_face_selection_binds_to_the_feature_input_topology() {
+    use crate::history_records::{
+        AsmDeltaState, AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory,
+    };
+    use crate::records::{
+        DesignEntitySelectionFaceCandidate, DesignHoleConstruction, DesignHoleFaceSelection,
+        DesignParameterScope,
+    };
+    use cadmpeg_ir::features::{
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology, HoleKind,
+        Length, Termination,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let feature_id = FeatureId("f3d:feature#42".into());
+    let scope_id = "f3d:Design/BulkStream.dat:scope#42";
+    let mut scope = DesignParameterScope::empty(scope_id, "Hole", 42);
+    scope.history_state_id = Some(2);
+    scope.previous_history_state_id = Some(1);
+    scope.hole_construction = Some(DesignHoleConstruction {
+        point_record_index: 55,
+        point_record_byte_offset: 0,
+        position: [0.0; 3],
+        position_offset: 0,
+        direction: [0.0, 0.0, 1.0],
+        direction_offset: 0,
+        point_parameters: [0.0; 2],
+        point_parameter_offsets: [0, 0],
+        reference_type: 0,
+        reference_type_offset: 0,
+        tangent_point_data: None,
+        tangent_point_data_prefix: None,
+        tangent_point_data_offset: None,
+        input_record_indices: vec![55],
+        input_record_offsets: vec![0],
+        face_selection: Some(DesignHoleFaceSelection {
+            record_index: 100,
+            byte_offset: 0,
+            class_tag: "333".into(),
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            identity_record_index: 103,
+            identity_record_offset: 0,
+            primary_identity: 18044,
+            primary_identity_offset: 0,
+            secondary_identity: None,
+            secondary_identity_offset: None,
+            curve_secondary_identity: None,
+            curve_secondary_identity_offset: None,
+            historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
+                history_id: "f3d:asset/Breps.BlobParts/BREP.example.smbh:asm-delta-state#2".into(),
+                historical_entity_kind: AsmHistoricalEntityKind::Pcurve,
+                historical_entity_ref: 18044,
+                historical_state_ids: vec![1],
+                face_slot: 30,
+            }],
+            next_record_index: 104,
+            next_byte_offset: 0,
+        }),
+    });
+    let mut feature = Feature::new(
+        feature_id.clone(),
+        0,
+        FeatureDefinition::Hole {
+            profile: None,
+            profile_filter: None,
+            face: Some(FaceSelection::Native(scope_id.into())),
+            position: Some(Point3::new(0.0, 0.0, 0.0)),
+            direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            placements: Vec::new(),
+            kind: HoleKind::Simple,
+            exit_kind: None,
+            diameter: Some(Length(5.0)),
+            extent: Some(Termination::Blind {
+                length: Length(10.0),
+            }),
+            bottom: None,
+            taper_angle: None,
+            specification: None,
+            allow_multi_profile_faces: None,
+        },
+    );
+    feature.native_ref = Some(scope_id.into());
+    let mut input_topologies = vec![FeatureInputTopology {
+        id: crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1),
+        input_of: feature_id.clone(),
+        bodies: Vec::new(),
+        faces: Vec::new(),
+        edges: Vec::new(),
+        vertices: Vec::new(),
+        native_ref: None,
+    }];
+    let state = |state_id, transition| AsmDeltaState {
+        id: format!("history:state#{state_id}"),
         parent: "history".into(),
         byte_offset: 0,
-        state_id: 2,
+        state_id,
         version_flag: 1,
         state_flag: 0,
         previous_ref: None,
         next_ref: None,
-        node_index: 2,
+        node_index: state_id,
         partner_ref: None,
         owner_ref: 0,
         bulletin_boards: Vec::new(),
         records: Vec::new(),
-        entity_versions: vec![crate::history_records::AsmEntityVersion {
-            entity_ref: 3,
-            record_ref: 4,
-        }],
+        entity_versions: Vec::new(),
         record_table_complete: true,
         topology: Some(AsmHistoricalTopology::default()),
-        transition: Some(transition.clone()),
+        transition,
     };
-    let mut histories = [AsmHistory {
-        id: "history".into(),
+    let history = AsmHistory {
+        id: "f3d:history".into(),
         byte_offset: 0,
         stream_size: None,
         history_entry_count: None,
         record_table_binding_budget_exceeded: false,
         projection_finalized: false,
-        states: vec![state],
-    }];
-
-    discard_projection_caches(&mut histories);
-
-    let state = &histories[0].states[0];
-    assert!(histories[0].projection_finalized);
-    assert!(state.entity_versions.is_empty());
-    assert!(!state.record_table_complete);
-    assert!(state.topology.is_none());
-    assert_eq!(state.transition, Some(transition));
-
-    let mut native = crate::native::F3dNative {
-        asm_histories: histories.to_vec(),
-        ..Default::default()
+        states: vec![
+            state(
+                2,
+                Some(AsmHistoricalTransition {
+                    previous_state_id: Some(1),
+                    records: Default::default(),
+                    topology: Default::default(),
+                }),
+            ),
+            state(1, None),
+        ],
     };
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    native.store(&mut namespace).expect("store native history");
-    native = crate::native::F3dNative::load(&namespace).expect("load native history");
-    assert!(native.asm_histories[0].projection_finalized);
+
+    bind_feature_face_selections(
+        std::slice::from_mut(&mut feature),
+        &mut input_topologies,
+        &[scope],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[history],
+    );
+
+    let FeatureDefinition::Hole {
+        face:
+            Some(FaceSelection::Historical {
+                state,
+                faces,
+                native,
+            }),
+        ..
+    } = &feature.definition
+    else {
+        panic!("Hole support face remains unresolved");
+    };
+    assert_eq!(native, scope_id);
+    assert_eq!(
+        state,
+        &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)
+    );
+    assert_eq!(faces.len(), 1);
+    assert_eq!(&input_topologies[0].faces, faces);
 }

@@ -95,6 +95,18 @@ pub(crate) fn f3d_with_text_brep(members: &[&str]) -> Vec<u8> {
 
 /// Wrap members into a `.f3z` archive with `Manifest.json` naming the root.
 pub(crate) fn f3z_archive(root_name: &str, members: &[(&str, &[u8])]) -> Vec<u8> {
+    f3z_archive_with_design_description(
+        root_name,
+        members,
+        br#"{"name":"Autodesk Design Description","version":"0.1","designDescription":{"id":"0","designGraphs":[]}}"#,
+    )
+}
+
+pub(crate) fn f3z_archive_with_design_description(
+    root_name: &str,
+    members: &[(&str, &[u8])],
+    design_description: &[u8],
+) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     for (name, bytes) in members {
@@ -105,8 +117,7 @@ pub(crate) fn f3z_archive(root_name: &str, members: &[(&str, &[u8])]) -> Vec<u8>
     zip.write_all(format!(r#"{{"root":"{root_name}"}}"#).as_bytes())
         .unwrap();
     zip.start_file("DesignDescription.json", stored).unwrap();
-    zip.write_all(br#"{"name":"Autodesk Design Description","version":"0.1","designDescription":{"id":"0","designGraphs":[]}}"#)
-        .unwrap();
+    zip.write_all(design_description).unwrap();
     zip.finish().unwrap().into_inner()
 }
 

@@ -18,6 +18,8 @@ use crate::framing::{
 };
 use crate::vec3_at::vec3_be_at;
 
+const EPS_TOPOLOGY_BLEND_SURFACES_2_E9: f64 = 1.0e-9;
+
 /// Exact inline schema header for the `intersection_data` one-byte record
 /// family. Its terminal `5a` is also the standalone record tag when the
 /// following fields form a complete shared record.
@@ -640,7 +642,7 @@ impl Graph {
                     || values[1] == 0.0
                     || !(values[0] * 1000.0).is_finite()
                     || !(values[1] * 1000.0).is_finite()
-                    || (values[0].abs() - values[1].abs()).abs() > 1.0e-9
+                    || (values[0].abs() - values[1].abs()).abs() > EPS_TOPOLOGY_BLEND_SURFACES_2_E9
                 {
                     return None;
                 }

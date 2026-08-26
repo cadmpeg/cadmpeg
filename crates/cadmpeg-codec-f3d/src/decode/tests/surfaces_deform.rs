@@ -197,7 +197,8 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
             }
             DeformableSurfaceData::Minimal { .. }
             | DeformableSurfaceData::SurfaceCurve { .. }
-            | DeformableSurfaceData::Full { .. } => {
+            | DeformableSurfaceData::Full { .. }
+            | DeformableSurfaceData::RevisionMode3 { .. } => {
                 panic!("wrong mode")
             }
         }
@@ -220,6 +221,83 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
             ProceduralSurfaceDefinition::Deformable { .. }
         ));
     }
+}
+
+#[test]
+fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
+    use cadmpeg_ir::geometry::{DeformableSurfaceData, ProceduralSurfaceDefinition};
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_revision_deformable_surface_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("revision deformable surface decode");
+    let ProceduralSurfaceDefinition::Deformable { construction } =
+        &decoded.ir().model.procedural_surfaces[0].definition
+    else {
+        panic!("expected deformable surface")
+    };
+    let revision_form = construction
+        .revision_form
+        .as_ref()
+        .expect("revision deformable form");
+    assert_eq!(revision_form.revision, 22_506);
+    assert_eq!(
+        revision_form.support_bounds,
+        [Some(0.0), Some(1.0), Some(0.0), Some(1.0)]
+    );
+    let DeformableSurfaceData::RevisionMode3 {
+        leading_parameter,
+        trailing_point,
+        parameters,
+        trailing_value,
+        ..
+    } = &construction.data
+    else {
+        panic!("expected revision mode-3 data")
+    };
+    assert_eq!(*leading_parameter, 2.5);
+    assert_eq!(
+        *trailing_point,
+        cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
+    );
+    assert_eq!(*parameters, [4.5, 5.5, 6.5]);
+    assert_eq!(*trailing_value, 19);
+
+    let (mut source_less, _, _) = decoded.into_parts();
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("revision deformable source-less encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("revision deformable source-less round trip");
+    let ProceduralSurfaceDefinition::Deformable { construction } =
+        &round_trip.ir().model.procedural_surfaces[0].definition
+    else {
+        panic!("expected round-trip deformable surface")
+    };
+    assert_eq!(
+        construction
+            .revision_form
+            .as_ref()
+            .expect("round-trip revision form")
+            .support_bounds,
+        [Some(0.0), Some(1.0), Some(0.0), Some(1.0)]
+    );
+    assert!(matches!(
+        construction.data,
+        DeformableSurfaceData::RevisionMode3 {
+            trailing_value: 19,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -836,6 +914,233 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
                     && curve.knots == [range[0], range[0], range[1], range[1]]
         ));
     }
+}
+
+#[test]
+fn generated_text_law_driven_sweep_preserves_expression_tokens() {
+    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition, SweepSurfaceLayout};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_text_law_driven_sweep_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("text-law sweep decode");
+    let ProceduralSurfaceDefinition::Sweep {
+        native: Some(native),
+        ..
+    } = &decoded.ir().model.procedural_surfaces[0].definition
+    else {
+        panic!("expected native sweep")
+    };
+    let SweepSurfaceLayout::LawDriven {
+        first_law,
+        second_law,
+        ..
+    } = &native.layout
+    else {
+        panic!("expected law-driven sweep")
+    };
+    assert!(matches!(
+        first_law.as_ref(),
+        LawExpression::Text { value } if value == "0.008726867790758789*X"
+    ));
+    assert!(matches!(
+        second_law.as_ref(),
+        LawExpression::Text { value } if value == "VEC(1,1,1)"
+    ));
+
+    let (mut source_less, _, _) = decoded.into_parts();
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("text-law sweep encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("text-law sweep round trip");
+    let ProceduralSurfaceDefinition::Sweep {
+        native: Some(native),
+        ..
+    } = &round_trip.ir().model.procedural_surfaces[0].definition
+    else {
+        panic!("expected round-tripped native sweep")
+    };
+    let SweepSurfaceLayout::LawDriven {
+        first_law,
+        second_law,
+        ..
+    } = &native.layout
+    else {
+        panic!("expected round-tripped law-driven sweep")
+    };
+    assert!(matches!(
+        first_law.as_ref(),
+        LawExpression::Text { value } if value == "0.008726867790758789*X"
+    ));
+    assert!(matches!(
+        second_law.as_ref(),
+        LawExpression::Text { value } if value == "VEC(1,1,1)"
+    ));
+}
+
+#[test]
+fn generated_revision_text_law_sweep_decodes_and_round_trips() {
+    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition, SweepSurfaceLayout};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_revision_text_law_sweep_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("revision text-law sweep decode");
+    let ProceduralSurfaceDefinition::Sweep {
+        native: Some(native),
+        ..
+    } = &decoded.ir().model.procedural_surfaces[0].definition
+    else {
+        panic!("expected native revision sweep")
+    };
+    assert_eq!(native.revision_form.as_ref().unwrap().revision, 23100);
+    let SweepSurfaceLayout::LawDriven {
+        first_law,
+        second_law,
+        formula,
+        ..
+    } = &native.layout
+    else {
+        panic!("expected revision law-driven sweep")
+    };
+    assert!(matches!(
+        first_law.as_ref(),
+        LawExpression::Text { value } if value == "0.008726867790758789*X"
+    ));
+    assert!(matches!(
+        second_law.as_ref(),
+        LawExpression::Text { value } if value == "VEC(1,1,1)"
+    ));
+    assert_eq!(formula.name, "ROTATE(DOMAIN(VEC(1,0,0),0,0.8),TRANS1)");
+    assert!(matches!(
+        formula.variables.as_slice(),
+        [LawExpression::TransformVec { .. }]
+    ));
+
+    let (mut source_less, _, _) = decoded.into_parts();
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("revision text-law sweep encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("revision text-law sweep round trip");
+    let ProceduralSurfaceDefinition::Sweep {
+        native: Some(native),
+        ..
+    } = &round_trip.ir().model.procedural_surfaces[0].definition
+    else {
+        panic!("expected round-tripped revision sweep")
+    };
+    assert_eq!(native.revision_form.as_ref().unwrap().revision, 23100);
+    assert!(matches!(
+        native.layout,
+        SweepSurfaceLayout::LawDriven {
+            first_law: ref first,
+            second_law: ref second,
+            ..
+        } if matches!(first.as_ref(), LawExpression::Text { value } if value == "0.008726867790758789*X")
+            && matches!(second.as_ref(), LawExpression::Text { value } if value == "VEC(1,1,1)")
+    ));
+}
+
+#[test]
+fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
+    use cadmpeg_ir::geometry::{LawExpression, ProceduralSurfaceDefinition, SweepSurfaceLayout};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_cacheless_revision_text_law_sweep_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("cacheless revision text-law sweep decode");
+    let procedural = &decoded.ir().model.procedural_surfaces[0];
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let ProceduralSurfaceDefinition::Sweep {
+        native: Some(native),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected cacheless native revision sweep")
+    };
+    let form = native.revision_form.as_ref().expect("revision form");
+    assert_eq!(form.revision, 23100);
+    assert_eq!(form.tail_enum, 2);
+    assert_eq!(
+        form.tail_parameterization.as_ref(),
+        Some(&expected_revision_surface_tail_parameterization())
+    );
+    let SweepSurfaceLayout::LawDriven {
+        first_law,
+        second_law,
+        ..
+    } = &native.layout
+    else {
+        panic!("expected cacheless law-driven sweep")
+    };
+    assert!(matches!(
+        first_law.as_ref(),
+        LawExpression::Text { value } if value == "0.008726867790758789*X"
+    ));
+    assert!(matches!(
+        second_law.as_ref(),
+        LawExpression::Text { value } if value == "VEC(1,1,1)"
+    ));
+
+    let (mut source_less, _, _) = decoded.into_parts();
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("cacheless revision text-law sweep encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("cacheless revision text-law sweep round trip");
+    let procedural = &round_trip.ir().model.procedural_surfaces[0];
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let ProceduralSurfaceDefinition::Sweep {
+        native: Some(native),
+        ..
+    } = &procedural.definition
+    else {
+        panic!("expected round-tripped cacheless native revision sweep")
+    };
+    assert_eq!(native.revision_form.as_ref().unwrap().tail_enum, 2);
+    assert_eq!(
+        native
+            .revision_form
+            .as_ref()
+            .unwrap()
+            .tail_parameterization
+            .as_ref(),
+        Some(&expected_revision_surface_tail_parameterization())
+    );
 }
 
 #[test]

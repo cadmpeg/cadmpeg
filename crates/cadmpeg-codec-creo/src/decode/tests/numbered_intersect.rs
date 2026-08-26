@@ -1934,14 +1934,14 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
     assert!(matches!(
         revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), axis),
         Some(SurfaceGeometry::Cone { radius, half_angle, .. })
-            if radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12
+            if radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
     ));
     assert!(matches!(
         revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), axis),
         Some(SurfaceGeometry::Cone { axis, radius, half_angle, .. })
             if axis.y == -1.0
                 && radius == 4.0
-                && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12
+                && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
     ));
     let centered_arc = SketchGeometry::Arc {
         center: cadmpeg_ir::math::Point2::new(0.0, 3.0),
@@ -1993,7 +1993,7 @@ fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, parameter).expect("pcurve point");
         let point = cadmpeg_ir::eval::surface_point(&surface, uv.u, uv.v).expect("surface point");
-        assert!((point.x.hypot(point.y) - 3.0).abs() < 1e-12);
-        assert!(point.z.abs() < 1e-12);
+        assert!((point.x.hypot(point.y) - 3.0).abs() < 1.0e-12);
+        assert!(point.z.abs() < 1.0e-12);
     }
 }

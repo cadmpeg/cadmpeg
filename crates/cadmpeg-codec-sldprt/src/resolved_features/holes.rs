@@ -29,6 +29,11 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 use std::collections::{HashMap, HashSet};
 
+const EPS_HOLE_POSITION: f64 = 1.0e-8;
+const EPS_HOLE_GEOMETRY: f64 = 1.0e-9;
+const EPS_HOLE_DEGENERATE_NORMAL: f64 = 1.0e-10;
+const EPS_HOLE_EXACT_GEOMETRY: f64 = 1.0e-12;
+
 #[cfg(test)]
 use super::parameters::enrich_history_parameters;
 
@@ -636,7 +641,7 @@ fn profiled_hole_construction_with_evidence(
         .collect::<Vec<_>>();
     let flat_bottom = expressions.iter().copied().any(|value| {
         crate::history::parse_angle_rad(value)
-            .is_some_and(|angle| (angle - std::f64::consts::PI).abs() <= 1.0e-12)
+            .is_some_and(|angle| (angle - std::f64::consts::PI).abs() <= EPS_HOLE_EXACT_GEOMETRY)
     });
     let mut lengths = expressions
         .iter()
@@ -649,11 +654,11 @@ fn profiled_hole_construction_with_evidence(
         .filter(|value| value.is_finite() && *value > 0.0)
         .collect::<Vec<_>>();
     diameters.sort_by(f64::total_cmp);
-    diameters.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-9);
+    diameters.dedup_by(|left, right| (*left - *right).abs() <= EPS_HOLE_GEOMETRY);
     angles.sort_by(f64::total_cmp);
-    angles.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-12);
+    angles.dedup_by(|left, right| (*left - *right).abs() <= EPS_HOLE_EXACT_GEOMETRY);
     lengths.sort_by(f64::total_cmp);
-    lengths.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-9);
+    lengths.dedup_by(|left, right| (*left - *right).abs() <= EPS_HOLE_GEOMETRY);
     let dimension_only = if crate::history::is_hole_profile_construction(profile) {
         match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
             ([diameter], [depth], []) => Some(ProfiledHoleConstruction {
@@ -1301,7 +1306,7 @@ pub(crate) fn project_hole_position_sketches(
     lanes: &[FeatureInputLane],
 ) {
     const NATIVE_TO_IR: f64 = 1000.0;
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = EPS_HOLE_POSITION;
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1675,8 +1680,8 @@ pub(crate) fn project_spatial_hole_position_sketches(
             })
             .collect::<Vec<_>>();
         let radius = *diameter * 0.5;
-        let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
-        let axis_tolerance_squared = 1.0e-12;
+        let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
+        let axis_tolerance_squared = EPS_HOLE_EXACT_GEOMETRY;
         let mut resolved = Vec::with_capacity(authored_markers.len());
         let mut ambiguous = false;
         for marker in &authored_markers {
@@ -1721,7 +1726,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                     .collect::<Vec<_>>();
                 support_axes
                     .sort_by_key(|axis| [axis.x.to_bits(), axis.y.to_bits(), axis.z.to_bits()]);
-                support_axes.dedup_by(|left, right| left.dot(*right) >= 1.0 - 1.0e-9);
+                support_axes.dedup_by(|left, right| left.dot(*right) >= 1.0 - EPS_HOLE_GEOMETRY);
                 if let [axis] = support_axes.as_slice() {
                     axes.push((point, *axis));
                 }
@@ -1800,7 +1805,7 @@ fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePla
         .map(|point| first.cross(displacement(*point)))
         .max_by(|left, right| left.norm().total_cmp(&right.norm()))?;
     let norm = candidate.norm();
-    if norm <= extent * extent * 1.0e-10 {
+    if norm <= extent * extent * EPS_HOLE_DEGENERATE_NORMAL {
         return None;
     }
     let normal = Vector3::new(candidate.x / norm, candidate.y / norm, candidate.z / norm);
@@ -1812,15 +1817,27 @@ fn coplanar_spatial_position_placements(points: &[Point3]) -> Option<Vec<HolePla
         )
         .dot(normal)
         .abs()
-            > extent * 1.0e-8
+            > extent * EPS_HOLE_POSITION
     }) {
         return None;
     }
     let axis = canonical_axis(normal);
     let axis = Vector3::new(
-        if axis.x.abs() <= 1.0e-12 { 0.0 } else { axis.x },
-        if axis.y.abs() <= 1.0e-12 { 0.0 } else { axis.y },
-        if axis.z.abs() <= 1.0e-12 { 0.0 } else { axis.z },
+        if axis.x.abs() <= EPS_HOLE_EXACT_GEOMETRY {
+            0.0
+        } else {
+            axis.x
+        },
+        if axis.y.abs() <= EPS_HOLE_EXACT_GEOMETRY {
+            0.0
+        } else {
+            axis.y
+        },
+        if axis.z.abs() <= EPS_HOLE_EXACT_GEOMETRY {
+            0.0
+        } else {
+            axis.z
+        },
     );
     Some(
         points
@@ -1842,7 +1859,7 @@ pub(crate) fn project_generated_hole_axes(
     faces: &[Face],
     surfaces: &[Surface],
 ) {
-    const AXIS_QUANTUM: f64 = 1.0e-8;
+    const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
     let native_features = histories
         .iter()
@@ -1880,7 +1897,7 @@ pub(crate) fn project_generated_hole_axes(
             continue;
         };
         let radius = *diameter * 0.5;
-        let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+        let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
         let mut lane_solutions = Vec::new();
         for lane in lanes {
             let local_identities = lane
@@ -2152,8 +2169,8 @@ fn project_flat_blind_topology_axes(
             continue;
         }
         let radius = diameter * 0.5;
-        let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
-        let length_tolerance = (length.abs() * 1.0e-9).max(1.0e-8);
+        let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
+        let length_tolerance = (length.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_POSITION);
         let Some(placements) = carrier_placements(cylinders.iter().filter_map(
             |(origin, axis, candidate_radius, candidate_span, _)| {
                 ((candidate_radius - radius).abs() <= radius_tolerance
@@ -2209,7 +2226,7 @@ fn project_drilled_hole_topology_axes(
                 && length > 0.0
                 && drill_point_angle.is_finite()
                 && drill_point_angle > 0.0
-                && (bottom_angle - drill_point_angle).abs() <= 1.0e-9 =>
+                && (bottom_angle - drill_point_angle).abs() <= EPS_HOLE_GEOMETRY =>
             {
                 Some((index, diameter, length, drill_point_angle))
             }
@@ -2249,8 +2266,8 @@ fn drilled_hole_topology_candidates(
     surfaces: &[Surface],
 ) -> Option<Vec<HolePlacement>> {
     let radius = diameter * 0.5;
-    let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
-    let length_tolerance = (length.abs() * 1.0e-9).max(1.0e-8);
+    let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
+    let length_tolerance = (length.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_POSITION);
     let cone_keys = surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
@@ -2262,8 +2279,8 @@ fn drilled_hole_topology_candidates(
                 half_angle,
                 ..
             } if (candidate_radius - radius).abs() <= radius_tolerance
-                && (ratio - 1.0).abs() <= 1.0e-9
-                && (half_angle - drill_point_angle * 0.5).abs() <= 1.0e-9 =>
+                && (ratio - 1.0).abs() <= EPS_HOLE_GEOMETRY
+                && (half_angle - drill_point_angle * 0.5).abs() <= EPS_HOLE_GEOMETRY =>
             {
                 hole_axis_key(&HolePlacement::Axis { origin, axis })
             }
@@ -2324,7 +2341,7 @@ fn expand_seeded_drilled_hole_topology_axes(
             || *length <= 0.0
             || !drill_point_angle.is_finite()
             || *drill_point_angle <= 0.0
-            || (bottom_angle - drill_point_angle).abs() > 1.0e-9
+            || (bottom_angle - drill_point_angle).abs() > EPS_HOLE_GEOMETRY
         {
             continue;
         }
@@ -2439,13 +2456,13 @@ fn partition_seeded_hole_axes(
         let Some(direction) = axes.next() else {
             return;
         };
-        if axes.any(|axis| axis.dot(direction) < 1.0 - 1.0e-9)
+        if axes.any(|axis| axis.dot(direction) < 1.0 - EPS_HOLE_GEOMETRY)
             || placements.iter().any(|placement| {
                 hole_axis_key(placement).is_none_or(|key| !candidate_keys.contains(&key))
             })
             || seed_directions
                 .iter()
-                .any(|candidate| candidate.dot(direction) >= 1.0 - 1.0e-9)
+                .any(|candidate| candidate.dot(direction) >= 1.0 - EPS_HOLE_GEOMETRY)
         {
             return;
         }
@@ -2467,7 +2484,7 @@ fn partition_seeded_hole_axes(
         let matches = seed_directions
             .iter()
             .enumerate()
-            .filter(|(_, seed)| seed.dot(direction) >= 1.0 - 1.0e-9)
+            .filter(|(_, seed)| seed.dot(direction) >= 1.0 - EPS_HOLE_GEOMETRY)
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
         let [partition] = matches.as_slice() else {
@@ -2579,7 +2596,7 @@ fn same_hole_construction(left: &FeatureDefinition, right: &FeatureDefinition) -
 }
 
 fn hole_axis_key(placement: &HolePlacement) -> Option<[i64; 6]> {
-    const AXIS_QUANTUM: f64 = 1.0e-8;
+    const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
     let HolePlacement::Axis { origin, axis } = placement else {
         return None;
@@ -2622,7 +2639,7 @@ fn cylindrical_support_normal(surface: &Surface, point: Point3) -> Option<Vector
         delta.z - along * axis.z,
     );
     let radial_length = radial.norm();
-    let tolerance = (radius * 1.0e-9).max(1.0e-9);
+    let tolerance = (radius * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     ((radial_length - radius).abs() <= tolerance).then(|| {
         Vector3::new(
             radial.x / radial_length,
@@ -2848,7 +2865,7 @@ pub(crate) fn project_hole_axes(
         if hole_diameter_counts.get(&diameter.to_bits()) == Some(&1) {
             if let Some(frame) = frames.next() {
                 let same_frame = |candidate: (Point3, Vector3, Vector3)| {
-                    frame.1.dot(candidate.1).abs() >= 1.0 - 1.0e-9
+                    frame.1.dot(candidate.1).abs() >= 1.0 - EPS_HOLE_GEOMETRY
                         && Vector3::new(
                             candidate.0.x - frame.0.x,
                             candidate.0.y - frame.0.y,
@@ -2856,7 +2873,7 @@ pub(crate) fn project_hole_axes(
                         )
                         .dot(frame.1)
                         .abs()
-                            <= 1.0e-8
+                            <= EPS_HOLE_POSITION
                 };
                 if frames.all(same_frame) {
                     if let Some(bore_placements) =
@@ -2936,7 +2953,7 @@ fn cylindrical_bore_axes(radius: f64, topology: &HoleTopology<'_>) -> Vec<(Point
         .iter()
         .map(|surface| (&surface.id, surface))
         .collect::<HashMap<_, _>>();
-    let tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+    let tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     let mut axes = topology
         .faces
         .iter()
@@ -2974,11 +2991,11 @@ fn plane_owned_bore_placements(
     radius: f64,
     topology: &HoleTopology<'_>,
 ) -> Option<Vec<HolePlacement>> {
-    const AXIS_QUANTUM: f64 = 1.0e-8;
+    const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
     let mut placements = cylindrical_bore_axes(radius, topology)
         .into_iter()
-        .filter(|(_, axis)| axis.dot(plane_normal).abs() >= 1.0 - 1.0e-9)
+        .filter(|(_, axis)| axis.dot(plane_normal).abs() >= 1.0 - EPS_HOLE_GEOMETRY)
         .map(|(origin, axis)| {
             let station = Vector3::new(
                 plane_origin.x - origin.x,
@@ -3022,7 +3039,7 @@ fn bore_carrier_placements(radius: f64, topology: &HoleTopology<'_>) -> Option<V
 }
 
 fn cylindrical_surface_placements(radius: f64, surfaces: &[Surface]) -> Option<Vec<HolePlacement>> {
-    let tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+    let tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     carrier_placements(surfaces.iter().filter_map(|surface| {
         let SurfaceGeometry::Cylinder {
             origin,
@@ -3040,7 +3057,7 @@ fn cylindrical_surface_placements(radius: f64, surfaces: &[Surface]) -> Option<V
 fn carrier_placements(
     axes: impl IntoIterator<Item = (Point3, Vector3)>,
 ) -> Option<Vec<HolePlacement>> {
-    const AXIS_QUANTUM: f64 = 1.0e-8;
+    const AXIS_QUANTUM: f64 = EPS_HOLE_POSITION;
     let quantize = |value: f64| (value / AXIS_QUANTUM).round() as i64;
     let mut carriers = axes
         .into_iter()
@@ -3204,9 +3221,9 @@ pub(crate) fn project_topological_hole_constructions(
                     if !reversed {
                         return None;
                     }
-                    let parallel = axis.dot(*placement_axis).abs() >= 1.0 - 1.0e-9;
+                    let parallel = axis.dot(*placement_axis).abs() >= 1.0 - EPS_HOLE_GEOMETRY;
                     let distance = point_axis_distance_squared(*placement_origin, *origin, *axis);
-                    (parallel && distance <= 1.0e-12).then_some((*radius, *span))
+                    (parallel && distance <= EPS_HOLE_EXACT_GEOMETRY).then_some((*radius, *span))
                 })
                 .collect::<Vec<_>>();
             candidates.sort_by(|left, right| {
@@ -3215,7 +3232,8 @@ pub(crate) fn project_topological_hole_constructions(
                     .then_with(|| left.1.total_cmp(&right.1))
             });
             candidates.dedup_by(|left, right| {
-                (left.0 - right.0).abs() <= 1.0e-9 && (left.1 - right.1).abs() <= 1.0e-9
+                (left.0 - right.0).abs() <= EPS_HOLE_GEOMETRY
+                    && (left.1 - right.1).abs() <= EPS_HOLE_GEOMETRY
             });
             common = Some(match common {
                 None => candidates,
@@ -3223,8 +3241,8 @@ pub(crate) fn project_topological_hole_constructions(
                     .into_iter()
                     .filter(|candidate| {
                         candidates.iter().any(|other| {
-                            (candidate.0 - other.0).abs() <= 1.0e-9
-                                && (candidate.1 - other.1).abs() <= 1.0e-9
+                            (candidate.0 - other.0).abs() <= EPS_HOLE_GEOMETRY
+                                && (candidate.1 - other.1).abs() <= EPS_HOLE_GEOMETRY
                         })
                     })
                     .collect(),
@@ -3316,7 +3334,7 @@ pub(crate) fn project_bore_backed_position_sketches(
         let canonical = canonical_axis(axes[0].1);
         if !axes
             .iter()
-            .all(|(_, axis)| canonical_axis(*axis).dot(canonical) >= 1.0 - 1.0e-9)
+            .all(|(_, axis)| canonical_axis(*axis).dot(canonical) >= 1.0 - EPS_HOLE_GEOMETRY)
         {
             continue;
         }
@@ -3327,12 +3345,12 @@ pub(crate) fn project_bore_backed_position_sketches(
                     origin,
                     normal,
                     u_axis,
-                } if normal.dot(canonical).abs() >= 1.0 - 1.0e-9
+                } if normal.dot(canonical).abs() >= 1.0 - EPS_HOLE_GEOMETRY
                     && axes.iter().all(|(point, _)| {
                         Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z)
                             .dot(normal)
                             .abs()
-                            <= 1.0e-8
+                            <= EPS_HOLE_POSITION
                     }) =>
                 {
                     Some((origin, normal, u_axis))
@@ -3505,12 +3523,12 @@ fn match_marker_loci_to_bore_axes(
     surfaces: &[Surface],
     direction: Option<Vector3>,
 ) -> Option<Vec<HolePlacement>> {
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = EPS_HOLE_POSITION;
     if marker_loci.is_empty() {
         return None;
     }
 
-    let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+    let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     let quantize_scalar = |value: f64| (value / QUANTUM).round() as i64;
     let mut grouped = HashMap::<[i64; 3], HashMap<[i64; 3], Vec<(Point3, Vector3)>>>::new();
     for surface in surfaces {
@@ -3564,7 +3582,7 @@ fn match_marker_loci_to_bore_axes(
                 let (origin, axis) = match direction {
                     Some(expected) => surfaces
                         .iter()
-                        .filter(|(_, axis)| expected.dot(*axis) >= 1.0 - 1.0e-9)
+                        .filter(|(_, axis)| expected.dot(*axis) >= 1.0 - EPS_HOLE_GEOMETRY)
                         .min_by(compare_origins)?,
                     None => surfaces.iter().min_by(compare_origins)?,
                 };
@@ -3666,7 +3684,7 @@ fn match_marker_loci_to_bore_axes(
 fn canonical_axis(axis: Vector3) -> Vector3 {
     let sign = [axis.x, axis.y, axis.z]
         .into_iter()
-        .find(|component| component.abs() > 1.0e-12)
+        .find(|component| component.abs() > EPS_HOLE_EXACT_GEOMETRY)
         .map_or(1.0, f64::signum);
     Vector3::new(axis.x * sign, axis.y * sign, axis.z * sign)
 }
@@ -3863,7 +3881,7 @@ fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Poin
                         || View::u16_le_at(payload, *offset).is_some_and(is_class_token))
             })
         })?;
-        (depth > 0.0 && (norm - 1.0).abs() <= 1.0e-9 && next_record < end).then_some((
+        (depth > 0.0 && (norm - 1.0).abs() <= EPS_HOLE_GEOMETRY && next_record < end).then_some((
             origin,
             Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
         ))
@@ -3888,7 +3906,7 @@ pub(super) fn feature_input_sketch_frame(
             .get(start..end)
             .and_then(|object| explicit_reference_plane_frame(object).ok().flatten())?;
         let finite_zero = |value: f64| {
-            if value.abs() <= 1.0e-12 {
+            if value.abs() <= EPS_HOLE_EXACT_GEOMETRY {
                 0.0
             } else {
                 value
@@ -3947,7 +3965,7 @@ fn coplanar_plane_frames(
         + reference.1.y * candidate.1.y
         + reference.1.z * candidate.1.z)
         / (reference_normal_length * candidate_normal_length);
-    if (normal_alignment.abs() - 1.0).abs() > 1.0e-8 {
+    if (normal_alignment.abs() - 1.0).abs() > EPS_HOLE_POSITION {
         return false;
     }
     let displacement = Vector3::new(
@@ -3969,7 +3987,7 @@ fn coplanar_plane_frames(
         .max(candidate.0.y.abs())
         .max(candidate.0.z.abs())
         .max(1.0);
-    normal_distance.abs() <= 1.0e-8 * scale
+    normal_distance.abs() <= EPS_HOLE_POSITION * scale
 }
 
 pub(super) fn sketch_feature_frames(
@@ -4064,9 +4082,9 @@ fn constrained_bore_axes(
     surfaces: &[Surface],
     relations: &[(FeatureInputRelationFamily, u16, u16, f64)],
 ) -> Option<Vec<HolePlacement>> {
-    const QUANTUM: f64 = 1.0e-8;
+    const QUANTUM: f64 = EPS_HOLE_POSITION;
     let v_axis = normal.cross(u_axis);
-    let radius_tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+    let radius_tolerance = (radius.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_GEOMETRY);
     let mut axes = surfaces
         .iter()
         .filter_map(|surface| match surface.geometry {
@@ -4076,7 +4094,7 @@ fn constrained_bore_axes(
                 radius: candidate_radius,
                 ..
             } if (candidate_radius - radius).abs() <= radius_tolerance
-                && axis.dot(normal).abs() >= 1.0 - 1.0e-9 =>
+                && axis.dot(normal).abs() >= 1.0 - EPS_HOLE_GEOMETRY =>
             {
                 let delta = Vector3::new(
                     candidate.x - origin.x,

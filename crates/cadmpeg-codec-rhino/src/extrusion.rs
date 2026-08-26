@@ -13,6 +13,9 @@ use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{interval, point, vector};
 use crate::wire::Uuid;
 
+const EPS_EXTRUSION_POSITION: f64 = 1.0e-8;
+const EPS_EXTRUSION_DEGENERATE: f64 = 1.0e-10;
+
 /// `ON_Extrusion` class UUID.
 pub(crate) const ON_EXTRUSION: Uuid = Uuid::from_canonical([
     0x36, 0xf5, 0x31, 0x75, 0x72, 0xb8, 0x4d, 0x47, 0xbf, 0x1f, 0xb4, 0xe6, 0xfc, 0x24, 0xf4, 0xb9,
@@ -22,7 +25,7 @@ const ANONYMOUS: u32 = 0x4000_8000;
 const ON_V5_EXTRUSION_DISPLAY_MESH_CACHE: Uuid = Uuid::from_canonical([
     0xa8, 0x13, 0x0a, 0x3e, 0xe4, 0xf3, 0x4c, 0xb0, 0xbb, 0x8a, 0xf1, 0x0a, 0x47, 0x39, 0x12, 0xd0,
 ]);
-const UNIT_TOLERANCE: f64 = 1.0e-10;
+const UNIT_TOLERANCE: f64 = EPS_EXTRUSION_DEGENERATE;
 const MITER_Z_MINIMUM: f64 = 1.0 / 64.0;
 const CLOSURE_ABSOLUTE_TOLERANCE: f64 = 2.328_306_436_538_696_3e-10;
 const CLOSURE_RELATIVE_TOLERANCE: f64 = 2.273_736_754_432_320_6e-13;
@@ -558,7 +561,7 @@ fn cap_pcurve(
     for point in &curve.control_points {
         let delta = point.vector_from(origin);
         let distance = delta.dot(frame.2);
-        if distance.abs() > 1.0e-8 {
+        if distance.abs() > EPS_EXTRUSION_POSITION {
             return Err(error(offset, "extrusion cap boundary is not planar"));
         }
         points.push(Point2::new(delta.dot(frame.0), delta.dot(frame.1)));

@@ -233,6 +233,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         &[point.clone(), identityless_point],
         &[],
         &[],
+        &[],
         1.0e-6,
     );
     assert_eq!(sketches.len(), 1);
@@ -255,7 +256,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     );
 
     // The settled explicit frame keeps its stored origin unscaled.
-    let (sketches, _) = project_sketch_design(&[placement(329)], &[point], &[], &[], 1.0e-6);
+    let (sketches, _) = project_sketch_design(&[placement(329)], &[point], &[], &[], &[], 1.0e-6);
     assert_eq!(
         sketches[0]
             .resolved_placement()
