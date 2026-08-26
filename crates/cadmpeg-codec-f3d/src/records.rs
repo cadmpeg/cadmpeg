@@ -2192,6 +2192,8 @@ pub enum DesignThreadForm {
     Compact,
     /// Direct standard prefix with the legacy compact scalar and trailer lanes.
     StandardLegacy,
+    /// Compact prefix with the legacy scalar and no-reference trailer lanes.
+    CompactLegacy,
 }
 
 /// Exact form and size construction carried by a `Thread` scope.

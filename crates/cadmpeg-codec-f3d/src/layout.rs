@@ -5456,6 +5456,32 @@ pub(crate) mod thread_standard_legacy_construction_tail {
     pub(crate) const LEGACY_TRAILER: usize = 38;
 }
 
+/// Byte offsets for the `thread_compact_legacy_construction_tail` record.
+///
+/// Spec §3.1. Record length 42 B.
+///
+/// ```text
+/// Offsets are relative to the first byte after the third LP-UTF16 string. This class-specific tail keeps the compact paired reference table while using the legacy scalar and no-reference trailer lanes.
+/// ```
+pub(crate) mod thread_compact_legacy_construction_tail {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 42;
+    /// Offset of `construction_marker` (`bytes[5]`). Spec §3.1.
+    pub(crate) const CONSTRUCTION_MARKER: usize = 0;
+    /// Offset of `major_diameter` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const MAJOR_DIAMETER: usize = 5;
+    /// Offset of `minor_diameter` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const MINOR_DIAMETER: usize = 13;
+    /// Offset of `pitch_marker` (`u8`). Spec §3.1.
+    pub(crate) const PITCH_MARKER: usize = 21;
+    /// Offset of `pitch` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const PITCH: usize = 22;
+    /// Offset of `pitch_diameter` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const PITCH_DIAMETER: usize = 30;
+    /// Offset of `legacy_trailer` (`bytes[4]`). Spec §3.1.
+    pub(crate) const LEGACY_TRAILER: usize = 38;
+}
+
 /// Byte offsets for the `thread_compact_reference_construction_tail` record.
 ///
 /// Spec §3.1. Record length 49 B.

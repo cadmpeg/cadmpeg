@@ -128,6 +128,7 @@ use crate::layout::shifted_reference_aware_extrude_class_323_tail as shifted_ref
 use crate::layout::shifted_reference_aware_extrude_scope_prefix as shifted_reference_aware;
 use crate::layout::thicken_class_347_scope_frame as thicken_347;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
+use crate::layout::thread_compact_legacy_construction_tail as thread_compact_legacy_tail;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
 use crate::layout::thread_standard_construction_tail as thread_tail;
 use crate::layout::thread_standard_legacy_construction_tail as thread_standard_legacy_tail;
@@ -507,7 +508,7 @@ pub(crate) fn exact_thread_construction(
     let face_group_record_indices = match prefix_form {
         DesignThreadForm::Standard => vec![scope.reference_members[0]],
         DesignThreadForm::Compact => scope.reference_members.iter().step_by(2).copied().collect(),
-        DesignThreadForm::StandardLegacy => return None,
+        DesignThreadForm::StandardLegacy | DesignThreadForm::CompactLegacy => return None,
     };
     let construction = parse_thread_payload(
         bytes,
@@ -515,9 +516,16 @@ pub(crate) fn exact_thread_construction(
         prefix_form,
         face_group_record_indices,
     )?;
-    if construction.form == DesignThreadForm::StandardLegacy
-        && (scope.class_tag != "334" || scope.paired_class_tag != "262")
-    {
+    let class_pair_is_valid = match construction.form {
+        DesignThreadForm::StandardLegacy => {
+            scope.class_tag == "334" && scope.paired_class_tag == "262"
+        }
+        DesignThreadForm::CompactLegacy => {
+            scope.class_tag == "414" && scope.paired_class_tag == "263"
+        }
+        DesignThreadForm::Standard | DesignThreadForm::Compact => true,
+    };
+    if !class_pair_is_valid {
         return None;
     }
     Some(construction)
@@ -581,11 +589,16 @@ pub(crate) fn parse_thread_payload(
             (DesignThreadForm::Standard, [1, 1, 0, 0, 0]) => (
                 DesignThreadForm::StandardLegacy,
                 0,
-                ThreadTrailerKind::CompactNoReference,
+                ThreadTrailerKind::StandardLegacy,
             ),
             (DesignThreadForm::Compact, [1, 2, 0, 0, 0]) => {
                 (DesignThreadForm::Compact, 0, ThreadTrailerKind::Compact)
             }
+            (DesignThreadForm::Compact, [1, 1, 0, 0, 0]) => (
+                DesignThreadForm::CompactLegacy,
+                0,
+                ThreadTrailerKind::CompactLegacy,
+            ),
             _ => return None,
         };
     let nominal_size = nominal_size_text.parse::<f64>().ok()?;
@@ -597,14 +610,15 @@ pub(crate) fn parse_thread_payload(
     let trailer_at = match trailer_kind {
         ThreadTrailerKind::Standard => thread_tail::STANDARD_TRAILER,
         ThreadTrailerKind::Compact => thread_compact_tail::COMPACT_TRAILER,
-        ThreadTrailerKind::CompactNoReference => thread_standard_legacy_tail::LEGACY_TRAILER,
+        ThreadTrailerKind::StandardLegacy => thread_standard_legacy_tail::LEGACY_TRAILER,
+        ThreadTrailerKind::CompactLegacy => thread_compact_legacy_tail::LEGACY_TRAILER,
     };
     let trailer_offset = after_profile.checked_add(trailer_at)?;
     let (trailing_reference_record_index, trailing_reference_offset) = match trailer_kind {
         ThreadTrailerKind::Standard if bytes.get(trailer_offset..trailer_offset + 2)? == [0, 1] => {
             (None, None)
         }
-        ThreadTrailerKind::CompactNoReference
+        ThreadTrailerKind::StandardLegacy | ThreadTrailerKind::CompactLegacy
             if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
         {
             (None, None)
@@ -665,7 +679,8 @@ pub(crate) fn parse_thread_payload(
 enum ThreadTrailerKind {
     Standard,
     Compact,
-    CompactNoReference,
+    StandardLegacy,
+    CompactLegacy,
 }
 
 pub(crate) fn bind_joint_origin_frames_from_assemblies(

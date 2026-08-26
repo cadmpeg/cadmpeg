@@ -258,6 +258,58 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
 }
 
 #[test]
+fn thread_scope_decodes_class_414_legacy_compact_tail() {
+    let mut bytes = vec![0; 160];
+    let mut payload = Vec::new();
+    lp_utf16(&mut payload, "M190x8");
+    lp_utf16(&mut payload, "190.0");
+    lp_utf16(&mut payload, "ISO Metric profile");
+    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes[29..34].copy_from_slice(&[0, 2, 0, 0, 0]);
+    bytes[34..38].copy_from_slice(&[0x36, 0, 0x48, 0]);
+    bytes[38..38 + payload.len()].copy_from_slice(&payload);
+    let after_profile = 38 + payload.len();
+    bytes[after_profile..after_profile + 5].copy_from_slice(&[1, 1, 0, 0, 0]);
+    bytes[after_profile + 5..after_profile + 13].copy_from_slice(&19.08149f64.to_le_bytes());
+    bytes[after_profile + 13..after_profile + 21].copy_from_slice(&18.18397f64.to_le_bytes());
+    bytes[after_profile + 21] = 0;
+    bytes[after_profile + 22..after_profile + 30].copy_from_slice(&0.8f64.to_le_bytes());
+    bytes[after_profile + 30..after_profile + 38].copy_from_slice(&18.50413f64.to_le_bytes());
+    bytes[after_profile + 38..after_profile + 42].copy_from_slice(&[0, 0, 0, 1]);
+
+    let expected = DesignThreadConstruction {
+        form: DesignThreadForm::CompactLegacy,
+        designation_offset: 38,
+        designation: "M190x8".into(),
+        nominal_size_text: "190.0".into(),
+        nominal_size: 190.0,
+        profile: "ISO Metric profile".into(),
+        major_diameter: 19.08149,
+        minor_diameter: 18.18397,
+        pitch: 0.8,
+        pitch_diameter: 18.50413,
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
+        face_group_record_indices: vec![988],
+    };
+    assert_thread_construction(
+        parse_thread_payload(&bytes, 38, DesignThreadForm::Compact, vec![988]),
+        &expected,
+    );
+
+    let mut scope = DesignParameterScope::empty("f3d:scope#legacy-compact-thread", "Thread", 987);
+    scope.class_tag = "414".into();
+    scope.paired_class_tag = "263".into();
+    scope.frame_length = 19;
+    scope.reference_members = vec![988, 989];
+    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+
+    scope.class_tag = "334".into();
+    scope.paired_class_tag = "262".into();
+    assert_eq!(exact_thread_construction(&bytes, &scope), None);
+}
+
+#[test]
 fn localized_sketch_scope_retains_its_generic_reference_table() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());

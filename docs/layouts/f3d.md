@@ -3971,6 +3971,22 @@ Offsets are relative to the first byte after the third LP-UTF16 string. This cla
 | 30 | 8 | `pitch_diameter` | `f64` | little | spec | pitch diameter at 30 |
 | 38 | 4 | `legacy_trailer` | `bytes[4]` | little | spec | its no-reference trailer is `00 00 00 01` at relative offset 38 |
 
+## `thread_compact_legacy_construction_tail`
+
+Spec §3.1 · layout: byte offsets · size: 42 B
+
+Offsets are relative to the first byte after the third LP-UTF16 string. This class-specific tail keeps the compact paired reference table while using the legacy scalar and no-reference trailer lanes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | Its construction marker is `01 01 00 00 00` |
+| 5 | 8 | `major_diameter` | `f64` | little | spec | Major diameter is at marker-relative offset 5 |
+| 13 | 8 | `minor_diameter` | `f64` | little | spec | minor diameter at 13 |
+| 21 | 1 | `pitch_marker` | `u8` | little | spec | its scalar lanes use pitch marker `0` |
+| 22 | 8 | `pitch` | `f64` | little | spec | pitch at 22 |
+| 30 | 8 | `pitch_diameter` | `f64` | little | spec | pitch diameter at 30 |
+| 38 | 4 | `legacy_trailer` | `bytes[4]` | little | spec | its no-reference trailer is `00 00 00 01` at relative offset 38 |
+
 ## `thread_compact_reference_construction_tail`
 
 Spec §3.1 · layout: byte offsets · size: 49 B

@@ -3592,12 +3592,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .copied()
                         .into_iter()
                         .collect(),
-                    records::DesignThreadForm::Compact => {
+                    records::DesignThreadForm::Compact
+                    | records::DesignThreadForm::CompactLegacy => {
                         scope.reference_members.iter().step_by(2).copied().collect()
                     }
                 };
                 scope.reference_members.len() >= 2
                     && scope.reference_members.len().is_multiple_of(2)
+                    && match construction.form {
+                        records::DesignThreadForm::StandardLegacy => {
+                            scope.class_tag == "334" && scope.paired_class_tag == "262"
+                        }
+                        records::DesignThreadForm::CompactLegacy => {
+                            scope.class_tag == "414" && scope.paired_class_tag == "263"
+                        }
+                        records::DesignThreadForm::Standard
+                        | records::DesignThreadForm::Compact => true,
+                    }
                     && construction.face_group_record_indices == expected_groups
                     && matches!(
                         construction
@@ -3640,9 +3651,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .iter()
                         .enumerate()
                         .all(|(group_ordinal, record_index)| {
-                            let compact_member = if construction.form
-                                == records::DesignThreadForm::Compact
-                            {
+                            let compact_member = if matches!(
+                                construction.form,
+                                records::DesignThreadForm::Compact
+                                    | records::DesignThreadForm::CompactLegacy
+                            ) {
                                 let reference_ordinal = group_ordinal.saturating_mul(2);
                                 let Some(member_record_index) = scope
                                     .reference_members
