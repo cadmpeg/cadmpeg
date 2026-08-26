@@ -114,6 +114,25 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
         CodecError::malformed(format_args!("text stream parse failed: {error}"))
     })?;
     let header = stream.header.as_kernel_header();
+    let (family, dialect) = match stream.dialect {
+        sat::Dialect::Asm => ("asm", "End-of-ASM-data"),
+        sat::Dialect::Acis => ("acis", "End-of-ACIS-data"),
+    };
+    let mut attributes = BTreeMap::new();
+    header_attributes(&header, family, &mut attributes);
+    attributes.insert("encoding".to_string(), "text".to_string());
+    attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
+    attributes.insert("terminator".to_string(), dialect.to_string());
+    // The ACIS branch carries the same save-format band as the ACIS binary
+    // stream, so it takes the same admission gate.
+    if stream.dialect == sat::Dialect::Acis
+        && !matches!(header.save_format_major(), Some(217 | 218))
+    {
+        return Ok(unsupported_result(
+            "Spatial ACIS text stream: this save-format band is not decoded",
+            attributes,
+        ));
+    }
     let brep = decode_with_header(
         &stream.records,
         bytes,
@@ -122,19 +141,6 @@ fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<DecodeResult, Co
         IdFormat(FORMAT),
         DecodePurpose::Model,
     );
-    let mut attributes = BTreeMap::new();
-    let family = match stream.dialect {
-        sat::Dialect::Asm => "asm",
-        sat::Dialect::Acis => "acis",
-    };
-    header_attributes(&header, family, &mut attributes);
-    attributes.insert("encoding".to_string(), "text".to_string());
-    attributes.insert("scale".to_string(), format!("{}", stream.header.scale));
-    let dialect = match stream.dialect {
-        sat::Dialect::Asm => "End-of-ASM-data",
-        sat::Dialect::Acis => "End-of-ACIS-data",
-    };
-    attributes.insert("terminator".to_string(), dialect.to_string());
     build_result(ctx, brep, attributes, &header, Some(dialect))
 }
 
