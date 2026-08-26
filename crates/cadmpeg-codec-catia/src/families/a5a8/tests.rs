@@ -894,7 +894,7 @@ fn a5_cubic_two_site_knots_are_clamped() {
 
 #[test]
 fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
-    for header_token in [5, 9, 13, 29] {
+    for header_token in [5, 9, 13, 29, 17] {
         let mut bytes = a5_freeform_curve_stream();
         bytes[7] = header_token;
         let curves = crate::families::a5a8::records::a5_freeform_curves(&bytes);
@@ -910,8 +910,28 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
     assert!(crate::families::a5a8::records::a5_freeform_curves(&wrong_degree).is_empty());
 
     let mut invalid_header_token = a5_freeform_curve_stream();
-    invalid_header_token[7] = 17;
+    invalid_header_token[7] = 18;
     assert!(crate::families::a5a8::records::a5_freeform_curves(&invalid_header_token).is_empty());
+}
+
+#[test]
+fn a5_curve_parser_accepts_compact_array_marker_values() {
+    let mut bytes = a5_freeform_curve_stream();
+    bytes[7] = 17;
+    bytes[11] = 0x08;
+    bytes.insert(12, 0x11);
+    let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    let [curve] = crate::families::a5a8::records::a5_freeform_curves(&bytes)
+        .try_into()
+        .expect("one compact-marker rolling-ball jet");
+    assert_eq!(curve.header_token, 17);
+    assert_eq!(curve.sites.len(), 2);
+
+    let mut invalid_marker = bytes;
+    invalid_marker[12] = 0x12;
+    assert!(crate::families::a5a8::records::a5_freeform_curves(&invalid_marker).is_empty());
 }
 
 #[test]

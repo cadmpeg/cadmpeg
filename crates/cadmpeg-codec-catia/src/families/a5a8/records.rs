@@ -989,8 +989,9 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         end,
         header_token,
     } = frame;
-    if data.get(pos) == Some(&0xa5) && !matches!(header_token, 5 | 9 | 13 | 29) {
-        return None;
+    if data.get(pos) == Some(&0xa5) {
+        let header_byte = u8::try_from(header_token).ok()?;
+        a5_int(header_byte)?;
     }
     let mut at = payload;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
@@ -1000,7 +1001,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     }
     match data.get(at..at + 2) {
         Some([0x0c, _]) => at += 1,
-        Some([0x08, 0x09 | 0x05]) => at += 2,
+        Some([0x08, marker]) if a5_int(*marker).is_some() => at += 2,
         _ => return None,
     }
     let knot_bytes = count.checked_mul(8)?;

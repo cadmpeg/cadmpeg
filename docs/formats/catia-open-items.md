@@ -244,7 +244,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What does each header token `05`, `09`, `0d`, and `1d` select?
 
-**Known.** `catia.md` §6.2 "Frames an explicit rolling-ball surface jet." admits these four width-1 tokens for an `a5 03 32` rolling-ball jet. All four use the defined degree-5 jet grammar.
+**Known.** `catia.md` §6.2 "Frames an explicit rolling-ball surface jet." defines the A5 header as one canonical width-1 compact integer (`4n+1`, `0 ≤ n ≤ 63`). The header value is retained, but no selector role is assigned.
 
 **Need.** We must know the selection rule to write the correct token.
 
@@ -252,7 +252,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What fields follow the three aligned jet blocks in each numeric-continuation length class?
 
-**Known.** `catia.md` §6.2 "Frames an explicit rolling-ball surface jet." defines the knots and the value, first-derivative, and second-derivative blocks. The continuation has more than one length class.
+**Known.** `catia.md` §6.2 "Frames an explicit rolling-ball surface jet." defines the knots, the `0x0c` or `0x08 <4n+1>` array marker, and the value, first-derivative, and second-derivative blocks. The continuation after those blocks has more than one length class and remains untyped.
 
 **Need.** We must know its lanes and terminal fields to read and write the complete record.
 
