@@ -2,7 +2,8 @@ use crate::decode::analytic::{
     directed_pcurve_points, linear_pcurve_carrier, mapped_pcurve_endpoints, meridian_circle_pcurve,
     nonperiodic_nurbs_endpoint_points, oriented_native_pcurve_endpoints, planar_curve_pcurve,
     ruled_generator_line_pcurve, solve_pcurve_vertex_domains,
-    surface_of_revolution_parallel_pcurve, unique_oriented_native_pcurve,
+    solve_pcurve_vertex_domains_with_authoritative_points, surface_of_revolution_parallel_pcurve,
+    unique_oriented_native_pcurve,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, Surface, SurfaceGeometry};
@@ -181,6 +182,37 @@ fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
             &BTreeMap::new(),
         ),
         BTreeMap::from([(1, a), (2, b)])
+    );
+}
+
+#[test]
+fn authoritative_native_endpoint_survives_conflicting_inferred_domain() {
+    let witness = [1.0, 0.0, 0.0];
+    let adjacent = [2.0, 0.0, 0.0];
+    let inferred = CurveGeometry::Line {
+        origin: Point3::new(9.0, 0.0, 0.0),
+        direction: Vector3::new(1.0, 0.0, 0.0),
+    };
+    let constraints = [([1, 2], [witness, adjacent])];
+    let analytic_domains = BTreeMap::from([(1, vec![[9.0, 0.0, 0.0]])]);
+    let incident_curves = BTreeMap::from([(1, vec![&inferred])]);
+
+    assert!(solve_pcurve_vertex_domains(
+        &constraints,
+        &BTreeMap::new(),
+        &analytic_domains,
+        &incident_curves,
+    )
+    .is_empty());
+    assert_eq!(
+        solve_pcurve_vertex_domains_with_authoritative_points(
+            &constraints,
+            &BTreeMap::from([(1, Some(witness)), (2, Some(adjacent))]),
+            &analytic_domains,
+            &incident_curves,
+            &BTreeMap::from([(1, witness)]),
+        ),
+        BTreeMap::from([(1, witness), (2, adjacent)])
     );
 }
 

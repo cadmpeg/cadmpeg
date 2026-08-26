@@ -113,50 +113,18 @@ pub(in super::super) fn feature_entity_dependencies(
     feature_id: u32,
 ) -> Vec<u32> {
     let mut dependencies = Vec::new();
-    for (table_index, table) in tables.iter().enumerate() {
+    for table in tables {
         if table.feature_id != Some(feature_id) || table.table_class_id != 100 {
             continue;
         }
-        for (entry_index, entry) in table.entries.iter().enumerate() {
-            let consumer_position = (table.offset, entry.offset, table_index, entry_index);
-            let producers = tables
-                .iter()
-                .enumerate()
-                .flat_map(|(producer_table_index, producer_table)| {
-                    let Some(producer_feature_id) = producer_table.feature_id else {
-                        return Vec::new();
-                    };
-                    if producer_feature_id == feature_id {
-                        return Vec::new();
-                    }
-                    producer_table
-                        .entries
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(producer_entry_index, producer_entry)| {
-                            let producer_position = (
-                                producer_table.offset,
-                                producer_entry.offset,
-                                producer_table_index,
-                                producer_entry_index,
-                            );
-                            (producer_position < consumer_position
-                                && producer_entry.class_id == 200
-                                && producer_entry.entity_id == entry.entity_id
-                                && producer_entry.source_entity_id.is_some())
-                            .then_some(producer_feature_id)
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .fold(Vec::new(), |mut producers, producer| {
-                    if !producers.contains(&producer) {
-                        producers.push(producer);
-                    }
-                    producers
-                });
+        for entry in &table.entries {
+            let producers = feature_entity_producers(tables, entry.entity_id);
             let [producer] = producers.as_slice() else {
                 continue;
             };
+            if *producer == feature_id {
+                continue;
+            }
             if !dependencies.contains(producer) {
                 dependencies.push(*producer);
             }
@@ -165,26 +133,45 @@ pub(in super::super) fn feature_entity_dependencies(
     dependencies
 }
 
-pub(in super::super) fn feature_entity_producers(
+fn feature_entity_producers(
     tables: &[crate::feature::FeatureEntityTable],
-) -> BTreeMap<u32, BTreeSet<u32>> {
+    entity_id: u32,
+) -> Vec<u32> {
+    tables
+        .iter()
+        .filter_map(|table| {
+            let owner = table.feature_id?;
+            table
+                .entries
+                .iter()
+                .any(|entry| entry.class_id == 200 && entry.entity_id == entity_id)
+                .then_some(owner)
+        })
+        .fold(Vec::new(), |mut producers, producer| {
+            if !producers.contains(&producer) {
+                producers.push(producer);
+            }
+            producers
+        })
+}
+
+pub(in super::super) fn preceding_feature_entity_producers(
+    tables: &[crate::feature::FeatureEntityTable],
+    entity_id: u32,
+    consumer_offset: usize,
+) -> Vec<u32> {
     tables
         .iter()
         .filter_map(|table| table.feature_id.map(|owner| (owner, table)))
         .flat_map(|(owner, table)| {
-            table
-                .entries
-                .iter()
-                .filter(|entry| entry.class_id == 200 && entry.source_entity_id.is_some())
-                .map(move |entry| (entry.entity_id, owner))
+            table.entries.iter().filter_map(move |entry| {
+                (entry.class_id == 200
+                    && entry.entity_id == entity_id
+                    && entry.offset < consumer_offset)
+                    .then_some(owner)
+            })
         })
-        .fold(
-            BTreeMap::<u32, BTreeSet<u32>>::new(),
-            |mut owners, (entity, owner)| {
-                owners.entry(entity).or_default().insert(owner);
-                owners
-            },
-        )
+        .collect()
 }
 
 pub(in super::super) fn agreed_surface_merge_replay_quilt_ids(
@@ -222,6 +209,48 @@ pub(in super::super) fn surface_merge_quilt_ids<'a>(
     agreed_surface_merge_replay_quilt_ids(replay, feature_id).filter(|ids| !ids.is_empty())
 }
 
+pub(in super::super) fn surface_merge_quilt_state_offset(
+    affected_ids: &[crate::feature::FeatureAffectedIds],
+    replay: &[crate::feature::FeatureSurfaceMergeAffectedIds],
+    feature_id: u32,
+    quilt_ids: &[u32],
+) -> Option<usize> {
+    if let Some(ids) = agreed_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Quilts,
+    ) {
+        return (ids == quilt_ids)
+            .then(|| {
+                affected_ids
+                    .iter()
+                    .filter(|record| {
+                        record.feature_id == feature_id
+                            && record.kind == crate::feature::AffectedIdKind::Quilts
+                            && record.ids == quilt_ids
+                    })
+                    .map(|record| record.offset)
+                    .min()
+            })
+            .flatten();
+    }
+    if has_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Quilts,
+    ) {
+        return None;
+    }
+    let ids = agreed_surface_merge_replay_quilt_ids(replay, feature_id)?;
+    (ids == quilt_ids).then(|| {
+        replay
+            .iter()
+            .filter(|record| record.feature_id == feature_id && record.quilt_ids == quilt_ids)
+            .map(|record| record.offset)
+            .min()
+    })?
+}
+
 pub(in super::super) fn surface_merge_entity_dependencies(
     affected_ids: &[crate::feature::FeatureAffectedIds],
     replay: &[crate::feature::FeatureSurfaceMergeAffectedIds],
@@ -231,13 +260,18 @@ pub(in super::super) fn surface_merge_entity_dependencies(
     let Some(ids) = surface_merge_quilt_ids(affected_ids, replay, feature_id) else {
         return Vec::new();
     };
-    let producers = feature_entity_producers(tables);
+    let Some(consumer_offset) =
+        surface_merge_quilt_state_offset(affected_ids, replay, feature_id, ids)
+    else {
+        return Vec::new();
+    };
     ids.iter()
         .filter_map(|entity_id| {
-            let owners = producers.get(entity_id)?;
-            let mut owners = owners.iter().copied();
-            let owner = owners.next()?;
-            (owners.next().is_none() && owner != feature_id).then_some(owner)
+            let producers = preceding_feature_entity_producers(tables, *entity_id, consumer_offset);
+            let [owner] = producers.as_slice() else {
+                return None;
+            };
+            (*owner != feature_id).then_some(*owner)
         })
         .fold(Vec::new(), |mut dependencies, dependency| {
             if !dependencies.contains(&dependency) {
@@ -366,6 +400,22 @@ pub(in super::super) fn reconcile_feature_links(
     ir: &mut CadIr,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
 ) {
+    let output_updates = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let feature_id = feature
+                .id
+                .as_str()
+                .strip_prefix("creo:model:feature#")
+                .and_then(|value| value.parse::<u32>().ok())?;
+            Some((
+                feature.id.clone(),
+                super::outputs::feature_output_bodies(scan, ir, feature_id),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
     let emitted = ir
         .model
         .features
@@ -381,6 +431,9 @@ pub(in super::super) fn reconcile_feature_links(
         else {
             continue;
         };
+        if let Some(outputs) = output_updates.get(&feature.id) {
+            feature.outputs.clone_from(outputs);
+        }
         let native_dependencies = native_feature_dependency_ids(
             &scan.features.affected_ids,
             &scan.features.operations,

@@ -3,6 +3,204 @@
 
 use super::super::*;
 
+fn line_extrusion_parameter_record(
+    direction: [f64; 3],
+    directrix: [[f64; 3]; 2],
+) -> SurfaceParameterRecord {
+    let mut values = direction.into_iter().collect::<Vec<_>>();
+    values.extend(directrix.into_iter().flatten());
+    let slot = |value, offset| SurfaceParameterScalar {
+        value: Some(value),
+        raw: vec![0x18],
+        offset,
+        length: 1,
+    };
+    let direction_slots = direction
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| slot(value, index))
+        .collect::<Vec<_>>();
+    let directrix_slots = directrix
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(index, value)| slot(value, index + 6))
+        .collect::<Vec<_>>();
+    let scalar_tokens = direction_slots
+        .iter()
+        .chain(&directrix_slots)
+        .cloned()
+        .collect::<Vec<_>>();
+    SurfaceParameterRecord {
+        surface_id: 1,
+        body: vec![0; 12],
+        scalar_values: values,
+        scalar_tokens: scalar_tokens.clone(),
+        opaque_spans: vec![SurfaceParameterOpaqueSpan {
+            raw: vec![0x00, 0x0c, 0x9a],
+            offset: 3,
+            length: 3,
+        }],
+        scalar_frames: vec![
+            SurfaceParameterScalarFrame {
+                offset: 0,
+                slots: direction_slots,
+            },
+            SurfaceParameterScalarFrame {
+                offset: 6,
+                slots: directrix_slots,
+            },
+        ],
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: None,
+        split_cylinder_outline_bounds: None,
+        positional_cone_frame: None,
+        positional_torus_frame: None,
+        boundary: SurfaceBodyBoundary::CompoundClose,
+        offset: 0,
+        body_offset: 0,
+    }
+}
+
+#[test]
+fn positional_line_extrusion_requires_a_non_degenerate_plane_carrier() {
+    let valid = line_extrusion_parameter_record([0.0, 0.0, 1.0], [[0.0; 3], [1.0, 0.0, 0.0]]);
+    assert!(valid.line_extrusion_frame(0x2c).is_some());
+
+    let zero_direction = line_extrusion_parameter_record([0.0; 3], [[0.0; 3], [1.0, 0.0, 0.0]]);
+    assert!(zero_direction.line_extrusion_frame(0x2c).is_none());
+
+    let collapsed_directrix =
+        line_extrusion_parameter_record([0.0, 0.0, 1.0], [[0.0; 3], [0.0; 3]]);
+    assert!(collapsed_directrix.line_extrusion_frame(0x2c).is_none());
+
+    let parallel_directions =
+        line_extrusion_parameter_record([1.0, 0.0, 0.0], [[0.0; 3], [1.0, 0.0, 0.0]]);
+    assert!(parallel_directions.line_extrusion_frame(0x2c).is_none());
+}
+
+#[test]
+fn positional_cone_frame_rejects_nonfinite_or_invalid_components() {
+    let valid = PositionalConeFrame {
+        apex: [0.0, 1.0, 2.0],
+        axis: [0.0, 1.0, 0.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        half_angle: std::f64::consts::FRAC_PI_4,
+    };
+    assert!(valid.is_valid());
+
+    let mut nonfinite_apex = valid;
+    nonfinite_apex.apex[1] = f64::NAN;
+    assert!(!nonfinite_apex.is_valid());
+
+    let mut zero_angle = valid;
+    zero_angle.half_angle = 0.0;
+    assert!(!zero_angle.is_valid());
+
+    let mut non_unit_axis = valid;
+    non_unit_axis.axis = [0.0, 2.0, 0.0];
+    assert!(!non_unit_axis.is_valid());
+
+    let mut non_orthogonal_reference = valid;
+    non_orthogonal_reference.ref_direction = [0.0, 1.0, 0.0];
+    assert!(!non_orthogonal_reference.is_valid());
+
+    let mut right_angle = valid;
+    right_angle.half_angle = std::f64::consts::FRAC_PI_2;
+    assert!(!right_angle.is_valid());
+}
+
+#[test]
+fn positional_torus_frame_rejects_nonfinite_or_invalid_components() {
+    let valid = PositionalTorusFrame {
+        center: [0.0, 1.0, 2.0],
+        axis: [0.0, 0.0, 1.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        major_radius: 4.0,
+        minor_radius: 0.5,
+    };
+    assert!(valid.is_valid());
+
+    let mut nonfinite_center = valid;
+    nonfinite_center.center[1] = f64::INFINITY;
+    assert!(!nonfinite_center.is_valid());
+
+    let mut zero_major = valid;
+    zero_major.major_radius = 0.0;
+    assert!(zero_major.is_valid());
+
+    let mut negative_major = valid;
+    negative_major.major_radius = -0.1;
+    assert!(!negative_major.is_valid());
+
+    let mut non_unit_axis = valid;
+    non_unit_axis.axis = [0.0, 0.0, 2.0];
+    assert!(!non_unit_axis.is_valid());
+
+    let mut non_orthogonal_reference = valid;
+    non_orthogonal_reference.ref_direction = [0.0, 0.0, 1.0];
+    assert!(!non_orthogonal_reference.is_valid());
+
+    let mut nonfinite_minor = valid;
+    nonfinite_minor.minor_radius = f64::NAN;
+    assert!(!nonfinite_minor.is_valid());
+}
+
+#[test]
+fn positional_cylinder_frame_rejects_nonfinite_or_nonpositive_components() {
+    let valid = PositionalCylinderFrame {
+        origin: [0.0, 1.0, 2.0],
+        axis: [0.0, 0.0, 1.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        radius: 3.0,
+        length: Some(4.0),
+    };
+    assert!(valid.is_valid());
+
+    let mut nonfinite_origin = valid;
+    nonfinite_origin.origin[1] = f64::NAN;
+    assert!(!nonfinite_origin.is_valid());
+
+    let mut nonfinite_radius = valid;
+    nonfinite_radius.radius = f64::INFINITY;
+    assert!(!nonfinite_radius.is_valid());
+
+    let mut non_unit_axis = valid;
+    non_unit_axis.axis = [0.0, 0.0, 2.0];
+    assert!(!non_unit_axis.is_valid());
+
+    let mut non_orthogonal_reference = valid;
+    non_orthogonal_reference.ref_direction = [0.0, 1.0, 1.0];
+    assert!(!non_orthogonal_reference.is_valid());
+
+    let mut nonpositive_length = valid;
+    nonpositive_length.length = Some(0.0);
+    assert!(!nonpositive_length.is_valid());
+}
+
+#[test]
+fn positional_cylinder_frame_rejects_conflicting_grammar_candidates() {
+    let first = PositionalCylinderFrame {
+        origin: [1.0, 2.0, 3.0],
+        axis: [0.0, 0.0, 1.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        radius: 2.0,
+        length: Some(8.0),
+    };
+    assert_eq!(
+        unique_positional_cylinder_frame(&[first, first]),
+        Some(first)
+    );
+
+    let mut conflicting = first;
+    conflicting.radius = 3.0;
+    assert_eq!(
+        unique_positional_cylinder_frame(&[first, conflicting]),
+        None
+    );
+}
+
 #[test]
 fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     let negative_x = [
@@ -129,16 +327,16 @@ fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
     .is_none());
 
     let referenced_planar_envelope = [
-        17, 24, 19, 47, 48, 0, 71, 17, 204, 24, 50, 195, 162, 112, 229, 160, 63, 250, 46, 17, 204,
-        47, 48, 0, 46, 17, 204,
+        17, 24, 19, 47, 48, 0, 71, 17, 204, 47, 48, 0, 50, 195, 162, 112, 229, 160, 63, 250, 46,
+        17, 204, 24, 46, 17, 204,
     ];
     let frame = decode_positional_cylinder_frame(
         &referenced_planar_envelope,
         &scalar::ScalarCache::default(),
     )
     .expect("complete referenced planar-envelope cylinder");
-    assert_eq!(frame.origin, [0.0, 16.0, 0.0]);
-    assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(frame.origin, [0.0, 0.0, 0.0]);
+    assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
     assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
     assert!((frame.radius - 4.45).abs() < 1e-12);
     assert_eq!(frame.length, Some(16.0));
@@ -298,6 +496,20 @@ fn positional_cylinder_frame_decodes_signed_radial_envelopes() {
             ref_direction: [1.0, 0.0, 0.0],
             radius: 2.0,
             length: Some(12.0),
+        })
+    );
+
+    let terminal_zero_negative = [
+        17, 72, 89, 0, 19, 24, 72, 117, 104, 72, 104, 16, 72, 89, 0, 72, 115, 56, 72, 101, 224, 24,
+    ];
+    assert_eq!(
+        decode_positional_cylinder_frame(&terminal_zero_negative, &cache),
+        Some(PositionalCylinderFrame {
+            origin: [-325.0, -175.0, 0.0],
+            axis: [0.0, 0.0, -1.0],
+            ref_direction: [-1.0, 0.0, 0.0],
+            radius: 17.5,
+            length: Some(100.0),
         })
     );
 
@@ -510,13 +722,15 @@ fn positional_cylinder_frame_decodes_precise_center_edge_envelope() {
     )
     .is_none());
 
-    let mut inconsistent_precise_origin = body;
-    inconsistent_precise_origin[20..23].copy_from_slice(&[47, 52, 0]);
-    assert!(decode_positional_cylinder_frame(
-        &inconsistent_precise_origin,
-        &scalar::ScalarCache::default()
-    )
-    .is_none());
+    let mut distant_coarse_axial_sample = body;
+    distant_coarse_axial_sample[20..23].copy_from_slice(&[47, 52, 0]);
+    assert_eq!(
+        decode_positional_cylinder_frame(
+            &distant_coarse_axial_sample,
+            &scalar::ScalarCache::default()
+        ),
+        Some(frame)
+    );
 }
 
 #[test]
@@ -1037,36 +1251,42 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
             length: Some(2.0_f64.sqrt()),
         }
     );
-    let compact_controls = [
+    let selector_corner_interval = [
         0x12, 0x2d, 0x40, 0x7a, 0x35, 0xc4, 0x3e, 0x21, 0x5b, 0x11, 0x2d, 0x44, 0xff, 0xd2, 0xa6,
         0xae, 0x74, 0x2b, 0x46, 0x65, 0x3f, 0xff, 0xff, 0xff, 0xff, 0xfc, 0x2d, 0x51, 0xd2, 0x31,
         0x1a, 0xfa, 0xb7, 0x82, 0x48, 0x28, 0x00, 0x46, 0x64, 0x1f, 0xff, 0xff, 0xff, 0xff, 0xfc,
         0x2d, 0x54, 0x14, 0xff, 0x8c, 0x32, 0xe0, 0xea, 0x48, 0x08, 0x00,
     ];
-    let compact_record = record(&compact_controls);
-    let compact_frame = compact_record
+    let selector_corner_record = record(&selector_corner_interval);
+    assert!(selector_corner_record
+        .selector_corner_interval_cylinder_frame(0x24)
+        .is_some());
+    assert!(selector_corner_record
+        .selector_corner_interval_cylinder_frame(0x22)
+        .is_none());
+    let selector_corner_frame = selector_corner_record
         .positional_cylinder_frame
-        .expect("compact-control repeated-diameter carrier");
-    assert!((compact_frame.radius - 4.521_925_117_895_819).abs() < 1e-12);
-    assert!(compact_frame
-        .axis
-        .into_iter()
-        .zip([
-            -std::f64::consts::FRAC_1_SQRT_2,
-            0.0,
-            std::f64::consts::FRAC_1_SQRT_2
-        ])
-        .all(|(actual, expected)| (actual - expected).abs() < 1e-12));
-    assert_eq!(compact_frame.ref_direction, [0.0, -1.0, 0.0]);
-    let mut referenced_controls = compact_controls.to_vec();
+        .expect("selector-corner interval carrier");
+    assert!((selector_corner_frame.origin[0] + 161.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!(
+        (selector_corner_frame.origin[1] - 38.329_481_329_444_5).abs() < EPS_CYLINDER_GEOMETRY_MIN
+    );
+    assert!((selector_corner_frame.origin[2] + 3.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert_eq!(selector_corner_frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(selector_corner_frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert!((selector_corner_frame.radius - 9.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!(selector_corner_frame.length.is_some_and(|length| {
+        (length - 9.043_850_235_791_638).abs() < EPS_CYLINDER_GEOMETRY_MIN
+    }));
+    let mut referenced_controls = selector_corner_interval.to_vec();
     referenced_controls.extend_from_slice(&[0xf7, 0x40]);
     assert!(record(&referenced_controls)
         .positional_cylinder_frame
         .is_some());
-    let mut invalid_control = compact_controls;
+    let mut invalid_control = selector_corner_interval;
     invalid_control[0] = 0x15;
     assert!(record(&invalid_control).positional_cylinder_frame.is_none());
-    invalid_control = compact_controls;
+    invalid_control = selector_corner_interval;
     invalid_control[9] = 0x15;
     assert!(record(&invalid_control).positional_cylinder_frame.is_none());
     let prefixed_auxiliary = [
@@ -1107,9 +1327,16 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     ];
     let split_frame = record(&split_controls)
         .positional_cylinder_frame
-        .expect("split-control repeated-diameter carrier");
-    assert!((split_frame.radius - 3.250_923_087_748_47).abs() < 1e-12);
-    assert_eq!(split_frame.ref_direction, [0.0, -1.0, 0.0]);
+        .expect("split selector-corner interval carrier");
+    assert!((split_frame.origin[0] + 99.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!((split_frame.origin[1] - 38.329_481_329_444_49).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!((split_frame.origin[2] - 3.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert_eq!(split_frame.axis, [0.0, 1.0, 0.0]);
+    assert_eq!(split_frame.ref_direction, [1.0, 0.0, 0.0]);
+    assert!((split_frame.radius - 7.0).abs() < EPS_CYLINDER_GEOMETRY_MIN);
+    assert!(split_frame.length.is_some_and(|length| {
+        (length - 6.501_846_175_496_936_6).abs() < EPS_CYLINDER_GEOMETRY_MIN
+    }));
     let mut invalid_split_controls = split_controls;
     invalid_split_controls[10] = 0x14;
     assert!(record(&invalid_split_controls)
@@ -1260,6 +1487,165 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     assert!(record(&incomplete_split)
         .positional_cylinder_frame
         .is_none());
+}
+
+#[test]
+fn decodes_structurally_delimited_type24_round_edge_envelope() {
+    let mut body = vec![0x34, 0xe0, 0x00];
+    body.extend_from_slice(&[0x56, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x00, 0x12, 0x68]);
+    body.extend_from_slice(&[0x6b, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x0f, 0xe4, 0x2f, 0x00, 0x00]);
+    body.extend_from_slice(&[0x0d, 0x2f, 0x00, 0x00, 0x0f]);
+    body.extend_from_slice(&[0xf7, 0x17]);
+
+    let record = SurfaceParameterRecord {
+        surface_id: 7,
+        body,
+        scalar_values: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: None,
+        split_cylinder_outline_bounds: None,
+        positional_cone_frame: None,
+        positional_torus_frame: None,
+        boundary: SurfaceBodyBoundary::CompoundClose,
+        offset: 0,
+        body_offset: 0,
+    };
+
+    assert_eq!(
+        record.type24_round_edge_envelope(0x24),
+        Some(Type24RoundEdgeEnvelope {
+            parameter_interval: [
+                f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0]),
+                f64::from_be_bytes([0x3f, 0xe0, 0, 0, 0, 0, 0, 0]),
+            ],
+            vertices: [[0.0, 1.0, 2.0], [-1.0, 2.0, 0.0]],
+            generated_entity_reference: Some(0x17),
+        })
+    );
+    assert!(record.type24_round_edge_envelope(0x25).is_none());
+}
+
+#[test]
+fn round_edge_envelope_accepts_model_reference_shell() {
+    let mut body = vec![0x32, 0xe4, 0, 0, 0, 0, 0, 0];
+    body.extend_from_slice(&[0x0f, 0x12, 0xe4]);
+    body.extend_from_slice(&[0x2d, 0x00, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    body.push(0x0f);
+    body.extend_from_slice(&[0x2d, 0x10, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x46, 0x14, 0, 0, 0, 0, 0, 0]);
+    body.push(0xe4);
+
+    let parameter = SurfaceParameterRecord {
+        surface_id: 7,
+        body,
+        scalar_values: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: None,
+        split_cylinder_outline_bounds: None,
+        positional_cone_frame: None,
+        positional_torus_frame: None,
+        boundary: SurfaceBodyBoundary::CompoundClose,
+        offset: 0,
+        body_offset: 0,
+    };
+    let envelope = parameter
+        .type24_round_edge_envelope(0x24)
+        .expect("complete model-reference-shell round envelope");
+
+    assert_eq!(envelope.parameter_interval, [0.0, 1.0]);
+    assert_eq!(envelope.vertices, [[2.0, -3.0, 0.0], [4.0, -5.0, 1.0]]);
+
+    let mut truncated = parameter;
+    truncated.body.remove(7);
+    assert!(truncated.type24_round_edge_envelope(0x24).is_none());
+}
+
+#[test]
+fn round_edge_vertices_use_the_first_directrix_coordinate_lane() {
+    let mut body = vec![0x18, 0x0f, 0x12, 0xe4];
+    body.extend_from_slice(&[0x2d, 0x00, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    body.push(0x0f);
+    body.extend_from_slice(&[0x2d, 0x10, 0, 0, 0, 0, 0, 0]);
+    body.extend_from_slice(&[0x46, 0x14, 0, 0, 0, 0, 0, 0]);
+    body.push(0xe4);
+
+    let parameter = SurfaceParameterRecord {
+        surface_id: 7,
+        body,
+        scalar_values: Vec::new(),
+        scalar_tokens: Vec::new(),
+        opaque_spans: Vec::new(),
+        scalar_frames: Vec::new(),
+        terminal_scalar_frame: None,
+        tabulated_cylinder_frame: None,
+        positional_cylinder_frame: None,
+        split_cylinder_outline_bounds: None,
+        positional_cone_frame: None,
+        positional_torus_frame: None,
+        boundary: SurfaceBodyBoundary::CompoundClose,
+        offset: 0,
+        body_offset: 0,
+    };
+    let envelope = parameter
+        .type24_round_edge_envelope(0x24)
+        .expect("complete directrix-lane endpoint envelope");
+
+    assert_eq!(envelope.parameter_interval, [0.0, 1.0]);
+    assert_eq!(envelope.vertices, [[2.0, -3.0, 0.0], [4.0, -5.0, 1.0]]);
+}
+
+#[test]
+fn complete_directrix_interval_cylinders_accept_selector_opener_variants() {
+    let build = |opener: &[u8], values: [f64; 7]| {
+        let mut body = opener.to_vec();
+        for value in values {
+            let raw = value.to_be_bytes();
+            assert_eq!(raw[0], 0x40, "test value uses the positive directrix form");
+            body.push(0x2d);
+            body.extend_from_slice(&raw[1..]);
+        }
+        body.extend_from_slice(&[0xf7, 0x17, 0xe3, 0x99]);
+        body
+    };
+    let values = [2.0, 2.0, 3.0, 4.0, 6.0, 5.0, 6.0];
+    let expected = PositionalCylinderFrame {
+        origin: [4.0, 5.0, 2.0],
+        axis: [0.0, 0.0, 1.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        radius: 2.0,
+        length: Some(4.0),
+    };
+    for opener in [
+        &[0x18, 0xe4, 0x11][..],
+        &[0x18, 0xe4, 0x00, 0x11, 0x07],
+        &[0x00, 0x11, 0x07, 0x18, 0x13],
+    ] {
+        assert_eq!(
+            decode_complete_directrix_interval_cylinder_frame(
+                &build(opener, values),
+                &scalar::ScalarCache::default(),
+            ),
+            Some(expected)
+        );
+    }
+    let inconsistent_interval = build(&[0x18, 0xe4, 0x11], [2.0, 2.0, 3.0, 4.0, 6.0, 5.0, 7.0]);
+    assert!(decode_complete_directrix_interval_cylinder_frame(
+        &inconsistent_interval,
+        &scalar::ScalarCache::default(),
+    )
+    .is_none());
 }
 
 #[test]

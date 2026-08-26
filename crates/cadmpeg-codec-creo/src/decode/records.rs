@@ -298,6 +298,38 @@ pub(super) struct CreoLoopRecord {
 }
 
 #[derive(Serialize)]
+pub(super) struct CreoLoopArrayFrameRecord {
+    pub(super) id: String,
+    pub(super) variant: Option<u8>,
+    pub(super) declared_count: u32,
+    pub(super) class_id: u32,
+    pub(super) materialized_count: usize,
+    pub(super) overfull: bool,
+    pub(super) offset: usize,
+    pub(super) prototype_end: usize,
+    pub(super) end: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct CreoLoopArrayRecord {
+    pub(super) id: String,
+    pub(super) frame_offset: usize,
+    pub(super) lo_id: u32,
+    pub(super) lo_type: u32,
+    pub(super) lo_subtype: u32,
+    pub(super) feature_id: u32,
+    pub(super) attributes: u8,
+    pub(super) direction: u32,
+    pub(super) next_lo_ptr: u32,
+    pub(super) body: Vec<u8>,
+    pub(super) offset: usize,
+    pub(super) body_offset: usize,
+    pub(super) end: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
 pub(super) struct CreoTopologicalVertexRecord {
     pub(super) id: String,
     pub(super) vertex_id: u32,
@@ -317,6 +349,15 @@ pub(super) struct CreoFaceComponentRecord {
     pub(super) id: String,
     pub(super) face_ids: Vec<u32>,
     pub(super) curve_ids: Vec<u32>,
+}
+
+#[derive(Serialize)]
+pub(super) struct CreoFaceAdmissionRejectionRecord {
+    pub(super) id: String,
+    pub(super) face_id: u32,
+    pub(super) reason: &'static str,
+    pub(super) boundary_half_edges: Vec<CreoHalfEdgeRef>,
+    pub(super) vertex_ids: Vec<u32>,
 }
 
 #[derive(Serialize)]
@@ -604,6 +645,21 @@ pub(super) struct CreoDatumPlaneRecord {
     pub(super) normal: [f64; 3],
     pub(super) plane_offset: f64,
     pub(super) corners: [[Option<f64>; 3]; 2],
+    pub(super) offset: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct CreoDatumCylinderRecord {
+    pub(super) id: String,
+    pub(super) datum_id: u32,
+    pub(super) owner_feature_id: u32,
+    pub(super) reversed: bool,
+    pub(super) origin: [f64; 3],
+    pub(super) axis: [f64; 3],
+    pub(super) ref_direction: [f64; 3],
+    pub(super) radius: f64,
+    pub(super) length: Option<f64>,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -1009,6 +1065,48 @@ pub(super) fn loop_records(scan: &ContainerScan) -> Vec<CreoLoopRecord> {
         .collect()
 }
 
+pub(super) fn loop_array_frame_records(scan: &ContainerScan) -> Vec<CreoLoopArrayFrameRecord> {
+    scan.loop_arrays
+        .frames
+        .iter()
+        .map(|frame| CreoLoopArrayFrameRecord {
+            id: format!("creo:loop_array:frame#{}", frame.offset),
+            variant: frame.variant,
+            declared_count: frame.declared_count,
+            class_id: frame.class_id,
+            materialized_count: frame.materialized_count,
+            overfull: frame.overfull,
+            offset: frame.offset,
+            prototype_end: frame.prototype_end,
+            end: frame.end,
+            source_section: source_section(scan, frame.offset),
+        })
+        .collect()
+}
+
+pub(super) fn loop_array_record_records(scan: &ContainerScan) -> Vec<CreoLoopArrayRecord> {
+    scan.loop_arrays
+        .records
+        .iter()
+        .map(|record| CreoLoopArrayRecord {
+            id: format!("creo:loop_array:record#{}", record.offset),
+            frame_offset: record.frame_offset,
+            lo_id: record.lo_id,
+            lo_type: record.lo_type,
+            lo_subtype: record.lo_subtype,
+            feature_id: record.feature_id,
+            attributes: record.attributes,
+            direction: record.direction,
+            next_lo_ptr: record.next_lo_ptr,
+            body: record.body.clone(),
+            offset: record.offset,
+            body_offset: record.body_offset,
+            end: record.end,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
 pub(super) fn topological_vertex_records(scan: &ContainerScan) -> Vec<CreoTopologicalVertexRecord> {
     scan.topology
         .vertices
@@ -1244,6 +1342,29 @@ pub(super) fn datum_plane_records(scan: &ContainerScan) -> Vec<CreoDatumPlaneRec
         .collect()
 }
 
+pub(super) fn datum_cylinder_records(scan: &ContainerScan) -> Vec<CreoDatumCylinderRecord> {
+    scan.planes
+        .datum_cylinders
+        .iter()
+        .map(|record| CreoDatumCylinderRecord {
+            id: format!(
+                "creo:datum:cylinder#{}:{}",
+                record.offset_in_payload, record.id
+            ),
+            datum_id: record.id,
+            owner_feature_id: record.feature_id,
+            reversed: record.reversed,
+            origin: record.frame.origin,
+            axis: record.frame.axis,
+            ref_direction: record.frame.ref_direction,
+            radius: record.frame.radius,
+            length: record.frame.length,
+            offset: record.offset_in_payload,
+            source_section: source_section(scan, record.offset_in_payload),
+        })
+        .collect()
+}
+
 pub(super) fn feature_section_transform_records(
     scan: &ContainerScan,
 ) -> Vec<CreoFeatureSectionTransformRecord> {
@@ -1347,6 +1468,22 @@ pub(super) struct CreoSurfaceRowRecord {
 }
 
 #[derive(Serialize)]
+pub(super) struct CreoSurfaceContourRecord {
+    pub(super) id: String,
+    pub(super) surface_id: u32,
+    pub(super) chain_index: usize,
+    pub(super) curve_header_id: u32,
+    pub(super) trv: u8,
+    pub(super) parameter_envelope: [Option<f64>; 4],
+    pub(super) separator_reference: Option<u32>,
+    pub(super) body: Vec<u8>,
+    pub(super) offset: usize,
+    pub(super) envelope_offset: usize,
+    pub(super) surface_row_offset: usize,
+    pub(super) source_section: String,
+}
+
+#[derive(Serialize)]
 pub(super) struct CreoSurfacePrototypeRecord {
     pub(super) id: String,
     pub(super) declared_family: String,
@@ -1382,6 +1519,7 @@ pub(super) struct CreoCurveParameterRecord {
     pub(super) skipped_references: Vec<u32>,
     pub(super) references: Vec<CreoCurveParameterReference>,
     pub(super) opaque_spans: Vec<CreoCurveParameterOpaqueSpan>,
+    pub(super) reference_geometry: [u32; 2],
     pub(super) suffix: &'static str,
     pub(super) suffix_candidate_count: Option<usize>,
     pub(super) offset: usize,
@@ -1485,6 +1623,33 @@ pub(super) fn surface_prototype_records(
         .collect()
 }
 
+pub(super) fn surface_contour_records(
+    scan: &ContainerScan,
+    records: &[crate::surface::SurfaceContourRecord],
+    namespace: &str,
+) -> Vec<CreoSurfaceContourRecord> {
+    records
+        .iter()
+        .map(|record| CreoSurfaceContourRecord {
+            id: format!(
+                "creo:{namespace}:surface_contour#{}-{}",
+                record.surface_id, record.offset
+            ),
+            surface_id: record.surface_id,
+            chain_index: record.chain_index,
+            curve_header_id: record.curve_header_id,
+            trv: record.trv,
+            parameter_envelope: record.parameter_envelope,
+            separator_reference: record.separator_reference,
+            body: record.body.clone(),
+            offset: record.offset,
+            envelope_offset: record.envelope_offset,
+            surface_row_offset: record.surface_row_offset,
+            source_section: source_section(scan, record.offset),
+        })
+        .collect()
+}
+
 fn curve_occurrence_identity(curve_id: u32, offset: usize, occurrence_count: usize) -> String {
     if occurrence_count == 1 {
         curve_id.to_string()
@@ -1559,6 +1724,7 @@ pub(super) fn curve_parameter_records(
                         length: span.length,
                     })
                     .collect(),
+                reference_geometry: record.reference_geometry,
                 suffix,
                 suffix_candidate_count,
                 offset: record.offset,

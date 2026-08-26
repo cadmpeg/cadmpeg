@@ -12,7 +12,7 @@ use super::super::feature_history::{
     feature_dimension_table_complete, unique_surface_parameter_record,
 };
 use super::super::sketch::{approximately_equal, normalized};
-use super::super::sweep::unique_available_positional_cylinder_frames;
+use super::super::sweep::unique_available_positional_cylinder_frame_records;
 
 const EPS_RADIUS_AGREEMENT: f64 = 1.0e-9;
 const EPS_AXIS_ALIGNMENT: f64 = 1.0e-9;
@@ -28,39 +28,159 @@ pub fn stepped_hole_form(
     let candidates = tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 29)
-        .filter_map(|table| paired_hole_replay_surfaces_by_source(feature_id, table, rows))
-        .filter(|generated_by_source| {
-            let cylinder_sources = generated_by_source
-                .values()
-                .filter(|entries| {
-                    matches!(
-                        entries.as_slice(),
-                        [
-                            Some(crate::surface::SurfaceKind::Cylinder),
-                            Some(crate::surface::SurfaceKind::Cylinder)
-                        ]
-                    )
-                })
-                .count();
-            let planar_support_sources = generated_by_source
-                .values()
-                .filter(|entries| {
-                    entries
-                        .iter()
-                        .filter(|kind| **kind == Some(crate::surface::SurfaceKind::Plane))
-                        .count()
-                        == 1
-                        && entries.iter().filter(|kind| kind.is_none()).count() == 1
-                })
-                .count();
-            let has_cone = generated_by_source
-                .values()
-                .flatten()
-                .any(|kind| *kind == Some(crate::surface::SurfaceKind::Cone));
-            cylinder_sources == 2 && planar_support_sources == 1 && !has_cone
+        .filter(|table| {
+            let paired = paired_hole_replay_surfaces_by_source(feature_id, table, rows)
+                .is_some_and(|generated_by_source| {
+                    paired_hole_replay_is_counterbore(&generated_by_source)
+                });
+            paired || split_patch_table_is_counterbore(feature_id, table, rows)
         })
         .count();
     (candidates == 1).then_some(HoleForm::Counterbore)
+}
+
+fn paired_hole_replay_is_counterbore(
+    generated_by_source: &BTreeMap<u32, [Option<crate::surface::SurfaceKind>; 2]>,
+) -> bool {
+    let cylinder_sources = generated_by_source
+        .values()
+        .filter(|entries| {
+            matches!(
+                entries,
+                [
+                    Some(crate::surface::SurfaceKind::Cylinder),
+                    Some(crate::surface::SurfaceKind::Cylinder)
+                ]
+            )
+        })
+        .count();
+    let planar_support_sources = generated_by_source
+        .values()
+        .filter(|entries| {
+            entries
+                .iter()
+                .filter(|kind| **kind == Some(crate::surface::SurfaceKind::Plane))
+                .count()
+                == 1
+                && entries.iter().filter(|kind| kind.is_none()).count() == 1
+        })
+        .count();
+    let has_cone = generated_by_source
+        .values()
+        .flatten()
+        .any(|kind| *kind == Some(crate::surface::SurfaceKind::Cone));
+    cylinder_sources == 2 && planar_support_sources == 1 && !has_cone
+}
+
+fn split_patch_table_is_counterbore(
+    feature_id: u32,
+    table: &crate::feature::FeatureEntityTable,
+    rows: &[crate::surface::SurfaceRow],
+) -> bool {
+    let surface_kinds = table
+        .surface_ids
+        .iter()
+        .map(|surface_id| {
+            crate::surface::unique_surface_row(rows, *surface_id)
+                .filter(|row| row.feature_id == feature_id)
+                .map(|row| row.kind)
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(surface_kinds) = surface_kinds else {
+        return false;
+    };
+    let cylinder_count = surface_kinds
+        .iter()
+        .filter(|kind| **kind == crate::surface::SurfaceKind::Cylinder)
+        .count();
+    let plane_count = surface_kinds
+        .iter()
+        .filter(|kind| **kind == crate::surface::SurfaceKind::Plane)
+        .count();
+    let unique_surface_count = table.surface_ids.iter().collect::<BTreeSet<_>>().len();
+    if surface_kinds.len() != 5
+        || unique_surface_count != 5
+        || cylinder_count != 4
+        || plane_count != 1
+    {
+        return false;
+    }
+    let is_rowless = |entry: &crate::feature::FeatureEntityTableEntry| {
+        table.non_surface_entity_ids.contains(&entry.entity_id)
+            && !table.surface_ids.contains(&entry.entity_id)
+    };
+    if !table.entries.windows(2).any(|entries| {
+        entries[0].class_id == 204
+            && entries[1].class_id == 203
+            && is_rowless(&entries[0])
+            && is_rowless(&entries[1])
+    }) {
+        return false;
+    }
+
+    let surface_ids = table.surface_ids.iter().copied().collect::<BTreeSet<_>>();
+    let mut materialized_surface_ids = BTreeSet::new();
+    let mut cylinder_ids_by_source = BTreeMap::<u32, Vec<u32>>::new();
+    let mut plane_ids_by_source = BTreeMap::<u32, Vec<u32>>::new();
+    let mut rowless_counts_by_source = BTreeMap::<u32, usize>::new();
+    for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
+        let materialized = table.surface_ids.contains(&entry.entity_id);
+        let rowless = is_rowless(entry);
+        if !materialized && !rowless {
+            return false;
+        }
+        let Some(source_id) = entry.source_entity_id else {
+            continue;
+        };
+        if source_id == 0 && materialized {
+            return false;
+        }
+        if rowless {
+            *rowless_counts_by_source.entry(source_id).or_default() += 1;
+            continue;
+        }
+        let Some(row) = crate::surface::unique_surface_row(rows, entry.entity_id)
+            .filter(|row| row.feature_id == feature_id)
+        else {
+            return false;
+        };
+        if !materialized_surface_ids.insert(entry.entity_id) {
+            return false;
+        }
+        if row.kind == crate::surface::SurfaceKind::Cylinder {
+            cylinder_ids_by_source
+                .entry(source_id)
+                .or_default()
+                .push(entry.entity_id);
+        } else if row.kind == crate::surface::SurfaceKind::Plane {
+            plane_ids_by_source
+                .entry(source_id)
+                .or_default()
+                .push(entry.entity_id);
+        }
+    }
+    if materialized_surface_ids != surface_ids {
+        return false;
+    }
+    let cylinder_id_count = cylinder_ids_by_source.values().map(Vec::len).sum::<usize>();
+    let unique_cylinder_id_count = cylinder_ids_by_source
+        .values()
+        .flatten()
+        .collect::<BTreeSet<_>>()
+        .len();
+    if plane_ids_by_source.len() != 1 {
+        return false;
+    }
+    let plane_source = *plane_ids_by_source.keys().next().expect("one plane source");
+    cylinder_ids_by_source.len() == 2
+        && cylinder_id_count == 4
+        && unique_cylinder_id_count == 4
+        && plane_ids_by_source[&plane_source].len() == 1
+        && !cylinder_ids_by_source.contains_key(&plane_source)
+        && rowless_counts_by_source.get(&plane_source) == Some(&1)
+        && cylinder_ids_by_source.values().all(|surface_ids| {
+            surface_ids.len() == 2 && surface_ids.iter().collect::<BTreeSet<_>>().len() == 2
+        })
 }
 
 pub fn paired_hole_replay_surfaces_by_source(
@@ -302,8 +422,13 @@ pub fn simple_drilled_hole_axis_placement(
             )
         })
         .collect::<BTreeSet<_>>();
-    let frames =
-        unique_available_positional_cylinder_frames(&cylinder_ids, &scan.surfaces.parameters)?;
+    let frames = unique_available_positional_cylinder_frame_records(
+        &cylinder_ids,
+        &scan.surfaces.parameters,
+    )?
+    .into_iter()
+    .map(|(_, frame)| frame)
+    .collect::<Vec<_>>();
     simple_drilled_axis_placement_from_frames(&frames, diameter)
 }
 

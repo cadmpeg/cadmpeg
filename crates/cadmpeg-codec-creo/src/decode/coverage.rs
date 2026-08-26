@@ -18,7 +18,16 @@ pub(crate) fn source_section(scan: &ContainerScan, offset: usize) -> String {
         .sections
         .iter()
         .find(|section| offset >= section.offset && offset < section.offset + section.length)
-        .map_or("unknown", |section| section.name.as_str())
+        .map_or_else(
+            || {
+                if scan.framing.layout == crate::container::Layout::LegacyAscii {
+                    "legacy_ascii"
+                } else {
+                    "unknown"
+                }
+            },
+            |section| section.name.as_str(),
+        )
         .to_string()
 }
 

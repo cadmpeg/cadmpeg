@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use super::*;
+use std::collections::BTreeSet;
 
 fn parameter_record(curve_id: u32, suffix: CurveSuffixStatus) -> CurveParameterRecord {
     CurveParameterRecord {
@@ -13,6 +14,7 @@ fn parameter_record(curve_id: u32, suffix: CurveSuffixStatus) -> CurveParameterR
         skipped_references: Vec::new(),
         references: Vec::new(),
         opaque_spans: Vec::new(),
+        reference_geometry: [0, 0],
         suffix,
         offset: curve_id as usize,
         body_offset: curve_id as usize,
@@ -69,6 +71,163 @@ fn pcurve_endpoint_slots_must_be_finite() {
 }
 
 #[test]
+fn decodes_canonical_and_positional_two_chart_sample_rows() {
+    let samples = [
+        0x0f, 0xe4, 0x0d, 0x18, // point 0
+        0xe4, 0x0f, 0x18, 0x0d, // point 1
+        0x0d, 0x18, 0xe4, 0x0f, // point 2
+    ];
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 3]);
+    payload.extend_from_slice(&samples);
+    payload.extend_from_slice(&[10, 11, 8, 9, 0, 0, 0xe3, 0xe1, 0xe3]);
+    payload.extend_from_slice(&[8, 0, 4, 0xf6, 1]);
+    payload.extend_from_slice(&samples);
+    payload.extend_from_slice(&[10, 11, 9, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+
+    let face_ids = BTreeSet::from([10, 11]);
+    let decoded = two_chart_pcurve_samples(&payload, Some(&face_ids));
+    assert_eq!(decoded.len(), 2);
+    assert_eq!(decoded[0].curve_id, 7);
+    assert_eq!(decoded[0].faces, [10, 11]);
+    assert_eq!(decoded[0].samples.len(), 3);
+    assert_eq!(decoded[0].samples[0], [[0.0, 1.0], [-1.0, 0.0]]);
+    assert_eq!(decoded[0].samples[2], [[-1.0, 0.0], [1.0, 0.0]]);
+    assert_eq!(decoded[1].curve_id, 8);
+    assert_eq!(decoded[1].samples, decoded[0].samples);
+}
+
+#[test]
+fn two_chart_sample_rows_require_exact_counted_consumption() {
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[
+        7, 0, 4, 1, 0xf6, 0xfc, 2, 0x0f, 0xe4, 0x0d, 0x18, 0xe4, 0x0f, 0x18, 0x0d,
+        0xff, // unclaimed body byte
+        10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3,
+    ]);
+
+    let face_ids = BTreeSet::from([10, 11]);
+    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
+}
+
+#[test]
+fn two_chart_sample_rows_do_not_claim_fc05_circle_bodies() {
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 5]);
+    payload.extend(std::iter::repeat_n(0x18, 20));
+    payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+
+    let face_ids = BTreeSet::from([10, 11]);
+    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
+}
+
+#[test]
+fn two_chart_replay_consumes_curve_local_scalar_forms() {
+    let first = [0x32, 0, 0, 0, 0, 0, 0, 0];
+    let second = [0x56, 0, 0, 0, 0, 0, 0];
+    let mut samples = Vec::new();
+    for _ in 0..2 {
+        samples.extend_from_slice(&first);
+        samples.extend_from_slice(&second);
+        samples.extend_from_slice(&first);
+        samples.extend_from_slice(&second);
+    }
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 2]);
+    payload.extend(samples);
+    payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+
+    let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].samples.len(), 2);
+    let expected_first = f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0]);
+    let expected_second = f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0]);
+    for sample in &decoded[0].samples {
+        for chart in sample {
+            assert!((chart[0] - expected_first).abs() <= f64::EPSILON);
+            assert!((chart[1] - expected_second).abs() <= f64::EPSILON);
+        }
+    }
+}
+
+#[test]
+fn decodes_only_complete_fc02_short_pcurve_endpoints() {
+    let token_specs = [
+        (-14.5, vec![0x48, 0x45, 0x00]),
+        (0.75, vec![0x2a, 0xe8, 0x00]),
+        (0.0, vec![0x18]),
+        (1.0, vec![0xe4]),
+        (-12.5, vec![0x48, 0x41, 0x00]),
+        (0.75, vec![0x2a, 0xe8, 0x00]),
+        (2.0, vec![0x29, 0xff, 0xff]),
+    ];
+    let mut body = vec![0xfc, 0x02];
+    let mut scalar_tokens = Vec::new();
+    for (value, raw) in token_specs {
+        let offset = body.len();
+        body.extend_from_slice(&raw);
+        scalar_tokens.push(CurveParameterScalar {
+            value,
+            raw,
+            offset,
+            length: body.len() - offset,
+        });
+    }
+    body.extend_from_slice(&[0x34, 0xb0, 0x00]);
+    let record = CurveParameterRecord {
+        curve_id: 846,
+        type_byte: 0,
+        scalar_values: scalar_tokens.iter().map(|token| token.value).collect(),
+        opaque_spans: vec![
+            CurveParameterOpaqueSpan {
+                raw: vec![0xfc, 0x02],
+                offset: 0,
+                length: 2,
+            },
+            CurveParameterOpaqueSpan {
+                raw: vec![0x34, 0xb0, 0x00],
+                offset: body.len() - 3,
+                length: 3,
+            },
+        ],
+        body,
+        scalar_tokens,
+        ..parameter_record(846, CurveSuffixStatus::Unique)
+    };
+    let topology = CurveTopologyRow {
+        id: 846,
+        type_byte: 0,
+        feature_id: 57,
+        directions: [0x01, 0xf6],
+        faces: [43, 163],
+        next_edges: [841, 164],
+        offset: 100,
+    };
+
+    assert_eq!(
+        fc02_short_pcurve_endpoints(
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&topology),
+        ),
+        vec![Fc02ShortPcurveEndpoints {
+            curve_id: 846,
+            faces: [43, 163],
+            face_0_endpoints: [[-14.5, 0.75], [-12.5, 0.75]],
+            offset: 846,
+        }]
+    );
+
+    let mut malformed = record.clone();
+    malformed.scalar_values[3] = 2.0;
+    malformed.scalar_tokens[3].value = 2.0;
+    assert!(fc02_short_pcurve_endpoints(&[malformed], std::slice::from_ref(&topology)).is_empty());
+
+    let mut malformed = record;
+    malformed.scalar_tokens[6].raw[2] = 0xfe;
+    assert!(fc02_short_pcurve_endpoints(&[malformed], &[topology]).is_empty());
+}
+
+#[test]
 fn finds_labeled_prototypes_in_concatenated_namespaces() {
     let payload = b"crv_array\0crv_id\0\x07type\0\x08feat_id\0\x04\
                    crv_array\0crv_id\0\x80\x80type\0\x01";
@@ -79,12 +238,14 @@ fn finds_labeled_prototypes_in_concatenated_namespaces() {
                 id: 7,
                 type_byte: 8,
                 feature_id: Some(4),
+                directions: None,
                 offset: 0,
             },
             CurvePrototype {
                 id: 128,
                 type_byte: 1,
                 feature_id: None,
+                directions: None,
                 offset: 33,
             },
         ]
@@ -94,6 +255,57 @@ fn finds_labeled_prototypes_in_concatenated_namespaces() {
 #[test]
 fn ignores_incomplete_labeled_rows() {
     assert!(prototypes(b"crv_array\0crv_id\0\x07").is_empty());
+}
+
+#[test]
+fn promotes_only_referenced_unique_prototype_topology() {
+    let prototypes = [CurvePrototype {
+        id: 44,
+        type_byte: 0,
+        feature_id: Some(40),
+        directions: Some([0x01, 0xf6]),
+        offset: 100,
+    }];
+    let prototype_topology = [CurvePrototypeTopology {
+        curve_id: 44,
+        faces: [43, 141],
+        next_edges: [271, 142],
+        offset: 100,
+    }];
+    let positional_rows = [CurveTopologyRow {
+        id: 605,
+        type_byte: 0,
+        feature_id: 547,
+        directions: [0x01, 0xf6],
+        faces: [43, 235],
+        next_edges: [44, 597],
+        offset: 200,
+    }];
+    assert_eq!(
+        prototype_topology_rows(
+            &prototypes,
+            &prototype_topology,
+            &positional_rows,
+            &BTreeSet::from([43, 141, 235]),
+        ),
+        vec![CurveTopologyRow {
+            id: 44,
+            type_byte: 0,
+            feature_id: 40,
+            directions: [0x01, 0xf6],
+            faces: [43, 141],
+            next_edges: [271, 142],
+            offset: 100,
+        }]
+    );
+
+    assert!(prototype_topology_rows(
+        &prototypes,
+        &prototype_topology,
+        &positional_rows,
+        &BTreeSet::from([43, 235]),
+    )
+    .is_empty());
 }
 
 #[test]
@@ -210,6 +422,106 @@ fn decodes_a_uniquely_delimited_topology_suffix() {
 }
 
 #[test]
+fn retains_nonzero_reference_geometry_after_topology_references() {
+    let payload = [
+        b't', b'o', b'p', b'o', b'l', b'_', b'r', b'e', b'f', b'_', b'd', b'a', b't', b'a', 0, 7,
+        8, 4, 1, 0xf6, 0xff, // opaque parameter body
+        10, 11, 7, 7, // face and next-edge references
+        0, 68, // ref_geom[0] and ref_geom[1]
+        0xe3, 0x81, 0x0d, // row close and array-item linkage
+        0xe1, 0xe3,
+    ];
+    let face_ids = BTreeSet::from([10, 11]);
+
+    assert_eq!(
+        topology_rows_with_face_ids(&payload, Some(&face_ids))[0].faces,
+        [10, 11]
+    );
+    let parameters = parameter_records_with_face_ids(&payload, Some(&face_ids));
+    assert_eq!(parameters.len(), 1);
+    assert_eq!(parameters[0].body, [0xff]);
+    assert_eq!(parameters[0].reference_geometry, [0, 68]);
+}
+
+#[test]
+fn reference_geometry_uses_the_generic_compact_lane() {
+    let row = [10, 11, 7, 7, 0x81, 0x0d, 68, 0xe3];
+    assert_eq!(
+        topology_suffix_candidates(&row),
+        Some(vec![(0, [10, 11, 7, 7], [269, 68])])
+    );
+}
+
+#[test]
+fn face_namespace_resolves_ambiguous_reference_boundaries() {
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[
+        0x80, 0x90, // curve 144
+        0x00, 0x28, 0x01, 0xf6, // type, feature, direction flags
+        0xff, // opaque parameter byte
+        0x80, 0x8f, 0x80, 0x8d, 0x81, 0x11, 0x2c, 0x00, 0x00, 0xe3, 0xe1, 0xf5, 0x05, 0xf6, 0xe3,
+    ]);
+
+    assert!(topology_rows(&payload).is_empty());
+    assert!(parameter_records(&payload).is_empty());
+
+    let face_ids = std::collections::BTreeSet::from([141, 143]);
+    let rows = topology_rows_with_face_ids(&payload, Some(&face_ids));
+    assert_eq!(
+        rows,
+        vec![CurveTopologyRow {
+            id: 144,
+            type_byte: 0,
+            feature_id: 40,
+            directions: [1, 0xf6],
+            faces: [143, 141],
+            next_edges: [273, 44],
+            offset: 15,
+        }]
+    );
+
+    let parameters = parameter_records_with_face_ids(&payload, Some(&face_ids));
+    assert_eq!(parameters.len(), 1);
+    assert_eq!(parameters[0].curve_id, 144);
+    assert_eq!(parameters[0].body, [0xff]);
+}
+
+#[test]
+fn topology_evidence_resolves_an_ambiguous_suffix_with_an_unmaterialized_face() {
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[
+        7, 8, 4, 1, 0xf6, 10, 0x80, 0x8d, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3,
+    ]);
+    payload.extend_from_slice(&[
+        0x80, 0x90, 0x00, 0x28, 0x01, 0xf6, 0xff, 0x80, 0x8f, 0x80, 0x8d, 0x81, 0x11, 0x2c, 0x00,
+        0x00, 0xe3, 0xe1, 0xf5, 0x05, 0xf6, 0xe3,
+    ]);
+
+    let face_ids = std::collections::BTreeSet::from([143]);
+    let rows = topology_rows_with_face_ids(&payload, Some(&face_ids));
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[1].id, 144);
+    assert_eq!(rows[1].faces, [143, 141]);
+    assert_eq!(rows[1].next_edges, [273, 44]);
+}
+
+#[test]
+fn materialized_face_evidence_precedes_namespace_face_evidence() {
+    let row = [0x81, 0x73, 0x81, 0x71, 0x81, 0x4b, 0x81, 0x29, 0, 0, 0xe3];
+    let materialized_face_ids = std::collections::BTreeSet::from([369, 371]);
+    let namespace_face_ids = std::collections::BTreeSet::from([115, 369, 371]);
+
+    assert_eq!(
+        topology_suffix_with_face_ids(
+            &row,
+            Some(&materialized_face_ids),
+            Some(&namespace_face_ids),
+        ),
+        Some((0, [371, 369, 331, 297], [0, 0]))
+    );
+}
+
+#[test]
 fn parameter_records_withhold_rows_with_ambiguous_terminal_suffixes() {
     let mut payload = b"topol_ref_data\0".to_vec();
     payload.extend_from_slice(&[7, 8, 4, 1, 0xf6]);
@@ -235,6 +547,23 @@ fn row_boundary_outweighs_prefix_like_bytes_inside_a_dense_body() {
     assert_eq!(
         parameter_records(&payload)[0].body[0..7],
         [0xfc, 5, 9, 8, 4, 1, 0xf6]
+    );
+}
+
+#[test]
+fn final_curve_row_uses_the_next_array_boundary() {
+    let payload = b"topol_ref_data\0\x07\x08\x04\x01\xf6\xff\x0a\x0b\x07\x07\0\0\xe3\x80\xe0\xe1\xf5\x05\xf6\xe0\0lo_array\0";
+    assert_eq!(
+        topology_rows(payload),
+        vec![CurveTopologyRow {
+            id: 7,
+            type_byte: 8,
+            feature_id: 4,
+            directions: [1, 0xf6],
+            faces: [10, 11],
+            next_edges: [7, 7],
+            offset: 15,
+        }]
     );
 }
 

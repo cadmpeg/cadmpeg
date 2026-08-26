@@ -45,7 +45,75 @@ fn finds_one_byte_and_two_byte_surface_rows() {
 }
 
 #[test]
-fn cross_section_count_rejects_boundary_one_body_candidate() {
+fn accepts_type24_row_with_boundary_type_eight() {
+    let payload = b"srf_array\0\xf8\x01\xae\x71\x24\xae\x5a\xf6\x08\0";
+    let decoded = rows(payload);
+
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].id, 11_889);
+    assert_eq!(decoded[0].kind, SurfaceKind::Cylinder);
+    assert_eq!(decoded[0].feature_id, 11_866);
+    assert_eq!(decoded[0].boundary_type, 0x08);
+}
+
+#[test]
+fn positional_spline_replay_uses_the_named_array_extents() {
+    let mut payload = b"srf_array\0\xf8\x02".to_vec();
+    payload.extend_from_slice(&[7, 0x28, 4, 0x01, 0, 8, 0xe3]);
+    payload.extend_from_slice(b"srf_prim_ptr(splsrf)\0");
+    payload.extend_from_slice(b"\xe0\x01tan_cond\0\xf8\x02\x03\xe4");
+    for name in ["i_points", "end_u_tangts", "end_v_tangts", "end_uv_deriv"] {
+        payload.extend_from_slice(&[0xe0, 0x02]);
+        payload.extend_from_slice(name.as_bytes());
+        payload.extend_from_slice(b"\0\xf9\x04\x03");
+        payload.extend(std::iter::repeat_n(0x0f, 12));
+    }
+    for name in ["u_params", "v_params"] {
+        payload.extend_from_slice(&[0xe0, 0x01]);
+        payload.extend_from_slice(name.as_bytes());
+        payload.extend_from_slice(b"\0\xf8\x02\x0f\xe4");
+    }
+    payload.push(0xe3);
+    payload.extend_from_slice(&[8, 0x28, 4, 0x01, 0, 0, 0xe3, 0x03, 0xe4]);
+    payload.extend(std::iter::repeat_n(0x0f, 48));
+    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0xe4, 0xe3]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let decoded_rows = rows(&payload);
+    assert_eq!(decoded_rows.len(), 2);
+    let later = decoded_rows.iter().find(|row| row.id == 8).unwrap();
+    let prototype = positional_spline_replay_prototype(&payload, &decoded_rows, later).unwrap();
+    assert_eq!(spline_replay_shape(&prototype).unwrap().point_count, 4);
+
+    let parameters = parameter_records(&payload);
+    let later_parameter = unique_surface_parameter(&parameters, 8).unwrap();
+    assert_eq!(later_parameter.boundary, SurfaceBodyBoundary::CompoundClose);
+    assert!(later_parameter.body.len() > 1);
+    let cache = scalar::ScalarCache::from_section(&payload);
+    let replay =
+        decode_positional_spline_replay(&later_parameter.body, &prototype, &cache).unwrap();
+    assert_eq!(replay.points.len(), 4);
+    assert_eq!(replay.u_derivatives.len(), 4);
+    assert_eq!(replay.v_derivatives.len(), 4);
+    assert_eq!(replay.mixed_derivatives.len(), 4);
+    assert_eq!(replay.u_parameters, [0.0, 1.0]);
+    assert_eq!(replay.v_parameters, [0.0, 1.0]);
+    let body_start = positional_body_start(&payload, later).unwrap();
+    assert_eq!(
+        positional_spline_replay_body_end(
+            &payload,
+            &decoded_rows,
+            later,
+            body_start,
+            payload.len(),
+            &cache,
+        ),
+        Some(later_parameter.body_offset + later_parameter.body.len())
+    );
+}
+
+#[test]
+fn cross_section_filters_boundary_one_body_candidate() {
     let payload =
         b"Sld_Xsections\0srf_array\0\xf8\x01\x07\x24\x04\x01\x06\0\x2d\x25\x32\xf6\x01\x01\xe2";
 
@@ -213,13 +281,18 @@ fn surface_array_frame_excludes_following_curve_namespace_bytes() {
 }
 
 #[test]
-fn surface_array_frame_withholds_a_count_mismatch() {
-    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+fn sparse_surface_array_retains_rows_but_not_complete_frame() {
+    let mut payload = b"srf_array\0\xf8\x03".to_vec();
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[8, 0x24, 5, 0x01, 0, 0]);
     payload.extend_from_slice(b"crv_array\0\xf8\x00");
 
-    assert!(rows(&payload).is_empty());
+    assert_eq!(
+        rows(&payload).iter().map(|row| row.id).collect::<Vec<_>>(),
+        [7, 8]
+    );
+    assert!(counted_row_bounds(&payload).is_empty());
+    assert!(complete_surface_array_bounds(&payload).is_empty());
 }
 
 #[test]
