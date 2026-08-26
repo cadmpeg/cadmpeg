@@ -413,7 +413,7 @@ fn parse_asset_header(bytes: &[u8]) -> Result<AssetManifestHeader, CodecError> {
                 cursor.finish("revision-10 Fusion asset manifest")?;
                 None
             }
-            14 | 15 | 19 | 20 => parse_current_design_asset(&mut cursor)?,
+            12 | 13 | 14 | 15 | 19 | 20 => parse_current_design_asset(&mut cursor)?,
             _ => {
                 return Err(malformed(
                     "Fusion asset manifest revision",
@@ -968,8 +968,8 @@ mod tests {
     }
 
     #[test]
-    fn revisions_fifteen_and_nineteen_use_the_current_asset_header() {
-        for revision in [15, 19] {
+    fn current_revisions_use_the_current_asset_header() {
+        for revision in [12, 13, 14, 15, 19, 20] {
             let mut bytes = encode_asset_header(
                 "Intermediate Design",
                 DESIGN_GUID,
