@@ -1286,28 +1286,32 @@ impl IndexedSectionLayout {
         let types = section
             .types
             .iter()
-            .enumerate()
-            .map(|(index, definition)| IndexedDefinitionLayout {
+            .map(|definition| IndexedDefinitionLayout {
                 offset: definition.offset,
                 name_len: definition.name.len(),
                 trailing_code: definition.trailing_code,
-                registry_suffix: (index + 1 < section.types.len()).then(|| IndexedByteRange {
+                registry_suffix: Some(IndexedByteRange {
                     start: definition.offset + definition.name.len() + 2,
-                    end: section.types[index + 1].offset,
+                    end: definition.offset
+                        + definition.name.len()
+                        + 2
+                        + definition.registry_suffix.len(),
                 }),
             })
             .collect();
         let fields = section
             .fields
             .iter()
-            .enumerate()
-            .map(|(index, definition)| IndexedDefinitionLayout {
+            .map(|definition| IndexedDefinitionLayout {
                 offset: definition.offset,
                 name_len: definition.name.len(),
                 trailing_code: definition.trailing_code,
-                registry_suffix: (index + 1 < section.fields.len()).then(|| IndexedByteRange {
+                registry_suffix: Some(IndexedByteRange {
                     start: definition.offset + definition.name.len() + 2,
-                    end: section.fields[index + 1].offset,
+                    end: definition.offset
+                        + definition.name.len()
+                        + 2
+                        + definition.registry_suffix.len(),
                 }),
             })
             .collect();
@@ -8880,10 +8884,9 @@ pub(crate) fn sections_with_operation_label_layouts<'a>(
             at = offset + 4;
             continue;
         }
-        let types = registry::type_definitions(bytes, offset + 16, end);
-        let field_start = types.last().map_or(offset + 16, |definition| {
-            definition.offset + definition.name.len() + 2
-        });
+        let type_registry = registry::type_registry(bytes, offset + 16, end);
+        let types = type_registry.definitions;
+        let field_start = type_registry.field_start;
         let record_area_pointer = section_record_area_pointer(bytes, offset, field_start, end)
             .or_else(|| {
                 legacy_feature_record_area_pointer(bytes, offset, field_start, end, &types)
@@ -9118,6 +9121,12 @@ fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> I
             object_id_table_offset,
             count,
         } => {
+            let type_registry = registry::type_registry(bytes, base, entity_index_start);
+            let fields = registry::all_field_definitions(
+                bytes,
+                type_registry.field_start,
+                entity_index_start,
+            );
             let records = (1..count)
                 .map(|index| {
                     let start_offset = entity_index_offset(bytes, entity_index_start, index)
@@ -9154,8 +9163,8 @@ fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> I
                 base,
                 entity_index_offset: entity_index_start,
                 object_id_table_offset,
-                types: registry::type_definitions(bytes, base, entity_index_start).into(),
-                fields: registry::all_field_definitions(bytes, base, entity_index_start).into(),
+                types: type_registry.definitions.into(),
+                fields: fields.into(),
                 control: None,
                 column_storage: None,
                 records: records.into(),
@@ -9169,6 +9178,12 @@ fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> I
             last,
             record_count,
         } => {
+            let type_registry = registry::type_registry(bytes, 0, entity_index_start);
+            let fields = registry::all_field_definitions(
+                bytes,
+                type_registry.field_start,
+                entity_index_start,
+            );
             let records = (0..record_count)
                 .map(|index| {
                     let start = entity_index_offset(bytes, entity_index_start, index + 1)
@@ -9189,8 +9204,8 @@ fn materialize_indexed_candidate(bytes: &[u8], candidate: IndexedCandidate) -> I
                 base: 0,
                 entity_index_offset: entity_index_start,
                 object_id_table_offset,
-                types: registry::type_definitions(bytes, 0, entity_index_start).into(),
-                fields: registry::all_field_definitions(bytes, 0, entity_index_start).into(),
+                types: type_registry.definitions.into(),
+                fields: fields.into(),
                 control: Some(EntityRecord {
                     object_id: None,
                     object_id_offset: None,

@@ -3,6 +3,8 @@
 
 use super::{FieldDefinition, IndexedDefinitionLayout, TypeDefinition};
 
+const FIELD_START_PROBE_LIMIT: usize = 256;
+
 /// Encoding family of a value in an OM registry declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RegistryTokenForm {
@@ -46,6 +48,25 @@ pub(crate) struct FieldRegistryLayout {
     pub storage_code: RegistryToken,
     /// One-based declaring-class ordinal.
     pub owner_class: u32,
+}
+
+/// Class declarations and the first byte of the following member registry.
+///
+/// The boundary is retained because the member registry follows the class
+/// registry, while the class list itself does not contain the reference-list
+/// declarations that precede it.
+pub(super) struct TypeRegistry<'a> {
+    pub definitions: Vec<TypeDefinition<'a>>,
+    pub field_start: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RegistryDeclaration<'a> {
+    offset: usize,
+    name: &'a str,
+    name_end: usize,
+    trailing_code: u8,
+    core_end: usize,
 }
 
 fn registry_byte(first: u8, suffix: &[u8], offset: usize) -> Option<u8> {
@@ -121,6 +142,157 @@ pub(crate) fn field_registry_layout(first: u8, suffix: &[u8]) -> Option<FieldReg
     })
 }
 
+fn registry_declaration_at<'a>(
+    bytes: &'a [u8],
+    at: usize,
+    end: usize,
+    prefix: &[u8],
+) -> Option<RegistryDeclaration<'a>> {
+    let declared = usize::from(*bytes.get(at)?);
+    let name_len = declared.checked_sub(1)?;
+    let name_start = at.checked_add(1)?;
+    let name_end = name_start.checked_add(name_len)?;
+    let raw = bytes.get(name_start..name_end)?;
+    if name_end >= end
+        || !raw.starts_with(prefix)
+        || !raw.iter().all(|byte| (0x20..0x7f).contains(byte))
+    {
+        return None;
+    }
+    Some(RegistryDeclaration {
+        offset: at,
+        name: std::str::from_utf8(raw).ok()?,
+        name_end,
+        trailing_code: bytes[name_end],
+        core_end: name_end + 1,
+    })
+}
+
+fn registry_token_in(bytes: &[u8], at: usize, end: usize) -> Option<RegistryToken> {
+    let first = *bytes.get(at)?;
+    let suffix = bytes.get(at.checked_add(1)?..end)?;
+    registry_token_at(first, suffix, 0).filter(|token| {
+        at.checked_add(token.width)
+            .is_some_and(|token_end| token_end <= end)
+    })
+}
+
+fn class_registry_layout_at(
+    bytes: &[u8],
+    at: usize,
+    end: usize,
+) -> Option<(ClassRegistryLayout, usize)> {
+    let storage_code = registry_token_in(bytes, at, end)?;
+    let base_at = at.checked_add(storage_code.width)?;
+    let base = registry_token_in(bytes, base_at, end)?;
+    let fingerprint_at = base_at.checked_add(base.width)?;
+    let fingerprint_end = fingerprint_at.checked_add(8)?;
+    let fingerprint = bytes
+        .get(fingerprint_at..fingerprint_end)?
+        .try_into()
+        .ok()?;
+    let reference_at = fingerprint_end;
+    let reference = registry_token_in(bytes, reference_at, end)?;
+    let tail_end = reference_at.checked_add(reference.width)?;
+    (reference.value != 0).then_some((
+        ClassRegistryLayout {
+            storage_code,
+            base_class: base.value,
+            schema_fingerprint: fingerprint,
+            reference: reference.value,
+        },
+        tail_end,
+    ))
+}
+
+fn complete_type_registry_at(bytes: &[u8], first: usize, end: usize) -> Option<TypeRegistry<'_>> {
+    let mut at = first;
+    loop {
+        let declaration = registry_declaration_at(bytes, at, end, b"UGS::")?;
+        at = declaration.core_end;
+        match bytes.get(at) {
+            Some(0x01) => {
+                at += 1;
+                break;
+            }
+            Some(_) if registry_declaration_at(bytes, at, end, b"UGS::").is_some() => {}
+            _ => return None,
+        }
+    }
+
+    let mut definitions = Vec::new();
+    loop {
+        if let Some(field_start) = field_registry_start(bytes, at, end) {
+            return Some(TypeRegistry {
+                definitions,
+                field_start,
+            });
+        }
+        let declaration = registry_declaration_at(bytes, at, end, b"UGS::")?;
+        let (_, tail_end) = class_registry_layout_at(bytes, declaration.name_end, end)?;
+        let registry_suffix = bytes.get(declaration.core_end..tail_end)?;
+        definitions.push(TypeDefinition {
+            offset: declaration.offset,
+            name: declaration.name,
+            trailing_code: declaration.trailing_code,
+            registry_suffix,
+        });
+        at = tail_end;
+        if field_registry_start(bytes, at, end).is_none()
+            && registry_declaration_at(bytes, at, end, b"UGS::").is_none()
+        {
+            return None;
+        }
+    }
+}
+
+fn field_registry_start(bytes: &[u8], at: usize, end: usize) -> Option<usize> {
+    if bytes.get(at) == Some(&0x02) {
+        return at.checked_add(1);
+    }
+    if registry_declaration_at(bytes, at, end, b"UGS::").is_some() {
+        return None;
+    }
+    (0..=1).find_map(|gap| {
+        let candidate = at.checked_add(gap)?;
+        if registry_declaration_at(bytes, candidate, end, b"UGS::").is_some() {
+            return None;
+        }
+        let probe_end = candidate.saturating_add(FIELD_START_PROBE_LIMIT).min(end);
+        for probe in candidate..probe_end {
+            if registry_declaration_at(bytes, probe, end, b"UGS::").is_some() {
+                return None;
+            }
+            if field_definition_at(bytes, probe, end).is_some() {
+                return Some(probe);
+            }
+        }
+        None
+    })
+}
+
+/// Parse the complete reference/class registry when its explicit terminators
+/// and class tails are present. Older or partial layouts use the historical
+/// scanner and retain its exact suffix bytes.
+pub(super) fn type_registry(bytes: &[u8], start: usize, end: usize) -> TypeRegistry<'_> {
+    let complete = (start..end).find_map(|at| {
+        registry_declaration_at(bytes, at, end, b"UGS::")
+            .and_then(|_| complete_type_registry_at(bytes, at, end))
+    });
+    if let Some(registry) = complete {
+        return registry;
+    }
+
+    let definitions = legacy_type_definitions(bytes, start, end);
+    let field_start = definitions.last().map_or(start, |definition| {
+        definition.offset + definition.name.len() + 2
+    });
+    TypeRegistry {
+        definitions,
+        field_start,
+    }
+}
+
 pub(super) fn materialize_type_definition<'a>(
     bytes: &'a [u8],
     layout: &IndexedDefinitionLayout,
@@ -174,14 +346,16 @@ pub(super) fn type_definition_layouts(
 ) -> Vec<IndexedDefinitionLayout> {
     definitions
         .iter()
-        .enumerate()
-        .map(|(index, definition)| IndexedDefinitionLayout {
+        .map(|definition| IndexedDefinitionLayout {
             offset: definition.offset,
             name_len: definition.name.len(),
             trailing_code: definition.trailing_code,
-            registry_suffix: (index + 1 < definitions.len()).then(|| super::IndexedByteRange {
+            registry_suffix: Some(super::IndexedByteRange {
                 start: definition.offset + definition.name.len() + 2,
-                end: definitions[index + 1].offset,
+                end: definition.offset
+                    + definition.name.len()
+                    + 2
+                    + definition.registry_suffix.len(),
             }),
         })
         .collect()
@@ -192,20 +366,22 @@ pub(super) fn field_definition_layouts(
 ) -> Vec<IndexedDefinitionLayout> {
     definitions
         .iter()
-        .enumerate()
-        .map(|(index, definition)| IndexedDefinitionLayout {
+        .map(|definition| IndexedDefinitionLayout {
             offset: definition.offset,
             name_len: definition.name.len(),
             trailing_code: definition.trailing_code,
-            registry_suffix: (index + 1 < definitions.len()).then(|| super::IndexedByteRange {
+            registry_suffix: Some(super::IndexedByteRange {
                 start: definition.offset + definition.name.len() + 2,
-                end: definitions[index + 1].offset,
+                end: definition.offset
+                    + definition.name.len()
+                    + 2
+                    + definition.registry_suffix.len(),
             }),
         })
         .collect()
 }
 
-pub(super) fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {
+fn legacy_type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {
     let mut out = Vec::new();
     let mut at = start;
     while at < end {
