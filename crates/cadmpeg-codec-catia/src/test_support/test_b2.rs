@@ -237,6 +237,14 @@ fn owner_numeric_tail_for(lower: [f64; 2], upper: [f64; 2]) -> Vec<u8> {
 }
 
 pub(crate) fn b2_owner_chart_stream(carrier_class: u8) -> Vec<u8> {
+    b2_owner_chart_stream_with_encoding(carrier_class, false)
+}
+
+pub(crate) fn b2_width_coded_owner_chart_stream(carrier_class: u8) -> Vec<u8> {
+    b2_owner_chart_stream_with_encoding(carrier_class, true)
+}
+
+fn b2_owner_chart_stream_with_encoding(carrier_class: u8, width_coded: bool) -> Vec<u8> {
     let mut bytes = match carrier_class {
         0x28 => b2_cylinder_stream(),
         0x2b => b2_torus_stream(),
@@ -301,8 +309,17 @@ pub(crate) fn b2_owner_chart_stream(carrier_class: u8) -> Vec<u8> {
         }
     }
     let mut owner = vec![0xb2, 0x03, 0x62, 0, 0x05, 0x89];
-    for value in [278, 324, 276, 268, 277, 374, 199, 195, 279] {
-        owner.extend_from_slice(&compact_uint_bytes(value));
+    let references = if width_coded {
+        [278, 1, 276, 2, 277, 3, 199, 4, 279]
+    } else {
+        [278, 324, 276, 268, 277, 374, 199, 195, 279]
+    };
+    for (index, value) in references.into_iter().enumerate() {
+        if width_coded && index % 2 == 1 {
+            owner.push(u8::try_from(value).expect("width-coded owner identity"));
+        } else {
+            owner.extend_from_slice(&compact_uint_bytes(value));
+        }
     }
     owner.extend_from_slice(&owner_numeric_tail_for(lower, upper));
     owner[3] = u8::try_from(owner.len() - 5).expect("owner-chart packet length");

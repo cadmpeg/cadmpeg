@@ -476,6 +476,38 @@ fn owner_chart_requires_exact_source_closed_selector_rectangle() {
 }
 
 #[test]
+fn owner_chart_applies_to_width_coded_identity_dialect() {
+    use crate::families::b2::records::{B2OwnerChartCarrier, B2OwnerReferenceEncoding};
+
+    for (carrier_class, carrier) in [
+        (0x28, B2OwnerChartCarrier::B28),
+        (0x2b, B2OwnerChartCarrier::B2b),
+        (0x32, B2OwnerChartCarrier::A32),
+    ] {
+        let bytes = b2_width_coded_owner_chart_stream(carrier_class);
+        let packets = crate::families::b2::records::b2_owner_packets(&bytes);
+        assert_eq!(packets.len(), 1);
+        assert_eq!(
+            packets[0].reference_encoding,
+            B2OwnerReferenceEncoding::WidthCodedStrong
+        );
+        assert_eq!(packets[0].references, [278, 1, 276, 2, 277, 3, 199, 4, 279]);
+
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let [chart] = crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records)
+            .try_into()
+            .unwrap_or_else(|charts: Vec<_>| {
+                panic!("one width-coded class-{carrier_class:02x} owner chart, got {charts:?}")
+            });
+        assert_eq!(chart.carrier, carrier);
+        assert_eq!(
+            chart.parameter_points.map(|point| point.prefix),
+            [0x05, 0x09, 0x0d, 0x11]
+        );
+    }
+}
+
+#[test]
 fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
     use crate::families::b2::records::B2OwnerChartBridge;
 
