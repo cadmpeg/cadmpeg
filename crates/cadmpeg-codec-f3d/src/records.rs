@@ -2190,13 +2190,15 @@ pub enum DesignThreadForm {
     Standard,
     /// Compact prefix, construction marker, and trailer layout.
     Compact,
+    /// Direct standard prefix with the legacy compact scalar and trailer lanes.
+    StandardLegacy,
 }
 
 /// Exact form and size construction carried by a `Thread` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignThreadConstruction {
-    /// Standard or compact construction form.
+    /// Standard, compact, or class-specific legacy construction form.
     pub form: DesignThreadForm,
     /// Byte offset of the designation LP-UTF16 field.
     pub designation_offset: u64,

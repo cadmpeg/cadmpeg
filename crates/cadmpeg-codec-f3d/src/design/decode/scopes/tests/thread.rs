@@ -82,6 +82,57 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     );
 }
 
+#[test]
+fn thread_scope_decodes_class_334_legacy_standard_tail() {
+    let mut bytes = vec![0; 148];
+    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes[29..34].copy_from_slice(&[1, 2, 0, 0, 0]);
+    bytes[34..38].copy_from_slice(&[0x36, 0, 0x67, 0]);
+    let mut payload = Vec::new();
+    lp_utf16(&mut payload, "M7x1");
+    lp_utf16(&mut payload, "7.0");
+    lp_utf16(&mut payload, "ISO Metric profile");
+    assert_eq!(payload.len(), 62);
+    bytes[38..100].copy_from_slice(&payload);
+    bytes[100..105].copy_from_slice(&[1, 1, 0, 0, 0]);
+    bytes[105..113].copy_from_slice(&0.71472f64.to_le_bytes());
+    bytes[113..121].copy_from_slice(&0.60355f64.to_le_bytes());
+    bytes[121] = 0;
+    bytes[122..130].copy_from_slice(&0.1f64.to_le_bytes());
+    bytes[130..138].copy_from_slice(&0.64255f64.to_le_bytes());
+    bytes[138..142].copy_from_slice(&[0, 0, 0, 1]);
+
+    let expected = DesignThreadConstruction {
+        form: DesignThreadForm::StandardLegacy,
+        designation_offset: 38,
+        designation: "M7x1".into(),
+        nominal_size_text: "7.0".into(),
+        nominal_size: 7.0,
+        profile: "ISO Metric profile".into(),
+        major_diameter: 0.71472,
+        minor_diameter: 0.60355,
+        pitch: 0.1,
+        pitch_diameter: 0.64255,
+        trailing_reference_record_index: None,
+        trailing_reference_offset: None,
+        face_group_record_indices: vec![988],
+    };
+    assert_thread_construction(
+        parse_thread_payload(&bytes, 38, DesignThreadForm::Standard, vec![988]),
+        &expected,
+    );
+
+    let mut scope = DesignParameterScope::empty("f3d:scope#legacy-thread", "Thread", 987);
+    scope.class_tag = "334".into();
+    scope.paired_class_tag = "262".into();
+    scope.reference_members = vec![988, 991];
+    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+
+    scope.class_tag = "335".into();
+    scope.paired_class_tag = "258".into();
+    assert_eq!(exact_thread_construction(&bytes, &scope), None);
+}
+
 fn assert_thread_construction(
     actual: Option<DesignThreadConstruction>,
     expected: &DesignThreadConstruction,

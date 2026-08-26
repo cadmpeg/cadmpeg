@@ -130,6 +130,7 @@ use crate::layout::thicken_class_347_scope_frame as thicken_347;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_owner_marked_scope_prefix as thread_owner;
 use crate::layout::thread_standard_construction_tail as thread_tail;
+use crate::layout::thread_standard_legacy_construction_tail as thread_standard_legacy_tail;
 use crate::layout::thread_standard_scope_prefix as thread_standard;
 use crate::layout::work_axis_direct_carrier_class_297 as work_axis_297;
 use crate::layout::work_axis_direct_carrier_class_335 as work_axis_335;
@@ -501,13 +502,25 @@ pub(crate) fn exact_thread_construction(
     {
         return None;
     }
-    let (form, designation_delta) = exact_thread_prefix(bytes.get(start..)?)?;
+    let (prefix_form, designation_delta) = exact_thread_prefix(bytes.get(start..)?)?;
     let designation_at = start.checked_add(designation_delta)?;
-    let face_group_record_indices = match form {
+    let face_group_record_indices = match prefix_form {
         DesignThreadForm::Standard => vec![scope.reference_members[0]],
         DesignThreadForm::Compact => scope.reference_members.iter().step_by(2).copied().collect(),
+        DesignThreadForm::StandardLegacy => return None,
     };
-    parse_thread_payload(bytes, designation_at, form, face_group_record_indices)
+    let construction = parse_thread_payload(
+        bytes,
+        designation_at,
+        prefix_form,
+        face_group_record_indices,
+    )?;
+    if construction.form == DesignThreadForm::StandardLegacy
+        && (scope.class_tag != "334" || scope.paired_class_tag != "262")
+    {
+        return None;
+    }
+    Some(construction)
 }
 
 fn exact_thread_prefix(bytes: &[u8]) -> Option<(DesignThreadForm, usize)> {
@@ -560,39 +573,48 @@ pub(crate) fn parse_thread_payload(
     let (designation, after_designation) = lp_utf16_bounded(bytes, designation_at, 1..=128)?;
     let (nominal_size_text, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
     let (profile, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
-    let form = match bytes.get(after_profile..after_profile + 5)? {
-        [0, 1, 0, 0, 0] => DesignThreadForm::Standard,
-        [1, 2, 0, 0, 0] => DesignThreadForm::Compact,
-        _ => return None,
-    };
-    if form != expected_form {
-        return None;
-    }
+    let (form, pitch_marker, trailer_kind) =
+        match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
+            (DesignThreadForm::Standard, [0, 1, 0, 0, 0]) => {
+                (DesignThreadForm::Standard, 1, ThreadTrailerKind::Standard)
+            }
+            (DesignThreadForm::Standard, [1, 1, 0, 0, 0]) => (
+                DesignThreadForm::StandardLegacy,
+                0,
+                ThreadTrailerKind::CompactNoReference,
+            ),
+            (DesignThreadForm::Compact, [1, 2, 0, 0, 0]) => {
+                (DesignThreadForm::Compact, 0, ThreadTrailerKind::Compact)
+            }
+            _ => return None,
+        };
     let nominal_size = nominal_size_text.parse::<f64>().ok()?;
     let major_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MAJOR_DIAMETER)?;
     let minor_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MINOR_DIAMETER)?;
-    let pitch_marker = match form {
-        DesignThreadForm::Standard => 1,
-        DesignThreadForm::Compact => 0,
-    };
     let pitch = (bytes.get(after_profile + thread_tail::PITCH_MARKER) == Some(&pitch_marker))
         .then(|| View::f64_le_at(bytes, after_profile + thread_tail::PITCH))??;
     let pitch_diameter = View::f64_le_at(bytes, after_profile + thread_tail::PITCH_DIAMETER)?;
-    let trailer_at = match form {
-        DesignThreadForm::Standard => thread_tail::STANDARD_TRAILER,
-        DesignThreadForm::Compact => thread_compact_tail::COMPACT_TRAILER,
+    let trailer_at = match trailer_kind {
+        ThreadTrailerKind::Standard => thread_tail::STANDARD_TRAILER,
+        ThreadTrailerKind::Compact => thread_compact_tail::COMPACT_TRAILER,
+        ThreadTrailerKind::CompactNoReference => thread_standard_legacy_tail::LEGACY_TRAILER,
     };
     let trailer_offset = after_profile.checked_add(trailer_at)?;
-    let (trailing_reference_record_index, trailing_reference_offset) = match form {
-        DesignThreadForm::Standard if bytes.get(trailer_offset..trailer_offset + 2)? == [0, 1] => {
+    let (trailing_reference_record_index, trailing_reference_offset) = match trailer_kind {
+        ThreadTrailerKind::Standard if bytes.get(trailer_offset..trailer_offset + 2)? == [0, 1] => {
             (None, None)
         }
-        DesignThreadForm::Compact
+        ThreadTrailerKind::CompactNoReference
             if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
         {
             (None, None)
         }
-        DesignThreadForm::Compact
+        ThreadTrailerKind::Compact
+            if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
+        {
+            (None, None)
+        }
+        ThreadTrailerKind::Compact
             if bytes.get(trailer_offset) == Some(&1)
                 && bytes.get(trailer_offset + 5..trailer_offset + 11)? == [0; 6] =>
         {
@@ -637,6 +659,13 @@ pub(crate) fn parse_thread_payload(
         trailing_reference_offset,
         face_group_record_indices,
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThreadTrailerKind {
+    Standard,
+    Compact,
+    CompactNoReference,
 }
 
 pub(crate) fn bind_joint_origin_frames_from_assemblies(

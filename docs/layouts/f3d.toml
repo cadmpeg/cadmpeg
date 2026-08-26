@@ -12942,6 +12942,63 @@ source = "spec"
 anchor = "the four bytes `00 00 00 01`"
 
 [[record]]
+name = "thread_standard_legacy_construction_tail"
+kind = "byte"
+section = "3.1"
+anchor = "Class `334` paired with class `262` is a third wire form"
+size = 42
+note = "Offsets are relative to the first byte after the third LP-UTF16 string. This class-specific tail keeps the standard one-group reference table while using the compact scalar and no-reference trailer lanes."
+
+[[record.field]]
+name = "construction_marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "Its construction marker is `01 01 00 00 00`"
+
+[[record.field]]
+name = "major_diameter"
+offset = 5
+type = "f64"
+source = "spec"
+anchor = "Major diameter is at marker-relative offset 5"
+
+[[record.field]]
+name = "minor_diameter"
+offset = 13
+type = "f64"
+source = "spec"
+anchor = "minor diameter at 13"
+
+[[record.field]]
+name = "pitch_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "its scalar lanes use pitch marker `0`"
+
+[[record.field]]
+name = "pitch"
+offset = 22
+type = "f64"
+source = "spec"
+anchor = "pitch at 22"
+
+[[record.field]]
+name = "pitch_diameter"
+offset = 30
+type = "f64"
+source = "spec"
+anchor = "pitch diameter at 30"
+
+[[record.field]]
+name = "legacy_trailer"
+offset = 38
+type = "bytes[4]"
+source = "spec"
+anchor = "its no-reference trailer is `00 00 00 01` at relative offset 38"
+
+[[record]]
 name = "thread_compact_reference_construction_tail"
 kind = "byte"
 section = "3.1"

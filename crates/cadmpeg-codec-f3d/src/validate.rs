@@ -3585,7 +3585,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             (Some(_), family) if family != Some(design::DesignFeatureFamily::Thread) => false,
             (Some(construction), _) => {
                 let expected_groups: Vec<_> = match construction.form {
-                    records::DesignThreadForm::Standard => scope
+                    records::DesignThreadForm::Standard
+                    | records::DesignThreadForm::StandardLegacy => scope
                         .reference_members
                         .first()
                         .copied()
